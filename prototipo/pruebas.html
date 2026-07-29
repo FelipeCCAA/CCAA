@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pruebas del modelo · Gestión Productiva CCAA</title>
+  <link rel="stylesheet" href="css/estilos.css" />
+  <style>
+    body { padding: 28px; background: var(--bg); }
+    .cab { max-width: 900px; margin: 0 auto 20px; }
+    .cab h1 { font-size: 20px; margin: 0 0 4px; }
+    .cab p { color: var(--tinta-suave); font-size: 13px; margin: 0; }
+    .marcador { max-width: 900px; margin: 0 auto 18px; display: flex; gap: 12px; align-items: center; }
+    .totales { font-size: 28px; font-weight: 700; letter-spacing: -.5px; }
+    .totales.ok { color: var(--ok-tx); } .totales.bad { color: var(--bad-tx); }
+    .resumen { color: var(--tinta-suave); font-size: 13px; }
+    .grupos { max-width: 900px; margin: 0 auto; }
+    .grupo { background: var(--panel); border-radius: var(--radio); box-shadow: var(--sombra); margin-bottom: 14px; overflow: hidden; }
+    .grupo-cab { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--linea); background: #f7f9fa; }
+    .grupo-cab h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: .4px; color: var(--tinta-suave); }
+    ul.casos { list-style: none; margin: 0; padding: 6px 0; }
+    ul.casos li { padding: 7px 16px; font-size: 13px; display: flex; gap: 10px; align-items: flex-start; }
+    ul.casos li + li { border-top: 1px solid #f2f5f6; }
+    .sig { font-weight: 700; width: 16px; flex-shrink: 0; }
+    .sig.ok { color: var(--ok-tx); } .sig.bad { color: var(--bad-tx); }
+    li.fallo { background: #fff5f5; }
+    pre.detalle { margin: 6px 0 0; font-size: 11.5px; color: var(--bad-tx); white-space: pre-wrap;
+                  font-family: Consolas, ui-monospace, monospace; }
+    .cargando { max-width: 900px; margin: 0 auto; color: var(--tinta-suave); font-style: italic; }
+  </style>
+</head>
+<body>
+  <div class="cab">
+    <h1>Pruebas del modelo</h1>
+    <p>Esquema, reglas de dominio y repositorio. Se ejecutan solas al abrir esta página; no necesitan servidor.</p>
+  </div>
+
+  <div id="marcador" class="marcador"></div>
+  <div id="salida" class="grupos"><p class="cargando">Ejecutando…</p></div>
+
+  <script src="js/datos.js"></script>
+  <script src="js/modelo/esquema.js"></script>
+  <script src="js/modelo/dominio.js"></script>
+  <script src="js/modelo/repositorio.js"></script>
+  <script src="js/modelo/recetas.js"></script>
+  <script src="js/modelo/planificador.js"></script>
+  <script src="js/modelo/turnos.js"></script>
+  <script src="js/modelo/semilla.js"></script>
+  <script src="js/modelo/pruebas.js"></script>
+  <script>
+    const escapar = t => String(t)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    Pruebas.correr().then(resultados => {
+      const fallidos = resultados.filter(r => !r.ok);
+      const grupos = {};
+      resultados.forEach(r => (grupos[r.grupo] = grupos[r.grupo] || []).push(r));
+
+      document.getElementById("marcador").innerHTML = `
+        <div class="totales ${fallidos.length ? "bad" : "ok"}">
+          ${resultados.length - fallidos.length}/${resultados.length}
+        </div>
+        <div class="resumen">
+          ${fallidos.length
+            ? `<strong>${fallidos.length} prueba(s) fallando.</strong>`
+            : "Todas las pruebas pasan."}
+        </div>`;
+
+      document.getElementById("salida").innerHTML = Object.entries(grupos).map(([nombre, casos]) => {
+        const malos = casos.filter(c => !c.ok).length;
+        return `
+          <section class="grupo">
+            <div class="grupo-cab">
+              <h2>${escapar(nombre)}</h2>
+              <span class="badge ${malos ? "bad" : "ok"}">${casos.length - malos}/${casos.length}</span>
+            </div>
+            <ul class="casos">
+              ${casos.map(c => `
+                <li class="${c.ok ? "" : "fallo"}">
+                  <span class="sig ${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✕"}</span>
+                  <div>
+                    ${escapar(c.nombre)}
+                    ${c.ok ? "" : `<pre class="detalle">${escapar(c.error)}</pre>`}
+                  </div>
+                </li>`).join("")}
+            </ul>
+          </section>`;
+      }).join("");
+    }).catch(e => {
+      document.getElementById("salida").innerHTML =
+        `<pre class="detalle">Error al ejecutar las pruebas:\n${escapar(e.stack || e.message)}</pre>`;
+    });
+  </script>
+</body>
+</html>

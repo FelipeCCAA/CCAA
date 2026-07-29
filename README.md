@@ -1,54 +1,151 @@
-# Gestión Productiva · Planta CCAA (leche en polvo y crema)
+# Gestión Productiva · Planta CCAA
 
-Aplicación web (HTML/CSS/JavaScript) para la gestión productiva de la planta de secado de Campos Australes. Corre **abriendo `index.html` en el navegador**, sin servidor ni instalación. Los datos de ejemplo provienen de los archivos reales de la planta (Producción, Trazabilidad de silos, Instructivo de recepción y formularios de levantamiento de Fabricación y Calidad).
+Sistema de gestión productiva de la planta de secado de Campos Australes (leche en polvo,
+crema y mantequilla): recepción de leche → producción de lotes → control de calidad →
+liberación → despacho.
 
-## Módulos
-
-**Panel general.** Kilos producidos, cumplimiento de parámetros de calidad, litros recepcionados en silos, recepciones retenidas y liberaciones pendientes. Gráficos de kg por producto y por mandante.
-
-**Producción (polvo y crema).** Registro de lotes con producto, mandante, lote, guía de despacho, kg, destino, línea (E1/E2) y parámetros fisicoquímicos (Humedad, Materia Grasa, SNG, ST, Acidez, pH, Temperatura). Cada lote se evalúa automáticamente como **Conforme / No conforme** contra las especificaciones referenciales por producto. Incluye alta de nuevos lotes y filtros por producto y por resultado de calidad.
-
-**Recepción y trazabilidad de silos.** Leche recibida por silo/estanque (SILO 1–8, TK LD, TK CREMA), procedencia (Nestlé, P. Unión), tipo (entera/descremada), litros, camión, operador, turno y controles de camión (Delvo Test, inhibidores, crioscopía, acidez, pH, temperatura), con estado Liberada/Retenida y gráfico de ocupación por silo.
-
-**Liberación de producto (Calidad).** Cada lote muestra el checklist de documentos obligatorios antes de autorizar despacho (PCC, monitoreo PPRO E1/E2 y Rovemas, checklist de cuerpos extraños, detector de metales, FEFO, hermeticidad y peso neto, evaluación sensorial, certificado de análisis CCAA.Calidad.FORM.016.02, etc.). El botón **Autorizar despacho** se habilita solo cuando el checklist está completo.
-
-**Maestros.** Catálogo de camiones y transportistas (vehículo, placa, tipo, capacidad y choferes A.M./P.M.) tomado del instructivo de recepción.
-
-## Uso
-
-1. Abre `index.html` con doble clic.
-2. Navega con el menú lateral.
-3. **+ Nuevo lote** registra una producción; el resultado de calidad se calcula solo.
-4. Los cambios se guardan automáticamente en el navegador de ese equipo.
-
-## Datos (importar / exportar)
-
-Como esta etapa trabaja con archivos JSON, en la barra lateral tienes **Exportar JSON** (descarga todo lo actual para respaldar o compartir), **Importar JSON** (carga un archivo del mismo formato) y **Restablecer datos** (vuelve a los datos de ejemplo). La carpeta `datos/` contiene los archivos de referencia por módulo.
-
-## Especificaciones de calidad (importante)
-
-Los rangos que determinan Conforme/No conforme son **referenciales** y están definidos en `js/datos.js`, dentro de `catalogos.especificaciones`. Ajústalos a las especificaciones oficiales de cada producto/mandante. Los lotes sin especificación definida aparecen como "Sin especificación", y los que no tienen parámetros cargados como "Sin control".
-
-## Estructura
-
-```
-App Gestión Productiva CCAA/
-├── index.html
-├── css/estilos.css
-├── js/
-│   ├── datos.js        Datos semilla (reales), guardado local, importar/exportar
-│   └── app.js          Lógica de los módulos, dashboard y formularios
-├── datos/
-│   ├── produccion.json
-│   ├── recepcion-silos.json
-│   ├── liberacion-calidad.json
-│   └── maestros.json
-└── README.md
-```
-
-## Próximos pasos sugeridos
-
-Los datos viven en cada navegador; para trabajo compartido conviene un servidor o base de datos central. Se pueden agregar: edición/borrado de registros, carga masiva del histórico completo de Producción.xlsx (954 registros), registro de controles de recepción por camión (Delvo/inhibidores/crioscopía como formulario), reportes exportables (PDF/Excel), y control de usuarios por área (Recepción, Producción, Calidad).
+Estado: **en construcción**. El modelo de datos y las reglas de negocio ya están definidos
+y probados en el prototipo (ver [`prototipo/`](prototipo/)); se están trasladando a una
+aplicación cliente/servidor con persistencia compartida.
 
 ---
-Prototipo v2 · datos reales de ejemplo · julio 2026
+
+## La regla que gobierna el sistema
+
+> **Un despacho exige un lote liberado.**
+> Un lote se libera si **todos sus formularios de calidad están completos y firmados** *y* su
+> **calidad es conforme** contra la especificación vigente a la fecha del lote.
+> Si no es conforme, solo puede salir como **liberación bajo concesión**: con motivo escrito,
+> autorizador identificado y marca permanente.
+
+Todo lo demás existe para poder aplicar esa regla y demostrar después que se aplicó.
+
+---
+
+## Estructura del repositorio
+
+```
+CCAA/
+├── backend/      API y base de datos — Django 6 + Django REST Framework
+├── frontend/     Interfaz de usuario — React 19 + TypeScript + Vite + Tailwind 4
+└── prototipo/    Prototipo funcional de referencia (HTML/JS, sin servidor)
+```
+
+### `prototipo/`
+
+Prototipo que define **qué debe hacer el sistema**. Corre abriendo `prototipo/index.html`
+en el navegador, sin servidor ni instalación, y guarda en `localStorage`.
+
+No es código a desplegar: es la **especificación ejecutable** del proyecto. Contiene el
+modelo de datos completo (20 entidades), las reglas de negocio y 110 pruebas que las cubren.
+Se consulta al construir cada módulo.
+
+Documentación clave:
+
+| Documento | Qué contiene |
+|---|---|
+| [prototipo/MODELO_DATOS.md](prototipo/MODELO_DATOS.md) | Las 20 entidades, las decisiones de modelado y su justificación |
+| [prototipo/PLANIFICADOR.md](prototipo/PLANIFICADOR.md) | Programa semanal de planta y balance de leche |
+| [prototipo/CONTEXTO_ARCHIVOS_FUENTE.md](prototipo/CONTEXTO_ARCHIVOS_FUENTE.md) | Los Excel de planta de donde salen los datos |
+| [prototipo/README.md](prototipo/README.md) | Los módulos explicados uno a uno |
+
+Para verificar que las reglas siguen intactas: abrir `prototipo/pruebas.html` en el
+navegador. Ejecuta las 110 pruebas y muestra el resultado en pantalla.
+
+---
+
+## Cómo levantar el proyecto
+
+Se necesitan **dos terminales**, una para cada parte.
+
+### Backend
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+python manage.py migrate
+python manage.py runserver
+```
+
+Queda en `http://127.0.0.1:8000/`. La raíz responde 404: solo existen `/admin/` y
+`/api/`. La base de datos (`db.sqlite3`) es local de cada equipo y no se versiona.
+
+Si `Activate.ps1` falla por permisos, ejecutar una vez:
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+### Frontend
+
+```powershell
+cd frontend
+npm install     # solo la primera vez
+npm run dev
+```
+
+Queda en `http://localhost:5173/`. Recarga solo al guardar archivos.
+
+---
+
+## Arquitectura
+
+El prototipo se diseñó en tres capas para que el cambio de plataforma afectara a una sola.
+Este repositorio es ese cambio: reemplaza el almacenamiento en el navegador por un backend
+compartido, que es lo que el flujo real exige (Recepción, Producción y Calidad son personas
+distintas en turnos distintos).
+
+| Capa del prototipo | Destino en este repositorio |
+|---|---|
+| `js/modelo/esquema.js` | Modelos de Django |
+| `js/modelo/dominio.js` | Reglas de negocio en Python |
+| `js/modelo/recetas.js` | Explosión de recetas multinivel, en Python |
+| `js/modelo/planificador.js` | Consumo derivado y balance, en Python |
+| `js/modelo/repositorio.js` | Se descarta: lo reemplazan el ORM y la API |
+| `js/modelo/pruebas.js` | Pruebas en pytest |
+| `js/app.js`, `js/ui/componentes.js` | Páginas y componentes React |
+
+### Frontend
+
+```
+frontend/src/
+├── app/          App.tsx, routes.tsx (rutas agrupadas por layout)
+├── layouts/      mainlayout (con menú lateral), authlayout (login)
+├── components/   Componentes reutilizables (Navbar, Button)
+├── pages/        Una carpeta por módulo
+└── services/     api.ts (cliente axios) y servicios por módulo
+```
+
+Las páginas internas se registran dentro de `<Route element={<MainLayout />}>` en
+[frontend/src/app/routes.tsx](frontend/src/app/routes.tsx) y heredan el menú lateral.
+Para que un módulo aparezca en el menú, se le asigna su ruta en
+[frontend/src/components/Navbar/Navbar.tsx](frontend/src/components/Navbar/Navbar.tsx)
+(los que tienen `ruta: null` se muestran en gris como "Pronto").
+
+---
+
+## Estado de los módulos
+
+| Módulo | Estado |
+|---|---|
+| Login | Interfaz lista; falta autenticación real |
+| Panel general | Interfaz lista con datos de ejemplo; falta conectar a la API |
+| Producción | Pendiente |
+| Recepción y silos | Pendiente |
+| Liberación (Calidad) | Pendiente |
+| Despachos | Pendiente |
+| Maestros / Administración | Pendiente |
+| Planificador | Pendiente |
+
+---
+
+## Definiciones pendientes con Calidad y Producción
+
+Detalle en [prototipo/MODELO_DATOS.md](prototipo/MODELO_DATOS.md) §8.
+
+1. **Especificaciones oficiales** por producto y mandante. Las actuales son referenciales.
+2. **¿Los análisis son por lote o por despacho?** El modelo admite varios por lote y agrega
+   por el peor caso; falta confirmar que ese criterio es el correcto.
+3. **Qué documentos de liberación aplican a cada familia de producto.**
+4. **¿Está poblada la columna `OP` en `Produccion.xlsx`?** Si lo está, puede ser la clave
+   natural del lote y el modelo se simplifica.
+5. **Límites de control de recepción** (acidez, pH, temperatura, crioscopía).
+
+Ninguna bloquea las primeras fases, pero la 1 y la 3 bloquean el módulo de Calidad.

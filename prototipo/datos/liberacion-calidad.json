@@ -1,0 +1,348 @@
+{
+  "liberaciones": [
+    {
+      "id": "LIB-6134",
+      "lote": "CCAA6134N",
+      "producto": "P. Semidescremado ST 45% CCAA",
+      "fecha": "2026-05-14",
+      "especialista": "Camila Rauque",
+      "estado": "Liberado",
+      "checklist": [
+        {
+          "documento": "CCAA.REC.FORM.002.01 Planilla de Instructivo",
+          "completado": true
+        },
+        {
+          "documento": "Formularios de control de proceso (PCC)",
+          "completado": true
+        },
+        {
+          "documento": "Checklist de cuerpos extraños evaporadores",
+          "completado": true
+        },
+        {
+          "documento": "Hoja de pulverización E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Disco de uperización",
+          "completado": true
+        },
+        {
+          "documento": "Inspección preoperativa E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Conexión de tierra E1 - E2",
+          "completado": true
+        },
+        {
+          "documento": "Formulario fisicoquímicos E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Formulario de filtros de limpieza",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo de PPRO E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo de PPRO Rovemas 3 y 4",
+          "completado": true
+        },
+        {
+          "documento": "Checklist cuerpos extraños Rovema 3 y 4",
+          "completado": true
+        },
+        {
+          "documento": "Seguimiento FEFO",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo PPRO Detector de metales",
+          "completado": true
+        },
+        {
+          "documento": "Control de consumo de materiales",
+          "completado": true
+        },
+        {
+          "documento": "Control de hermeticidad y peso neto",
+          "completado": true
+        },
+        {
+          "documento": "Registro de evaluación sensorial",
+          "completado": true
+        },
+        {
+          "documento": "Informe de laboratorio externo",
+          "completado": true
+        },
+        {
+          "documento": "CCAA.Calidad.FORM.016.02 Certificado de Análisis",
+          "completado": true
+        }
+      ]
+    },
+    {
+      "id": "LIB-6133",
+      "lote": "CCAA6133",
+      "producto": "Crema 42% CCAA",
+      "fecha": "2026-05-14",
+      "especialista": "Juan Calderón",
+      "estado": "Liberado",
+      "checklist": [
+        {
+          "documento": "CCAA.REC.FORM.002.01 Planilla de Instructivo",
+          "completado": true
+        },
+        {
+          "documento": "Formularios de control de proceso (PCC)",
+          "completado": true
+        },
+        {
+          "documento": "Checklist de cuerpos extraños evaporadores",
+          "completado": true
+        },
+        {
+          "documento": "Hoja de pulverización E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Disco de uperización",
+          "completado": true
+        },
+        {
+          "documento": "Inspección preoperativa E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Conexión de tierra E1 - E2",
+          "completado": true
+        },
+        {
+          "documento": "Formulario fisicoquímicos E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Formulario de filtros de limpieza",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo de PPRO E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo de PPRO Rovemas 3 y 4",
+          "completado": true
+        },
+        {
+          "documento": "Checklist cuerpos extraños Rovema 3 y 4",
+          "completado": true
+        },
+        {
+          "documento": "Seguimiento FEFO",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo PPRO Detector de metales",
+          "completado": true
+        },
+        {
+          "documento": "Control de consumo de materiales",
+          "completado": true
+        },
+        {
+          "documento": "Control de hermeticidad y peso neto",
+          "completado": true
+        },
+        {
+          "documento": "Registro de evaluación sensorial",
+          "completado": true
+        },
+        {
+          "documento": "Informe de laboratorio externo",
+          "completado": true
+        },
+        {
+          "documento": "CCAA.Calidad.FORM.016.02 Certificado de Análisis",
+          "completado": true
+        }
+      ]
+    },
+    {
+      "id": "LIB-6140",
+      "lote": "CCAA6140N",
+      "producto": "P. Entero ST 48%",
+      "fecha": "2026-05-22",
+      "especialista": "Camila Rauque",
+      "estado": "En revisión",
+      "checklist": [
+        {
+          "documento": "CCAA.REC.FORM.002.01 Planilla de Instructivo",
+          "completado": true
+        },
+        {
+          "documento": "Formularios de control de proceso (PCC)",
+          "completado": true
+        },
+        {
+          "documento": "Checklist de cuerpos extraños evaporadores",
+          "completado": true
+        },
+        {
+          "documento": "Hoja de pulverización E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Disco de uperización",
+          "completado": true
+        },
+        {
+          "documento": "Inspección preoperativa E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Conexión de tierra E1 - E2",
+          "completado": true
+        },
+        {
+          "documento": "Formulario fisicoquímicos E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Formulario de filtros de limpieza",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo de PPRO E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo de PPRO Rovemas 3 y 4",
+          "completado": true
+        },
+        {
+          "documento": "Checklist cuerpos extraños Rovema 3 y 4",
+          "completado": true
+        },
+        {
+          "documento": "Seguimiento FEFO",
+          "completado": true
+        },
+        {
+          "documento": "Monitoreo PPRO Detector de metales",
+          "completado": true
+        },
+        {
+          "documento": "Control de consumo de materiales",
+          "completado": false
+        },
+        {
+          "documento": "Control de hermeticidad y peso neto",
+          "completado": false
+        },
+        {
+          "documento": "Registro de evaluación sensorial",
+          "completado": false
+        },
+        {
+          "documento": "Informe de laboratorio externo",
+          "completado": false
+        },
+        {
+          "documento": "CCAA.Calidad.FORM.016.02 Certificado de Análisis",
+          "completado": false
+        }
+      ]
+    },
+    {
+      "id": "LIB-6142",
+      "lote": "CCAA6142",
+      "producto": "Crema 42% CCAA",
+      "fecha": "2026-05-23",
+      "especialista": "Juan Calderón",
+      "estado": "Pendiente",
+      "checklist": [
+        {
+          "documento": "CCAA.REC.FORM.002.01 Planilla de Instructivo",
+          "completado": true
+        },
+        {
+          "documento": "Formularios de control de proceso (PCC)",
+          "completado": true
+        },
+        {
+          "documento": "Checklist de cuerpos extraños evaporadores",
+          "completado": true
+        },
+        {
+          "documento": "Hoja de pulverización E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Disco de uperización",
+          "completado": true
+        },
+        {
+          "documento": "Inspección preoperativa E1 y E2",
+          "completado": true
+        },
+        {
+          "documento": "Conexión de tierra E1 - E2",
+          "completado": false
+        },
+        {
+          "documento": "Formulario fisicoquímicos E1 y E2",
+          "completado": false
+        },
+        {
+          "documento": "Formulario de filtros de limpieza",
+          "completado": false
+        },
+        {
+          "documento": "Monitoreo de PPRO E1 y E2",
+          "completado": false
+        },
+        {
+          "documento": "Monitoreo de PPRO Rovemas 3 y 4",
+          "completado": false
+        },
+        {
+          "documento": "Checklist cuerpos extraños Rovema 3 y 4",
+          "completado": false
+        },
+        {
+          "documento": "Seguimiento FEFO",
+          "completado": false
+        },
+        {
+          "documento": "Monitoreo PPRO Detector de metales",
+          "completado": false
+        },
+        {
+          "documento": "Control de consumo de materiales",
+          "completado": false
+        },
+        {
+          "documento": "Control de hermeticidad y peso neto",
+          "completado": false
+        },
+        {
+          "documento": "Registro de evaluación sensorial",
+          "completado": false
+        },
+        {
+          "documento": "Informe de laboratorio externo",
+          "completado": false
+        },
+        {
+          "documento": "CCAA.Calidad.FORM.016.02 Certificado de Análisis",
+          "completado": false
+        }
+      ]
+    }
+  ]
+}
