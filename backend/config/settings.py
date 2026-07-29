@@ -128,3 +128,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
 
 ]
+
+# Los listados van paginados: el historico de produccion son ~954 lotes y va
+# a seguir creciendo. Sin esto, /lotes/ devolveria la tabla entera.
+REST_FRAMEWORK = {
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 50,
+}
