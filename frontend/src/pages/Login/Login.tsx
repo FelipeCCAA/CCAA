@@ -7,7 +7,7 @@ import axios from "axios";
 import { iniciarSesion } from "../../services/usuario.service";
 import { guardarSesion } from "../../services/sesion";
 
-import fondo from "../../assets/images/CCAA.png";
+import fondo from "../../assets/images/CCAA.jpg";
 import logo from "../../assets/logos/logo-campos-australes-normal.png";
 
 function Login() {
