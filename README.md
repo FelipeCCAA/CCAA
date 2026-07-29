@@ -85,6 +85,36 @@ Queda en `http://localhost:5173/`. Recarga solo al guardar archivos.
 
 ---
 
+## La API
+
+Toda la API exige identificarse. La única excepción es el login, porque sin
+ella nadie podría obtener un token.
+
+```
+POST /api/usuarios/login/    devuelve { token, usuario }
+POST /api/usuarios/logout/   invalida el token en el servidor
+GET  /api/usuarios/yo/       el usuario del token
+
+GET/POST/PUT/DELETE
+  /api/maestros/mandantes/  /productos/  /especificaciones/
+  /api/maestros/parametros/          catálogo de fisicoquímicos
+  /api/produccion/lotes/  /analisis/
+  /api/produccion/resumen/           indicadores del panel
+```
+
+El token viaja en la cabecera `Authorization: Token <valor>`. En el frontend
+lo adjunta un interceptor de axios ([services/api.ts](frontend/src/services/api.ts)),
+que además cierra la sesión y manda al login si el backend responde 401.
+
+Los permisos se declaran **cerrados por defecto**: un endpoint nuevo que
+olvide declararlos queda protegido, no abierto. Hay una prueba que lo vigila
+para las rutas existentes.
+
+Para probar la API a mano conviene entrar antes a `/admin/`: la sesión del
+navegador también autentica, así que las URLs se pueden abrir directamente.
+
+---
+
 ## Arquitectura
 
 El prototipo se diseñó en tres capas para que el cambio de plataforma afectara a una sola.
@@ -125,9 +155,9 @@ Para que un módulo aparezca en el menú, se le asigna su ruta en
 
 | Módulo | Estado |
 |---|---|
-| Login | Interfaz lista; falta autenticación real |
-| Panel general | Interfaz lista con datos de ejemplo; falta conectar a la API |
-| Producción | Pendiente |
+| Login | Funcional, con token. Falta recuperar contraseña |
+| Panel general | Funcional, conectado a la API |
+| Producción | Listado, filtros, alta y borrado. Falta editar |
 | Recepción y silos | Pendiente |
 | Liberación (Calidad) | Pendiente |
 | Despachos | Pendiente |

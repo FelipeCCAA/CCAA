@@ -31,18 +31,15 @@ function Login() {
     setCargando(true);
 
     try {
-      const datos = await iniciarSesion(username, password);
+      const sesion = await iniciarSesion(username, password);
 
-      guardarSesion({
-        usuario: datos.usuario,
-        nombre: datos.nombre,
-        apellido: datos.apellido,
-      });
+      guardarSesion(sesion);
 
       navegar(destino, { replace: true });
     } catch (error) {
-      // El backend responde 400 si falta un campo y 401 si las credenciales
-      // no son válidas; en ambos casos manda su propio mensaje.
+      // El backend responde 400 si falta un campo, 401 si las credenciales no
+      // son válidas y 403 si la cuenta está desactivada; en los tres casos
+      // manda su propio mensaje.
       if (axios.isAxiosError(error) && error.response) {
         setError(
           error.response.data?.error || "Usuario o contraseña incorrectos"

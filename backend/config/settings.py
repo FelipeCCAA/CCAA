@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'produccion',
     "corsheaders",
     "rest_framework",
+    "rest_framework.authtoken",
 
 ]
 
@@ -129,9 +130,22 @@ CORS_ALLOWED_ORIGINS = [
 
 ]
 
-# Los listados van paginados: el historico de produccion son ~954 lotes y va
-# a seguir creciendo. Sin esto, /lotes/ devolveria la tabla entera.
 REST_FRAMEWORK = {
+    # Los listados van paginados: el historico de produccion son ~954 lotes y
+    # va a seguir creciendo. Sin esto, /lotes/ devolveria la tabla entera.
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+
+    # Toda la API exige identificarse. Las excepciones se declaran una por una
+    # en su vista (hoy solo el login), nunca al reves: si algun endpoint nuevo
+    # se olvida de declarar permisos, queda cerrado en vez de abierto.
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+        # Sesion tambien, para poder navegar la API desde el navegador
+        # estando logueado en /admin/.
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
