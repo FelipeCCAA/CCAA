@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 
 import {
   LayoutDashboard,
@@ -8,6 +8,8 @@ import {
   Database,
   LogOut,
 } from "lucide-react";
+
+import { cerrarSesion, nombreParaMostrar, obtenerSesion } from "../../services/sesion";
 
 import logo from "../../assets/logos/logo-campos-australes-normal.png";
 
@@ -55,6 +57,15 @@ const enlaceBase =
 
 
 function Navbar() {
+
+  const navegar = useNavigate();
+  const sesion = obtenerSesion();
+
+  const salir = () => {
+    cerrarSesion();
+    navegar("/login", { replace: true });
+  };
+
   return (
     <aside className="sticky top-0 flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
 
@@ -136,28 +147,29 @@ function Navbar() {
 
           <p className="text-sm font-medium text-slate-800">
 
-            Administrador
+            {sesion ? nombreParaMostrar(sesion) : "Sin sesión"}
 
           </p>
 
           <p className="text-xs text-slate-400">
 
-            Jefe TI
+            {sesion?.usuario ?? ""}
 
           </p>
 
         </div>
 
-        <NavLink
-          to="/login"
-          className={`${enlaceBase} text-slate-600 hover:bg-slate-50 hover:text-slate-900`}
+        <button
+          type="button"
+          onClick={salir}
+          className={`${enlaceBase} w-full text-slate-600 hover:bg-slate-50 hover:text-slate-900`}
         >
 
           <LogOut className="h-5 w-5" />
 
           Cerrar sesión
 
-        </NavLink>
+        </button>
 
       </div>
 

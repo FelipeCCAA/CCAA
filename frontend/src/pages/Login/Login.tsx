@@ -1,6 +1,11 @@
 
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { User, Lock, Eye, EyeOff } from "lucide-react";
+import axios from "axios";
+
+import { iniciarSesion } from "../../services/usuario.service";
+import { guardarSesion } from "../../services/sesion";
 
 import fondo from "../../assets/images/CCAA.png";
 import logo from "../../assets/logos/logo-campos-australes-normal.png";
@@ -12,6 +17,13 @@ function Login() {
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
 
+  const navegar = useNavigate();
+  const ubicacion = useLocation();
+
+  // Si RutaProtegida desvió al usuario hasta aquí, vuelve a donde iba.
+  const destino =
+    (ubicacion.state as { desde?: string } | null)?.desde || "/dashboard";
+
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -19,36 +31,26 @@ function Login() {
     setCargando(true);
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/usuarios/login/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            username: username,
-            password: password,
-          }),
-        }
-      );
+      const datos = await iniciarSesion(username, password);
 
-      const data = await response.json();
+      guardarSesion({
+        usuario: datos.usuario,
+        nombre: datos.nombre,
+        apellido: datos.apellido,
+      });
 
-      if (!response.ok) {
-        setError(data.error || "Usuario o contraseña incorrectos");
-        return;
-      }
-
-      console.log("Login correcto:", data);
-
-      // Por ahora solo comprobamos que Django respondió correctamente.
-      // Después guardaremos la sesión/token y enviaremos al Dashboard.
-
-      alert(`Bienvenido ${data.nombre || data.usuario}`);
+      navegar(destino, { replace: true });
     } catch (error) {
-      console.error("Error conectando con Django:", error);
-      setError("No se pudo conectar con el servidor.");
+      // El backend responde 400 si falta un campo y 401 si las credenciales
+      // no son válidas; en ambos casos manda su propio mensaje.
+      if (axios.isAxiosError(error) && error.response) {
+        setError(
+          error.response.data?.error || "Usuario o contraseña incorrectos"
+        );
+      } else {
+        console.error("Error conectando con Django:", error);
+        setError("No se pudo conectar con el servidor.");
+      }
     } finally {
       setCargando(false);
     }
