@@ -31,7 +31,7 @@ const modulos = [
   },
   {
     etiqueta: "Producción",
-    ruta: null,
+    ruta: "/produccion",
     icono: Factory,
   },
   {

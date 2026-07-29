@@ -7,6 +7,7 @@ import MainLayout from "../layouts/mainlayout";
 
 import Login from "../pages/Login/Login";
 import Dashboard from "../pages/Dashboard/Dashboard";
+import Produccion from "../pages/Produccion/Produccion";
 
 
 /*
@@ -54,6 +55,11 @@ function RoutesApp(){
                     <Route
                         path="/dashboard"
                         element={<Dashboard />}
+                    />
+
+                    <Route
+                        path="/produccion"
+                        element={<Produccion />}
                     />
 
                 </Route>

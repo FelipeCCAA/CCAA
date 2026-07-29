@@ -5,77 +5,20 @@ import {
   Layers,
   ShieldCheck,
   AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  HelpCircle,
-  FileWarning,
 } from "lucide-react";
 
 import GraficoBarras from "../../components/GraficoBarras/GraficoBarras";
+import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 
 import {
   obtenerLotes,
   obtenerResumen,
   type Lote,
-  type ResultadoCalidad,
   type Resumen,
 } from "../../services/produccion.service";
 
 
 const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
-
-
-/*
-  Cada resultado de calidad con su icono y su color.
-
-  El color nunca carga solo el significado: siempre va con icono y con la
-  etiqueta escrita, para que se distinga sin depender de verlo.
-*/
-const ESTILO_CALIDAD: Record<
-  ResultadoCalidad,
-  { icono: typeof CheckCircle2; clases: string }
-> = {
-  conforme: {
-    icono: CheckCircle2,
-    clases: "bg-green-50 text-green-700",
-  },
-  no_conforme: {
-    icono: XCircle,
-    clases: "bg-red-50 text-red-700",
-  },
-  sin_analisis: {
-    icono: HelpCircle,
-    clases: "bg-amber-50 text-amber-700",
-  },
-  sin_especificacion: {
-    icono: FileWarning,
-    clases: "bg-slate-100 text-slate-600",
-  },
-};
-
-
-function EtiquetaCalidad({ calidad }: { calidad: Lote["calidad"] }) {
-
-  const estilo = ESTILO_CALIDAD[calidad.resultado];
-  const Icono = estilo.icono;
-
-  const detalle = calidad.desviaciones
-    .map((d) => `${d.parametro} ${d.valor} (${d.desvio})`)
-    .join(", ");
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${estilo.clases}`}
-      title={detalle || undefined}
-    >
-
-      <Icono className="h-4 w-4" />
-
-      {calidad.etiqueta}
-
-    </span>
-  );
-}
 
 
 function Tarjeta({
