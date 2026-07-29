@@ -43,6 +43,10 @@ class LoteViewSet(viewsets.ModelViewSet):
         if producto:
             consulta = consulta.filter(producto_id=producto)
 
+        mandante = parametros.get("mandante")
+        if mandante:
+            consulta = consulta.filter(producto__mandante_id=mandante)
+
         estado = parametros.get("estado")
         if estado:
             consulta = consulta.filter(estado=estado)
@@ -55,7 +59,40 @@ class LoteViewSet(viewsets.ModelViewSet):
         if hasta:
             consulta = consulta.filter(fecha__lte=hasta)
 
+        buscar = parametros.get("buscar")
+        if buscar:
+            consulta = consulta.filter(codigo_lote__icontains=buscar)
+
+        calidad = parametros.get("calidad")
+        if calidad:
+            consulta = consulta.filter(id__in=self._ids_con_calidad(consulta, calidad))
+
         return consulta
+
+    @staticmethod
+    def _ids_con_calidad(consulta, resultado):
+        """
+        IDs de los lotes cuyo veredicto de calidad es el pedido.
+
+        El resultado se calcula, no se guarda (MODELO_DATOS.md §2.2), así que
+        no se puede filtrar con SQL: hay que evaluar en Python y devolver los
+        IDs para que el filtrado y la paginación sigan ocurriendo en la base.
+
+        Coste: recorre los lotes que pasaron los demás filtros. Con el
+        histórico previsto (~954 lotes) es asumible. Si algún día pesa, la
+        salida no es persistir el veredicto —eso rompería la reevaluación del
+        histórico— sino cachear por lote e invalidar al cambiar la spec.
+        """
+        especificaciones = list(Especificacion.objects.all())
+
+        return [
+            lote.id
+            for lote in consulta.prefetch_related("analisis")
+            if dominio.resultado_calidad_lote(
+                lote, list(lote.analisis.all()), especificaciones
+            ).resultado
+            == resultado
+        ]
 
 
 class AnalisisViewSet(viewsets.ModelViewSet):

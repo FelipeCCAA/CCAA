@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.validators import UniqueTogetherValidator
 
 from maestros.catalogos import CLAVES_PARAMETROS
 
@@ -70,6 +71,19 @@ class LoteSerializer(serializers.ModelSerializer):
             "estado_etiqueta",
             "observacion",
             "calidad",
+        ]
+        validators = [
+            # El mensaje por defecto de DRF viene en inglés y lo lee quien
+            # carga lotes en planta. El código de lote SÍ se repite entre
+            # productos y días; lo que no puede repetirse es la combinación.
+            UniqueTogetherValidator(
+                queryset=Lote.objects.all(),
+                fields=["codigo_lote", "producto", "fecha"],
+                message=(
+                    "Ya existe un lote con ese código para el mismo producto "
+                    "y la misma fecha."
+                ),
+            )
         ]
 
     def get_calidad(self, lote):

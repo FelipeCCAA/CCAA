@@ -130,6 +130,66 @@ class LotesAPITests(BaseAPI):
         self.assertEqual(datos["count"], 1)
         self.assertEqual(datos["results"][0]["codigo_lote"], "CR-01")
 
+    def test_filtra_por_resultado_de_calidad(self):
+        """
+        El veredicto no está en la base: se calcula. El filtro tiene que
+        funcionar igual, y seguir paginando.
+        """
+        bueno = self._lote(codigo="L-OK")
+        Analisis.objects.create(
+            lote=bueno, fecha=date(2026, 7, 20), valores={"humedad": 3.0, "mg": 27.0}
+        )
+        malo = self._lote(codigo="L-MAL")
+        Analisis.objects.create(
+            lote=malo, fecha=date(2026, 7, 20), valores={"humedad": 9.0, "mg": 27.0}
+        )
+        self._lote(codigo="L-SIN")
+
+        for resultado, esperado in [
+            ("conforme", ["L-OK"]),
+            ("no_conforme", ["L-MAL"]),
+            ("sin_analisis", ["L-SIN"]),
+        ]:
+            datos = self.cliente.get(
+                f"/api/produccion/lotes/?calidad={resultado}"
+            ).json()
+
+            self.assertEqual(
+                [l["codigo_lote"] for l in datos["results"]], esperado, resultado
+            )
+
+    def test_el_filtro_de_calidad_se_combina_con_los_demas(self):
+        crema = Producto.objects.create(
+            nombre="Crema", familia=Producto.Familia.CREMA, mandante=self.nestle
+        )
+        bueno = self._lote(codigo="L-OK")
+        Analisis.objects.create(
+            lote=bueno, fecha=date(2026, 7, 20), valores={"humedad": 3.0, "mg": 27.0}
+        )
+        self._lote(codigo="CR-01", producto=crema)
+
+        datos = self.cliente.get(
+            f"/api/produccion/lotes/?calidad=conforme&producto={crema.id}"
+        ).json()
+
+        self.assertEqual(datos["count"], 0)
+
+    def test_busca_por_codigo_de_lote(self):
+        self._lote(codigo="CCAA6140N")
+        self._lote(codigo="CCAA6141N")
+
+        datos = self.cliente.get("/api/produccion/lotes/?buscar=6141").json()
+
+        self.assertEqual(datos["count"], 1)
+
+    def test_se_puede_borrar_un_lote(self):
+        lote = self._lote()
+
+        respuesta = self.cliente.delete(f"/api/produccion/lotes/{lote.id}/")
+
+        self.assertEqual(respuesta.status_code, 204)
+        self.assertEqual(Lote.objects.count(), 0)
+
     def test_el_listado_no_dispara_una_consulta_por_lote(self):
         """
         Con prefetch, agregar lotes no debe agregar consultas. Sin él, esto
