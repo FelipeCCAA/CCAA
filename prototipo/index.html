@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestión Productiva · Planta CCAA</title>
+  <link rel="stylesheet" href="css/estilos.css" />
+</head>
+<body>
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="marca">
+        <div class="marca-logo" aria-hidden="true">CA</div>
+        <div>
+          <div class="marca-nombre">Campos Australes</div>
+          <div class="marca-sub">Planta de secado · Purranque</div>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Módulos">
+        <div class="nav-grupo">Operación</div>
+        <button class="nav-item activo" data-modulo="panel">
+          <span class="ico" aria-hidden="true">▦</span> Panel general</button>
+        <button class="nav-item" data-modulo="planificador">
+          <span class="ico" aria-hidden="true">▦</span> Planificador</button>
+        <button class="nav-item" data-modulo="turnos">
+          <span class="ico" aria-hidden="true">☷</span> Turnos</button>
+        <button class="nav-item" data-modulo="produccion">
+          <span class="ico" aria-hidden="true">⧉</span> Producción</button>
+        <button class="nav-item" data-modulo="recepcion">
+          <span class="ico" aria-hidden="true">▤</span> Recepción y silos
+          <span class="cuenta" hidden></span></button>
+        <button class="nav-item" data-modulo="calidad">
+          <span class="ico" aria-hidden="true">✔</span> Calidad
+          <span class="cuenta" hidden></span></button>
+        <button class="nav-item" data-modulo="despachos">
+          <span class="ico" aria-hidden="true">⇥</span> Despachos</button>
+
+        <div class="nav-grupo">Configuración</div>
+        <button class="nav-item" data-modulo="admin">
+          <span class="ico" aria-hidden="true">⚙</span> Administración</button>
+      </nav>
+
+      <div class="sidebar-pie">
+        <div class="datos-acciones">
+          <button id="btn-exportar" class="btn btn-sec btn-sm">Exportar datos</button>
+          <button id="btn-importar" class="btn btn-sec btn-sm">Importar datos</button>
+          <input type="file" id="input-importar" accept="application/json,.json" hidden />
+          <button id="btn-restablecer" class="btn btn-fantasma btn-sm">Restablecer</button>
+        </div>
+        <p class="nota-pie">Prototipo · datos de ejemplo</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="titulo-vista">Panel general</h1>
+          <p class="sub" id="sub-vista"></p>
+        </div>
+        <div class="topbar-acciones">
+          <div class="sesion" id="sesion"></div>
+          <button id="btn-accion" class="btn btn-pri" hidden></button>
+        </div>
+      </header>
+
+      <!-- ===== Panel ===== -->
+      <section id="vista-panel" class="vista activa">
+        <div id="aviso-panel"></div>
+        <div id="kpis" class="kpis"></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <div><h2>Kilos por producto</h2>
+                <p class="card-sub">Suma de los lotes registrados</p></div>
+            </div>
+            <div class="card-cuerpo"><div id="grafico-productos" class="grafico"></div></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div><h2>Kilos por mandante</h2>
+                <p class="card-sub">Distribución según empresa dueña del producto</p></div>
+            </div>
+            <div class="card-cuerpo"><div id="grafico-mandantes" class="grafico"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Planificador ===== -->
+      <section id="vista-planificador" class="vista">
+        <div id="plan-barra"></div>
+        <div id="plan-contenido"></div>
+      </section>
+
+      <!-- ===== Turnos ===== -->
+      <section id="vista-turnos" class="vista">
+        <div id="turnos-barra"></div>
+        <div id="turnos-contenido"></div>
+      </section>
+
+      <!-- ===== Producción ===== -->
+      <section id="vista-produccion" class="vista">
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Lotes de producción</h2>
+              <p class="card-sub">El resultado de calidad se recalcula siempre contra la especificación vigente a la fecha del lote</p></div>
+            <div class="filtros">
+              <div class="campo">
+                <label for="filtro-producto">Producto</label>
+                <select id="filtro-producto"></select>
+              </div>
+              <div class="campo">
+                <label for="filtro-calidad">Calidad</label>
+                <select id="filtro-calidad">
+                  <option value="todos">Todas</option>
+                  <option value="conforme">Conforme</option>
+                  <option value="no_conforme">No conforme</option>
+                  <option value="sin_analisis">Sin análisis</option>
+                  <option value="sin_especificacion">Sin especificación</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div id="tabla-produccion"></div>
+        </div>
+      </section>
+
+      <!-- ===== Recepción ===== -->
+      <section id="vista-recepcion" class="vista">
+        <div id="aviso-silos"></div>
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Ocupación de silos y estanques</h2>
+              <p class="card-sub">Saldo actual: ingresos por recepción menos consumo de producción</p></div>
+          </div>
+          <div class="card-cuerpo"><div id="grafico-silos" class="grafico"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Recepciones de leche</h2>
+              <p class="card-sub">Controles de camión: Delvo, inhibidores, crioscopía, acidez, pH y temperatura</p></div>
+          </div>
+          <div id="tabla-recepcion"></div>
+        </div>
+      </section>
+
+      <!-- ===== Calidad ===== -->
+      <section id="vista-calidad" class="vista">
+        <div id="calidad-contenido"></div>
+      </section>
+
+      <!-- ===== Despachos ===== -->
+      <section id="vista-despachos" class="vista">
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Kilos disponibles por lote liberado</h2>
+              <p class="card-sub">Producido menos despachado. Un despacho no puede exceder este saldo.</p></div>
+          </div>
+          <div class="card-cuerpo"><div id="grafico-disponible" class="grafico"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div><h2>Guías de despacho</h2>
+              <p class="card-sub">Salidas emitidas contra lotes autorizados por Calidad</p></div>
+          </div>
+          <div id="tabla-despachos"></div>
+        </div>
+      </section>
+
+      <!-- ===== Administración ===== -->
+      <section id="vista-admin" class="vista">
+        <div class="admin">
+          <nav class="admin-menu" id="admin-menu" aria-label="Entidades"></nav>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-head">
+              <div>
+                <h2 id="admin-titulo"></h2>
+                <p class="card-sub" id="admin-descripcion"></p>
+              </div>
+              <button id="admin-nuevo" class="btn btn-pri btn-sm"></button>
+            </div>
+            <div id="admin-tabla"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="js/datos.js"></script>
+  <script src="js/modelo/esquema.js"></script>
+  <script src="js/modelo/dominio.js"></script>
+  <script src="js/modelo/repositorio.js"></script>
+  <script src="js/modelo/recetas.js"></script>
+  <script src="js/modelo/planificador.js"></script>
+  <script src="js/modelo/turnos.js"></script>
+  <script src="js/modelo/semilla.js"></script>
+  <script src="js/ui/componentes.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

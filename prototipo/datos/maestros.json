@@ -1,0 +1,357 @@
+{
+  "maestros": [
+    {
+      "vehiculo": 6017041,
+      "placa": "BKSX97",
+      "transportista": "Luis Alejandro Flores Borquez",
+      "tipo": "Camión",
+      "capacidad": 16000.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017042,
+      "placa": "JFTP68",
+      "transportista": "Luis Alejandro Flores Borquez",
+      "tipo": "Camión",
+      "capacidad": 15000.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017043,
+      "placa": "HKRC88",
+      "transportista": "Renato Teobaldo Kahler González",
+      "tipo": "Camión",
+      "capacidad": 15500.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017044,
+      "placa": "HYBS56",
+      "transportista": "Renato Teobaldo Kahler González",
+      "tipo": "Camión",
+      "capacidad": 15500.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017045,
+      "placa": "FWHF70",
+      "transportista": "Luis Alejandro Flores Borquez",
+      "tipo": "Camión",
+      "capacidad": 17500.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017046,
+      "placa": "HRWD18",
+      "transportista": "Transportes Arnold y Cia Ltda",
+      "tipo": "Camión",
+      "capacidad": 15500.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017047,
+      "placa": "WR8456",
+      "transportista": "Gilberto Mas Becker",
+      "tipo": "Camión",
+      "capacidad": 14500.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017048,
+      "placa": "",
+      "transportista": "Nestle",
+      "tipo": "Camión",
+      "capacidad": 20000.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017050,
+      "placa": "BKSX 96",
+      "transportista": "Luis Alejandro Flores Borquez",
+      "tipo": "Camión",
+      "capacidad": 14000.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017051,
+      "placa": "FYPG55",
+      "transportista": "Transportes Arnold y Cia Ltda",
+      "tipo": "Camión",
+      "capacidad": 20000.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017052,
+      "placa": "JWZW68",
+      "transportista": "Transportes Arnold y Cia Ltda",
+      "tipo": "Camión",
+      "capacidad": 15500.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017053,
+      "placa": "CCHC33",
+      "transportista": "Gilberto Mas Becker",
+      "tipo": "Camión",
+      "capacidad": 15200.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017054,
+      "placa": "BZFF89",
+      "transportista": "Luis Alejandro Flores Borquez",
+      "tipo": "Camión",
+      "capacidad": 14800.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017055,
+      "placa": "DJXP99",
+      "transportista": "Luis Alejandro Flores Borquez",
+      "tipo": "Camión",
+      "capacidad": 18500.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017057,
+      "placa": "PCKD24",
+      "transportista": "Renato Teobaldo Kahler González",
+      "tipo": "Camión",
+      "capacidad": 16300.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017058,
+      "placa": "BDDW77",
+      "transportista": "Luis Alejandro Flores Borquez",
+      "tipo": "Camión",
+      "capacidad": 15000.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017059,
+      "placa": "FYLY76",
+      "transportista": "Renato Teobaldo Kahler González",
+      "tipo": "Camión",
+      "capacidad": 17000.0,
+      "choferAM": "",
+      "choferPM": ""
+    },
+    {
+      "vehiculo": 6017060,
+      "placa": "CWFT95",
+      "transportista": "Guido Bernardo Triviño Aguila",
+      "tipo": "Camión",
+      "capacidad": 14400.0,
+      "choferAM": "",
+      "choferPM": ""
+    }
+  ],
+  "catalogos": {
+    "productos": [
+      "Crema 42% CCAA",
+      "LEP NESTLÉ",
+      "Leche estandarizada - Lácteos Nebe",
+      "P. Entero ST 48%",
+      "P. Semidescremado ST 45% CCAA",
+      "Rwk NESTLÉ"
+    ],
+    "mandantes": [
+      "Nestlé",
+      "Colun",
+      "CCAA",
+      "Surlat",
+      "Lácteos Nebe"
+    ],
+    "lineas": [
+      "E1",
+      "E2"
+    ],
+    "destinos": [
+      "Los Angeles",
+      "Stock",
+      "Nestlé",
+      "Surlat",
+      "Colun",
+      "Macul",
+      "Chilolac"
+    ],
+    "silos": [
+      "SILO 1",
+      "SILO 2",
+      "SILO 3",
+      "SILO 4",
+      "SILO 5",
+      "SILO 6",
+      "SILO 7",
+      "SILO 8",
+      "TK LD 1",
+      "TK LD 2",
+      "TK LD 3",
+      "TK LD 4",
+      "TK LD 5",
+      "TK LD 6",
+      "TK CREMA 1",
+      "TK CREMA 2",
+      "TK CREMA 3",
+      "TK CREMA 4",
+      "TK CREMA 5"
+    ],
+    "procedencias": [
+      "Nestlé",
+      "P Unión"
+    ],
+    "operadores": [
+      "Cristian Navarro",
+      "Francisco Ruiz",
+      "John Aguilar",
+      "Nelson Werner",
+      "Simon Navarro",
+      "Araceli Catalan",
+      "Daniel Rivera",
+      "Fredy Salamanca",
+      "Gabriela Huenchur",
+      "Jorge Veliz",
+      "José Almonacid",
+      "Jose Andrade",
+      "Luis Almonacid",
+      "Luis Vargas",
+      "Magdiel Ojeda",
+      "Norberto Werner",
+      "Pedro Hernández",
+      "Sebastian Farias"
+    ],
+    "turnos": [
+      "A",
+      "B",
+      "C"
+    ],
+    "especificaciones": {
+      "P. Entero ST 48%": {
+        "humedad": [
+          0,
+          4.0
+        ],
+        "mg": [
+          26,
+          30
+        ],
+        "st": [
+          47,
+          49
+        ],
+        "acidez": [
+          13,
+          16
+        ],
+        "ph": [
+          6.5,
+          6.9
+        ]
+      },
+      "P. Semidescremado ST 45%": {
+        "humedad": [
+          0,
+          4.0
+        ],
+        "mg": [
+          10,
+          16
+        ],
+        "st": [
+          44,
+          46
+        ],
+        "acidez": [
+          13,
+          16
+        ],
+        "ph": [
+          6.5,
+          6.9
+        ]
+      },
+      "Crema 42% NESTLÉ": {
+        "humedad": [
+          0,
+          60
+        ],
+        "mg": [
+          40,
+          44
+        ],
+        "acidez": [
+          9,
+          14
+        ],
+        "ph": [
+          6.4,
+          6.9
+        ],
+        "temperatura": [
+          0,
+          8
+        ]
+      },
+      "Crema 42% CCAA": {
+        "humedad": [
+          0,
+          60
+        ],
+        "mg": [
+          40,
+          44
+        ],
+        "acidez": [
+          9,
+          14
+        ],
+        "ph": [
+          6.4,
+          6.9
+        ],
+        "temperatura": [
+          0,
+          8
+        ]
+      }
+    },
+    "documentosLiberacion": [
+      "CCAA.REC.FORM.002.01 Planilla de Instructivo",
+      "Formularios de control de proceso (PCC)",
+      "Checklist de cuerpos extraños evaporadores",
+      "Hoja de pulverización E1 y E2",
+      "Disco de uperización",
+      "Inspección preoperativa E1 y E2",
+      "Conexión de tierra E1 - E2",
+      "Formulario fisicoquímicos E1 y E2",
+      "Formulario de filtros de limpieza",
+      "Monitoreo de PPRO E1 y E2",
+      "Monitoreo de PPRO Rovemas 3 y 4",
+      "Checklist cuerpos extraños Rovema 3 y 4",
+      "Seguimiento FEFO",
+      "Monitoreo PPRO Detector de metales",
+      "Control de consumo de materiales",
+      "Control de hermeticidad y peso neto",
+      "Registro de evaluación sensorial",
+      "Informe de laboratorio externo",
+      "CCAA.Calidad.FORM.016.02 Certificado de Análisis"
+    ]
+  }
+}
