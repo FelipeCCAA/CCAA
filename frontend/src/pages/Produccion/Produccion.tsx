@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
+import axios from "axios";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 
@@ -13,6 +14,8 @@ import {
   type Parametro,
   type Producto,
 } from "../../services/produccion.service";
+
+import { puedeEscribir } from "../../services/sesion";
 
 import FormularioLote from "./FormularioLote";
 
@@ -38,6 +41,9 @@ function Produccion() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [formularioAbierto, setFormularioAbierto] = useState(false);
+
+  // Solo Producción y Administración registran lotes. El resto consulta.
+  const puedeEditar = puedeEscribir("produccion");
 
   const cargarLotes = useCallback(async () => {
 
@@ -110,7 +116,14 @@ function Produccion() {
       cargarLotes();
     } catch (error) {
       console.error("Error eliminando el lote:", error);
-      setError("No se pudo eliminar el lote.");
+
+      // Si el backend rechazó por permisos, explica el motivo: mostrar
+      // "no se pudo" deja al usuario sin saber qué hacer.
+      const detalle = axios.isAxiosError(error)
+        ? error.response?.data?.detail
+        : null;
+
+      setError(detalle || "No se pudo eliminar el lote.");
     }
 
   };
@@ -146,17 +159,29 @@ function Produccion() {
 
           </div>
 
-          <button
-            type="button"
-            onClick={() => setFormularioAbierto(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-800"
-          >
+          {puedeEditar ? (
 
-            <Plus className="h-5 w-5" />
+            <button
+              type="button"
+              onClick={() => setFormularioAbierto(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-800"
+            >
 
-            Nuevo lote
+              <Plus className="h-5 w-5" />
 
-          </button>
+              Nuevo lote
+
+            </button>
+
+          ) : (
+
+            <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500">
+
+              Tu rol permite consultar, no registrar lotes.
+
+            </p>
+
+          )}
 
         </header>
 
@@ -336,17 +361,21 @@ function Produccion() {
 
                       <td className="px-6 py-4 text-right">
 
-                        <button
-                          type="button"
-                          onClick={() => eliminar(lote)}
-                          className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                          aria-label={`Eliminar el lote ${lote.codigo_lote}`}
-                          title="Eliminar"
-                        >
+                        {puedeEditar && (
 
-                          <Trash2 className="h-4 w-4" />
+                          <button
+                            type="button"
+                            onClick={() => eliminar(lote)}
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                            aria-label={`Eliminar el lote ${lote.codigo_lote}`}
+                            title="Eliminar"
+                          >
 
-                        </button>
+                            <Trash2 className="h-4 w-4" />
+
+                          </button>
+
+                        )}
 
                       </td>
 

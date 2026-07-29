@@ -6,6 +6,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from maestros.models import Especificacion
+from usuarios.permisos import EscribeProduccion
 
 from . import dominio
 from .models import Analisis, Lote
@@ -21,6 +22,7 @@ class LoteViewSet(viewsets.ModelViewSet):
         .prefetch_related("analisis")
     )
     serializer_class = LoteSerializer
+    permission_classes = [EscribeProduccion]
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -98,6 +100,7 @@ class LoteViewSet(viewsets.ModelViewSet):
 class AnalisisViewSet(viewsets.ModelViewSet):
     queryset = Analisis.objects.select_related("lote")
     serializer_class = AnalisisSerializer
+    permission_classes = [EscribeProduccion]
 
     def get_queryset(self):
         consulta = super().get_queryset()
