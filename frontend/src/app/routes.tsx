@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 
+import RutaProtegida from "../components/RutaProtegida/RutaProtegida";
+
 import AuthLayout from "../layouts/authlayout";
 import MainLayout from "../layouts/mainlayout";
 
@@ -13,6 +15,9 @@ import Dashboard from "../pages/Dashboard/Dashboard";
   Las rutas que van dentro de un <Route element={<Layout />}> se dibujan en
   el <Outlet /> de ese layout. Así el menú lateral se define una sola vez y
   lo heredan todas las pantallas internas.
+
+  Las internas van además dentro de <RutaProtegida>, que manda al login a
+  quien no haya iniciado sesión.
 */
 
 function RoutesApp(){
@@ -21,9 +26,12 @@ function RoutesApp(){
 
         <Routes>
 
+            {/* La raíz entra al panel; si no hay sesión, RutaProtegida
+                desvía al login. */}
+
             <Route
                 path="/"
-                element={<Navigate to="/login" />}
+                element={<Navigate to="/dashboard" replace />}
             />
 
             {/* Pantallas de acceso: sin menú lateral */}
@@ -37,16 +45,27 @@ function RoutesApp(){
 
             </Route>
 
-            {/* Pantallas internas: con menú lateral */}
+            {/* Pantallas internas: exigen sesión y llevan menú lateral */}
 
-            <Route element={<MainLayout />}>
+            <Route element={<RutaProtegida />}>
 
-                <Route
-                    path="/dashboard"
-                    element={<Dashboard />}
-                />
+                <Route element={<MainLayout />}>
+
+                    <Route
+                        path="/dashboard"
+                        element={<Dashboard />}
+                    />
+
+                </Route>
 
             </Route>
+
+            {/* Cualquier otra dirección vuelve a la raíz */}
+
+            <Route
+                path="*"
+                element={<Navigate to="/" replace />}
+            />
 
         </Routes>
 
