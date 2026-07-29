@@ -9,7 +9,14 @@ import {
   LogOut,
 } from "lucide-react";
 
-import { cerrarSesion, nombreParaMostrar, obtenerSesion } from "../../services/sesion";
+import {
+  cargoParaMostrar,
+  cerrarSesion,
+  nombreParaMostrar,
+  obtenerSesion,
+} from "../../services/sesion";
+
+import { cerrarSesionEnServidor } from "../../services/usuario.service";
 
 import logo from "../../assets/logos/logo-campos-australes-normal.png";
 
@@ -61,9 +68,20 @@ function Navbar() {
   const navegar = useNavigate();
   const sesion = obtenerSesion();
 
-  const salir = () => {
+  const salir = async () => {
+
+    // Se invalida el token en el servidor. Si la llamada falla (servidor
+    // caído, red), igual se cierra en el navegador: dejar al usuario dentro
+    // porque no se pudo avisar sería peor.
+    try {
+      await cerrarSesionEnServidor();
+    } catch (error) {
+      console.error("No se pudo invalidar el token en el servidor:", error);
+    }
+
     cerrarSesion();
     navegar("/login", { replace: true });
+
   };
 
   return (
@@ -147,13 +165,13 @@ function Navbar() {
 
           <p className="text-sm font-medium text-slate-800">
 
-            {sesion ? nombreParaMostrar(sesion) : "Sin sesión"}
+            {sesion ? nombreParaMostrar(sesion.usuario) : "Sin sesión"}
 
           </p>
 
           <p className="text-xs text-slate-400">
 
-            {sesion?.usuario ?? ""}
+            {sesion ? cargoParaMostrar(sesion.usuario) : ""}
 
           </p>
 

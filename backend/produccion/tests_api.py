@@ -8,7 +8,9 @@ consulta por lote.
 
 from datetime import date
 
+from django.contrib.auth.models import User
 from django.test import TestCase
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from maestros.models import Especificacion, Mandante, Producto
@@ -18,7 +20,14 @@ from .models import Analisis, Lote
 
 class BaseAPI(TestCase):
     def setUp(self):
+        # La API exige identificarse. Las pruebas de que SIN token no se puede
+        # hacer nada están en usuarios/tests.py; aquí se prueba el camino
+        # autenticado.
+        usuario = User.objects.create_user(username="pruebas", password="x")
+        token = Token.objects.create(user=usuario)
+
         self.cliente = APIClient()
+        self.cliente.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 
         self.nestle = Mandante.objects.create(nombre="Nestlé")
         self.producto = Producto.objects.create(
@@ -201,7 +210,10 @@ class LotesAPITests(BaseAPI):
                 lote=lote, fecha=date(2026, 7, 20), valores={"humedad": 3.0, "mg": 27.0}
             )
 
-        with self.assertNumQueries(4):
+        # 1 valida el token, 1 cuenta para paginar, 1 trae los lotes, 1 trae
+        # todos sus análisis de una vez y 1 las especificaciones. Ninguna
+        # depende del número de lotes.
+        with self.assertNumQueries(5):
             self.cliente.get("/api/produccion/lotes/")
 
 
