@@ -2,6 +2,8 @@ from rest_framework import viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from usuarios.permisos import EscribeAdministracion
+
 from .models import Especificacion, Mandante, Producto
 from .serializers import (
     EspecificacionSerializer,
@@ -14,11 +16,13 @@ from .serializers import (
 class MandanteViewSet(viewsets.ModelViewSet):
     queryset = Mandante.objects.all()
     serializer_class = MandanteSerializer
+    permission_classes = [EscribeAdministracion]
 
 
 class ProductoViewSet(viewsets.ModelViewSet):
     queryset = Producto.objects.select_related("mandante")
     serializer_class = ProductoSerializer
+    permission_classes = [EscribeAdministracion]
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -37,6 +41,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
 class EspecificacionViewSet(viewsets.ModelViewSet):
     queryset = Especificacion.objects.select_related("producto")
     serializer_class = EspecificacionSerializer
+    permission_classes = [EscribeAdministracion]
 
     def get_queryset(self):
         consulta = super().get_queryset()

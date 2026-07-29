@@ -14,16 +14,18 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from maestros.models import Especificacion, Mandante, Producto
+from usuarios.models import PerfilUsuario, Rol
 
 from .models import Analisis, Lote
 
 
 class BaseAPI(TestCase):
     def setUp(self):
-        # La API exige identificarse. Las pruebas de que SIN token no se puede
-        # hacer nada están en usuarios/tests.py; aquí se prueba el camino
-        # autenticado.
+        # La API exige identificarse y tener el rol que corresponde. Quién
+        # puede escribir qué se prueba en usuarios/tests_permisos.py; aquí se
+        # prueba el camino autorizado, con el rol que registra lotes.
         usuario = User.objects.create_user(username="pruebas", password="x")
+        PerfilUsuario.objects.create(usuario=usuario, rol=Rol.PRODUCCION)
         token = Token.objects.create(user=usuario)
 
         self.cliente = APIClient()

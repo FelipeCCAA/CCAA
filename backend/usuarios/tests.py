@@ -10,7 +10,7 @@ from django.test import TestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
-from .models import PerfilUsuario
+from .models import PerfilUsuario, Rol
 
 
 class LoginTests(TestCase):
@@ -23,7 +23,10 @@ class LoginTests(TestCase):
             last_name="Pérez",
         )
         PerfilUsuario.objects.create(
-            usuario=self.usuario, cargo="Operadora", area="Producción", rol="TRABAJADOR"
+            usuario=self.usuario,
+            cargo="Operadora",
+            area="Producción",
+            rol=Rol.PRODUCCION,
         )
 
     def test_credenciales_correctas_devuelven_token_y_usuario(self):
@@ -38,7 +41,8 @@ class LoginTests(TestCase):
         self.assertTrue(datos["token"])
         self.assertEqual(datos["usuario"]["nombre"], "Ana")
         self.assertEqual(datos["usuario"]["perfil"]["cargo"], "Operadora")
-        self.assertEqual(datos["usuario"]["perfil"]["rol_etiqueta"], "Trabajador")
+        self.assertEqual(datos["usuario"]["perfil"]["rol_etiqueta"], "Producción")
+        self.assertEqual(datos["usuario"]["rol"], "produccion")
 
     def test_contrasena_incorrecta_no_entrega_token(self):
         respuesta = self.cliente.post(

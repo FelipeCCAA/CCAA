@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import PerfilUsuario
+from .models import PerfilUsuario, rol_de
 
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
@@ -26,11 +26,20 @@ class UsuarioSerializer(serializers.ModelSerializer):
     apellido = serializers.CharField(source="last_name", read_only=True)
     perfil = serializers.SerializerMethodField()
 
+    # Rol efectivo, que no siempre es el del perfil: un superusuario es
+    # administrador aunque no tenga uno. La interfaz usa este campo para
+    # decidir qué acciones mostrar, así que tiene que coincidir con lo que
+    # el backend va a permitir.
+    rol = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ["id", "username", "nombre", "apellido", "email", "perfil"]
+        fields = ["id", "username", "nombre", "apellido", "email", "rol", "perfil"]
 
     def get_perfil(self, usuario):
         perfil = getattr(usuario, "perfil", None)
 
         return PerfilUsuarioSerializer(perfil).data if perfil else None
+
+    def get_rol(self, usuario):
+        return rol_de(usuario)

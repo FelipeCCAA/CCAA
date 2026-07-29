@@ -24,13 +24,47 @@ export interface PerfilUsuario {
 }
 
 
+export type Rol =
+  | "recepcion"
+  | "produccion"
+  | "calidad"
+  | "admin"
+  | "lectura";
+
+
 export interface Usuario {
   id: number;
   username: string;
   nombre: string;
   apellido: string;
   email: string;
+  /* Rol efectivo. Un superusuario es "admin" aunque no tenga perfil, y un
+     usuario sin perfil es null: no escribe en ninguna parte. */
+  rol: Rol | null;
   perfil: PerfilUsuario | null;
+}
+
+
+/*
+  Quién escribe en cada módulo. Refleja usuarios/permisos.py.
+
+  Esto NO es seguridad: es cortesía. Sirve para no ofrecer un botón que el
+  backend va a rechazar con un 403. Quien lo evite editando el navegador se
+  encontrará igual con el rechazo del servidor, que es donde el permiso se
+  aplica de verdad.
+*/
+const ESCRITURA: Record<string, Rol[]> = {
+  maestros: ["admin"],
+  produccion: ["produccion", "admin"],
+  recepcion: ["recepcion", "admin"],
+  calidad: ["calidad", "admin"],
+};
+
+
+export function puedeEscribir(modulo: keyof typeof ESCRITURA): boolean {
+  const rol = obtenerSesion()?.usuario.rol;
+
+  return rol ? ESCRITURA[modulo].includes(rol) : false;
 }
 
 

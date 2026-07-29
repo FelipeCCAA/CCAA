@@ -110,6 +110,28 @@ Los permisos se declaran **cerrados por defecto**: un endpoint nuevo que
 olvide declararlos queda protegido, no abierto. Hay una prueba que lo vigila
 para las rutas existentes.
 
+### Roles
+
+Los cinco del proceso, definidos en [prototipo/MODELO_DATOS.md](prototipo/MODELO_DATOS.md).
+El criterio es **todos leen todo, cada uno escribe en lo suyo**: que Recepción
+consulte los lotes de Producción es necesario para trabajar; lo que no puede
+es editarlos.
+
+| | leer | escribir |
+|---|---|---|
+| Maestros (productos, especificaciones) | todos | `admin` |
+| Producción (lotes, análisis) | todos | `produccion`, `admin` |
+| Recepción y silos *(pendiente)* | todos | `recepcion`, `admin` |
+| Liberación de producto *(pendiente)* | todos | `calidad`, `admin` |
+
+`lectura` y los usuarios sin perfil no escriben en ninguna parte. Un
+superusuario de Django es `admin` aunque no tenga perfil, para que quien
+instaló el sistema no quede fuera de él.
+
+Las clases están en [backend/usuarios/permisos.py](backend/usuarios/permisos.py).
+El frontend consulta el rol solo para no ofrecer botones que el backend va a
+rechazar; el permiso se aplica en el servidor.
+
 Para probar la API a mano conviene entrar antes a `/admin/`: la sesión del
 navegador también autentica, así que las URLs se pueden abrir directamente.
 
