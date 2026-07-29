@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Especificacion, Mandante, Producto
+from .models import Especificacion, Mandante, Producto, Silo, Vehiculo
 
 
 @admin.register(Mandante)
@@ -24,6 +24,21 @@ class ProductoAdmin(admin.ModelAdmin):
     list_filter = ["familia", "naturaleza", "mandante", "activo"]
     search_fields = ["nombre", "codigo"]
     autocomplete_fields = ["mandante"]
+
+
+@admin.register(Silo)
+class SiloAdmin(admin.ModelAdmin):
+    # Sin columna de ocupación: es un saldo del libro de movimientos.
+    list_display = ["codigo", "tipo", "capacidad_l", "activo"]
+    list_filter = ["tipo", "activo"]
+    search_fields = ["codigo"]
+
+
+@admin.register(Vehiculo)
+class VehiculoAdmin(admin.ModelAdmin):
+    list_display = ["placa", "numero", "transportista", "capacidad_l", "chofer_am", "chofer_pm", "activo"]
+    list_filter = ["activo", "transportista"]
+    search_fields = ["placa", "numero", "transportista", "chofer_am", "chofer_pm"]
 
 
 @admin.register(Especificacion)

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .catalogos import PARAMETROS
-from .models import Especificacion, Mandante, Producto
+from .models import Especificacion, Mandante, Producto, Silo, Vehiculo
 
 
 class MandanteSerializer(serializers.ModelSerializer):
@@ -26,6 +26,32 @@ class ProductoSerializer(serializers.ModelSerializer):
             "unidad_base",
             "mandante",
             "mandante_nombre",
+            "activo",
+        ]
+
+
+class SiloSerializer(serializers.ModelSerializer):
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+
+    class Meta:
+        # Sin campo de ocupación: es un saldo que se calcula desde el libro de
+        # movimientos. Vive en /api/recepcion/ocupacion/.
+        model = Silo
+        fields = ["id", "codigo", "tipo", "tipo_etiqueta", "capacidad_l", "activo"]
+
+
+class VehiculoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Vehiculo
+        fields = [
+            "id",
+            "numero",
+            "placa",
+            "tipo",
+            "capacidad_l",
+            "transportista",
+            "chofer_am",
+            "chofer_pm",
             "activo",
         ]
 

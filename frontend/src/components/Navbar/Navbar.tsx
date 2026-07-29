@@ -43,7 +43,7 @@ const modulos = [
   },
   {
     etiqueta: "Recepción y silos",
-    ruta: null,
+    ruta: "/recepcion",
     icono: Truck,
   },
   {

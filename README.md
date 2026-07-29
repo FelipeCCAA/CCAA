@@ -97,9 +97,13 @@ GET  /api/usuarios/yo/       el usuario del token
 
 GET/POST/PUT/DELETE
   /api/maestros/mandantes/  /productos/  /especificaciones/
+  /api/maestros/silos/  /vehiculos/
   /api/maestros/parametros/          catálogo de fisicoquímicos
   /api/produccion/lotes/  /analisis/
   /api/produccion/resumen/           indicadores del panel
+  /api/recepcion/recepciones/  /movimientos/
+  /api/recepcion/recepciones/<id>/descargar/   ingresa la leche al silo
+  /api/recepcion/ocupacion/          saldo de cada silo
 ```
 
 El token viaja en la cabecera `Authorization: Token <valor>`. En el frontend
@@ -180,7 +184,7 @@ Para que un módulo aparezca en el menú, se le asigna su ruta en
 | Login | Funcional, con token. Falta recuperar contraseña |
 | Panel general | Funcional, conectado a la API |
 | Producción | Listado, filtros, alta y borrado. Falta editar |
-| Recepción y silos | Pendiente |
+| Recepción y silos | Registro, controles del camión, descarga y ocupación |
 | Liberación (Calidad) | Pendiente |
 | Despachos | Pendiente |
 | Maestros / Administración | Pendiente |

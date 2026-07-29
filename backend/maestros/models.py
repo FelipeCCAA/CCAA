@@ -91,6 +91,70 @@ class Producto(models.Model):
         return self.nombre
 
 
+class Silo(models.Model):
+    """
+    Silo o estanque de leche o crema.
+
+    La capacidad permite avisar cuando la ocupación la supera. La ocupación
+    NO es un campo: se calcula sumando el libro de movimientos
+    (MODELO_DATOS.md §2.4).
+    """
+
+    class Tipo(models.TextChoices):
+        SILO = "silo", "Silo"
+        TK_LD = "tk_ld", "TK Leche descremada"
+        TK_CREMA = "tk_crema", "TK Crema"
+
+    codigo = models.CharField("Código", max_length=40, unique=True)
+    tipo = models.CharField("Tipo", max_length=20, choices=Tipo.choices)
+    capacidad_l = models.DecimalField(
+        "Capacidad", max_digits=12, decimal_places=2, help_text="En litros"
+    )
+    activo = models.BooleanField("Activo", default=True)
+
+    class Meta:
+        verbose_name = "Silo / estanque"
+        verbose_name_plural = "Silos y estanques"
+        ordering = ["codigo"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(capacidad_l__gte=0),
+                name="silo_capacidad_no_negativa",
+            )
+        ]
+
+    def __str__(self):
+        return self.codigo
+
+
+class Vehiculo(models.Model):
+    """Camión de transporte de leche, con sus choferes por turno."""
+
+    numero = models.CharField("Número", max_length=40, blank=True)
+    placa = models.CharField("Placa", max_length=20, unique=True)
+    tipo = models.CharField("Tipo", max_length=60, default="Camión")
+    capacidad_l = models.DecimalField(
+        "Capacidad",
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="En litros",
+    )
+    transportista = models.CharField("Transportista", max_length=150, blank=True)
+    chofer_am = models.CharField("Chofer A.M.", max_length=150, blank=True)
+    chofer_pm = models.CharField("Chofer P.M.", max_length=150, blank=True)
+    activo = models.BooleanField("Activo", default=True)
+
+    class Meta:
+        verbose_name = "Camión"
+        verbose_name_plural = "Camiones"
+        ordering = ["placa"]
+
+    def __str__(self):
+        return f"{self.placa} · {self.transportista}" if self.transportista else self.placa
+
+
 class Especificacion(models.Model):
     """
     Rangos de calidad aceptables de un producto, versionados en el tiempo.

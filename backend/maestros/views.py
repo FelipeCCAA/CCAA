@@ -4,12 +4,14 @@ from rest_framework.response import Response
 
 from usuarios.permisos import EscribeAdministracion
 
-from .models import Especificacion, Mandante, Producto
+from .models import Especificacion, Mandante, Producto, Silo, Vehiculo
 from .serializers import (
     EspecificacionSerializer,
     MandanteSerializer,
     ParametroSerializer,
     ProductoSerializer,
+    SiloSerializer,
+    VehiculoSerializer,
 )
 
 
@@ -51,6 +53,18 @@ class EspecificacionViewSet(viewsets.ModelViewSet):
             consulta = consulta.filter(producto_id=producto)
 
         return consulta
+
+
+class SiloViewSet(viewsets.ModelViewSet):
+    queryset = Silo.objects.all()
+    serializer_class = SiloSerializer
+    permission_classes = [EscribeAdministracion]
+
+
+class VehiculoViewSet(viewsets.ModelViewSet):
+    queryset = Vehiculo.objects.all()
+    serializer_class = VehiculoSerializer
+    permission_classes = [EscribeAdministracion]
 
 
 @api_view(["GET"])

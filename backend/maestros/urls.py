@@ -5,6 +5,8 @@ from .views import (
     EspecificacionViewSet,
     MandanteViewSet,
     ProductoViewSet,
+    SiloViewSet,
+    VehiculoViewSet,
     parametros,
 )
 
@@ -12,6 +14,8 @@ router = DefaultRouter()
 router.register("mandantes", MandanteViewSet)
 router.register("productos", ProductoViewSet)
 router.register("especificaciones", EspecificacionViewSet)
+router.register("silos", SiloViewSet)
+router.register("vehiculos", VehiculoViewSet)
 
 urlpatterns = [
     path("parametros/", parametros, name="parametros"),

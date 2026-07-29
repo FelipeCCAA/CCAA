@@ -31,4 +31,6 @@ urlpatterns = [
 
     path("api/produccion/", include("produccion.urls")),
 
+    path("api/recepcion/", include("recepcion.urls")),
+
 ]
