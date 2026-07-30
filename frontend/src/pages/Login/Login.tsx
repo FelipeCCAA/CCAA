@@ -14,6 +14,7 @@ function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [mostrarPassword, setMostrarPassword] = useState(false);
+  const [recordar, setRecordar] = useState(false);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
 
@@ -33,7 +34,7 @@ function Login() {
     try {
       const sesion = await iniciarSesion(username, password);
 
-      guardarSesion(sesion);
+      guardarSesion(sesion, recordar);
 
       navegar(destino, { replace: true });
     } catch (error) {
@@ -65,7 +66,13 @@ function Login() {
           alt="Campos Australes"
         />
 
-        <div className="absolute inset-0 bg-gradient-to-br"></div>
+        {/* Velo sobre la foto.
+
+            Los colores no son decorativos: sin ellos, `bg-gradient-to-*` no
+            pinta nada —declara la dirección pero no de qué a qué— y el texto
+            blanco queda directamente sobre la imagen. Se oscurece abajo, que
+            es donde va el texto, y se deja limpia la parte de arriba. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/30 to-transparent"></div>
 
         <div className="relative z-10 flex flex-col justify-end p-16 text-white">
 
@@ -111,7 +118,10 @@ function Login() {
             {/* Usuario */}
             <div>
 
-              <label className="mb-2 block text-sm font-medium text-slate-700">
+              <label
+                htmlFor="usuario"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
                 Usuario
               </label>
 
@@ -120,6 +130,7 @@ function Login() {
                 <User className="h-5 w-5 text-slate-400" />
 
                 <input
+                  id="usuario"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -136,7 +147,10 @@ function Login() {
             {/* Contraseña */}
             <div>
 
-              <label className="mb-2 block text-sm font-medium text-slate-700">
+              <label
+                htmlFor="password"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
                 Contraseña
               </label>
 
@@ -145,6 +159,7 @@ function Login() {
                 <Lock className="h-5 w-5 text-slate-400" />
 
                 <input
+                  id="password"
                   type={mostrarPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -185,11 +200,24 @@ function Login() {
             {/* Recordarme / recuperar */}
             <div className="flex items-center justify-between">
 
-              <label className="flex items-center gap-2 text-sm">
+              {/* Sin marcar, la sesión vive en sessionStorage y muere al
+                  cerrar la pestaña. En una planta con turnos A/B/C sobre los
+                  mismos terminales, eso evita que el turno siguiente herede la
+                  sesión del anterior (ver services/sesion.ts). */}
+              <label
+                htmlFor="recordarme"
+                className="flex items-center gap-2 text-sm text-slate-700"
+              >
 
-                <input type="checkbox" />
+                <input
+                  id="recordarme"
+                  type="checkbox"
+                  checked={recordar}
+                  onChange={(e) => setRecordar(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-green-700 focus:ring-green-600"
+                />
 
-                Recordarme
+                Mantener la sesión iniciada
 
               </label>
 
@@ -228,7 +256,7 @@ function Login() {
 
           <div className="mt-12 text-center text-sm text-slate-400">
 
-            Factory System
+            Gestión Productiva · Planta CCAA
 
             <br />
 

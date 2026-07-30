@@ -5,10 +5,21 @@
   El token viaja en cada llamada a la API (ver api.ts); sin él, el backend
   responde 401 a todo salvo el login.
 
-  Sobre dónde se guarda: localStorage es legible por JavaScript, así que un
-  ataque de tipo XSS podría robar el token. La alternativa más segura es una
-  cookie HttpOnly, que exige manejar CSRF y cookies entre orígenes. Para una
-  aplicación interna de planta este compromiso es razonable, pero conviene
+  Dónde se guarda lo decide "Recordarme":
+
+  - Marcado, en `localStorage`: la sesión sobrevive a cerrar el navegador.
+  - Sin marcar, en `sessionStorage`: se borra al cerrar la pestaña.
+
+  La diferencia importa en planta. Recepción trabaja en turnos A/B/C sobre los
+  mismos terminales, y una sesión que sigue abierta cuando entra el turno
+  siguiente hace que los registros queden firmados por quien ya se fue. Que la
+  casilla exista y no haga nada era peor que no tenerla: prometía justamente
+  esa protección.
+
+  Sobre el riesgo de fondo: los dos almacenes son legibles por JavaScript, así
+  que un ataque de tipo XSS podría robar el token. La alternativa más segura es
+  una cookie HttpOnly, que exige manejar CSRF y cookies entre orígenes. Para
+  una aplicación interna de planta el compromiso es razonable, pero conviene
   saberlo antes de exponerla fuera de la red interna.
 */
 
@@ -74,13 +85,23 @@ export interface Sesion {
 }
 
 
-export function guardarSesion(sesion: Sesion): void {
-  localStorage.setItem(CLAVE, JSON.stringify(sesion));
+export function guardarSesion(sesion: Sesion, recordar = false): void {
+  const donde = recordar ? localStorage : sessionStorage;
+  const elOtro = recordar ? sessionStorage : localStorage;
+
+  // Se limpia el otro almacén antes de escribir: si quedaran dos copias, la
+  // de sessionStorage ganaría al leer y "Recordarme" dejaría de recordar en
+  // cuanto alguien iniciara sesión sin marcarlo.
+  elOtro.removeItem(CLAVE);
+  donde.setItem(CLAVE, JSON.stringify(sesion));
 }
 
 
 export function obtenerSesion(): Sesion | null {
-  const crudo = localStorage.getItem(CLAVE);
+  // `sessionStorage` primero: es la sesión de esta pestaña y la más reciente.
+  // Leer también `localStorage` mantiene válidas las sesiones abiertas antes
+  // de que existiera esta distinción.
+  const crudo = sessionStorage.getItem(CLAVE) ?? localStorage.getItem(CLAVE);
 
   if (!crudo) {
     return null;
@@ -106,6 +127,9 @@ export function obtenerToken(): string | null {
 
 
 export function cerrarSesion(): void {
+  // Los dos, sin preguntar dónde estaba: cerrar sesión a medias es peor que
+  // no cerrarla, porque el usuario cree que salió.
+  sessionStorage.removeItem(CLAVE);
   localStorage.removeItem(CLAVE);
 }
 
