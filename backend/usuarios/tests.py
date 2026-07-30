@@ -160,11 +160,22 @@ class ApiCerradaTests(TestCase):
     La API completa exige identificarse.
 
     Si alguien agrega un endpoint y olvida declarar permisos, queda cerrado
-    por defecto. Esta prueba lo vigila para todas las rutas, no para una lista.
+    por defecto. Esta prueba lo vigila para todas las rutas descubiertas, no
+    para una lista escrita a mano.
+
+    Las excepciones son el login y la recuperación de contraseña, que declaran
+    ``AllowAny`` explícitamente y se enumeran abajo. Abrir un endpoint nuevo
+    obliga a agregarlo aquí, que es justamente el punto: la lista de lo que
+    está abierto se mantiene corta y a la vista.
     """
 
-    # El login es la única excepción: sin él nadie podría obtener un token.
-    ABIERTAS = {"/api/usuarios/login/"}
+    # Sin el login nadie podría obtener un token, y quien olvidó su contraseña
+    # tampoco puede identificarse para pedir una nueva.
+    ABIERTAS = {
+        "/api/usuarios/login/",
+        "/api/usuarios/recuperar-contrasena/",
+        "/api/usuarios/restablecer-contrasena/",
+    }
 
     def setUp(self):
         self.cliente = APIClient()

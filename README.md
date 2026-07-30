@@ -106,6 +106,8 @@ ella nadie podría obtener un token.
 POST /api/usuarios/login/    devuelve { token, usuario }
 POST /api/usuarios/logout/   invalida el token en el servidor
 GET  /api/usuarios/yo/       el usuario del token
+POST /api/usuarios/recuperar-contrasena/
+POST /api/usuarios/restablecer-contrasena/
 
 GET/POST/PUT/DELETE
   /api/maestros/mandantes/  /productos/  /especificaciones/
@@ -133,6 +135,55 @@ mundo, y responde **409 con los motivos** si la regla no se cumple.
 El token viaja en la cabecera `Authorization: Token <valor>`. En el frontend
 lo adjunta un interceptor de axios ([services/api.ts](frontend/src/services/api.ts)),
 que además cierra la sesión y manda al login si el backend responde 401.
+
+### Recuperación de contraseña
+
+El botón **¿Olvidaste tu contraseña?** abre el flujo público:
+
+1. `/recuperar-contrasena` solicita el correo.
+2. Django envía un enlace temporal a `/restablecer-contrasena?uid=...&token=...`.
+3. La contraseña nueva invalida el enlace y cualquier token API anterior.
+
+Solo reciben el mensaje los usuarios de Django que estén activos, tengan una
+contraseña utilizable y posean un correo en `Administración > Usuarios`. La
+respuesta pública es siempre la misma aunque el correo no exista, para impedir
+la enumeración de cuentas.
+
+El administrador conserva además la posibilidad de cambiar manualmente una
+contraseña desde `/admin/`.
+
+La URL del frontend, la duración del enlace y el remitente se configuran con:
+
+```text
+PASSWORD_RESET_FRONTEND_URL=http://localhost:5173/restablecer-contrasena
+PASSWORD_RESET_TIMEOUT=3600
+DEFAULT_FROM_EMAIL=no-responder@dominio.cl
+```
+
+El envío de Microsoft 365/Outlook está implementado mediante Microsoft Graph
+y OAuth 2.0, sin almacenar la contraseña personal de un administrador. Para
+activarlo:
+
+1. Registrar una aplicación en Microsoft Entra.
+2. Agregar `Microsoft Graph > Application permissions > Mail.Send`.
+3. Conceder el consentimiento de administrador.
+4. Crear un secreto de cliente y guardarlo solo en el entorno del servidor.
+5. Elegir un buzón dedicado o compartido como remitente.
+6. Configurar las variables descritas en `backend/.env.example`.
+
+Conviene restringir la aplicación al buzón remitente mediante RBAC de
+aplicaciones de Exchange, porque `Mail.Send` de aplicación tiene alcance
+organizacional si no se limita.
+
+Para verificar las credenciales y enviar un mensaje real:
+
+```powershell
+python manage.py comprobar_correo --destinatario administrador@dominio.cl
+```
+
+El backend obtiene y cachea el token de Entra, envía el correo HTML por
+`POST /users/{buzon}/sendMail` y no expone secretos ni respuestas internas de
+Microsoft al usuario final.
 
 Los permisos se declaran **cerrados por defecto**: un endpoint nuevo que
 olvide declararlos queda protegido, no abierto. Hay una prueba que lo vigila
@@ -211,7 +262,7 @@ Para que un módulo aparezca en el menú, se le asigna su ruta en
 
 | Módulo | Estado |
 |---|---|
-| Login | Funcional, con token. Falta recuperar contraseña |
+| Login | Funcional, con token y recuperación de contraseña |
 | Panel general | Funcional, conectado a la API |
 | Producción | Listado, filtros, alta y borrado. Falta editar |
 | Recepción y silos | Registro, controles del camión, descarga y ocupación |

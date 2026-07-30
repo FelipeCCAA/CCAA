@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { User, Lock, Eye, EyeOff } from "lucide-react";
 import axios from "axios";
 
@@ -221,12 +221,12 @@ function Login() {
 
               </label>
 
-              <button
-                type="button"
+              <Link
+                to="/recuperar-contrasena"
                 className="text-sm text-green-700 hover:underline"
               >
                 ¿Olvidaste tu contraseña?
-              </button>
+              </Link>
 
             </div>
 

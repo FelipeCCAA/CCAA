@@ -43,3 +43,34 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
     def get_rol(self, usuario):
         return rol_de(usuario)
+
+
+class SolicitudRecuperacionSerializer(serializers.Serializer):
+    """Valida la dirección a la que se enviarán las instrucciones."""
+
+    email = serializers.EmailField(max_length=254)
+
+
+class ConfirmacionRecuperacionSerializer(serializers.Serializer):
+    """Valida los datos públicos del enlace y la nueva contraseña."""
+
+    uid = serializers.CharField(max_length=128)
+    token = serializers.CharField(max_length=256)
+    nueva_contrasena = serializers.CharField(
+        max_length=128,
+        trim_whitespace=False,
+        write_only=True,
+    )
+    confirmar_contrasena = serializers.CharField(
+        max_length=128,
+        trim_whitespace=False,
+        write_only=True,
+    )
+
+    def validate(self, datos):
+        if datos["nueva_contrasena"] != datos["confirmar_contrasena"]:
+            raise serializers.ValidationError(
+                {"confirmar_contrasena": "Las contraseñas no coinciden."}
+            )
+
+        return datos
