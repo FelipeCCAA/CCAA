@@ -47,6 +47,53 @@ export interface CalidadLote {
 }
 
 
+export type EstadoLote = "en_proceso" | "producido" | "cerrado" | "anulado";
+
+
+/*
+  Transiciones válidas entre estados de un lote.
+
+  Refleja `Lote.TRANSICIONES` del backend, que es quien manda: esto solo
+  sirve para no ofrecer un botón que el servidor va a rechazar. Un lote
+  cerrado o anulado es final — el histórico se audita, y un lote anulado que
+  vuelve a producción es un registro que dice algo falso sobre lo que pasó.
+*/
+export const TRANSICIONES: Record<EstadoLote, EstadoLote[]> = {
+  en_proceso: ["producido", "anulado"],
+  producido: ["cerrado", "anulado"],
+  cerrado: [],
+  anulado: [],
+};
+
+export const ETIQUETA_ESTADO: Record<EstadoLote, string> = {
+  en_proceso: "En proceso",
+  producido: "Producido",
+  cerrado: "Cerrado",
+  anulado: "Anulado",
+};
+
+/* Qué significa cada paso, para que el botón diga la consecuencia y no solo
+   el nombre del estado. */
+export const EXPLICACION_ESTADO: Record<EstadoLote, string> = {
+  en_proceso: "El lote sigue en la línea.",
+  producido:
+    "Cierra la producción. Desde aquí el lote llega a Calidad y puede liberarse.",
+  cerrado: "El lote queda cerrado. Es un estado final: no admite vuelta atrás.",
+  anulado:
+    "El lote no existió como producción. Es un estado final: no admite vuelta atrás.",
+};
+
+
+export interface Analisis {
+  id: number;
+  lote: number;
+  fecha: string;
+  muestra: string;
+  valores: Record<string, number>;
+  observacion: string;
+}
+
+
 export interface Lote {
   id: number;
   codigo_lote: string;
@@ -59,9 +106,27 @@ export interface Lote {
   turno: string;
   /* Django serializa los decimales como texto, para no perder precisión. */
   kg_producidos: string;
-  estado: string;
+  bultos: number | null;
+  hora_inicio: string | null;
+  hora_termino: string | null;
+  vencimiento: string | null;
+  estado: EstadoLote;
   estado_etiqueta: string;
+  observacion: string;
   calidad: CalidadLote;
+}
+
+
+/* El lote con sus análisis: lo que devuelve el detalle. */
+export interface LoteDetalle extends Lote {
+  analisis: Analisis[];
+  /* null si Calidad no ha tramitado el expediente todavía. */
+  liberacion: {
+    estado: string;
+    estado_etiqueta: string;
+    liberado: boolean;
+    autorizada_por_nombre: string | null;
+  } | null;
 }
 
 
@@ -195,4 +260,66 @@ export async function crearAnalisis(
 
 export async function borrarLote(id: number): Promise<void> {
   await api.delete(`produccion/lotes/${id}/`);
+}
+
+
+export async function obtenerLote(id: number): Promise<LoteDetalle> {
+  const { data } = await api.get<LoteDetalle>(`produccion/lotes/${id}/`);
+
+  return data;
+}
+
+
+/** Campos editables de un lote. Todos opcionales: se manda lo que cambió. */
+export interface LoteEditado {
+  codigo_lote?: string;
+  op?: string;
+  producto?: number;
+  fecha?: string;
+  linea?: string;
+  turno?: string;
+  kg_producidos?: string;
+  bultos?: number | null;
+  hora_inicio?: string | null;
+  hora_termino?: string | null;
+  vencimiento?: string | null;
+  observacion?: string;
+}
+
+
+/**
+ * Edita los datos de un lote.
+ *
+ * El backend rechaza con 400 si el lote está cerrado o anulado —es histórico—
+ * o si Calidad ya lo liberó, porque cambiar lo que se produjo dejaría esa
+ * firma respaldando otra cosa. La observación se puede anotar siempre.
+ */
+export async function editarLote(
+  id: number,
+  cambios: LoteEditado,
+): Promise<LoteDetalle> {
+
+  const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, cambios);
+
+  return data;
+}
+
+
+/**
+ * Cambia el estado de un lote.
+ *
+ * El backend valida la transición contra `Lote.TRANSICIONES` y responde 400
+ * con el motivo si no es válida. Ese rechazo es el que vale: la pantalla solo
+ * oculta los pasos imposibles por cortesía.
+ */
+export async function cambiarEstadoLote(
+  id: number,
+  estado: EstadoLote,
+): Promise<LoteDetalle> {
+
+  const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, {
+    estado,
+  });
+
+  return data;
 }

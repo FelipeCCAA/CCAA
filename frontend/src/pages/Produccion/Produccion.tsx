@@ -17,6 +17,7 @@ import {
 
 import { puedeEscribir } from "../../services/sesion";
 
+import DetalleLote from "./DetalleLote";
 import FormularioLote from "./FormularioLote";
 
 
@@ -41,6 +42,7 @@ function Produccion() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [formularioAbierto, setFormularioAbierto] = useState(false);
+  const [loteAbierto, setLoteAbierto] = useState<number | null>(null);
 
   // Solo Producción y Administración registran lotes. El resto consulta.
   const puedeEditar = puedeEscribir("produccion");
@@ -307,7 +309,12 @@ function Produccion() {
 
                   {lotes.map((lote) => (
 
-                    <tr key={lote.id} className="border-t border-slate-100">
+                    <tr
+                      key={lote.id}
+                      onClick={() => setLoteAbierto(lote.id)}
+                      className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                      title="Ver el lote y cerrar la producción"
+                    >
 
                       <td className="px-6 py-4 font-medium text-slate-800">
 
@@ -365,7 +372,13 @@ function Produccion() {
 
                           <button
                             type="button"
-                            onClick={() => eliminar(lote)}
+                            /* Sin `stopPropagation`, el clic llegaría también
+                               a la fila y abriría la ficha del lote que se
+                               acaba de borrar. */
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              eliminar(lote);
+                            }}
                             className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                             aria-label={`Eliminar el lote ${lote.codigo_lote}`}
                             title="Eliminar"
@@ -440,6 +453,17 @@ function Produccion() {
           parametros={parametros}
           alCerrar={() => setFormularioAbierto(false)}
           alGuardar={cargarLotes}
+        />
+
+      )}
+
+      {loteAbierto !== null && (
+
+        <DetalleLote
+          loteId={loteAbierto}
+          puedeEditar={puedeEditar}
+          alCerrar={() => setLoteAbierto(null)}
+          alCambiar={cargarLotes}
         />
 
       )}
