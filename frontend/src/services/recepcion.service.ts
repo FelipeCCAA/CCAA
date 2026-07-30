@@ -43,9 +43,14 @@ export interface Ocupacion {
 
 
 export interface EvaluacionRecepcion {
+  /* Nada de lo medido se salió de rango. NO significa que se pueda liberar:
+     para eso hay que haber medido lo decisivo. */
   conforme: boolean;
-  estado_sugerido: "liberada" | "retenida";
+  estado_sugerido: "liberada" | "retenida" | "sin_analisis";
   motivos: string[];
+  /* Controles decisivos sin informar. Con alguno pendiente no se libera. */
+  faltantes: string[];
+  analizada: boolean;
 }
 
 

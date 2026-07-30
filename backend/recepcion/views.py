@@ -46,10 +46,64 @@ class RecepcionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Quien registra queda como operador si no se indicó otro: el dato es
         # para auditoría y teclearlo a mano solo lo hace menos fiable.
+        extra = {}
+
         if serializer.validated_data.get("operador") is None:
-            serializer.save(operador=self.request.user)
+            extra["operador"] = self.request.user
+
+        estado = self._estado_segun_controles(serializer)
+        if estado is not None:
+            extra["estado"] = estado
+
+        serializer.save(**extra)
+
+    def perform_update(self, serializer):
+        """
+        Los controles pueden llegar después de registrar el camión, así que al
+        editarlos el estado vuelve a derivarse. Una recepción ya descargada o
+        cerrada no se toca: su leche ya entró al silo.
+        """
+        estado = self._estado_segun_controles(serializer)
+
+        intocables = (Recepcion.Estado.DESCARGADA, Recepcion.Estado.CERRADA)
+
+        if estado is not None and serializer.instance.estado not in intocables:
+            serializer.save(estado=estado)
         else:
             serializer.save()
+
+    @staticmethod
+    def _estado_segun_controles(serializer):
+        """
+        El estado que corresponde a los controles informados, o None si no hay
+        con qué decidir todavía.
+
+        Es lo que faltaba para que el flujo funcione: el veredicto se calculaba
+        y se mostraba en pantalla, pero no movía la recepción. Quedaba en
+        `registrada` para siempre, el botón de descargar nunca aparecía, y por
+        tanto la ocupación del silo no cambiaba nunca.
+
+        Si quien llama manda un `estado` explícito, manda el suyo: la pantalla
+        de Recepción puede necesitar retener a mano por algo que los controles
+        no capturan.
+        """
+        if "estado" in serializer.initial_data:
+            return None
+
+        controles = serializer.validated_data.get(
+            "controles", getattr(serializer.instance, "controles", None)
+        )
+
+        evaluacion = dominio.evaluar_recepcion(controles)
+
+        if not evaluacion.analizada:
+            return None
+
+        return (
+            Recepcion.Estado.LIBERADA
+            if evaluacion.liberable
+            else Recepcion.Estado.RETENIDA
+        )
 
     @action(detail=True, methods=["post"])
     def descargar(self, request, pk=None):

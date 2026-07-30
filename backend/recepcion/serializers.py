@@ -54,6 +54,10 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "conforme": evaluacion.conforme,
             "estado_sugerido": evaluacion.estado,
             "motivos": evaluacion.motivos,
+            # Controles decisivos sin informar. Con alguno pendiente no se
+            # puede liberar: no es que esté conforme, es que nadie lo midió.
+            "faltantes": evaluacion.faltantes,
+            "analizada": evaluacion.analizada,
         }
 
     def validate_controles(self, controles):

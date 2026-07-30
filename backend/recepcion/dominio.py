@@ -27,11 +27,44 @@ LIMITES = {
 }
 
 
+# Controles sin los cuales no se puede liberar.
+#
+# El Delvo detecta antibióticos, y esa leche no entra a la planta bajo ningún
+# criterio: sin ese resultado no hay nada que autorizar. Que falte no es
+# "conforme", es que nadie lo midió — la misma distinción que hace Calidad
+# entre un lote conforme y uno sin análisis (MODELO_DATOS.md §2.2).
+#
+# Qué controles son obligatorios está pendiente de definir con Calidad (§8.5).
+# Este es el piso de seguridad, no la lista final: agregar `inhibidores` u
+# `organoleptico` es añadirlos a esta tupla.
+CONTROLES_DECISIVOS = ("delvo",)
+
+
 @dataclass(frozen=True)
 class EvaluacionRecepcion:
+    # ¿Lo que se midió está dentro de límites? NO significa que se pueda
+    # liberar: para eso hay que haber medido lo decisivo. Las dos cosas se
+    # separan a propósito, porque confundirlas es lo que dejaba pasar leche
+    # sin analizar como si estuviera conforme.
     conforme: bool
-    estado: str  # liberada | retenida
+    # liberada | retenida | sin_analisis
+    estado: str
     motivos: list[str] = field(default_factory=list)
+    faltantes: list[str] = field(default_factory=list)
+
+    @property
+    def analizada(self) -> bool:
+        """¿Hay con qué decidir? Sin esto no se libera ni se retiene."""
+        return self.estado != SIN_ANALISIS
+
+    @property
+    def liberable(self) -> bool:
+        return self.estado == LIBERADA
+
+
+LIBERADA = "liberada"
+RETENIDA = "retenida"
+SIN_ANALISIS = "sin_analisis"
 
 
 @dataclass(frozen=True)
@@ -66,10 +99,21 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
 
     Devuelve los motivos, no solo un booleano, para que la pantalla pueda
     explicar por qué se retuvo (MODELO_DATOS.md §2.10).
+
+    Sin los controles decisivos NO devuelve "liberada": devuelve
+    `sin_analisis`. Antes, una recepción con los controles vacíos salía
+    conforme —no había motivos que informar— y la pantalla decía "Sin
+    alertas" sobre leche que nadie había medido.
     """
     c = controles or {}
     lim = {**LIMITES, **(limites or {})}
     motivos: list[str] = []
+
+    faltantes = [
+        control
+        for control in CONTROLES_DECISIVOS
+        if c.get(control) in (None, "")
+    ]
 
     if c.get("delvo") == "Positivo":
         motivos.append("Delvo Test positivo (presencia de antibióticos).")
@@ -101,10 +145,22 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
     if crioscopia is not None and crioscopia > lim["crioscopia_max"]:
         motivos.append(f"Crioscopía {crioscopia} indica posible aguado.")
 
+    # Un motivo manda sobre la falta de datos: si el Delvo salió positivo, la
+    # leche se retiene aunque falten los demás controles.
+    if motivos:
+        estado = RETENIDA
+    elif faltantes:
+        estado = SIN_ANALISIS
+    else:
+        estado = LIBERADA
+
     return EvaluacionRecepcion(
+        # `conforme` sigue significando lo mismo que antes: nada de lo medido
+        # se salió de rango. Lo que cambia es `estado`, que es el que decide.
         conforme=not motivos,
-        estado="retenida" if motivos else "liberada",
+        estado=estado,
         motivos=motivos,
+        faltantes=faltantes,
     )
 
 

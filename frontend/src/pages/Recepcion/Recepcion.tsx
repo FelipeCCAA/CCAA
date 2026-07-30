@@ -502,6 +502,22 @@ function Recepcion() {
 
                             </span>
 
+                          ) : !recepcion.evaluacion.analizada ? (
+
+                            /* Sin los controles decisivos no hay "sin alertas"
+                               que valga: es que nadie los midió, y esta leche
+                               no puede descargarse al silo. */
+                            <span
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700"
+                              title={`Falta informar: ${recepcion.evaluacion.faltantes.join(", ")}`}
+                            >
+
+                              <AlertTriangle className="h-4 w-4" />
+
+                              Sin analizar
+
+                            </span>
+
                           ) : (
 
                             <span className="text-xs text-slate-400">Sin alertas</span>

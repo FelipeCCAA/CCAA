@@ -31,6 +31,34 @@ class EvaluarRecepcionTests(TestCase):
     def test_sin_controles_no_hay_motivo_para_retener(self):
         self.assertTrue(dominio.evaluar_recepcion({}).conforme)
 
+    def test_sin_controles_tampoco_se_libera(self):
+        """
+        No tener motivos para retener no es lo mismo que poder liberar. Sin el
+        Delvo nadie midió lo que decide, y la leche sin analizar no entra al
+        silo — igual que un lote sin análisis no se libera.
+        """
+        evaluacion = dominio.evaluar_recepcion({})
+
+        self.assertEqual(evaluacion.estado, "sin_analisis")
+        self.assertFalse(evaluacion.analizada)
+        self.assertFalse(evaluacion.liberable)
+        self.assertIn("delvo", evaluacion.faltantes)
+
+    def test_medir_todo_menos_el_delvo_no_alcanza(self):
+        evaluacion = dominio.evaluar_recepcion(
+            {"acidez": 16.0, "ph": 6.7, "temperatura": 4.0, "crioscopia": -0.52}
+        )
+
+        self.assertTrue(evaluacion.conforme, "nada de lo medido se salió de rango")
+        self.assertFalse(evaluacion.liberable, "pero falta el que decide")
+
+    def test_un_motivo_manda_sobre_los_controles_que_falten(self):
+        """Delvo positivo retiene aunque no se haya medido nada más."""
+        evaluacion = dominio.evaluar_recepcion({"delvo": "Positivo"})
+
+        self.assertEqual(evaluacion.estado, "retenida")
+        self.assertTrue(evaluacion.analizada)
+
     def test_controles_normales_liberan(self):
         evaluacion = dominio.evaluar_recepcion(
             {"delvo": "Negativo", "acidez": 16.0, "ph": 6.7, "temperatura": 4.0}
@@ -192,6 +220,119 @@ class BaseAPIRecepcion(TestCase):
         }
         datos.update(extra)
         return self.cliente.post("/api/recepcion/recepciones/", datos, format="json")
+
+
+class EstadoSegunControlesTests(BaseAPIRecepcion):
+    """
+    El estado de la recepción sigue al veredicto de sus controles.
+
+    Existen porque faltaba: el veredicto se calculaba y se mostraba, pero no
+    movía la recepción. Toda recepción nacía `registrada`, no había forma de
+    llevarla a `liberada` desde la aplicación, el botón de descargar nunca
+    aparecía — y como la ocupación de un silo es el saldo de sus movimientos,
+    la leche registrada nunca llegaba al silo.
+    """
+
+    def test_con_los_controles_en_regla_queda_liberada(self):
+        respuesta = self._crear(
+            controles={
+                "delvo": "Negativo",
+                "inhibidores": "Negativo",
+                "acidez": 16.0,
+                "ph": 6.7,
+                "temperatura": 4.0,
+            }
+        )
+
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(respuesta.json()["estado"], "liberada")
+
+    def test_con_delvo_positivo_queda_retenida(self):
+        respuesta = self._crear(controles={"delvo": "Positivo"})
+
+        self.assertEqual(respuesta.json()["estado"], "retenida")
+
+    def test_sin_el_control_decisivo_se_queda_registrada(self):
+        """No se libera sola leche que nadie midió."""
+        respuesta = self._crear(controles={"acidez": 16.0, "ph": 6.7})
+
+        self.assertEqual(respuesta.json()["estado"], "registrada")
+        self.assertIn("delvo", respuesta.json()["evaluacion"]["faltantes"])
+
+    def test_los_controles_pueden_llegar_despues(self):
+        """El camión se registra al llegar y el laboratorio informa luego."""
+        creada = self._crear().json()
+        self.assertEqual(creada["estado"], "registrada")
+
+        respuesta = self.cliente.patch(
+            f"/api/recepcion/recepciones/{creada['id']}/",
+            {"controles": {"delvo": "Negativo", "acidez": 16.0}},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.json()["estado"], "liberada")
+
+    def test_un_estado_explicito_manda_sobre_el_veredicto(self):
+        """Recepción puede retener a mano por algo que los controles no ven."""
+        respuesta = self._crear(
+            controles={"delvo": "Negativo"},
+            estado="retenida",
+            motivo="El camión llegó con el precinto roto.",
+        )
+
+        self.assertEqual(respuesta.json()["estado"], "retenida")
+
+    def test_una_recepcion_descargada_no_cambia_de_estado_sola(self):
+        """Su leche ya entró al silo: recalcular el estado la desharía."""
+        creada = self._crear(controles={"delvo": "Negativo"}).json()
+        self.cliente.post(f"/api/recepcion/recepciones/{creada['id']}/descargar/")
+
+        self.cliente.patch(
+            f"/api/recepcion/recepciones/{creada['id']}/",
+            {"controles": {"delvo": "Positivo"}},
+            format="json",
+        )
+
+        recepcion = Recepcion.objects.get(pk=creada["id"])
+        self.assertEqual(recepcion.estado, Recepcion.Estado.DESCARGADA)
+
+
+class FlujoCompletoTests(BaseAPIRecepcion):
+    """De registrar el camión a que el silo cambie de saldo."""
+
+    def test_registrar_con_controles_conformes_llega_al_silo(self):
+        vacio = self.cliente.get("/api/recepcion/ocupacion/").json()
+        self.assertEqual(vacio["litros_totales"], 0)
+
+        creada = self._crear(
+            controles={"delvo": "Negativo", "inhibidores": "Negativo", "ph": 6.7}
+        ).json()
+
+        self.assertEqual(creada["estado"], "liberada")
+
+        descarga = self.cliente.post(
+            f"/api/recepcion/recepciones/{creada['id']}/descargar/"
+        )
+
+        self.assertEqual(descarga.status_code, 200)
+        self.assertEqual(descarga.json()["estado"], "descargada")
+
+        ocupacion = self.cliente.get("/api/recepcion/ocupacion/").json()
+
+        self.assertEqual(ocupacion["litros_totales"], 25000)
+        self.assertEqual(MovimientoSilo.objects.count(), 1)
+
+    def test_una_retenida_no_llega_al_silo(self):
+        creada = self._crear(controles={"delvo": "Positivo"}).json()
+
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{creada['id']}/descargar/"
+        )
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertEqual(
+            self.cliente.get("/api/recepcion/ocupacion/").json()["litros_totales"], 0
+        )
 
 
 class RecepcionAPITests(BaseAPIRecepcion):
