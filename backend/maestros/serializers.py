@@ -1,7 +1,14 @@
 from rest_framework import serializers
 
 from .catalogos import PARAMETROS
-from .models import Especificacion, Mandante, Producto, Silo, Vehiculo
+from .models import (
+    DocumentoLiberacion,
+    Especificacion,
+    Mandante,
+    Producto,
+    Silo,
+    Vehiculo,
+)
 
 
 class MandanteSerializer(serializers.ModelSerializer):
@@ -92,6 +99,61 @@ class EspecificacionSerializer(serializers.ModelSerializer):
             "vigente_hasta": self.instance.vigente_hasta,
             "rangos": self.instance.rangos,
             "fuente": self.instance.fuente,
+        }
+
+
+class DocumentoLiberacionSerializer(serializers.ModelSerializer):
+    """
+    El catálogo del checklist, con la plantilla de cada formulario.
+
+    La plantilla viaja entera: es lo que la pantalla dibuja. Cambiarla desde
+    aquí cambia el formulario, sin desplegar (MODELO_DATOS.md §2.6).
+    """
+
+    campos = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DocumentoLiberacion
+        fields = [
+            "id",
+            "codigo",
+            "nombre",
+            "aplica_a",
+            "instruccion",
+            "plantilla",
+            "campos",
+            "fuente",
+            "orden",
+            "activo",
+        ]
+
+    def get_campos(self, documento):
+        """Cuántos campos tiene el formulario. Cero significa solo atestación."""
+        return len(documento.plantilla or [])
+
+    def validate(self, datos):
+        """
+        Delega en el `clean()` del modelo para no escribir dos veces las mismas
+        reglas. Sin esto, la API podría guardar una plantilla que el admin
+        rechaza, y la pantalla la dibujaría a medias sin avisar a nadie.
+        """
+        instancia = DocumentoLiberacion(**{**self._datos_actuales(), **datos})
+        instancia.clean()
+        return datos
+
+    def _datos_actuales(self):
+        if self.instance is None:
+            return {}
+
+        return {
+            "codigo": self.instance.codigo,
+            "nombre": self.instance.nombre,
+            "aplica_a": self.instance.aplica_a,
+            "instruccion": self.instance.instruccion,
+            "plantilla": self.instance.plantilla,
+            "fuente": self.instance.fuente,
+            "orden": self.instance.orden,
+            "activo": self.instance.activo,
         }
 
 

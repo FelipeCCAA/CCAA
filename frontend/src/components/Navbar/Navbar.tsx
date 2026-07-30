@@ -48,7 +48,7 @@ const modulos = [
   },
   {
     etiqueta: "Liberación de producto",
-    ruta: null,
+    ruta: "/liberacion",
     icono: ClipboardCheck,
   },
   {

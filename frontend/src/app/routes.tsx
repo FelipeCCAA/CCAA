@@ -9,6 +9,7 @@ import Login from "../pages/Login/Login";
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Produccion from "../pages/Produccion/Produccion";
 import Recepcion from "../pages/Recepcion/Recepcion";
+import Liberacion from "../pages/Liberacion/Liberacion";
 
 
 /*
@@ -66,6 +67,11 @@ function RoutesApp(){
                     <Route
                         path="/recepcion"
                         element={<Recepcion />}
+                    />
+
+                    <Route
+                        path="/liberacion"
+                        element={<Liberacion />}
                     />
 
                 </Route>

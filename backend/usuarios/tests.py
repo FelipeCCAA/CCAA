@@ -7,6 +7,7 @@ API queda CERRADA: que sin token no se lee ni se escribe nada.
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.urls import get_resolver
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -127,31 +128,65 @@ class SesionTests(TestCase):
         self.assertEqual(self.cliente.get("/api/usuarios/yo/").status_code, 401)
 
 
+def rutas_de_la_api():
+    """
+    Todas las rutas de `/api/` que no llevan parámetros, descubiertas del
+    enrutador.
+
+    Se descubren en vez de listarse a mano porque una lista escrita a mano
+    envejece en silencio: cubre lo que había el día que se escribió y no lo
+    que se agregó después, que es justamente el endpoint nuevo que podría
+    haberse olvidado de declarar permisos. Esta lista ya se había quedado sin
+    las rutas de Recepción.
+    """
+    rutas = []
+
+    def recorrer(patrones, prefijo=""):
+        for patron in patrones:
+            ruta = prefijo + str(patron.pattern).replace("^", "").replace("$", "")
+
+            if hasattr(patron, "url_patterns"):
+                recorrer(patron.url_patterns, ruta)
+            elif "<" not in ruta:
+                rutas.append("/" + ruta)
+
+    recorrer(get_resolver().url_patterns)
+
+    return sorted(r for r in rutas if r.startswith("/api/"))
+
+
 class ApiCerradaTests(TestCase):
     """
     La API completa exige identificarse.
 
     Si alguien agrega un endpoint y olvida declarar permisos, queda cerrado
-    por defecto. Esta prueba lo vigila para las rutas que ya existen.
+    por defecto. Esta prueba lo vigila para todas las rutas, no para una lista.
     """
 
-    RUTAS = [
-        "/api/produccion/lotes/",
-        "/api/produccion/analisis/",
-        "/api/produccion/resumen/",
-        "/api/maestros/productos/",
-        "/api/maestros/mandantes/",
-        "/api/maestros/especificaciones/",
-        "/api/maestros/parametros/",
-    ]
+    # El login es la única excepción: sin él nadie podría obtener un token.
+    ABIERTAS = {"/api/usuarios/login/"}
 
     def setUp(self):
         self.cliente = APIClient()
 
+    def test_hay_rutas_que_vigilar(self):
+        """
+        Si el descubrimiento se rompe, la prueba de abajo pasaría sin
+        comprobar nada. Esto lo delata.
+        """
+        self.assertGreater(len(rutas_de_la_api()), 10)
+
     def test_sin_token_no_se_lee_nada(self):
-        for ruta in self.RUTAS:
+        for ruta in rutas_de_la_api():
+            if ruta in self.ABIERTAS:
+                continue
+
             with self.subTest(ruta=ruta):
-                self.assertEqual(self.cliente.get(ruta).status_code, 401)
+                self.assertEqual(
+                    self.cliente.get(ruta).status_code,
+                    401,
+                    f"{ruta} responde sin identificarse",
+                )
 
     def test_sin_token_no_se_escribe_nada(self):
         self.assertEqual(

@@ -104,7 +104,19 @@ GET/POST/PUT/DELETE
   /api/recepcion/recepciones/  /movimientos/
   /api/recepcion/recepciones/<id>/descargar/   ingresa la leche al silo
   /api/recepcion/ocupacion/          saldo de cada silo
+  /api/maestros/documentos/          catálogo del checklist, con su plantilla
+  /api/calidad/registros/  /liberaciones/
+  /api/calidad/expedientes/          lotes por liberar, con su avance
+  /api/calidad/expedientes/<lote>/   el expediente completo de un lote
+  /api/calidad/expedientes/<lote>/liberar/    firma la liberación
+  /api/calidad/expedientes/<lote>/conceder/   firma bajo concesión, con motivo
 ```
+
+Los `expedientes` no guardan nada: arman lo que hay que mirar para decidir.
+El avance documental y el veredicto de calidad se calculan en cada llamada
+([§2.2](prototipo/MODELO_DATOS.md) y [§2.6](prototipo/MODELO_DATOS.md)), así
+que no hay nada que sincronizar. Firmar es lo único que cambia el estado del
+mundo, y responde **409 con los motivos** si la regla no se cumple.
 
 El token viaja en la cabecera `Authorization: Token <valor>`. En el frontend
 lo adjunta un interceptor de axios ([services/api.ts](frontend/src/services/api.ts)),
@@ -112,7 +124,8 @@ que además cierra la sesión y manda al login si el backend responde 401.
 
 Los permisos se declaran **cerrados por defecto**: un endpoint nuevo que
 olvide declararlos queda protegido, no abierto. Hay una prueba que lo vigila
-para las rutas existentes.
+descubriendo las rutas del enrutador, de modo que cubre también las que se
+agreguen después.
 
 ### Roles
 
@@ -123,10 +136,15 @@ es editarlos.
 
 | | leer | escribir |
 |---|---|---|
-| Maestros (productos, especificaciones, documentos) | todos | `admin` |
+| Maestros (productos, especificaciones) | todos | `admin` |
 | Producción (lotes, análisis) | todos | `produccion`, `admin` |
 | Recepción y silos | todos | `recepcion`, `admin` |
-| Liberación de producto *(sin API todavía)* | todos | `calidad`, `admin` |
+| Liberación y documentos del checklist | todos | `calidad`, `admin` |
+
+El catálogo de documentos es un maestro, pero lo escribe **Calidad**. El módulo
+promete que Calidad cambia un campo y el formulario cambia sin desplegar
+([§2.6](prototipo/MODELO_DATOS.md)); si para eso hubiera que pedírselo a un
+administrador, la promesa quedaría vacía.
 
 `lectura` y los usuarios sin perfil no escriben en ninguna parte. Un
 superusuario de Django es `admin` aunque no tenga perfil, para que quien
@@ -185,7 +203,7 @@ Para que un módulo aparezca en el menú, se le asigna su ruta en
 | Panel general | Funcional, conectado a la API |
 | Producción | Listado, filtros, alta y borrado. Falta editar |
 | Recepción y silos | Registro, controles del camión, descarga y ocupación |
-| Liberación (Calidad) | Modelos y reglas listos y probados. Faltan la API y la pantalla |
+| Liberación (Calidad) | Checklist con formularios dinámicos, cotejo contra el laboratorio, firma y concesión |
 | Despachos | Pendiente |
 | Maestros / Administración | Pendiente |
 | Planificador | Pendiente |

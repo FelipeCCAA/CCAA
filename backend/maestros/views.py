@@ -2,10 +2,18 @@ from rest_framework import viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from usuarios.permisos import EscribeAdministracion
+from usuarios.permisos import EscribeAdministracion, EscribeCalidad
 
-from .models import Especificacion, Mandante, Producto, Silo, Vehiculo
+from .models import (
+    DocumentoLiberacion,
+    Especificacion,
+    Mandante,
+    Producto,
+    Silo,
+    Vehiculo,
+)
 from .serializers import (
+    DocumentoLiberacionSerializer,
     EspecificacionSerializer,
     MandanteSerializer,
     ParametroSerializer,
@@ -65,6 +73,42 @@ class VehiculoViewSet(viewsets.ModelViewSet):
     queryset = Vehiculo.objects.all()
     serializer_class = VehiculoSerializer
     permission_classes = [EscribeAdministracion]
+
+
+class DocumentoLiberacionViewSet(viewsets.ModelViewSet):
+    """
+    El catálogo del checklist de liberación.
+
+    Lo escribe **Calidad**, no Administración, aunque sea un maestro. El
+    módulo promete que Calidad cambia un campo y el formulario cambia sin
+    desplegar (MODELO_DATOS.md §2.6); si para eso hubiera que pedírselo a un
+    administrador, la promesa quedaría vacía y los formularios volverían a
+    envejecer en papel, que es el problema que se vino a resolver.
+    """
+
+    queryset = DocumentoLiberacion.objects.all()
+    serializer_class = DocumentoLiberacionSerializer
+    permission_classes = [EscribeCalidad]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        parametros = self.request.query_params
+
+        # `familia` filtra por el contenido de una lista JSON. Es una búsqueda
+        # de subcadena, así que se comprueba en Python: son pocos documentos y
+        # un `icontains` daría falsos positivos entre familias con nombres
+        # parecidos.
+        familia = parametros.get("familia")
+        if familia:
+            consulta = consulta.filter(
+                id__in=[d.id for d in consulta if familia in (d.aplica_a or [])]
+            )
+
+        activo = parametros.get("activo")
+        if activo is not None:
+            consulta = consulta.filter(activo=activo.lower() not in ("false", "0"))
+
+        return consulta
 
 
 @api_view(["GET"])
