@@ -48,6 +48,7 @@ Documentación clave:
 | [prototipo/PLANIFICADOR.md](prototipo/PLANIFICADOR.md) | Programa semanal de planta y balance de leche |
 | [prototipo/CONTEXTO_ARCHIVOS_FUENTE.md](prototipo/CONTEXTO_ARCHIVOS_FUENTE.md) | Los Excel de planta de donde salen los datos |
 | [prototipo/README.md](prototipo/README.md) | Los módulos explicados uno a uno |
+| [DECISIONES.md](DECISIONES.md) | Decisiones de plataforma: qué se decidió, por qué y qué se pierde |
 
 Para verificar que las reglas siguen intactas: abrir `prototipo/pruebas.html` en el
 navegador. Ejecuta las 110 pruebas y muestra el resultado en pantalla.
@@ -60,15 +61,26 @@ Se necesitan **dos terminales**, una para cada parte.
 
 ### Backend
 
+Necesita un **PostgreSQL**. El porqué está en [DECISIONES.md](DECISIONES.md) §001;
+el corto es que en SQLite el bloqueo de filas no existe y la firma de una
+liberación no se puede proteger de una modificación concurrente.
+
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env          # solo la primera vez, y ajustar la contraseña
 python manage.py migrate
 python manage.py runserver
 ```
 
 Queda en `http://127.0.0.1:8000/`. La raíz responde 404: solo existen `/admin/` y
-`/api/`. La base de datos (`db.sqlite3`) es local de cada equipo y no se versiona.
+`/api/`. El archivo `.env` es local de cada equipo y no se versiona.
+
+Para trabajar sin un PostgreSQL levantado se puede poner `DB_ENGINE=sqlite` en
+el `.env`. **No es equivalente**: al arrancar avisa de lo que se pierde, y sin
+esa variable puesta a mano se niega a arrancar con `DEBUG=False`. Sirve para
+programar, no para operar.
 
 Si `Activate.ps1` falla por permisos, ejecutar una vez:
 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`

@@ -10,10 +10,17 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# La configuracion que cambia entre equipos vive en backend/.env, que no se
+# versiona. backend/.env.example lista las variables con valores de ejemplo.
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -82,12 +89,37 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# El motor por defecto es PostgreSQL. El motivo esta escrito en DECISIONES.md,
+# pero el corto es: en SQLite solo escribe uno a la vez y `select_for_update()`
+# NO hace nada -Django ni siquiera emite el FOR UPDATE-, asi que la firma de
+# una liberacion no se puede proteger de una modificacion concurrente. Ese
+# bloqueo es lo que impide firmar contra un checklist que dejo de estar
+# completo mientras se decidia.
+#
+# DB_ENGINE=sqlite existe como salida para quien todavia no tiene un Postgres
+# levantado. No es equivalente: el check `calidad.E001` avisa de lo que se
+# pierde. No usar para operar.
+
+DB_ENGINE = os.getenv("DB_ENGINE", "postgres").lower()
+
+if DB_ENGINE == "sqlite":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "ccaa"),
+            "USER": os.getenv("DB_USER", "postgres"),
+            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+        }
+    }
 
 
 # Password validation

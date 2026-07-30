@@ -122,21 +122,43 @@ class LiberacionViewSet(viewsets.ModelViewSet):
 
 # --------------------------------------------------------------- expedientes
 
-def _contexto_del_lote(lote):
+def _contexto_del_lote(lote, bloquear=False):
     """
     Todo lo que el dominio necesita para juzgar un lote.
 
     Se carga de una vez y se pasa entero, en lugar de que el dominio consulte:
     así sigue sin depender de la base de datos y se puede probar sin ella.
+
+    `bloquear` es para el camino de la firma. Toma un bloqueo de fila sobre lo
+    que la decisión va a leer —los formularios y los análisis— de modo que
+    nadie pueda desmarcar un documento o corregir un análisis entre la
+    comprobación y el guardado. Sin él, `transaction.atomic()` garantiza que la
+    escritura sea todo-o-nada, pero NO que lo leído siga siendo cierto al
+    escribir: la liberación quedaría firmada contra un checklist que ya cambió.
+
+    Solo se usa dentro de una transacción; fuera, Django lo rechaza. Y en un
+    motor que no sepa bloquear filas no hace nada en absoluto, en silencio: de
+    eso avisa el check `calidad.E001`.
     """
+    registros = RegistroCalidad.objects.filter(lote=lote)
+    analisis = Analisis.objects.filter(lote=lote)
+
+    if bloquear:
+        # Sin `select_related` a propósito: con el JOIN, el FOR UPDATE
+        # bloquearía también las filas del catálogo de documentos, que es un
+        # maestro compartido por todos los lotes. El dominio no necesita el
+        # documento del registro —usa `documento_id`— así que no hace falta.
+        registros = registros.select_for_update()
+        analisis = analisis.select_for_update()
+    else:
+        registros = registros.select_related("documento")
+
     return {
         "lote": lote,
         "producto": lote.producto,
         "documentos": list(DocumentoLiberacion.objects.all()),
-        "registros": list(
-            RegistroCalidad.objects.filter(lote=lote).select_related("documento")
-        ),
-        "analisis": list(Analisis.objects.filter(lote=lote)),
+        "registros": list(registros),
+        "analisis": list(analisis),
         "especificaciones": list(Especificacion.objects.filter(producto=lote.producto)),
     }
 
@@ -291,15 +313,18 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
     """
     Estampa la firma después de comprobar la regla.
 
-    La comprobación y el guardado van juntos en una transacción: entre una y
-    otro, otro usuario podría desmarcar un documento, y quedaría firmada una
-    liberación cuyo checklist ya no está completo.
+    La comprobación y el guardado van en una transacción **y con bloqueo de
+    fila** sobre lo que se leyó. Las dos cosas hacen falta y no son la misma:
+    la transacción hace que la escritura sea todo-o-nada; el bloqueo hace que
+    lo leído siga siendo cierto al escribir. Sin lo segundo, otro usuario puede
+    desmarcar un documento entre la comprobación y el guardado, y la
+    liberación queda firmada contra un checklist que ya no está completo.
     """
     lote = get_object_or_404(Lote.objects.select_related("producto"), pk=lote_id)
     rol = rol_de(request.user)
 
     with transaction.atomic():
-        contexto = _contexto_del_lote(lote)
+        contexto = _contexto_del_lote(lote, bloquear=True)
 
         if concesion:
             validacion = dominio.validar_concesion(
