@@ -2,13 +2,20 @@
 setlocal
 
 set "BACKEND_DIR=%~dp0"
-set "PYTHON_CCAA=%BACKEND_DIR%..\.venv\Scripts\python.exe"
+
+rem El entorno virtual vive en distinto sitio segun quien clono el proyecto:
+rem el README lo documenta en backend\.venv, pero tambien es habitual tenerlo
+rem en la raiz. Se prueban los dos en vez de exigir uno: el script existe para
+rem levantar el servidor, no para imponer una distribucion de carpetas.
+set "PYTHON_CCAA=%BACKEND_DIR%.venv\Scripts\python.exe"
+if not exist "%PYTHON_CCAA%" set "PYTHON_CCAA=%BACKEND_DIR%..\.venv\Scripts\python.exe"
 
 if not exist "%PYTHON_CCAA%" (
-    echo [ERROR] No se encontro el entorno virtual de CCAA:
-    echo %PYTHON_CCAA%
+    echo [ERROR] No se encontro el entorno virtual de CCAA. Se busco en:
+    echo   %BACKEND_DIR%.venv\Scripts\python.exe
+    echo   %BACKEND_DIR%..\.venv\Scripts\python.exe
     echo.
-    echo Crea el entorno virtual en la raiz del proyecto e instala requirements.txt.
+    echo Crea el entorno virtual e instala backend\requirements.txt.
     exit /b 1
 )
 

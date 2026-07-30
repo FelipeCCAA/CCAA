@@ -59,28 +59,82 @@ navegador. Ejecuta las 110 pruebas y muestra el resultado en pantalla.
 
 Se necesitan **dos terminales**, una para cada parte.
 
-### Backend
+### PostgreSQL (solo la primera vez)
 
-Necesita un **PostgreSQL**. El porqué está en [DECISIONES.md](DECISIONES.md) §001;
-el corto es que en SQLite el bloqueo de filas no existe y la firma de una
-liberación no se puede proteger de una modificación concurrente.
+El proyecto corre sobre **PostgreSQL**. El porqué está en
+[DECISIONES.md](DECISIONES.md) §001; el corto es que en SQLite el bloqueo de
+filas no existe y la firma de una liberación no se puede proteger de una
+modificación concurrente.
+
+Instalación en Windows, con `winget`. Pide permisos de administrador, así que
+hay que aceptar el aviso de UAC:
+
+```powershell
+winget install --id PostgreSQL.PostgreSQL.17 --exact `
+  --accept-package-agreements --accept-source-agreements --silent `
+  --custom "--mode unattended --unattendedmodeui none --superpassword TU-CLAVE --serverport 5432"
+```
+
+Queda como servicio de Windows (`postgresql-x64-17`) con arranque automático:
+no hay que levantarlo a mano nunca más. Después, crear la base:
+
+```powershell
+$env:PGPASSWORD = "TU-CLAVE"
+& "C:\Program Files\PostgreSQL\17\bin\createdb.exe" -h 127.0.0.1 -U postgres -E UTF8 ccaa
+```
+
+Comprobar que quedó bien:
+
+```powershell
+Get-Service postgresql-x64-17          # debe decir Running
+```
+
+### Backend
 
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env          # solo la primera vez, y ajustar la contraseña
+copy .env.example .env          # solo la primera vez
 python manage.py migrate
 python manage.py runserver
+```
+
+En el `.env` recién copiado hay que dejar, como mínimo, los datos de la base:
+
+```text
+DB_NAME=ccaa
+DB_USER=postgres
+DB_PASSWORD=TU-CLAVE
+DB_HOST=127.0.0.1
+DB_PORT=5432
 ```
 
 Queda en `http://127.0.0.1:8000/`. La raíz responde 404: solo existen `/admin/` y
 `/api/`. El archivo `.env` es local de cada equipo y no se versiona.
 
+**Si ya se venía trabajando con SQLite**, los datos se traen sin perder nada.
+Antes de cambiar el `.env`, exportar; después de `migrate`, cargar:
+
+```powershell
+# con el .env todavía apuntando a SQLite
+$env:PYTHONUTF8 = "1"
+python manage.py dumpdata --natural-foreign --natural-primary `
+  --exclude contenttypes --exclude auth.permission --exclude admin.logentry `
+  --indent 2 -o datos.json
+
+# ...cambiar el .env a PostgreSQL y correr migrate, y entonces:
+python manage.py loaddata datos.json
+```
+
+`PYTHONUTF8=1` no es opcional: sin él Django escribe el volcado en la
+codificación del sistema y las tildes se pierden al cargarlo.
+
 Para trabajar sin un PostgreSQL levantado se puede poner `DB_ENGINE=sqlite` en
-el `.env`. **No es equivalente**: al arrancar avisa de lo que se pierde, y sin
-esa variable puesta a mano se niega a arrancar con `DEBUG=False`. Sirve para
-programar, no para operar.
+el `.env`. **No es equivalente**: al arrancar avisa de lo que se pierde
+(`calidad.W001`), y sin esa variable puesta a mano se niega a arrancar con
+`DEBUG=False`. Sirve para programar, no para operar — y las pruebas de bloqueo
+se saltan, que no es lo mismo que pasar.
 
 Si `Activate.ps1` falla por permisos, ejecutar una vez:
 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`

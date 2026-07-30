@@ -165,7 +165,13 @@ antes de creerles.
 
 ### Verificado contra PostgreSQL real
 
-Comprobado sobre **PostgreSQL 17.6** (binarios temporales, puerto 55432):
+Se comprobó dos veces. La primera, sobre **PostgreSQL 17.6** con binarios
+temporales, cuando todavía no había un servidor instalado. La segunda, ya
+sobre el **PostgreSQL 17.10 instalado como servicio** en el equipo de
+desarrollo, migrando los datos que había en SQLite: 87 registros, tabla por
+tabla, sin pérdidas, y con las contraseñas de los usuarios intactas.
+
+De la primera vez:
 
 - Las 12 migraciones aplican limpias desde cero.
 - `manage.py check` no reporta nada (en SQLite reporta `calidad.W001`).
@@ -177,3 +183,8 @@ Comprobado sobre **PostgreSQL 17.6** (binarios temporales, puerto 55432):
 
 En SQLite (`DB_ENGINE=sqlite`): las mismas 206 pruebas OK, 3 saltadas, y el
 aviso `calidad.W001` en cada arranque.
+
+De la segunda, ya con el servicio instalado: las **257 pruebas OK** sobre
+PostgreSQL, con las tres de bloqueo corriendo de verdad en lugar de saltarse,
+y el aviso `calidad.W001` desaparecido. Los pasos para dejar otro equipo igual
+están en el README.
