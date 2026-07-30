@@ -8,6 +8,7 @@ from .views import (
     expediente,
     expedientes,
     liberar,
+    revisar,
 )
 
 router = DefaultRouter()
@@ -19,5 +20,6 @@ urlpatterns = [
     path("expedientes/<int:lote_id>/", expediente, name="expediente"),
     path("expedientes/<int:lote_id>/liberar/", liberar, name="liberar"),
     path("expedientes/<int:lote_id>/conceder/", conceder, name="conceder"),
+    path("expedientes/<int:lote_id>/revisar/", revisar, name="revisar"),
     path("", include(router.urls)),
 ]

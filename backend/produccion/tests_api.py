@@ -10,6 +10,7 @@ from datetime import date
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -56,6 +57,224 @@ class BaseAPI(TestCase):
         }
         datos.update(extra)
         return Lote.objects.create(**datos)
+
+
+class TransicionesDeEstadoTests(BaseAPI):
+    """
+    `Lote.TRANSICIONES` estaba declarado desde el primer día y no lo comprobaba
+    nadie: por la API se podía saltar de `en_proceso` a `cerrado` sin pasar por
+    `producido`, o devolver a producción un lote anulado.
+
+    Importa porque el estado del lote decide si llega a Calidad, y el histórico
+    se audita: un lote anulado que revive es un registro que dice algo falso
+    sobre lo que pasó en planta.
+    """
+
+    def _patch(self, lote, estado):
+        return self.cliente.patch(
+            f"/api/produccion/lotes/{lote.id}/", {"estado": estado}, format="json"
+        )
+
+    def test_el_camino_normal_se_permite(self):
+        lote = self._lote(estado=Lote.Estado.EN_PROCESO)
+
+        self.assertEqual(self._patch(lote, "producido").status_code, 200)
+
+        lote.refresh_from_db()
+        self.assertEqual(lote.estado, Lote.Estado.PRODUCIDO)
+
+        self.assertEqual(self._patch(lote, "cerrado").status_code, 200)
+
+    def test_no_se_salta_un_estado_intermedio(self):
+        lote = self._lote(estado=Lote.Estado.EN_PROCESO)
+
+        respuesta = self._patch(lote, "cerrado")
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(lote.estado, Lote.Estado.EN_PROCESO)
+
+    def test_un_lote_cerrado_no_vuelve_a_produccion(self):
+        lote = self._lote(estado=Lote.Estado.CERRADO)
+
+        respuesta = self._patch(lote, "en_proceso")
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(lote.estado, Lote.Estado.CERRADO)
+
+    def test_un_lote_anulado_no_revive(self):
+        lote = self._lote(estado=Lote.Estado.ANULADO)
+
+        respuesta = self._patch(lote, "producido")
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(lote.estado, Lote.Estado.ANULADO)
+
+    def test_el_rechazo_dice_a_donde_si_se_puede_ir(self):
+        """Un 400 que solo dice «no» obliga a adivinar el estado correcto."""
+        lote = self._lote(estado=Lote.Estado.EN_PROCESO)
+
+        mensaje = str(self._patch(lote, "cerrado").json())
+
+        self.assertIn("producido", mensaje)
+        self.assertIn("anulado", mensaje)
+
+    def test_al_cambiar_el_estado_devuelve_el_lote_entero(self):
+        """
+        La respuesta de un PATCH sobre un lote trae sus análisis, igual que el
+        detalle. Devolver menos dejaba la ficha de Producción a medias al
+        cerrar un lote: la pantalla se quedaba sin `analisis` y reventaba.
+        """
+        lote = self._lote(estado=Lote.Estado.EN_PROCESO)
+        Analisis.objects.create(
+            lote=lote, fecha=date(2026, 7, 20), valores={"humedad": 3.0, "mg": 27.0}
+        )
+
+        datos = self._patch(lote, "producido").json()
+
+        self.assertIn("analisis", datos)
+        self.assertEqual(len(datos["analisis"]), 1)
+        self.assertEqual(datos["estado"], "producido")
+
+    def test_guardar_sin_cambiar_el_estado_no_molesta(self):
+        """
+        Editar un lote no debe tropezar con la máquina de estados: el
+        formulario reenvía el estado actual junto con lo demás.
+        """
+        lote = self._lote(estado=Lote.Estado.PRODUCIDO)
+
+        respuesta = self.cliente.patch(
+            f"/api/produccion/lotes/{lote.id}/",
+            {"estado": "producido", "bultos": 42},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        lote.refresh_from_db()
+        self.assertEqual(lote.bultos, 42)
+
+
+class EdicionDeLoteTests(BaseAPI):
+    """
+    Editar un lote se permite, con dos guardas: no después de cerrarlo, y no
+    mientras Calidad lo tenga firmado.
+    """
+
+    def _patch(self, lote, **campos):
+        return self.cliente.patch(
+            f"/api/produccion/lotes/{lote.id}/", campos, format="json"
+        )
+
+    def _liberar(self, lote):
+        """Deja el lote con una liberación firmada, como quedaría tras firmar."""
+        from calidad.models import Liberacion
+
+        firmante = User.objects.create_user(
+            username=f"calidad-{lote.id}", password="x", first_name="M.", last_name="Rivas"
+        )
+        PerfilUsuario.objects.create(usuario=firmante, rol=Rol.CALIDAD)
+
+        return Liberacion.objects.create(
+            lote=lote,
+            estado=Liberacion.Estado.LIBERADO,
+            autorizada_por=firmante,
+            autorizada_en=timezone.now(),
+        )
+
+    def test_se_editan_los_datos_de_un_lote_en_proceso(self):
+        lote = self._lote(estado=Lote.Estado.EN_PROCESO)
+
+        respuesta = self._patch(lote, kg_producidos="11500.00", bultos=230, turno="B")
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(str(lote.kg_producidos), "11500.00")
+        self.assertEqual(lote.bultos, 230)
+        self.assertEqual(lote.turno, "B")
+
+    def test_tambien_se_edita_un_lote_producido(self):
+        """Producido no es final: todavía se corrige lo que se tecleó mal."""
+        lote = self._lote(estado=Lote.Estado.PRODUCIDO)
+
+        self.assertEqual(self._patch(lote, bultos=99).status_code, 200)
+
+    def test_un_lote_cerrado_no_se_edita(self):
+        lote = self._lote(estado=Lote.Estado.CERRADO)
+
+        respuesta = self._patch(lote, kg_producidos="1.00")
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("histórico", str(respuesta.json()))
+        self.assertNotEqual(str(lote.kg_producidos), "1.00")
+
+    def test_un_lote_anulado_tampoco(self):
+        lote = self._lote(estado=Lote.Estado.ANULADO)
+
+        self.assertEqual(self._patch(lote, bultos=5).status_code, 400)
+
+    def test_no_se_cambian_los_kilos_de_un_lote_liberado(self):
+        """
+        Es la guarda que importa: la firma de Calidad respalda unos kilos
+        concretos, y Despachos descuenta de ahí.
+        """
+        lote = self._lote(estado=Lote.Estado.PRODUCIDO)
+        self._liberar(lote)
+
+        respuesta = self._patch(lote, kg_producidos="99999.00")
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertNotEqual(str(lote.kg_producidos), "99999.00")
+
+    def test_el_rechazo_dice_como_desbloquearlo(self):
+        lote = self._lote(estado=Lote.Estado.PRODUCIDO)
+        self._liberar(lote)
+
+        mensaje = str(self._patch(lote, bultos=7).json())
+
+        self.assertIn("revisar/", mensaje)
+
+    def test_la_observacion_si_se_anota_en_un_lote_liberado(self):
+        """Anotar no cambia lo que se produjo, así que no toca la firma."""
+        lote = self._lote(estado=Lote.Estado.PRODUCIDO)
+        self._liberar(lote)
+
+        respuesta = self._patch(lote, observacion="Revisar el peso con bodega.")
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn("bodega", lote.observacion)
+
+    def test_la_ficha_avisa_de_la_liberacion_antes_de_editar(self):
+        """
+        La pantalla necesita saberlo por adelantado. Si no, ofrece «Editar»,
+        alguien llena el formulario y descubre el rechazo al guardar.
+        """
+        lote = self._lote(estado=Lote.Estado.PRODUCIDO)
+        self._liberar(lote)
+
+        datos = self.cliente.get(f"/api/produccion/lotes/{lote.id}/").json()
+
+        self.assertTrue(datos["liberacion"]["liberado"])
+        self.assertEqual(datos["liberacion"]["autorizada_por_nombre"], "M. Rivas")
+
+    def test_un_lote_sin_expediente_lo_dice_con_null(self):
+        lote = self._lote(estado=Lote.Estado.PRODUCIDO)
+
+        datos = self.cliente.get(f"/api/produccion/lotes/{lote.id}/").json()
+
+        self.assertIsNone(datos["liberacion"])
+
+    def test_guardar_los_mismos_valores_no_molesta(self):
+        """Reenviar el formulario sin tocar nada no debe dar error."""
+        lote = self._lote(estado=Lote.Estado.CERRADO)
+
+        respuesta = self._patch(lote, kg_producidos=str(lote.kg_producidos))
+
+        self.assertEqual(respuesta.status_code, 200)
 
 
 class LotesAPITests(BaseAPI):

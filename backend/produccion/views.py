@@ -25,7 +25,12 @@ class LoteViewSet(viewsets.ModelViewSet):
     permission_classes = [EscribeProduccion]
 
     def get_serializer_class(self):
-        if self.action == "retrieve":
+        # Todo lo que opera sobre UN lote devuelve el lote entero, con sus
+        # análisis. Devolver menos en la respuesta de un PATCH obliga a quien
+        # llama a pedir el lote otra vez, y si no lo hace se queda con una
+        # ficha a medias: fue exactamente lo que rompió el panel de Producción
+        # al cerrar un lote.
+        if self.action in ("retrieve", "update", "partial_update"):
             return LoteDetalleSerializer
 
         return super().get_serializer_class()

@@ -342,9 +342,31 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
             )
 
         liberacion, _ = Liberacion.objects.get_or_create(lote=lote)
-        liberacion.estado = (
+
+        destino = (
             Liberacion.Estado.CONCESION if concesion else Liberacion.Estado.LIBERADO
         )
+
+        # Un expediente que nadie ha abierto está en `pendiente`, y desde ahí
+        # no se firma: se pasa antes por revisión, que es lo que significa que
+        # alguien lo está mirando. Firmar directamente saltaría la máquina de
+        # estados que el modelo declara.
+        if liberacion.estado == Liberacion.Estado.PENDIENTE:
+            liberacion.estado = Liberacion.Estado.EN_REVISION
+
+        if not liberacion.puede_pasar_a(destino):
+            return Response(
+                {
+                    "detail": (
+                        f"Un expediente {liberacion.get_estado_display().lower()} "
+                        f"no puede pasar a {destino.label.lower()}."
+                    ),
+                    "bloqueos": [],
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        liberacion.estado = destino
         liberacion.concesion = concesion
         liberacion.motivo_concesion = motivo
         liberacion.observacion = observacion
@@ -365,6 +387,50 @@ def liberar(request, lote_id):
     return _firmar(
         request, lote_id, concesion=False, observacion=datos.validated_data["observacion"]
     )
+
+
+@api_view(["POST"])
+@permission_classes([EscribeCalidad])
+def revisar(request, lote_id):
+    """
+    Devuelve el expediente a revisión.
+
+    Es la transición legítima que faltaba y que antes se hacía escribiendo
+    `estado` a mano. Sirve para dos cosas: abrir un expediente pendiente, y
+    retirar una liberación ya firmada cuando algo deja de sostenerla —al
+    desmarcar un documento, por ejemplo, el checklist ya no está completo y la
+    autorización tampoco.
+
+    La firma anterior se borra: dejarla puesta sobre un expediente que volvió
+    a revisión diría que alguien autorizó algo que ya no está autorizado.
+    """
+    lote = get_object_or_404(Lote, pk=lote_id)
+
+    with transaction.atomic():
+        liberacion, _ = Liberacion.objects.get_or_create(lote=lote)
+
+        if liberacion.estado == Liberacion.Estado.EN_REVISION:
+            return Response(LiberacionSerializer(liberacion).data)
+
+        if not liberacion.puede_pasar_a(Liberacion.Estado.EN_REVISION):
+            return Response(
+                {
+                    "detail": (
+                        f"Un expediente {liberacion.get_estado_display().lower()} "
+                        "no puede volver a revisión."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        liberacion.estado = Liberacion.Estado.EN_REVISION
+        liberacion.concesion = False
+        liberacion.motivo_concesion = ""
+        liberacion.autorizada_por = None
+        liberacion.autorizada_en = None
+        liberacion.save()
+
+    return Response(LiberacionSerializer(liberacion).data)
 
 
 @api_view(["POST"])

@@ -308,6 +308,142 @@ class ConcesionAPITests(BaseAPI):
         self.assertEqual(respuesta.status_code, 409)
 
 
+class NoHayPuertaDeAtrasTests(BaseAPI):
+    """
+    La regla que justifica el sistema no se puede saltar por otra ruta.
+
+    Existen porque se pudo: un `PATCH` a `/liberaciones/<id>/` con
+    `estado: liberado` dejaba el lote despachable sin checklist, sin
+    autorizador y sin fecha. El ViewSet lo advertía en su docstring en vez de
+    impedirlo.
+    """
+
+    def _expediente_pendiente(self):
+        """Un expediente sin checklist, que la vía correcta rechaza."""
+        return Liberacion.objects.create(lote=self.lote)
+
+    def test_no_se_firma_escribiendo_el_estado(self):
+        liberacion = self._expediente_pendiente()
+
+        respuesta = self.cliente.patch(
+            f"/api/calidad/liberaciones/{liberacion.id}/",
+            {"estado": "liberado"},
+            format="json",
+        )
+
+        liberacion.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("estado", respuesta.json())
+        self.assertEqual(liberacion.estado, Liberacion.Estado.PENDIENTE)
+        self.assertFalse(liberacion.liberado)
+
+    def test_no_se_concede_escribiendo_el_estado(self):
+        """Lo más grave: concesión sin motivo y sin la marca permanente."""
+        liberacion = self._expediente_pendiente()
+
+        respuesta = self.cliente.patch(
+            f"/api/calidad/liberaciones/{liberacion.id}/",
+            {"estado": "liberado_concesion", "motivo_concesion": ""},
+            format="json",
+        )
+
+        liberacion.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertFalse(liberacion.liberado)
+        self.assertFalse(liberacion.concesion)
+
+    def test_no_se_falsifica_el_autorizador(self):
+        liberacion = self._expediente_pendiente()
+        otro = self._usuario("otro", Rol.CALIDAD)
+
+        respuesta = self.cliente.patch(
+            f"/api/calidad/liberaciones/{liberacion.id}/",
+            {"autorizada_por": otro.id, "autorizada_en": "2020-01-01T00:00:00Z"},
+            format="json",
+        )
+
+        liberacion.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIsNone(liberacion.autorizada_por)
+
+    def test_el_rechazo_dice_por_donde_se_hace(self):
+        """
+        Un 400 que no dice la alternativa deja a quien integra buscando a
+        ciegas, y el atajo se vuelve a intentar por otro lado.
+        """
+        liberacion = self._expediente_pendiente()
+
+        respuesta = self.cliente.patch(
+            f"/api/calidad/liberaciones/{liberacion.id}/",
+            {"estado": "liberado"},
+            format="json",
+        )
+
+        self.assertIn("liberar/", str(respuesta.json()))
+
+    def test_anotar_la_observacion_si_se_permite(self):
+        """Cerrar la puerta no es tapiar la ventana: el expediente se anota."""
+        liberacion = self._expediente_pendiente()
+
+        respuesta = self.cliente.patch(
+            f"/api/calidad/liberaciones/{liberacion.id}/",
+            {"observacion": "Pendiente del informe microbiológico."},
+            format="json",
+        )
+
+        liberacion.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn("microbiológico", liberacion.observacion)
+
+
+class VolverARevisionTests(BaseAPI):
+    """
+    Retirar una liberación firmada es una transición legítima, y antes solo se
+    podía haciendo justamente lo que ahora está prohibido.
+    """
+
+    def test_una_liberacion_firmada_puede_volver_a_revision(self):
+        self._analisis()
+        self._checklist_completo()
+        self.cliente.post(f"/api/calidad/expedientes/{self.lote.id}/liberar/")
+
+        respuesta = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/revisar/"
+        )
+
+        liberacion = Liberacion.objects.get(lote=self.lote)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(liberacion.estado, Liberacion.Estado.EN_REVISION)
+        self.assertFalse(liberacion.liberado)
+
+    def test_al_volver_a_revision_se_retira_la_firma(self):
+        """Dejarla puesta diría que alguien autorizó algo que ya no lo está."""
+        self._analisis()
+        self._checklist_completo()
+        self.cliente.post(f"/api/calidad/expedientes/{self.lote.id}/liberar/")
+
+        self.cliente.post(f"/api/calidad/expedientes/{self.lote.id}/revisar/")
+
+        liberacion = Liberacion.objects.get(lote=self.lote)
+
+        self.assertIsNone(liberacion.autorizada_por)
+        self.assertIsNone(liberacion.autorizada_en)
+        self.assertFalse(liberacion.concesion)
+        self.assertEqual(liberacion.motivo_concesion, "")
+
+    def test_produccion_no_retira_liberaciones(self):
+        cliente = self._cliente(self._usuario("prod9", Rol.PRODUCCION))
+
+        respuesta = cliente.post(f"/api/calidad/expedientes/{self.lote.id}/revisar/")
+
+        self.assertEqual(respuesta.status_code, 403)
+
+
 class RegistroAPITests(BaseAPI):
     def test_no_se_da_por_completado_un_formulario_al_que_le_faltan_campos(self):
         respuesta = self.cliente.post(

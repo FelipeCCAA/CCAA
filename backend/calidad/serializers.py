@@ -100,6 +100,31 @@ class _RegistroEnMemoria:
 
 
 class LiberacionSerializer(serializers.ModelSerializer):
+    """
+    El expediente de autorización.
+
+    Todo lo que constituye la firma es de solo lectura: el estado, quién
+    autorizó, cuándo, la marca de concesión y su motivo. Se escriben por
+    `expedientes/<lote>/liberar/`, `/conceder/` y `/revisar/`, que comprueban
+    la regla antes de tocar nada.
+
+    No basta con dejarlos fuera de `fields`. Un campo de solo lectura que
+    llega en el cuerpo, DRF lo descarta en silencio y responde 200: quien lo
+    intentó se queda creyendo que funcionó. Por eso `validate` lo rechaza con
+    un mensaje que dice por dónde se hace.
+    """
+
+    # Campos que definen la firma. Escribirlos por esta vía saltaría la regla
+    # que justifica el sistema: se probó, y dejaba un lote despachable sin
+    # checklist, sin autorizador y sin fecha.
+    DE_LA_FIRMA = (
+        "estado",
+        "concesion",
+        "motivo_concesion",
+        "autorizada_por",
+        "autorizada_en",
+    )
+
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     producto_nombre = serializers.CharField(
         source="lote.producto.nombre", read_only=True
@@ -128,7 +153,31 @@ class LiberacionSerializer(serializers.ModelSerializer):
             "liberado",
         ]
         # La firma la estampa el servidor al liberar, nunca el cliente.
-        read_only_fields = ["autorizada_por", "autorizada_en", "concesion"]
+        read_only_fields = [
+            "estado",
+            "autorizada_por",
+            "autorizada_en",
+            "concesion",
+            "motivo_concesion",
+        ]
+
+    def validate(self, datos):
+        intentados = sorted(set(self.DE_LA_FIRMA) & set(self.initial_data or {}))
+
+        if intentados:
+            raise serializers.ValidationError(
+                {
+                    campo: (
+                        "No se escribe por aquí. La liberación se firma en "
+                        "expedientes/<lote>/liberar/ o /conceder/, que "
+                        "comprueban el checklist y la calidad antes de "
+                        "estampar la firma."
+                    )
+                    for campo in intentados
+                }
+            )
+
+        return datos
 
 
 # ------------------------------------------------------- salidas derivadas
