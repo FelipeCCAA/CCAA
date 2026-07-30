@@ -40,3 +40,37 @@ export async function obtenerUsuarioActual(): Promise<Usuario> {
 
   return data;
 }
+
+
+/** Solicita el correo de recuperación sin revelar si la cuenta existe. */
+export async function solicitarRecuperacion(
+  email: string,
+): Promise<{ mensaje: string }> {
+  const { data } = await api.post<{ mensaje: string }>(
+    "usuarios/recuperar-contrasena/",
+    { email },
+  );
+
+  return data;
+}
+
+
+export interface ConfirmacionRecuperacion {
+  uid: string;
+  token: string;
+  nueva_contrasena: string;
+  confirmar_contrasena: string;
+}
+
+
+/** Confirma el token del enlace y establece la nueva contraseña. */
+export async function restablecerContrasena(
+  datos: ConfirmacionRecuperacion,
+): Promise<{ mensaje: string }> {
+  const { data } = await api.post<{ mensaje: string }>(
+    "usuarios/restablecer-contrasena/",
+    datos,
+  );
+
+  return data;
+}

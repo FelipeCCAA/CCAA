@@ -6,6 +6,8 @@ import AuthLayout from "../layouts/authlayout";
 import MainLayout from "../layouts/mainlayout";
 
 import Login from "../pages/Login/Login";
+import RecuperarContrasena from "../pages/RecuperarContrasena/RecuperarContrasena";
+import RestablecerContrasena from "../pages/RecuperarContrasena/RestablecerContrasena";
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Produccion from "../pages/Produccion/Produccion";
 
@@ -42,6 +44,16 @@ function RoutesApp(){
                 <Route
                     path="/login"
                     element={<Login />}
+                />
+
+                <Route
+                    path="/recuperar-contrasena"
+                    element={<RecuperarContrasena />}
+                />
+
+                <Route
+                    path="/restablecer-contrasena"
+                    element={<RestablecerContrasena />}
                 />
 
             </Route>

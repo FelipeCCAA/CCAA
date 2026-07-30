@@ -10,22 +10,46 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+def env_bool(nombre, predeterminado=False):
+    """Lee una variable booleana con valores habituales de despliegue."""
+    valor = os.environ.get(nombre)
+    if valor is None:
+        return predeterminado
+    return valor.lower() in ("1", "true", "yes", "on")
+
+
+def env_lista(nombre, predeterminado=""):
+    """Convierte una lista separada por comas y elimina entradas vacías."""
+    return [
+        elemento.strip()
+        for elemento in os.environ.get(nombre, predeterminado).split(",")
+        if elemento.strip()
+    ]
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-w^a-=_$-k*9_x6j8+t+8x40i9ua$h1@knw#2sr#&%u5k-w=z3#'
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-w^a-=_$-k*9_x6j8+t+8x40i9ua$h1@knw#2sr#&%u5k-w=z3#",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env_bool("DJANGO_DEBUG", True)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env_lista("DJANGO_ALLOWED_HOSTS")
 
 
 # Application definition
@@ -49,12 +73,12 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    "corsheaders.middleware.CorsMiddleware",
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -124,11 +148,55 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-CORS_ALLOWED_ORIGINS = [
 
+# Recuperación de contraseña
+#
+# El backend genera y valida el token; el frontend solo presenta el formulario
+# al que apunta este enlace. En producción estas opciones se configuran desde
+# variables de entorno.
+PASSWORD_RESET_FRONTEND_URL = os.environ.get(
+    "PASSWORD_RESET_FRONTEND_URL",
+    "http://localhost:5173/restablecer-contrasena",
+)
+PASSWORD_RESET_TIMEOUT = int(os.environ.get("PASSWORD_RESET_TIMEOUT", "3600"))
+
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL",
+    "no-responder@camposaustrales.cl",
+)
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
+    "usuarios.email_backends.MicrosoftGraphEmailBackend",
+)
+MICROSOFT_GRAPH_TENANT_ID = os.environ.get("MICROSOFT_GRAPH_TENANT_ID", "")
+MICROSOFT_GRAPH_CLIENT_ID = os.environ.get("MICROSOFT_GRAPH_CLIENT_ID", "")
+MICROSOFT_GRAPH_CLIENT_SECRET = os.environ.get(
+    "MICROSOFT_GRAPH_CLIENT_SECRET",
+    "",
+)
+MICROSOFT_GRAPH_SENDER = os.environ.get("MICROSOFT_GRAPH_SENDER", "")
+MICROSOFT_GRAPH_TIMEOUT = int(os.environ.get("MICROSOFT_GRAPH_TIMEOUT", "15"))
+MICROSOFT_GRAPH_SAVE_TO_SENT_ITEMS = (
+    os.environ.get("MICROSOFT_GRAPH_SAVE_TO_SENT_ITEMS", "false").lower()
+    in ("1", "true", "yes")
+)
+
+CORS_ALLOWED_ORIGINS = env_lista(
+    "CORS_ALLOWED_ORIGINS",
     "http://localhost:5173",
+)
+CSRF_TRUSTED_ORIGINS = env_lista("CSRF_TRUSTED_ORIGINS")
 
-]
+# Endurecimiento activado automáticamente al usar DJANGO_DEBUG=false.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", False)
+X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True
 
 REST_FRAMEWORK = {
     # Los listados van paginados: el historico de produccion son ~954 lotes y
@@ -137,8 +205,8 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 50,
 
     # Toda la API exige identificarse. Las excepciones se declaran una por una
-    # en su vista (hoy solo el login), nunca al reves: si algun endpoint nuevo
-    # se olvida de declarar permisos, queda cerrado en vez de abierto.
+    # en su vista (login y recuperación de contraseña), nunca al revés: si un
+    # endpoint nuevo olvida declarar permisos, queda cerrado en vez de abierto.
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         # Sesion tambien, para poder navegar la API desde el navegador
@@ -148,4 +216,22 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_RATES": {
+        "password_reset_request": "5/hour",
+        "password_reset_confirm": "10/hour",
+    },
 }
+
+if os.environ.get("DB_ENGINE") == "postgresql":
+    DATABASES["default"] = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ["DB_NAME"],
+        "USER": os.environ["DB_USER"],
+        "PASSWORD": os.environ["DB_PASSWORD"],
+        "HOST": os.environ.get("DB_HOST", "localhost"),
+        "PORT": os.environ.get("DB_PORT", "5432"),
+        "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
+        "OPTIONS": {
+            "sslmode": os.environ.get("DB_SSLMODE", "prefer"),
+        },
+    }

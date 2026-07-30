@@ -132,7 +132,8 @@ class ApiCerradaTests(TestCase):
     La API completa exige identificarse.
 
     Si alguien agrega un endpoint y olvida declarar permisos, queda cerrado
-    por defecto. Esta prueba lo vigila para las rutas que ya existen.
+    por defecto. Las únicas excepciones son login y recuperación de
+    contraseña, que declaran ``AllowAny`` explícitamente.
     """
 
     RUTAS = [
