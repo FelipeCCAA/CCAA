@@ -1,9 +1,10 @@
 """
-Maestros del proceso productivo: mandantes, productos y especificaciones.
+Maestros del proceso productivo: mandantes, productos, especificaciones y el
+catálogo de documentos de liberación.
 
-Traducción de las entidades `mandante`, `producto` y `especificacion` de
-`prototipo/js/modelo/esquema.js`. Las decisiones de modelado y su justificación
-están en `prototipo/MODELO_DATOS.md`.
+Traducción de las entidades `mandante`, `producto`, `especificacion` y
+`documentoLiberacion` de `prototipo/js/modelo/esquema.js`. Las decisiones de
+modelado y su justificación están en `prototipo/MODELO_DATOS.md`.
 """
 
 from django.core.exceptions import ValidationError
@@ -241,4 +242,221 @@ class Especificacion(models.Model):
         ):
             raise ValidationError(
                 {"vigente_hasta": "No puede ser anterior a la fecha de inicio de vigencia."}
+            )
+
+
+class DocumentoLiberacion(models.Model):
+    """
+    Un documento del checklist de liberación y, en `plantilla`, los campos de
+    su formulario.
+
+    La decisión que gobierna este modelo (MODELO_DATOS.md §2.6): los
+    formularios son DATOS, no código. La interfaz dibuja la plantilla, así que
+    Calidad cambia un campo desde Administración y el formulario cambia, sin
+    tocar código ni volver a desplegar. No hay diecinueve formularios escritos
+    a mano esperando a que alguien los mantenga.
+
+    Dos atributos de un campo hacen el trabajo que el papel no puede:
+
+    - `origen` ("lote.codigo_lote") lo rellena con lo que el sistema ya sabe.
+      Nadie vuelve a teclear el lote ni la fecha, y por tanto nadie los teclea
+      mal.
+    - `parametro` ("mg") lo ata a un fisicoquímico, y al escribirlo se coteja
+      contra el análisis del lote y la especificación vigente. Un formulario
+      que no cuadra con el laboratorio es exactamente lo que una auditoría
+      busca y lo que en papel no aparece nunca.
+
+    Qué documentos aplican a qué familia está pendiente de definir con Calidad
+    (MODELO_DATOS.md §8.3). Es una pregunta de datos, no de código: se responde
+    cargando el catálogo, no modificando este archivo.
+    """
+
+    # Tipos que la interfaz sabe dibujar. `id` y `ref` del esquema del
+    # prototipo quedan fuera a propósito: un campo de formulario no es una
+    # identidad ni una llave foránea.
+    TIPOS_CAMPO = {
+        "texto",
+        "entero",
+        "decimal",
+        "fecha",
+        "fechaHora",
+        "hora",
+        "booleano",
+        "enum",
+        "lista",
+        "objeto",
+    }
+
+    codigo = models.CharField(
+        "Código",
+        max_length=80,
+        blank=True,
+        help_text="Ej: CCAA.Calidad.FORM.016.02",
+    )
+    nombre = models.CharField("Nombre", max_length=200)
+    aplica_a = models.JSONField(
+        "Aplica a",
+        default=list,
+        help_text='Familias de producto que lo exigen: ["polvo", "crema"]',
+    )
+    instruccion = models.TextField(
+        "Instrucción",
+        blank=True,
+        help_text="Qué debe verificar quien lo completa",
+    )
+    plantilla = models.JSONField(
+        "Plantilla del formulario",
+        default=list,
+        blank=True,
+        help_text=(
+            '[{"clave": "mg", "etiqueta": "Materia grasa", "tipo": "decimal", '
+            '"req": true, "parametro": "mg"}, ...]. Vacía = solo atestación'
+        ),
+    )
+    fuente = models.CharField(
+        "Fuente",
+        max_length=250,
+        blank=True,
+        help_text="De dónde salió la plantilla. Marque las provisorias",
+    )
+    orden = models.PositiveIntegerField(
+        "Orden", default=0, help_text="Posición en el checklist"
+    )
+    activo = models.BooleanField("Activo", default=True)
+
+    class Meta:
+        verbose_name = "Documento de liberación"
+        verbose_name_plural = "Documentos de liberación"
+        ordering = ["orden", "nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["codigo"],
+                condition=~models.Q(codigo=""),
+                name="documento_liberacion_codigo_unico",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.codigo} · {self.nombre}" if self.codigo else self.nombre
+
+    def clean(self):
+        """
+        Valida `aplica_a` y `plantilla`, que por ser JSON la base no valida.
+
+        Se valida aquí y no al dibujar el formulario porque una plantilla mal
+        escrita no falla: se muestra a medias. Un campo con el `tipo` mal
+        tecleado simplemente no aparece, y quien completa el registro en planta
+        no tiene forma de notar que falta.
+        """
+        self._validar_aplica_a()
+        self._validar_plantilla()
+
+    def _validar_aplica_a(self):
+        if not isinstance(self.aplica_a, list):
+            raise ValidationError({"aplica_a": "Debe ser una lista de familias."})
+
+        if not self.aplica_a:
+            raise ValidationError(
+                {"aplica_a": "Debe indicar al menos una familia; si no, no se exige nunca."}
+            )
+
+        familias = set(Producto.Familia.values)
+        desconocidas = [f for f in self.aplica_a if f not in familias]
+
+        if desconocidas:
+            raise ValidationError(
+                {
+                    "aplica_a": (
+                        f"Familias no reconocidas: {', '.join(map(str, desconocidas))}. "
+                        f"Las válidas son: {', '.join(sorted(familias))}."
+                    )
+                }
+            )
+
+    def _validar_plantilla(self):
+        if not isinstance(self.plantilla, list):
+            raise ValidationError({"plantilla": "Debe ser una lista de campos."})
+
+        claves = []
+
+        for posicion, campo in enumerate(self.plantilla, start=1):
+            if not isinstance(campo, dict):
+                raise ValidationError(
+                    {"plantilla": f"El campo {posicion} debe ser un objeto."}
+                )
+
+            clave = campo.get("clave")
+            if not clave:
+                raise ValidationError(
+                    {"plantilla": f"El campo {posicion} no tiene 'clave'."}
+                )
+            claves.append(clave)
+
+            if not campo.get("etiqueta"):
+                raise ValidationError(
+                    {"plantilla": f"El campo '{clave}' no tiene 'etiqueta' que mostrar."}
+                )
+
+            tipo = campo.get("tipo")
+            if tipo not in self.TIPOS_CAMPO:
+                raise ValidationError(
+                    {
+                        "plantilla": (
+                            f"El campo '{clave}' tiene un tipo no reconocido: {tipo!r}. "
+                            f"Los válidos son: {', '.join(sorted(self.TIPOS_CAMPO))}."
+                        )
+                    }
+                )
+
+            if tipo == "enum" and not campo.get("valores"):
+                raise ValidationError(
+                    {"plantilla": f"El campo '{clave}' es 'enum' y no declara sus 'valores'."}
+                )
+
+            # MODELO_DATOS.md §2.6: un campo objeto sin `campos` declarados cae
+            # en un cuadro de JSON crudo, inservible para quien lo completa en
+            # planta.
+            if tipo == "objeto" and not campo.get("campos"):
+                raise ValidationError(
+                    {
+                        "plantilla": (
+                            f"El campo '{clave}' es 'objeto' y no declara sus 'campos'. "
+                            "Sin ellos la interfaz solo puede mostrar JSON crudo."
+                        )
+                    }
+                )
+
+            parametro = campo.get("parametro")
+            if parametro is not None and parametro not in CLAVES_PARAMETROS:
+                raise ValidationError(
+                    {
+                        "plantilla": (
+                            f"El campo '{clave}' se ata al parámetro '{parametro}', "
+                            "que no existe en el catálogo de fisicoquímicos."
+                        )
+                    }
+                )
+
+            for limite in ("min", "max"):
+                valor = campo.get(limite)
+                if valor is not None and not isinstance(valor, (int, float)):
+                    raise ValidationError(
+                        {"plantilla": f"El '{limite}' del campo '{clave}' debe ser numérico."}
+                    )
+
+            minimo, maximo = campo.get("min"), campo.get("max")
+            if minimo is not None and maximo is not None and minimo > maximo:
+                raise ValidationError(
+                    {"plantilla": f"En el campo '{clave}' el mínimo es mayor que el máximo."}
+                )
+
+        repetidas = {c for c in claves if claves.count(c) > 1}
+        if repetidas:
+            raise ValidationError(
+                {
+                    "plantilla": (
+                        f"Claves repetidas: {', '.join(sorted(repetidas))}. "
+                        "Los valores se guardan por clave, así que una repetida se pisa."
+                    )
+                }
             )

@@ -123,10 +123,10 @@ es editarlos.
 
 | | leer | escribir |
 |---|---|---|
-| Maestros (productos, especificaciones) | todos | `admin` |
+| Maestros (productos, especificaciones, documentos) | todos | `admin` |
 | Producción (lotes, análisis) | todos | `produccion`, `admin` |
-| Recepción y silos *(pendiente)* | todos | `recepcion`, `admin` |
-| Liberación de producto *(pendiente)* | todos | `calidad`, `admin` |
+| Recepción y silos | todos | `recepcion`, `admin` |
+| Liberación de producto *(sin API todavía)* | todos | `calidad`, `admin` |
 
 `lectura` y los usuarios sin perfil no escriben en ninguna parte. Un
 superusuario de Django es `admin` aunque no tenga perfil, para que quien
@@ -185,7 +185,7 @@ Para que un módulo aparezca en el menú, se le asigna su ruta en
 | Panel general | Funcional, conectado a la API |
 | Producción | Listado, filtros, alta y borrado. Falta editar |
 | Recepción y silos | Registro, controles del camión, descarga y ocupación |
-| Liberación (Calidad) | Pendiente |
+| Liberación (Calidad) | Modelos y reglas listos y probados. Faltan la API y la pantalla |
 | Despachos | Pendiente |
 | Maestros / Administración | Pendiente |
 | Planificador | Pendiente |
@@ -204,4 +204,10 @@ Detalle en [prototipo/MODELO_DATOS.md](prototipo/MODELO_DATOS.md) §8.
    natural del lote y el modelo se simplifica.
 5. **Límites de control de recepción** (acidez, pH, temperatura, crioscopía).
 
-Ninguna bloquea las primeras fases, pero la 1 y la 3 bloquean el módulo de Calidad.
+Ninguna bloquea las primeras fases. La 1 y la 3 tampoco bloquean *construir* el módulo
+de Calidad, y por eso ya está construido: los formularios son datos, no código
+([§2.6](prototipo/MODELO_DATOS.md)), y las especificaciones están versionadas ([§2.3](prototipo/MODELO_DATOS.md)).
+Lo que bloquean es **ponerlo a operar**: sin las especificaciones oficiales y sin saber
+qué documentos exige cada familia, el motor funciona pero libera contra rangos
+referenciales y contra un checklist inventado. Se responden cargando datos desde
+`/admin/`, no modificando código.

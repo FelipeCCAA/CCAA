@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import Especificacion, Mandante, Producto, Silo, Vehiculo
+from .models import (
+    DocumentoLiberacion,
+    Especificacion,
+    Mandante,
+    Producto,
+    Silo,
+    Vehiculo,
+)
 
 
 @admin.register(Mandante)
@@ -47,3 +54,25 @@ class EspecificacionAdmin(admin.ModelAdmin):
     list_filter = ["producto__familia", "producto__mandante"]
     search_fields = ["producto__nombre", "fuente"]
     autocomplete_fields = ["producto"]
+
+
+@admin.register(DocumentoLiberacion)
+class DocumentoLiberacionAdmin(admin.ModelAdmin):
+    """
+    Es desde aquí que Calidad arma el checklist. Cambiar la plantilla de un
+    documento cambia su formulario en la aplicación (MODELO_DATOS.md §2.6), sin
+    desplegar nada: por eso esta pantalla es parte del producto y no una
+    herramienta de mantenimiento.
+    """
+
+    list_display = ["orden", "nombre", "codigo", "aplica_a", "campos_en_plantilla", "activo"]
+    list_display_links = ["nombre"]
+    list_filter = ["activo"]
+    search_fields = ["nombre", "codigo", "fuente"]
+    ordering = ["orden", "nombre"]
+
+    @admin.display(description="Campos")
+    def campos_en_plantilla(self, documento):
+        """Una plantilla vacía es válida: el documento es solo una atestación."""
+        total = len(documento.plantilla or [])
+        return total or "solo atestación"

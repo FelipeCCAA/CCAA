@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'maestros',
     'produccion',
     'recepcion',
+    'calidad',
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
