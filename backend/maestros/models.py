@@ -16,7 +16,25 @@ from .catalogos import CLAVES_PARAMETROS
 class Mandante(models.Model):
     """Empresa dueña del producto elaborado. Incluye la marca propia CCAA."""
 
+    class Cliente(models.TextChoices):
+        """Segmento «cliente» del SKU. Las claves son las de `catalogos_sku`."""
+
+        NO_DEFINIDO = "no_definido", "Cliente no definido (producto propio CCAA)"
+        NESTLE = "nestle", "Nestlé"
+        COLUN = "colun", "Colun"
+        SOPROLE = "soprole", "Soprole"
+
     nombre = models.CharField("Nombre", max_length=120, unique=True)
+    codigo_cliente = models.CharField(
+        "Código de cliente (SKU)",
+        max_length=20,
+        choices=Cliente.choices,
+        blank=True,
+        help_text=(
+            "Qué cliente representa este mandante dentro del SKU. Sin esto, "
+            "sus productos no pueden generar SKU."
+        ),
+    )
     activo = models.BooleanField("Activo", default=True)
 
     class Meta:
@@ -52,7 +70,95 @@ class Producto(models.Model):
         KG = "kg", "Kilogramos"
         L = "L", "Litros"
 
-    codigo = models.CharField("Código", max_length=60, blank=True)
+    # ------------------------------------------------ segmentos del SKU
+    #
+    # Las claves son las de `catalogos_sku`, no un juego paralelo:
+    # `tests_sku_modelo` comprueba que no se separen. Si divergieran, el
+    # desplegable de la pantalla ofrecería valores que el generador rechaza.
+
+    class NaturalezaComercial(models.TextChoices):
+        """
+        Para quién se fabrica. **No** es `Producto.naturaleza`, que dice dónde
+        está el producto en la cadena (materia prima / intermedio / terminado).
+        Comparten nombre y no significan lo mismo.
+        """
+
+        SERVICIO_TERCEROS = "servicio_terceros", "Servicio a terceros"
+        PRODUCTO_PROPIO = "producto_propio", "Producto propio"
+
+    class Categoria(models.TextChoices):
+        LECHE_POLVO = "leche_polvo", "Leche en polvo"
+        PRECONDENSADO = "precondensado", "Precondensado"
+        CREMA = "crema", "Crema"
+        MANTEQUILLA = "mantequilla", "Mantequilla"
+        MATERIALES_DIVERSOS = "materiales_diversos", "Materiales diversos"
+        LECHE_FRESCA_EST = "leche_fresca_est", "Leche fresca estandarizada"
+        SUERO = "suero", "Suero"
+        EXTRACTO_MALTA = "extracto_malta", "Extracto de malta"
+        LP_INSTANTANEA = "lp_instantanea", "Leche en polvo instantánea"
+        LP_CON_LECITINA = "lp_con_lecitina", "Leche en polvo con lecitina"
+        LECHE_FLUIDA = "leche_fluida", "Leche fluida"
+
+    class TipoProducto(models.TextChoices):
+        ENTERA = "entera", "Entera"
+        SEMIDESCREMADA = "semidescremada", "Semidescremada"
+        DESCREMADA = "descremada", "Descremada"
+        CON_SAL = "con_sal", "Con sal"
+        SIN_SAL = "sin_sal", "Sin sal"
+        SIN_ESPECIFICAR = "sin_especificar", "Sin especificar"
+        NO_DEFINIDO = "no_definido", "No definido"
+        ESTANDARIZADA = "estandarizada", "Estandarizada"
+
+    class Formato(models.TextChoices):
+        GRANEL = "granel", "Granel"
+        SACO_25KG = "saco_25kg", "Saco 25 kg"
+        CAJA_20KG = "caja_20kg", "Caja 20 kg"
+
+    class Mercado(models.TextChoices):
+        LOCAL = "local", "Local"
+        EXPORTACION = "exportacion", "Exportación"
+
+    codigo = models.CharField(
+        "SKU",
+        max_length=60,
+        blank=True,
+        help_text=(
+            "Derivado de los atributos de abajo; se recalcula al guardar. Un "
+            "producto sin ellos conserva el código que tenga, para poder "
+            "registrar los códigos antiguos de planta."
+        ),
+    )
+    naturaleza_comercial = models.CharField(
+        "Naturaleza comercial (SKU)",
+        max_length=20,
+        choices=NaturalezaComercial.choices,
+        blank=True,
+    )
+    categoria = models.CharField(
+        "Categoría (SKU)", max_length=25, choices=Categoria.choices, blank=True
+    )
+    tipo = models.CharField(
+        "Tipo (SKU)", max_length=20, choices=TipoProducto.choices, blank=True
+    )
+    formato = models.CharField(
+        "Formato (SKU)", max_length=15, choices=Formato.choices, blank=True
+    )
+    mercado = models.CharField(
+        "Mercado (SKU)",
+        max_length=15,
+        choices=Mercado.choices,
+        default=Mercado.LOCAL,
+        blank=True,
+    )
+    variante = models.PositiveSmallIntegerField(
+        "Variante (SKU)",
+        null=True,
+        blank=True,
+        help_text=(
+            "Correlativo de dos dígitos para desempatar dos productos que "
+            "comparten los seis segmentos. Déjalo vacío salvo que haga falta."
+        ),
+    )
     nombre = models.CharField("Nombre", max_length=180)
     familia = models.CharField("Familia", max_length=20, choices=Familia.choices)
     naturaleza = models.CharField(
@@ -90,6 +196,74 @@ class Producto(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    # ----------------------------------------------------------------- SKU
+
+    #: Los cuatro que el operador elige. `mercado` trae valor por defecto y
+    #: el cliente sale del mandante, así que ninguno de los dos entra aquí.
+    ATRIBUTOS_SKU = ("naturaleza_comercial", "categoria", "tipo", "formato")
+
+    def atributos_sku_completos(self) -> bool:
+        return all(getattr(self, campo) for campo in self.ATRIBUTOS_SKU) and bool(
+            self.mandante_id and self.mandante.codigo_cliente
+        )
+
+    def sku_derivado(self) -> str | None:
+        """
+        El SKU que le corresponde según sus atributos, o `None` si faltan.
+
+        No levanta cuando falta un atributo —eso es un producto a medio
+        cargar, no un error— pero sí deja pasar el `SkuInvalido` de una
+        combinación imposible: un producto propio con cliente describe algo
+        que no existe, y guardarlo callando dejaría el maestro mintiendo.
+        """
+        from .dominio import generar_sku
+
+        if not self.atributos_sku_completos():
+            return None
+
+        return generar_sku(
+            self.naturaleza_comercial,
+            self.mandante.codigo_cliente,
+            self.categoria,
+            self.tipo,
+            self.formato,
+            self.mercado or self.Mercado.LOCAL,
+            variante=self.variante,
+        )
+
+    def clean(self):
+        """
+        Traduce el rechazo del generador a un error de formulario.
+
+        Sin esto, una combinación imposible reventaría al guardar con una
+        traza de 500 en vez de decir en pantalla qué está mal.
+        """
+        from .dominio import SkuInvalido
+
+        super().clean()
+
+        try:
+            self.sku_derivado()
+        except SkuInvalido as e:
+            raise ValidationError({"naturaleza_comercial": str(e)}) from e
+
+    def save(self, *args, **kwargs):
+        """
+        El SKU se deriva de los atributos: son la fuente de verdad.
+
+        Un producto sin los atributos cargados conserva el código que tenga
+        —el histórico está lleno de códigos escritos a mano y hay que poder
+        registrarlos—, pero en cuanto se completan, el generador manda. Es lo
+        que evita que el maestro y los atributos se contradigan, que es
+        justamente el error que trae el archivo de origen.
+        """
+        derivado = self.sku_derivado()
+
+        if derivado is not None:
+            self.codigo = derivado
+
+        super().save(*args, **kwargs)
 
 
 class Silo(models.Model):

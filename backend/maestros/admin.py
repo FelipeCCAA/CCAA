@@ -14,25 +14,85 @@ from .models import (
 
 @admin.register(Mandante)
 class MandanteAdmin(admin.ModelAdmin):
-    list_display = ["nombre", "activo"]
+    list_display = ["nombre", "codigo_cliente", "activo"]
     list_filter = ["activo"]
     search_fields = ["nombre"]
 
 
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
+    """
+    Alta de productos con el SKU generado desde sus atributos.
+
+    El SKU es de solo lectura a propósito: se compone de catálogos y se
+    recalcula al guardar. Dejarlo escribible invitaría a teclear un código
+    que contradiga los atributos del mismo producto, que es exactamente el
+    problema que trae el archivo de origen (`SKU_PRODUCTOS.md` §4.2).
+    """
+
     list_display = [
         "nombre",
         "codigo",
         "mandante",
-        "familia",
-        "naturaleza",
-        "unidad_base",
+        "categoria",
+        "tipo",
+        "formato",
         "activo",
     ]
-    list_filter = ["familia", "naturaleza", "mandante", "activo"]
+    list_filter = ["categoria", "formato", "familia", "naturaleza", "mandante", "activo"]
     search_fields = ["nombre", "codigo"]
     autocomplete_fields = ["mandante"]
+    readonly_fields = ["codigo", "sku_explicado"]
+
+    fieldsets = [
+        (
+            None,
+            {"fields": ["nombre", "mandante", "familia", "naturaleza", "unidad_base", "activo"]},
+        ),
+        (
+            "SKU",
+            {
+                "fields": [
+                    "naturaleza_comercial",
+                    "categoria",
+                    "tipo",
+                    "formato",
+                    "mercado",
+                    "variante",
+                    "codigo",
+                    "sku_explicado",
+                ],
+                "description": (
+                    "El SKU se arma con estos atributos más el código de "
+                    "cliente del mandante. Completa naturaleza, categoría, "
+                    "tipo y formato, y se genera solo al guardar; si falta "
+                    "alguno, el SKU queda como esté y el producto se guarda "
+                    "igual."
+                ),
+            },
+        ),
+    ]
+
+    @admin.display(description="Cómo se lee el SKU")
+    def sku_explicado(self, obj):
+        """
+        Traduce el SKU guardado de vuelta a sus valores.
+
+        Es la comprobación que faltaba en el archivo de origen: si lo que se
+        lee no coincide con los atributos de arriba, el código está mal y se
+        ve sin tener que descomponerlo a mano.
+        """
+        from .dominio import describir_sku
+
+        if not obj or not obj.codigo:
+            return "— (completa los atributos y guarda)"
+
+        descripcion = describir_sku(obj.codigo)
+
+        if descripcion is None:
+            return f"{obj.codigo} · no tiene la forma de un SKU (código antiguo)"
+
+        return " · ".join(f"{k}: {v}" for k, v in descripcion.items())
 
 
 @admin.register(Silo)

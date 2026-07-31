@@ -58,10 +58,19 @@ detendría la producción del día por un dato completable, y endurecerlo es dec
 sobre esa misma función. El código se propone con `codigo-sugerido/` y queda editable, por la
 misma razón que `codigo_lote_valido` avisa y no restringe.
 
-**Codificador de SKU** (2026-07-31): hecho el dominio puro —`maestros/catalogos_sku.py`,
-`maestros/dominio.py`, `tests_dominio_sku.py`—. **El modelo no se tocó**: los campos de `Producto`
-(`naturaleza_comercial`, `categoria`, `tipo`, `formato`, `mercado`, `sku`, `variante`) y el
-`codigo_cliente` de `Mandante` dependen de decisiones abiertas, abajo.
+**Codificador de SKU** (2026-07-31): completo. Dominio puro en `maestros/catalogos_sku.py` +
+`maestros/dominio.py`, y el maestro en `Producto` (`naturaleza_comercial`, `categoria`, `tipo`,
+`formato`, `mercado`, `variante`) más `Mandante.codigo_cliente`.
+
+**El SKU se deriva, no se teclea.** `Producto.save()` lo recalcula desde los atributos cada vez;
+en el admin el campo es de solo lectura y al lado va «Cómo se lee el SKU», que lo descompone de
+vuelta. Dejarlo escribible invitaría a teclear un código que contradiga los atributos del mismo
+producto — que es exactamente el defecto que trae el archivo de origen (§4.2). Un producto sin los
+atributos cargados conserva el código que tenga: el histórico está lleno de códigos a mano.
+
+**Dónde se crea un producto:** admin de Django → Maestros → Productos. La pantalla de Maestros del
+frontend sigue deshabilitada («Pronto»). El mandante necesita su `codigo_cliente` cargado o sus
+productos no generan SKU.
 
 **Salvedades sobre `SKU_PRODUCTOS.md`** (verificadas contra el Excel fuente):
 
