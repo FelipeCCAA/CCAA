@@ -141,7 +141,12 @@ export function haySesion(): boolean {
 
 /** Nombre para mostrar. Cae al nombre de usuario si no tiene nombre cargado. */
 export function nombreParaMostrar(usuario: Usuario): string {
-  const completo = `${usuario.nombre} ${usuario.apellido}`.trim();
+  // Se filtran los vacíos antes de unir: interpolar un campo ausente deja el
+  // texto "undefined" a la vista, y `trim()` no lo quita porque está en medio.
+  const completo = [usuario.nombre, usuario.apellido]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 
   return completo || usuario.username;
 }

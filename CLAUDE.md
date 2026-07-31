@@ -10,7 +10,7 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 
 ## Arquitectura
 
-- **Backend:** Django REST + **PostgreSQL**. Apps: `maestros`, `recepcion`, `produccion`, `calidad`, `inocuidad`, `usuarios`. Cada app separa:
+- **Backend:** Django REST + **PostgreSQL**. Apps: `maestros`, `recepcion`, `produccion`, `calidad`, `inocuidad`, `planificacion`, `auditoria`, `usuarios`. Cada app separa:
   - `models.py` — esquema (usa **JSONField** para formularios dinámicos: `plantilla`, `valores`, `rangos`, `controles`).
   - `dominio.py` — reglas puras y testeables (sin ORM/DOM). Toda regla nueva se cubre en `tests_dominio.py`.
   - `views.py` — API; el camino de la **firma de liberación** usa `select_for_update` (no romper, ver `DECISIONES.md` §001).
@@ -31,6 +31,9 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - `codigo_lote_valido` **avisa, no restringe**: el histórico de planta trae códigos que no siguen el patrón —empezando por todos los del POE anterior— y hay que poder registrarlos. No conectarlo al `clean()` de `Lote`.
 - **`Producto.codigo` guarda el SKU** y es parte del código de lote. Un producto sin él no frena nada: `codigo-sugerido/` devuelve `codigo: null` con un motivo que dice qué falta y dónde, y el operador escribe el código a mano. Se carga desde el admin, y conviene componerlo con `generar_sku` en vez de teclearlo.
 - **SKU de producto** (`maestros/dominio.py` + `catalogos_sku.py`): 12 dígitos en 6 segmentos, compuestos **solo desde catálogos**. Un valor fuera de catálogo falla en vez de improvisar — un SKU con un segmento inventado se ve igual de válido que uno correcto y termina impreso en un saco. El orden de los segmentos se dedujo de los datos, no de los encabezados de la planilla, que están desalineados; `tests_dominio_sku.py` recompone los 24 productos reales del archivo y es lo que fija ese orden. `sku_valido` comprueba además la regla naturaleza↔cliente, para que el validador no apruebe lo que el generador se niega a componer.
+- **Auditoría** (`auditoria`): se captura por señales, no desde las vistas, para cubrir todo lo que escribe en la base —API, admin, scripts, shell— y no solo los caminos instrumentados. Los dos lados del diff se leen **de la base** en `pre_save`/`post_save`: comparar la base contra el objeto en memoria marca como cambiados campos que solo cambiaron de tipo. Todos los cambios tienen la **misma forma** `{campo: [antes, después]}`, también las altas —con `None` delante—: dos formas obligan a cada consumidor a distinguirlas y el que no lo haga revienta. Es **de solo lectura en las tres capas** (viewset, admin y servicio del frontend): un registro que se puede editar no prueba nada.
+- **Máquinas** (`maestros.Equipo`): `consume_leche` es una **regla del balance**, no una etiqueta. Un mismo código de producción se programa en el evaporador y en la línea que lo recibe; si ambos restaran, la semana contaría la misma leche dos veces. Solo los evaporadores.
+- Los **catálogos de opciones** se sirven desde el backend (`/api/maestros/catalogos/`, `/api/planificacion/catalogos/`) y no se escriben en el frontend: una copia ofrece tarde o temprano un valor que el backend rechaza.
 
 ## Trampas conocidas
 
@@ -38,6 +41,8 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - El camino de la firma usa `select_for_update`; en SQLite eso **no hace nada** y la garantía desaparece en silencio. De ahí el check `calidad.E001`.
 - `frontend/tsconfig.json` es de tipo **solución** (`files: []` + referencias), así que `npx tsc --noEmit` a secas **no comprueba nada** y sale con 0. Usa `npx tsc -b` (es lo que corre `npm run build`).
 - El runner de pruebas **migra la base de pruebas solo**, así que una migración generada y no aplicada deja la suite entera en verde y revienta en el navegador con un `IntegrityError`. Después de `makemigrations`, correr `migrate`.
+- Las **migraciones de datos siembran también la base de pruebas** (documentos de liberación, equipos). Un `create()` en `setUp` choca con la unicidad: usar `update_or_create`.
+- En una pantalla que carga varias fuentes con `Promise.all`, **un endpoint caído las vacía todas**. Los datos auxiliares —catálogos de desplegables— van aparte y degradan solos.
 - Dentro de `transaction.atomic()`, **salir con `return` confirma la transacción**: solo una excepción revierte. Un `return Response(...)` de validación a mitad de un lote de escrituras deja media operación guardada.
 
 ## Tarea de integración en curso
@@ -70,6 +75,15 @@ atributos cargados conserva el código que tenga: el histórico está lleno de c
 
 **Dónde se crea un producto:** pantalla **Maestros** (`/maestros`), pestaña Productos — o el admin
 de Django. El mandante necesita su `codigo_cliente` cargado o sus productos no generan SKU.
+
+**Maestros** cubre seis pestañas: productos, mandantes, máquinas, silos, camiones y códigos de
+producción. Los tres últimos comparten `FormularioMaestro`, un formulario descrito por datos; los
+tres primeros tienen el suyo porque muestran reglas propias (el SKU derivado, el cliente que
+aporta el mandante, la advertencia del balance). Faltan **especificaciones**, **documentos de
+liberación** y **recetas**: sus formularios son plantillas JSON y quien decide sobre ellos es
+Calidad, así que siguen en el admin.
+
+**Auditoría** vive en `/auditoria`, visible para todos los roles.
 
 La pantalla cubre productos, mandantes y silos (estos últimos de solo lectura: su ocupación es un
 saldo del libro de movimientos, y un formulario invitaría a «corregirlo» escribiéndolo). Las
