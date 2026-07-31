@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modelo de datos y flujo de proceso — Planta CCAA</title>
+<style>
+  :root{
+    --azul:#1d3762; --azul2:#2b5088; --verde:#65bc7b; --verde-d:#2e7d46;
+    --tinta:#1a2733; --gris:#55606b; --linea:#d7dee8; --papel:#ffffff; --fondo:#f4f6f9;
+    --rec:#3f7fd0; --cond:#2fa36b; --sec:#e08a1e; --env:#8455c7; --lib:#c0455e; --man:#c98a3a;
+    --nueva:#c0455e; --parcial:#e08a1e; --existe:#2e7d46;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    color:var(--tinta);background:var(--fondo);line-height:1.5;font-size:15px}
+  header{background:linear-gradient(120deg,var(--azul),var(--azul2));color:#fff;padding:30px 28px 22px}
+  header h1{margin:0 0 4px;font-size:25px;letter-spacing:.2px}
+  header p{margin:0;opacity:.9;font-size:14px;max-width:900px}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px 70px}
+  nav{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.96);backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--linea);display:flex;gap:6px;flex-wrap:wrap;padding:10px 20px}
+  nav button{border:1px solid var(--linea);background:#fff;color:var(--gris);border-radius:20px;
+    padding:6px 15px;font-size:13px;cursor:pointer;font-weight:600;transition:.15s}
+  nav button:hover{border-color:var(--azul2);color:var(--azul)}
+  nav button.on{background:var(--azul);color:#fff;border-color:var(--azul)}
+  section{display:none;animation:fade .25s ease}
+  section.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2{font-size:20px;color:var(--azul);margin:34px 0 6px}
+  h2 .n{color:var(--verde-d);font-size:14px;font-weight:700}
+  .sub{color:var(--gris);font-size:14px;margin:0 0 18px;max-width:900px}
+  /* flujo pipeline */
+  .pipe{display:flex;gap:12px;overflow-x:auto;padding:8px 2px 18px}
+  .stage{min-width:220px;flex:1;background:#fff;border:1px solid var(--linea);border-radius:12px;
+    border-top:5px solid var(--c);box-shadow:0 1px 3px rgba(20,40,70,.06);display:flex;flex-direction:column}
+  .stage h3{margin:0;padding:12px 14px 4px;font-size:15px;color:var(--c)}
+  .stage .eq{padding:0 14px 8px;font-size:12px;color:var(--gris)}
+  .stage ul{margin:0;padding:8px 14px 12px;border-top:1px dashed var(--linea);list-style:none}
+  .stage li{font-size:12.5px;padding:3px 0 3px 16px;position:relative;color:var(--tinta)}
+  .stage li::before{content:"";position:absolute;left:0;top:9px;width:7px;height:7px;border-radius:2px;background:var(--c)}
+  .stage li b{color:var(--gris);font-weight:600}
+  .arrow{align-self:center;color:var(--gris);font-size:22px;flex:0 0 auto}
+  .branch{background:#fff8ef;border:1px dashed var(--man);border-radius:12px;padding:12px 16px;margin:6px 0 0;font-size:13px}
+  .branch b{color:var(--man)}
+  /* entidades */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:6px}
+  .card{background:#fff;border:1px solid var(--linea);border-radius:11px;padding:0;overflow:hidden;
+    box-shadow:0 1px 3px rgba(20,40,70,.05)}
+  .card .top{padding:11px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;
+    border-left:5px solid var(--b,#ccc)}
+  .card .top h4{margin:0;font-size:15px;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--azul)}
+  .card .desc{padding:0 14px 8px;font-size:12.5px;color:var(--gris)}
+  .card .fields{padding:8px 14px 13px;border-top:1px solid #eef1f5;font-size:12.5px}
+  .card .fields code{background:#eef2f7;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#33455c;
+    display:inline-block;margin:2px 3px 2px 0}
+  .badge{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;white-space:nowrap}
+  .b-existe{background:var(--existe)} .b-parcial{background:var(--parcial)} .b-nueva{background:var(--nueva)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin:2px 0 16px;font-size:12.5px;color:var(--gris)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .groupt{font-size:13px;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.6px;
+    margin:26px 0 2px;border-bottom:2px solid var(--linea);padding-bottom:5px}
+  /* dossier gate */
+  .gate{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:4px 0;margin-top:8px}
+  .gate table{border-collapse:collapse;width:100%;font-size:12.5px}
+  .gate th{background:var(--azul);color:#fff;text-align:left;padding:8px 12px;font-weight:600}
+  .gate td{padding:7px 12px;border-top:1px solid #eef1f5;vertical-align:top}
+  .gate tr:hover td{background:#f7f9fc}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;color:#fff}
+  .callout{background:#eaf6ee;border:1px solid #bfe3cc;border-left:5px solid var(--verde-d);
+    border-radius:10px;padding:14px 18px;margin:16px 0;font-size:13.5px}
+  .callout b{color:var(--verde-d)}
+  .note{background:#fbf4e8;border:1px solid #f0dcb6;border-left:5px solid var(--sec);border-radius:10px;
+    padding:14px 18px;margin:16px 0;font-size:13.5px}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0 4px}
+  .kpi{background:#fff;border:1px solid var(--linea);border-radius:11px;padding:14px 18px;min-width:140px}
+  .kpi b{display:block;font-size:26px;color:var(--azul);line-height:1}
+  .kpi span{font-size:12px;color:var(--gris)}
+  code.lot{font-family:ui-monospace,Menlo,Consolas,monospace;background:#eef2f7;padding:1px 6px;border-radius:4px;color:#33455c}
+  footer{color:var(--gris);font-size:12px;text-align:center;padding:26px 20px 10px}
+  @media(max-width:640px){.pipe{flex-direction:column}.arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Modelo de datos y flujo de proceso — Planta CCAA</h1>
+  <p>Levantamiento de los procesos, formatos y registros reales de la planta (Sistema de Aseguramiento de Calidad / HACCP · FSSC 22000) traducido a un modelo de datos para robustecer la App de Gestión Productiva. Cada entidad y campo propuesto proviene de un formato en uso.</p>
+</header>
+<nav id="nav"></nav>
+<div class="wrap">
+
+<!-- ============ FLUJO ============ -->
+<section id="flujo" class="on">
+  <div class="kpis">
+    <div class="kpi"><b>1.567</b><span>archivos revisados</span></div>
+    <div class="kpi"><b>204</b><span>documentos codificados</span></div>
+    <div class="kpi"><b>99</b><span>formatos / registros (FORM)</span></div>
+    <div class="kpi"><b>19</b><span>registros para liberar un lote</span></div>
+  </div>
+
+  <h2>Flujo físico del producto <span class="n">— y el registro que se genera en cada etapa</span></h2>
+  <p class="sub">La leche cruda recorre seis etapas hasta el despacho. En cada una se llena uno o más formatos de control que después alimentan la liberación. El orden de las etapas es el mismo orden del Dossier de Liberación (ver pestaña siguiente).</p>
+
+  <div class="pipe">
+    <div class="stage" style="--c:var(--rec)">
+      <h3>1 · Recepción</h3><div class="eq">Camiones · Silos 1–8 · TK LD / TK Crema</div>
+      <ul>
+        <li><b>Controles camión:</b> Delvo, inhibidores/PPRO, crioscopía, acidez, pH, T°</li>
+        <li><b>Trazabilidad silo</b> · CCAA.REC.FORM.005/010</li>
+        <li>PAC pHmetro, crioscopio, antibióticos</li>
+        <li>Decisión: <b>Libera / Retiene</b></li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c:var(--cond)">
+      <h3>2 · Condensación</h3><div class="eq">VEB · Scheffers 2 · Scheffers 3</div>
+      <ul>
+        <li><b>PCC 1 Uperización</b> T°≥80°C · caudal máx · CCAA.Cond.FORM.001/006/010…</li>
+        <li>Checklist cuerpos extraños evaporadores</li>
+        <li>Aseo CIP (enjuague/soda/ácido, pH, conductividad)</li>
+        <li>Salida: <b>precondensado</b> a TK</li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c:var(--sec)">
+      <h3>3 · Secado</h3><div class="eq">Torres Egron 1 (E1) · Egron 2 (E2)</div>
+      <ul>
+        <li><b>Hoja de pulverización</b> E1/E2 · CCAA.Sec.FORM.025/026</li>
+        <li>Inspección pre-operativa · conexión a tierra</li>
+        <li><b>Análisis fisicoquímico</b> (humedad, MG, prot., solubilidad, sensorial)</li>
+        <li>Filtros de limpieza · dosificación lecitina · PPRO 3</li>
+        <li>Salida: <b>polvo</b> (LEP / entero / descremado)</li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c:var(--env)">
+      <h3>4 · Envasado</h3><div class="eq">Rovema 3 · Rovema 4 · bolsa 25 kg / TOTE</div>
+      <ul>
+        <li><b>PCC detector de metales</b> Fe/noFe/inox · CCAA.ENV.FORM.001/003</li>
+        <li>Checklist cuerpos extraños Rovema · PPRO 4</li>
+        <li><b>Hermeticidad y peso neto</b> · consumo de materiales</li>
+        <li>Seguimiento <b>FEFO</b></li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c:var(--lib)">
+      <h3>5 · Liberación</h3><div class="eq">Calidad · Dossier 19 registros</div>
+      <ul>
+        <li><b>Checklist Dossier</b> completo, firmado y conforme</li>
+        <li>Evaluación sensorial · informe lab externo</li>
+        <li><b>Certificado de análisis</b> · CCAA.Calidad.FORM.016/041</li>
+        <li>Decisión: <b>Liberado</b> / bajo concesión</li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c:var(--azul)">
+      <h3>6 · Despacho</h3><div class="eq">Los Ángeles · Nestlé · Colun · Stock</div>
+      <ul>
+        <li>Sólo contra <b>lote liberado</b> y kilos disponibles</li>
+        <li>Guía de despacho · orden de compra</li>
+        <li>Descuento de saldo de lote</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="branch">
+    <b>Ramal Mantequilla:</b> la crema separada en recepción/descremado no va a secado — alimenta la
+    sala de mantequilla (pasteurización → mantequera continua ECM-800). Formatos propios:
+    control de proceso mantequilla, control de peso neto, control de pasteurización, cámara climatizada,
+    certificado de liberación de mantequilla (CCAA.MAN.FORM.*). La receta multinivel ya lo contempla:
+    <code class="lot">mantequilla ← crema ← leche fresca</code>.
+  </div>
+
+  <div class="note">
+    <b>Codificación de lote (CCAA.Calidad.POE.009.02).</b> El código no es libre: es
+    <code class="lot">CCAA + &lt;año&gt;&lt;día juliano&gt; + sufijo</code>. Ej.: elaborado el 16-07-2025 →
+    <code class="lot">CCAA5197</code>. Sufijo: <b>N</b> = uso nacional · <b>1</b> = Egron 1 ·
+    <b>2</b> = Egron 2 · sin sufijo = crema · <b>A</b> = segunda producción del mismo día (evita duplicidad).
+    → El sistema puede <b>autogenerar y validar</b> el código a partir de fecha + línea + destino, en vez de teclearlo.
+  </div>
+</section>
+
+<!-- ============ DOSSIER ============ -->
+<section id="dossier">
+  <h2>La regla que justifica el sistema <span class="n">— el Dossier de Liberación</span></h2>
+  <p class="sub">Un despacho exige un lote liberado. Un lote se libera cuando sus <b>19 registros</b> están completos, firmados y conformes. Este es el checklist real (CCAA.Calidad.FORM.023), en orden de flujo. Cada registro se convierte en datos capturables; la columna final indica la entidad propuesta.</p>
+  <div class="gate">
+  <table>
+    <thead><tr><th>N°</th><th>Registro</th><th>Área</th><th>Código(s)</th><th>Entidad de datos</th></tr></thead>
+    <tbody id="dtbody"></tbody>
+  </table>
+  </div>
+  <div class="callout">
+    <b>Comportamiento del sistema.</b> El botón «Autorizar despacho» permanece bloqueado hasta el 100% de los registros
+    completos y <i>conformes contra la especificación vigente a la fecha del lote</i>. Un registro observado bloquea la
+    liberación aunque el resto esté completo. El cierre requiere <b>V°B Fabricación + V°B Calidad</b>. La
+    <b>liberación bajo concesión</b> (producto fuera de especificación aceptado por el mandante o reproceso) exige motivo
+    escrito y autorizador identificado, y queda marcada de forma permanente — no es una puerta trasera, es el registro que la auditoría busca.
+  </div>
+</section>
+
+<!-- ============ ENTIDADES ============ -->
+<section id="modelo">
+  <h2>Modelo de datos <span class="n">— existente + propuesto</span></h2>
+  <p class="sub">El modelo actual de la app (esquema.js / dominio.js) ya cubre la columna vertebral: recepción → silos → lote → análisis → liberación → despacho, con especificaciones versionadas y recetas multinivel. Lo que el levantamiento agrega son las <b>entidades de control de proceso, inocuidad y saneamiento</b> que hoy viven sólo en planillas y que son exactamente lo que una auditoría FSSC revisa.</p>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--existe)"></span> Ya en el modelo</span>
+    <span><span class="dot" style="background:var(--parcial)"></span> Existe pero incompleto</span>
+    <span><span class="dot" style="background:var(--nueva)"></span> Nueva — proveniente de los formatos</span>
+  </div>
+  <div id="groups"></div>
+</section>
+
+<footer>Generado el 30-07-2026 · Fuente: carpeta «Documentos Planta» · Modelo alineado a App Gestión Productiva CCAA (esquema.js / dominio.js). Campos propuestos = derivados de los formatos reales, a validar con Calidad y Producción.</footer>
+</div>
+
+<script>
+const tabs=[["flujo","Flujo de proceso"],["dossier","Dossier de liberación"],["modelo","Modelo de datos"]];
+const nav=document.getElementById('nav');
+tabs.forEach(([id,txt],i)=>{const b=document.createElement('button');b.textContent=txt;b.className=i===0?'on':'';
+  b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));document.getElementById(id).classList.add('on');
+  window.scrollTo({top:0,behavior:'smooth'});};nav.appendChild(b);});
+
+const dossier=[
+ [1,"Trazabilidad de Leche fresca","Recepción","var(--rec)","CCAA.REC.FORM.005","recepcion · movimientoSilo · lote"],
+ [2,"PCC 1 — Control de Proceso (Uperización)","Condensación","var(--cond)","CCAA.Cond.FORM.001/006/010–012/007/013/015","controlProceso (PCC1)"],
+ [3,"Checklist Cuerpos Extraños Evaporadores","Condensación","var(--cond)","CCAA.Cond.FORM.005/014/016","monitoreoPPRO"],
+ [4,"Disco de Uperización","Condensación","var(--cond)","(sin código)","adjunto de evidencia"],
+ [5,"Hoja de Pulverización E1-E2","Secado","var(--sec)","CCAA.Sec.FORM.025/026","controlProceso"],
+ [6,"Inspección Pre-operativa E1-E2","Secado","var(--sec)","CCAA.Sec.FORM.003","checklistPreoperativo"],
+ [7,"Conexión a Tierra E1-E2","Secado","var(--sec)","CCAA.Sec.FORM.016/041","checklistPreoperativo"],
+ [8,"Análisis Fisicoquímico E1-E2","Secado","var(--sec)","CCAA.Sec.FORM.001/019","analisis"],
+ [9,"Filtros de Limpieza de producto","Secado","var(--sec)","CCAA.Sec.FORM.020","registroLimpiezaCIP"],
+ [10,"Dosificación de Lecitina","Secado","var(--sec)","CCAA.Sec.FORM.021","controlProceso"],
+ [11,"Checklist Cuerpos Extraños E1-E2","Secado","var(--sec)","CCAA.Sec.FORM.012","monitoreoPPRO"],
+ [12,"PPRO 3 — Monitoreo E1-E2","Secado","var(--sec)","CCAA.Sec.FORM.022","monitoreoPPRO"],
+ [13,"PPRO 4 — Rovemas 3 y 4","Envase","var(--env)","CCAA.Sec.FORM.005","monitoreoPPRO"],
+ [14,"Checklist Cuerpos Extraños Rovema 3-4","Envase","var(--env)","CCAA.Sec.FORM.007","monitoreoPPRO"],
+ [15,"Inspección en Operación Rovema 3-4","Envase","var(--env)","CCAA.Sec.FORM.024","checklistPreoperativo"],
+ [16,"Seguimiento FEFO","Envase","var(--env)","CCAA.Sec.FORM.023","reglaFEFO (despacho)"],
+ [17,"PPRO 5 — Detector de Metales","Envase","var(--env)","CCAA.ENV.FORM.001/003","monitoreoPPRO (PCC)"],
+ [18,"Control de Consumo de Materiales","Envase","var(--env)","CCAA.Sec.FORM.011","consumoMaterialEnvase"],
+ [19,"Control de Hermeticidad y Peso Neto","Envase","var(--env)","CCAA.ENV.FORM.004","controlPesoNeto"],
+];
+const tb=document.getElementById('dtbody');
+dossier.forEach(d=>{const tr=document.createElement('tr');
+  tr.innerHTML=`<td><b>${d[0]}</b></td><td>${d[1]}</td><td><span class="pill" style="background:${d[3]}">${d[2]}</span></td>
+  <td style="font-family:ui-monospace,monospace;font-size:11.5px;color:#33455c">${d[4]}</td><td>${d[5]}</td>`;
+  tb.appendChild(tr);});
+
+const E={ex:'b-existe',pa:'b-parcial',nu:'b-nueva'};
+const groups=[
+ ["Maestros (catálogos)","#3f7fd0",[
+   ["producto","ex","Producto terminado; el mandante es un campo, no se deduce del nombre.","naturaleza, unidadBase, mandanteId, vidaUtil"],
+   ["mandante","ex","Empresa dueña del producto (Nestlé, Colun, CCAA…).","nombre, tipo"],
+   ["especificacion","ex","Rangos por producto, versionados (vigenteDesde/Hasta).","productoId, parametros[min,max], vigenteDesde"],
+   ["receta","ex","Qué se necesita para obtener un producto; multinivel y versionada.","componentes[], unidad, versión"],
+   ["silo","ex","Silo/estanque con capacidad para calcular ocupación.","tipo, capacidadL"],
+   ["vehiculo","ex","Camiones y transportistas.","placa, capacidad, transportista, choferAM/PM"],
+   ["usuario","ex","Personas y rol (recepción, producción, calidad, admin).","rol, nombre"],
+   ["equipo","nu","Maestro de equipos con sus límites críticos por PCC. Hoy están dispersos en cada formato.","codigo(VEB/Sch2/Sch3/E1/E2/Rovema3-4), tipo, pcc[], tempMin, caudalMax"],
+   ["documentoLiberacion","pa","Catálogo de los 19 registros del dossier. Falta el <code>área</code> y el <code>orden</code> para reproducir el flujo, y <code>aplicaA</code> por familia.","codigo, nombre, area, orden, aplicaA, plantilla[]"],
+ ]],
+ ["Recepción y silos","#3f7fd0",[
+   ["recepcion","ex","Llegada de un camión y sus controles (Delvo, inhibidores, crioscopía…).","silo, procedencia, litros, controles{}, estado(Libera/Retiene)"],
+   ["movimientoSilo","ex","Libro mayor de cada silo; la ocupación se calcula sumando, nunca se edita.","siloId, tipo(ingreso/salida/ajuste), cantidad, origen"],
+   ["evaluacionMateriaPrima","nu","Evaluación de MEE y MP (lecitina, film, bolsa, caja, protomalt) al ingreso. Formato CCAA.Calidad.FORM.024.","materiaPrima, proveedorId, lote, parametros[], alergenos, resultado"],
+ ]],
+ ["Producción — control de proceso","#2fa36b",[
+   ["lote","pa","Unidad de producción y liberación. Falta la <b>autogeneración del código</b> (POE.009.02) y el vínculo a equipo/turno.","codigoLote(auto), productoId, fecha, linea, equipoId, turno, kg, estado"],
+   ["controlProceso","nu","Parámetros horarios por equipo y lote: condensación (VEB/Sch) y pulverización (E1/E2). Incluye el <b>PCC 1 uperización</b>. Formatos CCAA.Cond.FORM.* y CCAA.Sec.FORM.002/025/026.","loteId, equipoId, turno, horaArranque, lecturas[hora,flujo,densidad,tDSI,tCalandria,vacío,presión], pcc1{tMin,caudalMax,cumple}, operador"],
+   ["monitoreoPPRO","nu","Chequeos horarios OK/No-OK de inocuidad por turno: presión de aire, roce de válvulas, cuerpos extraños y <b>PCC detector de metales</b> (Fe/noFe/inox). Formatos CCAA.Sec.FORM.022/007 y CCAA.ENV.FORM.001/003.","loteId, tipoPPRO, equipoId, turno, lecturasHora[hora,resultado], accionCorrectiva, operador"],
+   ["analisis","pa","Medición fisicoquímica del lote. Ampliar con los campos reales del formato Egron: solubilidad, tamiz, separación FC, sensorial IN/OUT, acidez inicio/medio/fin.","loteId, humedad, mg, proteina, solubilidad, tamiz, sensorial, acidezIMF, nBolsa, muestraMicrob"],
+   ["registroLimpiezaCIP","nu","Aseo CIP/COP por equipo: etapas (enjuague, soda, ácido, agua), caudal, T°, conductividad, pH final, verificación visual IN/OUT. Formatos CCAA.Cond.FORM.001, CCAA.Rec.FORM.013/015, CCAA.Sec.FORM.020.","equipoId, fecha, etapas[etapa,horaInicio,caudal,temp,conduct], phFinal, visualInOut, operador"],
+   ["controlPesoNeto","nu","Peso bruto/tara/neto por unidad + chequeo aspecto/etiquetado/sellado. Hermeticidad. Formatos CCAA.ENV.FORM.004 y CCAA.MAN.FORM.005.","loteId, muestras[hora,bruto,tara,neto,aspecto,etiquetado,sellado]"],
+   ["consumoMaterialEnvase","nu","Control de consumo de bolsas/cajas/film por lote — cierra el balance de materiales de envase.","loteId, material, consumo, mermas"],
+ ]],
+ ["Liberación y calidad","#c0455e",[
+   ["registroCalidad","ex","Un formulario del checklist ya completado para un lote: valores, quién firmó y cuándo. Dibujado desde la <code>plantilla</code>, no escrito a mano.","loteId, documentoId, valores{}, estado, firma, fecha"],
+   ["liberacion","ex","Autorización de Calidad y su firma. Devuelve motivos de bloqueo, no un booleano.","loteId, estado, concesion{motivo,autorizador}, firma"],
+   ["certificadoAnalisis","pa","Documento de salida: producto, lote, fechas, kg, y fisicoquímicos con método/unidad/spec/resultado. Formatos CCAA.Calidad.FORM.016/041.","loteId, fechaElab, fechaVenc, kg, cajas, fisicoquimicos[param,metodo,unidad,min,max,resultado]"],
+   ["noConformidad","nu","TNC / PNC / reclamos: incidente, área, detección, tipo, reincidencia, acción correctiva y preventiva, cierre. Formatos CCAA.Calidad.FORM.025/026/027/029.","tipo, titulo, area, loteId?, fechaDeteccion, descripcion, reincidente, accionCorrectiva, accionPreventiva, estado"],
+   ["despacho","ex","Salida física. Sólo contra lote liberado, kilos disponibles y regla FEFO.","loteId, kg, destino, gd, oc, fecha"],
+ ]],
+ ["Calibración / metrología","#8455c7",[
+   ["calibracionInstrumento","nu","Planes de autocontrol (PAC) y contrastaciones: pHmetro, crioscopio, balanza, termómetro, Infralab. Frecuencia diaria/según uso, con tolerancia y conforme/no. Formatos CCAA.Calidad.FORM.004/007/009/020/033/047.","equipoId, tipo, fecha, patron, lecturas[valor,ref,tolerancia], offset, conforme, analista"],
+ ]],
+ ["Planificación (ya existente)","#1d3762",[
+   ["codigoProduccion","ex","Receta programable: qué se produce, en qué evaporador y litros/hora.","productoId, equipo, rendimientoLh"],
+   ["semanaPlan · bloquePlan","ex","Programa horario; el consumo del balance se deduce de las horas × rendimiento.","estado, equipo, horas, productoId"],
+   ["balanceDia","ex","Sólo lo que se teclea: stock de apertura, recepciones, trasvasije, crema.","fecha, stockApertura, recepciones, trasvasije"],
+   ["eventoAuditoria","ex","Bitácora inmutable: usuario, fecha, valor anterior/nuevo. La escribe el repositorio.","entidad, accion, usuario, antes, despues"],
+ ]],
+];
+const cont=document.getElementById('groups');
+groups.forEach(([titulo,color,ents])=>{
+  const h=document.createElement('div');h.className='groupt';h.textContent=titulo;cont.appendChild(h);
+  const g=document.createElement('div');g.className='grid';
+  ents.forEach(([name,st,desc,fields])=>{
+    const badge=st==='ex'?'Ya en el modelo':st==='pa'?'Ampliar':'Nueva';
+    const c=document.createElement('div');c.className='card';
+    c.innerHTML=`<div class="top" style="--b:${color}"><h4>${name}</h4><span class="badge ${E[st]}">${badge}</span></div>
+      <div class="desc">${desc}</div>
+      <div class="fields">${fields.split(',').map(f=>`<code>${f.trim()}</code>`).join('')}</div>`;
+    g.appendChild(c);
+  });
+  cont.appendChild(g);
+});
+</script>
+</body>
+</html>
