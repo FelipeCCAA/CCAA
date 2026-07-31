@@ -27,9 +27,9 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - Español en UI, datos y comentarios. Fechas ISO `YYYY-MM-DD`. `codigo_lote` como string.
 - El diseño manda: extender el modelo, no reescribirlo.
 - **Dónde va cada registro:** `produccion` guarda **cómo se produjo** (lote, análisis, control de proceso — el PCC 1 vive ahí como un límite dentro del control). `inocuidad` guarda lo que **solo existe para vigilar un peligro**: PPRO, PCC de detector de metales, y más adelante limpieza CIP/COP, no conformidades y calibraciones. Mover modelos entre apps después obliga a renombrar tablas a mano, así que la separación se decidió con dos modelos y no con seis.
-- **Código de lote** (vigente desde 2026-07-31): `CCAA` + último dígito del año + día juliano (3) + **SKU del producto** + `-` + correlativo del día (2) — p. ej. `CCAA6197LEP25-01`. El correlativo va **siempre**, desde `-01`: dos formas conviviendo obligan a conocer la excepción al leer, ordenar y buscar. Reemplaza al esquema del POE.009.02, donde el sufijo codificaba la torre (E1→1, E2→2) y el uso nacional (`N`); eso ahora vive dentro del SKU, que es donde se mantiene una sola vez.
+- **Código de lote** (vigente desde 2026-07-31): `CCAA` + último dígito del año + día juliano (3) + **SKU del producto** + `-` + correlativo del día (2) — p. ej. `CCAA6212010102010201-01`. El correlativo va **siempre**, desde `-01`: dos formas conviviendo obligan a conocer la excepción al leer, ordenar y buscar. Reemplaza al esquema del POE.009.02, donde el sufijo codificaba la torre (E1→1, E2→2) y el uso nacional (`N`); eso ahora vive dentro del SKU, que es donde se mantiene una sola vez.
 - `codigo_lote_valido` **avisa, no restringe**: el histórico de planta trae códigos que no siguen el patrón —empezando por todos los del POE anterior— y hay que poder registrarlos. No conectarlo al `clean()` de `Lote`.
-- **`Producto.codigo` está vacío en la base**, y es parte del código de lote: hasta que se cargue desde el admin, `codigo-sugerido/` devuelve `codigo: null` con su motivo y el operador escribe el código a mano.
+- **`Producto.codigo` guarda el SKU** y es parte del código de lote. Un producto sin él no frena nada: `codigo-sugerido/` devuelve `codigo: null` con un motivo que dice qué falta y dónde, y el operador escribe el código a mano. Se carga desde el admin, y conviene componerlo con `generar_sku` en vez de teclearlo.
 - **SKU de producto** (`maestros/dominio.py` + `catalogos_sku.py`): 12 dígitos en 6 segmentos, compuestos **solo desde catálogos**. Un valor fuera de catálogo falla en vez de improvisar — un SKU con un segmento inventado se ve igual de válido que uno correcto y termina impreso en un saco. El orden de los segmentos se dedujo de los datos, no de los encabezados de la planilla, que están desalineados; `tests_dominio_sku.py` recompone los 24 productos reales del archivo y es lo que fija ese orden. `sku_valido` comprueba además la regla naturaleza↔cliente, para que el validador no apruebe lo que el generador se niega a componer.
 
 ## Trampas conocidas
@@ -79,16 +79,29 @@ misma razón que `codigo_lote_valido` avisa y no restringe.
   explosión multinivel y pruebas). Lo que sigue vigente de §7 es que las hojas de recetas del
   mismo Excel son la BOM por 100 kg y pueden sembrarla.
 
+**Resuelto (2026-07-31): el código de lote lleva el SKU completo de 12 dígitos**, o sea 23
+caracteres —`CCAA6212010102010201-01`—. Se planteó la alternativa de un código corto por producto
+(el Excel trae `Cód. CeGe` 101–123 y `Cód. Patricio R.` 5001–7004, que darían `CCAA6197101-01`) y
+se descartó a favor de que el código cargue toda la información del producto. Si en planta el
+largo resulta impracticable al imprimirlo o transcribirlo, el cambio es de una línea en
+`generar_codigo_lote` — pero invalida los códigos ya emitidos.
+
+**SKU cargados** (2026-07-31), compuestos con `generar_sku` y no a mano:
+
+| Producto | Mandante | SKU |
+|---|---|---|
+| Crema | CCAA | `020004010101` |
+| Leche entera en polvo | Nestlé | `010102010201` |
+
+El segundo **no** es el del archivo (`010104010201`): ese codifica Categoría = Crema y es la fila
+mal codificada de §4.2. Se cargó el correcto. Si aparecen más productos, componerlos igual y no
+copiarlos crudos del Excel.
+
 **Decisiones abiertas antes de tocar el modelo:**
 
-1. **El código de lote embebe el SKU, y el SKU real son 12 dígitos.** El formato se decidió con un
-   mnemónico corto de ejemplo (`CCAA6197LEP25-01`, 16 caracteres); con el SKU real queda
-   `CCAA6197010103010101-01` — **23 caracteres, 20 dígitos corridos**, para imprimir en un saco y
-   transcribir a mano. El archivo ya trae dos códigos cortos por producto (`Cód. CeGe` 101–123,
-   `Cód. Patricio R.` 5001–7004) que darían `CCAA6197101-01`. **Se resuelve antes de cargar SKU.**
-2. El 7.º segmento de variante para unicidad (`SKU_PRODUCTOS.md` §4.1), después de aplicar el
-   punto anterior sobre la categoría `11`.
-3. Validar con negocio los 16 productos marcados «¿definido correctamente? = False».
+1. El 7.º segmento de variante para unicidad (`SKU_PRODUCTOS.md` §4.1), después de aplicar lo de
+   la categoría `11`.
+2. Validar con negocio los 16 productos marcados «¿definido correctamente? = False».
 
 **Lo siguiente, en este orden:**
 
