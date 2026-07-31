@@ -570,6 +570,38 @@ class DocumentoLiberacion(models.Model):
         blank=True,
         help_text="De dónde salió la plantilla. Marque las provisorias",
     )
+    class Frecuencia(models.TextChoices):
+        """
+        Cada cuánto se llena el registro. **No es un detalle administrativo:**
+        decide dónde vive el dato.
+
+        Solo `POR_LOTE` produce un formulario por lote (`RegistroCalidad`).
+        Los demás pertenecen al equipo y a su período, y un lote los *consume*
+        si su fecha cae dentro: un aseo semanal hecho el lunes cubre todos los
+        lotes de esa semana. Guardarlo por lote obligaría a teclear la misma
+        limpieza una vez por lote —y cinco copias del mismo hecho pueden
+        acabar diciendo cosas distintas—.
+
+        En el catálogo de planta, solo 12 de 204 documentos son por lote.
+        """
+
+        POR_LOTE = "por_lote", "Por lote"
+        POR_TURNO = "por_turno", "Por turno"
+        POR_CICLO = "por_ciclo", "Por ciclo"
+        DIARIA = "diaria", "Diaria"
+        SEMANAL = "semanal", "Semanal"
+        SEGUN_PROGRAMA = "segun_programa", "Según programa"
+
+    frecuencia = models.CharField(
+        "Frecuencia",
+        max_length=20,
+        choices=Frecuencia.choices,
+        default=Frecuencia.POR_LOTE,
+        help_text=(
+            "Decide dónde vive el registro: por lote va en el expediente del "
+            "lote; el resto pertenece al equipo y su período."
+        ),
+    )
     evidencia = models.JSONField(
         "Se cumple con el dato",
         default=dict,

@@ -33,7 +33,7 @@ from usuarios.models import rol_de
 from usuarios.permisos import EscribeCalidad
 
 from . import dominio
-from .models import Liberacion, RegistroCalidad
+from .models import Liberacion, RegistroCalidad, RegistroEquipo
 from .serializers import (
     ConcesionSerializer,
     FirmaSerializer,
@@ -203,11 +203,23 @@ def _contexto_del_lote(lote, bloquear=False):
         movimientos=list(movimientos),
     )
 
+    # Los registros periódicos que pueden cubrir a este lote. Se traen los del
+    # documento y se filtra por ventana en el dominio, que es quien sabe qué
+    # significa «semanal».
+    cubiertos_por_periodo = dominio.documentos_cubiertos_por_periodo(
+        documentos,
+        lote,
+        RegistroEquipo.objects.filter(
+            documento__in=documentos, estado=RegistroEquipo.Estado.COMPLETADO
+        ).select_related("equipo", "documento"),
+    )
+
     return {
         "lote": lote,
         "producto": lote.producto,
         "documentos": documentos,
         "cumplidos_por_dato": cumplidos_por_dato,
+        "cubiertos_por_periodo": cubiertos_por_periodo,
         "registros": list(registros),
         "analisis": lista_analisis,
         "especificaciones": list(Especificacion.objects.filter(producto=lote.producto)),
