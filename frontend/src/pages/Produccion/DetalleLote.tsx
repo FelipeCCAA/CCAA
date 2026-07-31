@@ -15,6 +15,7 @@ import {
 } from "../../services/produccion.service";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
+import PanelAsignacion from "./PanelAsignacion";
 
 
 /*
@@ -569,9 +570,17 @@ function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
 
             )}
 
+            {/* Leche asignada: de qué silos salió este lote */}
+
+            <PanelAsignacion
+              loteId={lote.id}
+              puedeEditar={puedeEditar}
+              alCambiar={alCambiar}
+            />
+
             {/* Análisis */}
 
-            <div>
+            <div className="border-t border-slate-200 pt-5">
 
               <h3 className="mb-2 text-sm font-medium text-slate-700">
                 Análisis del lote

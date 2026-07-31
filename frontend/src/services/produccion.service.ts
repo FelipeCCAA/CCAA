@@ -323,3 +323,105 @@ export async function cambiarEstadoLote(
 
   return data;
 }
+
+
+/* ---------------------------------------------------------------- asignación
+
+   De qué silos salió la leche de un lote. Aquí empieza la trazabilidad: un
+   lote puede mezclar leche de varios estanques, y cada línea es un asiento
+   del libro mayor.
+*/
+
+export interface LineaAsignacion {
+  id: number;
+  silo: number;
+  silo_codigo: string;
+  litros: number;
+  fecha_hora: string;
+}
+
+export interface Asignacion {
+  lote: string;
+  estado: string;
+  editable: boolean;
+  motivo_bloqueo: string | null;
+  lineas: LineaAsignacion[];
+  /* Lo que Producción declaró haber tomado del silo: el hecho. */
+  asignado: number;
+  /* Lo que la receta decía que costaba: la expectativa. null si no hay receta. */
+  teorico: number | null;
+  diferencia: number | null;
+  /* Asignado sobre teórico. Bajo 100 se usó menos leche; sobre 100, más. En
+     ese orden: la razón inversa sube al consumir menos, y se leería como un
+     logro cuando suele significar que falta cargar una línea. */
+  consumo_pct: number | null;
+  /* El rendimiento como lo mide la planta: leche que costó cada kilo. */
+  litros_por_kg: number | null;
+  litros_por_kg_receta: number | null;
+}
+
+export interface RecepcionCandidata {
+  id: number;
+  fecha: string;
+  guia: string;
+  litros: string;
+  procedencia: string;
+  vehiculo: string | null;
+}
+
+export interface Trazabilidad {
+  lote: string;
+  tramos: {
+    silo: number;
+    silo_codigo: string;
+    litros: number;
+    fecha_hora: string;
+    recepciones: RecepcionCandidata[];
+  }[];
+  nota: string;
+}
+
+
+export async function obtenerAsignacion(loteId: number): Promise<Asignacion> {
+  const { data } = await api.get<Asignacion>(
+    `produccion/lotes/${loteId}/asignacion/`,
+  );
+
+  return data;
+}
+
+
+export async function asignarLeche(
+  loteId: number,
+  asignaciones: { silo: number; litros: number }[],
+): Promise<Asignacion> {
+
+  const { data } = await api.post<Asignacion>(
+    `produccion/lotes/${loteId}/asignacion/`,
+    { asignaciones },
+  );
+
+  return data;
+}
+
+
+export async function quitarAsignacion(
+  loteId: number,
+  movimientoId: number,
+): Promise<Asignacion> {
+
+  const { data } = await api.delete<Asignacion>(
+    `produccion/lotes/${loteId}/asignacion/${movimientoId}/`,
+  );
+
+  return data;
+}
+
+
+export async function obtenerTrazabilidad(loteId: number): Promise<Trazabilidad> {
+  const { data } = await api.get<Trazabilidad>(
+    `produccion/lotes/${loteId}/trazabilidad/`,
+  );
+
+  return data;
+}

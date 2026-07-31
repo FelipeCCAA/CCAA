@@ -1,11 +1,16 @@
 from collections import Counter, defaultdict
+from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.db.models import Sum
-from rest_framework import viewsets
-from rest_framework.decorators import api_view
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import status, viewsets
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
-from maestros.models import Especificacion
+from maestros import recetas
+from maestros.models import Especificacion, Producto, Receta, Silo
 from usuarios.permisos import EscribeProduccion
 
 from . import dominio
@@ -75,6 +80,313 @@ class LoteViewSet(viewsets.ModelViewSet):
             consulta = consulta.filter(id__in=self._ids_con_calidad(consulta, calidad))
 
         return consulta
+
+    @action(detail=True, methods=["get", "post"])
+    def asignacion(self, request, pk=None):
+        """
+        La leche que este lote tomó de los silos.
+
+        Aquí empieza la trazabilidad. La leche se mezcla dentro del silo, así
+        que lo único que se puede afirmar de un lote es de qué estanques salió
+        y cuánto de cada uno; el vínculo con las recepciones concretas es un
+        conjunto de candidatas, no una cadena (MODELO_DATOS.md §2.5).
+
+        Los litros **los declara Producción**, no los deriva el sistema. El
+        libro mayor registra lo que realmente se tomó del estanque; lo que la
+        receta dice que debería haberse tomado es otra cosa, y guardar la
+        estimación en lugar del hecho haría que el saldo del silo dejara de
+        ser un saldo.
+
+        Se admiten varias líneas porque un producto puede mezclar leche de más
+        de un silo, que es lo normal cuando ninguno alcanza solo.
+        """
+        lote = self.get_object()
+
+        if request.method == "GET":
+            return Response(self._estado_asignacion(lote))
+
+        lineas = request.data.get("asignaciones")
+
+        if not isinstance(lineas, list) or not lineas:
+            return Response(
+                {
+                    "detail": (
+                        "Hay que indicar de qué silos se tomó la leche: "
+                        '[{"silo": 3, "litros": 60000}, ...]'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        bloqueo = self._por_que_no_se_puede_asignar(lote)
+        if bloqueo:
+            return Response({"detail": bloqueo}, status=status.HTTP_409_CONFLICT)
+
+        creados = self._crear_asignaciones(lote, lineas)
+
+        if isinstance(creados, Response):
+            return creados
+
+        return Response(self._estado_asignacion(lote))
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"asignacion/(?P<movimiento_id>\d+)",
+    )
+    def quitar_asignacion(self, request, pk=None, movimiento_id=None):
+        """
+        Quita una línea de asignación.
+
+        Solo mientras el lote sigue **en proceso**: hasta ahí la asignación se
+        está armando y borrar una línea es corregir un borrador. Después es
+        histórico, y un asiento del libro mayor no se borra — se corrige con
+        un ajuste que deja rastro.
+        """
+        from recepcion.models import MovimientoSilo
+
+        lote = self.get_object()
+
+        if lote.estado != Lote.Estado.EN_PROCESO:
+            return Response(
+                {
+                    "detail": (
+                        f"Un lote {lote.get_estado_display().lower()} ya no cambia "
+                        "su asignación. Corrija con un ajuste de silo, que deja "
+                        "rastro."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        movimiento = get_object_or_404(
+            MovimientoSilo,
+            pk=movimiento_id,
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=lote.id,
+        )
+        movimiento.delete()
+
+        return Response(self._estado_asignacion(lote))
+
+    @action(detail=True, methods=["get"])
+    def trazabilidad(self, request, pk=None):
+        """
+        De qué recepciones pudo salir este lote.
+
+        Devuelve un **conjunto** de recepciones candidatas por silo, no una
+        cadena: son las que habían ingresado a ese estanque antes de que el
+        lote consumiera. Prometer un vínculo exacto sería falso, porque dentro
+        del silo la leche ya está mezclada.
+        """
+        from recepcion.dominio import trazabilidad_lote
+        from recepcion.models import MovimientoSilo, Recepcion
+
+        lote = self.get_object()
+
+        tramos = trazabilidad_lote(lote.id, MovimientoSilo.objects.all())
+
+        ids = {r for tramo in tramos for r in tramo["recepciones"]}
+        recepciones = {
+            r.id: {
+                "id": r.id,
+                "fecha": r.fecha,
+                "guia": r.guia,
+                "litros": r.litros,
+                "procedencia": r.procedencia,
+                "vehiculo": r.vehiculo.placa if r.vehiculo else None,
+            }
+            for r in Recepcion.objects.filter(id__in=ids).select_related("vehiculo")
+        }
+
+        silos = {
+            s.id: s.codigo
+            for s in Silo.objects.filter(id__in=[t["silo_id"] for t in tramos])
+        }
+
+        return Response(
+            {
+                "lote": lote.codigo_lote,
+                "tramos": [
+                    {
+                        "silo": tramo["silo_id"],
+                        "silo_codigo": silos.get(tramo["silo_id"]),
+                        "litros": tramo["litros"],
+                        "fecha_hora": tramo["fecha_hora"],
+                        "recepciones": [
+                            recepciones[r] for r in tramo["recepciones"] if r in recepciones
+                        ],
+                    }
+                    for tramo in tramos
+                ],
+                # Se dice explícitamente para que nadie lea la lista como una
+                # cadena de origen única.
+                "nota": (
+                    "Las recepciones son candidatas: la leche se mezcla dentro "
+                    "del silo y no hay vínculo uno a uno."
+                ),
+            }
+        )
+
+    # ------------------------------------------------------------- ayudantes
+
+    def _crear_asignaciones(self, lote, lineas):
+        """
+        Crea las líneas de asignación, todas o ninguna.
+
+        Se valida **antes** de escribir nada. Devolver un `Response` desde
+        dentro de `transaction.atomic()` NO revierte —salir por return es una
+        salida normal, no un error—, así que media asignación quedaría
+        guardada: el silo descontado y el lote sin la leche que decía tener.
+        """
+        from recepcion.models import MovimientoSilo
+
+        preparadas = []
+
+        for linea in lineas:
+            silo_id = linea.get("silo")
+            crudo = linea.get("litros")
+
+            if not silo_id or crudo in (None, ""):
+                return Response(
+                    {"detail": "Cada línea necesita un silo y sus litros."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
+                litros = Decimal(str(crudo))
+            except (InvalidOperation, TypeError):
+                return Response(
+                    {"detail": f"Litros no numéricos: {crudo!r}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if litros <= 0:
+                return Response(
+                    {"detail": "Los litros asignados deben ser mayores que cero."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            preparadas.append((silo_id, litros, linea.get("fecha_hora")))
+
+        with transaction.atomic():
+            return [
+                MovimientoSilo.objects.create(
+                    silo_id=silo_id,
+                    tipo=MovimientoSilo.Tipo.SALIDA,
+                    litros=litros,
+                    # La hora acota la trazabilidad: solo cuentan las
+                    # recepciones que ya estaban en el silo. Se puede declarar
+                    # para cargar una asignación con retraso sin arrastrar
+                    # leche que llegó después.
+                    fecha_hora=fecha_hora or timezone.now(),
+                    origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                    origen_id=lote.id,
+                    motivo=f"Asignación de leche al lote {lote.codigo_lote}",
+                )
+                for silo_id, litros, fecha_hora in preparadas
+            ]
+
+    def _por_que_no_se_puede_asignar(self, lote) -> str | None:
+        """
+        Un lote liberado o histórico no cambia de qué leche salió.
+
+        Cambiarlo después de que Calidad firmó dejaría esa firma respaldando
+        un producto hecho con otra materia prima, que es exactamente lo que la
+        trazabilidad existe para impedir.
+        """
+        from calidad.models import Liberacion
+
+        if not Lote.TRANSICIONES.get(lote.estado, []):
+            return (
+                f"Un lote {lote.get_estado_display().lower()} es histórico: su "
+                "asignación de leche ya no cambia."
+            )
+
+        liberacion = Liberacion.objects.filter(lote=lote).first()
+
+        if liberacion is not None and liberacion.liberado:
+            return (
+                "El lote está liberado: cambiar de qué leche salió dejaría la "
+                "firma de Calidad respaldando otra materia prima. Retire antes "
+                f"la liberación en expedientes/{lote.id}/revisar/."
+            )
+
+        return None
+
+    def _estado_asignacion(self, lote):
+        """
+        Lo asignado, lo que la receta esperaba, y cómo se comparan.
+
+        Los dos números se llevan aparte a propósito: **lo asignado es el
+        hecho** —lo que salió del estanque— y **lo teórico es la expectativa**.
+        Se informa, no se bloquea: una merma mayor de la prevista es algo que
+        explicar, no algo que impedir.
+
+        Sobre los dos indicadores, porque el nombre importa:
+
+        - `consumo_pct` es asignado / teórico. Por debajo de 100 se usó menos
+          leche de la prevista; por encima, más. En ese orden y no al revés:
+          la razón inversa sube cuando se consume menos, y un número que crece
+          al gastar menos se lee como un logro cuando muchas veces solo
+          significa que falta cargar una línea.
+        - `litros_por_kg` es el rendimiento como lo mide la planta: cuánta
+          leche costó cada kilo. Al lado va el de la receta, que es contra lo
+          que se compara.
+        """
+        from recepcion.models import MovimientoSilo
+
+        lineas = MovimientoSilo.objects.filter(
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=lote.id,
+        ).select_related("silo")
+
+        asignado = float(sum(l.litros for l in lineas))
+        teorico = self._litros_de_receta(lote)
+        kg = float(lote.kg_producidos or 0)
+
+        return {
+            "lote": lote.codigo_lote,
+            "estado": lote.estado,
+            "editable": self._por_que_no_se_puede_asignar(lote) is None,
+            "motivo_bloqueo": self._por_que_no_se_puede_asignar(lote),
+            "lineas": [
+                {
+                    "id": l.id,
+                    "silo": l.silo_id,
+                    "silo_codigo": l.silo.codigo,
+                    "litros": float(l.litros),
+                    "fecha_hora": l.fecha_hora,
+                }
+                for l in lineas
+            ],
+            "asignado": asignado,
+            # None cuando el producto no tiene receta vigente: no se inventa.
+            "teorico": teorico,
+            "diferencia": (asignado - teorico) if teorico is not None else None,
+            "consumo_pct": (
+                round(asignado / teorico * 100, 1)
+                if teorico else None
+            ),
+            # Rendimiento real: sin kilos declarados todavía no hay tal cosa.
+            "litros_por_kg": round(asignado / kg, 2) if kg and asignado else None,
+            "litros_por_kg_receta": (
+                round(teorico / kg, 2) if kg and teorico else None
+            ),
+        }
+
+    @staticmethod
+    def _litros_de_receta(lote) -> float | None:
+        """Litros que la receta vigente dice que cuesta este lote."""
+        return recetas.litros_de_leche(
+            list(Producto.objects.all()),
+            list(Receta.objects.prefetch_related("componentes")),
+            lote.producto_id,
+            lote.kg_producidos,
+            lote.fecha,
+        )
 
     @staticmethod
     def _ids_con_calidad(consulta, resultado):
