@@ -24,6 +24,11 @@ from .models import Liberacion, RegistroCalidad
 
 class BaseAPI(TestCase):
     def setUp(self):
+        # El catálogo del Dossier se siembra por migración y también está en la
+        # base de pruebas. Aquí se arma un checklist propio de dos documentos,
+        # así que hay que partir de cero.
+        DocumentoLiberacion.objects.all().delete()
+
         self.usuario = self._usuario("calidad1", Rol.CALIDAD, nombre="M.", apellido="Rivas")
         self.cliente = self._cliente(self.usuario)
 

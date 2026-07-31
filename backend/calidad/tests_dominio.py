@@ -26,6 +26,12 @@ class BaseLiberacion(TestCase):
     """
 
     def setUp(self):
+        # El catálogo del Dossier se siembra por migración, así que también
+        # existe en la base de pruebas. Estas pruebas arman su propio checklist
+        # y tienen que partir de cero: heredando los 19 medirían el avance
+        # contra documentos que no crearon.
+        DocumentoLiberacion.objects.all().delete()
+
         self.mandante = Mandante.objects.create(nombre="Nestlé")
 
         self.polvo = Producto.objects.create(

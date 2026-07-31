@@ -26,6 +26,11 @@ class DocumentoLiberacionTests(TestCase):
     y quien completa el registro en planta no tiene forma de notar que falta.
     """
 
+    def setUp(self):
+        # Hay pruebas que cuentan documentos, y el catálogo del Dossier se
+        # siembra por migración también en la base de pruebas.
+        DocumentoLiberacion.objects.all().delete()
+
     def _documento(self, **cambios):
         datos = {
             "nombre": "Ficha técnica",

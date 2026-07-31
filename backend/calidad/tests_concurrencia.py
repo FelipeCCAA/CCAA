@@ -127,6 +127,10 @@ class BloqueoAlFirmarTests(TransactionTestCase):
     """
 
     def setUp(self):
+        # Igual que en las demás pruebas de calidad: el catálogo sembrado por
+        # migración se limpia para armar aquí el checklist que se quiere medir.
+        DocumentoLiberacion.objects.all().delete()
+
         usuario = User.objects.create_user("mrivas", password="x")
         PerfilUsuario.objects.create(usuario=usuario, rol=Rol.CALIDAD)
 
