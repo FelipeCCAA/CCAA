@@ -451,7 +451,6 @@ function Produccion() {
 
         <FormularioLote
           productos={productos}
-          parametros={parametros}
           alCerrar={() => setFormularioAbierto(false)}
           alGuardar={cargarLotes}
         />
@@ -463,6 +462,7 @@ function Produccion() {
         <DetalleLote
           loteId={loteAbierto}
           puedeEditar={puedeEditar}
+          parametros={parametros}
           alCerrar={() => setLoteAbierto(null)}
           alCambiar={cargarLotes}
         />

@@ -3,10 +3,8 @@ import { Plus, Trash2, X } from "lucide-react";
 import axios from "axios";
 
 import {
-  crearAnalisis,
   crearLote,
   sugerirCodigoLote,
-  type Parametro,
   type Producto,
 } from "../../services/produccion.service";
 
@@ -29,13 +27,14 @@ import { obtenerSilos, type Silo } from "../../services/recepcion.service";
   El código se sugiere según el POE.009.02 pero queda editable: el histórico
   de planta trae códigos que no siguen el patrón y hay que poder registrarlos.
 
-  Los parámetros de calidad siguen aquí porque hoy es la única vía para
-  cargarlos. Al abrir un proceso normalmente van vacíos.
+  Los parámetros de calidad no están aquí: se miden sobre el producto
+  terminado, así que se cargan desde la ficha del lote una vez cerrada la
+  producción. Pedirlos al abrir invita a rellenarlos con lo que se espera en
+  vez de con lo que se midió.
 */
 
 interface Props {
   productos: Producto[];
-  parametros: Parametro[];
   alCerrar: () => void;
   alGuardar: () => void;
 }
@@ -44,7 +43,7 @@ interface Props {
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 
-function FormularioLote({ productos, parametros, alCerrar, alGuardar }: Props) {
+function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
   const [codigoLote, setCodigoLote] = useState("");
   const [producto, setProducto] = useState("");
@@ -52,7 +51,6 @@ function FormularioLote({ productos, parametros, alCerrar, alGuardar }: Props) {
   const [op, setOp] = useState("");
   const [linea, setLinea] = useState("");
   const [turno, setTurno] = useState("");
-  const [muestra, setMuestra] = useState("");
   const [observacion, setObservacion] = useState("");
 
   /* Una vez que el operador escribe el código, la sugerencia deja de pisarlo:
@@ -64,8 +62,6 @@ function FormularioLote({ productos, parametros, alCerrar, alGuardar }: Props) {
   const [asignaciones, setAsignaciones] = useState<
     { silo: string; litros: string }[]
   >([]);
-
-  const [medidos, setMedidos] = useState<Record<string, string>>({});
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -99,10 +95,6 @@ function FormularioLote({ productos, parametros, alCerrar, alGuardar }: Props) {
     return () => clearTimeout(temporizador);
   }, [sugerir]);
 
-  const cambiarParametro = (clave: string, valor: string) => {
-    setMedidos((previos) => ({ ...previos, [clave]: valor }));
-  };
-
   const agregarSilo = () =>
     setAsignaciones((a) => [...a, { silo: "", litros: "" }]);
 
@@ -120,22 +112,13 @@ function FormularioLote({ productos, parametros, alCerrar, alGuardar }: Props) {
     setError("");
     setGuardando(true);
 
-    // Solo viajan los parámetros que se completaron.
-    const valores: Record<string, number> = {};
-
-    for (const [clave, valor] of Object.entries(medidos)) {
-      if (valor.trim() !== "" && !Number.isNaN(Number(valor))) {
-        valores[clave] = Number(valor);
-      }
-    }
-
     const leche = asignaciones
       .filter((l) => l.silo && l.litros)
       .map((l) => ({ silo: Number(l.silo), litros: Number(l.litros) }));
 
     try {
 
-      const lote = await crearLote({
+      await crearLote({
         codigo_lote: codigoLote,
         producto: Number(producto),
         fecha,
@@ -145,24 +128,6 @@ function FormularioLote({ productos, parametros, alCerrar, alGuardar }: Props) {
         observacion: observacion || undefined,
         asignaciones: leche.length > 0 ? leche : undefined,
       });
-
-      if (Object.keys(valores).length > 0) {
-
-        try {
-          await crearAnalisis(lote.id, fecha, valores, muestra);
-        } catch {
-          // El lote sí quedó abierto. Se avisa en vez de dejar creer que no
-          // se guardó nada y que el usuario lo cargue dos veces.
-          setError(
-            "El proceso se abrió, pero no se pudieron registrar sus " +
-              "parámetros. Agrégalos desde la ficha del lote.",
-          );
-          setGuardando(false);
-          alGuardar();
-          return;
-        }
-
-      }
 
       alGuardar();
       alCerrar();
@@ -432,77 +397,6 @@ function FormularioLote({ productos, parametros, alCerrar, alGuardar }: Props) {
               Agregar silo
 
             </button>
-
-          </div>
-
-          {/* Parámetros de calidad */}
-
-          <div className="mt-8 border-t border-slate-200 pt-6">
-
-            <h3 className="text-sm font-semibold text-slate-800">
-
-              Parámetros de calidad
-
-            </h3>
-
-            <p className="mt-1 mb-5 text-sm text-slate-400">
-
-              Opcionales, y normalmente vacíos al abrir: se miden sobre el
-              producto terminado. Se evalúan solos contra la especificación
-              vigente, el resultado no se escribe a mano.
-
-            </p>
-
-            <div className="mb-5 max-w-xs">
-
-              <label className={etiquetaCampo}>Muestra</label>
-
-              <input
-                className={campo}
-                value={muestra}
-                onChange={(e) => setMuestra(e.target.value)}
-                placeholder="M-01"
-              />
-
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-
-              {parametros.map((parametro) => (
-
-                <div key={parametro.clave}>
-
-                  <label className={etiquetaCampo}>
-
-                    {parametro.etiqueta}
-
-                    {parametro.unidad && (
-
-                      <span className="ml-1 font-normal text-slate-400">
-
-                        ({parametro.unidad})
-
-                      </span>
-
-                    )}
-
-                  </label>
-
-                  <input
-                    type="number"
-                    step="any"
-                    className={campo}
-                    value={medidos[parametro.clave] ?? ""}
-                    onChange={(e) =>
-                      cambiarParametro(parametro.clave, e.target.value)
-                    }
-                  />
-
-                </div>
-
-              ))}
-
-            </div>
 
           </div>
 

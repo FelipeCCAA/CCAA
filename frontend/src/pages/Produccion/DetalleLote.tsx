@@ -12,10 +12,12 @@ import {
   TRANSICIONES,
   type EstadoLote,
   type LoteDetalle,
+  type Parametro,
   type LoteEditado,
 } from "../../services/produccion.service";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
+import FormularioAnalisis from "./FormularioAnalisis";
 import PanelAsignacion from "./PanelAsignacion";
 
 
@@ -34,6 +36,8 @@ import PanelAsignacion from "./PanelAsignacion";
 interface Props {
   loteId: number;
   puedeEditar: boolean;
+  /* Vienen de la pantalla de Producción, que ya los pidió una vez. */
+  parametros: Parametro[];
   alCerrar: () => void;
   alCambiar: () => void;
 }
@@ -141,7 +145,13 @@ function cambios(original: Borrador, actual: Borrador): LoteEditado {
 }
 
 
-function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
+function DetalleLote({
+  loteId,
+  puedeEditar,
+  parametros,
+  alCerrar,
+  alCambiar,
+}: Props) {
 
   const [lote, setLote] = useState<LoteDetalle | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -620,6 +630,30 @@ function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
                 </ul>
 
               )}
+
+              {/* Los parámetros se miden sobre el producto terminado: hasta
+                  que la corrida no cierra no hay nada que analizar. */}
+
+              {lote.estado === "en_proceso" ? (
+
+                <p className="mt-3 text-xs text-slate-400">
+                  Los análisis se cargan al cerrar la producción: se miden
+                  sobre el producto terminado.
+                </p>
+
+              ) : puedeEditar && !esFinal ? (
+
+                <FormularioAnalisis
+                  loteId={lote.id}
+                  fechaLote={lote.fecha}
+                  parametros={parametros}
+                  alGuardar={() => {
+                    void cargar();
+                    alCambiar();
+                  }}
+                />
+
+              ) : null}
 
             </div>
 
