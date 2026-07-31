@@ -23,3 +23,13 @@ db.sqlite3
 
 # Python cache
 .pytest_cache/
+# Documentos de planta: la fuente de los formatos reales.
+#
+# 1.691 archivos y 1,8 GB, y no todo es de producción — hay salud
+# ocupacional, rendiciones y compras. No entra al repositorio: lo haría
+# pesado para siempre (el histórico de git no se adelgaza) y publicaría
+# documentos internos a todo el que clone.
+#
+# Se lee en local para construir las plantillas; lo que queda versionado es
+# la plantilla resultante, no el archivo de origen.
+Documentos Planta/
