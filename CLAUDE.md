@@ -144,6 +144,29 @@ el modelo captura.
 dibuja — cae al campo de texto por defecto, sin avisar. Hay una prueba que impide usarlo hasta que
 se implemente.
 
+**Los registros que no son por lote viven en el equipo y su período** (2026-07-31). En el catálogo
+de planta **solo 12 de 204 documentos son por lote**; el resto son aseos por ciclo, monitoreos por
+turno y programas. `DocumentoLiberacion.frecuencia` decide dónde vive el dato, y `RegistroEquipo`
+—hermano de `RegistroCalidad`, mismo contrato de plantilla— cuelga del equipo y su fecha. El
+checklist del lote lo **consume**: un aseo semanal se llena una vez y cubre todos los lotes de esa
+semana.
+
+La ventana se deduce de la frecuencia y **no se guarda**: un `vigente_hasta` almacenado se
+desincroniza al corregir la fecha del registro, y un lote quedaría cubierto por un aseo que ya no
+lo alcanza. La excepción es `segun_programa`, sin período deducible: ahí el registro declara su
+vigencia y sin ella **no cubre nada**.
+
+La captura vive en **`/registros`**, organizada por equipo y fecha — quien asea una torre no
+piensa en lotes. Los campos los dibuja `components/CampoDePlantilla`, el mismo componente que el
+expediente: un solo renderizador para un solo contrato.
+
+**Las frecuencias se cargan solo cuando el formato las declara.** El catálogo del levantamiento
+tiene una columna de frecuencia que **no coincide** con los formularios: clasifica los checklists
+de cuerpos extraños como «Según programa» mientras el formato dice «Al inicio del ciclo de
+producción». Manda el formato. El resto se queda en `por_lote`, que además es el valor seguro:
+pasarse de frecuencia solo molesta, quedarse corto deja que un registro cubra lotes que nunca
+revisó.
+
 La pantalla cubre productos, mandantes y silos (estos últimos de solo lectura: su ocupación es un
 saldo del libro de movimientos, y un formulario invitaría a «corregirlo» escribiéndolo). Las
 **especificaciones** y el **catálogo de documentos** siguen en el admin: sus formularios son JSON

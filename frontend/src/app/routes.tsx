@@ -15,6 +15,7 @@ import Liberacion from "../pages/Liberacion/Liberacion";
 import Planificacion from "../pages/Planificacion/Planificacion";
 import Maestros from "../pages/Maestros/Maestros";
 import Auditoria from "../pages/Auditoria/Auditoria";
+import Registros from "../pages/Registros/Registros";
 
 
 /*
@@ -97,6 +98,11 @@ function RoutesApp(){
                     <Route
                         path="/maestros"
                         element={<Maestros />}
+                    />
+
+                    <Route
+                        path="/registros"
+                        element={<Registros />}
                     />
 
                     <Route

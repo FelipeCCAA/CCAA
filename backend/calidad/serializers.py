@@ -202,6 +202,25 @@ def serializar_avance(avance):
                 # porque no es lo mismo «hay control de proceso» que «alguien
                 # marcó la casilla».
                 "cumplido_por_dato": d.cumplido_por_dato,
+                # El registro periódico que lo cubre, si lo hay. Va con su
+                # fecha y su equipo para que el expediente pueda decir CUÁL
+                # —«el aseo del 27-07 en el VEB»— y quien audita llegue al
+                # papel.
+                "cubierto_por": (
+                    {
+                        "id": d.cubierto_por.id,
+                        "fecha": d.cubierto_por.fecha,
+                        "equipo": (
+                            d.cubierto_por.equipo.nombre
+                            if d.cubierto_por.equipo_id
+                            else None
+                        ),
+                        "turno": d.cubierto_por.turno,
+                        "vigente_hasta": d.cubierto_por.vigente_hasta,
+                    }
+                    if d.cubierto_por is not None
+                    else None
+                ),
                 "faltantes": [c["etiqueta"] for c in d.faltantes],
             }
             for d in avance.detalle

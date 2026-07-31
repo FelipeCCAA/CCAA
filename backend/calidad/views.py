@@ -30,10 +30,11 @@ from produccion.models import (
 )
 from recepcion.models import MovimientoSilo
 from usuarios.models import rol_de
-from usuarios.permisos import EscribeCalidad
+from usuarios.permisos import EscribeCalidad, EscribePlanta
 
 from . import dominio
 from .models import Liberacion, RegistroCalidad, RegistroEquipo
+from .serializers_equipo import RegistroEquipoSerializer
 from .serializers import (
     ConcesionSerializer,
     FirmaSerializer,
@@ -568,3 +569,85 @@ def conceder(request, lote_id):
         motivo=datos.validated_data["motivo"],
         observacion=datos.validated_data["observacion"],
     )
+
+
+class RegistroEquipoViewSet(viewsets.ModelViewSet):
+    """
+    Registros que pertenecen al equipo y su período, no a un lote.
+
+    Escriben Producción y Calidad: quien está en la máquina llena el aseo o la
+    inspección, y Calidad revisa. El checklist de los lotes de ese período los
+    consume solo.
+    """
+
+    queryset = RegistroEquipo.objects.select_related("documento", "equipo")
+    serializer_class = RegistroEquipoSerializer
+    permission_classes = [EscribePlanta]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        parametros = self.request.query_params
+
+        documento = parametros.get("documento")
+        if documento:
+            consulta = consulta.filter(documento_id=documento)
+
+        equipo = parametros.get("equipo")
+        if equipo:
+            consulta = consulta.filter(equipo_id=equipo)
+
+        desde = parametros.get("desde")
+        if desde:
+            consulta = consulta.filter(fecha__gte=desde)
+
+        hasta = parametros.get("hasta")
+        if hasta:
+            consulta = consulta.filter(fecha__lte=hasta)
+
+        estado = parametros.get("estado")
+        if estado:
+            consulta = consulta.filter(estado=estado)
+
+        return consulta
+
+    def perform_create(self, serializer):
+        self._guardar_firmando(serializer)
+
+    def perform_update(self, serializer):
+        self._guardar_firmando(serializer)
+
+    def _guardar_firmando(self, serializer):
+        """
+        Quién completó el registro lo pone el servidor, no el cliente.
+
+        Es la misma razón que en la liberación: un registro que dice haber
+        sido completado por otro no prueba nada.
+        """
+        from django.utils import timezone
+
+        completado = (
+            serializer.validated_data.get("estado") == RegistroEquipo.Estado.COMPLETADO
+        )
+
+        serializer.save(
+            completado_por=self.request.user if completado else None,
+            completado_en=timezone.now() if completado else None,
+        )
+
+
+@api_view(["GET"])
+def documentos_periodicos(request):
+    """
+    Los documentos que NO son por lote, para armar la pantalla de registros.
+
+    Se sirven aparte del catálogo completo porque la pantalla de planta solo
+    trabaja con estos: mezclarlos con los del expediente obligaría a filtrar
+    en el cliente y a repetir ahí la regla de qué es periódico.
+    """
+    from maestros.serializers import DocumentoLiberacionSerializer
+
+    documentos = DocumentoLiberacion.objects.exclude(
+        frecuencia=DocumentoLiberacion.Frecuencia.POR_LOTE
+    ).order_by("orden")
+
+    return Response(DocumentoLiberacionSerializer(documentos, many=True).data)
