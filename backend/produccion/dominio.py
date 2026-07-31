@@ -256,14 +256,21 @@ def resultado_calidad_lote(
     )
 
 
-def kg_disponibles(lote: Any, kg_despachados: Decimal | float = 0) -> Decimal:
+def kg_disponibles(lote: Any, kg_despachados: Decimal | float = 0) -> Decimal | None:
     """
     Kilos que quedan por despachar de un lote.
 
     Los despachos aún no existen como entidad, así que por ahora recibe el
     total despachado como parámetro. Cuando exista el módulo, se calculará
     desde ahí sin cambiar la firma para quien llame.
+
+    Devuelve None mientras el lote no declare sus kilos: de un lote en proceso
+    todavía no hay nada disponible, y contarlo como cero diría que se despachó
+    todo.
     """
+    if lote.kg_producidos is None:
+        return None
+
     return Decimal(str(lote.kg_producidos)) - Decimal(str(kg_despachados))
 
 
@@ -335,3 +342,88 @@ def codigo_lote_valido(codigo: str) -> bool:
     que un registro de trazabilidad debe hacer.
     """
     return bool(_PATRON_CODIGO.match(codigo or ""))
+
+
+def tipo_de_codificacion(producto) -> str:
+    """
+    Cómo se codifica este producto, a partir de su ficha de maestros.
+
+    El POE agrupa por sufijo y el maestro agrupa por familia, y no son la
+    misma partición: el precondensado es un líquido intermedio y lleva
+    sufijo propio, mientras que la crema —que también sale líquida— no lleva
+    ninguno. Por eso la regla mira la naturaleza antes que la familia.
+
+    Lanza `ValueError` en vez de devolver un tipo por defecto: un producto
+    que el POE no contempla necesita que alguien decida su sufijo, y elegir
+    uno en silencio imprimiría códigos equivocados en las bolsas.
+    """
+    familia = getattr(producto, "familia", None)
+    naturaleza = getattr(producto, "naturaleza", None)
+
+    if familia == "polvo":
+        return TIPO_LEP
+
+    if familia == "crema":
+        return TIPO_CREMA
+
+    if naturaleza == "intermedio":
+        return TIPO_PRECONDENSADO
+
+    raise ValueError(
+        f"El POE.009.02 no define cómo codificar «{producto}» "
+        f"(familia {familia!r}, naturaleza {naturaleza!r})."
+    )
+
+
+@dataclass(frozen=True)
+class DecisionCierre:
+    """
+    Una decisión con sus motivos, y con lo que solo hay que advertir.
+
+    `bloqueos` impide; `avisos` deja pasar diciendo qué queda cojo. La
+    distinción es el punto: mezclarlos obliga a elegir entre detener la
+    producción por un dato completable o dejarlo pasar en silencio.
+    """
+
+    permitido: bool
+    bloqueos: list[str] = field(default_factory=list)
+    avisos: list[str] = field(default_factory=list)
+
+
+def puede_declarar_producido(lote, asignaciones) -> DecisionCierre:
+    """
+    ¿Se puede cerrar la producción de este lote?
+
+    Se declara producido cuando la corrida terminó, y ahí recién se conocen
+    los kilos: por eso el lote se abre sin ellos y aquí se exigen. Sin kilos
+    no hay rendimiento, no hay balance de despacho y no hay nada contra qué
+    contrastar el plan.
+
+    La leche asignada **no bloquea**: avisa. Un lote sin asignar es un lote
+    sin trazabilidad hacia las recepciones, que es un problema real, pero
+    impedir el cierre dejaría la producción del día detenida por un dato que
+    se puede completar después. La decisión de endurecerlo es de Calidad, y
+    se toma cambiando esta función, no parcheando la vista.
+
+    Devuelve motivos, no un booleano (MODELO_DATOS.md §2.10).
+    """
+    bloqueos = []
+    avisos = []
+
+    if lote.kg_producidos is None:
+        bloqueos.append(
+            "Declara los kilos producidos: sin ellos no hay rendimiento ni "
+            "balance de despacho."
+        )
+    elif Decimal(str(lote.kg_producidos)) <= 0:
+        bloqueos.append("Los kilos producidos tienen que ser mayores que cero.")
+
+    if not asignaciones:
+        avisos.append(
+            "El lote no tiene leche asignada: quedará sin trazabilidad hacia "
+            "las recepciones."
+        )
+
+    return DecisionCierre(
+        permitido=not bloqueos, bloqueos=bloqueos, avisos=avisos
+    )

@@ -5,7 +5,8 @@ from django.db import transaction
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status, viewsets
+from django.utils.dateparse import parse_date
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
@@ -80,6 +81,109 @@ class LoteViewSet(viewsets.ModelViewSet):
             consulta = consulta.filter(id__in=self._ids_con_calidad(consulta, calidad))
 
         return consulta
+
+    def create(self, request, *args, **kwargs):
+        """
+        Abre un proceso: crea el lote y le asigna su leche de una vez.
+
+        Van juntos a propósito. Si el lote se creara primero y la asignación
+        fuera un segundo paso, un fallo entre medio dejaría un lote abierto
+        sin materia prima — y nadie vuelve a completar lo que ya parece
+        creado. La asignación al inicio es justamente lo que da trazabilidad;
+        posponerla la convierte en documentación retroactiva.
+
+        `asignaciones` es opcional: un lote histórico se carga sin ella, y el
+        aviso al declararlo producido recuerda que quedó sin trazar.
+        """
+        lineas = request.data.get("asignaciones") or []
+
+        if lineas and not isinstance(lineas, list):
+            return Response(
+                {"detail": 'Formato: "asignaciones": [{"silo": 3, "litros": 60000}]'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            respuesta = super().create(request, *args, **kwargs)
+
+            if lineas:
+                lote = Lote.objects.get(pk=respuesta.data["id"])
+                creados = self._crear_asignaciones(lote, lineas)
+
+                if isinstance(creados, Response):
+                    # Se sale por excepción y no por return: dentro de un
+                    # `atomic`, volver normalmente confirma la transacción y
+                    # dejaría el lote creado sin su leche.
+                    raise serializers.ValidationError(creados.data)
+
+                respuesta.data["asignacion"] = self._estado_asignacion(lote)
+
+        return respuesta
+
+    @action(detail=False, methods=["get"], url_path="codigo-sugerido")
+    def codigo_sugerido(self, request):
+        """
+        El código que le tocaría a un lote nuevo, según el POE.009.02.
+
+        Se **sugiere**, no se impone: la respuesta trae el código y el
+        operador puede cambiarlo. El histórico de planta trae códigos que no
+        siguen el patrón y hay que poder registrarlos, así que el generador
+        avisa y no restringe — la misma razón por la que `codigo_lote_valido`
+        no cuelga del `clean()` del modelo.
+
+        `segunda_produccion` no se pregunta: se deduce de si ya existe un lote
+        de ese producto y esa fecha. Preguntarlo sería pedirle al operador un
+        dato que el sistema ya tiene, y equivocarse ahí repite un código.
+        """
+        producto_id = request.query_params.get("producto")
+        fecha_texto = request.query_params.get("fecha")
+
+        if not producto_id or not fecha_texto:
+            return Response(
+                {"detail": "Indica el producto y la fecha."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        fecha = parse_date(fecha_texto)
+
+        if fecha is None:
+            return Response(
+                {"detail": f"Fecha no reconocida: {fecha_texto!r} (usa AAAA-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        producto = get_object_or_404(Producto, pk=producto_id)
+
+        try:
+            tipo = dominio.tipo_de_codificacion(producto)
+        except ValueError as e:
+            # 200 con `codigo: null`: el formulario sigue abierto y el
+            # operador escribe el código a mano. Un 400 se leería como si el
+            # lote no se pudiera crear, y sí se puede.
+            return Response({"codigo": None, "motivo": str(e)})
+
+        repetido = Lote.objects.filter(producto=producto, fecha=fecha).exists()
+
+        codigo = dominio.generar_codigo_lote(
+            fecha,
+            tipo,
+            linea=request.query_params.get("linea") or None,
+            nacional=request.query_params.get("nacional") in ("1", "true", "True"),
+            segunda_produccion=repetido,
+        )
+
+        return Response(
+            {
+                "codigo": codigo,
+                "segunda_produccion": repetido,
+                "motivo": (
+                    "Ya hay un lote de este producto en la fecha: lleva 'A' "
+                    "para no repetir el código."
+                    if repetido
+                    else None
+                ),
+            }
+        )
 
     @action(detail=True, methods=["get", "post"])
     def asignacion(self, request, pk=None):
@@ -379,7 +483,16 @@ class LoteViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _litros_de_receta(lote) -> float | None:
-        """Litros que la receta vigente dice que cuesta este lote."""
+        """
+        Litros que la receta vigente dice que cuesta este lote.
+
+        Sin kilos declarados no hay expectativa que calcular: la receta dice
+        cuánta leche cuesta *cada kilo*, y mientras el lote está en proceso
+        todavía no se sabe cuántos serán.
+        """
+        if lote.kg_producidos is None:
+            return None
+
         return recetas.litros_de_leche(
             list(Producto.objects.all()),
             list(Receta.objects.prefetch_related("componentes")),
@@ -466,7 +579,9 @@ def resumen(request):
         )
         por_resultado[resultado.resultado] += 1
 
-        kilos = float(lote.kg_producidos)
+        # Un lote en proceso todavía no declaró kilos. Suma cero: no es que
+        # haya producido nada, es que aún no se sabe.
+        kilos = float(lote.kg_producidos or 0)
         kg_por_producto[lote.producto.nombre] += kilos
         kg_por_mandante[lote.producto.mandante.nombre] += kilos
 

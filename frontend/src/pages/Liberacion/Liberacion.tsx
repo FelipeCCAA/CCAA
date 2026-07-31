@@ -7,6 +7,8 @@ import {
   type FilaExpediente,
 } from "../../services/calidad.service";
 
+import { kilos } from "../../services/produccion.service";
+
 import Expediente from "./Expediente";
 
 
@@ -21,7 +23,6 @@ import Expediente from "./Expediente";
   trabajo pendiente entre lo que ya está resuelto.
 */
 
-const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
 const ESTILO_LIBERACION: Record<string, string> = {
   pendiente: "bg-slate-100 text-slate-600",
@@ -209,7 +210,7 @@ function Liberacion() {
                   <td className="px-5 py-3 text-slate-600">{fila.lote.fecha}</td>
 
                   <td className="px-5 py-3 text-right text-slate-600">
-                    {formato.format(Number(fila.lote.kg_producidos))}
+                    {kilos(fila.lote.kg_producidos)}
                   </td>
 
                   <td className="px-5 py-3">

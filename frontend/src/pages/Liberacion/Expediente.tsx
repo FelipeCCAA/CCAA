@@ -18,6 +18,7 @@ import {
   type Expediente as ExpedienteTipo,
 } from "../../services/calidad.service";
 
+import { kilos } from "../../services/produccion.service";
 import { puedeEscribir } from "../../services/sesion";
 
 import FormularioDinamico from "./FormularioDinamico";
@@ -41,7 +42,6 @@ interface Props {
 }
 
 
-const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
 const ESTILO_CALIDAD: Record<string, string> = {
   conforme: "bg-green-50 text-green-700",
@@ -182,7 +182,7 @@ function Expediente({ loteId, alVolver }: Props) {
 
             <p className="mt-1 text-sm text-slate-500">
               {lote.producto_nombre} · {lote.mandante_nombre} · {lote.fecha} ·{" "}
-              {formato.format(Number(lote.kg_producidos))} kg
+              {kilos(lote.kg_producidos)}
             </p>
 
           </div>

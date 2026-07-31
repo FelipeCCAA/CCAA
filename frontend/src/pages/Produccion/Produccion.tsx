@@ -7,6 +7,7 @@ import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 import {
   borrarLote,
   buscarLotes,
+  kilos,
   obtenerParametros,
   obtenerProductos,
   RESULTADOS,
@@ -171,7 +172,7 @@ function Produccion() {
 
               <Plus className="h-5 w-5" />
 
-              Nuevo lote
+              Abrir proceso
 
             </button>
 
@@ -338,7 +339,7 @@ function Produccion() {
 
                       <td className="px-6 py-4 text-slate-600">
 
-                        {formato.format(Number(lote.kg_producidos))} kg
+                        {kilos(lote.kg_producidos)}
 
                       </td>
 

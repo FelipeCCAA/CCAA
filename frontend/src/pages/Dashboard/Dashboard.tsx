@@ -11,6 +11,7 @@ import GraficoBarras from "../../components/GraficoBarras/GraficoBarras";
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 
 import {
+  kilos,
   obtenerLotes,
   obtenerResumen,
   type Lote,
@@ -337,7 +338,7 @@ function Dashboard() {
 
                       <td className="px-6 py-4 text-slate-600">
 
-                        {formato.format(Number(lote.kg_producidos))} kg
+                        {kilos(lote.kg_producidos)}
 
                       </td>
 

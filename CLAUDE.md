@@ -31,6 +31,9 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 
 - El catálogo de `DocumentoLiberacion` se siembra por **migración de datos**, así que también aparece en la base de **pruebas**. Cualquier prueba que arme su propio checklist debe limpiarlo primero (`DocumentoLiberacion.objects.all().delete()` en `setUp`), o medirá el avance contra documentos que no creó.
 - El camino de la firma usa `select_for_update`; en SQLite eso **no hace nada** y la garantía desaparece en silencio. De ahí el check `calidad.E001`.
+- `frontend/tsconfig.json` es de tipo **solución** (`files: []` + referencias), así que `npx tsc --noEmit` a secas **no comprueba nada** y sale con 0. Usa `npx tsc -b` (es lo que corre `npm run build`).
+- El runner de pruebas **migra la base de pruebas solo**, así que una migración generada y no aplicada deja la suite entera en verde y revienta en el navegador con un `IntegrityError`. Después de `makemigrations`, correr `migrate`.
+- Dentro de `transaction.atomic()`, **salir con `return` confirma la transacción**: solo una excepción revierte. Un `return Response(...)` de validación a mitad de un lote de escrituras deja media operación guardada.
 
 ## Tarea de integración en curso
 
@@ -40,6 +43,15 @@ Integrar el delta del levantamiento (`LEVANTAMIENTO_PLANTA.md` §2–§5) siguie
 **P0 aplicado** (2026-07-30): campo `area` en `DocumentoLiberacion`, siembra de los 19 registros
 del Dossier, `generar_codigo_lote` con sus pruebas, `ControlProceso`+`ControlProcesoLectura` con
 el PCC 1, y la app `inocuidad` con `MonitoreoPPRO`+`PproLectura`.
+
+**Ciclo de vida del lote** (cambiado el 2026-07-31): un lote **se abre al empezar la corrida**,
+con su leche asignada y **sin kilos** — `kg_producidos` es nulable. Los kilos se declaran al
+pasar a `producido`, que es cuando se saben; la regla vive en
+`produccion.dominio.puede_declarar_producido`, no en el esquema, para que un lote histórico se
+pueda cargar completo de una vez. La leche asignada **avisa pero no bloquea** ese paso: exigirla
+detendría la producción del día por un dato completable, y endurecerlo es decisión de Calidad
+sobre esa misma función. El código se propone con `codigo-sugerido/` según el POE.009.02 y queda
+editable, por la misma razón que `codigo_lote_valido` avisa y no restringe.
 
 **Lo siguiente, en este orden:**
 

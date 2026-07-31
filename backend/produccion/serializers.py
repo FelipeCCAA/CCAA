@@ -1,3 +1,5 @@
+from copy import copy
+
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
@@ -150,6 +152,8 @@ class LoteSerializer(serializers.ModelSerializer):
             if campo in datos and datos[campo] != getattr(self.instance, campo)
         ]
 
+        self._rechazar_si_no_puede_declararse_producido(datos)
+
         if not cambios:
             return datos
 
@@ -157,6 +161,46 @@ class LoteSerializer(serializers.ModelSerializer):
         self._rechazar_si_esta_liberado(cambios)
 
         return datos
+
+    def _rechazar_si_no_puede_declararse_producido(self, datos):
+        """
+        Un lote se declara producido con sus kilos, no sin ellos.
+
+        El lote se abre al empezar la corrida, cuando los kilos todavía no
+        existen; este es el momento en que sí tienen que estar. La regla vive
+        en `dominio.puede_declarar_producido` para que se pueda probar sola y
+        para que endurecerla —por ejemplo, exigir también la leche asignada—
+        sea editar una función pura y no la vista.
+        """
+        if datos.get("estado") != Lote.Estado.PRODUCIDO:
+            return
+
+        if self.instance.estado == Lote.Estado.PRODUCIDO:
+            return
+
+        # Los kilos pueden venir en la misma llamada que el cambio de estado.
+        candidato = copy(self.instance)
+        if "kg_producidos" in datos:
+            candidato.kg_producidos = datos["kg_producidos"]
+
+        decision = dominio.puede_declarar_producido(
+            candidato, self._asignaciones_del_lote()
+        )
+
+        if not decision.permitido:
+            raise serializers.ValidationError({"estado": decision.bloqueos})
+
+    def _asignaciones_del_lote(self):
+        """Las salidas de silo que este lote consumió."""
+        from recepcion.models import MovimientoSilo
+
+        return list(
+            MovimientoSilo.objects.filter(
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                origen_id=self.instance.id,
+            )
+        )
 
     def _rechazar_si_es_final(self):
         """Un lote cerrado o anulado es histórico, y el histórico se audita."""

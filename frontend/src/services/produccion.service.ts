@@ -47,6 +47,24 @@ export interface CalidadLote {
 }
 
 
+const FORMATO_KG = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
+
+
+/**
+ * Kilos de un lote, o un guion si todavía no se declararon.
+ *
+ * Existe porque `Number(null)` es 0: un lote en proceso mostraría "0 kg" y
+ * diría que no produjo nada, cuando lo cierto es que aún no se sabe cuánto.
+ */
+export function kilos(valor: string | number | null | undefined): string {
+  if (valor == null || valor === "") {
+    return "—";
+  }
+
+  return `${FORMATO_KG.format(Number(valor))} kg`;
+}
+
+
 export type EstadoLote = "en_proceso" | "producido" | "cerrado" | "anulado";
 
 
@@ -104,8 +122,9 @@ export interface Lote {
   fecha: string;
   linea: string;
   turno: string;
-  /* Django serializa los decimales como texto, para no perder precisión. */
-  kg_producidos: string;
+  /* Django serializa los decimales como texto, para no perder precisión.
+     null mientras el lote está en proceso: todavía no se sabe cuántos. */
+  kg_producidos: string | null;
   bultos: number | null;
   hora_inicio: string | null;
   hora_termino: string | null;
@@ -175,17 +194,55 @@ export interface FiltrosLotes {
 }
 
 
-/** Campos de un lote nuevo. Los opcionales se omiten si van vacíos. */
+/**
+ * Campos para abrir un proceso. Los opcionales se omiten si van vacíos.
+ *
+ * `kg_producidos` no está: los kilos se saben cuando la corrida termina, y se
+ * declaran al marcar el lote como producido. Exigirlos aquí es lo que obligaba
+ * a registrar el lote —y con él toda su trazabilidad— al final del día.
+ */
 export interface LoteNuevo {
   codigo_lote: string;
   producto: number;
   fecha: string;
-  kg_producidos: string;
   op?: string;
   linea?: string;
   turno?: string;
   bultos?: number;
   observacion?: string;
+  /* De qué silos sale la leche. Va en la misma llamada: si fallara, no queda
+     un lote abierto sin materia prima. */
+  asignaciones?: { silo: number; litros: number }[];
+}
+
+
+export interface CodigoSugerido {
+  /* null cuando el POE no define cómo codificar el producto: se escribe a
+     mano y el motivo lo explica. */
+  codigo: string | null;
+  segunda_produccion?: boolean;
+  motivo: string | null;
+}
+
+
+/**
+ * El código que le tocaría a este lote según el POE.009.02.
+ *
+ * Se sugiere, no se impone: el histórico de planta trae códigos que no siguen
+ * el patrón y hay que poder registrarlos igual.
+ */
+export async function sugerirCodigoLote(
+  producto: number,
+  fecha: string,
+  linea?: string,
+): Promise<CodigoSugerido> {
+
+  const { data } = await api.get<CodigoSugerido>(
+    "produccion/lotes/codigo-sugerido/",
+    { params: { producto, fecha, linea: linea || undefined } },
+  );
+
+  return data;
 }
 
 
@@ -315,10 +372,15 @@ export async function editarLote(
 export async function cambiarEstadoLote(
   id: number,
   estado: EstadoLote,
+  kgProducidos?: string,
 ): Promise<LoteDetalle> {
 
+  // Los kilos viajan con el cambio de estado, no antes: declarar y cerrar la
+  // producción es un solo gesto, y en dos llamadas un fallo entre medio
+  // dejaría los kilos escritos en un lote que sigue abierto.
   const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, {
     estado,
+    ...(kgProducidos ? { kg_producidos: kgProducidos } : {}),
   });
 
   return data;

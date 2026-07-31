@@ -7,6 +7,7 @@ import {
   editarLote,
   ETIQUETA_ESTADO,
   EXPLICACION_ESTADO,
+  kilos,
   obtenerLote,
   TRANSICIONES,
   type EstadoLote,
@@ -38,7 +39,6 @@ interface Props {
 }
 
 
-const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
 const ESTILO_ESTADO: Record<EstadoLote, string> = {
   en_proceso: "bg-blue-50 text-blue-700",
@@ -105,7 +105,9 @@ function borradorDe(lote: LoteDetalle): Borrador {
     fecha: lote.fecha,
     linea: lote.linea ?? "",
     turno: lote.turno ?? "",
-    kg_producidos: lote.kg_producidos,
+    /* Vacío cuando el lote sigue en proceso: los kilos se declaran al
+       cerrarlo, y un "0" en el campo se guardaría como producción real. */
+    kg_producidos: lote.kg_producidos ?? "",
     bultos: lote.bultos === null ? "" : String(lote.bultos),
     hora_inicio: lote.hora_inicio ?? "",
     hora_termino: lote.hora_termino ?? "",
@@ -147,6 +149,11 @@ function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
   const [guardando, setGuardando] = useState(false);
   const [confirmando, setConfirmando] = useState<EstadoLote | null>(null);
 
+  /* Cerrar la producción es declarar cuánto se produjo: los kilos se piden
+     aquí, que es cuando se saben. El backend los exige igual. */
+  const [declarando, setDeclarando] = useState(false);
+  const [kgCierre, setKgCierre] = useState("");
+
   const [editando, setEditando] = useState(false);
   const [borrador, setBorrador] = useState<Borrador | null>(null);
   const [original, setOriginal] = useState<Borrador | null>(null);
@@ -175,15 +182,17 @@ function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
 
   }, [cargar]);
 
-  const cambiar = async (estado: EstadoLote) => {
+  const cambiar = async (estado: EstadoLote, kgDeclarados?: string) => {
 
     setError("");
     setGuardando(true);
 
     try {
 
-      setLote(await cambiarEstadoLote(loteId, estado));
+      setLote(await cambiarEstadoLote(loteId, estado, kgDeclarados));
       setConfirmando(null);
+      setDeclarando(false);
+      setKgCierre("");
       alCambiar();
 
     } catch (e) {
@@ -332,7 +341,7 @@ function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
                     <Dato etiqueta="Código">{lote.codigo_lote}</Dato>
 
                     <Dato etiqueta="Kilos">
-                      {formato.format(Number(lote.kg_producidos))} kg
+                      {kilos(lote.kg_producidos)}
                     </Dato>
 
                     <Dato etiqueta="Bultos">{lote.bultos ?? "—"}</Dato>
@@ -640,7 +649,65 @@ function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
                 </p>
               )}
 
-              {puedeEditar && !esFinal && !confirmando && (
+              {/* Cierre de producción: declarar los kilos */}
+
+              {declarando && (
+
+                <div className="mt-3 rounded-xl bg-slate-50 p-4">
+
+                  <p className="text-sm font-medium text-slate-800">
+
+                    ¿Cuántos kilos produjo el lote?
+
+                  </p>
+
+                  <p className="mt-1 text-sm text-slate-600">
+
+                    Cierra la producción. Desde aquí el lote llega a Calidad y
+                    puede liberarse.
+
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      autoFocus
+                      value={kgCierre}
+                      onChange={(e) => setKgCierre(e.target.value)}
+                      placeholder="Kilos"
+                      className="w-40 rounded-xl border border-slate-300 px-3 py-2 text-sm tabular-nums text-slate-800 focus:border-green-600 focus:outline-none"
+                    />
+
+                    <button
+                      type="button"
+                      disabled={guardando || !kgCierre}
+                      onClick={() => void cambiar("producido", kgCierre)}
+                      className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {guardando ? "Cerrando…" : "Cerrar producción"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeclarando(false);
+                        setKgCierre("");
+                      }}
+                      className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+                    >
+                      Cancelar
+                    </button>
+
+                  </div>
+
+                </div>
+
+              )}
+
+              {puedeEditar && !esFinal && !confirmando && !declarando && (
 
                 <div className="mt-3 flex flex-wrap gap-2">
 
@@ -650,11 +717,17 @@ function DetalleLote({ loteId, puedeEditar, alCerrar, alCambiar }: Props) {
                       key={estado}
                       type="button"
                       disabled={guardando}
-                      onClick={() =>
-                        TRANSICIONES[estado].length === 0
-                          ? setConfirmando(estado)
-                          : void cambiar(estado)
-                      }
+                      onClick={() => {
+                        // Cerrar la producción pide los kilos; los pasos sin
+                        // vuelta atrás piden confirmación; el resto va directo.
+                        if (estado === "producido" && lote.kg_producidos == null) {
+                          setDeclarando(true);
+                        } else if (TRANSICIONES[estado].length === 0) {
+                          setConfirmando(estado);
+                        } else {
+                          void cambiar(estado);
+                        }
+                      }}
                       title={EXPLICACION_ESTADO[estado]}
                       className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-medium disabled:opacity-50 ${
                         estado === "anulado"

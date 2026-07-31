@@ -75,7 +75,16 @@ class Lote(models.Model):
     linea = models.CharField("Línea", max_length=5, choices=Linea.choices, blank=True)
     turno = models.CharField("Turno", max_length=5, choices=Turno.choices, blank=True)
     kg_producidos = models.DecimalField(
-        "Kilos producidos", max_digits=12, decimal_places=2
+        "Kilos producidos",
+        max_digits=12,
+        decimal_places=2,
+        # Nulo mientras el lote está en proceso: los kilos se saben cuando la
+        # corrida termina, no cuando empieza. Que sean obligatorios al declarar
+        # el lote producido lo decide `dominio.puede_declarar_producido`, no el
+        # esquema — un lote histórico cargado a mano puede llegar sin ellos.
+        null=True,
+        blank=True,
+        help_text="Se declaran al cerrar la producción",
     )
     bultos = models.PositiveIntegerField(
         "Bultos", null=True, blank=True, help_text="Bolsas o cajas"
