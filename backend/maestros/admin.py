@@ -144,9 +144,22 @@ class DocumentoLiberacionAdmin(admin.ModelAdmin):
     herramienta de mantenimiento.
     """
 
-    list_display = ["orden", "nombre", "codigo", "area", "aplica_a", "campos_en_plantilla", "activo"]
+    list_display = [
+        "orden",
+        "nombre",
+        "codigo",
+        "area",
+        "frecuencia",
+        "aplica_a",
+        "campos_en_plantilla",
+        "activo",
+    ]
     list_display_links = ["nombre"]
-    list_filter = ["area", "activo"]
+    # `frecuencia` se edita desde la lista porque decide dónde vive el
+    # registro: cambiarla mueve el formulario entre el expediente del lote y
+    # los registros de planta.
+    list_editable = ["frecuencia"]
+    list_filter = ["area", "frecuencia", "activo"]
     search_fields = ["nombre", "codigo", "fuente"]
     ordering = ["orden", "nombre"]
 

@@ -160,7 +160,13 @@ La captura vive en **`/registros`**, organizada por equipo y fecha — quien ase
 piensa en lotes. Los campos los dibuja `components/CampoDePlantilla`, el mismo componente que el
 expediente: un solo renderizador para un solo contrato.
 
-**Las frecuencias se cargan solo cuando el formato las declara.** El catálogo del levantamiento
+**La frecuencia es un dato configurable, no una constante del código.** Se edita en la pestaña
+**Documentos de liberación** de Maestros —o en el admin—, y la escribe **Calidad**, no
+Administración: es quien responde por el checklist, y que Producción pudiera bajar la frecuencia
+de un documento le dejaría reducir lo que se le exige. Cambiarla mueve el formulario entre el
+expediente del lote y `/registros`, sin desplegar.
+
+**Las frecuencias sembradas se cargan solo cuando el formato las declara.** El catálogo del levantamiento
 tiene una columna de frecuencia que **no coincide** con los formularios: clasifica los checklists
 de cuerpos extraños como «Según programa» mientras el formato dice «Al inicio del ciclo de
 producción». Manda el formato. El resto se queda en `por_lote`, que además es el valor seguro:

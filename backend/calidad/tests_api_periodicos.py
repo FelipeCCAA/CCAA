@@ -195,6 +195,49 @@ class ApiTests(BasePeriodicos):
 
         self.assertEqual([d["codigo"] for d in datos], ["ASEO-SEM"])
 
+    def test_la_frecuencia_se_cambia_desde_el_catalogo(self):
+        """
+        Es un dato configurable y no una constante del código: cambiarla mueve
+        el formulario entre el expediente del lote y los registros de planta,
+        sin desplegar nada. Lo escribe Calidad, que es quien responde por el
+        checklist.
+        """
+        por_lote = DocumentoLiberacion.objects.create(
+            codigo="MOVIBLE", nombre="Cambia de sitio", aplica_a=["polvo"], orden=9
+        )
+
+        respuesta = self.calidad.patch(
+            f"/api/maestros/documentos/{por_lote.id}/",
+            {"frecuencia": "semanal"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+
+        # Y desde ese momento aparece entre los periódicos.
+        codigos = [
+            d["codigo"]
+            for d in self.produccion.get("/api/calidad/documentos-periodicos/").json()
+        ]
+        self.assertIn("MOVIBLE", codigos)
+
+    def test_produccion_no_cambia_el_checklist(self):
+        """
+        El catálogo lo escribe Calidad. Que Producción pudiera bajar la
+        frecuencia de un documento le dejaría reducir lo que se le exige.
+        """
+        documento = DocumentoLiberacion.objects.create(
+            codigo="OTRO", nombre="Otro", aplica_a=["polvo"], orden=8
+        )
+
+        respuesta = self.produccion.patch(
+            f"/api/maestros/documentos/{documento.id}/",
+            {"frecuencia": "semanal"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
+
     def test_calidad_tambien_registra(self):
         """Quien está en la máquina llena el aseo; Calidad revisa y corrige."""
         respuesta = self.calidad.post(

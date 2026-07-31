@@ -8,9 +8,12 @@ import {
   obtenerProductosMaestros,
   obtenerSilosMaestros,
   obtenerVehiculosMaestros,
+  editarDocumento,
   guardarSilo,
   guardarVehiculo,
+  obtenerDocumentos,
   type CatalogosSku,
+  type DocumentoLiberacion,
   type Equipo,
   type Mandante,
   type ProductoMaestro,
@@ -55,7 +58,8 @@ type Pestana =
   | "equipos"
   | "silos"
   | "camiones"
-  | "codigos";
+  | "codigos"
+  | "documentos";
 
 const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "productos", etiqueta: "Productos" },
@@ -64,6 +68,7 @@ const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "silos", etiqueta: "Silos y estanques" },
   { clave: "camiones", etiqueta: "Camiones" },
   { clave: "codigos", etiqueta: "Códigos de producción" },
+  { clave: "documentos", etiqueta: "Documentos de liberación" },
 ];
 
 
@@ -196,6 +201,9 @@ function Maestros() {
   const [camiones, setCamiones] = useState<Vehiculo[]>([]);
   const [codigos, setCodigos] = useState<CodigoProduccion[]>([]);
   const [catPlan, setCatPlan] = useState<CatalogosPlanificacion | null>(null);
+  const [documentos, setDocumentos] = useState<DocumentoLiberacion[]>([]);
+  /* Qué documento se está guardando, para no dejar la fila muda al hacer clic. */
+  const [guardandoDoc, setGuardandoDoc] = useState<number | null>(null);
   const [catalogos, setCatalogos] = useState<CatalogosSku | null>(null);
 
   const [cargando, setCargando] = useState(true);
@@ -228,13 +236,14 @@ function Maestros() {
     try {
 
       // Los listados van juntos: sin ellos no hay nada que mostrar.
-      const [p, m, e, s, v, k] = await Promise.all([
+      const [p, m, e, s, v, k, d] = await Promise.all([
         obtenerProductosMaestros(),
         obtenerMandantes(),
         obtenerEquipos(),
         obtenerSilosMaestros(),
         obtenerVehiculosMaestros(),
         obtenerCodigos(),
+        obtenerDocumentos(),
       ]);
 
       setProductos(p);
@@ -243,6 +252,7 @@ function Maestros() {
       setSilos(s);
       setCamiones(v);
       setCodigos(k);
+      setDocumentos(d);
 
     } catch {
       setError(
@@ -276,6 +286,33 @@ function Maestros() {
 
     return () => clearTimeout(temporizador);
   }, [cargar]);
+
+  // El checklist lo escribe Calidad, no Administración: el módulo promete que
+  // Calidad cambia un campo y el formulario cambia sin desplegar.
+  const puedeEditarDocumentos = puedeEscribir("calidad");
+
+  const cambiarFrecuencia = async (
+    documento: DocumentoLiberacion,
+    frecuencia: string,
+  ) => {
+
+    setGuardandoDoc(documento.id);
+    setError("");
+
+    try {
+      const guardado = await editarDocumento(documento.id, { frecuencia });
+
+      setDocumentos((previos) =>
+        previos.map((d) => (d.id === guardado.id ? guardado : d)),
+      );
+    } catch {
+      setError(
+        `No se pudo cambiar la frecuencia de «${documento.nombre}».`,
+      );
+    } finally {
+      setGuardandoDoc(null);
+    }
+  };
 
   const celda = "px-4 py-3 text-sm";
   const encabezado =
@@ -627,6 +664,109 @@ function Maestros() {
                   semanal. Solo los evaporadores: una línea recibe lo que el
                   evaporador ya produjo, y marcar ambos contaría la misma leche
                   dos veces.
+                </p>
+
+              </section>
+
+            )}
+
+            {/* Documentos de liberación */}
+
+            {pestana === "documentos" && (
+
+              <section className="rounded-2xl border border-slate-200 bg-white">
+
+                <p className="border-b border-slate-100 px-6 py-3 text-sm text-slate-500">
+                  El checklist de liberación. La <strong>frecuencia</strong> decide
+                  dónde se lleva cada formulario: «por lote» va en el expediente
+                  del lote; el resto pertenece al equipo y su período, y se
+                  registra en Registros de planta. Cambiarla mueve el formulario
+                  de una pantalla a la otra.
+                </p>
+
+                <div className="overflow-x-auto">
+
+                  <table className="w-full">
+
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className={encabezado}>#</th>
+                        <th className={encabezado}>Documento</th>
+                        <th className={encabezado}>Área</th>
+                        <th className={encabezado}>Frecuencia</th>
+                        <th className={encabezado}>Formulario</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+
+                      {documentos.map((d) => (
+
+                        <tr key={d.id} className="border-t border-slate-100">
+
+                          <td className={`${celda} text-slate-400`}>{d.orden}</td>
+
+                          <td className={`${celda} font-medium text-slate-800`}>
+                            {d.nombre}
+                            <div className="font-mono text-xs font-normal text-slate-400">
+                              {d.codigo || "sin código"}
+                            </div>
+                          </td>
+
+                          <td className={`${celda} text-slate-600`}>
+                            {d.area_etiqueta}
+                          </td>
+
+                          <td className={celda}>
+                            {puedeEditarDocumentos ? (
+                              <select
+                                className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-800 focus:border-green-500 focus:outline-none disabled:opacity-50"
+                                value={d.frecuencia}
+                                disabled={guardandoDoc === d.id}
+                                onChange={(e) =>
+                                  void cambiarFrecuencia(d, e.target.value)
+                                }
+                              >
+                                {(catalogos?.frecuencia_documento ?? []).map((o) => (
+                                  <option key={o.valor} value={o.valor}>
+                                    {o.etiqueta}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-slate-600">
+                                {d.frecuencia_etiqueta}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className={`${celda} text-slate-500`}>
+                            {d.campos > 0
+                              ? `${d.campos} campos`
+                              : "solo atestación"}
+                          </td>
+
+                        </tr>
+
+                      ))}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+                {!puedeEditarDocumentos && (
+                  <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                    Solo Calidad cambia el checklist: es quien responde por él.
+                  </p>
+                )}
+
+                <p className="border-t border-slate-100 px-6 py-3 text-xs text-slate-400">
+                  La plantilla de cada formulario —qué campos pide— se edita en el
+                  admin de Django. Se construye contra el formato real de planta:
+                  una plantilla inventada se completa igual y da el documento por
+                  cumplido.
                 </p>
 
               </section>
