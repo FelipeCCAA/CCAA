@@ -37,4 +37,6 @@ urlpatterns = [
 
     path("api/planificacion/", include("planificacion.urls")),
 
+    path("api/auditoria/", include("auditoria.urls")),
+
 ]

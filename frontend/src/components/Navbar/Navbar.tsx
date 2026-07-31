@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   CalendarRange,
   Database,
+  History,
   LogOut,
 } from "lucide-react";
 
@@ -61,6 +62,11 @@ const modulos = [
     etiqueta: "Maestros",
     ruta: "/maestros",
     icono: Database,
+  },
+  {
+    etiqueta: "Auditoría",
+    ruta: "/auditoria",
+    icono: History,
   },
 ];
 

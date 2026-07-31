@@ -14,6 +14,7 @@ import Recepcion from "../pages/Recepcion/Recepcion";
 import Liberacion from "../pages/Liberacion/Liberacion";
 import Planificacion from "../pages/Planificacion/Planificacion";
 import Maestros from "../pages/Maestros/Maestros";
+import Auditoria from "../pages/Auditoria/Auditoria";
 
 
 /*
@@ -96,6 +97,11 @@ function RoutesApp(){
                     <Route
                         path="/maestros"
                         element={<Maestros />}
+                    />
+
+                    <Route
+                        path="/auditoria"
+                        element={<Auditoria />}
                     />
 
                 </Route>
