@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'recepcion',
     'calidad',
     'inocuidad',
+    'planificacion',
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",

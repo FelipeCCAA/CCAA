@@ -5,6 +5,7 @@ import {
   Factory,
   Truck,
   ClipboardCheck,
+  CalendarRange,
   Database,
   LogOut,
 } from "lucide-react";
@@ -50,6 +51,11 @@ const modulos = [
     etiqueta: "Liberación de producto",
     ruta: "/liberacion",
     icono: ClipboardCheck,
+  },
+  {
+    etiqueta: "Planificación",
+    ruta: "/planificacion",
+    icono: CalendarRange,
   },
   {
     etiqueta: "Maestros",

@@ -12,6 +12,7 @@ import Dashboard from "../pages/Dashboard/Dashboard";
 import Produccion from "../pages/Produccion/Produccion";
 import Recepcion from "../pages/Recepcion/Recepcion";
 import Liberacion from "../pages/Liberacion/Liberacion";
+import Planificacion from "../pages/Planificacion/Planificacion";
 
 
 /*
@@ -84,6 +85,11 @@ function RoutesApp(){
                     <Route
                         path="/liberacion"
                         element={<Liberacion />}
+                    />
+
+                    <Route
+                        path="/planificacion"
+                        element={<Planificacion />}
                     />
 
                 </Route>

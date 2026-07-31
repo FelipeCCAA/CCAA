@@ -35,4 +35,6 @@ urlpatterns = [
 
     path("api/calidad/", include("calidad.urls")),
 
+    path("api/planificacion/", include("planificacion.urls")),
+
 ]

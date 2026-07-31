@@ -1,0 +1,29 @@
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+from .views import (
+    BalanceDiaViewSet,
+    BloquePlanViewSet,
+    CodigoProduccionViewSet,
+    SemanaPlanViewSet,
+    cerrar,
+    contraste,
+    programa,
+    publicar,
+    reabrir,
+)
+
+router = DefaultRouter()
+router.register("codigos", CodigoProduccionViewSet)
+router.register("semanas", SemanaPlanViewSet)
+router.register("bloques", BloquePlanViewSet)
+router.register("balances", BalanceDiaViewSet)
+
+urlpatterns = [
+    path("semanas/<int:semana_id>/programa/", programa, name="programa"),
+    path("semanas/<int:semana_id>/publicar/", publicar, name="publicar-semana"),
+    path("semanas/<int:semana_id>/reabrir/", reabrir, name="reabrir-semana"),
+    path("semanas/<int:semana_id>/cerrar/", cerrar, name="cerrar-semana"),
+    path("semanas/<int:semana_id>/contraste/", contraste, name="contraste-semana"),
+    path("", include(router.urls)),
+]
