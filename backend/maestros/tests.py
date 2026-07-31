@@ -144,15 +144,50 @@ class DossierSembradoTests(TestCase):
     """
 
     # Los 19 del Dossier CCAA.Calidad.FORM.023, repartidos por etapa del flujo.
+    #
+    # Son 21 documentos y no 19 porque el checklist de cuerpos extraños se
+    # separó en uno por evaporador: en planta son tres formatos con piezas
+    # distintas —Scheffers 2 tiene pulmones y coil, el VEB tiene cuatro
+    # efectos— y una plantilla única pediría el estado de piezas que ese
+    # evaporador no tiene.
     POR_AREA = {
         "recepcion": 1,
-        "condensacion": 3,
+        "condensacion": 5,
         "secado": 8,
         "envase": 7,
     }
 
-    def test_estan_los_diecinueve(self):
-        self.assertEqual(DocumentoLiberacion.objects.count(), 19)
+    def test_estan_los_del_dossier(self):
+        self.assertEqual(DocumentoLiberacion.objects.count(), 21)
+
+    def test_el_checklist_de_cuerpos_extranos_va_por_evaporador(self):
+        """
+        Uno solo obligaría a elegir un evaporador y dejar los otros dos sin
+        sus piezas, o a mezclar las tres listas. Las dos cosas convierten el
+        checklist en un trámite: se marca igual y no dice qué se revisó.
+        """
+        codigos = {"CCAA.Cond.FORM.005", "CCAA.Cond.FORM.014", "CCAA.Cond.FORM.016"}
+
+        checklists = DocumentoLiberacion.objects.filter(codigo__in=codigos)
+
+        self.assertEqual(checklists.count(), 3)
+
+        # Cada uno con sus piezas: si dos coincidieran, sobraría uno.
+        piezas = [
+            tuple(c["clave"] for c in d.plantilla) for d in checklists
+        ]
+        self.assertEqual(len(set(piezas)), 3)
+
+    def test_solo_el_veb_tiene_cuarto_efecto(self):
+        """La diferencia que hace que no puedan compartir plantilla."""
+        veb = DocumentoLiberacion.objects.get(codigo="CCAA.Cond.FORM.016")
+        sch3 = DocumentoLiberacion.objects.get(codigo="CCAA.Cond.FORM.014")
+
+        claves_veb = {c["clave"] for c in veb.plantilla}
+        claves_sch3 = {c["clave"] for c in sch3.plantilla}
+
+        self.assertIn("tapa_sup_4_estado", claves_veb)
+        self.assertNotIn("tapa_sup_4_estado", claves_sch3)
 
     def test_cada_area_tiene_los_suyos(self):
         for area, esperados in self.POR_AREA.items():
@@ -193,6 +228,8 @@ class DossierSembradoTests(TestCase):
     PLANTILLAS_DE_UN_FORMATO_REAL = {
         "CCAA.Sec.FORM.007": "Check list cuerpos extraños Rovema 3 y 4",
         "CCAA.Cond.FORM.005": "Check list CE Scheffers 2",
+        "CCAA.Cond.FORM.014": "Checklist CE Scheffer 3",
+        "CCAA.Cond.FORM.016": "Checklist CE VEB",
     }
 
     def test_solo_tienen_plantilla_los_que_salen_de_un_formato_real(self):

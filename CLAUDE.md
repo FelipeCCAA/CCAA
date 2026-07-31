@@ -50,7 +50,7 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 Integrar el delta del levantamiento (`LEVANTAMIENTO_PLANTA.md` §2–§5) siguiendo el backlog
 `docs/levantamiento-2026-07/Backlog_Mejoras_App_CCAA.md`.
 
-**P0 aplicado** (2026-07-30): campo `area` en `DocumentoLiberacion`, siembra de los 19 registros
+**P0 aplicado** (2026-07-30): campo `area` en `DocumentoLiberacion`, siembra de los registros
 del Dossier, `generar_codigo_lote` con sus pruebas, `ControlProceso`+`ControlProcesoLectura` con
 el PCC 1, y la app `inocuidad` con `MonitoreoPPRO`+`PproLectura`.
 
@@ -123,6 +123,26 @@ tenga las Rovemas y las torres E1/E2.
 
 El expediente **distingue** el cumplimiento por dato del visto manual: no es lo mismo «hay control
 de proceso» que «alguien lo marcó».
+
+**El checklist tiene 21 documentos, no 19.** El Dossier lista el checklist de cuerpos extraños
+como un solo registro (`Cond.FORM.005/014/016`), pero en planta son tres formatos con **piezas
+distintas**: el Scheffers 2 tiene pulmones y coil, el Scheffers 3 tapas por efecto, y el VEB
+cuatro efectos. Una plantilla única pediría el estado de piezas que ese evaporador no tiene, y el
+checklist se marcaría igual sin decir qué se revisó.
+
+**Plantillas cargadas** (desde `Documentos Planta/`, no inventadas): los cuatro checklists de
+cuerpos extraños —Scheffers 2, Scheffers 3, VEB y Rovemas 3-4—. `maestros.tests` exige que solo
+tengan plantilla los documentos declarados en `PLANTILLAS_DE_UN_FORMATO_REAL` junto a su formato
+de origen: agregar una obliga a decir de dónde salió.
+
+Dos documentos **no deberían llevar plantilla nunca**: el PPRO E1-E2 (`Sec.FORM.022`) son lecturas
+horarias OK/No-OK de tres tipos que `MonitoreoPPRO` ya modela, y la dosificación de lecitina son
+lecturas horarias, o sea `ControlProcesoLectura`. Darles formulario sería volver a teclear lo que
+el modelo captura.
+
+**Ojo con el tipo `lista`**: está en el contrato de la plantilla pero `FormularioDinamico` no lo
+dibuja — cae al campo de texto por defecto, sin avisar. Hay una prueba que impide usarlo hasta que
+se implemente.
 
 La pantalla cubre productos, mandantes y silos (estos últimos de solo lectura: su ocupación es un
 saldo del libro de movimientos, y un formulario invitaría a «corregirlo» escribiéndolo). Las
