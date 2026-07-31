@@ -18,6 +18,7 @@ import {
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 import FormularioAnalisis from "./FormularioAnalisis";
+import PanelInocuidad from "./PanelInocuidad";
 import PanelAsignacion from "./PanelAsignacion";
 
 
@@ -592,6 +593,14 @@ function DetalleLote({
             {/* Leche asignada: de qué silos salió este lote */}
 
             <PanelAsignacion
+              loteId={lote.id}
+              puedeEditar={puedeEditar}
+              alCambiar={alCambiar}
+            />
+
+            {/* Inocuidad: el PCC 1 y los PPRO deciden si se puede liberar */}
+
+            <PanelInocuidad
               loteId={lote.id}
               puedeEditar={puedeEditar}
               alCambiar={alCambiar}

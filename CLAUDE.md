@@ -85,6 +85,21 @@ Calidad, así que siguen en el admin.
 
 **Auditoría** vive en `/auditoria`, visible para todos los roles.
 
+**Inocuidad aplicada** (2026-07-31): las dos reglas de bloqueo están y funcionan de punta a punta.
+Una lectura fuera del límite del **PCC 1** de uperización, o un **PPRO** con lecturas No-OK sin
+acción correctiva, impiden liberar el lote — y **no admiten concesión**: una concesión asume un
+riesgo conocido y medido sobre la calidad, y aquí lo que falló es la barrera que hace seguro el
+producto. El mecanismo no es una rama aparte: sus motivos entran en `bloqueos` y eso ya anula las
+dos vías; si alguien los saca de esa lista, tiene que reponer la exclusión a mano.
+
+Los límites del PCC viven **en cada `ControlProceso`** y no en un maestro: cambian por equipo —VEB
+80,0 °C / 14.175 kg·h; Scheffers 2 81,2 °C / 17.100— y un control de mayo se audita contra el
+límite que regía en mayo. Las claves que el PCC vigila dentro de `valores` (`t_dsi`,
+`flujo_entrada`) se sirven en `/api/produccion/catalogos-inocuidad/` para que la pantalla las
+rotule igual que el dominio las evalúa: si divergieran, el PCC dejaría de vigilar en silencio.
+
+La captura está en el **panel de inocuidad de la ficha del lote**.
+
 La pantalla cubre productos, mandantes y silos (estos últimos de solo lectura: su ocupación es un
 saldo del libro de movimientos, y un formulario invitaría a «corregirlo» escribiéndolo). Las
 **especificaciones** y el **catálogo de documentos** siguen en el admin: sus formularios son JSON
@@ -137,14 +152,12 @@ copiarlos crudos del Excel.
 
 **Lo siguiente, en este orden:**
 
-1. Las dos **reglas de bloqueo** en `calidad/dominio.py`, con pruebas de regresión: una lectura de
-   `ControlProceso` fuera del límite del PCC 1, o un `MonitoreoPPRO` con lecturas No-OK y sin
-   acción correctiva, deben impedir liberar el lote. El dato ya está listo y probado
-   (`MonitoreoPPRO.resuelto`).
-2. Serializers, urls, admin y pantallas de captura de los modelos nuevos.
-3. La `plantilla` de cada uno de los 19 documentos, contra su formato real. Hoy van como
+1. La `plantilla` de cada uno de los 19 documentos, contra su formato real. Hoy van como
    atestación, y eso es deliberado: una plantilla inventada se completa igual y da el documento
    por cumplido.
+2. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
+3. Cargar el maestro de productos completo (hoy hay 3 de los 23 del Excel) y resolver las
+   decisiones abiertas del SKU.
 
 **Pendiente con Calidad:** los 19 se sembraron con `aplica_a = ["polvo"]`. Cuáles exigen además
 crema o mantequilla sigue abierto (`MODELO_DATOS.md` §8.3) y se responde editando el catálogo,

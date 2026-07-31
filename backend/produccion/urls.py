@@ -6,6 +6,7 @@ from .views import (
     ControlProcesoLecturaViewSet,
     ControlProcesoViewSet,
     LoteViewSet,
+    catalogos_inocuidad,
     resumen,
 )
 
@@ -17,5 +18,10 @@ router.register("lecturas-control", ControlProcesoLecturaViewSet)
 
 urlpatterns = [
     path("resumen/", resumen, name="resumen"),
+    path(
+        "catalogos-inocuidad/",
+        catalogos_inocuidad,
+        name="catalogos-inocuidad",
+    ),
     path("", include(router.urls)),
 ]

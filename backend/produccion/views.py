@@ -15,7 +15,13 @@ from maestros.models import Especificacion, Producto, Receta, Silo
 from usuarios.permisos import EscribeProduccion
 
 from . import dominio
-from .models import Analisis, ControlProceso, ControlProcesoLectura, Lote
+from .models import (
+    Analisis,
+    ControlProceso,
+    ControlProcesoLectura,
+    Equipo,
+    Lote,
+)
 from .serializers import (
     AnalisisSerializer,
     ControlProcesoLecturaSerializer,
@@ -681,3 +687,33 @@ class ControlProcesoLecturaViewSet(viewsets.ModelViewSet):
             consulta = consulta.filter(control_id=control)
 
         return consulta
+
+
+@api_view(["GET"])
+def catalogos_inocuidad(request):
+    """
+    Opciones de los formularios de control de proceso y monitoreo PPRO.
+
+    Igual que en maestros: el modelo es la fuente de verdad y la pantalla no
+    lleva su propia copia. Incluye los **parámetros del PCC 1** para que la
+    captura los rotule igual que el dominio los evalúa — si la pantalla los
+    renombrara, el control dejaría de encontrarlos y el PCC pasaría a no
+    vigilar nada en silencio.
+    """
+    from inocuidad.models import MonitoreoPPRO, PproLectura
+
+    def opciones(choices):
+        return [{"valor": v, "etiqueta": e} for v, e in choices]
+
+    return Response(
+        {
+            "equipo_control": opciones(Equipo.choices),
+            "turno": opciones(Lote.Turno.choices),
+            "tipo_ppro": opciones(MonitoreoPPRO.Tipo.choices),
+            "resultado_ppro": opciones(PproLectura.Resultado.choices),
+            "pcc1": {
+                "temperatura": dominio.PCC1_TEMPERATURA,
+                "caudal": dominio.PCC1_CAUDAL,
+            },
+        }
+    )
