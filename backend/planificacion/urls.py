@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .catalogos_vista import catalogos
 from .views import (
     BalanceDiaViewSet,
     BloquePlanViewSet,
@@ -20,6 +21,7 @@ router.register("bloques", BloquePlanViewSet)
 router.register("balances", BalanceDiaViewSet)
 
 urlpatterns = [
+    path("catalogos/", catalogos, name="planificacion-catalogos"),
     path("semanas/<int:semana_id>/programa/", programa, name="programa"),
     path("semanas/<int:semana_id>/publicar/", publicar, name="publicar-semana"),
     path("semanas/<int:semana_id>/reabrir/", reabrir, name="reabrir-semana"),

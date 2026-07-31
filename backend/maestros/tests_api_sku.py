@@ -137,7 +137,7 @@ class CrearProductoTests(BaseApiMaestros):
 class CatalogosSkuTests(BaseApiMaestros):
 
     def test_sirve_los_valores_de_cada_segmento(self):
-        datos = self.cliente.get("/api/maestros/catalogos-sku/").json()
+        datos = self.cliente.get("/api/maestros/catalogos/").json()
 
         for segmento in ("naturaleza_comercial", "categoria", "tipo", "formato",
                          "mercado", "cliente"):
@@ -149,7 +149,7 @@ class CatalogosSkuTests(BaseApiMaestros):
         Es la razón de servirlos: una copia en el frontend ofrecería tarde o
         temprano un valor que el backend rechaza.
         """
-        datos = self.cliente.get("/api/maestros/catalogos-sku/").json()
+        datos = self.cliente.get("/api/maestros/catalogos/").json()
 
         pares = [
             ("naturaleza_comercial", catalogos_sku.NATURALEZA),
@@ -167,7 +167,7 @@ class CatalogosSkuTests(BaseApiMaestros):
                 )
 
     def test_cada_valor_trae_su_etiqueta(self):
-        datos = self.cliente.get("/api/maestros/catalogos-sku/").json()
+        datos = self.cliente.get("/api/maestros/catalogos/").json()
 
         self.assertTrue(all(o["etiqueta"] for o in datos["categoria"]))
 

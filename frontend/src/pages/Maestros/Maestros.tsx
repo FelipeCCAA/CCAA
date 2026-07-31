@@ -7,16 +7,29 @@ import {
   obtenerMandantes,
   obtenerProductosMaestros,
   obtenerSilosMaestros,
+  obtenerVehiculosMaestros,
+  guardarSilo,
+  guardarVehiculo,
   type CatalogosSku,
   type Equipo,
   type Mandante,
   type ProductoMaestro,
   type Silo,
+  type Vehiculo,
 } from "../../services/maestros.service";
+
+import {
+  guardarCodigo,
+  obtenerCatalogosPlanificacion,
+  obtenerCodigos,
+  type CatalogosPlanificacion,
+  type CodigoProduccion,
+} from "../../services/planificacion.service";
 
 import { puedeEscribir } from "../../services/sesion";
 
 import FormularioEquipo from "./FormularioEquipo";
+import FormularioMaestro, { type Campo } from "./FormularioMaestro";
 import FormularioMandante from "./FormularioMandante";
 import FormularioProducto from "./FormularioProducto";
 
@@ -36,14 +49,140 @@ import FormularioProducto from "./FormularioProducto";
   saldo escribiéndolo.
 */
 
-type Pestana = "productos" | "mandantes" | "equipos" | "silos";
+type Pestana =
+  | "productos"
+  | "mandantes"
+  | "equipos"
+  | "silos"
+  | "camiones"
+  | "codigos";
 
 const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "productos", etiqueta: "Productos" },
   { clave: "mandantes", etiqueta: "Mandantes" },
   { clave: "equipos", etiqueta: "Máquinas" },
   { clave: "silos", etiqueta: "Silos y estanques" },
+  { clave: "camiones", etiqueta: "Camiones" },
+  { clave: "codigos", etiqueta: "Códigos de producción" },
 ];
+
+
+
+/*
+  Los campos de cada maestro simple, descritos como datos.
+
+  Se arman con los catálogos que sirve el backend, así que un valor nuevo en el
+  modelo aparece en el desplegable sin tocar esta pantalla.
+*/
+function camposDe(
+  entidad: "silo" | "camion" | "codigo",
+  catalogos: CatalogosSku | null,
+  catPlan: CatalogosPlanificacion | null,
+  productos: ProductoMaestro[],
+  mandantes: Mandante[],
+): Campo[] {
+
+  if (entidad === "silo") {
+    return [
+      {
+        clave: "codigo",
+        etiqueta: "Código",
+        tipo: "texto",
+        requerido: true,
+        soloLecturaAlEditar: true,
+        ayuda: "SILO 1, TK CREMA 2…",
+      },
+      {
+        clave: "tipo",
+        etiqueta: "Tipo",
+        tipo: "select",
+        requerido: true,
+        opciones: catalogos?.silo_tipo ?? [],
+      },
+      {
+        clave: "capacidad_l",
+        etiqueta: "Capacidad (litros)",
+        tipo: "numero",
+        requerido: true,
+      },
+      { clave: "activo", etiqueta: "Activo", tipo: "checkbox" },
+    ];
+  }
+
+  if (entidad === "camion") {
+    return [
+      { clave: "placa", etiqueta: "Placa", tipo: "texto", requerido: true },
+      { clave: "numero", etiqueta: "Número interno", tipo: "texto" },
+      { clave: "tipo", etiqueta: "Tipo", tipo: "texto" },
+      { clave: "capacidad_l", etiqueta: "Capacidad (litros)", tipo: "numero" },
+      {
+        clave: "transportista",
+        etiqueta: "Transportista",
+        tipo: "texto",
+        ancho: 2,
+      },
+      { clave: "chofer_am", etiqueta: "Chofer A.M.", tipo: "texto" },
+      { clave: "chofer_pm", etiqueta: "Chofer P.M.", tipo: "texto" },
+      { clave: "activo", etiqueta: "Activo", tipo: "checkbox" },
+    ];
+  }
+
+  return [
+    {
+      clave: "codigo",
+      etiqueta: "Código",
+      tipo: "texto",
+      requerido: true,
+      soloLecturaAlEditar: true,
+      ayuda: "LNSH2, RCSH2N…",
+    },
+    { clave: "nombre", etiqueta: "Nombre", tipo: "texto" },
+    {
+      clave: "producto",
+      etiqueta: "Producto",
+      tipo: "select",
+      opciones: productos.map((p) => ({ valor: p.id, etiqueta: p.nombre })),
+    },
+    {
+      clave: "mandante",
+      etiqueta: "Mandante",
+      tipo: "select",
+      opciones: mandantes.map((m) => ({ valor: m.id, etiqueta: m.nombre })),
+    },
+    {
+      clave: "categoria",
+      etiqueta: "Categoría de consumo",
+      tipo: "select",
+      requerido: true,
+      ayuda: "A qué fila del balance suma.",
+      opciones: catPlan?.categoria_consumo ?? [],
+    },
+    {
+      clave: "formato",
+      etiqueta: "Formato",
+      tipo: "select",
+      opciones: catPlan?.formato ?? [],
+    },
+    {
+      clave: "rendimiento_lh",
+      etiqueta: "Rendimiento (L/h)",
+      tipo: "numero",
+      requerido: true,
+      ancho: 2,
+      ayuda:
+        "Litros de leche por hora de corrida. Es lo que convierte horas de programa en litros del balance.",
+    },
+    { clave: "activo", etiqueta: "Activo", tipo: "checkbox" },
+  ];
+}
+
+
+
+const TITULO_SIMPLE = {
+  silo: "silo",
+  camion: "camión",
+  codigo: "código de producción",
+};
 
 
 function Maestros() {
@@ -54,6 +193,9 @@ function Maestros() {
   const [mandantes, setMandantes] = useState<Mandante[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [silos, setSilos] = useState<Silo[]>([]);
+  const [camiones, setCamiones] = useState<Vehiculo[]>([]);
+  const [codigos, setCodigos] = useState<CodigoProduccion[]>([]);
+  const [catPlan, setCatPlan] = useState<CatalogosPlanificacion | null>(null);
   const [catalogos, setCatalogos] = useState<CatalogosSku | null>(null);
 
   const [cargando, setCargando] = useState(true);
@@ -66,6 +208,14 @@ function Maestros() {
   const [editandoEquipo, setEditandoEquipo] = useState<Equipo | null>(null);
   const [nuevoEquipo, setNuevoEquipo] = useState(false);
 
+  /* Los maestros simples comparten un formulario descrito por datos: qué
+     entidad se está editando y con qué valores. */
+  const [simple, setSimple] = useState<{
+    entidad: "silo" | "camion" | "codigo";
+    id: number | null;
+    valores: Record<string, unknown>;
+  } | null>(null);
+
   // Solo Administración escribe maestros: una especificación decide qué sale
   // como conforme. El backend manda; esto solo evita ofrecer lo que rechaza.
   const puedeEditar = puedeEscribir("maestros");
@@ -77,25 +227,47 @@ function Maestros() {
 
     try {
 
-      const [p, m, e, s, c] = await Promise.all([
+      // Los listados van juntos: sin ellos no hay nada que mostrar.
+      const [p, m, e, s, v, k] = await Promise.all([
         obtenerProductosMaestros(),
         obtenerMandantes(),
         obtenerEquipos(),
         obtenerSilosMaestros(),
-        obtenerCatalogosSku(),
+        obtenerVehiculosMaestros(),
+        obtenerCodigos(),
       ]);
 
       setProductos(p);
       setMandantes(m);
       setEquipos(e);
       setSilos(s);
-      setCatalogos(c);
+      setCamiones(v);
+      setCodigos(k);
 
     } catch {
-      setError("No se pudieron cargar los maestros. ¿Está corriendo el servidor?");
+      setError(
+        "No se pudieron cargar los maestros. Revisa que el servidor esté " +
+          "corriendo y vuelve a intentarlo.",
+      );
     } finally {
       setCargando(false);
     }
+
+    /*
+      Los catálogos van aparte y cada uno por su cuenta.
+
+      Solo alimentan los desplegables de los formularios. Pedirlos en el mismo
+      `Promise.all` que los listados hacía que un solo endpoint caído dejara
+      las seis pestañas vacías — pasó con un 500 en los catálogos de
+      planificación, y desde la pantalla parecía que no había datos.
+    */
+    obtenerCatalogosSku()
+      .then(setCatalogos)
+      .catch(() => setCatalogos(null));
+
+    obtenerCatalogosPlanificacion()
+      .then(setCatPlan)
+      .catch(() => setCatPlan(null));
 
   }, []);
 
@@ -467,10 +639,24 @@ function Maestros() {
 
               <section className="rounded-2xl border border-slate-200 bg-white">
 
-                <p className="border-b border-slate-100 px-6 py-3 text-sm text-slate-500">
-                  Solo consulta. La ocupación no se edita: es el saldo del libro
-                  de movimientos, y se ve en Recepción y silos.
-                </p>
+                {puedeEditar && (
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSimple({
+                          entidad: "silo",
+                          id: null,
+                          valores: { tipo: "silo", activo: true },
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nuevo silo
+                    </button>
+                  </div>
+                )}
 
                 <table className="w-full">
 
@@ -480,6 +666,7 @@ function Maestros() {
                       <th className={encabezado}>Tipo</th>
                       <th className={encabezado}>Capacidad</th>
                       <th className={encabezado}>Estado</th>
+                      <th className={encabezado}></th>
                     </tr>
                   </thead>
 
@@ -498,6 +685,29 @@ function Maestros() {
                         <td className={`${celda} text-slate-500`}>
                           {s.activo ? "Activo" : "Inactivo"}
                         </td>
+                        <td className={`${celda} text-right`}>
+                          {puedeEditar && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSimple({
+                                  entidad: "silo",
+                                  id: s.id,
+                                  valores: {
+                                    codigo: s.codigo,
+                                    tipo: s.tipo,
+                                    capacidad_l: s.capacidad_l,
+                                    activo: s.activo,
+                                  },
+                                })
+                              }
+                              title="Editar"
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
+                        </td>
                       </tr>
 
                     ))}
@@ -505,6 +715,243 @@ function Maestros() {
                   </tbody>
 
                 </table>
+
+                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                  La capacidad se configura aquí; la <strong>ocupación</strong> no,
+                  porque es el saldo del libro de movimientos y se ve en Recepción
+                  y silos. Escribirla a mano la desalinearía de los movimientos que
+                  la producen.
+                </p>
+
+              </section>
+
+            )}
+
+            {/* Camiones */}
+
+            {pestana === "camiones" && (
+
+              <section className="rounded-2xl border border-slate-200 bg-white">
+
+                {puedeEditar && (
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSimple({
+                          entidad: "camion",
+                          id: null,
+                          valores: { tipo: "Camión", activo: true },
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nuevo camión
+                    </button>
+                  </div>
+                )}
+
+                {camiones.length === 0 ? (
+
+                  <p className="px-6 py-10 text-center text-sm text-slate-400">
+                    Todavía no hay camiones.
+                  </p>
+
+                ) : (
+
+                  <table className="w-full">
+
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className={encabezado}>Placa</th>
+                        <th className={encabezado}>Transportista</th>
+                        <th className={encabezado}>Choferes</th>
+                        <th className={encabezado}>Capacidad</th>
+                        <th className={encabezado}></th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+
+                      {camiones.map((v) => (
+
+                        <tr key={v.id} className="border-t border-slate-100">
+
+                          <td className={`${celda} font-medium text-slate-800`}>
+                            {v.placa}
+                            {v.numero && (
+                              <span className="ml-2 text-xs text-slate-400">
+                                n.º {v.numero}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className={`${celda} text-slate-600`}>
+                            {v.transportista || "—"}
+                          </td>
+
+                          <td className={`${celda} text-slate-500`}>
+                            {[v.chofer_am, v.chofer_pm].filter(Boolean).join(" · ") || "—"}
+                          </td>
+
+                          <td className={`${celda} tabular-nums text-slate-600`}>
+                            {v.capacidad_l
+                              ? `${Number(v.capacidad_l).toLocaleString("es-CL")} L`
+                              : "—"}
+                          </td>
+
+                          <td className={`${celda} text-right`}>
+                            {puedeEditar && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSimple({
+                                    entidad: "camion",
+                                    id: v.id,
+                                    valores: {
+                                      placa: v.placa,
+                                      numero: v.numero,
+                                      tipo: v.tipo,
+                                      capacidad_l: v.capacidad_l,
+                                      transportista: v.transportista,
+                                      chofer_am: v.chofer_am,
+                                      chofer_pm: v.chofer_pm,
+                                      activo: v.activo,
+                                    },
+                                  })
+                                }
+                                title="Editar"
+                                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                            )}
+                          </td>
+
+                        </tr>
+
+                      ))}
+
+                    </tbody>
+
+                  </table>
+
+                )}
+
+              </section>
+
+            )}
+
+            {/* Códigos de producción */}
+
+            {pestana === "codigos" && (
+
+              <section className="rounded-2xl border border-slate-200 bg-white">
+
+                {puedeEditar && (
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSimple({
+                          entidad: "codigo",
+                          id: null,
+                          valores: { activo: true },
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nuevo código
+                    </button>
+                  </div>
+                )}
+
+                <table className="w-full">
+
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className={encabezado}>Código</th>
+                      <th className={encabezado}>Producto</th>
+                      <th className={encabezado}>Consumo</th>
+                      <th className={encabezado}>Rendimiento</th>
+                      <th className={encabezado}></th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+                    {codigos.map((k) => (
+
+                      <tr key={k.id} className="border-t border-slate-100">
+
+                        <td className={`${celda} font-medium text-slate-800`}>
+                          {k.codigo}
+                          {k.nombre && (
+                            <div className="text-xs font-normal text-slate-400">
+                              {k.nombre}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className={`${celda} text-slate-600`}>
+                          {k.producto_nombre || "—"}
+                          <div className="text-xs text-slate-400">
+                            {k.mandante_nombre || ""}
+                          </div>
+                        </td>
+
+                        <td className={`${celda} text-slate-500`}>
+                          {k.categoria_etiqueta}
+                        </td>
+
+                        <td className={`${celda} tabular-nums text-slate-600`}>
+                          {Number(k.rendimiento_lh).toLocaleString("es-CL")} L/h
+                        </td>
+
+                        <td className={`${celda} text-right`}>
+                          {puedeEditar && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSimple({
+                                  entidad: "codigo",
+                                  id: k.id,
+                                  valores: {
+                                    codigo: k.codigo,
+                                    nombre: k.nombre,
+                                    producto: k.producto,
+                                    mandante: k.mandante,
+                                    formato: k.formato,
+                                    categoria: k.categoria,
+                                    rendimiento_lh: k.rendimiento_lh,
+                                    activo: k.activo,
+                                  },
+                                })
+                              }
+                              title="Editar"
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
+                        </td>
+
+                      </tr>
+
+                    ))}
+
+                  </tbody>
+
+                </table>
+
+                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                  El <strong>rendimiento</strong> convierte horas de programa en
+                  litros de leche: es lo que hace que el balance semanal cuadre o
+                  no. Un código es una forma de programar un producto, no un
+                  producto nuevo.
+                </p>
 
               </section>
 
@@ -534,6 +981,29 @@ function Maestros() {
             setEditandoProducto(null);
           }}
           alGuardar={cargar}
+        />
+      )}
+
+      {simple && (
+        <FormularioMaestro
+          titulo={`${simple.id ? "Editar" : "Nuevo"} ${TITULO_SIMPLE[simple.entidad]}`}
+          campos={camposDe(
+            simple.entidad,
+            catalogos,
+            catPlan,
+            productos,
+            mandantes,
+          )}
+          valores={simple.valores}
+          edicion={simple.id !== null}
+          alCerrar={() => setSimple(null)}
+          alGuardar={(datos) => {
+            if (simple.entidad === "silo") return guardarSilo(simple.id, datos);
+            if (simple.entidad === "camion")
+              return guardarVehiculo(simple.id, datos);
+            return guardarCodigo(simple.id, datos);
+          }}
+          alTerminar={cargar}
         />
       )}
 

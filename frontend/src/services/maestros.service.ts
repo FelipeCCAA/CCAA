@@ -12,7 +12,7 @@ import type { Pagina } from "./produccion.service";
   archivo de origen del catálogo.
 
   Los catálogos de cada segmento tampoco están escritos en el frontend: se
-  piden a `/maestros/catalogos-sku/`. Una copia aquí ofrecería tarde o
+  piden a `/maestros/catalogos/`. Una copia aquí ofrecería tarde o
   temprano un valor que el backend rechaza — el mismo criterio que ya sigue
   el catálogo de parámetros de calidad.
 */
@@ -23,6 +23,8 @@ export interface OpcionCatalogo {
 }
 
 export interface CatalogosSku {
+  silo_tipo: OpcionCatalogo[];
+  equipo_tipo: OpcionCatalogo[];
   naturaleza_comercial: OpcionCatalogo[];
   categoria: OpcionCatalogo[];
   tipo: OpcionCatalogo[];
@@ -114,7 +116,7 @@ export interface Silo {
 
 
 export async function obtenerCatalogosSku(): Promise<CatalogosSku> {
-  const { data } = await api.get<CatalogosSku>("maestros/catalogos-sku/");
+  const { data } = await api.get<CatalogosSku>("maestros/catalogos/");
 
   return data;
 }
@@ -209,6 +211,54 @@ export async function editarEquipo(
 ): Promise<Equipo> {
 
   const { data } = await api.patch<Equipo>(`maestros/equipos/${id}/`, cambios);
+
+  return data;
+}
+
+
+/* ------------------------------------------------------- camiones y silos */
+
+export interface Vehiculo {
+  id: number;
+  numero: string;
+  placa: string;
+  tipo: string;
+  capacidad_l: string | null;
+  transportista: string;
+  chofer_am: string;
+  chofer_pm: string;
+  activo: boolean;
+}
+
+
+export async function obtenerVehiculosMaestros(): Promise<Vehiculo[]> {
+  const { data } = await api.get<Pagina<Vehiculo>>("maestros/vehiculos/");
+
+  return data.results;
+}
+
+
+export async function guardarVehiculo(
+  id: number | null,
+  datos: Record<string, unknown>,
+): Promise<Vehiculo> {
+
+  const { data } = id
+    ? await api.patch<Vehiculo>(`maestros/vehiculos/${id}/`, datos)
+    : await api.post<Vehiculo>("maestros/vehiculos/", datos);
+
+  return data;
+}
+
+
+export async function guardarSilo(
+  id: number | null,
+  datos: Record<string, unknown>,
+): Promise<Silo> {
+
+  const { data } = id
+    ? await api.patch<Silo>(`maestros/silos/${id}/`, datos)
+    : await api.post<Silo>("maestros/silos/", datos);
 
   return data;
 }

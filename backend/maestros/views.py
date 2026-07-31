@@ -134,14 +134,13 @@ def parametros(request):
 
 
 @api_view(["GET"])
-def catalogos_sku(request):
+def catalogos(request):
     """
-    Valores que admite cada segmento del SKU, con su etiqueta.
+    Los valores que admite cada campo de opciones de los maestros.
 
-    Se sirven desde aquí en vez de escribirlos en la pantalla: los catálogos
-    son la fuente de verdad del generador, y una copia en el frontend
-    ofrecería tarde o temprano un valor que el backend rechaza. Es el mismo
-    criterio que `/parametros/`.
+    Se sirven desde aquí en vez de escribirlos en la pantalla: el modelo es la
+    fuente de verdad, y una copia en el frontend ofrecería tarde o temprano un
+    valor que el backend rechaza. Es el mismo criterio que `/parametros/`.
     """
     from .models import Producto
 
@@ -150,6 +149,8 @@ def catalogos_sku(request):
 
     return Response(
         {
+            "silo_tipo": opciones(Silo.Tipo.choices),
+            "equipo_tipo": opciones(Equipo.Tipo.choices),
             "naturaleza_comercial": opciones(Producto.NaturalezaComercial.choices),
             "categoria": opciones(Producto.Categoria.choices),
             "tipo": opciones(Producto.TipoProducto.choices),

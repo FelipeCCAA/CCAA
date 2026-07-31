@@ -360,3 +360,35 @@ export async function cerrarSemana(id: number): Promise<Semana> {
 
   return data;
 }
+
+
+export interface CatalogosPlanificacion {
+  categoria_consumo: { valor: string; etiqueta: string }[];
+  formato: { valor: string; etiqueta: string }[];
+  estado_semana: { valor: string; etiqueta: string }[];
+  tipo_bloque: { valor: string; etiqueta: string }[];
+  estado_equipo: { valor: string; etiqueta: string }[];
+}
+
+
+export async function obtenerCatalogosPlanificacion(): Promise<CatalogosPlanificacion> {
+  const { data } = await api.get<CatalogosPlanificacion>(
+    "planificacion/catalogos/",
+  );
+
+  return data;
+}
+
+
+/** Alta y edición de un código de producción, desde el maestro. */
+export async function guardarCodigo(
+  id: number | null,
+  datos: Record<string, unknown>,
+): Promise<CodigoProduccion> {
+
+  const { data } = id
+    ? await api.patch<CodigoProduccion>(`planificacion/codigos/${id}/`, datos)
+    : await api.post<CodigoProduccion>("planificacion/codigos/", datos);
+
+  return data;
+}

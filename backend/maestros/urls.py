@@ -9,7 +9,7 @@ from .views import (
     ProductoViewSet,
     SiloViewSet,
     VehiculoViewSet,
-    catalogos_sku,
+    catalogos,
     parametros,
 )
 
@@ -24,6 +24,6 @@ router.register("documentos", DocumentoLiberacionViewSet)
 
 urlpatterns = [
     path("parametros/", parametros, name="parametros"),
-    path("catalogos-sku/", catalogos_sku, name="catalogos-sku"),
+    path("catalogos/", catalogos, name="catalogos"),
     path("", include(router.urls)),
 ]
