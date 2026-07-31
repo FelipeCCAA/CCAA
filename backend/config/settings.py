@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'calidad',
     'inocuidad',
     'planificacion',
+    'auditoria',
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
@@ -87,6 +88,10 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Va al final: necesita el usuario ya resuelto por
+    # AuthenticationMiddleware, y envuelve a la vista para soltar el
+    # actor pase lo que pase.
+    'auditoria.middleware.AuditoriaMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
