@@ -100,6 +100,30 @@ rotule igual que el dominio las evalúa: si divergieran, el PCC dejaría de vigi
 
 La captura está en el **panel de inocuidad de la ficha del lote**.
 
+**Documentos que cumple el propio dato** (2026-07-31). Once de los diecinueve registros del
+Dossier son datos que la aplicación ya captura, y pedir además una casilla es doble digitación —
+peor aún: la casilla puede decir «cumplido» sobre un PCC 1 incumplido.
+`DocumentoLiberacion.evidencia` declara qué registro lo cumple, y
+`calidad.dominio.documentos_con_evidencia` lo resuelve.
+
+**Solo cinco están atados**, y es deliberado: un documento cumplido *de más* deja salir producto.
+Los seis restantes dependen del equipo donde se registró, y `MonitoreoPPRO.equipo` todavía es
+texto libre — un monitoreo de cuerpos extraños daría por cumplidos los tres checklists
+(evaporadores, E1-E2, Rovema) cuando solo se hizo uno. Para habilitarlos hace falta que ese campo
+referencie el maestro de equipos (el mismo cambio que se hizo con `BloquePlan`), y que el maestro
+tenga las Rovemas y las torres E1/E2.
+
+| Documento | Lo cumple |
+|---|---|
+| `CCAA.REC.FORM.005` Trazabilidad | la asignación de silos del lote |
+| `CCAA.Cond.FORM.010` PCC 1 | un `ControlProceso` en VEB, SCH2 o SCH3 |
+| `CCAA.Sec.FORM.025` Pulverización | un `ControlProceso` en E1 o E2 |
+| `CCAA.Sec.FORM.001` Fisicoquímico | un `Analisis` del lote |
+| `CCAA.ENV.FORM.001` Detector de metales | un `MonitoreoPPRO` de ese tipo |
+
+El expediente **distingue** el cumplimiento por dato del visto manual: no es lo mismo «hay control
+de proceso» que «alguien lo marcó».
+
 La pantalla cubre productos, mandantes y silos (estos últimos de solo lectura: su ocupación es un
 saldo del libro de movimientos, y un formulario invitaría a «corregirlo» escribiéndolo). Las
 **especificaciones** y el **catálogo de documentos** siguen en el admin: sus formularios son JSON
@@ -152,11 +176,13 @@ copiarlos crudos del Excel.
 
 **Lo siguiente, en este orden:**
 
-1. La `plantilla` de cada uno de los 19 documentos, contra su formato real. Hoy van como
-   atestación, y eso es deliberado: una plantilla inventada se completa igual y da el documento
-   por cumplido.
-2. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
-3. Cargar el maestro de productos completo (hoy hay 3 de los 23 del Excel) y resolver las
+1. La `plantilla` de los documentos que siguen siendo manuales, contra su **formato real**. Los
+   archivos están en `Documentos Planta/` (ignorada por git: 1,8 GB y no todo es de producción).
+   Inventarlas es el error que hay que evitar: una plantilla inventada se completa igual y da el
+   documento por cumplido.
+2. Habilitar la evidencia de los seis documentos que hoy no se pueden atar — ver abajo.
+3. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
+4. Cargar el maestro de productos completo (hoy hay 3 de los 23 del Excel) y resolver las
    decisiones abiertas del SKU.
 
 **Pendiente con Calidad:** los 19 se sembraron con `aplica_a = ["polvo"]`. Cuáles exigen además

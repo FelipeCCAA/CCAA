@@ -198,6 +198,10 @@ def serializar_avance(avance):
                 "completo": d.completo,
                 "observado": d.observado,
                 "iniciado": d.iniciado,
+                # De dónde viene el cumplimiento. La pantalla lo distingue
+                # porque no es lo mismo «hay control de proceso» que «alguien
+                # marcó la casilla».
+                "cumplido_por_dato": d.cumplido_por_dato,
                 "faltantes": [c["etiqueta"] for c in d.faltantes],
             }
             for d in avance.detalle

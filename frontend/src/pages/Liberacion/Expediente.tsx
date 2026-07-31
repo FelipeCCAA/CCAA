@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Database,
   ArrowLeft,
   Check,
   CircleDashed,
@@ -55,6 +56,12 @@ function IconoDocumento({ estado }: { estado: EstadoDocumento }) {
 
   if (estado.observado) {
     return <FileWarning className="h-5 w-5 shrink-0 text-amber-600" />;
+  }
+
+  // Se distingue del visto manual a propósito: uno dice que alguien lo
+  // afirmó, el otro que el sistema tiene el registro.
+  if (estado.cumplido_por_dato) {
+    return <Database className="h-5 w-5 shrink-0 text-green-600" />;
   }
 
   if (estado.completo) {
@@ -323,6 +330,8 @@ function Expediente({ loteId, alVolver }: Props) {
 
                       {estado.observado
                         ? "Observado: bloquea la liberación"
+                        : estado.cumplido_por_dato
+                        ? "Lo cumple el registro del sistema, no una casilla"
                         : estado.completo
                           ? `Completado por ${estado.registro?.completado_por_nombre || "—"}`
                           : estado.iniciado

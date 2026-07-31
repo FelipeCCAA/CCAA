@@ -570,6 +570,16 @@ class DocumentoLiberacion(models.Model):
         blank=True,
         help_text="De dónde salió la plantilla. Marque las provisorias",
     )
+    evidencia = models.JSONField(
+        "Se cumple con el dato",
+        default=dict,
+        blank=True,
+        help_text=(
+            'Qué registro del sistema da por cumplido este documento: '
+            '{"fuente": "monitoreo_ppro", "tipo": "detector_metales"}. '
+            "Vacío = lo marca una persona."
+        ),
+    )
     orden = models.PositiveIntegerField(
         "Orden", default=0, help_text="Posición en el checklist"
     )

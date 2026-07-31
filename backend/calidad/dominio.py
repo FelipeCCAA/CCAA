@@ -64,6 +64,10 @@ class EstadoDocumento:
     observado: bool
     iniciado: bool
     faltantes: list[dict[str, Any]] = field(default_factory=list)
+    #: Lo cumple el registro del sistema y no una casilla. Se distingue para
+    #: que el expediente pueda decir de dónde viene el cumplimiento: «hay
+    #: control de proceso» no es lo mismo que «alguien lo marcó».
+    cumplido_por_dato: bool = False
 
 
 @dataclass(frozen=True)
@@ -358,10 +362,117 @@ def cotejar_con_analisis(
 
 # -------------------------------------------------------------------- checklist
 
+#: Fuentes de datos que pueden dar por cumplido un documento del Dossier.
+#: El nombre es el que va en `DocumentoLiberacion.evidencia["fuente"]`.
+FUENTE_CONTROL_PROCESO = "control_proceso"
+FUENTE_MONITOREO_PPRO = "monitoreo_ppro"
+FUENTE_ANALISIS = "analisis"
+FUENTE_ASIGNACION_LECHE = "asignacion_leche"
+
+
+def _coincide(registro: Any, criterio: dict) -> bool:
+    """
+    ¿Este registro satisface el criterio del documento?
+
+    Compara **solo las claves que el criterio declara**, y todas tienen que
+    coincidir. Un criterio vacío lo cumple cualquier registro de la fuente;
+    uno que declara `equipo` exige ese equipo.
+
+    Se compara en minúsculas y sin espacios porque `equipo` viaja como texto
+    libre en los monitoreos, y «E1 » no debería fallar contra «e1».
+    """
+    def normal(valor):
+        return str(valor or "").strip().lower()
+
+    for campo, esperado in criterio.items():
+        if campo == "fuente":
+            continue
+
+        # `campo_en` acepta varios valores: el PCC 1 de uperización se registra
+        # en cualquiera de los tres evaporadores, y exigir uno concreto dejaría
+        # el documento sin cumplir según en cuál se corrió.
+        if campo.endswith("_en"):
+            valor = getattr(registro, campo[:-3], None)
+
+            if normal(valor) not in {normal(e) for e in (esperado or [])}:
+                return False
+
+            continue
+
+        if normal(getattr(registro, campo, None)) != normal(esperado):
+            return False
+
+    return True
+
+
+def documentos_con_evidencia(
+    documentos: Iterable[Any],
+    lote_id: int,
+    controles: Iterable[Any] = (),
+    monitoreos: Iterable[Any] = (),
+    analisis: Iterable[Any] = (),
+    movimientos: Iterable[Any] = (),
+) -> set[int]:
+    """
+    Documentos del checklist que el propio dato del sistema da por cumplidos.
+
+    Once de los diecinueve registros del Dossier son datos que la aplicación
+    ya captura: el PCC 1 vive en `ControlProceso`, los PPRO en
+    `MonitoreoPPRO`, el fisicoquímico en `Analisis`, la trazabilidad en la
+    asignación de silos. Pedir además una casilla es doble digitación — y algo
+    peor: la casilla puede decir «cumplido» sobre un PCC 1 incumplido.
+
+    Un documento se cumple con su dato cuando **existe al menos un registro
+    del lote** que coincide con el criterio. Que ese registro además esté
+    conforme es otra pregunta y la responden las reglas de inocuidad, que
+    bloquean por su cuenta. Aquí solo se responde si el registro existe: es
+    exactamente lo que la casilla afirmaba.
+
+    Devuelve ids y no objetos porque es lo que `avance_checklist` necesita
+    para cruzarlo con los registros manuales.
+    """
+    por_fuente = {
+        FUENTE_CONTROL_PROCESO: [
+            c for c in (controles or []) if getattr(c, "lote_id", None) == lote_id
+        ],
+        FUENTE_MONITOREO_PPRO: [
+            m for m in (monitoreos or []) if getattr(m, "lote_id", None) == lote_id
+        ],
+        FUENTE_ANALISIS: [
+            a for a in (analisis or []) if getattr(a, "lote_id", None) == lote_id
+        ],
+        # La asignación de leche son las salidas de silo con origen en el lote.
+        FUENTE_ASIGNACION_LECHE: [
+            m
+            for m in (movimientos or [])
+            if getattr(m, "tipo", None) == "salida"
+            and getattr(m, "origen_tipo", None) == "lote"
+            and getattr(m, "origen_id", None) == lote_id
+        ],
+    }
+
+    cumplidos = set()
+
+    for documento in documentos or []:
+        criterio = getattr(documento, "evidencia", None) or {}
+        candidatos = por_fuente.get(criterio.get("fuente"))
+
+        # Sin fuente declarada, o con una que no existe, el documento sigue
+        # siendo manual. No se inventa una equivalencia.
+        if not candidatos:
+            continue
+
+        if any(_coincide(registro, criterio) for registro in candidatos):
+            cumplidos.add(documento.id)
+
+    return cumplidos
+
+
 def avance_checklist(
     registros: Iterable[Any],
     documentos_exigibles: Sequence[Any],
     lote_id: int | None = None,
+    cumplidos_por_dato: set[int] | None = None,
 ) -> AvanceChecklist:
     """
     Avance documental de un lote, derivado de sus registros de calidad.
@@ -375,6 +486,12 @@ def avance_checklist(
     este — y como el checklist completo es lo que habilita la liberación, el
     error deja salir producto. Lo detectó una prueba del prototipo y hay una de
     regresión que lo cubre.
+
+    `cumplidos_por_dato` son los documentos que el propio registro del sistema
+    satisface (`documentos_con_evidencia`): el PCC 1 lo cumple su control de
+    proceso, no una casilla. Se pasa aparte y no se mezcla con los registros
+    manuales para que se vea de dónde viene cada cumplimiento — en el
+    expediente y aquí.
     """
     exigibles = list(documentos_exigibles or [])
 
@@ -384,17 +501,26 @@ def avance_checklist(
         if lote_id is None or r.lote_id == lote_id
     }
 
+    por_dato = cumplidos_por_dato or set()
+
     detalle = []
     for documento in exigibles:
         registro = por_documento.get(documento.id)
+
+        # El dato del sistema cumple el documento por sí solo. Una
+        # observación manual sigue pesando: si alguien abrió el registro y lo
+        # marcó observado, eso es una alerta que el dato no borra.
+        lo_cumple_el_dato = documento.id in por_dato
+
         detalle.append(
             EstadoDocumento(
                 documento=documento,
                 registro=registro,
-                completo=registro_completo(registro, documento),
+                completo=lo_cumple_el_dato or registro_completo(registro, documento),
                 observado=getattr(registro, "estado", None) == OBSERVADO,
-                iniciado=registro is not None,
-                faltantes=campos_faltantes(registro, documento),
+                iniciado=lo_cumple_el_dato or registro is not None,
+                faltantes=[] if lo_cumple_el_dato else campos_faltantes(registro, documento),
+                cumplido_por_dato=lo_cumple_el_dato,
             )
         )
 
@@ -471,6 +597,7 @@ def puede_liberar(
     controles: Iterable[Any] = (),
     lecturas_control: Iterable[Any] = (),
     monitoreos: Iterable[Any] = (),
+    cumplidos_por_dato: set[int] | None = None,
 ) -> DecisionLiberacion:
     """
     ¿Se puede liberar este lote?
@@ -501,7 +628,7 @@ def puede_liberar(
         bloqueos.append("El lote aún está en proceso: primero hay que cerrar la producción.")
 
     exigibles = documentos_aplicables(documentos, producto)
-    avance = avance_checklist(registros, exigibles, lote.id)
+    avance = avance_checklist(registros, exigibles, lote.id, cumplidos_por_dato)
 
     if not avance.total:
         bloqueos.append("No hay documentos configurados para esta familia de producto.")
