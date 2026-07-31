@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Analisis, Lote
+from .models import Analisis, ControlProceso, ControlProcesoLectura, Lote
 
 
 class AnalisisInline(admin.TabularInline):
@@ -39,3 +39,22 @@ class AnalisisAdmin(admin.ModelAdmin):
     search_fields = ["lote__codigo_lote", "muestra"]
     date_hierarchy = "fecha"
     autocomplete_fields = ["lote", "especificacion"]
+
+
+class ControlProcesoLecturaInline(admin.TabularInline):
+    """El detalle horario se carga desde su control, como en el formato."""
+
+    model = ControlProcesoLectura
+    extra = 0
+    fields = ["hora", "valores", "observacion"]
+
+
+@admin.register(ControlProceso)
+class ControlProcesoAdmin(admin.ModelAdmin):
+    # Sin columna de cumplimiento del PCC: se recalcula desde las lecturas.
+    list_display = ["lote", "equipo", "fecha", "turno", "pcc1_temp_min", "pcc1_caudal_max"]
+    list_filter = ["equipo", "turno", "fecha"]
+    search_fields = ["lote__codigo_lote", "observacion"]
+    date_hierarchy = "fecha"
+    autocomplete_fields = ["lote"]
+    inlines = [ControlProcesoLecturaInline]

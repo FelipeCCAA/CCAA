@@ -18,6 +18,7 @@ presentes al leer el código:
    natural `codigo_lote + producto + fecha`.
 """
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -175,6 +176,171 @@ class Analisis(models.Model):
             raise ValidationError(
                 {"valores": f"Parámetros no reconocidos: {', '.join(sorted(desconocidos))}"}
             )
+
+        for parametro, valor in self.valores.items():
+            if valor is not None and not isinstance(valor, (int, float)):
+                raise ValidationError(
+                    {"valores": f"El valor de '{parametro}' debe ser numérico."}
+                )
+
+
+class Equipo(models.TextChoices):
+    """
+    Equipos que registran control de proceso.
+
+    Provisional como `choices`. El backlog prevé un maestro `Equipo` con sus
+    límites críticos por producto (P1 #11); mientras eso no exista, los
+    límites viajan en cada `ControlProceso` y esta lista basta.
+    """
+
+    VEB = "VEB", "Evaporador VEB"
+    SCH2 = "SCH2", "Evaporador Scheffers 2"
+    SCH3 = "SCH3", "Evaporador Scheffers 3"
+    E1 = "E1", "Torre de secado Egron 1"
+    E2 = "E2", "Torre de secado Egron 2"
+
+
+class ControlProceso(models.Model):
+    """
+    Control de proceso de un equipo para un lote: condensación o secado.
+
+    Traducción de los formatos de planta CCAA.Cond.FORM.001/006/010–012 y
+    CCAA.Sec.FORM.002/025/026. La cabecera va aquí y el detalle horario en
+    `ControlProcesoLectura`, que es el mismo patrón que `Recepcion` y
+    `MovimientoSilo`: un registro y su libro.
+
+    Reúne el **PCC 1 de uperización**, que es lo que hace de este modelo un
+    registro de inocuidad y no solo de producción. Los límites (temperatura
+    mínima, caudal máximo) se guardan **por registro** y no en un maestro
+    porque cambian por equipo y por producto: el VEB trabaja a 80,0 °C y
+    14.175 kg/h, el Scheffers 2 a 81,2 °C y 17.100 kg/h.
+
+    Lo que NO se guarda es si el control cumplió: eso se recalcula desde las
+    lecturas, igual que el resultado de calidad de un lote (MODELO_DATOS.md
+    §2.2). Guardarlo dejaría un veredicto que se desincroniza en cuanto
+    alguien corrige una lectura mal tecleada.
+    """
+
+    lote = models.ForeignKey(
+        Lote,
+        on_delete=models.CASCADE,
+        related_name="controles_proceso",
+        verbose_name="Lote",
+    )
+    equipo = models.CharField("Equipo", max_length=10, choices=Equipo.choices)
+    turno = models.CharField("Turno", max_length=5, choices=Lote.Turno.choices, blank=True)
+    fecha = models.DateField("Fecha")
+
+    hora_arranque = models.TimeField("Hora de arranque", null=True, blank=True)
+    hora_inicio_produccion = models.TimeField(
+        "Inicio de producción", null=True, blank=True
+    )
+    hora_termino_produccion = models.TimeField(
+        "Término de producción", null=True, blank=True
+    )
+
+    # PCC 1 · Uperización. Los límites del formato, para poder auditar cada
+    # lectura contra lo que regía ese día y no contra lo que rige hoy.
+    pcc1_temp_min = models.DecimalField(
+        "PCC1 · Temperatura mínima",
+        max_digits=5,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        help_text="En °C. Una lectura por debajo incumple el PCC",
+    )
+    pcc1_caudal_max = models.DecimalField(
+        "PCC1 · Caudal máximo",
+        max_digits=10,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        help_text="En kg/h. Una lectura por encima incumple el PCC",
+    )
+
+    operador = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="controles_proceso",
+        null=True,
+        blank=True,
+        verbose_name="Operador",
+    )
+    observacion = models.TextField("Observación", blank=True)
+
+    class Meta:
+        verbose_name = "Control de proceso"
+        verbose_name_plural = "Controles de proceso"
+        ordering = ["-fecha", "equipo"]
+        constraints = [
+            # Un equipo lleva un control por lote, fecha y turno. Sin esto, dos
+            # cabeceras del mismo turno partirían las lecturas en dos y el
+            # cumplimiento del PCC se evaluaría sobre la mitad de los datos.
+            models.UniqueConstraint(
+                fields=["lote", "equipo", "fecha", "turno"],
+                name="control_proceso_unico_por_lote_equipo_fecha_turno",
+            )
+        ]
+
+    def __str__(self):
+        return f"Control {self.equipo} · {self.lote.codigo_lote} · {self.fecha}"
+
+    def clean(self):
+        if (
+            self.hora_inicio_produccion is not None
+            and self.hora_termino_produccion is not None
+            and self.hora_termino_produccion == self.hora_inicio_produccion
+        ):
+            raise ValidationError(
+                {
+                    "hora_termino_produccion": (
+                        "No puede ser igual a la hora de inicio."
+                    )
+                }
+            )
+
+
+class ControlProcesoLectura(models.Model):
+    """
+    Una lectura horaria de un control de proceso.
+
+    Los parámetros medidos cambian por equipo —el VEB no mide lo mismo que la
+    torre Egron—, así que van como JSON igual que `Analisis.valores`. Poner
+    una columna por parámetro obligaría a migrar la base cada vez que un
+    formato de planta agrega una medición.
+    """
+
+    control = models.ForeignKey(
+        ControlProceso,
+        on_delete=models.CASCADE,
+        related_name="lecturas",
+        verbose_name="Control de proceso",
+    )
+    hora = models.TimeField("Hora")
+    valores = models.JSONField(
+        "Valores medidos",
+        default=dict,
+        help_text='{"flujo_entrada": 13500, "densidad": 1020, "t_dsi": 82.1, ...}',
+    )
+    observacion = models.TextField("Observación", blank=True)
+
+    class Meta:
+        verbose_name = "Lectura de control de proceso"
+        verbose_name_plural = "Lecturas de control de proceso"
+        ordering = ["hora"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["control", "hora"],
+                name="lectura_control_unica_por_hora",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.control.equipo} · {self.hora}"
+
+    def clean(self):
+        if not isinstance(self.valores, dict):
+            raise ValidationError({"valores": "Debe ser un objeto de valores medidos."})
 
         for parametro, valor in self.valores.items():
             if valor is not None and not isinstance(valor, (int, float)):
