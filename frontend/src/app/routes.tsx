@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import RutaProtegida from "../components/RutaProtegida/RutaProtegida";
+import RutaAdmin from "../components/RutaAdmin/RutaAdmin";
 
 import AuthLayout from "../layouts/authlayout";
 import MainLayout from "../layouts/mainlayout";
@@ -15,6 +16,8 @@ import Liberacion from "../pages/Liberacion/Liberacion";
 import Planificacion from "../pages/Planificacion/Planificacion";
 import Maestros from "../pages/Maestros/Maestros";
 import Auditoria from "../pages/Auditoria/Auditoria";
+import Administracion from "../pages/Administracion/Administracion";
+import Inventario from "../pages/Inventario/Inventario";
 
 
 /*
@@ -68,6 +71,14 @@ function RoutesApp(){
             <Route element={<RutaProtegida />}>
 
                 <Route element={<MainLayout />}>
+
+                    <Route element={<RutaAdmin />}>
+                        <Route
+                            path="/administracion"
+                            element={<Administracion />}
+                        />
+                        <Route path="/inventario" element={<Inventario />} />
+                    </Route>
 
                     <Route
                         path="/dashboard"

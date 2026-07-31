@@ -26,8 +26,10 @@ from rest_framework.throttling import SimpleRateThrottle
 from .serializers import (
     ConfirmacionRecuperacionSerializer,
     SolicitudRecuperacionSerializer,
+    TrabajadorSerializer,
     UsuarioSerializer,
 )
+from .permisos import EsAdministrador
 
 
 logger = logging.getLogger(__name__)
@@ -121,6 +123,19 @@ def yo(request):
     sigue siendo válida; si el token fue revocado, responde 401.
     """
     return Response(UsuarioSerializer(request.user).data)
+
+
+@api_view(["GET"])
+@permission_classes([EsAdministrador])
+def trabajadores(request):
+    """Lista de usuarios y perfiles para el panel propio de Administración."""
+    usuarios = User.objects.select_related("perfil").order_by(
+        "first_name", "last_name", "username"
+    )
+    perfil = getattr(request.user, "perfil", None)
+    if not request.user.is_superuser and perfil.area != perfil.Area.ADMINISTRACION:
+        usuarios = usuarios.filter(perfil__area=perfil.area)
+    return Response(TrabajadorSerializer(usuarios, many=True).data)
 
 
 @api_view(["POST"])

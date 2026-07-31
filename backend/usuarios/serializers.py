@@ -6,10 +6,15 @@ from .models import PerfilUsuario, rol_de
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
     rol_etiqueta = serializers.CharField(source="get_rol_display", read_only=True)
+    nivel_etiqueta = serializers.CharField(source="get_nivel_display", read_only=True)
+    area_etiqueta = serializers.CharField(source="get_area_display", read_only=True)
 
     class Meta:
         model = PerfilUsuario
-        fields = ["cargo", "area", "turno", "rol", "rol_etiqueta"]
+        fields = [
+            "cargo", "area", "area_etiqueta", "turno", "rol", "rol_etiqueta",
+            "nivel", "nivel_etiqueta",
+        ]
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -43,6 +48,16 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
     def get_rol(self, usuario):
         return rol_de(usuario)
+
+
+class TrabajadorSerializer(UsuarioSerializer):
+    """Datos de personal visibles en el panel administrativo."""
+
+    activo = serializers.BooleanField(source="is_active", read_only=True)
+    ultimo_acceso = serializers.DateTimeField(source="last_login", read_only=True)
+
+    class Meta(UsuarioSerializer.Meta):
+        fields = UsuarioSerializer.Meta.fields + ["activo", "ultimo_acceso"]
 
 
 class SolicitudRecuperacionSerializer(serializers.Serializer):
