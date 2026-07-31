@@ -12,20 +12,37 @@ from .models import (
 
 
 class MandanteSerializer(serializers.ModelSerializer):
+    codigo_cliente_etiqueta = serializers.CharField(
+        source="get_codigo_cliente_display", read_only=True
+    )
+
     class Meta:
         model = Mandante
-        fields = ["id", "nombre", "activo"]
+        fields = [
+            "id",
+            "nombre",
+            "codigo_cliente",
+            "codigo_cliente_etiqueta",
+            "activo",
+        ]
 
 
 class ProductoSerializer(serializers.ModelSerializer):
     mandante_nombre = serializers.CharField(source="mandante.nombre", read_only=True)
     familia_etiqueta = serializers.CharField(source="get_familia_display", read_only=True)
 
+    # El SKU se deriva de los atributos en `Producto.save()`: mandarlo desde
+    # el cliente sería teclear un código que puede contradecirlos, que es el
+    # defecto que trae el archivo de origen (SKU_PRODUCTOS.md §4.2).
+    codigo = serializers.CharField(read_only=True)
+    sku_legible = serializers.SerializerMethodField()
+
     class Meta:
         model = Producto
         fields = [
             "id",
             "codigo",
+            "sku_legible",
             "nombre",
             "familia",
             "familia_etiqueta",
@@ -33,8 +50,55 @@ class ProductoSerializer(serializers.ModelSerializer):
             "unidad_base",
             "mandante",
             "mandante_nombre",
+            "naturaleza_comercial",
+            "categoria",
+            "tipo",
+            "formato",
+            "mercado",
+            "variante",
             "activo",
         ]
+
+    def get_sku_legible(self, producto):
+        """
+        El SKU descompuesto en sus valores, para poder contrastarlo con los
+        atributos sin descomponerlo a mano. `None` si el código no tiene la
+        forma de un SKU — que es lo normal en los códigos antiguos.
+        """
+        from .dominio import describir_sku
+
+        return describir_sku(producto.codigo)
+
+    def validate(self, datos):
+        """
+        Traduce el rechazo del generador a un error de campo.
+
+        Sin esto, una combinación imposible —producto propio con cliente—
+        reventaría con un 500 en vez de decir qué está mal.
+        """
+        from .dominio import SkuInvalido
+
+        candidato = Producto(**{**self._actuales(), **datos})
+
+        try:
+            candidato.sku_derivado()
+        except SkuInvalido as e:
+            raise serializers.ValidationError({"naturaleza_comercial": str(e)}) from e
+
+        return datos
+
+    def _actuales(self):
+        """Lo que ya tiene el producto, para validar un PATCH parcial."""
+        if self.instance is None:
+            return {}
+
+        campos = [
+            f.name
+            for f in Producto._meta.concrete_fields
+            if f.name != "id"
+        ]
+
+        return {campo: getattr(self.instance, campo) for campo in campos}
 
 
 class SiloSerializer(serializers.ModelSerializer):

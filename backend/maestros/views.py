@@ -115,3 +115,33 @@ class DocumentoLiberacionViewSet(viewsets.ModelViewSet):
 def parametros(request):
     """Catálogo de parámetros fisicoquímicos medibles."""
     return Response(ParametroSerializer(ParametroSerializer.catalogo(), many=True).data)
+
+
+@api_view(["GET"])
+def catalogos_sku(request):
+    """
+    Valores que admite cada segmento del SKU, con su etiqueta.
+
+    Se sirven desde aquí en vez de escribirlos en la pantalla: los catálogos
+    son la fuente de verdad del generador, y una copia en el frontend
+    ofrecería tarde o temprano un valor que el backend rechaza. Es el mismo
+    criterio que `/parametros/`.
+    """
+    from .models import Producto
+
+    def opciones(choices):
+        return [{"valor": v, "etiqueta": e} for v, e in choices]
+
+    return Response(
+        {
+            "naturaleza_comercial": opciones(Producto.NaturalezaComercial.choices),
+            "categoria": opciones(Producto.Categoria.choices),
+            "tipo": opciones(Producto.TipoProducto.choices),
+            "formato": opciones(Producto.Formato.choices),
+            "mercado": opciones(Producto.Mercado.choices),
+            "cliente": opciones(Mandante.Cliente.choices),
+            "familia": opciones(Producto.Familia.choices),
+            "naturaleza": opciones(Producto.Naturaleza.choices),
+            "unidad_base": opciones(Producto.Unidad.choices),
+        }
+    )

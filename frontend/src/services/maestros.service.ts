@@ -1,0 +1,173 @@
+import api from "./api";
+
+import type { Pagina } from "./produccion.service";
+
+
+/*
+  Maestros: productos, mandantes, silos y camiones.
+
+  El SKU del producto **no viaja desde aquí**: lo deriva el backend de los
+  atributos en `Producto.save()`. Mandarlo permitiría guardar un código que
+  contradiga los atributos del mismo producto, que es el defecto que trae el
+  archivo de origen del catálogo.
+
+  Los catálogos de cada segmento tampoco están escritos en el frontend: se
+  piden a `/maestros/catalogos-sku/`. Una copia aquí ofrecería tarde o
+  temprano un valor que el backend rechaza — el mismo criterio que ya sigue
+  el catálogo de parámetros de calidad.
+*/
+
+export interface OpcionCatalogo {
+  valor: string;
+  etiqueta: string;
+}
+
+export interface CatalogosSku {
+  naturaleza_comercial: OpcionCatalogo[];
+  categoria: OpcionCatalogo[];
+  tipo: OpcionCatalogo[];
+  formato: OpcionCatalogo[];
+  mercado: OpcionCatalogo[];
+  cliente: OpcionCatalogo[];
+  familia: OpcionCatalogo[];
+  naturaleza: OpcionCatalogo[];
+  unidad_base: OpcionCatalogo[];
+}
+
+
+export interface Mandante {
+  id: number;
+  nombre: string;
+  /* Qué cliente representa dentro del SKU. Sin esto sus productos no
+     generan código. */
+  codigo_cliente: string;
+  codigo_cliente_etiqueta: string;
+  activo: boolean;
+}
+
+
+export interface ProductoMaestro {
+  id: number;
+  /* El SKU. Derivado: es de solo lectura. */
+  codigo: string;
+  /* El SKU descompuesto en sus valores, o null si el código no tiene esa
+     forma — lo normal en los códigos antiguos de planta. */
+  sku_legible: Record<string, string> | null;
+  nombre: string;
+  familia: string;
+  familia_etiqueta: string;
+  naturaleza: string;
+  unidad_base: string;
+  mandante: number;
+  mandante_nombre: string;
+  naturaleza_comercial: string;
+  categoria: string;
+  tipo: string;
+  formato: string;
+  mercado: string;
+  variante: number | null;
+  activo: boolean;
+}
+
+
+/** Campos que se envían al crear o editar. `codigo` no está: se deriva. */
+export interface ProductoEditable {
+  nombre?: string;
+  familia?: string;
+  naturaleza?: string;
+  unidad_base?: string;
+  mandante?: number;
+  naturaleza_comercial?: string;
+  categoria?: string;
+  tipo?: string;
+  formato?: string;
+  mercado?: string;
+  variante?: number | null;
+  activo?: boolean;
+}
+
+
+export interface Silo {
+  id: number;
+  codigo: string;
+  tipo: string;
+  tipo_etiqueta: string;
+  capacidad_l: string;
+  activo: boolean;
+}
+
+
+export async function obtenerCatalogosSku(): Promise<CatalogosSku> {
+  const { data } = await api.get<CatalogosSku>("maestros/catalogos-sku/");
+
+  return data;
+}
+
+
+export async function obtenerMandantes(): Promise<Mandante[]> {
+  const { data } = await api.get<Pagina<Mandante>>("maestros/mandantes/");
+
+  return data.results;
+}
+
+
+export async function crearMandante(
+  mandante: { nombre: string; codigo_cliente: string },
+): Promise<Mandante> {
+
+  const { data } = await api.post<Mandante>("maestros/mandantes/", mandante);
+
+  return data;
+}
+
+
+export async function editarMandante(
+  id: number,
+  cambios: Partial<Mandante>,
+): Promise<Mandante> {
+
+  const { data } = await api.patch<Mandante>(`maestros/mandantes/${id}/`, cambios);
+
+  return data;
+}
+
+
+export async function obtenerProductosMaestros(): Promise<ProductoMaestro[]> {
+  const { data } = await api.get<Pagina<ProductoMaestro>>("maestros/productos/");
+
+  return data.results;
+}
+
+
+export async function crearProducto(
+  producto: ProductoEditable,
+): Promise<ProductoMaestro> {
+
+  const { data } = await api.post<ProductoMaestro>(
+    "maestros/productos/",
+    producto,
+  );
+
+  return data;
+}
+
+
+export async function editarProducto(
+  id: number,
+  cambios: ProductoEditable,
+): Promise<ProductoMaestro> {
+
+  const { data } = await api.patch<ProductoMaestro>(
+    `maestros/productos/${id}/`,
+    cambios,
+  );
+
+  return data;
+}
+
+
+export async function obtenerSilosMaestros(): Promise<Silo[]> {
+  const { data } = await api.get<Pagina<Silo>>("maestros/silos/");
+
+  return data.results;
+}

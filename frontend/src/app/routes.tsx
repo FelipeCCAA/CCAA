@@ -13,6 +13,7 @@ import Produccion from "../pages/Produccion/Produccion";
 import Recepcion from "../pages/Recepcion/Recepcion";
 import Liberacion from "../pages/Liberacion/Liberacion";
 import Planificacion from "../pages/Planificacion/Planificacion";
+import Maestros from "../pages/Maestros/Maestros";
 
 
 /*
@@ -90,6 +91,11 @@ function RoutesApp(){
                     <Route
                         path="/planificacion"
                         element={<Planificacion />}
+                    />
+
+                    <Route
+                        path="/maestros"
+                        element={<Maestros />}
                     />
 
                 </Route>

@@ -59,7 +59,7 @@ const modulos = [
   },
   {
     etiqueta: "Maestros",
-    ruta: null,
+    ruta: "/maestros",
     icono: Database,
   },
 ];

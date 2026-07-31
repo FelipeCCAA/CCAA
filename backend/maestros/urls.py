@@ -8,6 +8,7 @@ from .views import (
     ProductoViewSet,
     SiloViewSet,
     VehiculoViewSet,
+    catalogos_sku,
     parametros,
 )
 
@@ -21,5 +22,6 @@ router.register("documentos", DocumentoLiberacionViewSet)
 
 urlpatterns = [
     path("parametros/", parametros, name="parametros"),
+    path("catalogos-sku/", catalogos_sku, name="catalogos-sku"),
     path("", include(router.urls)),
 ]

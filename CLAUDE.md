@@ -68,9 +68,18 @@ vuelta. Dejarlo escribible invitaría a teclear un código que contradiga los at
 producto — que es exactamente el defecto que trae el archivo de origen (§4.2). Un producto sin los
 atributos cargados conserva el código que tenga: el histórico está lleno de códigos a mano.
 
-**Dónde se crea un producto:** admin de Django → Maestros → Productos. La pantalla de Maestros del
-frontend sigue deshabilitada («Pronto»). El mandante necesita su `codigo_cliente` cargado o sus
-productos no generan SKU.
+**Dónde se crea un producto:** pantalla **Maestros** (`/maestros`), pestaña Productos — o el admin
+de Django. El mandante necesita su `codigo_cliente` cargado o sus productos no generan SKU.
+
+La pantalla cubre productos, mandantes y silos (estos últimos de solo lectura: su ocupación es un
+saldo del libro de movimientos, y un formulario invitaría a «corregirlo» escribiéndolo). Las
+**especificaciones** y el **catálogo de documentos** siguen en el admin: sus formularios son JSON
+y quien decide sobre ellos es Calidad, no Administración.
+
+Los catálogos de los desplegables se sirven en `/api/maestros/catalogos-sku/` en vez de escribirse
+en el frontend, y el SKU **no se previsualiza en el cliente**: reproducir el generador allí crea
+una segunda implementación que puede diferir de la que manda, justo en el dato que se imprime en
+el saco. Lo que sí se anticipa es qué falta para poder componerlo.
 
 **Salvedades sobre `SKU_PRODUCTOS.md`** (verificadas contra el Excel fuente):
 
