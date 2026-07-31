@@ -301,6 +301,32 @@ function FormularioProducto({
                 {selector("naturaleza_comercial", catalogos.naturaleza_comercial)}
               </Campo>
 
+              {/* El cliente es un segmento del SKU como los demás, pero no se
+                  elige: lo dice el mandante. Se muestra igual, porque si no
+                  la mitad del código se compone con algo que no está en
+                  pantalla. */}
+              <div>
+
+                <span className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Cliente
+                </span>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700">
+                  {!mandante
+                    ? "— elige el mandante"
+                    : mandante.codigo_cliente
+                      ? mandante.codigo_cliente_etiqueta
+                      : "sin código de cliente"}
+                </div>
+
+                <span className="mt-1 block text-xs text-slate-400">
+                  {mandante && !mandante.codigo_cliente
+                    ? `Asígnale uno a «${mandante.nombre}» en la pestaña Mandantes.`
+                    : "Lo define el mandante: no se elige aquí para que no haya dos copias que se contradigan."}
+                </span>
+
+              </div>
+
               <Campo etiqueta="Categoría">
                 {selector("categoria", catalogos.categoria)}
               </Campo>
