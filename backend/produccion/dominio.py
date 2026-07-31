@@ -13,6 +13,7 @@ especificación todo el histórico queda reevaluado con el criterio nuevo.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -264,3 +265,73 @@ def kg_disponibles(lote: Any, kg_despachados: Decimal | float = 0) -> Decimal:
     desde ahí sin cambiar la firma para quien llame.
     """
     return Decimal(str(lote.kg_producidos)) - Decimal(str(kg_despachados))
+
+
+# --------------------------------------------------------- código de lote
+
+# Tipos de producto a efectos de la codificación (CCAA.Calidad.POE.009.02).
+# No son la `familia` del producto: la familia agrupa por naturaleza (polvo,
+# crema) y esto agrupa por cómo se codifica, que no es lo mismo — el
+# precondensado y la crema comparten familia en algunos casos y llevan
+# sufijos distintos.
+TIPO_PRECONDENSADO = "precondensado"
+TIPO_CREMA = "crema"
+TIPO_LEP = "lep"  # leche entera o descremada en polvo
+
+_SUFIJO_LINEA = {"E1": "1", "E2": "2"}
+
+# CCAA + año(1) + juliano(3) + sufijo opcional + 'A' de segunda producción.
+_PATRON_CODIGO = re.compile(r"^CCAA\d{4}(N|[12])?A?$")
+
+
+def generar_codigo_lote(
+    fecha: date,
+    tipo: str,
+    *,
+    linea: str | None = None,
+    nacional: bool = False,
+    segunda_produccion: bool = False,
+) -> str:
+    """
+    Arma el código de lote según CCAA.Calidad.POE.009.02.
+
+    Base: 'CCAA' + último dígito del año + día juliano de tres dígitos. El
+    sufijo depende del producto: 'N' para el precondensado de uso nacional,
+    nada para la crema, y el número de la torre para el polvo (E1 → 1,
+    E2 → 2). Si es la segunda producción del mismo día se agrega 'A', que es
+    lo que el POE indica para no repetir el código.
+
+    Es una función pura: arma el texto que el operador vería en papel, y nada
+    más. **No garantiza unicidad** — la clave natural del lote sigue siendo
+    `codigo_lote + producto + fecha`, que es lo que la base controla
+    (MODELO_DATOS.md §2.1). Dos productos distintos del mismo día comparten
+    código a propósito, igual que en planta.
+    """
+    base = f"CCAA{fecha.year % 10}{fecha.timetuple().tm_yday:03d}"
+
+    if tipo == TIPO_PRECONDENSADO:
+        sufijo = "N" if nacional else ""
+    elif tipo == TIPO_CREMA:
+        sufijo = ""
+    elif tipo == TIPO_LEP:
+        sufijo = _SUFIJO_LINEA.get(linea or "", "")
+    else:
+        raise ValueError(f"Tipo de producto desconocido para codificación: {tipo!r}")
+
+    if segunda_produccion:
+        sufijo += "A"
+
+    return base + sufijo
+
+
+def codigo_lote_valido(codigo: str) -> bool:
+    """
+    ¿El código respeta la forma del POE.009.02?
+
+    Se ofrece para avisar en pantalla, **no para validar el modelo**. El
+    histórico de planta tiene códigos que no siguen esta forma y que hay que
+    poder registrar igual; convertir esto en una restricción del modelo
+    impediría cargar lo que realmente pasó, que es justo lo contrario de lo
+    que un registro de trazabilidad debe hacer.
+    """
+    return bool(_PATRON_CODIGO.match(codigo or ""))
