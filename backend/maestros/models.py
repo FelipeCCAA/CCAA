@@ -271,6 +271,22 @@ class DocumentoLiberacion(models.Model):
     cargando el catálogo, no modificando este archivo.
     """
 
+    class Area(models.TextChoices):
+        """
+        Etapa del flujo que genera el registro.
+
+        Reproduce el orden del Dossier de Liberación (CCAA.Calidad.FORM.023):
+        Recepción → Condensación → Secado → Envase. Sirve para saber **qué
+        área tiene el registro pendiente**, que es la pregunta que hoy se
+        responde llamando por teléfono.
+        """
+
+        RECEPCION = "recepcion", "Recepción"
+        CONDENSACION = "condensacion", "Condensación"
+        SECADO = "secado", "Secado"
+        ENVASE = "envase", "Envase"
+        CALIDAD = "calidad", "Calidad"
+
     # Tipos que la interfaz sabe dibujar. `id` y `ref` del esquema del
     # prototipo quedan fuera a propósito: un campo de formulario no es una
     # identidad ni una llave foránea.
@@ -294,6 +310,13 @@ class DocumentoLiberacion(models.Model):
         help_text="Ej: CCAA.Calidad.FORM.016.02",
     )
     nombre = models.CharField("Nombre", max_length=200)
+    area = models.CharField(
+        "Área de origen",
+        max_length=20,
+        choices=Area.choices,
+        blank=True,
+        help_text="Etapa del flujo que genera el registro",
+    )
     aplica_a = models.JSONField(
         "Aplica a",
         default=list,

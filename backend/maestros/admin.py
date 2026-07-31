@@ -65,9 +65,9 @@ class DocumentoLiberacionAdmin(admin.ModelAdmin):
     herramienta de mantenimiento.
     """
 
-    list_display = ["orden", "nombre", "codigo", "aplica_a", "campos_en_plantilla", "activo"]
+    list_display = ["orden", "nombre", "codigo", "area", "aplica_a", "campos_en_plantilla", "activo"]
     list_display_links = ["nombre"]
-    list_filter = ["activo"]
+    list_filter = ["area", "activo"]
     search_fields = ["nombre", "codigo", "fuente"]
     ordering = ["orden", "nombre"]
 
