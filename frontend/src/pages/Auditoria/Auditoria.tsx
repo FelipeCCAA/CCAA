@@ -46,6 +46,28 @@ function comoTexto(valor: unknown): string {
 }
 
 
+/*
+  Separa un valor del diff en su par [antes, después].
+
+  El backend siempre guarda pares, pero esto no lo da por hecho. Un registro
+  con otra forma —de una versión anterior, o de un modelo con un JSONField que
+  contenga una lista— haría fallar la desestructuración, y como esto se dibuja
+  dentro del `map` de la tabla, el fallo se lleva por delante la pantalla
+  entera. Ya pasó una vez: las altas se guardaban planas y desestructurar un
+  número dejó la página en blanco.
+
+  Un registro de auditoría que no se puede leer es peor que uno feo.
+*/
+function par(valor: unknown): [unknown, unknown] {
+  if (Array.isArray(valor) && valor.length === 2) {
+    return [valor[0], valor[1]];
+  }
+
+  // Forma inesperada: se muestra como valor único, sin inventar un anterior.
+  return [undefined, valor];
+}
+
+
 function Diff({ registro }: { registro: RegistroAuditoria }) {
 
   const campos = Object.entries(registro.cambios ?? {});
@@ -56,25 +78,32 @@ function Diff({ registro }: { registro: RegistroAuditoria }) {
 
   return (
     <ul className="space-y-1">
-      {campos.map(([campo, [antes, despues]]) => (
-        <li key={campo} className="text-sm">
+      {campos.map(([campo, valor]) => {
 
-          <span className="text-slate-500">{campo}</span>
+        const [antes, despues] = par(valor);
+        // En un alta no hay valor anterior: mostrar "— → x" es ruido.
+        const soloDespues = antes === null || antes === undefined;
 
-          {registro.accion === "creacion" ? (
-            <span className="ml-2 text-slate-800">{comoTexto(despues)}</span>
-          ) : (
-            <>
-              <span className="ml-2 text-slate-400 line-through">
-                {comoTexto(antes)}
-              </span>
-              <span className="mx-1.5 text-slate-300">→</span>
-              <span className="text-slate-800">{comoTexto(despues)}</span>
-            </>
-          )}
+        return (
+          <li key={campo} className="text-sm">
 
-        </li>
-      ))}
+            <span className="text-slate-500">{campo}</span>
+
+            {soloDespues ? (
+              <span className="ml-2 text-slate-800">{comoTexto(despues)}</span>
+            ) : (
+              <>
+                <span className="ml-2 text-slate-400 line-through">
+                  {comoTexto(antes)}
+                </span>
+                <span className="mx-1.5 text-slate-300">→</span>
+                <span className="text-slate-800">{comoTexto(despues)}</span>
+              </>
+            )}
+
+          </li>
+        );
+      })}
     </ul>
   );
 }

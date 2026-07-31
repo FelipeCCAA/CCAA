@@ -77,10 +77,16 @@ def _valor(instancia, campo):
 
 
 def _instantanea(instancia) -> dict:
+    """
+    Los campos del objeto y sus valores.
+
+    Sin la clave primaria: no cambia nunca y ya viaja en `objeto_id`, así que
+    en un alta solo sería ruido repetido.
+    """
     return {
         campo.name: _valor(instancia, campo)
         for campo in instancia._meta.concrete_fields
-        if campo.name not in CAMPOS_EXCLUIDOS
+        if campo.name not in CAMPOS_EXCLUIDOS and not campo.primary_key
     }
 
 
@@ -142,7 +148,17 @@ def _al_guardar(sender, instance, created, **kwargs):
     # También de la base: es lo que quedó guardado, incluidos los valores que
     # el propio modelo derive en `save()` —como el SKU del producto—.
     despues = _instantanea_guardada(sender, instance.pk) or _instantanea(instance)
-    cambios = despues if created else _diferencias(antes, despues)
+
+    # Un alta se guarda con la MISMA forma que una modificación: el valor
+    # anterior es `None` porque no había nada. Guardarla como un diccionario
+    # plano de valores obligaría a cada consumidor a distinguir las dos formas
+    # —y el que no lo haga, revienta: fue exactamente lo que tumbó la pantalla
+    # de auditoría al intentar desestructurar un número como par.
+    cambios = (
+        {campo: [None, valor] for campo, valor in despues.items()}
+        if created
+        else _diferencias(antes, despues)
+    )
 
     # Un save() que no cambió nada no es un hecho que registrar.
     if not created and not cambios:

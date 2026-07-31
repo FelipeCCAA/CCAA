@@ -64,6 +64,47 @@ class CapturaDeCambiosTests(BaseAuditoria):
         self.assertEqual(registro.accion, "creacion")
         self.assertEqual(registro.objeto_desc[:3], "L-1")
 
+    def test_todos_los_cambios_tienen_la_misma_forma(self):
+        """
+        Siempre `[antes, despues]`, también en un alta —con `None` delante—.
+
+        Es la prueba que faltaba. Las altas se guardaban como un diccionario
+        plano de valores y las modificaciones como pares; la pantalla de
+        auditoría desestructuraba pares sobre todo, intentó iterar un número y
+        dejó la página en blanco. Dos formas en el mismo campo obligan a cada
+        consumidor a distinguirlas, y el que no lo haga revienta.
+        """
+        lote = Lote.objects.create(
+            codigo_lote="L-1", producto=self.producto, fecha=date(2026, 7, 16)
+        )
+        lote.observacion = "algo"
+        lote.save()
+        lote.delete()
+
+        for registro in self._registros("produccion.Lote"):
+            with self.subTest(accion=registro.accion):
+                for campo, valor in registro.cambios.items():
+                    self.assertIsInstance(valor, list, campo)
+                    self.assertEqual(len(valor), 2, campo)
+
+    def test_un_alta_no_declara_un_valor_anterior(self):
+        Lote.objects.create(
+            codigo_lote="L-1", producto=self.producto, fecha=date(2026, 7, 16)
+        )
+
+        cambios = self._registros("produccion.Lote")[0].cambios
+
+        self.assertEqual(cambios["codigo_lote"], [None, "L-1"])
+        self.assertTrue(all(par[0] is None for par in cambios.values()))
+
+    def test_la_clave_primaria_no_es_un_cambio(self):
+        """Ya viaja en `objeto_id`: repetirla en el diff solo es ruido."""
+        Lote.objects.create(
+            codigo_lote="L-1", producto=self.producto, fecha=date(2026, 7, 16)
+        )
+
+        self.assertNotIn("id", self._registros("produccion.Lote")[0].cambios)
+
     def test_una_modificacion_guarda_el_antes_y_el_despues(self):
         """
         Es la pregunta que hace un auditor: no «quién lo tocó» sino «qué decía
