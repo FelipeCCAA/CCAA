@@ -5,6 +5,8 @@ from .models import (
     Especificacion,
     Mandante,
     Producto,
+    Receta,
+    RecetaComponente,
     Silo,
     Vehiculo,
 )
@@ -76,3 +78,22 @@ class DocumentoLiberacionAdmin(admin.ModelAdmin):
         """Una plantilla vacía es válida: el documento es solo una atestación."""
         total = len(documento.plantilla or [])
         return total or "solo atestación"
+
+
+class RecetaComponenteInline(admin.TabularInline):
+    """Los componentes se cargan desde su receta: así se lee un escandallo."""
+
+    model = RecetaComponente
+    extra = 1
+    fields = ["producto", "cantidad", "unidad", "merma"]
+    autocomplete_fields = ["producto"]
+
+
+@admin.register(Receta)
+class RecetaAdmin(admin.ModelAdmin):
+    list_display = ["producto", "version", "cantidad_base", "vigente_desde",
+                    "vigente_hasta", "fuente"]
+    list_filter = ["producto__familia", "producto__mandante"]
+    search_fields = ["producto__nombre", "fuente"]
+    autocomplete_fields = ["producto"]
+    inlines = [RecetaComponenteInline]

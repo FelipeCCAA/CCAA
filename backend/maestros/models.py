@@ -483,3 +483,175 @@ class DocumentoLiberacion(models.Model):
                     )
                 }
             )
+
+
+class Receta(models.Model):
+    """
+    Qué se necesita para obtener un producto. Multinivel y versionada.
+
+    La decisión que la justifica (MODELO_DATOS.md §2.7): una tabla plana
+    "producto → litros de leche" no basta, porque **la mantequilla no se hace
+    con leche, se hace con crema**. El modelo encadena transformaciones y las
+    resuelve recorriendo el árbol:
+
+        mantequilla 1 kg ──► crema 2 kg ──► leche fresca 8 L
+        crema       1 kg ──► leche fresca 4 L
+
+    Versionada por la misma razón que las especificaciones (§2.3): un lote de
+    mayo se explota con la receta de mayo. Cambiar el rendimiento hoy no debe
+    reescribir lo que costó producir hace seis meses.
+
+    La explosión vive en `maestros/recetas.py`, sin ORM, para poder probarla
+    sola.
+    """
+
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        related_name="recetas",
+        verbose_name="Producto",
+    )
+    version = models.PositiveIntegerField("Versión", default=1)
+    cantidad_base = models.DecimalField(
+        "Cantidad base",
+        max_digits=12,
+        decimal_places=3,
+        default=1,
+        help_text="Los componentes rinden esta cantidad de producto",
+    )
+    vigente_desde = models.DateField("Vigente desde")
+    vigente_hasta = models.DateField(
+        "Vigente hasta",
+        null=True,
+        blank=True,
+        help_text="Vacío = vigente indefinidamente",
+    )
+    fuente = models.CharField(
+        "Fuente",
+        max_length=250,
+        blank=True,
+        help_text="Documento o acuerdo que respalda la receta",
+    )
+
+    class Meta:
+        verbose_name = "Receta"
+        verbose_name_plural = "Recetas"
+        ordering = ["producto__nombre", "-version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["producto", "version"],
+                name="receta_version_unica_por_producto",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad_base__gt=0),
+                name="receta_cantidad_base_positiva",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.producto} · v{self.version}"
+
+    def clean(self):
+        if (
+            self.vigente_hasta is not None
+            and self.vigente_desde is not None
+            and self.vigente_hasta < self.vigente_desde
+        ):
+            raise ValidationError(
+                {"vigente_hasta": "No puede ser anterior a la fecha de inicio de vigencia."}
+            )
+
+        # Una materia prima es el final de la cadena: si llevara receta, la
+        # explosión no sabría dónde detenerse.
+        if (
+            self.producto_id
+            and self.producto.naturaleza == Producto.Naturaleza.MATERIA_PRIMA
+        ):
+            raise ValidationError(
+                {
+                    "producto": (
+                        "Una materia prima no lleva receta: es donde la "
+                        "explosión se detiene."
+                    )
+                }
+            )
+
+
+class RecetaComponente(models.Model):
+    """
+    Un ingrediente de una receta, con su merma.
+
+    La merma va en el componente y no en la receta porque se pierde distinto
+    según lo que se transforma: la leche que se evapora no es lo mismo que el
+    envase que se rompe.
+    """
+
+    receta = models.ForeignKey(
+        Receta,
+        on_delete=models.CASCADE,
+        related_name="componentes",
+        verbose_name="Receta",
+    )
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        related_name="usos_en_recetas",
+        verbose_name="Componente",
+    )
+    cantidad = models.DecimalField("Cantidad", max_digits=12, decimal_places=4)
+    unidad = models.CharField(
+        "Unidad",
+        max_length=5,
+        choices=Producto.Unidad.choices,
+        help_text="Debe coincidir con la unidad base del componente",
+    )
+    merma = models.DecimalField(
+        "Merma",
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text="En %. Aumenta la cantidad necesaria del componente",
+    )
+
+    class Meta:
+        verbose_name = "Componente de receta"
+        verbose_name_plural = "Componentes de receta"
+        ordering = ["receta", "producto__nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["receta", "producto"],
+                name="componente_unico_por_receta",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0),
+                name="componente_cantidad_positiva",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(merma__gte=0),
+                name="componente_merma_no_negativa",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.cantidad} {self.unidad} de {self.producto}"
+
+    def clean(self):
+        # Un producto que se lleva a sí mismo cuelga la explosión. El ciclo
+        # indirecto lo detecta el dominio, que ve el árbol entero; este es el
+        # caso directo, que se puede atajar aquí.
+        if self.receta_id and self.producto_id == self.receta.producto_id:
+            raise ValidationError(
+                {"producto": "Una receta no puede llevarse a sí misma como componente."}
+            )
+
+        # La unidad declarada tiene que ser la del componente: mezclar litros
+        # y kilos en la explosión da un número que parece bueno y no lo es.
+        if self.producto_id and self.unidad != self.producto.unidad_base:
+            raise ValidationError(
+                {
+                    "unidad": (
+                        f"{self.producto} se mide en "
+                        f"{self.producto.get_unidad_base_display().lower()}."
+                    )
+                }
+            )
