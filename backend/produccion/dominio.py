@@ -276,103 +276,53 @@ def kg_disponibles(lote: Any, kg_despachados: Decimal | float = 0) -> Decimal | 
 
 # --------------------------------------------------------- código de lote
 
-# Tipos de producto a efectos de la codificación (CCAA.Calidad.POE.009.02).
-# No son la `familia` del producto: la familia agrupa por naturaleza (polvo,
-# crema) y esto agrupa por cómo se codifica, que no es lo mismo — el
-# precondensado y la crema comparten familia en algunos casos y llevan
-# sufijos distintos.
-TIPO_PRECONDENSADO = "precondensado"
-TIPO_CREMA = "crema"
-TIPO_LEP = "lep"  # leche entera o descremada en polvo
-
-_SUFIJO_LINEA = {"E1": "1", "E2": "2"}
-
-# CCAA + año(1) + juliano(3) + sufijo opcional + 'A' de segunda producción.
-_PATRON_CODIGO = re.compile(r"^CCAA\d{4}(N|[12])?A?$")
+# CCAA + año(1) + juliano(3) + SKU + '-' + correlativo(2).
+#
+# El SKU es lo que distingue dos lotes del mismo día, y el correlativo lo que
+# distingue dos lotes del mismo producto el mismo día. Antes el sufijo
+# codificaba la torre y el uso nacional (POE.009.02); ahora eso vive dentro
+# del SKU del producto, que es donde se mantiene una sola vez.
+_PATRON_CODIGO = re.compile(r"^CCAA\d{4}[A-Za-z0-9]+-\d{2}$")
 
 
-def generar_codigo_lote(
-    fecha: date,
-    tipo: str,
-    *,
-    linea: str | None = None,
-    nacional: bool = False,
-    segunda_produccion: bool = False,
-) -> str:
+def generar_codigo_lote(fecha: date, sku: str, correlativo: int = 1) -> str | None:
     """
-    Arma el código de lote según CCAA.Calidad.POE.009.02.
+    Arma el código de un lote: CCAA + año + día juliano + SKU + correlativo.
 
-    Base: 'CCAA' + último dígito del año + día juliano de tres dígitos. El
-    sufijo depende del producto: 'N' para el precondensado de uso nacional,
-    nada para la crema, y el número de la torre para el polvo (E1 → 1,
-    E2 → 2). Si es la segunda producción del mismo día se agrega 'A', que es
-    lo que el POE indica para no repetir el código.
+    El correlativo va **siempre**, desde `-01`. Ponerlo solo a partir del
+    segundo lote deja dos formas distintas conviviendo, y quien lee, ordena o
+    busca códigos tiene que conocer la excepción.
 
-    Es una función pura: arma el texto que el operador vería en papel, y nada
-    más. **No garantiza unicidad** — la clave natural del lote sigue siendo
-    `codigo_lote + producto + fecha`, que es lo que la base controla
-    (MODELO_DATOS.md §2.1). Dos productos distintos del mismo día comparten
-    código a propósito, igual que en planta.
+    Devuelve `None` si el producto no tiene SKU. Es la única pieza que el
+    sistema no puede deducir, y componer un código sin ella —o con un relleno
+    inventado— imprimiría en la bolsa algo que no identifica al producto.
+
+    Es una función pura: arma el texto y nada más. **No garantiza unicidad**;
+    la clave natural del lote sigue siendo `codigo_lote + producto + fecha`,
+    que es lo que la base controla (MODELO_DATOS.md §2.1).
     """
+    limpio = (sku or "").strip()
+
+    if not limpio:
+        return None
+
     base = f"CCAA{fecha.year % 10}{fecha.timetuple().tm_yday:03d}"
 
-    if tipo == TIPO_PRECONDENSADO:
-        sufijo = "N" if nacional else ""
-    elif tipo == TIPO_CREMA:
-        sufijo = ""
-    elif tipo == TIPO_LEP:
-        sufijo = _SUFIJO_LINEA.get(linea or "", "")
-    else:
-        raise ValueError(f"Tipo de producto desconocido para codificación: {tipo!r}")
-
-    if segunda_produccion:
-        sufijo += "A"
-
-    return base + sufijo
+    return f"{base}{limpio}-{correlativo:02d}"
 
 
 def codigo_lote_valido(codigo: str) -> bool:
     """
-    ¿El código respeta la forma del POE.009.02?
+    ¿El código respeta la forma vigente?
 
     Se ofrece para avisar en pantalla, **no para validar el modelo**. El
-    histórico de planta tiene códigos que no siguen esta forma y que hay que
-    poder registrar igual; convertir esto en una restricción del modelo
-    impediría cargar lo que realmente pasó, que es justo lo contrario de lo
-    que un registro de trazabilidad debe hacer.
+    histórico de planta tiene códigos que no siguen esta forma —empezando por
+    todos los del POE.009.02 anterior— y que hay que poder registrar igual;
+    convertir esto en una restricción del modelo impediría cargar lo que
+    realmente pasó, que es justo lo contrario de lo que un registro de
+    trazabilidad debe hacer.
     """
     return bool(_PATRON_CODIGO.match(codigo or ""))
-
-
-def tipo_de_codificacion(producto) -> str:
-    """
-    Cómo se codifica este producto, a partir de su ficha de maestros.
-
-    El POE agrupa por sufijo y el maestro agrupa por familia, y no son la
-    misma partición: el precondensado es un líquido intermedio y lleva
-    sufijo propio, mientras que la crema —que también sale líquida— no lleva
-    ninguno. Por eso la regla mira la naturaleza antes que la familia.
-
-    Lanza `ValueError` en vez de devolver un tipo por defecto: un producto
-    que el POE no contempla necesita que alguien decida su sufijo, y elegir
-    uno en silencio imprimiría códigos equivocados en las bolsas.
-    """
-    familia = getattr(producto, "familia", None)
-    naturaleza = getattr(producto, "naturaleza", None)
-
-    if familia == "polvo":
-        return TIPO_LEP
-
-    if familia == "crema":
-        return TIPO_CREMA
-
-    if naturaleza == "intermedio":
-        return TIPO_PRECONDENSADO
-
-    raise ValueError(
-        f"El POE.009.02 no define cómo codificar «{producto}» "
-        f"(familia {familia!r}, naturaleza {naturaleza!r})."
-    )
 
 
 @dataclass(frozen=True)

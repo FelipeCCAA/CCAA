@@ -25,7 +25,9 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - Español en UI, datos y comentarios. Fechas ISO `YYYY-MM-DD`. `codigo_lote` como string.
 - El diseño manda: extender el modelo, no reescribirlo.
 - **Dónde va cada registro:** `produccion` guarda **cómo se produjo** (lote, análisis, control de proceso — el PCC 1 vive ahí como un límite dentro del control). `inocuidad` guarda lo que **solo existe para vigilar un peligro**: PPRO, PCC de detector de metales, y más adelante limpieza CIP/COP, no conformidades y calibraciones. Mover modelos entre apps después obliga a renombrar tablas a mano, así que la separación se decidió con dos modelos y no con seis.
-- `codigo_lote_valido` (POE.009.02) **avisa, no restringe**: el histórico de planta trae códigos que no siguen el patrón y hay que poder registrarlos. No conectarlo al `clean()` de `Lote`.
+- **Código de lote** (vigente desde 2026-07-31): `CCAA` + último dígito del año + día juliano (3) + **SKU del producto** + `-` + correlativo del día (2) — p. ej. `CCAA6197LEP25-01`. El correlativo va **siempre**, desde `-01`: dos formas conviviendo obligan a conocer la excepción al leer, ordenar y buscar. Reemplaza al esquema del POE.009.02, donde el sufijo codificaba la torre (E1→1, E2→2) y el uso nacional (`N`); eso ahora vive dentro del SKU, que es donde se mantiene una sola vez.
+- `codigo_lote_valido` **avisa, no restringe**: el histórico de planta trae códigos que no siguen el patrón —empezando por todos los del POE anterior— y hay que poder registrarlos. No conectarlo al `clean()` de `Lote`.
+- **`Producto.codigo` (SKU) está vacío en la base**, y es parte del código de lote: hasta que se cargue desde el admin, `codigo-sugerido/` devuelve `codigo: null` con su motivo y el operador escribe el código a mano.
 
 ## Trampas conocidas
 
@@ -50,8 +52,8 @@ pasar a `producido`, que es cuando se saben; la regla vive en
 `produccion.dominio.puede_declarar_producido`, no en el esquema, para que un lote histórico se
 pueda cargar completo de una vez. La leche asignada **avisa pero no bloquea** ese paso: exigirla
 detendría la producción del día por un dato completable, y endurecerlo es decisión de Calidad
-sobre esa misma función. El código se propone con `codigo-sugerido/` según el POE.009.02 y queda
-editable, por la misma razón que `codigo_lote_valido` avisa y no restringe.
+sobre esa misma función. El código se propone con `codigo-sugerido/` y queda editable, por la
+misma razón que `codigo_lote_valido` avisa y no restringe.
 
 **Lo siguiente, en este orden:**
 

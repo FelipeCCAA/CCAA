@@ -154,32 +154,37 @@ class LoteViewSet(viewsets.ModelViewSet):
 
         producto = get_object_or_404(Producto, pk=producto_id)
 
-        try:
-            tipo = dominio.tipo_de_codificacion(producto)
-        except ValueError as e:
+        # El correlativo distingue dos lotes del mismo producto el mismo día.
+        # Se cuenta lo que ya existe en vez de preguntarlo: pedirle al
+        # operador un dato que el sistema tiene es como se repite un código.
+        anteriores = Lote.objects.filter(producto=producto, fecha=fecha).count()
+        correlativo = anteriores + 1
+
+        codigo = dominio.generar_codigo_lote(fecha, producto.codigo, correlativo)
+
+        if codigo is None:
             # 200 con `codigo: null`: el formulario sigue abierto y el
             # operador escribe el código a mano. Un 400 se leería como si el
             # lote no se pudiera crear, y sí se puede.
-            return Response({"codigo": None, "motivo": str(e)})
-
-        repetido = Lote.objects.filter(producto=producto, fecha=fecha).exists()
-
-        codigo = dominio.generar_codigo_lote(
-            fecha,
-            tipo,
-            linea=request.query_params.get("linea") or None,
-            nacional=request.query_params.get("nacional") in ("1", "true", "True"),
-            segunda_produccion=repetido,
-        )
+            return Response(
+                {
+                    "codigo": None,
+                    "correlativo": correlativo,
+                    "motivo": (
+                        f"«{producto.nombre}» no tiene código de producto (SKU) "
+                        "cargado en Maestros, y el SKU es parte del código de "
+                        "lote. Escríbelo a mano o completa el maestro."
+                    ),
+                }
+            )
 
         return Response(
             {
                 "codigo": codigo,
-                "segunda_produccion": repetido,
+                "correlativo": correlativo,
                 "motivo": (
-                    "Ya hay un lote de este producto en la fecha: lleva 'A' "
-                    "para no repetir el código."
-                    if repetido
+                    f"Es el lote n.º {correlativo} de este producto en la fecha."
+                    if anteriores
                     else None
                 ),
             }

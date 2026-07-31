@@ -217,29 +217,33 @@ export interface LoteNuevo {
 
 
 export interface CodigoSugerido {
-  /* null cuando el POE no define cómo codificar el producto: se escribe a
-     mano y el motivo lo explica. */
+  /* null cuando el producto no tiene SKU cargado: se escribe a mano y el
+     motivo dice qué falta y dónde. */
   codigo: string | null;
-  segunda_produccion?: boolean;
+  /* Qué número de lote de ese producto es en la fecha. */
+  correlativo: number;
   motivo: string | null;
 }
 
 
 /**
- * El código que le tocaría a este lote según el POE.009.02.
+ * El código que le tocaría a este lote.
  *
- * Se sugiere, no se impone: el histórico de planta trae códigos que no siguen
- * el patrón y hay que poder registrarlos igual.
+ * Se compone de año, día juliano, SKU del producto y correlativo del día. El
+ * correlativo lo cuenta el servidor a partir de los lotes que ya existen:
+ * preguntárselo al operador sería pedirle un dato que el sistema ya tiene.
+ *
+ * Se sugiere, no se impone: el histórico de planta trae códigos con otra
+ * forma —todos los del POE.009.02 anterior— y hay que poder registrarlos.
  */
 export async function sugerirCodigoLote(
   producto: number,
   fecha: string,
-  linea?: string,
 ): Promise<CodigoSugerido> {
 
   const { data } = await api.get<CodigoSugerido>(
     "produccion/lotes/codigo-sugerido/",
-    { params: { producto, fecha, linea: linea || undefined } },
+    { params: { producto, fecha } },
   );
 
   return data;

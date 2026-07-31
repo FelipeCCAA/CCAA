@@ -24,8 +24,9 @@ import { obtenerSilos, type Silo } from "../../services/recepcion.service";
   segundo paso, un fallo entre medio dejaría un lote abierto sin materia
   prima, y nadie vuelve a completar lo que ya parece creado.
 
-  El código se sugiere según el POE.009.02 pero queda editable: el histórico
-  de planta trae códigos que no siguen el patrón y hay que poder registrarlos.
+  El código se compone del año, el día juliano, el SKU del producto y el
+  correlativo del día, y queda editable: el histórico de planta trae códigos
+  con otra forma y hay que poder registrarlos.
 
   Los parámetros de calidad no están aquí: se miden sobre el producto
   terminado, así que se cargan desde la ficha del lote una vez cerrada la
@@ -79,7 +80,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
     }
 
     try {
-      const sugerencia = await sugerirCodigoLote(Number(producto), fecha, linea);
+      const sugerencia = await sugerirCodigoLote(Number(producto), fecha);
 
       setCodigoLote(sugerencia.codigo ?? "");
       setNotaCodigo(sugerencia.motivo ?? "");
@@ -87,7 +88,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
       // Sin sugerencia el campo queda libre: se escribe a mano.
       setNotaCodigo("");
     }
-  }, [producto, fecha, linea, codigoEditado]);
+  }, [producto, fecha, codigoEditado]);
 
   useEffect(() => {
     const temporizador = setTimeout(sugerir, 0);
@@ -276,15 +277,15 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
                   setCodigoLote(e.target.value);
                   setCodigoEditado(true);
                 }}
-                placeholder="CCAA6140N"
+                placeholder="CCAA6197LEP25-01"
                 required
               />
 
               <p className="mt-1.5 text-xs text-slate-400">
 
                 {notaCodigo ||
-                  "Se propone según el POE.009.02 a partir del producto, la " +
-                    "fecha y la línea. Se puede cambiar."}
+                  "Se propone con el año, el día juliano, el SKU del producto " +
+                    "y el correlativo del día. Se puede cambiar."}
 
               </p>
 

@@ -30,12 +30,16 @@ class BaseApertura(TestCase):
     def setUp(self):
         self.mandante = Mandante.objects.create(nombre="Nestlé")
 
+        # El SKU es parte del código de lote: sin él no hay codificación
+        # automática.
         self.polvo = Producto.objects.create(
+            codigo="LEP25",
             nombre="Leche entera en polvo",
             familia=Producto.Familia.POLVO,
             mandante=self.mandante,
         )
         self.crema = Producto.objects.create(
+            codigo="CRE10",
             nombre="Crema",
             familia=Producto.Familia.CREMA,
             mandante=self.mandante,
@@ -241,49 +245,73 @@ class CodigoSugeridoTests(BaseApertura):
 
         return self.cliente.get("/api/produccion/lotes/codigo-sugerido/", params)
 
-    def test_sugiere_el_codigo_del_poe(self):
-        # 2026 → '6'; 16 de julio de 2026 es el día juliano 197.
-        self.assertEqual(self._sugerir(linea="E1").json()["codigo"], "CCAA61971")
+    def test_mezcla_anio_dia_juliano_y_sku(self):
+        # 2026 → '6'; el 16 de julio de 2026 es el día juliano 197.
+        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197LEP25-01")
 
-    def test_la_crema_no_lleva_sufijo_de_linea(self):
-        datos = self._sugerir(producto=self.crema.id).json()
-
-        self.assertEqual(datos["codigo"], "CCAA6197")
-
-    def test_la_segunda_produccion_del_dia_se_deduce_sola(self):
+    def test_el_correlativo_se_deduce_de_los_lotes_que_ya_existen(self):
         """
         Preguntárselo al operador sería pedirle un dato que el sistema ya
         tiene, y equivocarse ahí repite un código de lote.
         """
         Lote.objects.create(
-            codigo_lote="CCAA61971",
+            codigo_lote="CCAA6197LEP25-01",
             producto=self.polvo,
             fecha=date(2026, 7, 16),
         )
 
-        datos = self._sugerir(linea="E1").json()
+        datos = self._sugerir().json()
 
-        self.assertEqual(datos["codigo"], "CCAA61971A")
-        self.assertTrue(datos["segunda_produccion"])
-        self.assertIn("repetir", datos["motivo"])
+        self.assertEqual(datos["codigo"], "CCAA6197LEP25-02")
+        self.assertEqual(datos["correlativo"], 2)
+        self.assertIn("n.º 2", datos["motivo"])
 
-    def test_un_producto_sin_regla_de_codificacion_no_frena_el_lote(self):
+    def test_un_lote_de_otro_producto_no_corre_el_correlativo(self):
         """
-        Devuelve 200 con `codigo: null` y su motivo: el operador escribe el
-        código a mano. Un 400 se leería como que el lote no se puede crear.
+        El correlativo cuenta por producto: es lo que distingue dos corridas
+        del mismo SKU, no la actividad del día.
         """
-        raro = Producto.objects.create(
-            nombre="Suero líquido",
-            familia=Producto.Familia.OTRO,
-            naturaleza=Producto.Naturaleza.TERMINADO,
+        Lote.objects.create(
+            codigo_lote="CCAA6197CRE10-01",
+            producto=self.crema,
+            fecha=date(2026, 7, 16),
+        )
+
+        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197LEP25-01")
+
+    def test_un_lote_de_otra_fecha_no_corre_el_correlativo(self):
+        Lote.objects.create(
+            codigo_lote="CCAA6196LEP25-01",
+            producto=self.polvo,
+            fecha=date(2026, 7, 15),
+        )
+
+        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197LEP25-01")
+
+    def test_dos_productos_del_mismo_dia_se_distinguen_por_el_sku(self):
+        self.assertNotEqual(
+            self._sugerir().json()["codigo"],
+            self._sugerir(producto=self.crema.id).json()["codigo"],
+        )
+
+    def test_un_producto_sin_sku_no_frena_el_lote(self):
+        """
+        Devuelve 200 con `codigo: null` y un motivo que dice qué falta y
+        dónde. Un 400 se leería como que el lote no se puede crear, y sí se
+        puede: el código se escribe a mano.
+        """
+        sin_sku = Producto.objects.create(
+            nombre="Suero en polvo",
+            familia=Producto.Familia.POLVO,
             mandante=self.mandante,
         )
 
-        respuesta = self._sugerir(producto=raro.id)
+        respuesta = self._sugerir(producto=sin_sku.id)
 
         self.assertEqual(respuesta.status_code, 200)
         self.assertIsNone(respuesta.json()["codigo"])
-        self.assertIn("POE", respuesta.json()["motivo"])
+        self.assertIn("SKU", respuesta.json()["motivo"])
+        self.assertIn("Maestros", respuesta.json()["motivo"])
 
     def test_sin_producto_o_fecha_no_se_inventa_un_codigo(self):
         respuesta = self.cliente.get("/api/produccion/lotes/codigo-sugerido/")
@@ -295,42 +323,3 @@ class CodigoSugeridoTests(BaseApertura):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("AAAA-MM-DD", respuesta.json()["detail"])
-
-
-class TipoDeCodificacionTests(TestCase):
-    """
-    El POE agrupa por sufijo y el maestro por familia, y no coinciden: por eso
-    la traducción es explícita y no un `getattr`.
-    """
-
-    class _Producto:
-        def __init__(self, familia, naturaleza="terminado"):
-            self.familia = familia
-            self.naturaleza = naturaleza
-
-        def __str__(self):
-            return f"{self.familia}/{self.naturaleza}"
-
-    def test_el_polvo_se_codifica_como_lep(self):
-        self.assertEqual(
-            dominio.tipo_de_codificacion(self._Producto("polvo")), dominio.TIPO_LEP
-        )
-
-    def test_la_crema_tiene_su_propio_tipo(self):
-        self.assertEqual(
-            dominio.tipo_de_codificacion(self._Producto("crema")), dominio.TIPO_CREMA
-        )
-
-    def test_un_liquido_intermedio_es_precondensado(self):
-        self.assertEqual(
-            dominio.tipo_de_codificacion(self._Producto("liquido", "intermedio")),
-            dominio.TIPO_PRECONDENSADO,
-        )
-
-    def test_un_producto_fuera_del_poe_se_rechaza_en_vez_de_inventar(self):
-        """
-        Elegir un sufijo en silencio imprimiría códigos equivocados en las
-        bolsas, que es peor que no proponer ninguno.
-        """
-        with self.assertRaises(ValueError):
-            dominio.tipo_de_codificacion(self._Producto("otro"))
