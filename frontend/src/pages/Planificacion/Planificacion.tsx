@@ -17,6 +17,7 @@ import {
   type Semana,
 } from "../../services/planificacion.service";
 
+import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
 import { puedeEscribir } from "../../services/sesion";
 
 import BalanceLeche from "./BalanceLeche";
@@ -66,9 +67,12 @@ function Planificacion() {
   const [firmando, setFirmando] = useState(false);
 
   const [nuevoBloque, setNuevoBloque] = useState<{
-    equipo: string;
+    equipo: number;
     hora: number;
   } | null>(null);
+
+  /* Los equipos vienen del maestro: la Gantt dibuja una fila por cada uno. */
+  const [equipos, setEquipos] = useState<Equipo[]>([]);
 
   const puedeEditar = puedeEscribir("produccion");
 
@@ -108,6 +112,9 @@ function Planificacion() {
     const t = setTimeout(() => {
       void cargarSemanas();
       void obtenerCodigos().then(setCodigos).catch(() => undefined);
+      // Sin equipos la Gantt no tiene filas que dibujar, pero la pantalla
+      // sigue en pie y lo dice.
+      void obtenerEquipos().then(setEquipos).catch(() => setEquipos([]));
     }, 0);
 
     return () => clearTimeout(t);
@@ -372,6 +379,7 @@ function Planificacion() {
 
                 <Gantt
                   bloques={programa.bloques}
+                  equipos={equipos}
                   dia={dia}
                   puedeEditar={editable}
                   alCrear={(equipo, hora) => setNuevoBloque({ equipo, hora })}
@@ -421,6 +429,7 @@ function Planificacion() {
         <FormularioBloque
           semanaId={semana.id}
           equipo={nuevoBloque.equipo}
+          equipos={equipos}
           horaInicio={nuevoBloque.hora}
           dia={dia}
           codigos={codigos}

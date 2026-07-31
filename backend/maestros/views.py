@@ -6,6 +6,7 @@ from usuarios.permisos import EscribeAdministracion, EscribeCalidad
 
 from .models import (
     DocumentoLiberacion,
+    Equipo,
     Especificacion,
     Mandante,
     Producto,
@@ -14,6 +15,7 @@ from .models import (
 )
 from .serializers import (
     DocumentoLiberacionSerializer,
+    EquipoSerializer,
     EspecificacionSerializer,
     MandanteSerializer,
     ParametroSerializer,
@@ -61,6 +63,20 @@ class EspecificacionViewSet(viewsets.ModelViewSet):
             consulta = consulta.filter(producto_id=producto)
 
         return consulta
+
+
+class EquipoViewSet(viewsets.ModelViewSet):
+    """
+    Máquinas de la planta.
+
+    Las lee cualquier rol —la carta Gantt las necesita para dibujar sus
+    filas— y solo Administración las modifica: `consume_leche` cambia cuánta
+    leche resta el plan del balance.
+    """
+
+    queryset = Equipo.objects.all()
+    serializer_class = EquipoSerializer
+    permission_classes = [EscribeAdministracion]
 
 
 class SiloViewSet(viewsets.ModelViewSet):

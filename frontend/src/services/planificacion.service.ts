@@ -15,14 +15,6 @@ import api from "./api";
 
 export type EstadoSemana = "borrador" | "publicada" | "cerrada";
 
-export type Equipo =
-  | "carga_precondensado"
-  | "scheffers2"
-  | "scheffers3"
-  | "veb"
-  | "linea1"
-  | "linea2"
-  | "linea_mantequilla";
 
 export type CategoriaConsumo =
   | "prec_nestle"
@@ -34,16 +26,16 @@ export type CategoriaConsumo =
 export type Origen = "ccaa" | "nestle" | "punion";
 
 
-/* Los equipos, en el orden en que se leen en el Excel. */
-export const EQUIPOS: { valor: Equipo; etiqueta: string; evaporador: boolean }[] = [
-  { valor: "carga_precondensado", etiqueta: "Carga precondensado", evaporador: false },
-  { valor: "scheffers2", etiqueta: "Scheffers 2", evaporador: true },
-  { valor: "scheffers3", etiqueta: "Scheffers 3", evaporador: true },
-  { valor: "veb", etiqueta: "VEB", evaporador: true },
-  { valor: "linea1", etiqueta: "Línea 1", evaporador: false },
-  { valor: "linea2", etiqueta: "Línea 2", evaporador: false },
-  { valor: "linea_mantequilla", etiqueta: "Mantequilla", evaporador: false },
-];
+/*
+  Los equipos ya no están escritos aquí: son maestro y se piden a
+  `/maestros/equipos/`. Agregar una máquina era editar este archivo y
+  desplegar, que es lo contrario de que el administrador configure la planta.
+
+  `consume_leche` viene con cada equipo porque es una regla del balance: un
+  mismo código se programa en el evaporador y en la línea que lo recibe, y si
+  ambos restaran, la leche se contaría dos veces.
+*/
+export type { Equipo } from "./maestros.service";
 
 export const DIAS = [
   "Lunes",
@@ -147,7 +139,9 @@ export interface CodigoProduccion {
 export interface Bloque {
   id: number;
   semana: number;
-  equipo: Equipo;
+  /* Id del equipo en el maestro. */
+  equipo: number;
+  equipo_codigo: string;
   equipo_etiqueta: string;
   dia: number;
   hora_inicio: string;
@@ -319,7 +313,7 @@ export async function guardarBalance(
 
 export async function crearBloque(bloque: {
   semana: number;
-  equipo: Equipo;
+  equipo: number;
   dia: number;
   hora_inicio: number;
   hora_fin: number;

@@ -21,29 +21,7 @@ MODELO_DATOS.md §2.2).
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from maestros.models import Mandante, Producto
-
-
-# Equipos programables. Solo los EVAPORADORES consumen leche y alimentan el
-# balance; las líneas de secado y mantequilla se programan igual, pero su
-# consumo ya viene contado por el evaporador que las alimenta (§4.1).
-class Equipo(models.TextChoices):
-    CARGA_PRECONDENSADO = "carga_precondensado", "Carga de precondensado"
-    SCHEFFERS2 = "scheffers2", "Evaporador Scheffers 2"
-    SCHEFFERS3 = "scheffers3", "Evaporador Scheffers 3"
-    VEB = "veb", "Evaporador VEB"
-    LINEA1 = "linea1", "Línea 1"
-    LINEA2 = "linea2", "Línea 2"
-    LINEA_MANTEQUILLA = "linea_mantequilla", "Línea de mantequilla"
-
-
-#: Los únicos equipos cuyos bloques restan leche del balance.
-#:
-#: Un mismo código —LNSH2, por ejemplo— aparece en el evaporador *y* en la
-#: línea que lo recibe. Sumar todos los bloques contaría la leche dos veces.
-#: El Excel lo evita sumando solo las filas de evaporadores; aquí se filtra
-#: por equipo, que es lo mismo dicho en el modelo.
-EVAPORADORES = (Equipo.SCHEFFERS2, Equipo.SCHEFFERS3, Equipo.VEB)
+from maestros.models import Equipo, Mandante, Producto
 
 
 class CategoriaConsumo(models.TextChoices):
@@ -225,7 +203,12 @@ class BloquePlan(models.Model):
         related_name="bloques",
         verbose_name="Semana",
     )
-    equipo = models.CharField("Equipo", max_length=25, choices=Equipo.choices)
+    equipo = models.ForeignKey(
+        Equipo,
+        on_delete=models.PROTECT,
+        related_name="bloques",
+        verbose_name="Equipo",
+    )
     dia = models.PositiveSmallIntegerField(
         "Día", help_text="0 = lunes … 6 = domingo"
     )
@@ -273,7 +256,7 @@ class BloquePlan(models.Model):
 
     def __str__(self):
         etiqueta = self.codigo.codigo if self.codigo else self.estado_equipo
-        return f"{self.get_equipo_display()} · día {self.dia} · {etiqueta}"
+        return f"{self.equipo} · día {self.dia} · {etiqueta}"
 
     @property
     def horas(self) -> float:
@@ -281,8 +264,19 @@ class BloquePlan(models.Model):
 
     @property
     def consume_leche(self) -> bool:
-        """Solo los evaporadores restan del balance (PLANIFICADOR.md §4.1)."""
-        return self.tipo == self.Tipo.PRODUCCION and self.equipo in EVAPORADORES
+        """
+        Solo los evaporadores restan del balance (PLANIFICADOR.md §4.1).
+
+        Quién es evaporador lo dice el maestro de equipos, no una lista en el
+        código: un mismo código de producción se programa en el evaporador y
+        en la línea que lo recibe, y si los dos restaran, el balance contaría
+        la misma leche dos veces.
+        """
+        return (
+            self.tipo == self.Tipo.PRODUCCION
+            and self.equipo_id is not None
+            and self.equipo.consume_leche
+        )
 
     def clean(self):
         # La coherencia tipo ↔ contenido: un bloque de producción sin código

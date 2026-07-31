@@ -14,7 +14,14 @@ from django.test import TestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
-from maestros.models import Mandante, Producto, Receta, RecetaComponente, Silo
+from maestros.models import (
+    Equipo,
+    Mandante,
+    Producto,
+    Receta,
+    RecetaComponente,
+    Silo,
+)
 from produccion.models import Lote
 from recepcion.models import MovimientoSilo, Recepcion
 from usuarios.models import PerfilUsuario, Rol
@@ -25,7 +32,6 @@ from .models import (
     BloquePlan,
     CategoriaConsumo,
     CodigoProduccion,
-    Equipo,
     SemanaPlan,
 )
 
@@ -62,6 +68,16 @@ class BaseContraste(TestCase):
 
         self.semana = SemanaPlan.objects.create(
             codigo="W7", anio=2026, fecha_inicio=date(2026, 2, 9)  # lunes
+        )
+        # Ya existe: los equipos se siembran por migración de datos y esa
+        # migración también corre en la base de pruebas.
+        self.scheffers2, _ = Equipo.objects.update_or_create(
+            codigo="scheffers2",
+            defaults={
+                "nombre": "Evaporador Scheffers 2",
+                "tipo": Equipo.Tipo.EVAPORADOR,
+                "consume_leche": True,
+            },
         )
         self.codigo = CodigoProduccion.objects.create(
             codigo="LNSH2",
@@ -111,7 +127,7 @@ class ConsumoRealTests(BaseContraste):
     def test_lo_asignado_llega_al_contraste_como_consumo_real(self):
         cliente = self._cliente()
         BloquePlan.objects.create(
-            semana=self.semana, equipo=Equipo.SCHEFFERS2, dia=0,
+            semana=self.semana, equipo=self.scheffers2, dia=0,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.codigo,
         )  # 4 h × 11.000 = 44.000 planificados
@@ -259,7 +275,7 @@ class ContrasteTests(BaseContraste):
 
     def test_contrasta_los_kilos_planificados_con_los_producidos(self):
         BloquePlan.objects.create(
-            semana=self.semana, equipo=Equipo.SCHEFFERS2, dia=0,
+            semana=self.semana, equipo=self.scheffers2, dia=0,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.codigo, cantidad_kg=5000,
         )
@@ -278,7 +294,7 @@ class ContrasteTests(BaseContraste):
         fuentes distintas: si fueran la misma, el contraste siempre cuadraría.
         """
         BloquePlan.objects.create(
-            semana=self.semana, equipo=Equipo.SCHEFFERS2, dia=0,
+            semana=self.semana, equipo=self.scheffers2, dia=0,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.codigo,
         )  # 4 h × 11.000 = 44.000 planificados

@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .catalogos import PARAMETROS
 from .models import (
     DocumentoLiberacion,
+    Equipo,
     Especificacion,
     Mandante,
     Producto,
@@ -99,6 +100,23 @@ class ProductoSerializer(serializers.ModelSerializer):
         ]
 
         return {campo: getattr(self.instance, campo) for campo in campos}
+
+
+class EquipoSerializer(serializers.ModelSerializer):
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+
+    class Meta:
+        model = Equipo
+        fields = [
+            "id",
+            "codigo",
+            "nombre",
+            "tipo",
+            "tipo_etiqueta",
+            "consume_leche",
+            "orden",
+            "activo",
+        ]
 
 
 class SiloSerializer(serializers.ModelSerializer):

@@ -87,6 +87,22 @@ export interface ProductoEditable {
 }
 
 
+export interface Equipo {
+  id: number;
+  /* Identificador estable: la planificación lo referencia. */
+  codigo: string;
+  nombre: string;
+  tipo: string;
+  tipo_etiqueta: string;
+  /* Regla del balance, no etiqueta: solo los evaporadores restan leche.
+     Marcarlo en una línea que recibe lo que el evaporador ya produjo restaría
+     la misma leche dos veces. */
+  consume_leche: boolean;
+  orden: number;
+  activo: boolean;
+}
+
+
 export interface Silo {
   id: number;
   codigo: string;
@@ -170,4 +186,29 @@ export async function obtenerSilosMaestros(): Promise<Silo[]> {
   const { data } = await api.get<Pagina<Silo>>("maestros/silos/");
 
   return data.results;
+}
+
+
+export async function obtenerEquipos(): Promise<Equipo[]> {
+  const { data } = await api.get<Pagina<Equipo>>("maestros/equipos/");
+
+  return data.results;
+}
+
+
+export async function crearEquipo(equipo: Partial<Equipo>): Promise<Equipo> {
+  const { data } = await api.post<Equipo>("maestros/equipos/", equipo);
+
+  return data;
+}
+
+
+export async function editarEquipo(
+  id: number,
+  cambios: Partial<Equipo>,
+): Promise<Equipo> {
+
+  const { data } = await api.patch<Equipo>(`maestros/equipos/${id}/`, cambios);
+
+  return data;
 }

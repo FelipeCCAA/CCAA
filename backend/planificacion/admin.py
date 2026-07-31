@@ -83,6 +83,7 @@ class BloquePlanAdmin(admin.ModelAdmin):
         "estado_equipo",
     ]
     list_filter = ["equipo", "tipo", "dia"]
+    autocomplete_fields = ["equipo"]
     search_fields = ["semana__codigo", "codigo__codigo"]
     autocomplete_fields = ["codigo"]
 

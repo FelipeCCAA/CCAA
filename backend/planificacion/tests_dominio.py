@@ -11,16 +11,14 @@ from datetime import date
 
 from django.test import TestCase
 
-from maestros.models import Mandante, Producto
+from maestros.models import Equipo, Mandante, Producto
 
 from . import dominio
 from .models import (
-    EVAPORADORES,
     BalanceDia,
     BloquePlan,
     CategoriaConsumo,
     CodigoProduccion,
-    Equipo,
     SemanaPlan,
 )
 
@@ -43,6 +41,31 @@ class BasePlanificador(TestCase):
             codigo="W7", anio=2026, fecha_inicio=date(2026, 2, 9)  # lunes
         )
 
+        # Los equipos son maestro: quién consume leche lo dice el propio
+        # equipo, no una lista en el código.
+        self.scheffers2 = self._equipo("scheffers2", "Evaporador Scheffers 2", True)
+        self.scheffers3 = self._equipo("scheffers3", "Evaporador Scheffers 3", True)
+        self.veb = self._equipo("veb", "Evaporador VEB", True)
+        self.linea1 = self._equipo("linea1", "Línea 1", False)
+
+    @staticmethod
+    def _equipo(codigo, nombre, consume):
+        """
+        `update_or_create` y no `create`: los equipos se siembran por
+        migración de datos, así que ya existen en la base de pruebas
+        (CLAUDE.md, «Trampas conocidas»). Se fuerzan sus valores para que la
+        prueba no dependa de cómo quedó la siembra.
+        """
+        equipo, _ = Equipo.objects.update_or_create(
+            codigo=codigo,
+            defaults={
+                "nombre": nombre,
+                "tipo": Equipo.Tipo.EVAPORADOR if consume else Equipo.Tipo.LINEA,
+                "consume_leche": consume,
+            },
+        )
+        return equipo
+
     def _codigo(self, codigo, categoria, rendimiento):
         return CodigoProduccion.objects.create(
             codigo=codigo,
@@ -55,7 +78,7 @@ class BasePlanificador(TestCase):
     def _bloque(self, **cambios):
         datos = {
             "semana": self.semana,
-            "equipo": Equipo.SCHEFFERS2,
+            "equipo": self.scheffers2,
             "dia": 0,
             "hora_inicio": 8,
             "hora_fin": 12,
@@ -93,7 +116,7 @@ class ConsumoDelProgramaTests(BasePlanificador):
     def test_cada_codigo_suma_a_su_propia_categoria(self):
         self._bloque(hora_inicio=8, hora_fin=12, codigo=self.rc_nestle)
         self._bloque(
-            equipo=Equipo.SCHEFFERS3, hora_inicio=8, hora_fin=10, codigo=self.ln_nestle
+            equipo=self.scheffers3, hora_inicio=8, hora_fin=10, codigo=self.ln_nestle
         )
         bloques, codigos, _ = self._ctx()
 
@@ -107,8 +130,8 @@ class ConsumoDelProgramaTests(BasePlanificador):
         Sin esto se contaría la leche dos veces: el mismo código aparece en el
         evaporador y en la línea que lo recibe.
         """
-        self._bloque(equipo=Equipo.SCHEFFERS2, hora_inicio=8, hora_fin=12)
-        self._bloque(equipo=Equipo.LINEA1, hora_inicio=8, hora_fin=12)
+        self._bloque(equipo=self.scheffers2, hora_inicio=8, hora_fin=12)
+        self._bloque(equipo=self.linea1, hora_inicio=8, hora_fin=12)
         bloques, codigos, _ = self._ctx()
 
         consumo = dominio.consumo_dia(bloques, codigos, 0)
@@ -228,7 +251,7 @@ class SolapamientoTests(BasePlanificador):
     def test_detecta_dos_bloques_pisandose_en_el_mismo_equipo_y_dia(self):
         a = self._bloque(hora_inicio=8, hora_fin=12)
         b = BloquePlan(
-            semana=self.semana, equipo=Equipo.SCHEFFERS2, dia=0,
+            semana=self.semana, equipo=self.scheffers2, dia=0,
             hora_inicio=10, hora_fin=14, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.rc_nestle,
         )
@@ -240,7 +263,7 @@ class SolapamientoTests(BasePlanificador):
         """Un turno tras otro es la programación normal."""
         a = self._bloque(hora_inicio=8, hora_fin=14)
         b = BloquePlan(
-            semana=self.semana, equipo=Equipo.SCHEFFERS2, dia=0,
+            semana=self.semana, equipo=self.scheffers2, dia=0,
             hora_inicio=14, hora_fin=20, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.rc_nestle,
         )
@@ -252,12 +275,12 @@ class SolapamientoTests(BasePlanificador):
         a = self._bloque(hora_inicio=8, hora_fin=12)
 
         otro_equipo = BloquePlan(
-            semana=self.semana, equipo=Equipo.VEB, dia=0,
+            semana=self.semana, equipo=self.veb, dia=0,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.rc_nestle,
         )
         otro_dia = BloquePlan(
-            semana=self.semana, equipo=Equipo.SCHEFFERS2, dia=1,
+            semana=self.semana, equipo=self.scheffers2, dia=1,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.rc_nestle,
         )
@@ -269,7 +292,7 @@ class SolapamientoTests(BasePlanificador):
 class ValidarBloqueTests(BasePlanificador):
     def test_la_hora_de_termino_debe_ser_posterior(self):
         bloque = BloquePlan(
-            semana=self.semana, equipo=Equipo.VEB, dia=0,
+            semana=self.semana, equipo=self.veb, dia=0,
             hora_inicio=12, hora_fin=8, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.rc_nestle,
         )
@@ -281,7 +304,7 @@ class ValidarBloqueTests(BasePlanificador):
 
     def test_un_bloque_de_produccion_sin_codigo_no_vale(self):
         bloque = BloquePlan(
-            semana=self.semana, equipo=Equipo.VEB, dia=0,
+            semana=self.semana, equipo=self.veb, dia=0,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.PRODUCCION,
         )
 
@@ -289,7 +312,7 @@ class ValidarBloqueTests(BasePlanificador):
 
     def test_un_bloque_de_estado_sin_estado_tampoco(self):
         bloque = BloquePlan(
-            semana=self.semana, equipo=Equipo.VEB, dia=0,
+            semana=self.semana, equipo=self.veb, dia=0,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.ESTADO,
         )
 
@@ -297,7 +320,7 @@ class ValidarBloqueTests(BasePlanificador):
 
     def test_un_bloque_valido_pasa(self):
         bloque = BloquePlan(
-            semana=self.semana, equipo=Equipo.VEB, dia=0,
+            semana=self.semana, equipo=self.veb, dia=0,
             hora_inicio=8, hora_fin=12, tipo=BloquePlan.Tipo.PRODUCCION,
             codigo=self.rc_nestle,
         )
@@ -374,16 +397,64 @@ class CalculadoraTests(TestCase):
         self.assertAlmostEqual(dominio.factor_concentracion(3.5, 8.8), 0.123)
 
 
-class EvaporadoresCoincidenTests(TestCase):
+class ConsumoPorEquipoTests(BasePlanificador):
     """
-    El dominio repite la lista de evaporadores como texto para no importar los
-    modelos. Esta prueba vigila esa duplicación: si alguien agrega un
-    evaporador al modelo y no aquí, su leche dejaría de contarse en el balance
-    sin que nada falle.
+    Quién resta leche del balance lo dice el maestro de equipos.
+
+    Antes era una tupla repetida en el dominio y en el modelo, con una prueba
+    que vigilaba la duplicación. Ahora el dato viaja con el equipo, así que la
+    duplicación no existe — pero la regla sí, y es la que evita contar dos
+    veces la misma leche.
     """
 
-    def test_la_lista_del_dominio_coincide_con_la_del_modelo(self):
-        self.assertEqual(set(dominio.EVAPORADORES), {e.value for e in EVAPORADORES})
+    def test_un_evaporador_resta_del_balance(self):
+        self._bloque(equipo=self.veb, hora_inicio=8, hora_fin=12)
+
+        self.assertGreater(
+            dominio.consumo_dia(
+                list(BloquePlan.objects.all()),
+                list(CodigoProduccion.objects.all()),
+                0,
+            ).total,
+            0,
+        )
+
+    def test_una_linea_no_resta(self):
+        """
+        La línea recibe lo que el evaporador ya produjo: si también restara,
+        el balance contaría la misma leche dos veces.
+        """
+        self._bloque(equipo=self.linea1, hora_inicio=8, hora_fin=12)
+
+        self.assertEqual(
+            dominio.consumo_dia(
+                list(BloquePlan.objects.all()),
+                list(CodigoProduccion.objects.all()),
+                0,
+            ).total,
+            0,
+        )
+
+    def test_marcar_una_linea_como_consumidora_la_hace_restar(self):
+        """
+        Es la consecuencia de que sea configurable: el administrador puede
+        cambiar el balance desde el maestro. Por eso el campo lleva su aviso.
+        """
+        self.linea1.consume_leche = True
+        self.linea1.save()
+        self._bloque(equipo=self.linea1, hora_inicio=8, hora_fin=12)
+
+        self.assertGreater(
+            dominio.consumo_dia(
+                list(BloquePlan.objects.select_related("equipo")),
+                list(CodigoProduccion.objects.all()),
+                0,
+            ).total,
+            0,
+        )
+
+
+class CategoriasCoincidenTests(TestCase):
 
     def test_las_categorias_del_dominio_coinciden_con_las_del_modelo(self):
         self.assertEqual(set(dominio.CATEGORIAS), set(CategoriaConsumo.values))

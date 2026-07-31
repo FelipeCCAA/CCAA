@@ -4,11 +4,11 @@ import axios from "axios";
 
 import {
   crearBloque,
-  EQUIPOS,
   ESTADO_EQUIPO,
   type CodigoProduccion,
-  type Equipo,
 } from "../../services/planificacion.service";
+
+import type { Equipo } from "../../services/maestros.service";
 
 
 /*
@@ -24,7 +24,9 @@ import {
 
 interface Props {
   semanaId: number;
-  equipo: string;
+  /* Id del equipo en el maestro. */
+  equipo: number;
+  equipos: Equipo[];
   dia: number;
   horaInicio: number;
   codigos: CodigoProduccion[];
@@ -41,6 +43,7 @@ const claseCampo =
 function FormularioBloque({
   semanaId,
   equipo,
+  equipos,
   dia,
   horaInicio,
   codigos,
@@ -59,8 +62,8 @@ function FormularioBloque({
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
-  const nombreEquipo =
-    EQUIPOS.find((e) => e.valor === equipo)?.etiqueta ?? equipo;
+  const suyo = equipos.find((e) => e.id === equipo);
+  const nombreEquipo = suyo?.nombre ?? "Equipo";
 
   const guardar = async () => {
 
@@ -71,7 +74,7 @@ function FormularioBloque({
 
       await crearBloque({
         semana: semanaId,
-        equipo: equipo as Equipo,
+        equipo,
         dia,
         hora_inicio: Number(inicio),
         hora_fin: Number(fin),

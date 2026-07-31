@@ -4,11 +4,11 @@ import { Trash2 } from "lucide-react";
 import {
   colorDeBloque,
   COLOR_FAMILIA,
-  EQUIPOS,
   ESTADO_EQUIPO,
   type Bloque,
-  type Equipo,
 } from "../../services/planificacion.service";
+
+import type { Equipo } from "../../services/maestros.service";
 
 
 /*
@@ -27,9 +27,13 @@ import {
 
 interface Props {
   bloques: Bloque[];
+  /* Del maestro, ya ordenados. Antes era una lista escrita en el código y
+     agregar una máquina exigía desplegar. */
+  equipos: Equipo[];
   dia: number;
   puedeEditar: boolean;
-  alCrear: (equipo: Equipo, hora: number) => void;
+  /* Se pasa el id del equipo: es lo que guarda el bloque. */
+  alCrear: (equipo: number, hora: number) => void;
   alBorrar: (bloque: Bloque) => void;
 }
 
@@ -38,7 +42,7 @@ interface Props {
 const HORAS = Array.from({ length: 24 }, (_, i) => i);
 
 
-function Gantt({ bloques, dia, puedeEditar, alCrear, alBorrar }: Props) {
+function Gantt({ bloques, equipos, dia, puedeEditar, alCrear, alBorrar }: Props) {
 
   const [encima, setEncima] = useState<number | null>(null);
 
@@ -76,24 +80,24 @@ function Gantt({ bloques, dia, puedeEditar, alCrear, alBorrar }: Props) {
 
         {/* Una fila por equipo */}
 
-        {EQUIPOS.map((equipo) => {
+        {equipos.map((equipo) => {
 
-          const suyos = delDia.filter((b) => b.equipo === equipo.valor);
+          const suyos = delDia.filter((b) => b.equipo === equipo.id);
 
           return (
             <div
-              key={equipo.valor}
+              key={equipo.id}
               className="flex border-b border-slate-100 last:border-0"
             >
 
               <div className="w-40 shrink-0 px-3 py-3">
 
-                <p className="text-sm text-slate-700">{equipo.etiqueta}</p>
+                <p className="text-sm text-slate-700">{equipo.nombre}</p>
 
                 {/* Solo los evaporadores restan del balance: un mismo código
                     aparece también en la línea que lo recibe, y sumar ambos
                     contaría la leche dos veces. */}
-                {equipo.evaporador && (
+                {equipo.consume_leche && (
                   <p className="text-[10px] text-slate-400">consume leche</p>
                 )}
 
@@ -108,10 +112,10 @@ function Gantt({ bloques, dia, puedeEditar, alCrear, alBorrar }: Props) {
                       key={h}
                       type="button"
                       disabled={!puedeEditar}
-                      onClick={() => alCrear(equipo.valor, h)}
+                      onClick={() => alCrear(equipo.id, h)}
                       title={
                         puedeEditar
-                          ? `Programar en ${equipo.etiqueta} a las ${h}:00`
+                          ? `Programar en ${equipo.nombre} a las ${h}:00`
                           : undefined
                       }
                       className="flex-1 border-l border-slate-100 disabled:cursor-default enabled:hover:bg-green-50/60"

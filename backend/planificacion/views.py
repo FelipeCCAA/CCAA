@@ -73,7 +73,10 @@ class SemanaPlanViewSet(viewsets.ModelViewSet):
 
 
 class BloquePlanViewSet(viewsets.ModelViewSet):
-    queryset = BloquePlan.objects.select_related("codigo")
+    # `equipo` va en el select_related porque el balance consulta
+    # `bloque.equipo.consume_leche` por cada bloque: sin esto, una consulta
+    # por fila.
+    queryset = BloquePlan.objects.select_related("codigo", "equipo")
     serializer_class = BloquePlanSerializer
     permission_classes = [EscribeProduccion]
 
@@ -87,7 +90,8 @@ class BloquePlanViewSet(viewsets.ModelViewSet):
 
         equipo = parametros.get("equipo")
         if equipo:
-            consulta = consulta.filter(equipo=equipo)
+            # Por código y no por id: la pantalla habla de "scheffers2".
+            consulta = consulta.filter(equipo__codigo=equipo)
 
         return consulta
 
@@ -112,7 +116,11 @@ class BalanceDiaViewSet(viewsets.ModelViewSet):
 def _contexto(semana):
     """Lo que el dominio necesita, cargado de una vez."""
     return (
-        list(BloquePlan.objects.filter(semana=semana).select_related("codigo")),
+        list(
+            BloquePlan.objects.filter(semana=semana).select_related(
+                "codigo", "equipo"
+            )
+        ),
         list(CodigoProduccion.objects.all()),
         list(BalanceDia.objects.filter(semana=semana)),
     )

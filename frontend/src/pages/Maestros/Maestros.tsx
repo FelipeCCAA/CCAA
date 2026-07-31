@@ -3,10 +3,12 @@ import { Database, Pencil, Plus } from "lucide-react";
 
 import {
   obtenerCatalogosSku,
+  obtenerEquipos,
   obtenerMandantes,
   obtenerProductosMaestros,
   obtenerSilosMaestros,
   type CatalogosSku,
+  type Equipo,
   type Mandante,
   type ProductoMaestro,
   type Silo,
@@ -14,6 +16,7 @@ import {
 
 import { puedeEscribir } from "../../services/sesion";
 
+import FormularioEquipo from "./FormularioEquipo";
 import FormularioMandante from "./FormularioMandante";
 import FormularioProducto from "./FormularioProducto";
 
@@ -21,8 +24,8 @@ import FormularioProducto from "./FormularioProducto";
 /*
   Maestros del sistema.
 
-  Cubre productos, mandantes y silos, que es lo que se carga desde la
-  operación. Las **especificaciones de calidad** y el **catálogo de documentos
+  Cubre productos, mandantes, máquinas y silos, que es lo que se configura
+  desde la operación. Las **especificaciones de calidad** y el **catálogo de documentos
   de liberación** siguen en el admin de Django a propósito: sus formularios son
   JSON (rangos por parámetro, plantilla del documento) y darles una pantalla es
   un trabajo aparte — además el que decide sobre ellos es Calidad, no
@@ -33,11 +36,12 @@ import FormularioProducto from "./FormularioProducto";
   saldo escribiéndolo.
 */
 
-type Pestana = "productos" | "mandantes" | "silos";
+type Pestana = "productos" | "mandantes" | "equipos" | "silos";
 
 const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "productos", etiqueta: "Productos" },
   { clave: "mandantes", etiqueta: "Mandantes" },
+  { clave: "equipos", etiqueta: "Máquinas" },
   { clave: "silos", etiqueta: "Silos y estanques" },
 ];
 
@@ -48,6 +52,7 @@ function Maestros() {
 
   const [productos, setProductos] = useState<ProductoMaestro[]>([]);
   const [mandantes, setMandantes] = useState<Mandante[]>([]);
+  const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [silos, setSilos] = useState<Silo[]>([]);
   const [catalogos, setCatalogos] = useState<CatalogosSku | null>(null);
 
@@ -58,6 +63,8 @@ function Maestros() {
   const [nuevoProducto, setNuevoProducto] = useState(false);
   const [editandoMandante, setEditandoMandante] = useState<Mandante | null>(null);
   const [nuevoMandante, setNuevoMandante] = useState(false);
+  const [editandoEquipo, setEditandoEquipo] = useState<Equipo | null>(null);
+  const [nuevoEquipo, setNuevoEquipo] = useState(false);
 
   // Solo Administración escribe maestros: una especificación decide qué sale
   // como conforme. El backend manda; esto solo evita ofrecer lo que rechaza.
@@ -70,15 +77,17 @@ function Maestros() {
 
     try {
 
-      const [p, m, s, c] = await Promise.all([
+      const [p, m, e, s, c] = await Promise.all([
         obtenerProductosMaestros(),
         obtenerMandantes(),
+        obtenerEquipos(),
         obtenerSilosMaestros(),
         obtenerCatalogosSku(),
       ]);
 
       setProductos(p);
       setMandantes(m);
+      setEquipos(e);
       setSilos(s);
       setCatalogos(c);
 
@@ -115,8 +124,9 @@ function Maestros() {
             </h1>
 
             <p className="mt-2 max-w-3xl text-slate-500">
-              Productos, mandantes y estanques. El SKU del producto se genera
-              desde sus atributos: no se escribe a mano.
+              Productos, mandantes, máquinas y estanques: la configuración
+              del entorno productivo. El SKU del producto se genera desde sus
+              atributos, no se escribe a mano.
             </p>
 
           </div>
@@ -354,6 +364,103 @@ function Maestros() {
 
             )}
 
+            {/* Máquinas */}
+
+            {pestana === "equipos" && (
+
+              <section className="rounded-2xl border border-slate-200 bg-white">
+
+                {puedeEditar && (
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setNuevoEquipo(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nueva máquina
+                    </button>
+                  </div>
+                )}
+
+                <table className="w-full">
+
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className={encabezado}>Máquina</th>
+                      <th className={encabezado}>Tipo</th>
+                      <th className={encabezado}>Balance de leche</th>
+                      <th className={encabezado}>Bloques</th>
+                      <th className={encabezado}></th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+                    {equipos.map((e) => (
+
+                      <tr key={e.id} className="border-t border-slate-100">
+
+                        <td className={`${celda} font-medium text-slate-800`}>
+                          {e.nombre}
+                          {!e.activo && (
+                            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                              Inactiva
+                            </span>
+                          )}
+                          <div className="font-mono text-xs font-normal text-slate-400">
+                            {e.codigo}
+                          </div>
+                        </td>
+
+                        <td className={`${celda} text-slate-600`}>{e.tipo_etiqueta}</td>
+
+                        <td className={celda}>
+                          {e.consume_leche ? (
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                              Resta leche
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">No resta</span>
+                          )}
+                        </td>
+
+                        <td className={`${celda} text-slate-500`}>
+                          orden {e.orden}
+                        </td>
+
+                        <td className={`${celda} text-right`}>
+                          {puedeEditar && (
+                            <button
+                              type="button"
+                              onClick={() => setEditandoEquipo(e)}
+                              title="Editar"
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
+                        </td>
+
+                      </tr>
+
+                    ))}
+
+                  </tbody>
+
+                </table>
+
+                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                  «Resta leche» decide qué bloques consumen del balance
+                  semanal. Solo los evaporadores: una línea recibe lo que el
+                  evaporador ya produjo, y marcar ambos contaría la misma leche
+                  dos veces.
+                </p>
+
+              </section>
+
+            )}
+
             {/* Silos */}
 
             {pestana === "silos" && (
@@ -425,6 +532,17 @@ function Maestros() {
           alCerrar={() => {
             setNuevoProducto(false);
             setEditandoProducto(null);
+          }}
+          alGuardar={cargar}
+        />
+      )}
+
+      {(nuevoEquipo || editandoEquipo) && (
+        <FormularioEquipo
+          equipo={editandoEquipo}
+          alCerrar={() => {
+            setNuevoEquipo(false);
+            setEditandoEquipo(null);
           }}
           alGuardar={cargar}
         />

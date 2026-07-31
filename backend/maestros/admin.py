@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     DocumentoLiberacion,
+    Equipo,
     Especificacion,
     Mandante,
     Producto,
@@ -93,6 +94,22 @@ class ProductoAdmin(admin.ModelAdmin):
             return f"{obj.codigo} · no tiene la forma de un SKU (código antiguo)"
 
         return " · ".join(f"{k}: {v}" for k, v in descripcion.items())
+
+
+@admin.register(Equipo)
+class EquipoAdmin(admin.ModelAdmin):
+    """
+    Máquinas de la planta.
+
+    `consume_leche` es una regla del balance, no una etiqueta: marcarlo en una
+    línea que recibe lo que el evaporador ya produjo restaría la misma leche
+    dos veces.
+    """
+
+    list_display = ["nombre", "codigo", "tipo", "consume_leche", "orden", "activo"]
+    list_filter = ["tipo", "consume_leche", "activo"]
+    list_editable = ["orden", "activo"]
+    search_fields = ["nombre", "codigo"]
 
 
 @admin.register(Silo)

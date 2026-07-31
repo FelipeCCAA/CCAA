@@ -266,6 +266,60 @@ class Producto(models.Model):
         super().save(*args, **kwargs)
 
 
+class Equipo(models.Model):
+    """
+    Máquina programable de la planta: evaporadores, líneas de secado, etc.
+
+    Era una lista fija en `planificacion.models.Equipo` y agregar una máquina
+    exigía editar código y desplegar, que es lo contrario de que el maestro se
+    configure. Vive en `maestros` porque es configuración del entorno, no un
+    hecho de una corrida.
+
+    **`consume_leche` es una regla de negocio, no una etiqueta.** Un mismo
+    código de producción —LNSH2, por ejemplo— se programa en el evaporador
+    *y* en la línea que lo recibe; si los dos bloques restaran leche, el
+    balance la contaría dos veces. Solo los evaporadores la consumen. Marcar
+    de más aquí hace desaparecer leche del balance sin que nadie lo note.
+    """
+
+    class Tipo(models.TextChoices):
+        EVAPORADOR = "evaporador", "Evaporador"
+        LINEA = "linea", "Línea"
+        CARGA = "carga", "Carga"
+        OTRO = "otro", "Otro"
+
+    codigo = models.SlugField(
+        "Código",
+        max_length=40,
+        unique=True,
+        help_text="Identificador estable. No se cambia: la planificación lo referencia.",
+    )
+    nombre = models.CharField("Nombre", max_length=120)
+    tipo = models.CharField("Tipo", max_length=20, choices=Tipo.choices)
+    consume_leche = models.BooleanField(
+        "Consume leche del balance",
+        default=False,
+        help_text=(
+            "Solo los evaporadores. Marcarlo en una línea que recibe lo que "
+            "el evaporador ya produjo restaría la misma leche dos veces."
+        ),
+    )
+    orden = models.PositiveSmallIntegerField(
+        "Orden",
+        default=0,
+        help_text="Posición en la carta Gantt, de arriba hacia abajo.",
+    )
+    activo = models.BooleanField("Activo", default=True)
+
+    class Meta:
+        verbose_name = "Equipo / máquina"
+        verbose_name_plural = "Equipos y máquinas"
+        ordering = ["orden", "nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
 class Silo(models.Model):
     """
     Silo o estanque de leche o crema.

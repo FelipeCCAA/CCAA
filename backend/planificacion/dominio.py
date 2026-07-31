@@ -18,11 +18,6 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 
-#: Equipos cuyos bloques restan leche. Se repite aquí como texto para no
-#: importar los modelos y perder la pureza; hay una prueba que vigila que
-#: coincida con `models.EVAPORADORES`.
-EVAPORADORES = ("scheffers2", "scheffers3", "veb")
-
 CATEGORIAS = (
     "prec_nestle",
     "prec_ccaa",
@@ -125,7 +120,12 @@ def consumo_dia(
     for bloque in bloques:
         if bloque.dia != dia:
             continue
-        if bloque.tipo != "produccion" or bloque.equipo not in EVAPORADORES:
+        # Quién consume leche lo dice el propio equipo del bloque. Antes era
+        # una tupla de códigos repetida aquí para no importar los modelos;
+        # ahora el dato viaja con el objeto y sigue sin haber import.
+        if bloque.tipo != "produccion" or not getattr(
+            bloque.equipo, "consume_leche", False
+        ):
             continue
 
         codigo = por_codigo.get(bloque.codigo_id)

@@ -32,7 +32,8 @@ class CodigoProduccionSerializer(serializers.ModelSerializer):
 class BloquePlanSerializer(serializers.ModelSerializer):
     codigo_texto = serializers.CharField(source="codigo.codigo", read_only=True)
     categoria = serializers.CharField(source="codigo.categoria", read_only=True)
-    equipo_etiqueta = serializers.CharField(source="get_equipo_display", read_only=True)
+    equipo_etiqueta = serializers.CharField(source="equipo.nombre", read_only=True)
+    equipo_codigo = serializers.CharField(source="equipo.codigo", read_only=True)
     horas = serializers.FloatField(read_only=True)
     consume_leche = serializers.BooleanField(read_only=True)
 
@@ -42,6 +43,7 @@ class BloquePlanSerializer(serializers.ModelSerializer):
             "id",
             "semana",
             "equipo",
+            "equipo_codigo",
             "equipo_etiqueta",
             "dia",
             "hora_inicio",
