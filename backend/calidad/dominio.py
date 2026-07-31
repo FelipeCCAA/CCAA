@@ -23,7 +23,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-from produccion import dominio as calidad_producto
+# El dominio de producción: de ahí salen el veredicto de calidad del lote
+# y la evaluación del PCC 1.
+from produccion import dominio as produccion_dominio
 
 
 # Roles que pueden firmar una liberación.
@@ -407,6 +409,57 @@ def avance_checklist(
 
 # ---------------------------------------------------------- regla de liberación
 
+def bloqueos_de_inocuidad(
+    controles: Iterable[Any] = (),
+    lecturas_control: Iterable[Any] = (),
+    monitoreos: Iterable[Any] = (),
+) -> list[str]:
+    """
+    Lo que la inocuidad impide, con su motivo.
+
+    Son dos reglas y las dos son de HACCP, no de calidad de producto:
+
+    - Una lectura fuera del límite del **PCC 1** de uperización significa que
+      la leche pasó sin el tratamiento térmico que garantiza su inocuidad. No
+      hay concesión posible: una concesión asume un riesgo conocido sobre el
+      producto, y aquí lo que falló es la barrera que lo hace seguro.
+    - Un **PPRO** con lecturas No-OK y sin acción correctiva escrita es un
+      incidente abierto. Lo que bloquea no es el No-OK —eso pasa y se corrige—
+      sino que nadie haya dejado constancia de qué se hizo.
+
+    Recibe las lecturas aparte de los controles para no tocar la base desde
+    aquí: quien llama las trae en una consulta.
+    """
+    bloqueos: list[str] = []
+
+    for control in controles or []:
+        evaluacion = produccion_dominio.evaluar_pcc1(control, lecturas_control)
+
+        if evaluacion.incumplimientos:
+            detalle = "; ".join(
+                i.descripcion for i in evaluacion.incumplimientos[:3]
+            )
+            resto = len(evaluacion.incumplimientos) - 3
+            if resto > 0:
+                detalle += f"; y {resto} más"
+
+            bloqueos.append(
+                f"PCC 1 incumplido en {control.equipo}: {detalle}. "
+                "La uperización no alcanzó el límite crítico."
+            )
+
+    for monitoreo in monitoreos or []:
+        # `resuelto` es False solo cuando hay No-OK **y** falta la acción
+        # correctiva: el modelo ya distingue las dos cosas.
+        if not monitoreo.resuelto:
+            bloqueos.append(
+                f"{monitoreo.get_tipo_display()} con lecturas No-OK y sin acción "
+                "correctiva registrada."
+            )
+
+    return bloqueos
+
+
 def puede_liberar(
     lote: Any,
     producto: Any,
@@ -415,6 +468,9 @@ def puede_liberar(
     analisis: Sequence[Any] = (),
     especificaciones: Iterable[Any] = (),
     rol: str | None = None,
+    controles: Iterable[Any] = (),
+    lecturas_control: Iterable[Any] = (),
+    monitoreos: Iterable[Any] = (),
 ) -> DecisionLiberacion:
     """
     ¿Se puede liberar este lote?
@@ -427,6 +483,10 @@ def puede_liberar(
     que esta función no dependa de Django; quien llama lo resuelve con
     `usuarios.models.rol_de`. Si no se pasa, no se evalúa el permiso: sirve
     para consultar el estado de un lote sin estar autorizando nada.
+
+    Los controles de proceso y los monitoreos PPRO llegan como argumentos por
+    la misma razón: la función sigue sin consultar la base. Si no se pasan, no
+    se evalúa la inocuidad — igual que con el rol.
     """
     if lote is None:
         return DecisionLiberacion(
@@ -458,14 +518,18 @@ def puede_liberar(
     if rol is not None and rol not in ROLES_AUTORIZADORES:
         bloqueos.append(f'El rol "{rol}" no puede autorizar liberaciones.')
 
-    calidad = calidad_producto.resultado_calidad_lote(lote, analisis, especificaciones)
+    # Inocuidad. Van con el resto de bloqueos y no aparte porque comparten
+    # consecuencia: mientras estén, no hay liberación normal.
+    bloqueos.extend(bloqueos_de_inocuidad(controles, lecturas_control, monitoreos))
+
+    calidad = produccion_dominio.resultado_calidad_lote(lote, analisis, especificaciones)
 
     bloqueos_calidad: list[str] = []
-    if calidad.resultado == calidad_producto.SIN_ESPECIFICACION:
+    if calidad.resultado == produccion_dominio.SIN_ESPECIFICACION:
         bloqueos_calidad.append(
             "El producto no tiene especificación de calidad vigente a la fecha del lote."
         )
-    elif calidad.resultado == calidad_producto.SIN_ANALISIS:
+    elif calidad.resultado == produccion_dominio.SIN_ANALISIS:
         bloqueos_calidad.append("El lote no tiene análisis de calidad completos.")
 
     # Sin especificación o sin análisis no hay liberación posible, ni siquiera
@@ -480,7 +544,19 @@ def puede_liberar(
             avance=avance,
         )
 
-    no_conforme = calidad.resultado == calidad_producto.NO_CONFORME
+    no_conforme = calidad.resultado == produccion_dominio.NO_CONFORME
+
+    # Un fallo de inocuidad no admite concesión, y no hace falta una rama
+    # aparte para conseguirlo: sus motivos están dentro de `bloqueos`, así que
+    # `resto_en_regla` ya es falso y con él caen las dos vías.
+    #
+    # Se escribe aquí porque la garantía importa y el mecanismo no es obvio:
+    # la concesión existe para liberar un producto cuya calidad se salió de
+    # especificación asumiendo un riesgo **conocido y medido**; un PCC 1
+    # incumplido no es eso, es que la barrera que hace inocuo el producto no
+    # actuó, y no hay medición que acote ese riesgo. Si alguien alguna vez
+    # saca los bloqueos de inocuidad de esta lista, tiene que reponer la
+    # exclusión a mano.
     resto_en_regla = not bloqueos
 
     if no_conforme:

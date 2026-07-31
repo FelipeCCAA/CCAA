@@ -6,7 +6,7 @@ from rest_framework.validators import UniqueTogetherValidator
 from maestros.catalogos import CLAVES_PARAMETROS
 
 from . import dominio
-from .models import Analisis, Lote
+from .models import Analisis, ControlProceso, ControlProcesoLectura, Lote
 
 
 class AnalisisSerializer(serializers.ModelSerializer):
@@ -294,4 +294,88 @@ class LoteDetalleSerializer(LoteSerializer):
                 if liberacion.autorizada_por
                 else None
             ),
+        }
+
+
+class ControlProcesoLecturaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ControlProcesoLectura
+        fields = ["id", "control", "hora", "valores", "observacion"]
+
+    def validate_valores(self, valores):
+        if not isinstance(valores, dict):
+            raise serializers.ValidationError("Debe ser un objeto de valores medidos.")
+
+        for parametro, valor in valores.items():
+            if valor is not None and not isinstance(valor, (int, float)):
+                raise serializers.ValidationError(
+                    f"El valor de '{parametro}' debe ser numérico."
+                )
+
+        return valores
+
+
+class ControlProcesoSerializer(serializers.ModelSerializer):
+    equipo_etiqueta = serializers.CharField(source="get_equipo_display", read_only=True)
+    lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
+    lecturas = ControlProcesoLecturaSerializer(many=True, read_only=True)
+
+    # El veredicto del PCC 1 se recalcula desde las lecturas y su límite; no se
+    # guarda (MODELO_DATOS.md §2.2).
+    pcc1 = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ControlProceso
+        fields = [
+            "id",
+            "lote",
+            "lote_codigo",
+            "equipo",
+            "equipo_etiqueta",
+            "turno",
+            "fecha",
+            "hora_arranque",
+            "hora_inicio_produccion",
+            "hora_termino_produccion",
+            "pcc1_temp_min",
+            "pcc1_caudal_max",
+            "operador",
+            "observacion",
+            "lecturas",
+            "pcc1",
+        ]
+        # `turno` y `equipo` son opcionales en el modelo pero entran en la
+        # clave de unicidad, y DRF exige **todos** los campos de una clave
+        # única aunque el modelo los declare `blank=True`. Con `required=False`
+        # a secas el validador los vuelve a pedir; hace falta el valor por
+        # defecto para que la pantalla pueda omitirlos.
+        extra_kwargs = {
+            "turno": {"required": False, "default": ""},
+        }
+
+    def get_pcc1(self, control):
+        """
+        Cómo quedó el punto crítico, con el detalle de cada incumplimiento.
+
+        Se devuelve entero y no solo un booleano porque la pantalla tiene que
+        poder decir *qué* lectura se salió y de cuánto: un «no cumple» sin
+        detalle obliga a buscar el problema a mano.
+        """
+        evaluacion = dominio.evaluar_pcc1(control, list(control.lecturas.all()))
+
+        return {
+            "cumple": evaluacion.cumple,
+            "sin_limites": evaluacion.sin_limites,
+            "sin_lecturas": evaluacion.sin_lecturas,
+            "incumplimientos": [
+                {
+                    "hora": str(i.hora),
+                    "parametro": i.parametro,
+                    "valor": i.valor,
+                    "limite": i.limite,
+                    "sentido": i.sentido,
+                    "descripcion": i.descripcion,
+                }
+                for i in evaluacion.incumplimientos
+            ],
         }

@@ -140,8 +140,20 @@ def _contexto_del_lote(lote, bloquear=False):
     motor que no sepa bloquear filas no hace nada en absoluto, en silencio: de
     eso avisa el check `calidad.E001`.
     """
+    from inocuidad.models import MonitoreoPPRO
+    from produccion.models import ControlProceso, ControlProcesoLectura
+
     registros = RegistroCalidad.objects.filter(lote=lote)
     analisis = Analisis.objects.filter(lote=lote)
+
+    # Inocuidad: el PCC 1 de uperización y los monitoreos PPRO. Entran al
+    # contexto porque ahora deciden, y se bloquean por la misma razón que los
+    # formularios: entre la comprobación y la firma nadie puede corregir una
+    # lectura fuera de límite ni borrar la acción correctiva que resolvía un
+    # No-OK.
+    controles = ControlProceso.objects.filter(lote=lote)
+    lecturas_control = ControlProcesoLectura.objects.filter(control__lote=lote)
+    monitoreos = MonitoreoPPRO.objects.filter(lote=lote)
 
     if bloquear:
         # Sin `select_related` a propósito: con el JOIN, el FOR UPDATE
@@ -150,8 +162,18 @@ def _contexto_del_lote(lote, bloquear=False):
         # documento del registro —usa `documento_id`— así que no hace falta.
         registros = registros.select_for_update()
         analisis = analisis.select_for_update()
+        controles = controles.select_for_update()
+        # `lecturas_control` filtra por `control__lote`, así que su FOR UPDATE
+        # arrastraría también la tabla de controles por el JOIN. Se acota a las
+        # filas de lectura con `of`, que es lo que se quiere proteger.
+        lecturas_control = lecturas_control.select_for_update(of=("self",))
+        monitoreos = monitoreos.select_for_update()
     else:
         registros = registros.select_related("documento")
+
+    # `resuelto` recorre las lecturas del monitoreo: sin esto sería una
+    # consulta por monitoreo dentro del dominio.
+    monitoreos = monitoreos.prefetch_related("lecturas")
 
     return {
         "lote": lote,
@@ -160,6 +182,9 @@ def _contexto_del_lote(lote, bloquear=False):
         "registros": list(registros),
         "analisis": list(analisis),
         "especificaciones": list(Especificacion.objects.filter(producto=lote.producto)),
+        "controles": list(controles),
+        "lecturas_control": list(lecturas_control),
+        "monitoreos": list(monitoreos),
     }
 
 

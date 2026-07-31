@@ -15,8 +15,14 @@ from maestros.models import Especificacion, Producto, Receta, Silo
 from usuarios.permisos import EscribeProduccion
 
 from . import dominio
-from .models import Analisis, Lote
-from .serializers import AnalisisSerializer, LoteDetalleSerializer, LoteSerializer
+from .models import Analisis, ControlProceso, ControlProcesoLectura, Lote
+from .serializers import (
+    AnalisisSerializer,
+    ControlProcesoLecturaSerializer,
+    ControlProcesoSerializer,
+    LoteDetalleSerializer,
+    LoteSerializer,
+)
 
 
 class LoteViewSet(viewsets.ModelViewSet):
@@ -629,3 +635,49 @@ def resumen(request):
             ],
         }
     )
+
+
+class ControlProcesoViewSet(viewsets.ModelViewSet):
+    """
+    Control de proceso de un equipo para un lote, con el PCC 1 de uperización.
+
+    Es un registro de inocuidad además de uno de producción: sus lecturas
+    deciden si el lote se puede liberar (`calidad.dominio.bloqueos_de_inocuidad`).
+    """
+
+    queryset = ControlProceso.objects.select_related("lote").prefetch_related("lecturas")
+    serializer_class = ControlProcesoSerializer
+    permission_classes = [EscribeProduccion]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        parametros = self.request.query_params
+
+        lote = parametros.get("lote")
+        if lote:
+            consulta = consulta.filter(lote_id=lote)
+
+        equipo = parametros.get("equipo")
+        if equipo:
+            consulta = consulta.filter(equipo=equipo)
+
+        fecha = parametros.get("fecha")
+        if fecha:
+            consulta = consulta.filter(fecha=fecha)
+
+        return consulta
+
+
+class ControlProcesoLecturaViewSet(viewsets.ModelViewSet):
+    queryset = ControlProcesoLectura.objects.select_related("control")
+    serializer_class = ControlProcesoLecturaSerializer
+    permission_classes = [EscribeProduccion]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+
+        control = self.request.query_params.get("control")
+        if control:
+            consulta = consulta.filter(control_id=control)
+
+        return consulta

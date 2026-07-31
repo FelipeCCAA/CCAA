@@ -97,8 +97,18 @@ class MonitoreoPPRO(models.Model):
 
     @property
     def tiene_no_ok(self) -> bool:
-        """¿Alguna lectura salió No-OK? Se calcula, no se guarda."""
-        return self.lecturas.filter(resultado=PproLectura.Resultado.NO_OK).exists()
+        """
+        ¿Alguna lectura salió No-OK? Se calcula, no se guarda.
+
+        Recorre `lecturas.all()` en vez de filtrar en la base para que un
+        `prefetch_related("lecturas")` lo resuelva sin consultar: la
+        liberación evalúa esto por cada monitoreo del lote, y un `.filter()`
+        ignora el prefetch y dispara una consulta cada vez.
+        """
+        return any(
+            lectura.resultado == PproLectura.Resultado.NO_OK
+            for lectura in self.lecturas.all()
+        )
 
     @property
     def resuelto(self) -> bool:

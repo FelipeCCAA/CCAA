@@ -377,3 +377,114 @@ def puede_declarar_producido(lote, asignaciones) -> DecisionCierre:
     return DecisionCierre(
         permitido=not bloqueos, bloqueos=bloqueos, avisos=avisos
     )
+
+
+# --------------------------------------------------------------- PCC 1
+
+#: Claves de `ControlProcesoLectura.valores` que vigila el PCC 1 de
+#: uperización. Van aquí y no en el modelo porque el modelo guarda las
+#: lecturas como JSON —los parámetros cambian por equipo— y esta es la única
+#: parte de ese JSON que decide si un lote se puede liberar.
+#:
+#: **Tienen que coincidir con lo que escribe la pantalla de captura.** Si la
+#: pantalla renombra el campo, el control deja de encontrarlo y el PCC pasa a
+#: no vigilar nada en silencio, que es peor que fallar. De ahí que
+#: `evaluar_pcc1` distinga «cumple» de «no se midió».
+PCC1_TEMPERATURA = "t_dsi"
+PCC1_CAUDAL = "flujo_entrada"
+
+
+@dataclass(frozen=True)
+class IncumplimientoPcc1:
+    """Una lectura que se salió del límite crítico."""
+
+    hora: Any
+    parametro: str
+    valor: float
+    limite: float
+    # 'bajo' para la temperatura, 'alto' para el caudal.
+    sentido: str
+
+    @property
+    def descripcion(self) -> str:
+        etiqueta = "Temperatura" if self.parametro == PCC1_TEMPERATURA else "Caudal"
+        relacion = "por debajo del mínimo" if self.sentido == "bajo" else "sobre el máximo"
+
+        return f"{etiqueta} {self.valor} {relacion} ({self.limite}) a las {self.hora}"
+
+
+@dataclass(frozen=True)
+class EvaluacionPcc1:
+    """
+    Cómo quedó el PCC 1 de un control de proceso.
+
+    `sin_limites` y `sin_lecturas` no son lo mismo que cumplir: un control al
+    que nadie le puso límites, o que no tiene ninguna lectura, no demuestra
+    que la uperización ocurrió. Se distinguen para que la liberación pueda
+    decir cuál de los dos falta.
+    """
+
+    cumple: bool
+    incumplimientos: list[IncumplimientoPcc1] = field(default_factory=list)
+    sin_limites: bool = False
+    sin_lecturas: bool = False
+
+
+def evaluar_pcc1(control: Any, lecturas: Iterable[Any] = ()) -> EvaluacionPcc1:
+    """
+    Evalúa las lecturas de un control contra su límite crítico.
+
+    El límite se lee del propio control y no de un maestro: cambia por equipo
+    y por producto —el VEB trabaja a 80,0 °C y el Scheffers 2 a 81,2— y un
+    control de mayo tiene que auditarse contra el límite que regía en mayo.
+
+    Una lectura que no trae el parámetro **no cuenta como incumplimiento**:
+    no se midió. Lo que sí se informa es que el control entero no tiene
+    lecturas, porque un PCC sin lecturas no vigiló nada.
+    """
+    temp_min = _numero(getattr(control, "pcc1_temp_min", None))
+    caudal_max = _numero(getattr(control, "pcc1_caudal_max", None))
+
+    propias = [
+        lectura
+        for lectura in (lecturas or [])
+        if getattr(lectura, "control_id", None) == control.id
+    ]
+
+    if temp_min is None and caudal_max is None:
+        return EvaluacionPcc1(cumple=True, sin_limites=True, sin_lecturas=not propias)
+
+    incumplimientos: list[IncumplimientoPcc1] = []
+
+    for lectura in propias:
+        valores = getattr(lectura, "valores", None) or {}
+
+        temperatura = _numero(valores.get(PCC1_TEMPERATURA))
+        if temp_min is not None and temperatura is not None and temperatura < temp_min:
+            incumplimientos.append(
+                IncumplimientoPcc1(
+                    hora=lectura.hora,
+                    parametro=PCC1_TEMPERATURA,
+                    valor=temperatura,
+                    limite=temp_min,
+                    sentido="bajo",
+                )
+            )
+
+        caudal = _numero(valores.get(PCC1_CAUDAL))
+        if caudal_max is not None and caudal is not None and caudal > caudal_max:
+            incumplimientos.append(
+                IncumplimientoPcc1(
+                    hora=lectura.hora,
+                    parametro=PCC1_CAUDAL,
+                    valor=caudal,
+                    limite=caudal_max,
+                    sentido="alto",
+                )
+            )
+
+    return EvaluacionPcc1(
+        cumple=not incumplimientos,
+        incumplimientos=incumplimientos,
+        sin_lecturas=not propias,
+    )
