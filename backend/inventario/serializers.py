@@ -2,7 +2,7 @@ from rest_framework import serializers
 from decimal import Decimal, ROUND_CEILING
 
 from .models import (
-    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, ConsumoProducto,
+    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP,
     DetalleOrdenCompra, DevolucionProduccion,
     DetalleSolicitudCompra, EjecucionMRP, DetalleSolicitudMaterial, Existencia,
     InspeccionMaterial, Insumo,
@@ -71,15 +71,6 @@ class InsumoSerializer(serializers.ModelSerializer):
 
     def get_explicacion_eoq(self, insumo):
         return self._eoq_ajuste(insumo)[1]
-
-
-class ConsumoProductoSerializer(serializers.ModelSerializer):
-    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
-    insumo_nombre = serializers.CharField(source="insumo.nombre", read_only=True)
-
-    class Meta:
-        model = ConsumoProducto
-        fields = "__all__"
 
 
 class CicloCIPSerializer(serializers.ModelSerializer):

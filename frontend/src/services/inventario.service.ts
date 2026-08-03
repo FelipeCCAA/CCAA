@@ -91,11 +91,6 @@ export async function ingresarMaterial(datos: {
   return data;
 }
 
-export async function relacionarMaterialReceta(datos: { producto: number; insumo: number; cantidad_por_kg: number }) {
-  const { data } = await api.post("inventario/consumos/", datos);
-  return data;
-}
-
 export async function consumirRecetaProduccion(lote_produccion: number) {
   const { data } = await api.post<{ consumo: number; movimientos: MovimientoInventario[] }>("inventario/movimientos/consumir-receta/", { lote_produccion });
   return data;

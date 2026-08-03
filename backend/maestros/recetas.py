@@ -38,10 +38,26 @@ class Nodo:
     naturaleza: str | None
     receta: Any = None
     hijos: list["Nodo"] = field(default_factory=list)
+    # Insumos que cuelgan de este nodo. Van aparte de `hijos` porque son
+    # **hojas**: un saco o un litro de soda cáustica no se fabrican aquí, se
+    # compran, así que no hay nada sobre lo que recurrir.
+    insumos: list["NodoInsumo"] = field(default_factory=list)
     # El producto ya estaba en la rama: seguir colgaría el cálculo.
     ciclo: bool = False
     # No tiene receta y no es materia prima: la cadena queda incompleta.
     sin_receta: bool = False
+    merma: float = 0.0
+
+
+@dataclass
+class NodoInsumo:
+    """Un insumo que consume un nodo del árbol, con su cantidad escalada."""
+
+    insumo_id: int
+    insumo: Any
+    nombre: str
+    cantidad: float
+    unidad: str
     merma: float = 0.0
 
 
@@ -54,6 +70,11 @@ class Explosion:
     requerimientos: dict[int, float] = field(default_factory=dict)
     # Solo las hojas que son materia prima. Es lo que consume la planta.
     materia_prima: dict[int, float] = field(default_factory=dict)
+    # {insumo_id: cantidad} de todo lo que se descuenta de bodega, a cualquier
+    # nivel. Va en su propio diccionario y no mezclado con `requerimientos`
+    # porque los ids son de otro catálogo: sumarlos ahí haría que el insumo 7
+    # y el producto 7 se pisaran, y el número resultante no sería de nadie.
+    insumos: dict[int, float] = field(default_factory=dict)
     ciclo: bool = False
     sin_receta: list[int] = field(default_factory=list)
 
@@ -148,6 +169,23 @@ def _arbol(
         # La merma aumenta lo que hay que meter para sacar lo mismo.
         necesario = _numero(componente.cantidad) * factor * (1 + merma / 100)
 
+        # Un componente es un producto o un insumo. El insumo es hoja: se
+        # compra, no se fabrica, así que no hay receta sobre la cual recurrir.
+        if getattr(componente, "insumo_id", None):
+            insumo = componente.insumo
+
+            nodo.insumos.append(
+                NodoInsumo(
+                    insumo_id=componente.insumo_id,
+                    insumo=insumo,
+                    nombre=getattr(insumo, "nombre", "(insumo desconocido)"),
+                    cantidad=necesario,
+                    unidad=componente.unidad,
+                    merma=merma,
+                )
+            )
+            continue
+
         hijo = _arbol(
             productos,
             recetas,
@@ -168,6 +206,13 @@ def _acumular(nodo: Nodo, explosion: Explosion) -> None:
 
     if nodo.sin_receta and nodo.producto_id not in explosion.sin_receta:
         explosion.sin_receta.append(nodo.producto_id)
+
+    # Los insumos de este nodo, a cualquier profundidad: un saco que cuelga de
+    # la crema cuenta igual que uno que cuelga de la mantequilla.
+    for insumo in nodo.insumos:
+        explosion.insumos[insumo.insumo_id] = (
+            explosion.insumos.get(insumo.insumo_id, 0.0) + insumo.cantidad
+        )
 
     for hijo in nodo.hijos:
         explosion.requerimientos[hijo.producto_id] = (

@@ -171,12 +171,19 @@ class DocumentoLiberacionAdmin(admin.ModelAdmin):
 
 
 class RecetaComponenteInline(admin.TabularInline):
-    """Los componentes se cargan desde su receta: así se lee un escandallo."""
+    """
+    Los componentes se cargan desde su receta: así se lee un escandallo.
+
+    Cada renglón es **un producto o un insumo**, nunca los dos. El producto se
+    transforma aquí y la explosión sigue por su propia receta; el insumo se
+    compra y lo descuenta bodega. Llenar las dos columnas da dos cantidades
+    para el mismo renglón, y el modelo lo rechaza.
+    """
 
     model = RecetaComponente
     extra = 1
-    fields = ["producto", "cantidad", "unidad", "merma"]
-    autocomplete_fields = ["producto"]
+    fields = ["producto", "insumo", "cantidad", "unidad", "merma"]
+    autocomplete_fields = ["producto", "insumo"]
 
 
 @admin.register(Receta)

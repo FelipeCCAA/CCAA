@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AdjuntoViewSet, AjusteInventarioViewSet, AlertaViewSet, BodegaViewSet, CicloCIPViewSet,
-    ConsumoProductoViewSet, DetalleOrdenCompraViewSet,
+    DetalleOrdenCompraViewSet,
     DetalleSolicitudCompraViewSet, DetalleSolicitudMaterialViewSet,
     DevolucionProduccionViewSet, EjecucionMRPViewSet, ExistenciaViewSet,
     InspeccionMaterialViewSet, InsumoProveedorViewSet, InsumoViewSet,
@@ -16,7 +16,6 @@ from .views import (
 
 router = DefaultRouter()
 router.register("insumos", InsumoViewSet)
-router.register("consumos", ConsumoProductoViewSet)
 router.register("cip", CicloCIPViewSet)
 router.register("proveedores", ProveedorViewSet)
 router.register("insumo-proveedores", InsumoProveedorViewSet)

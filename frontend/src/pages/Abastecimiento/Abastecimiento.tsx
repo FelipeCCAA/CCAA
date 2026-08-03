@@ -5,14 +5,13 @@ import {
   agregarDetalleMRQ, crearMRQ, decidirInspeccion, entregarMRQ, enviarMRQ,
   consumirRecetaProduccion, crearMaterial, ingresarMaterial, obtenerExistencias, obtenerInspecciones, obtenerInsumos, obtenerMRQ,
   crearAjuste, decidirAjuste, obtenerAjustes, obtenerMovimientos, obtenerNotificaciones,
-  obtenerOrdenesCompra, obtenerUbicaciones, registrarSalida, relacionarMaterialReceta, reservarMRQ,
+  obtenerOrdenesCompra, obtenerUbicaciones, registrarSalida, reservarMRQ,
   type AjusteInventario, type MovimientoInventario,
   type Existencia, type InspeccionMaterial, type Insumo, type Notificacion,
   type OrdenCompra, type SolicitudMaterial,
 } from "../../services/inventario.service";
 import { obtenerSesion } from "../../services/sesion";
 import { obtenerLotes, type Lote } from "../../services/produccion.service";
-import { obtenerProductosMaestros, type ProductoMaestro } from "../../services/maestros.service";
 import type { UbicacionInventario } from "../../services/inventario.service";
 
 const formato = (valor: string) => Number(valor).toLocaleString("es-CL", { maximumFractionDigits: 3 });
@@ -28,11 +27,9 @@ function Abastecimiento() {
   const [ajustes, setAjustes] = useState<AjusteInventario[]>([]);
   const [ubicaciones, setUbicaciones] = useState<UbicacionInventario[]>([]);
   const [lotesProduccion, setLotesProduccion] = useState<Lote[]>([]);
-  const [productos, setProductos] = useState<ProductoMaestro[]>([]);
   const [operacion, setOperacion] = useState({ existencia: "", tipo: "consumo", cantidad: "", motivo: "" });
   const [nuevoMaterial, setNuevoMaterial] = useState({ codigo: "", nombre: "", categoria: "materia_prima", unidad: "kg", requiere_calidad: true, requiere_lote: true, requiere_vencimiento: true });
   const [ingreso, setIngreso] = useState({ insumo: "", codigo_lote: "", ubicacion: "", cantidad: "", elaboracion: "", vencimiento: "" });
-  const [receta, setReceta] = useState({ producto: "", insumo: "", cantidad_por_kg: "" });
   const [loteAConsumir, setLoteAConsumir] = useState("");
   const [nuevaMrq, setNuevaMrq] = useState({ insumo: "", cantidad: "", fecha: "" });
   const [error, setError] = useState("");
@@ -41,13 +38,13 @@ function Abastecimiento() {
 
   const cargar = async () => {
     try {
-      const [e, i, m, o, n, materiales, movimientosData, ajustesData, ubicacionesData, lotesData, productosData] = await Promise.all([
+      const [e, i, m, o, n, materiales, movimientosData, ajustesData, ubicacionesData, lotesData] = await Promise.all([
         obtenerExistencias(), obtenerInspecciones(), obtenerMRQ(),
-        obtenerOrdenesCompra(), obtenerNotificaciones(), obtenerInsumos(), obtenerMovimientos(), obtenerAjustes(), obtenerUbicaciones(), obtenerLotes(100), obtenerProductosMaestros(),
+        obtenerOrdenesCompra(), obtenerNotificaciones(), obtenerInsumos(), obtenerMovimientos(), obtenerAjustes(), obtenerUbicaciones(), obtenerLotes(100),
       ]);
       setExistencias(e); setInspecciones(i); setMrq(m); setOrdenes(o); setNotificaciones(n); setInsumos(materiales);
       setMovimientos(movimientosData); setAjustes(ajustesData);
-      setUbicaciones(ubicacionesData); setLotesProduccion(lotesData); setProductos(productosData);
+      setUbicaciones(ubicacionesData); setLotesProduccion(lotesData);
     } catch { setError("No se pudo cargar el panel de abastecimiento."); }
   };
 
@@ -55,12 +52,12 @@ function Abastecimiento() {
     let vigente = true;
     Promise.all([
       obtenerExistencias(), obtenerInspecciones(), obtenerMRQ(),
-      obtenerOrdenesCompra(), obtenerNotificaciones(), obtenerInsumos(), obtenerMovimientos(), obtenerAjustes(), obtenerUbicaciones(), obtenerLotes(100), obtenerProductosMaestros(),
-    ]).then(([e, i, m, o, n, materiales, movimientosData, ajustesData, ubicacionesData, lotesData, productosData]) => {
+      obtenerOrdenesCompra(), obtenerNotificaciones(), obtenerInsumos(), obtenerMovimientos(), obtenerAjustes(), obtenerUbicaciones(), obtenerLotes(100),
+    ]).then(([e, i, m, o, n, materiales, movimientosData, ajustesData, ubicacionesData, lotesData]) => {
       if (!vigente) return;
       setExistencias(e); setInspecciones(i); setMrq(m); setOrdenes(o); setNotificaciones(n); setInsumos(materiales);
       setMovimientos(movimientosData); setAjustes(ajustesData);
-      setUbicaciones(ubicacionesData); setLotesProduccion(lotesData); setProductos(productosData);
+      setUbicaciones(ubicacionesData); setLotesProduccion(lotesData);
     }).catch(() => { if (vigente) setError("No se pudo cargar el panel de abastecimiento."); });
     return () => { vigente = false; };
   }, []);
@@ -109,11 +106,6 @@ function Abastecimiento() {
     try { await ingresarMaterial({ ...ingreso, insumo: Number(ingreso.insumo), ubicacion: Number(ingreso.ubicacion), cantidad: Number(ingreso.cantidad) }); setIngreso({ insumo: "", codigo_lote: "", ubicacion: "", cantidad: "", elaboracion: "", vencimiento: "" }); await cargar(); }
     catch { setError("No se pudo ingresar: usa Cuarentena si requiere Calidad, o Disponible si no requiere inspección."); }
   };
-  const guardarReceta = async (evento: React.FormEvent) => {
-    evento.preventDefault();
-    try { await relacionarMaterialReceta({ producto: Number(receta.producto), insumo: Number(receta.insumo), cantidad_por_kg: Number(receta.cantidad_por_kg) }); setReceta({ producto: "", insumo: "", cantidad_por_kg: "" }); setError(""); }
-    catch { setError("No se pudo relacionar el material; puede que ya esté incluido en esa receta."); }
-  };
   const consumirReceta = async () => {
     try { await consumirRecetaProduccion(Number(loteAConsumir)); setLoteAConsumir(""); await cargar(); }
     catch { setError("No se pudo consumir la receta: revisa kilos producidos, receta, Calidad y stock disponible."); }
@@ -136,7 +128,11 @@ function Abastecimiento() {
     {puedeBodega && <section className="mt-8 grid gap-8 xl:grid-cols-2">
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">1. Crear material</h2><p className="mt-1 text-sm text-slate-500">El código es el ID operativo que relaciona el material con recetas y movimientos.</p><form onSubmit={guardarMaterial} className="mt-4 grid gap-3 sm:grid-cols-2"><input required placeholder="Código / ID" value={nuevoMaterial.codigo} onChange={(e) => setNuevoMaterial({ ...nuevoMaterial, codigo: e.target.value })} className="rounded-xl border px-4 py-3 text-sm"/><input required placeholder="Nombre" value={nuevoMaterial.nombre} onChange={(e) => setNuevoMaterial({ ...nuevoMaterial, nombre: e.target.value })} className="rounded-xl border px-4 py-3 text-sm"/><select value={nuevoMaterial.categoria} onChange={(e) => setNuevoMaterial({ ...nuevoMaterial, categoria: e.target.value })} className="rounded-xl border bg-white px-4 py-3 text-sm">{[["materia_prima","Materia prima"],["empaque","Empaque"],["produccion","Insumo productivo"],["quimico","Químico"],["limpieza","Limpieza"],["repuesto","Repuesto"],["seguridad","Seguridad"],["otro","Otro"]].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select><select value={nuevoMaterial.unidad} onChange={(e) => setNuevoMaterial({ ...nuevoMaterial, unidad: e.target.value })} className="rounded-xl border bg-white px-4 py-3 text-sm"><option value="kg">kg</option><option value="L">Litros</option><option value="un">Unidades</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={nuevoMaterial.requiere_calidad} onChange={(e) => setNuevoMaterial({ ...nuevoMaterial, requiere_calidad: e.target.checked })}/> Requiere Calidad</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={nuevoMaterial.requiere_vencimiento} onChange={(e) => setNuevoMaterial({ ...nuevoMaterial, requiere_vencimiento: e.target.checked })}/> Requiere vencimiento</label><button className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white sm:col-span-2">Guardar material</button></form></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">2. Ingresar material por lote</h2><p className="mt-1 text-sm text-slate-500">Si requiere Calidad debe ingresar a Cuarentena; quedará disponible solo después de aprobarse.</p><form onSubmit={guardarIngreso} className="mt-4 grid gap-3 sm:grid-cols-2"><select required value={ingreso.insumo} onChange={(e) => setIngreso({ ...ingreso, insumo: e.target.value })} className="rounded-xl border bg-white px-4 py-3 text-sm"><option value="">Material</option>{insumos.map((i) => <option key={i.id} value={i.id}>{i.codigo} · {i.nombre}</option>)}</select><input required placeholder="Lote proveedor" value={ingreso.codigo_lote} onChange={(e) => setIngreso({ ...ingreso, codigo_lote: e.target.value })} className="rounded-xl border px-4 py-3 text-sm"/><select required value={ingreso.ubicacion} onChange={(e) => setIngreso({ ...ingreso, ubicacion: e.target.value })} className="rounded-xl border bg-white px-4 py-3 text-sm"><option value="">Ubicación</option>{ubicaciones.filter((u) => u.activo).map((u) => <option key={u.id} value={u.id}>{u.bodega_nombre}/{u.codigo} · {u.tipo}</option>)}</select><input required type="number" min="0.001" step="0.001" placeholder="Cantidad" value={ingreso.cantidad} onChange={(e) => setIngreso({ ...ingreso, cantidad: e.target.value })} className="rounded-xl border px-4 py-3 text-sm"/><input type="date" title="Elaboración" value={ingreso.elaboracion} onChange={(e) => setIngreso({ ...ingreso, elaboracion: e.target.value })} className="rounded-xl border px-4 py-3 text-sm"/><input type="date" title="Vencimiento" value={ingreso.vencimiento} onChange={(e) => setIngreso({ ...ingreso, vencimiento: e.target.value })} className="rounded-xl border px-4 py-3 text-sm"/><button className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white sm:col-span-2">Registrar ingreso</button></form></div>
-      <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">3. Relacionar con receta</h2><form onSubmit={guardarReceta} className="mt-4 grid gap-3"><select required value={receta.producto} onChange={(e) => setReceta({ ...receta, producto: e.target.value })} className="rounded-xl border bg-white px-4 py-3 text-sm"><option value="">Producto final</option>{productos.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}</select><select required value={receta.insumo} onChange={(e) => setReceta({ ...receta, insumo: e.target.value })} className="rounded-xl border bg-white px-4 py-3 text-sm"><option value="">Material</option>{insumos.map((i) => <option key={i.id} value={i.id}>{i.codigo} · {i.nombre}</option>)}</select><input required type="number" min="0.000001" step="0.000001" placeholder="Cantidad por kg de producto" value={receta.cantidad_por_kg} onChange={(e) => setReceta({ ...receta, cantidad_por_kg: e.target.value })} className="rounded-xl border px-4 py-3 text-sm"/><button className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white">Agregar a receta</button></form></div>
+      {/* La fórmula ya no se edita aquí. Vive en maestros.Receta, que es
+          versionada y multinivel, y la escribe Calidad — que es quien
+          responde por ella. Que Bodega pudiera cambiarla dejaba que quien
+          descuenta el material redefiniera cuánto material lleva. */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">3. Receta del producto</h2><p className="mt-1 text-sm text-slate-500">La fórmula la mantiene Calidad en el maestro de recetas, versionada por fecha: un lote de mayo se descuenta con la receta de mayo. Aquí solo se consume.</p><p className="mt-3 text-sm text-slate-400">Se edita en el administrador de Django, <span className="font-medium text-slate-600">Maestros › Recetas</span>.</p></div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">4. Consumir receta por Producción</h2><p className="mt-1 text-sm text-slate-500">Descuenta automáticamente: kg producidos × cantidad por kg, seleccionando lotes FEFO aprobados.</p><div className="mt-4 grid gap-3"><select value={loteAConsumir} onChange={(e) => setLoteAConsumir(e.target.value)} className="rounded-xl border bg-white px-4 py-3 text-sm"><option value="">Lote de Producción</option>{lotesProduccion.filter((l) => l.kg_producidos && l.estado !== "anulado").map((l) => <option key={l.id} value={l.id}>{l.codigo_lote} · {l.producto_nombre} · {l.kg_producidos} kg</option>)}</select><button type="button" disabled={!loteAConsumir} onClick={() => void consumirReceta()} className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40">Registrar consumo completo</button></div></div>
     </section>}
 

@@ -36,6 +36,9 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - **Una sola representación de «equipo»** (desde 2026-08-03). `maestros.Equipo` es la única: `ControlProceso`, `MonitoreoPPRO`, `CicloCIP`, `BloquePlan` y `RegistroEquipo` lo referencian por clave foránea. Antes había cinco vocabularios para las mismas máquinas —un `TextChoices` en `produccion` («VEB», «SCH2»), el maestro («veb», «scheffers2»), y texto libre en los monitoreos y en el CIP—, y con dos alfabetos un criterio del checklist no se podía comparar contra el registro sin traducir en el medio. `linea1`/`linea2` **eran** las torres Egron: se renombraron a `e1`/`e2`, no se duplicaron. Se agregaron `rovema3` y `rovema4`.
 - Los **criterios de evidencia comparan el `codigo` del equipo**, no su nombre ni el objeto. El nombre se edita desde Maestros, y un criterio escrito contra «Torre de secado Egron 1» dejaría de cumplirse el día que alguien le corrija una tilde — en silencio, hasta que un lote no se pudiera liberar. `calidad.dominio._valor_comparable` lo resuelve, y `tests_evidencia` lo fija con un doble cuyo nombre difiere del código.
 - Los **catálogos de opciones** se sirven desde el backend (`/api/maestros/catalogos/`, `/api/planificacion/catalogos/`) y no se escriben en el frontend: una copia ofrece tarde o temprano un valor que el backend rechaza.
+- **Una sola receta** (desde 2026-08-03). `maestros.Receta` es el único lugar donde se declara qué lleva un producto. Un `RecetaComponente` es **un producto o un insumo, nunca los dos**: el producto se transforma aquí y la explosión sigue por su receta; el insumo se compra y lo descuenta bodega. Antes había un segundo maestro, `inventario.ConsumoProducto`, plano y sin versión, y era **ese** el que el descuento de bodega consumía — así que un lote de mayo se descontaba con las cantidades de hoy, que es justo lo que `Receta` está versionada para impedir. Los tres caminos que calculan consumo —el descuento del lote, el MRP semanal y el MRP puntual— pasan por `inventario.servicios.insumos_requeridos`; con tres implementaciones, la orden de compra y el descuento podían pedir cantidades distintas para la misma fórmula.
+- La **fórmula la escribe Calidad**, no Bodega. El formulario que había en `/abastecimiento` dejaba que quien descuenta el material redefiniera cuánto material lleva. Se edita en el admin (`Maestros › Recetas`), igual que las especificaciones.
+- Una explosión **incompleta no descuenta nada**: si la cadena se corta —un intermedio sin receta, un ciclo— `consumir_receta_produccion` falla en vez de descontar un requerimiento a medias, que se parece demasiado a uno completo y dejaría el saldo de bodega mintiendo. El MRP puntual devuelve `receta_completa` por la misma razón.
 
 ## Trampas conocidas
 
@@ -230,8 +233,7 @@ copiarlos crudos del Excel.
 **Lo siguiente, en este orden** (revisado el 2026-08-03):
 
 1. ~~Unificar `equipo` en el maestro~~ — hecho.
-2. Unificar la receta: `inventario.ConsumoProducto` duplica `maestros.RecetaComponente`, y es la
-   copia plana la que el descuento de bodega consume mientras la multinivel tiene 0 filas.
+2. ~~Unificar la receta~~ — hecho.
 3. Enganchar el consumo de inventario al ciclo del lote (hoy nada en `produccion` llama a
    `inventario.servicios.consumir_receta_produccion`).
 4. Borrar `Insumo.stock_actual`: saldo huérfano, visible en el admin, que ya no lee nadie.

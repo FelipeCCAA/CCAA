@@ -89,6 +89,61 @@ def _cantidad(valor) -> Decimal:
     return cantidad
 
 
+def catalogos_de_receta():
+    """
+    Productos y recetas cargados una vez, listos para explotar.
+
+    `explosionar` no consulta la base a propósito —es dominio puro— así que
+    quien la llama tiene que traerle los catálogos. Se cargan aquí y no dentro
+    del bucle: el MRP semanal explota un bloque por cada turno programado, y
+    releer el maestro en cada vuelta sería una consulta por bloque.
+    """
+    from maestros.models import Producto, Receta
+
+    return (
+        list(Producto.objects.all()),
+        list(
+            Receta.objects.prefetch_related(
+                "componentes__insumo", "componentes__producto"
+            )
+        ),
+    )
+
+
+def insumos_requeridos(*, producto_id, cantidad, fecha, catalogos=None):
+    """
+    Qué insumos consume producir `cantidad` de un producto, y cuántos.
+
+    Devuelve `{insumo_id: Decimal}`. La receta se resuelve **a esa fecha**: un
+    lote de mayo se calcula con las cantidades de mayo, que es para lo que
+    `Receta` está versionada.
+
+    Es multinivel: si el producto se hace de crema y la crema lleva su propio
+    empaque, ese empaque entra también. Antes esto era una tabla plana por
+    producto y el segundo nivel simplemente no existía.
+
+    Los tres caminos que calculan consumo —el descuento del lote, el MRP
+    semanal y el MRP puntual— pasan por aquí. Con tres implementaciones, la
+    orden de compra y el descuento podían pedir cantidades distintas para la
+    misma fórmula.
+    """
+    from maestros.recetas import explosionar
+
+    productos, recetas = catalogos if catalogos is not None else catalogos_de_receta()
+
+    explosion = explosionar(productos, recetas, producto_id, float(cantidad), fecha)
+
+    # La explosión trabaja en float —es aritmética de árbol, no de dinero—; se
+    # vuelve a Decimal antes de que el número toque existencias o una orden de
+    # compra, que es donde el redondeo tiene consecuencias.
+    return explosion, {
+        insumo_id: Decimal(str(total)).quantize(
+            Decimal("0.001"), rounding=ROUND_HALF_UP
+        )
+        for insumo_id, total in explosion.insumos.items()
+    }
+
+
 @transaction.atomic
 def registrar_entrada(*, lote, ubicacion, cantidad, usuario, documento_tipo, documento_id):
     cantidad = _cantidad(cantidad)
@@ -176,8 +231,21 @@ def ingresar_material_manual(*, insumo, codigo_lote, ubicacion, cantidad, usuari
 
 @transaction.atomic
 def consumir_receta_produccion(*, lote_produccion, usuario):
-    """Descuenta por FEFO la receta declarada para los kg reales del lote."""
-    from .models import ConsumoLoteProduccion, ConsumoProducto
+    """
+    Descuenta por FEFO los insumos que la receta del lote declara.
+
+    La receta se resuelve **a la fecha del lote**, no a la de hoy: un lote de
+    mayo se descuenta con las cantidades que regían en mayo. Antes esto leía
+    `ConsumoProducto`, una tabla plana sin versión, así que corregir una
+    fórmula reescribía en silencio lo que había costado producir seis meses
+    atrás — y `ConsumoLoteProduccion` decía ser la cabecera auditable de ese
+    cálculo.
+
+    La explosión es multinivel: si el producto se hace de crema y la crema
+    lleva su propio empaque, ese empaque también entra. Por eso se usa
+    `explosionar` y no se recorren los componentes a mano.
+    """
+    from .models import ConsumoLoteProduccion, Insumo
 
     if lote_produccion.estado == lote_produccion.Estado.ANULADO:
         raise ValidationError("No se puede consumir inventario para un lote anulado.")
@@ -185,22 +253,43 @@ def consumir_receta_produccion(*, lote_produccion, usuario):
         raise ValidationError("El lote debe tener kilos producidos informados.")
     if ConsumoLoteProduccion.objects.filter(lote_produccion=lote_produccion).exists():
         raise ValidationError("La receta de este lote de Producción ya fue consumida.")
-    receta = list(ConsumoProducto.objects.filter(producto=lote_produccion.producto).select_related("insumo"))
-    if not receta:
-        raise ValidationError("El producto no tiene materiales configurados en la receta de Inventario.")
+
+    explosion, requerido = insumos_requeridos(
+        producto_id=lote_produccion.producto_id,
+        cantidad=lote_produccion.kg_producidos,
+        fecha=lote_produccion.fecha,
+    )
+
+    if not requerido:
+        raise ValidationError(
+            "La receta vigente del producto no declara insumos que descontar."
+        )
+
+    # Una cadena cortada da un número que se parece demasiado a uno completo:
+    # descontar con él dejaría el saldo de bodega mintiendo.
+    if not explosion.completa:
+        raise ValidationError(
+            "La receta no se puede explotar hasta el final: hay un producto sin "
+            "receta o un ciclo. Corrígela antes de descontar."
+        )
+
+    por_id = {i.id: i for i in Insumo.objects.filter(id__in=requerido)}
+
     cabecera = ConsumoLoteProduccion.objects.create(
         lote_produccion=lote_produccion, kg_base=lote_produccion.kg_producidos,
         registrado_por=usuario,
     )
     movimientos = []
-    for componente in receta:
-        restante = (Decimal(lote_produccion.kg_producidos) * componente.cantidad_por_kg).quantize(
-            Decimal("0.001"), rounding=ROUND_HALF_UP
-        )
+    # Orden estable: el diccionario de la explosión no lo garantiza, y dos
+    # ejecuciones que tomen los lotes en distinto orden dan movimientos
+    # distintos para el mismo consumo.
+    for insumo_id in sorted(requerido):
+        insumo = por_id[insumo_id]
+        restante = requerido[insumo_id]
         if restante <= 0:
             continue
         candidatas = Existencia.objects.select_for_update().select_related("lote", "ubicacion").filter(
-            lote__insumo=componente.insumo, lote__activo=True,
+            lote__insumo=insumo, lote__activo=True,
             ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
         ).order_by(F("lote__vencimiento").asc(nulls_last=True), "lote__recibido_en", "id")
         for existencia in candidatas:
@@ -217,7 +306,7 @@ def consumir_receta_produccion(*, lote_produccion, usuario):
             if restante == 0:
                 break
         if restante > 0:
-            raise ValidationError(f"Stock insuficiente de {componente.insumo.nombre}. Faltan {restante}.")
+            raise ValidationError(f"Stock insuficiente de {insumo.nombre}. Faltan {restante}.")
     return cabecera, movimientos
 
 
@@ -669,7 +758,7 @@ def ejecutar_mrp_semana(*, semana, usuario):
 
     from planificacion.models import BloquePlan, SemanaPlan
     from .models import (
-        ConsumoProducto, DetalleOrdenCompra, EjecucionMRP, InsumoProveedor,
+        DetalleOrdenCompra, EjecucionMRP, InsumoProveedor,
         OrdenCompra, ResultadoMRP,
     )
 
@@ -682,15 +771,28 @@ def ejecutar_mrp_semana(*, semana, usuario):
         and b.cantidad_kg and b.codigo_id and b.codigo.producto_id
         and b.equipo.tipo == "linea"
     ]
+    # Los catálogos se cargan una vez para toda la semana: `explosionar` es
+    # dominio puro y no consulta, así que releerlos por bloque serían tantas
+    # consultas como turnos programados.
+    catalogos = catalogos_de_receta()
+
     bruta: dict[int, Decimal] = {}
     fechas: dict[int, object] = {}
     for bloque in bloques:
-        consumos = ConsumoProducto.objects.filter(producto_id=bloque.codigo.producto_id)
         fecha = semana.fecha_del_dia(bloque.dia)
-        for consumo in consumos:
-            requerido = Decimal(bloque.cantidad_kg) * consumo.cantidad_por_kg
-            bruta[consumo.insumo_id] = bruta.get(consumo.insumo_id, Decimal("0")) + requerido
-            fechas[consumo.insumo_id] = min(fechas.get(consumo.insumo_id, fecha), fecha)
+        # Se explota **a la fecha del bloque**: si una receta cambia a mitad de
+        # semana, el martes se planifica con la de antes y el jueves con la
+        # nueva. Una sola cifra para toda la semana escondería el cambio.
+        _explosion, requerido = insumos_requeridos(
+            producto_id=bloque.codigo.producto_id,
+            cantidad=bloque.cantidad_kg,
+            fecha=fecha,
+            catalogos=catalogos,
+        )
+
+        for insumo_id, cantidad in requerido.items():
+            bruta[insumo_id] = bruta.get(insumo_id, Decimal("0")) + cantidad
+            fechas[insumo_id] = min(fechas.get(insumo_id, fecha), fecha)
 
     ejecucion = EjecucionMRP.objects.create(
         fecha_corte=semana.fecha_inicio,

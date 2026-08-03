@@ -2,6 +2,7 @@ from decimal import Decimal
 from math import ceil
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -13,7 +14,7 @@ from usuarios.permisos import (
 )
 
 from .models import (
-    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, ConsumoProducto, DetalleEntregaProduccion, DetalleOrdenCompra,
+    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, DetalleEntregaProduccion, DetalleOrdenCompra,
     DetalleSolicitudCompra, DetalleSolicitudMaterial, EjecucionMRP, Existencia,
     DevolucionProduccion, InspeccionMaterial, Insumo, InsumoProveedor, LiberacionExcepcionalMaterial,
     LoteInventario, MovimientoInventario, NoConformidadMaterial, Notificacion,
@@ -22,7 +23,7 @@ from .models import (
 )
 from .serializers import (
     AdjuntoSerializer, AjusteInventarioSerializer, AlertaSerializer, BodegaSerializer, CicloCIPSerializer,
-    ConsumoProductoSerializer, DetalleOrdenCompraSerializer,
+    DetalleOrdenCompraSerializer,
     DetalleSolicitudCompraSerializer, DetalleSolicitudMaterialSerializer, DevolucionProduccionSerializer,
     EjecucionMRPSerializer, ExistenciaSerializer, InspeccionMaterialSerializer, InsumoProveedorSerializer,
     InsumoSerializer, LoteInventarioSerializer, MovimientoSerializer,
@@ -34,7 +35,7 @@ from .serializers import (
 from .servicios import (
     consumir_receta_produccion, crear_ajuste, decidir_inspeccion, decidir_solicitud_compra,
     decidir_y_aplicar_ajuste, entregar_solicitud_material,
-    ejecutar_mrp_semana, recibir_detalle_compra, registrar_devolucion,
+    ejecutar_mrp_semana, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
 )
 
@@ -56,14 +57,8 @@ class InsumoViewSet(FiltroAreaAdminMixin, viewsets.ModelViewSet):
     permission_classes = [EscribeBodega]
 
 
-class ConsumoProductoViewSet(viewsets.ModelViewSet):
-    queryset = ConsumoProducto.objects.select_related("producto", "insumo")
-    serializer_class = ConsumoProductoSerializer
-    permission_classes = [EscribeBodega]
-
-
 class CicloCIPViewSet(FiltroAreaAdminMixin, viewsets.ModelViewSet):
-    queryset = CicloCIP.objects.select_related("responsable")
+    queryset = CicloCIP.objects.select_related("responsable", "equipo")
     serializer_class = CicloCIPSerializer
 
 
@@ -505,21 +500,38 @@ def calcular_mrp(request):
     except (KeyError, TypeError, ValueError):
         return Response({"error": "Producto y kilos a producir son obligatorios."}, status=status.HTTP_400_BAD_REQUEST)
 
-    consumos = ConsumoProducto.objects.filter(producto_id=producto_id).select_related("insumo")
+    # A la fecha de hoy: es un cálculo de «qué necesito para producir esto»,
+    # así que manda la receta que rige ahora. El descuento de un lote, en
+    # cambio, usa la que regía el día del lote.
+    explosion, requerido = insumos_requeridos(
+        producto_id=producto_id, cantidad=kilos, fecha=timezone.localdate()
+    )
+
+    por_id = {i.id: i for i in Insumo.objects.filter(id__in=requerido)}
+
     resultado = []
-    for consumo in consumos:
-        requerido = kilos * consumo.cantidad_por_kg
-        existencias = Existencia.objects.select_related("lote").filter(lote__insumo=consumo.insumo)
+    for insumo_id in sorted(requerido):
+        insumo = por_id[insumo_id]
+        cantidad = requerido[insumo_id]
+        existencias = Existencia.objects.select_related("lote").filter(lote__insumo=insumo)
         disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
-        comprar = max(Decimal("0"), requerido - disponible)
-        envase = consumo.insumo.contenido_envase or Decimal("1")
+        comprar = max(Decimal("0"), cantidad - disponible)
+        envase = insumo.contenido_envase or Decimal("1")
         resultado.append({
-            "insumo": consumo.insumo.nombre,
-            "unidad": consumo.insumo.unidad,
-            "requerido": requerido,
+            "insumo": insumo.nombre,
+            "unidad": insumo.unidad,
+            "requerido": cantidad,
             "stock": disponible,
             "faltante": comprar,
             "envases_a_pedir": ceil(comprar / envase),
-            "eoq": consumo.insumo.eoq,
+            "eoq": insumo.eoq,
         })
-    return Response({"kilos_producir": kilos, "materiales": resultado})
+
+    return Response({
+        "kilos_producir": kilos,
+        "materiales": resultado,
+        # Si la cadena se cortó, el listado está incompleto y hay que decirlo:
+        # una lista de materiales a medias se parece demasiado a una completa,
+        # y con ella se emite una orden de compra corta.
+        "receta_completa": explosion.completa,
+    })

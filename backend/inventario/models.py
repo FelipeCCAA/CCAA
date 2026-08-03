@@ -67,15 +67,6 @@ class Insumo(models.Model):
         return f"{self.codigo} · {self.nombre}"
 
 
-class ConsumoProducto(models.Model):
-    producto = models.ForeignKey("maestros.Producto", on_delete=models.CASCADE, related_name="consumos_inventario")
-    insumo = models.ForeignKey(Insumo, on_delete=models.PROTECT, related_name="consumos")
-    cantidad_por_kg = models.DecimalField(max_digits=14, decimal_places=6)
-
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["producto", "insumo"], name="consumo_unico_producto_insumo")]
-
-
 class ConsumoLoteProduccion(models.Model):
     """Cabecera auditable del descuento automático de una receta."""
     lote_produccion = models.OneToOneField(

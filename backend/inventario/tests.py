@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
@@ -5,10 +6,10 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from maestros.models import Mandante, Producto
+from maestros.models import Mandante, Producto, Receta, RecetaComponente
 from usuarios.models import PerfilUsuario
 
-from .models import ConsumoProducto, Insumo
+from .models import Insumo
 from .models import (
     Bodega, DetalleOrdenCompra, Existencia, InspeccionMaterial,
     LoteInventario, MovimientoInventario, OrdenCompra, Proveedor,
@@ -50,10 +51,20 @@ class InventarioTests(TestCase):
             consumo_diario=40,
             plazo_reposicion_dias=5,
         )
-        ConsumoProducto.objects.create(
+        # La fórmula vive en el maestro de recetas, que es el único lugar
+        # donde se declara: 0,04 bolsas por kilo, o sea una bolsa cada 25 kg.
+        # `cantidad_base=1` porque los componentes se declaran por kilo.
+        self.receta = Receta.objects.create(
             producto=self.producto,
+            version=1,
+            cantidad_base=1,
+            vigente_desde=date(2020, 1, 1),
+        )
+        RecetaComponente.objects.create(
+            receta=self.receta,
             insumo=self.bolsa,
-            cantidad_por_kg=Decimal("0.04"),
+            cantidad=Decimal("0.04"),
+            unidad="un",
         )
 
     def test_eoq_y_punto_reposicion(self):
@@ -132,6 +143,79 @@ class InventarioTests(TestCase):
         self.assertEqual(movimientos[0].documento_id, lote_produccion.pk)
         with self.assertRaisesMessage(ValidationError, "ya fue consumida"):
             consumir_receta_produccion(lote_produccion=lote_produccion, usuario=self.admin)
+
+    def test_el_descuento_usa_la_receta_que_regia_el_dia_del_lote(self):
+        """
+        El motivo de haber unificado las dos recetas. Con la tabla plana que
+        el descuento leía antes —sin versión— corregir la fórmula hoy
+        reescribía lo que había costado producir en mayo, y
+        `ConsumoLoteProduccion` decía ser la cabecera auditable de ese cálculo.
+        """
+        from produccion.models import Lote
+
+        # Desde julio se ocupan el doble de bolsas por kilo.
+        nueva = Receta.objects.create(
+            producto=self.producto, version=2, cantidad_base=1,
+            vigente_desde=date(2026, 7, 1),
+        )
+        RecetaComponente.objects.create(
+            receta=nueva, insumo=self.bolsa, cantidad=Decimal("0.08"), unidad="un",
+        )
+
+        bodega = Bodega.objects.create(codigo="BV", nombre="Bodega vigencia")
+        ubicacion = Ubicacion.objects.create(bodega=bodega, codigo="DISP")
+        lote_material = LoteInventario.objects.create(
+            insumo=self.bolsa, codigo="B-VIGENCIA",
+            estado_calidad=LoteInventario.EstadoCalidad.APROBADO,
+        )
+        registrar_entrada(
+            lote=lote_material, ubicacion=ubicacion, cantidad=100,
+            usuario=self.admin, documento_tipo="recepcion", documento_id=1,
+        )
+
+        # Un lote de junio: le toca la versión 1, o sea 0,04 por kilo.
+        lote_junio = Lote.objects.create(
+            codigo_lote="LP-JUNIO", producto=self.producto, fecha=date(2026, 6, 15),
+            kg_producidos=1000, estado=Lote.Estado.PRODUCIDO,
+        )
+        _, movimientos = consumir_receta_produccion(
+            lote_produccion=lote_junio, usuario=self.admin
+        )
+
+        self.assertEqual(
+            sum((m.cantidad for m in movimientos), Decimal("0")), Decimal("40")
+        )
+
+    def test_una_cadena_cortada_no_descuenta_nada(self):
+        """
+        Un requerimiento a medias se parece demasiado a uno completo, y
+        descontar con él dejaría el saldo de bodega mintiendo.
+        """
+        from produccion.models import Lote
+
+        intermedio = Producto.objects.create(
+            nombre="Concentrado sin receta",
+            familia="polvo",
+            naturaleza="intermedio",
+            mandante=self.producto.mandante,
+        )
+        # El producto lleva un intermedio que no tiene receta propia: la
+        # explosión no puede llegar hasta abajo.
+        RecetaComponente.objects.create(
+            receta=self.receta, producto=intermedio, cantidad=1, unidad="kg",
+        )
+
+        lote_produccion = Lote.objects.create(
+            codigo_lote="LP-CORTADA", producto=self.producto, fecha=date(2026, 8, 3),
+            kg_producidos=1000, estado=Lote.Estado.PRODUCIDO,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "explotar hasta el final"):
+            consumir_receta_produccion(
+                lote_produccion=lote_produccion, usuario=self.admin
+            )
+
+        self.assertEqual(MovimientoInventario.objects.filter(tipo="consumo").count(), 0)
 
 
 class LibroInventarioTests(TestCase):

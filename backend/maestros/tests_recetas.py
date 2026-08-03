@@ -296,3 +296,156 @@ class ModeloRecetaTests(BaseRecetas):
             componente.full_clean()
 
         self.assertIn("unidad", error.exception.message_dict)
+
+
+class ComponenteInsumoTests(BaseRecetas):
+    """
+    Un componente puede ser un insumo de bodega, no solo un producto.
+
+    Antes esto vivía en `inventario.ConsumoProducto`: un segundo maestro que
+    respondía la misma pregunta —cuánto lleva un kilo de producto— sobre el
+    otro catálogo, sin versión y sin niveles. El descuento de bodega usaba
+    ese, así que un lote de mayo se descontaba con las cantidades de hoy.
+    """
+
+    def setUp(self):
+        super().setUp()
+
+        from inventario.models import Insumo
+        from usuarios.models import PerfilUsuario
+
+        self.bolsa = Insumo.objects.create(
+            codigo="BOLSA-25",
+            nombre="Bolsa 25 kg",
+            area=PerfilUsuario.Area.SECADO,
+            unidad="un",
+        )
+        self.etiqueta = Insumo.objects.create(
+            codigo="ETIQ",
+            nombre="Etiqueta",
+            area=PerfilUsuario.Area.SECADO,
+            unidad="un",
+        )
+
+    def _con_insumo(self, receta, insumo, cantidad, unidad="un", merma=0):
+        return RecetaComponente.objects.create(
+            receta=receta,
+            insumo=insumo,
+            cantidad=cantidad,
+            unidad=unidad,
+            merma=merma,
+        )
+
+    def test_un_componente_es_producto_o_insumo_pero_no_los_dos(self):
+        componente = RecetaComponente(
+            receta=self.receta_mantequilla,
+            producto=self.crema,
+            insumo=self.bolsa,
+            cantidad=1,
+            unidad="kg",
+        )
+
+        with self.assertRaises(ValidationError):
+            componente.full_clean()
+
+    def test_un_componente_sin_producto_ni_insumo_no_vale(self):
+        """Una cantidad de nada."""
+        componente = RecetaComponente(
+            receta=self.receta_mantequilla, cantidad=1, unidad="kg"
+        )
+
+        with self.assertRaises(ValidationError):
+            componente.full_clean()
+
+    def test_la_unidad_del_insumo_debe_ser_la_suya(self):
+        componente = RecetaComponente(
+            receta=self.receta_mantequilla,
+            insumo=self.bolsa,
+            cantidad=1,
+            unidad="kg",
+        )
+
+        with self.assertRaises(ValidationError) as error:
+            componente.full_clean()
+
+        self.assertIn("unidad", error.exception.message_dict)
+
+    def test_el_insumo_se_escala_con_la_cantidad(self):
+        self._con_insumo(self.receta_mantequilla, self.bolsa, 0.04)
+
+        productos, recetas_todas = self._ctx()
+        explosion = recetas.explosionar(
+            productos, recetas_todas, self.mantequilla.id, 100, self.fecha
+        )
+
+        self.assertAlmostEqual(explosion.insumos[self.bolsa.id], 4.0)
+
+    def test_el_insumo_de_un_nivel_inferior_tambien_cuenta(self):
+        """
+        La mantequilla lleva crema, y la crema lleva su propia etiqueta. Con
+        una tabla plana por producto ese segundo nivel simplemente no existía,
+        y la orden de compra salía corta.
+        """
+        self._con_insumo(self.receta_crema, self.etiqueta, 1)
+
+        productos, recetas_todas = self._ctx()
+        explosion = recetas.explosionar(
+            productos, recetas_todas, self.mantequilla.id, 3, self.fecha
+        )
+
+        # 3 kg de mantequilla ← 6 kg de crema ← 6 etiquetas.
+        self.assertAlmostEqual(explosion.insumos[self.etiqueta.id], 6.0)
+
+    def test_los_insumos_no_se_mezclan_con_los_requerimientos_de_producto(self):
+        """
+        Los ids son de catálogos distintos: sumarlos juntos haría que el
+        insumo 7 y el producto 7 se pisaran, y el número no sería de nadie.
+        """
+        self._con_insumo(self.receta_mantequilla, self.bolsa, 2)
+
+        productos, recetas_todas = self._ctx()
+        explosion = recetas.explosionar(
+            productos, recetas_todas, self.mantequilla.id, 1, self.fecha
+        )
+
+        self.assertIn(self.bolsa.id, explosion.insumos)
+        self.assertNotIn(self.bolsa.id, explosion.materia_prima)
+
+    def test_la_merma_del_insumo_aumenta_lo_que_hay_que_poner(self):
+        """Un envase que se rompe obliga a meter más para sacar lo mismo."""
+        self._con_insumo(self.receta_mantequilla, self.bolsa, 10, merma=20)
+
+        productos, recetas_todas = self._ctx()
+        explosion = recetas.explosionar(
+            productos, recetas_todas, self.mantequilla.id, 1, self.fecha
+        )
+
+        self.assertAlmostEqual(explosion.insumos[self.bolsa.id], 12.0)
+
+    def test_manda_la_receta_vigente_a_esa_fecha(self):
+        """
+        Lo que la unificación vino a arreglar: la tabla plana no tenía
+        versión, así que corregir una fórmula reescribía en silencio lo que
+        había costado producir seis meses atrás.
+        """
+        antigua = self._receta(
+            self.leche, [], desde=date(2026, 1, 1), version=1
+        )
+        self._con_insumo(antigua, self.bolsa, 5)
+
+        nueva = self._receta(
+            self.leche, [], desde=date(2026, 6, 1), version=2
+        )
+        self._con_insumo(nueva, self.bolsa, 9)
+
+        productos, recetas_todas = self._ctx()
+
+        en_marzo = recetas.explosionar(
+            productos, recetas_todas, self.leche.id, 1, date(2026, 3, 15)
+        )
+        en_julio = recetas.explosionar(
+            productos, recetas_todas, self.leche.id, 1, date(2026, 7, 15)
+        )
+
+        self.assertAlmostEqual(en_marzo.insumos[self.bolsa.id], 5.0)
+        self.assertAlmostEqual(en_julio.insumos[self.bolsa.id], 9.0)

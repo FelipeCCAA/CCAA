@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from .models import (
-    Adjunto, AjusteInventario, Alerta, Aprobacion, Bodega, CicloCIP, ConsumoLoteProduccion, ConsumoProducto, DetalleOrdenCompra,
+    Adjunto, AjusteInventario, Alerta, Aprobacion, Bodega, CicloCIP, ConsumoLoteProduccion, DetalleOrdenCompra,
     DetalleRecepcionCompra, DetalleSolicitudMaterial, EjecucionMRP,
     DevolucionProduccion, EntregaProduccion, Existencia, InspeccionMaterial, Insumo,
     InsumoProveedor, LiberacionExcepcionalMaterial, LoteInventario,
@@ -18,11 +18,6 @@ class InsumoAdmin(admin.ModelAdmin):
     list_filter = ["area", "activo"]
     search_fields = ["codigo", "nombre"]
     readonly_fields = ["stock_actual"]
-
-
-@admin.register(ConsumoProducto)
-class ConsumoProductoAdmin(admin.ModelAdmin):
-    list_display = ["producto", "insumo", "cantidad_por_kg"]
 
 
 @admin.register(CicloCIP)

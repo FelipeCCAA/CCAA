@@ -856,7 +856,36 @@ class RecetaComponente(models.Model):
     La merma va en el componente y no en la receta porque se pierde distinto
     según lo que se transforma: la leche que se evapora no es lo mismo que el
     envase que se rompe.
+
+    **Un componente es un producto o un insumo, nunca los dos.** Los productos
+    encadenan transformaciones —la mantequilla lleva crema, y la crema leche—
+    y por eso la explosión recurre sobre ellos. Los insumos son hojas: un saco
+    o un litro de soda cáustica no se fabrican aquí, se compran, y quien los
+    descuenta es bodega.
+
+    Los dos viven en la misma tabla a propósito. Antes había un segundo
+    maestro, `inventario.ConsumoProducto`, que respondía la misma pregunta
+    —cuánto lleva un kilo de producto— sobre el otro catálogo: dos lugares
+    donde declarar la fórmula, libres de discrepar, y solo uno de ellos
+    versionado. El descuento de bodega usaba el plano, así que un lote de mayo
+    se descontaba con las cantidades de hoy, que es justo lo que `Receta` está
+    versionada para impedir.
     """
+
+    class Unidad(models.TextChoices):
+        """
+        Cubre las unidades de los dos catálogos.
+
+        `Producto` mide en kilos y litros; un insumo de empaque se cuenta en
+        unidades —sacos, etiquetas— y sin `un` no habría forma de declararlo.
+        No se reutiliza `Producto.Unidad` porque agregarle «unidades» ahí
+        haría que el maestro de productos ofreciera una base que ningún
+        producto lácteo tiene.
+        """
+
+        KG = "kg", "Kilogramos"
+        L = "L", "Litros"
+        UN = "un", "Unidades"
 
     receta = models.ForeignKey(
         Receta,
@@ -869,12 +898,24 @@ class RecetaComponente(models.Model):
         on_delete=models.PROTECT,
         related_name="usos_en_recetas",
         verbose_name="Componente",
+        null=True,
+        blank=True,
+        help_text="Si el componente se transforma aquí. Deja vacío si es un insumo.",
+    )
+    insumo = models.ForeignKey(
+        "inventario.Insumo",
+        on_delete=models.PROTECT,
+        related_name="usos_en_recetas",
+        verbose_name="Insumo",
+        null=True,
+        blank=True,
+        help_text="Si el componente se compra y se descuenta de bodega.",
     )
     cantidad = models.DecimalField("Cantidad", max_digits=12, decimal_places=4)
     unidad = models.CharField(
         "Unidad",
         max_length=5,
-        choices=Producto.Unidad.choices,
+        choices=Unidad.choices,
         help_text="Debe coincidir con la unidad base del componente",
     )
     merma = models.DecimalField(
@@ -888,11 +929,31 @@ class RecetaComponente(models.Model):
     class Meta:
         verbose_name = "Componente de receta"
         verbose_name_plural = "Componentes de receta"
-        ordering = ["receta", "producto__nombre"]
+        ordering = ["receta", "producto__nombre", "insumo__nombre"]
         constraints = [
+            # `nulls_distinct=False` en las dos: sin eso PostgreSQL considera
+            # distintos dos NULL y la misma receta admitiría el mismo insumo
+            # repetido —cada fila con `producto` nulo—, que es como se
+            # duplicaría una cantidad sin que nadie lo viera.
             models.UniqueConstraint(
                 fields=["receta", "producto"],
                 name="componente_unico_por_receta",
+                nulls_distinct=False,
+            ),
+            models.UniqueConstraint(
+                fields=["receta", "insumo"],
+                name="componente_insumo_unico_por_receta",
+                nulls_distinct=False,
+            ),
+            # Uno de los dos, y solo uno. Un componente con ambos tendría dos
+            # cantidades para el mismo renglón; uno sin ninguno es una
+            # cantidad de nada.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(producto__isnull=False, insumo__isnull=True)
+                    | models.Q(producto__isnull=True, insumo__isnull=False)
+                ),
+                name="componente_es_producto_o_insumo",
             ),
             models.CheckConstraint(
                 condition=models.Q(cantidad__gt=0),
@@ -905,9 +966,14 @@ class RecetaComponente(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.cantidad} {self.unidad} de {self.producto}"
+        return f"{self.cantidad} {self.unidad} de {self.producto or self.insumo}"
 
     def clean(self):
+        if bool(self.producto_id) == bool(self.insumo_id):
+            raise ValidationError(
+                "Un componente es un producto o un insumo, no los dos ni ninguno."
+            )
+
         # Un producto que se lleva a sí mismo cuelga la explosión. El ciclo
         # indirecto lo detecta el dominio, que ve el árbol entero; este es el
         # caso directo, que se puede atajar aquí.
@@ -924,6 +990,16 @@ class RecetaComponente(models.Model):
                     "unidad": (
                         f"{self.producto} se mide en "
                         f"{self.producto.get_unidad_base_display().lower()}."
+                    )
+                }
+            )
+
+        if self.insumo_id and self.unidad != self.insumo.unidad:
+            raise ValidationError(
+                {
+                    "unidad": (
+                        f"{self.insumo} se mide en "
+                        f"{self.insumo.get_unidad_display().lower()}."
                     )
                 }
             )
