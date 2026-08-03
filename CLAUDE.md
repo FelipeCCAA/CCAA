@@ -140,14 +140,31 @@ cuatro efectos. Una plantilla única pediría el estado de piezas que ese evapor
 checklist se marcaría igual sin decir qué se revisó.
 
 **Plantillas cargadas** (desde `Documentos Planta/`, no inventadas): los cuatro checklists de
-cuerpos extraños —Scheffers 2, Scheffers 3, VEB y Rovemas 3-4—. `maestros.tests` exige que solo
-tengan plantilla los documentos declarados en `PLANTILLAS_DE_UN_FORMATO_REAL` junto a su formato
-de origen: agregar una obliga a decir de dónde salió.
+cuerpos extraños —Scheffers 2, Scheffers 3, VEB y Rovemas 3-4— y la **inspección pre-operativa
+E1-E2** (`Sec.FORM.003`, cargada el 2026-08-03). `maestros.tests` exige que solo tengan plantilla
+los documentos declarados en `PLANTILLAS_DE_UN_FORMATO_REAL` junto a su formato de origen:
+agregar una obliga a decir de dónde salió.
 
-Dos documentos **no deberían llevar plantilla nunca**: el PPRO E1-E2 (`Sec.FORM.022`) son lecturas
-horarias OK/No-OK de tres tipos que `MonitoreoPPRO` ya modela, y la dosificación de lecitina son
-lecturas horarias, o sea `ControlProcesoLectura`. Darles formulario sería volver a teclear lo que
-el modelo captura.
+**Los nombres de archivo de `Documentos Planta/` no son fiables.** `CCAA.Sec.FORM.020.01.xlsx`
+contiene en su encabezado el código `CCAA.Sec.FORM.021.01`, y el formato de la inspección en
+operación de las Rovemas se llama `Inspeccion operativa Rov 3 4.xlsx` —sin número—. Los formatos
+se buscan **por el código que llevan dentro**, abriendo el archivo; buscar por nombre da falsos
+negativos y, peor, falsos positivos.
+
+Tres documentos **no llevan plantilla aunque su formato ya se revisó**, y `maestros.tests`
+(`REVISADOS_Y_SIN_PLANTILLA`) lo fija para que el próximo que los encuentre no los cargue creyendo
+que faltaban: el PPRO E1-E2 (`Sec.FORM.022`) son lecturas horarias OK/No-OK de tres tipos que
+`MonitoreoPPRO` ya modela; la dosificación de lecitina (`Sec.FORM.021`) son lecturas horarias, o
+sea `ControlProcesoLectura`; y la inspección en operación de Rovemas (`Sec.FORM.024`) es una
+**grilla de 24 horas** — su mitad «al inicio de la operación» sí sería un checklist, pero
+aplanar la mitad «cada 1 hora» a un campo por ítem daría un formulario que se completa entero
+habiendo registrado una de las veinticuatro lecturas que el formato pide. Partir un formato de
+planta en dos registros lo decide Calidad.
+
+**Los cinco documentos que siguen en `por_lote` sin formato que lo diga se quedan ahí.** El
+control maestro (`12.- Control de Documentos`) no trae columna de frecuencia utilizable, y
+`por_lote` es el valor seguro: pasarse de frecuencia solo molesta, quedarse corto deja que un
+registro cubra lotes que nunca revisó.
 
 **Ojo con el tipo `lista`**: está en el contrato de la plantilla pero `FormularioDinamico` no lo
 dibuja — cae al campo de texto por defecto, sin avisar. Hay una prueba que impide usarlo hasta que
@@ -238,13 +255,13 @@ copiarlos crudos del Excel.
 2. ~~Unificar la receta~~ — hecho.
 3. ~~Enganchar el consumo de inventario al ciclo del lote~~ — hecho.
 4. Borrar `Insumo.stock_actual`: saldo huérfano, visible en el admin, que ya no lee nadie.
-5. La `plantilla` de los documentos que siguen siendo manuales, contra su **formato real**. Los
-   archivos están en `Documentos Planta/` (ignorada por git: 1,8 GB y no todo es de producción).
-   Inventarlas es el error que hay que evitar: una plantilla inventada se completa igual y da el
-   documento por cumplido. Faltan `Sec.FORM.003` y `Sec.FORM.024`.
+5. ~~Las plantillas de `Sec.FORM.003` y `Sec.FORM.024`~~ — hecho: la primera cargada, la segunda
+   revisada y deliberadamente sin plantilla (ver arriba).
 6. Cargar el maestro de productos completo (hoy hay 4 de los 23 del Excel) y resolver las
    decisiones abiertas del SKU.
 7. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
+8. **`Sec.FORM.024` con Calidad**: decidir si se parte en un checklist de inicio de operación y un
+   registro de lecturas horarias, o si se modela como un `MonitoreoPPRO` con más tipos.
 
 **Pendiente con Calidad:** los 19 se sembraron con `aplica_a = ["polvo"]`. Cuáles exigen además
 crema o mantequilla sigue abierto (`MODELO_DATOS.md` §8.3) y se responde editando el catálogo,

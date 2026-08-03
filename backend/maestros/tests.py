@@ -230,7 +230,40 @@ class DossierSembradoTests(TestCase):
         "CCAA.Cond.FORM.005": "Check list CE Scheffers 2",
         "CCAA.Cond.FORM.014": "Checklist CE Scheffer 3",
         "CCAA.Cond.FORM.016": "Checklist CE VEB",
+        "CCAA.Sec.FORM.003": "Inspeccion preoperativa egron 1",
     }
+
+    #: Documentos cuyo formato **sí** se revisó y que aun así no llevan
+    #: plantilla, con el motivo. No es lo mismo que «todavía no lo hemos
+    #: mirado»: son grillas de lecturas horarias, y aplanarlas a un campo por
+    #: ítem daría un formulario que se completa entero habiendo registrado una
+    #: de las veinticuatro lecturas que el formato pide.
+    REVISADOS_Y_SIN_PLANTILLA = {
+        "CCAA.Sec.FORM.022": (
+            "Lecturas horarias OK/No-OK de tres tipos en tres turnos: es lo "
+            "que MonitoreoPPRO y PproLectura ya modelan."
+        ),
+        "CCAA.Sec.FORM.021": (
+            "Lecturas horarias de kilos y consumo: es ControlProcesoLectura."
+        ),
+        "CCAA.Sec.FORM.024": (
+            "Grilla de 24 horas. La mitad «al inicio de la operación» sí sería "
+            "un checklist, pero la mitad «cada 1 hora» son lecturas; partir un "
+            "formato de planta en dos registros lo decide Calidad."
+        ),
+    }
+
+    def test_los_formatos_revisados_sin_plantilla_siguen_sin_ella(self):
+        """
+        Que un formato exista no significa que su plantilla deba cargarse.
+        Estos tres se revisaron y se dejaron fuera a propósito; sin esta
+        prueba, el próximo que los encuentre en `Documentos Planta/` los
+        cargaría creyendo que faltaban.
+        """
+        for codigo, motivo in self.REVISADOS_Y_SIN_PLANTILLA.items():
+            with self.subTest(codigo=codigo, motivo=motivo):
+                documento = DocumentoLiberacion.objects.get(codigo=codigo)
+                self.assertEqual(documento.plantilla, [], motivo)
 
     def test_solo_tienen_plantilla_los_que_salen_de_un_formato_real(self):
         """
