@@ -216,10 +216,10 @@ el saco. Lo que sí se anticipa es qué falta para poder componerlo.
   SKU; el generador compone desde atributos, así que de un atributo malo sale el mismo SKU malo.
   Hay que arreglar el dato.
 - §4.2 sospecha de *Leche Entera Instantánea 27% CN*: está bien, es Colun (`02`). Sin acción.
-- §4.1 atribuye las colisiones a falta de estructura. **Parte es carga inconsistente:** la
-  categoría `11` «Leche en Polvo c/Lec» ya existe y uno de los tres productos c/LdS la usa; los
-  otros dos van como `02`. Antes de agregar un 7.º segmento, ver cuántas colisiones desaparecen
-  al aplicar la `11` donde corresponde.
+- §4.1 atribuye las colisiones a falta de estructura. **Parte era carga inconsistente, y ya está
+  medido** (2026-08-03): aplicar la categoría `11` donde corresponde baja las colisiones de seis
+  grupos a cuatro. O sea que el 7.º segmento sí hace falta —pero para cuatro pares, no para el
+  desorden entero—, y solo si negocio confirma que no son duplicados del archivo.
 - §4.3 dice 17 productos sin validar; en la hoja son **16**.
 - §7 da `Receta` por «pendiente de portar del prototipo»: **ya está** (`maestros/recetas.py`, con
   explosión multinivel y pruebas). Lo que sigue vigente de §7 es que las hojas de recetas del
@@ -232,21 +232,41 @@ se descartó a favor de que el código cargue toda la información del producto.
 largo resulta impracticable al imprimirlo o transcribirlo, el cambio es de una línea en
 `generar_codigo_lote` — pero invalida los códigos ya emitidos.
 
-**SKU cargados** (2026-07-31), compuestos con `generar_sku` y no a mano:
+**Maestro de productos cargado** (2026-08-03): los **23** del Excel, con
+`python manage.py cargar_productos` (`--aplicar` para escribir; sin eso simula recorriendo el
+mismo camino y revirtiendo, no calculando aparte lo que pasaría).
 
-| Producto | Mandante | SKU |
-|---|---|---|
-| Crema | CCAA | `020004010101` |
-| Leche entera en polvo | Nestlé | `010102010201` |
+El comando **ignora la columna «SKU» del archivo** y compone cada código con `generar_sku`:
+copiarla metería en el maestro el mismo defecto que `Producto.save()` existe para evitar, un
+código que contradice los atributos del propio producto. Las tres correcciones al archivo están
+declaradas en `CORRECCIONES`, con su motivo, para que se vea qué se cambió: la *Leche Entera
+Estándar 28% NE* venía con Categoría = Crema (§4.2), y los dos productos *c/LdS* venían con
+categoría `02` en vez de la `11` que ya existe.
 
-El segundo **no** es el del archivo (`010104010201`): ese codifica Categoría = Crema y es la fila
-mal codificada de §4.2. Se cargó el correcto. Si aparecen más productos, componerlos igual y no
-copiarlos crudos del Excel.
+Es un **comando y no una migración de datos** porque los productos son datos de negocio: una
+migración los sembraría también en la base de pruebas, donde no pintan nada y solo abren la puerta
+a que una prueba pase por un producto que no creó.
+
+**Medido (2026-08-03): aplicar la categoría `11` baja las colisiones de seis grupos a cuatro.**
+Eso es lo que faltaba para decidir el 7.º segmento. Los cuatro pares que quedan comparten los seis
+segmentos y hay que preguntarle a negocio si son el mismo producto repetido en el archivo o dos
+distintos:
+
+| SKU | Productos que lo comparten |
+|---|---|
+| `010302010201` | Leche Entera Estándar 27% SP · Leche Entera en Polvo Regular |
+| `010302030201` | Leche Descremada MH SP · Leche en Polvo Descremada Regular |
+| `010311030201` | Leche Descremada c/LdS MH SP · Leche Descremada en Polvo c/Lec |
+| `020003020101` | Precondensado SemiDescremado Rc0.201 · P. Semidescremado ST 45% CCAA |
+
+Ojo: **el código de lote lleva el SKU**, así que mientras esos pares compartan código, dos lotes de
+productos distintos del mismo día pueden salir con el mismo código de lote. `Producto.variante`
+existe para desempatarlos y `generar_sku` ya lo admite; falta la decisión, no el mecanismo.
 
 **Decisiones abiertas antes de tocar el modelo:**
 
-1. El 7.º segmento de variante para unicidad (`SKU_PRODUCTOS.md` §4.1), después de aplicar lo de
-   la categoría `11`.
+1. Los cuatro pares de la tabla de arriba: ¿duplicados del archivo o productos distintos? Si son
+   distintos, se les asigna `variante` y el SKU pasa a 14 dígitos.
 2. Validar con negocio los 16 productos marcados «¿definido correctamente? = False».
 
 **Lo siguiente, en este orden** (revisado el 2026-08-03):
@@ -257,8 +277,8 @@ copiarlos crudos del Excel.
 4. Borrar `Insumo.stock_actual`: saldo huérfano, visible en el admin, que ya no lee nadie.
 5. ~~Las plantillas de `Sec.FORM.003` y `Sec.FORM.024`~~ — hecho: la primera cargada, la segunda
    revisada y deliberadamente sin plantilla (ver arriba).
-6. Cargar el maestro de productos completo (hoy hay 4 de los 23 del Excel) y resolver las
-   decisiones abiertas del SKU.
+6. ~~Cargar el maestro de productos completo~~ — hecho (23/23). Quedan las decisiones del SKU,
+   que son de negocio.
 7. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
 8. **`Sec.FORM.024` con Calidad**: decidir si se parte en un checklist de inicio de operación y un
    registro de lecturas horarias, o si se modela como un `MonitoreoPPRO` con más tipos.

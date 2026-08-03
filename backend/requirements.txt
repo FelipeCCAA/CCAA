@@ -2,6 +2,10 @@ asgiref==3.12.1
 Django==6.0.7
 django-cors-headers==4.9.0
 djangorestframework==3.17.1
+# Solo lo usa `manage.py cargar_productos`, que lee el Excel del levantamiento.
+# El comando lo importa dentro de handle() y avisa si falta, así que la
+# aplicación arranca igual sin él.
+openpyxl==3.1.5
 psycopg2-binary==2.9.12
 python-dotenv==1.2.2
 sqlparse==0.5.5
