@@ -16,7 +16,9 @@ from .serializers import MonitoreoPPROSerializer, PproLecturaSerializer
 class MonitoreoPPROViewSet(viewsets.ModelViewSet):
     # `lecturas` se prefetch-ea porque `resuelto` las recorre: sin esto, una
     # consulta por monitoreo en cada listado.
-    queryset = MonitoreoPPRO.objects.select_related("lote").prefetch_related("lecturas")
+    queryset = MonitoreoPPRO.objects.select_related("lote", "equipo").prefetch_related(
+        "lecturas"
+    )
     serializer_class = MonitoreoPPROSerializer
     permission_classes = [EscribeProduccion]
 

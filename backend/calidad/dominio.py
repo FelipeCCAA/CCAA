@@ -374,6 +374,24 @@ FUENTE_ANALISIS = "analisis"
 FUENTE_ASIGNACION_LECHE = "asignacion_leche"
 
 
+def _valor_comparable(valor: Any) -> str:
+    """
+    Cómo se compara un campo del registro contra el criterio.
+
+    Los criterios nombran equipos por su **código del maestro** (`veb`, `e1`),
+    porque es el identificador estable: el nombre se edita desde Maestros y un
+    criterio escrito contra «Torre de secado Egron 1» dejaría de cumplirse el
+    día que alguien le corrija la tilde.
+
+    Por eso, si el valor es una referencia —un `Equipo`—, se compara su
+    código; si es texto, el texto. No se importa el modelo: basta con que el
+    objeto tenga `codigo`, y así el dominio se sigue probando con dobles.
+    """
+    codigo = getattr(valor, "codigo", None)
+
+    return str(codigo if codigo is not None else (valor or "")).strip().lower()
+
+
 def _coincide(registro: Any, criterio: dict) -> bool:
     """
     ¿Este registro satisface el criterio del documento?
@@ -382,12 +400,9 @@ def _coincide(registro: Any, criterio: dict) -> bool:
     coincidir. Un criterio vacío lo cumple cualquier registro de la fuente;
     uno que declara `equipo` exige ese equipo.
 
-    Se compara en minúsculas y sin espacios porque `equipo` viaja como texto
-    libre en los monitoreos, y «E1 » no debería fallar contra «e1».
+    Se compara en minúsculas y sin espacios: es barato y evita que «E1 »
+    falle contra «e1» en los criterios escritos a mano.
     """
-    def normal(valor):
-        return str(valor or "").strip().lower()
-
     for campo, esperado in criterio.items():
         if campo == "fuente":
             continue
@@ -396,14 +411,16 @@ def _coincide(registro: Any, criterio: dict) -> bool:
         # en cualquiera de los tres evaporadores, y exigir uno concreto dejaría
         # el documento sin cumplir según en cuál se corrió.
         if campo.endswith("_en"):
-            valor = getattr(registro, campo[:-3], None)
+            valor = _valor_comparable(getattr(registro, campo[:-3], None))
 
-            if normal(valor) not in {normal(e) for e in (esperado or [])}:
+            if valor not in {_valor_comparable(e) for e in (esperado or [])}:
                 return False
 
             continue
 
-        if normal(getattr(registro, campo, None)) != normal(esperado):
+        if _valor_comparable(getattr(registro, campo, None)) != _valor_comparable(
+            esperado
+        ):
             return False
 
     return True

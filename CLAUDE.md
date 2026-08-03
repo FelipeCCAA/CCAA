@@ -33,6 +33,8 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - **SKU de producto** (`maestros/dominio.py` + `catalogos_sku.py`): 12 dígitos en 6 segmentos, compuestos **solo desde catálogos**. Un valor fuera de catálogo falla en vez de improvisar — un SKU con un segmento inventado se ve igual de válido que uno correcto y termina impreso en un saco. El orden de los segmentos se dedujo de los datos, no de los encabezados de la planilla, que están desalineados; `tests_dominio_sku.py` recompone los 24 productos reales del archivo y es lo que fija ese orden. `sku_valido` comprueba además la regla naturaleza↔cliente, para que el validador no apruebe lo que el generador se niega a componer.
 - **Auditoría** (`auditoria`): se captura por señales, no desde las vistas, para cubrir todo lo que escribe en la base —API, admin, scripts, shell— y no solo los caminos instrumentados. Los dos lados del diff se leen **de la base** en `pre_save`/`post_save`: comparar la base contra el objeto en memoria marca como cambiados campos que solo cambiaron de tipo. Todos los cambios tienen la **misma forma** `{campo: [antes, después]}`, también las altas —con `None` delante—: dos formas obligan a cada consumidor a distinguirlas y el que no lo haga revienta. Es **de solo lectura en las tres capas** (viewset, admin y servicio del frontend): un registro que se puede editar no prueba nada.
 - **Máquinas** (`maestros.Equipo`): `consume_leche` es una **regla del balance**, no una etiqueta. Un mismo código de producción se programa en el evaporador y en la línea que lo recibe; si ambos restaran, la semana contaría la misma leche dos veces. Solo los evaporadores.
+- **Una sola representación de «equipo»** (desde 2026-08-03). `maestros.Equipo` es la única: `ControlProceso`, `MonitoreoPPRO`, `CicloCIP`, `BloquePlan` y `RegistroEquipo` lo referencian por clave foránea. Antes había cinco vocabularios para las mismas máquinas —un `TextChoices` en `produccion` («VEB», «SCH2»), el maestro («veb», «scheffers2»), y texto libre en los monitoreos y en el CIP—, y con dos alfabetos un criterio del checklist no se podía comparar contra el registro sin traducir en el medio. `linea1`/`linea2` **eran** las torres Egron: se renombraron a `e1`/`e2`, no se duplicaron. Se agregaron `rovema3` y `rovema4`.
+- Los **criterios de evidencia comparan el `codigo` del equipo**, no su nombre ni el objeto. El nombre se edita desde Maestros, y un criterio escrito contra «Torre de secado Egron 1» dejaría de cumplirse el día que alguien le corrija una tilde — en silencio, hasta que un lote no se pudiera liberar. `calidad.dominio._valor_comparable` lo resuelve, y `tests_evidencia` lo fija con un doble cuyo nombre difiere del código.
 - Los **catálogos de opciones** se sirven desde el backend (`/api/maestros/catalogos/`, `/api/planificacion/catalogos/`) y no se escriben en el frontend: una copia ofrece tarde o temprano un valor que el backend rechaza.
 
 ## Trampas conocidas
@@ -106,20 +108,22 @@ peor aún: la casilla puede decir «cumplido» sobre un PCC 1 incumplido.
 `DocumentoLiberacion.evidencia` declara qué registro lo cumple, y
 `calidad.dominio.documentos_con_evidencia` lo resuelve.
 
-**Solo cinco están atados**, y es deliberado: un documento cumplido *de más* deja salir producto.
-Los seis restantes dependen del equipo donde se registró, y `MonitoreoPPRO.equipo` todavía es
-texto libre — un monitoreo de cuerpos extraños daría por cumplidos los tres checklists
-(evaporadores, E1-E2, Rovema) cuando solo se hizo uno. Para habilitarlos hace falta que ese campo
-referencie el maestro de equipos (el mismo cambio que se hizo con `BloquePlan`), y que el maestro
-tenga las Rovemas y las torres E1/E2.
+**Siete están atados** (2026-08-03), y el resto sigue manual a propósito: un documento cumplido
+*de más* deja salir producto.
 
 | Documento | Lo cumple |
 |---|---|
 | `CCAA.REC.FORM.005` Trazabilidad | la asignación de silos del lote |
-| `CCAA.Cond.FORM.010` PCC 1 | un `ControlProceso` en VEB, SCH2 o SCH3 |
-| `CCAA.Sec.FORM.025` Pulverización | un `ControlProceso` en E1 o E2 |
+| `CCAA.Cond.FORM.010` PCC 1 | un `ControlProceso` en `veb`, `scheffers2` o `scheffers3` |
+| `CCAA.Sec.FORM.025` Pulverización | un `ControlProceso` en `e1` o `e2` |
 | `CCAA.Sec.FORM.001` Fisicoquímico | un `Analisis` del lote |
 | `CCAA.ENV.FORM.001` Detector de metales | un `MonitoreoPPRO` de ese tipo |
+| `CCAA.Sec.FORM.022` PPRO 3 · E1-E2 | un `MonitoreoPPRO` de aire/roce en `e1` o `e2` |
+| `CCAA.Sec.FORM.005` PPRO 4 · Rovemas | un `MonitoreoPPRO` de aire/roce en `rovema3` o `rovema4` |
+
+Los dos últimos exigen **equipo y tipo juntos**. Solo la máquina no basta: el checklist de cuerpos
+extraños de esa misma torre es otro documento, y sin el tipo lo daría por cumplido — mientras que
+el PPRO vigila presión de aire y roce de válvulas, que nadie habría mirado.
 
 El expediente **distingue** el cumplimiento por dato del visto manual: no es lo mismo «hay control
 de proceso» que «alguien lo marcó».
@@ -223,16 +227,21 @@ copiarlos crudos del Excel.
    la categoría `11`.
 2. Validar con negocio los 16 productos marcados «¿definido correctamente? = False».
 
-**Lo siguiente, en este orden:**
+**Lo siguiente, en este orden** (revisado el 2026-08-03):
 
-1. La `plantilla` de los documentos que siguen siendo manuales, contra su **formato real**. Los
+1. ~~Unificar `equipo` en el maestro~~ — hecho.
+2. Unificar la receta: `inventario.ConsumoProducto` duplica `maestros.RecetaComponente`, y es la
+   copia plana la que el descuento de bodega consume mientras la multinivel tiene 0 filas.
+3. Enganchar el consumo de inventario al ciclo del lote (hoy nada en `produccion` llama a
+   `inventario.servicios.consumir_receta_produccion`).
+4. Borrar `Insumo.stock_actual`: saldo huérfano, visible en el admin, que ya no lee nadie.
+5. La `plantilla` de los documentos que siguen siendo manuales, contra su **formato real**. Los
    archivos están en `Documentos Planta/` (ignorada por git: 1,8 GB y no todo es de producción).
    Inventarlas es el error que hay que evitar: una plantilla inventada se completa igual y da el
-   documento por cumplido.
-2. Habilitar la evidencia de los seis documentos que hoy no se pueden atar — ver abajo.
-3. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
-4. Cargar el maestro de productos completo (hoy hay 3 de los 23 del Excel) y resolver las
+   documento por cumplido. Faltan `Sec.FORM.003` y `Sec.FORM.024`.
+6. Cargar el maestro de productos completo (hoy hay 4 de los 23 del Excel) y resolver las
    decisiones abiertas del SKU.
+7. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
 
 **Pendiente con Calidad:** los 19 se sembraron con `aplica_a = ["polvo"]`. Cuáles exigen además
 crema o mantequilla sigue abierto (`MODELO_DATOS.md` §8.3) y se responde editando el catálogo,

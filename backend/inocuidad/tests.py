@@ -17,7 +17,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from maestros.models import Mandante, Producto
+from maestros.models import Equipo, Mandante, Producto
 from produccion.models import Lote
 
 from .models import MonitoreoPPRO, PproLectura
@@ -25,6 +25,9 @@ from .models import MonitoreoPPRO, PproLectura
 
 class BaseInocuidad(TestCase):
     def setUp(self):
+        # Sembrada por migración de datos, así que existe también aquí.
+        self.rovema3 = Equipo.objects.get(codigo="rovema3")
+
         self.mandante = Mandante.objects.create(nombre="Nestlé")
         self.producto = Producto.objects.create(
             nombre="Leche entera en polvo",
@@ -43,7 +46,7 @@ class BaseInocuidad(TestCase):
         datos = {
             "lote": self.lote,
             "tipo": MonitoreoPPRO.Tipo.DETECTOR_METALES,
-            "equipo": "Rovema 3",
+            "equipo": self.rovema3,
             "turno": "A",
             "fecha": date(2026, 7, 16),
         }

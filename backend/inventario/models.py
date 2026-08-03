@@ -97,7 +97,17 @@ class CicloCIP(models.Model):
         OBSERVADO = "observado", "Observado"
 
     area = models.CharField(max_length=30, choices=PerfilUsuario.Area.choices)
-    equipo = models.CharField(max_length=120)
+    # Referencia al maestro y no texto libre: un CIP es la limpieza de una
+    # máquina concreta, y con el nombre escrito a mano no hay forma de saber
+    # si la torre quedó aseada o si alguien escribió «Egron 1» donde el resto
+    # del sistema dice «E1».
+    equipo = models.ForeignKey(
+        "maestros.Equipo",
+        on_delete=models.PROTECT,
+        related_name="ciclos_cip",
+        null=True,
+        blank=True,
+    )
     inicio = models.DateTimeField()
     fin = models.DateTimeField(null=True, blank=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PROGRAMADO)

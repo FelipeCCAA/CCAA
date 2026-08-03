@@ -16,8 +16,23 @@ import type { Pagina } from "./produccion.service";
   el lote sin tocar nada más.
 */
 
+/* Un equipo del maestro como opción. El `valor` es el **id**, que es lo que
+   la referencia guarda; el `codigo` viaja para poder leerlo, no para
+   compararlo aquí — quién cumple qué documento lo decide el backend. */
+export interface OpcionEquipo {
+  valor: number;
+  etiqueta: string;
+  codigo: string;
+}
+
+
 export interface CatalogosInocuidad {
-  equipo_control: { valor: string; etiqueta: string }[];
+  /* Qué máquinas admite cada formulario lo filtra el backend desde el tipo
+     del maestro: un control de proceso va en un evaporador o una torre, no en
+     una envasadora. Repetir ese filtro aquí sería una segunda copia de la
+     regla, libre de discrepar. */
+  equipo_control: OpcionEquipo[];
+  equipo_ppro: OpcionEquipo[];
   turno: { valor: string; etiqueta: string }[];
   tipo_ppro: { valor: string; etiqueta: string }[];
   resultado_ppro: { valor: string; etiqueta: string }[];
@@ -52,8 +67,9 @@ export interface ControlProceso {
   id: number;
   lote: number;
   lote_codigo: string;
-  equipo: string;
+  equipo: number;
   equipo_etiqueta: string;
+  equipo_codigo: string;
   turno: string;
   fecha: string;
   hora_arranque: string | null;
@@ -89,7 +105,11 @@ export interface MonitoreoPpro {
   lote_codigo: string;
   tipo: string;
   tipo_etiqueta: string;
-  equipo: string;
+  /* Nulo en el detector de metales: es un PCC del envasado que no cuelga de
+     una máquina del maestro. */
+  equipo: number | null;
+  equipo_etiqueta: string | null;
+  equipo_codigo: string | null;
   turno: string;
   fecha: string;
   accion_correctiva: string;

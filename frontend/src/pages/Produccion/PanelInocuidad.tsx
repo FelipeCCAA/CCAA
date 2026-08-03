@@ -80,7 +80,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
   const [lectura, setLectura] = useState<Record<number, { hora: string; t: string; c: string }>>({});
 
   const [nuevoMonitoreo, setNuevoMonitoreo] = useState(false);
-  const [monitoreo, setMonitoreo] = useState({ tipo: "", fecha: "" });
+  const [monitoreo, setMonitoreo] = useState({ tipo: "", equipo: "", fecha: "" });
   const [lecturaPpro, setLecturaPpro] = useState<Record<number, string>>({});
   const [accion, setAccion] = useState<Record<number, string>>({});
 
@@ -131,7 +131,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
     conError(async () => {
       await crearControl({
         lote: loteId,
-        equipo: control.equipo,
+        equipo: Number(control.equipo),
         fecha: control.fecha,
         pcc1_temp_min: control.pcc1_temp_min || null,
         pcc1_caudal_max: control.pcc1_caudal_max || null,
@@ -462,6 +462,13 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
 
                 <span className="font-medium text-slate-800">{m.tipo_etiqueta}</span>
 
+                {/* La máquina se muestra porque es lo que distingue este
+                    monitoreo del mismo chequeo hecho en otra: sin ella, dos
+                    filas de la lista se leen idénticas. */}
+                {m.equipo_etiqueta && (
+                  <span className="text-sm text-slate-500">{m.equipo_etiqueta}</span>
+                )}
+
                 <span className="text-sm text-slate-500">{m.fecha}</span>
 
                 {!m.tiene_no_ok ? (
@@ -623,6 +630,23 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
               ))}
             </select>
 
+            {/* En qué máquina. Es lo que decide qué documento del checklist
+                queda cumplido —el PPRO de las torres no es el de las
+                Rovemas—, así que no es un dato de adorno. Queda opcional
+                porque el detector de metales no cuelga de ninguna. */}
+            <select
+              className={campo}
+              value={monitoreo.equipo}
+              onChange={(e) => setMonitoreo({ ...monitoreo, equipo: e.target.value })}
+            >
+              <option value="">Sin equipo</option>
+              {catalogos.equipo_ppro.map((o) => (
+                <option key={o.valor} value={o.valor}>
+                  {o.etiqueta}
+                </option>
+              ))}
+            </select>
+
             <input
               type="date"
               className={campo}
@@ -638,10 +662,11 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
                   await crearMonitoreo({
                     lote: loteId,
                     tipo: monitoreo.tipo,
+                    equipo: monitoreo.equipo ? Number(monitoreo.equipo) : null,
                     fecha: monitoreo.fecha,
                   });
                   setNuevoMonitoreo(false);
-                  setMonitoreo({ tipo: "", fecha: "" });
+                  setMonitoreo({ tipo: "", equipo: "", fecha: "" });
                 }, "No se pudo crear el monitoreo.")
               }
               className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"

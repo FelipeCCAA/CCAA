@@ -7,9 +7,12 @@ además una casilla es doble digitación, y algo peor: la casilla puede decir
 
 Lo que estas pruebas protegen es el lado peligroso. Un documento cumplido **de
 más** deja salir producto, así que la coincidencia tiene que ser exacta: el
-registro es de ESE lote, y de ESE equipo o tipo. Por eso solo cinco de los
-once están atados hoy — los otros seis dependen de un `equipo` que todavía es
-texto libre.
+registro es de ESE lote, y de ESE equipo o tipo.
+
+Desde que `equipo` es una referencia al maestro y no texto libre, el criterio
+compara **códigos**. Eso es lo que permitió atar los dos PPRO de máquina
+(`Sec.FORM.022` y `Sec.FORM.005`), que antes no se podían distinguir del
+checklist de cuerpos extraños de la misma torre.
 """
 
 from django.test import SimpleTestCase, TestCase
@@ -21,6 +24,23 @@ class _Documento:
     def __init__(self, id, evidencia=None):
         self.id = id
         self.evidencia = evidencia or {}
+
+
+class _Equipo:
+    """
+    Doble de `maestros.Equipo`.
+
+    El nombre es distinto del código a propósito: así una prueba falla si el
+    dominio compara por `str(equipo)` —que devuelve el nombre— en vez de por
+    el código, que es el identificador estable.
+    """
+
+    def __init__(self, codigo, nombre=None):
+        self.codigo = codigo
+        self.nombre = nombre or f"Máquina {codigo.upper()}"
+
+    def __str__(self):
+        return self.nombre
 
 
 class _Registro:
@@ -118,15 +138,21 @@ class CoincidenciaPorListaTests(SimpleTestCase):
 
     def _pcc1(self):
         return _Documento(
-            1, {"fuente": "control_proceso", "equipo_en": ["VEB", "SCH2", "SCH3"]}
+            1,
+            {
+                "fuente": "control_proceso",
+                "equipo_en": ["veb", "scheffers2", "scheffers3"],
+            },
         )
 
     def test_cualquiera_de_la_lista_cumple(self):
-        for equipo in ("VEB", "SCH2", "SCH3"):
-            with self.subTest(equipo=equipo):
+        for codigo in ("veb", "scheffers2", "scheffers3"):
+            with self.subTest(equipo=codigo):
                 self.assertEqual(
                     dominio.documentos_con_evidencia(
-                        [self._pcc1()], 1, controles=[_Registro(equipo=equipo)]
+                        [self._pcc1()],
+                        1,
+                        controles=[_Registro(equipo=_Equipo(codigo))],
                     ),
                     {1},
                 )
@@ -138,18 +164,70 @@ class CoincidenciaPorListaTests(SimpleTestCase):
         """
         self.assertEqual(
             dominio.documentos_con_evidencia(
-                [self._pcc1()], 1, controles=[_Registro(equipo="E1")]
+                [self._pcc1()], 1, controles=[_Registro(equipo=_Equipo("e1"))]
             ),
             set(),
         )
 
-    def test_se_compara_sin_distinguir_mayusculas_ni_espacios(self):
-        """`equipo` viaja como texto libre: «e1 » no debería fallar."""
-        documento = _Documento(1, {"fuente": "control_proceso", "equipo_en": ["E1"]})
+    def test_el_equipo_se_compara_por_su_codigo_y_no_por_su_nombre(self):
+        """
+        El nombre se edita desde Maestros; el código no. Si la comparación
+        cayera en el nombre —que es lo que da `str(equipo)`—, corregirle una
+        tilde a «Torre de secado Egron 1» dejaría el documento sin cumplirse
+        y nadie lo notaría hasta que un lote no se pudiera liberar.
+        """
+        documento = _Documento(1, {"fuente": "control_proceso", "equipo_en": ["e1"]})
+        equipo = _Equipo("e1", nombre="Torre de secado Egron 1")
 
         self.assertEqual(
             dominio.documentos_con_evidencia(
-                [documento], 1, controles=[_Registro(equipo=" e1 ")]
+                [documento], 1, controles=[_Registro(equipo=equipo)]
+            ),
+            {1},
+        )
+
+    def test_se_compara_sin_distinguir_mayusculas_ni_espacios(self):
+        """Los criterios se escriben a mano: «E1 » no debería fallar."""
+        documento = _Documento(1, {"fuente": "control_proceso", "equipo_en": ["E1 "]})
+
+        self.assertEqual(
+            dominio.documentos_con_evidencia(
+                [documento], 1, controles=[_Registro(equipo=_Equipo("e1"))]
+            ),
+            {1},
+        )
+
+    def test_dos_criterios_se_exigen_juntos(self):
+        """
+        El PPRO de las Rovemas declara equipo **y** tipo. Sin el tipo, el
+        checklist de cuerpos extraños de la misma máquina —que es otro
+        documento— lo daría por cumplido, y el PPRO vigila presión de aire:
+        algo que nadie habría mirado.
+        """
+        documento = _Documento(
+            1,
+            {
+                "fuente": "monitoreo_ppro",
+                "equipo_en": ["rovema3", "rovema4"],
+                "tipo_en": ["aire_transporte", "aire_secundario", "roce_valvulas"],
+            },
+        )
+        cuerpos_extranos = _Registro(
+            equipo=_Equipo("rovema3"), tipo="cuerpos_extranos"
+        )
+
+        self.assertEqual(
+            dominio.documentos_con_evidencia(
+                [documento], 1, monitoreos=[cuerpos_extranos]
+            ),
+            set(),
+        )
+
+        self.assertEqual(
+            dominio.documentos_con_evidencia(
+                [documento],
+                1,
+                monitoreos=[_Registro(equipo=_Equipo("rovema3"), tipo="aire_transporte")],
             ),
             {1},
         )
@@ -232,7 +310,7 @@ class SiembraDelDossierTests(TestCase):
     criterio de más da por cumplido un documento que nadie hizo.
     """
 
-    def test_los_cinco_inequivocos_tienen_evidencia(self):
+    def test_los_siete_inequivocos_tienen_evidencia(self):
         from maestros.models import DocumentoLiberacion
 
         con_evidencia = {
@@ -248,14 +326,50 @@ class SiembraDelDossierTests(TestCase):
                 "CCAA.Sec.FORM.025",   # hoja de pulverización
                 "CCAA.Sec.FORM.001",   # análisis fisicoquímico
                 "CCAA.ENV.FORM.001",   # detector de metales
+                "CCAA.Sec.FORM.022",   # PPRO 3 · torres E1-E2
+                "CCAA.Sec.FORM.005",   # PPRO 4 · Rovemas 3 y 4
             },
         )
 
+    def test_los_ppro_de_maquina_exigen_equipo_y_tipo(self):
+        """
+        Solo la máquina no basta: el checklist de cuerpos extraños de la misma
+        torre es otro documento, y sin el tipo lo daría por cumplido. El PPRO
+        vigila presión de aire y roce de válvulas — cosas que nadie habría
+        mirado.
+        """
+        from maestros.models import DocumentoLiberacion
+
+        for codigo in ("CCAA.Sec.FORM.022", "CCAA.Sec.FORM.005"):
+            with self.subTest(codigo=codigo):
+                criterio = DocumentoLiberacion.objects.get(codigo=codigo).evidencia
+
+                self.assertEqual(criterio["fuente"], dominio.FUENTE_MONITOREO_PPRO)
+                self.assertTrue(criterio["equipo_en"])
+                self.assertNotIn("cuerpos_extranos", criterio["tipo_en"])
+                self.assertNotIn("detector_metales", criterio["tipo_en"])
+
+    def test_los_criterios_nombran_equipos_que_existen_en_el_maestro(self):
+        """
+        Un código mal escrito no falla: simplemente no coincide nunca, y el
+        documento queda pidiendo una casilla que ya nadie va a marcar porque
+        el dato sí se registró.
+        """
+        from maestros.models import DocumentoLiberacion, Equipo
+
+        codigos = set(Equipo.objects.values_list("codigo", flat=True))
+
+        for documento in DocumentoLiberacion.objects.exclude(evidencia={}):
+            for esperado in documento.evidencia.get("equipo_en", []):
+                with self.subTest(codigo=documento.codigo, equipo=esperado):
+                    self.assertIn(esperado, codigos)
+
     def test_los_checklists_de_cuerpos_extranos_siguen_manuales(self):
         """
-        Son tres —evaporadores, E1-E2 y Rovema— y hoy el dato no los
-        distingue: `MonitoreoPPRO.equipo` es texto libre. Atarlos daría los
-        tres por cumplidos con un solo monitoreo.
+        Son tres —evaporadores, E1-E2 y Rovema— y ninguno se cumple con un
+        dato: dos son formularios de plantilla que se llenan por ciclo o por
+        turno, y el de E1-E2 todavía no tiene su formato cargado. Atarlos a un
+        monitoreo daría por revisadas piezas que nadie miró.
         """
         from maestros.models import DocumentoLiberacion
 

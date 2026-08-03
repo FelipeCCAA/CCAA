@@ -16,13 +16,19 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from maestros.models import Mandante, Producto
+from maestros.models import Equipo, Mandante, Producto
 
-from .models import ControlProceso, ControlProcesoLectura, Equipo, Lote
+from .models import ControlProceso, ControlProcesoLectura, Lote
 
 
 class BaseControlProceso(TestCase):
     def setUp(self):
+        # Los equipos los siembra una migración de datos, así que también
+        # existen en la base de pruebas: se buscan, no se crean.
+        self.veb = Equipo.objects.get(codigo="veb")
+        self.sch2 = Equipo.objects.get(codigo="scheffers2")
+        self.e1 = Equipo.objects.get(codigo="e1")
+
         self.mandante = Mandante.objects.create(nombre="Nestlé")
         self.producto = Producto.objects.create(
             nombre="Leche entera en polvo",
@@ -39,7 +45,7 @@ class BaseControlProceso(TestCase):
     def _control(self, **cambios):
         datos = {
             "lote": self.lote,
-            "equipo": Equipo.VEB,
+            "equipo": self.veb,
             "turno": "A",
             "fecha": date(2026, 7, 16),
             "pcc1_temp_min": 80.0,
@@ -56,9 +62,9 @@ class ControlProcesoTests(BaseControlProceso):
         Scheffers 2 a 81,2 °C. Guardarlos aquí permite auditar cada lectura
         contra lo que regía ese día, no contra lo que rige hoy.
         """
-        veb = self._control(equipo=Equipo.VEB, pcc1_temp_min=80.0)
+        veb = self._control(equipo=self.veb, pcc1_temp_min=80.0)
         sch = self._control(
-            equipo=Equipo.SCH2, pcc1_temp_min=81.2, pcc1_caudal_max=17100.0
+            equipo=self.sch2, pcc1_temp_min=81.2, pcc1_caudal_max=17100.0
         )
 
         self.assertEqual(float(veb.pcc1_temp_min), 80.0)
@@ -82,15 +88,15 @@ class ControlProcesoTests(BaseControlProceso):
         self.assertEqual(ControlProceso.objects.count(), 2)
 
     def test_dos_equipos_registran_el_mismo_turno(self):
-        self._control(equipo=Equipo.VEB)
-        self._control(equipo=Equipo.SCH2)
+        self._control(equipo=self.veb)
+        self._control(equipo=self.sch2)
 
         self.assertEqual(ControlProceso.objects.count(), 2)
 
     def test_la_hora_de_termino_no_puede_ser_la_de_inicio(self):
         control = ControlProceso(
             lote=self.lote,
-            equipo=Equipo.E1,
+            equipo=self.e1,
             fecha=date(2026, 7, 16),
             hora_inicio_produccion=time(8, 0),
             hora_termino_produccion=time(8, 0),
@@ -104,7 +110,7 @@ class ControlProcesoTests(BaseControlProceso):
     def test_los_limites_pueden_ir_vacios(self):
         """No todos los formatos de control llevan el PCC 1."""
         control = self._control(
-            equipo=Equipo.E1, pcc1_temp_min=None, pcc1_caudal_max=None
+            equipo=self.e1, pcc1_temp_min=None, pcc1_caudal_max=None
         )
         control.full_clean()
 

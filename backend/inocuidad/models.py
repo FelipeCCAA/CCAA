@@ -51,11 +51,18 @@ class MonitoreoPPRO(models.Model):
         verbose_name="Lote",
     )
     tipo = models.CharField("Tipo de PPRO", max_length=30, choices=Tipo.choices)
-    equipo = models.CharField(
-        "Equipo",
-        max_length=20,
+    equipo = models.ForeignKey(
+        "maestros.Equipo",
+        on_delete=models.PROTECT,
+        related_name="monitoreos_ppro",
+        null=True,
         blank=True,
-        help_text="E1/E2, Rovema 3/4, etc.",
+        verbose_name="Equipo",
+        help_text=(
+            "En qué máquina se hizo. Referencia al maestro y no texto libre: "
+            "el checklist decide con esto qué documento se da por cumplido, y "
+            "«E1», «e1 » y «Egron 1» habrían sido tres máquinas distintas."
+        ),
     )
     turno = models.CharField(
         "Turno",
@@ -86,9 +93,16 @@ class MonitoreoPPRO(models.Model):
             # Un monitoreo por lote, tipo, equipo, fecha y turno. Dos cabeceras
             # del mismo chequeo partirían las lecturas y la regla de bloqueo
             # miraría solo la mitad.
+            #
+            # `nulls_distinct=False` porque `equipo` pasó a ser nulable al
+            # volverse referencia: por omisión PostgreSQL considera distintos
+            # dos NULL, y el monitoreo sin equipo —el detector de metales, que
+            # no depende de una máquina— habría podido duplicarse sin que la
+            # restricción dijera nada.
             models.UniqueConstraint(
                 fields=["lote", "tipo", "equipo", "fecha", "turno"],
                 name="monitoreo_ppro_unico_por_turno",
+                nulls_distinct=False,
             )
         ]
 

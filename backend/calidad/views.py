@@ -156,9 +156,12 @@ def _contexto_del_lote(lote, bloquear=False):
     # formularios: entre la comprobación y la firma nadie puede corregir una
     # lectura fuera de límite ni borrar la acción correctiva que resolvía un
     # No-OK.
-    controles = ControlProceso.objects.filter(lote=lote)
+    # `select_related("equipo")` porque los criterios de evidencia comparan el
+    # **código** del equipo, y sin esto el dominio dispararía una consulta por
+    # cada control y cada monitoreo del lote.
+    controles = ControlProceso.objects.filter(lote=lote).select_related("equipo")
     lecturas_control = ControlProcesoLectura.objects.filter(control__lote=lote)
-    monitoreos = MonitoreoPPRO.objects.filter(lote=lote)
+    monitoreos = MonitoreoPPRO.objects.filter(lote=lote).select_related("equipo")
 
     if bloquear:
         # Sin `select_related` a propósito: con el JOIN, el FOR UPDATE
@@ -167,12 +170,14 @@ def _contexto_del_lote(lote, bloquear=False):
         # documento del registro —usa `documento_id`— así que no hace falta.
         registros = registros.select_for_update()
         analisis = analisis.select_for_update()
-        controles = controles.select_for_update()
-        # `lecturas_control` filtra por `control__lote`, así que su FOR UPDATE
-        # arrastraría también la tabla de controles por el JOIN. Se acota a las
-        # filas de lectura con `of`, que es lo que se quiere proteger.
+        # `of=("self",)` en los tres por el mismo motivo: sin acotarlo, el
+        # FOR UPDATE se lleva por el JOIN todo lo que el `select_related`
+        # trajo —el maestro de equipos— y firmar un lote dejaría esperando a
+        # cualquier otro que use la misma máquina. Se bloquea el registro que
+        # se está evaluando, que es lo que la garantía necesita.
+        controles = controles.select_for_update(of=("self",))
         lecturas_control = lecturas_control.select_for_update(of=("self",))
-        monitoreos = monitoreos.select_for_update()
+        monitoreos = monitoreos.select_for_update(of=("self",))
     else:
         registros = registros.select_related("documento")
 
@@ -276,12 +281,16 @@ def expedientes(request):
     # cuál creer.
     ids = [lote.id for lote in lotes]
 
-    controles = list(ControlProceso.objects.filter(lote_id__in=ids))
+    controles = list(
+        ControlProceso.objects.filter(lote_id__in=ids).select_related("equipo")
+    )
     lecturas_control = list(
         ControlProcesoLectura.objects.filter(control__lote_id__in=ids)
     )
     monitoreos = list(
-        MonitoreoPPRO.objects.filter(lote_id__in=ids).prefetch_related("lecturas")
+        MonitoreoPPRO.objects.filter(lote_id__in=ids)
+        .select_related("equipo")
+        .prefetch_related("lecturas")
     )
     movimientos = list(
         MovimientoSilo.objects.filter(

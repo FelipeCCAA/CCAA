@@ -316,7 +316,10 @@ class ControlProcesoLecturaSerializer(serializers.ModelSerializer):
 
 
 class ControlProcesoSerializer(serializers.ModelSerializer):
-    equipo_etiqueta = serializers.CharField(source="get_equipo_display", read_only=True)
+    equipo_etiqueta = serializers.CharField(source="equipo.nombre", read_only=True)
+    # El código del maestro viaja además del nombre porque es lo que los
+    # criterios de evidencia del checklist comparan; el nombre es para leer.
+    equipo_codigo = serializers.CharField(source="equipo.codigo", read_only=True)
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     lecturas = ControlProcesoLecturaSerializer(many=True, read_only=True)
 
@@ -332,6 +335,7 @@ class ControlProcesoSerializer(serializers.ModelSerializer):
             "lote_codigo",
             "equipo",
             "equipo_etiqueta",
+            "equipo_codigo",
             "turno",
             "fecha",
             "hora_arranque",

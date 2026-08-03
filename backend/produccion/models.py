@@ -193,22 +193,6 @@ class Analisis(models.Model):
                 )
 
 
-class Equipo(models.TextChoices):
-    """
-    Equipos que registran control de proceso.
-
-    Provisional como `choices`. El backlog prevé un maestro `Equipo` con sus
-    límites críticos por producto (P1 #11); mientras eso no exista, los
-    límites viajan en cada `ControlProceso` y esta lista basta.
-    """
-
-    VEB = "VEB", "Evaporador VEB"
-    SCH2 = "SCH2", "Evaporador Scheffers 2"
-    SCH3 = "SCH3", "Evaporador Scheffers 3"
-    E1 = "E1", "Torre de secado Egron 1"
-    E2 = "E2", "Torre de secado Egron 2"
-
-
 class ControlProceso(models.Model):
     """
     Control de proceso de un equipo para un lote: condensación o secado.
@@ -236,7 +220,12 @@ class ControlProceso(models.Model):
         related_name="controles_proceso",
         verbose_name="Lote",
     )
-    equipo = models.CharField("Equipo", max_length=10, choices=Equipo.choices)
+    equipo = models.ForeignKey(
+        "maestros.Equipo",
+        on_delete=models.PROTECT,
+        related_name="controles_proceso",
+        verbose_name="Equipo",
+    )
     turno = models.CharField("Turno", max_length=5, choices=Lote.Turno.choices, blank=True)
     fecha = models.DateField("Fecha")
 
@@ -280,7 +269,10 @@ class ControlProceso(models.Model):
     class Meta:
         verbose_name = "Control de proceso"
         verbose_name_plural = "Controles de proceso"
-        ordering = ["-fecha", "equipo"]
+        # Por el orden del maestro y no por el id del equipo: ordenar por la
+        # clave foránea deja la lista en el orden en que se creó el maestro,
+        # que no es el de la planta.
+        ordering = ["-fecha", "equipo__orden"]
         constraints = [
             # Un equipo lleva un control por lote, fecha y turno. Sin esto, dos
             # cabeceras del mismo turno partirían las lecturas en dos y el

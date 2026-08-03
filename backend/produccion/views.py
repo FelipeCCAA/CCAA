@@ -19,7 +19,6 @@ from .models import (
     Analisis,
     ControlProceso,
     ControlProcesoLectura,
-    Equipo,
     Lote,
 )
 from .serializers import (
@@ -651,7 +650,9 @@ class ControlProcesoViewSet(viewsets.ModelViewSet):
     deciden si el lote se puede liberar (`calidad.dominio.bloqueos_de_inocuidad`).
     """
 
-    queryset = ControlProceso.objects.select_related("lote").prefetch_related("lecturas")
+    queryset = ControlProceso.objects.select_related("lote", "equipo").prefetch_related(
+        "lecturas"
+    )
     serializer_class = ControlProcesoSerializer
     permission_classes = [EscribeProduccion]
 
@@ -701,13 +702,38 @@ def catalogos_inocuidad(request):
     vigilar nada en silencio.
     """
     from inocuidad.models import MonitoreoPPRO, PproLectura
+    from maestros.models import Equipo
 
     def opciones(choices):
         return [{"valor": v, "etiqueta": e} for v, e in choices]
 
+    def equipos(*tipos):
+        """
+        Equipos del maestro como opciones. El `valor` es el **id**, que es lo
+        que la referencia guarda.
+
+        Qué máquinas admite cada formulario se decide aquí y no en la
+        pantalla: un control de proceso se lleva en un evaporador o en una
+        torre —no en una envasadora—, y si el filtro viviera en el cliente
+        sería una segunda copia de esa regla, libre de discrepar.
+        """
+        consulta = Equipo.objects.filter(activo=True)
+
+        if tipos:
+            consulta = consulta.filter(tipo__in=tipos)
+
+        return [
+            {"valor": e.id, "etiqueta": e.nombre, "codigo": e.codigo}
+            for e in consulta.order_by("orden", "nombre")
+        ]
+
     return Response(
         {
-            "equipo_control": opciones(Equipo.choices),
+            "equipo_control": equipos(Equipo.Tipo.EVAPORADOR, Equipo.Tipo.TORRE),
+            # El PPRO se monitorea en cualquier máquina: presión de aire en las
+            # torres, cuerpos extraños en las envasadoras, y el detector de
+            # metales no cuelga de ninguna.
+            "equipo_ppro": equipos(),
             "turno": opciones(Lote.Turno.choices),
             "tipo_ppro": opciones(MonitoreoPPRO.Tipo.choices),
             "resultado_ppro": opciones(PproLectura.Resultado.choices),

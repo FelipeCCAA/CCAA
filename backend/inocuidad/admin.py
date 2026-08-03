@@ -17,7 +17,7 @@ class MonitoreoPPROAdmin(admin.ModelAdmin):
     # correctiva, no un campo de la tabla.
     list_display = ["lote", "tipo", "equipo", "fecha", "turno", "operador"]
     list_filter = ["tipo", "fecha", "turno"]
-    search_fields = ["lote__codigo_lote", "equipo", "accion_correctiva"]
+    search_fields = ["lote__codigo_lote", "equipo__nombre", "accion_correctiva"]
     date_hierarchy = "fecha"
     autocomplete_fields = ["lote"]
     inlines = [PproLecturaInline]

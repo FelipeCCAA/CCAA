@@ -16,6 +16,13 @@ class PproLecturaSerializer(serializers.ModelSerializer):
 class MonitoreoPPROSerializer(serializers.ModelSerializer):
     tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
+    # `allow_null` en los dos: el detector de metales no cuelga de una máquina.
+    equipo_etiqueta = serializers.CharField(
+        source="equipo.nombre", read_only=True, allow_null=True
+    )
+    equipo_codigo = serializers.CharField(
+        source="equipo.codigo", read_only=True, allow_null=True
+    )
     lecturas = PproLecturaSerializer(many=True, read_only=True)
 
     # Se calculan, no se guardan: un veredicto persistido se desincroniza en
@@ -32,6 +39,8 @@ class MonitoreoPPROSerializer(serializers.ModelSerializer):
             "tipo",
             "tipo_etiqueta",
             "equipo",
+            "equipo_etiqueta",
+            "equipo_codigo",
             "turno",
             "fecha",
             "accion_correctiva",
@@ -46,6 +55,6 @@ class MonitoreoPPROSerializer(serializers.ModelSerializer):
         # a secas el validador los vuelve a pedir; hace falta el valor por
         # defecto para que la pantalla pueda omitirlos.
         extra_kwargs = {
-            "equipo": {"required": False, "default": ""},
+            "equipo": {"required": False, "default": None},
             "turno": {"required": False, "default": ""},
         }

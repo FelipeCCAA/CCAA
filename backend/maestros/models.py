@@ -284,6 +284,8 @@ class Equipo(models.Model):
 
     class Tipo(models.TextChoices):
         EVAPORADOR = "evaporador", "Evaporador"
+        TORRE = "torre", "Torre de secado"
+        ENVASADORA = "envasadora", "Envasadora"
         LINEA = "linea", "Línea"
         CARGA = "carga", "Carga"
         OTRO = "otro", "Otro"

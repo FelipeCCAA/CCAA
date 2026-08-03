@@ -16,6 +16,7 @@ from rest_framework.test import APIClient
 
 from maestros.models import (
     DocumentoLiberacion,
+    Equipo,
     Especificacion,
     Mandante,
     Producto,
@@ -31,6 +32,9 @@ class BaseInocuidadApi(TestCase):
         # El catálogo se siembra por migración y también existe en la base de
         # pruebas (CLAUDE.md, «Trampas conocidas»).
         DocumentoLiberacion.objects.all().delete()
+
+        # Sembrado por migración, igual que el catálogo de documentos.
+        self.veb = Equipo.objects.get(codigo="veb")
 
         mandante = Mandante.objects.create(nombre="Nestlé")
         self.producto = Producto.objects.create(
@@ -86,7 +90,7 @@ class BaseInocuidadApi(TestCase):
             "/api/produccion/controles/",
             {
                 "lote": self.lote.id,
-                "equipo": "VEB",
+                "equipo": self.veb.id,
                 "fecha": "2026-07-16",
                 "pcc1_temp_min": temp_min,
                 "pcc1_caudal_max": caudal_max,
@@ -278,7 +282,7 @@ class PermisosTests(BaseInocuidadApi):
         y además firmar contra ella junta las dos manos que el control separa.
         """
         control = ControlProceso.objects.create(
-            lote=self.lote, equipo="VEB", fecha=date(2026, 7, 16)
+            lote=self.lote, equipo=self.veb, fecha=date(2026, 7, 16)
         )
 
         respuesta = self.calidad.post(
