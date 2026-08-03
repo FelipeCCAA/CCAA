@@ -13,6 +13,20 @@
   },
   "rewrites": [
     {
+      "source": "/admin(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/static(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "backend"
+      }
+    },
+    {
       "source": "/api(/.*)?",
       "destination": {
         "type": "service",
