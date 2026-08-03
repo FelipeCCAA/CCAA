@@ -273,8 +273,17 @@ class LoteDetalleSerializer(LoteSerializer):
     # formulario y descubra el rechazo al guardar.
     liberacion = serializers.SerializerMethodField()
 
+    # Si el material del lote se descontó de bodega o quedó pendiente. Va en
+    # la ficha porque un descuento que falló y no se ve es peor que uno que no
+    # se intentó: el saldo de bodega queda alto y nadie lo sabe.
+    consumo_inventario = serializers.SerializerMethodField()
+
     class Meta(LoteSerializer.Meta):
-        fields = LoteSerializer.Meta.fields + ["analisis", "liberacion"]
+        fields = LoteSerializer.Meta.fields + [
+            "analisis",
+            "liberacion",
+            "consumo_inventario",
+        ]
 
     def get_liberacion(self, lote):
         # Import local: `calidad` importa `produccion`.
@@ -294,6 +303,20 @@ class LoteDetalleSerializer(LoteSerializer):
                 if liberacion.autorizada_por
                 else None
             ),
+        }
+
+    def get_consumo_inventario(self, lote):
+        # Import local: `inventario` importa `produccion`, así que hacerlo
+        # arriba cerraría el círculo.
+        from inventario.models import ConsumoLoteProduccion
+
+        consumo = ConsumoLoteProduccion.objects.filter(lote_produccion=lote).first()
+
+        return {
+            "registrado": consumo is not None,
+            "registrado_en": consumo.registrado_en if consumo else None,
+            "kg_base": consumo.kg_base if consumo else None,
+            "pendiente": dominio.consumo_de_inventario_pendiente(lote, consumo),
         }
 
 

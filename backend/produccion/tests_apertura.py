@@ -323,3 +323,177 @@ class CodigoSugeridoTests(BaseApertura):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("AAAA-MM-DD", respuesta.json()["detail"])
+
+
+class ConsumoDeInventarioTests(BaseApertura):
+    """
+    Declarar el lote producido descuenta su material de bodega.
+
+    Antes esto no pasaba en ninguna parte: `inventario` tenía el servicio y
+    nadie lo llamaba, así que la trazabilidad se cortaba justo donde el
+    material se consume.
+    """
+
+    def setUp(self):
+        super().setUp()
+
+        from inventario.models import Bodega, LoteInventario, Insumo, Ubicacion
+        from inventario.servicios import registrar_entrada
+        from maestros.models import Receta, RecetaComponente
+
+        self.bolsa = Insumo.objects.create(
+            codigo="BOLSA-25",
+            nombre="Bolsa 25 kg",
+            area=PerfilUsuario.Area.SECADO,
+            unidad="un",
+        )
+        receta = Receta.objects.create(
+            producto=self.polvo, version=1, cantidad_base=1,
+            vigente_desde=date(2020, 1, 1),
+        )
+        RecetaComponente.objects.create(
+            receta=receta, insumo=self.bolsa, cantidad="0.04", unidad="un",
+        )
+
+        bodega = Bodega.objects.create(codigo="B1", nombre="Bodega")
+        self.ubicacion = Ubicacion.objects.create(bodega=bodega, codigo="DISP")
+        self.material = LoteInventario.objects.create(
+            insumo=self.bolsa, codigo="B-1",
+            estado_calidad=LoteInventario.EstadoCalidad.APROBADO,
+        )
+        registrar_entrada(
+            lote=self.material, ubicacion=self.ubicacion, cantidad=100,
+            usuario=User.objects.create_user("bodeguero", password="x"),
+            documento_tipo="recepcion", documento_id=1,
+        )
+
+    def _lote_abierto(self):
+        return Lote.objects.create(
+            codigo_lote="CCAA6197", producto=self.polvo, fecha=date(2026, 7, 16),
+        )
+
+    def _producir(self, lote, kg=1000):
+        return self.cliente.patch(
+            f"/api/produccion/lotes/{lote.id}/",
+            {"estado": "producido", "kg_producidos": kg},
+            format="json",
+        )
+
+    def _existencia(self):
+        from inventario.models import Existencia
+
+        return Existencia.objects.get(
+            lote=self.material, ubicacion=self.ubicacion
+        ).cantidad_fisica
+
+    def test_declararse_producido_descuenta_el_material(self):
+        from decimal import Decimal
+
+        lote = self._lote_abierto()
+
+        respuesta = self._producir(lote)
+
+        self.assertEqual(respuesta.status_code, 200)
+        # 1000 kg × 0,04 bolsas por kg = 40 bolsas.
+        self.assertEqual(self._existencia(), Decimal("60.000"))
+        self.assertTrue(respuesta.data["consumo_inventario"]["registrado"])
+        self.assertFalse(respuesta.data["consumo_inventario"]["pendiente"])
+
+    def test_sin_stock_el_lote_igual_se_declara_y_avisa(self):
+        """
+        El mismo criterio que la leche asignada: detener la producción del día
+        porque bodega no alcanzó a cargar el material traslada a la línea un
+        problema que no es suyo.
+        """
+        from decimal import Decimal
+
+        lote = self._lote_abierto()
+
+        # 100.000 kg piden 4.000 bolsas y solo hay 100.
+        respuesta = self._producir(lote, kg=100_000)
+
+        self.assertEqual(respuesta.status_code, 200)
+
+        lote.refresh_from_db()
+        self.assertEqual(lote.estado, Lote.Estado.PRODUCIDO)
+
+        # Nada se descontó, ni a medias. El servicio alcanza a crear la
+        # cabecera y a sacar las 100 bolsas que sí había antes de darse cuenta
+        # de que faltan: si eso no se revirtiera, el lote quedaría con un
+        # consumo «registrado» que descontó una fracción de lo que debía, y
+        # nadie volvería a mirarlo porque ya figura hecho.
+        from inventario.models import ConsumoLoteProduccion
+
+        self.assertEqual(self._existencia(), Decimal("100.000"))
+        self.assertFalse(
+            ConsumoLoteProduccion.objects.filter(lote_produccion=lote).exists()
+        )
+        self.assertTrue(respuesta.data["consumo_inventario"]["pendiente"])
+        self.assertIn("Stock insuficiente", str(respuesta.data["avisos"]))
+
+    def test_un_lote_sin_receta_no_bloquea_pero_queda_pendiente(self):
+        lote = Lote.objects.create(
+            codigo_lote="CCAA6198", producto=self.crema, fecha=date(2026, 7, 16),
+        )
+
+        respuesta = self._producir(lote)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.data["consumo_inventario"]["pendiente"])
+
+    def test_no_se_descuenta_dos_veces_al_reeditar(self):
+        """
+        Un PATCH posterior sobre un lote ya producido no vuelve a descontar:
+        el material se consumió una vez y el stock no puede bajar de nuevo por
+        haber corregido una observación.
+        """
+        from decimal import Decimal
+
+        lote = self._lote_abierto()
+        self._producir(lote)
+
+        self.cliente.patch(
+            f"/api/produccion/lotes/{lote.id}/",
+            {"observacion": "corrección"},
+            format="json",
+        )
+
+        self.assertEqual(self._existencia(), Decimal("60.000"))
+
+    def test_un_lote_en_proceso_no_tiene_consumo_pendiente(self):
+        """Todavía no tiene kilos: no hay nada que descontar."""
+        lote = self._lote_abierto()
+
+        respuesta = self.cliente.get(f"/api/produccion/lotes/{lote.id}/")
+
+        self.assertFalse(respuesta.data["consumo_inventario"]["pendiente"])
+
+
+class ReglaDeConsumoPendienteTests(TestCase):
+    """La regla sola, sin base de datos."""
+
+    class _Lote:
+        def __init__(self, estado):
+            self.estado = estado
+
+    def test_en_proceso_no_hay_nada_pendiente(self):
+        self.assertFalse(
+            dominio.consumo_de_inventario_pendiente(self._Lote("en_proceso"), None)
+        )
+
+    def test_producido_sin_consumo_queda_pendiente(self):
+        self.assertTrue(
+            dominio.consumo_de_inventario_pendiente(self._Lote("producido"), None)
+        )
+
+    def test_producido_con_consumo_no_queda_pendiente(self):
+        self.assertFalse(
+            dominio.consumo_de_inventario_pendiente(
+                self._Lote("producido"), object()
+            )
+        )
+
+    def test_un_lote_cerrado_tambien_debio_descontar(self):
+        self.assertTrue(
+            dominio.consumo_de_inventario_pendiente(self._Lote("cerrado"), None)
+        )

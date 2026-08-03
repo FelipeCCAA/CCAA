@@ -131,6 +131,77 @@ class LoteViewSet(viewsets.ModelViewSet):
 
         return respuesta
 
+    def update(self, request, *args, **kwargs):
+        """
+        Además de guardar, descuenta de bodega si el lote pasó a producido.
+
+        Es el momento en que se conocen los kilos, y sin kilos no hay nada que
+        descontar. Antes esto no ocurría en ninguna parte: `inventario` tenía
+        el servicio y nadie lo llamaba, así que la trazabilidad se cortaba
+        justo donde el material se consume.
+        """
+        antes = self.get_object().estado
+
+        respuesta = super().update(request, *args, **kwargs)
+
+        if antes == Lote.Estado.PRODUCIDO:
+            return respuesta
+
+        lote = self.get_object()
+
+        if lote.estado != Lote.Estado.PRODUCIDO:
+            return respuesta
+
+        aviso = self._descontar_de_bodega(lote)
+
+        # Se vuelve a serializar después de descontar y no antes: la ficha
+        # lleva el estado del consumo, y la que armó `super().update()` se
+        # construyó cuando todavía no había ocurrido. Devolverla diría que el
+        # consumo quedó pendiente justo después de haberlo hecho.
+        datos = self.get_serializer(lote).data
+
+        if aviso:
+            datos["avisos"] = [*(respuesta.data.get("avisos") or []), aviso]
+
+        respuesta.data = datos
+
+        return respuesta
+
+    def _descontar_de_bodega(self, lote) -> str | None:
+        """
+        Intenta el descuento. Devuelve el motivo si no se pudo, o `None`.
+
+        **No bloquea.** Es el mismo criterio que la leche asignada: detener la
+        producción del día porque bodega todavía no cargó la receta o el
+        material sigue en cuarentena traslada a la línea un problema que no es
+        suyo. Lo que sí pasa es que el lote queda con el consumo pendiente y a
+        la vista —`consumo_inventario` en su ficha— para poder reintentarlo.
+
+        Atrapar la excepción es seguro porque `consumir_receta_produccion` es
+        `@transaction.atomic`: su fallo revierte hasta su propio punto de
+        retorno y no arrastra el guardado del lote, que ya ocurrió. Importa
+        que sea así — el servicio alcanza a crear la cabecera del consumo y a
+        sacar lo que sí había antes de darse cuenta de que falta, y sin esa
+        reversión el lote quedaría con un consumo «registrado» que descontó
+        una fracción de lo debido. Nadie volvería a mirarlo: ya figura hecho.
+
+        `test_sin_stock_el_lote_igual_se_declara_y_avisa` lo fija. Si alguien
+        quita ese decorador, la prueba falla ahí y no aquí.
+        """
+        from django.core.exceptions import ValidationError as ErrorDeModelo
+
+        from inventario.servicios import consumir_receta_produccion
+
+        try:
+            consumir_receta_produccion(lote_produccion=lote, usuario=self.request.user)
+        except ErrorDeModelo as error:
+            return (
+                "No se descontó el material de bodega: "
+                f"{' '.join(error.messages)} El consumo queda pendiente."
+            )
+
+        return None
+
     @action(detail=False, methods=["get"], url_path="codigo-sugerido")
     def codigo_sugerido(self, request):
         """

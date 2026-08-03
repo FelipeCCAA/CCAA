@@ -39,6 +39,8 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - **Una sola receta** (desde 2026-08-03). `maestros.Receta` es el único lugar donde se declara qué lleva un producto. Un `RecetaComponente` es **un producto o un insumo, nunca los dos**: el producto se transforma aquí y la explosión sigue por su receta; el insumo se compra y lo descuenta bodega. Antes había un segundo maestro, `inventario.ConsumoProducto`, plano y sin versión, y era **ese** el que el descuento de bodega consumía — así que un lote de mayo se descontaba con las cantidades de hoy, que es justo lo que `Receta` está versionada para impedir. Los tres caminos que calculan consumo —el descuento del lote, el MRP semanal y el MRP puntual— pasan por `inventario.servicios.insumos_requeridos`; con tres implementaciones, la orden de compra y el descuento podían pedir cantidades distintas para la misma fórmula.
 - La **fórmula la escribe Calidad**, no Bodega. El formulario que había en `/abastecimiento` dejaba que quien descuenta el material redefiniera cuánto material lleva. Se edita en el admin (`Maestros › Recetas`), igual que las especificaciones.
 - Una explosión **incompleta no descuenta nada**: si la cadena se corta —un intermedio sin receta, un ciclo— `consumir_receta_produccion` falla en vez de descontar un requerimiento a medias, que se parece demasiado a uno completo y dejaría el saldo de bodega mintiendo. El MRP puntual devuelve `receta_completa` por la misma razón.
+- **Declarar el lote producido descuenta su material de bodega** (desde 2026-08-03), y es el único momento en que ocurre: antes hay lote pero no kilos. **No bloquea** — mismo criterio que la leche asignada: detener la producción del día porque bodega no cargó la receta o el material sigue en cuarentena traslada a la línea un problema que no es suyo. Lo que falla queda **pendiente y visible** (`consumo_inventario.pendiente` en la ficha), porque un descuento fallido que no se ve deja el saldo alto sin que nadie lo sepa.
+- Atrapar el error del consumo **es seguro solo porque `consumir_receta_produccion` es `@transaction.atomic`**: el servicio alcanza a crear la cabecera y a sacar lo que sí había antes de detectar que falta, y sin esa reversión el lote quedaría con un consumo «registrado» que descontó una fracción. Quitar ese decorador rompe `test_sin_stock_el_lote_igual_se_declara_y_avisa` —verificado por mutación—, no la vista.
 
 ## Trampas conocidas
 
@@ -234,8 +236,7 @@ copiarlos crudos del Excel.
 
 1. ~~Unificar `equipo` en el maestro~~ — hecho.
 2. ~~Unificar la receta~~ — hecho.
-3. Enganchar el consumo de inventario al ciclo del lote (hoy nada en `produccion` llama a
-   `inventario.servicios.consumir_receta_produccion`).
+3. ~~Enganchar el consumo de inventario al ciclo del lote~~ — hecho.
 4. Borrar `Insumo.stock_actual`: saldo huérfano, visible en el admin, que ya no lee nadie.
 5. La `plantilla` de los documentos que siguen siendo manuales, contra su **formato real**. Los
    archivos están en `Documentos Planta/` (ignorada por git: 1,8 GB y no todo es de producción).

@@ -399,6 +399,24 @@ function DetalleLote({
 
                 )}
 
+                {/* El material no se descontó de bodega. No impide nada —el
+                    lote ya está producido— pero mientras no se resuelva, el
+                    saldo de bodega está más alto de lo que corresponde. */}
+                {lote.consumo_inventario?.pendiente && (
+
+                  <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+
+                    <span className="font-medium">
+                      El material de este lote no se descontó de bodega.
+                    </span>{" "}
+                    Revisa que el producto tenga receta vigente y que el
+                    material esté aprobado y con stock. Hasta entonces, el
+                    saldo de bodega no refleja lo que esta corrida consumió.
+
+                  </p>
+
+                )}
+
                 {esFinal && puedeEditar && (
                   <p className="text-sm text-slate-500">
                     Un lote {lote.estado_etiqueta.toLowerCase()} ya no se edita:

@@ -146,6 +146,18 @@ export interface LoteDetalle extends Lote {
     liberado: boolean;
     autorizada_por_nombre: string | null;
   } | null;
+  /* Si el material del lote se descontó de bodega. `pendiente` es cierto
+     cuando el lote ya está producido y el descuento no ocurrió: un descuento
+     que falló y no se ve deja el saldo de bodega alto sin que nadie lo sepa. */
+  consumo_inventario: {
+    registrado: boolean;
+    registrado_en: string | null;
+    kg_base: string | null;
+    pendiente: boolean;
+  };
+  /* Solo viene en la respuesta de un PATCH que cambió algo digno de avisar.
+     No bloquean: informan. */
+  avisos?: string[];
 }
 
 

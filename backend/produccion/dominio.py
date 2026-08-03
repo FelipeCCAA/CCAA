@@ -379,6 +379,35 @@ def puede_declarar_producido(lote, asignaciones) -> DecisionCierre:
     )
 
 
+#: Estados en los que el material ya debió descontarse de bodega. Un lote en
+#: proceso todavía no tiene kilos, así que no hay nada que descontar.
+ESTADOS_CON_CONSUMO = ("producido", "cerrado")
+
+
+def consumo_de_inventario_pendiente(lote, consumo) -> bool:
+    """
+    ¿Este lote debió descontar material de bodega y todavía no lo hizo?
+
+    El descuento se intenta solo al declarar el lote producido, que es cuando
+    se conocen los kilos. Si falla —no hay receta cargada, falta stock, el
+    material sigue en cuarentena— el lote **igual se declara**: es el mismo
+    criterio que la leche asignada, y por la misma razón. Detener la
+    producción del día por un dato que bodega puede completar después
+    trasladaría a la línea un problema que no es suyo.
+
+    Pero un descuento que falló y no se ve es peor que uno que no se intentó:
+    el saldo de bodega queda alto y nadie lo sabe. Por eso queda pendiente y a
+    la vista, para que se pueda reintentar.
+
+    `consumo` es la cabecera `ConsumoLoteProduccion` del lote, o `None`. Se
+    recibe ya resuelta para que esta función no consulte la base.
+    """
+    if lote.estado not in ESTADOS_CON_CONSUMO:
+        return False
+
+    return consumo is None
+
+
 # --------------------------------------------------------------- PCC 1
 
 #: Claves de `ControlProcesoLectura.valores` que vigila el PCC 1 de
