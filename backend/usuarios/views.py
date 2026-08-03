@@ -16,6 +16,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import (
     api_view,
+    authentication_classes,
     permission_classes,
     throttle_classes,
 )
@@ -59,6 +60,7 @@ class ConfirmacionRecuperacionThrottle(RecuperacionThrottle):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def login(request):
     """
@@ -217,6 +219,7 @@ def actualizar_trabajador(request, usuario_id):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([SolicitudRecuperacionThrottle])
 def solicitar_recuperacion(request):
@@ -272,6 +275,7 @@ def solicitar_recuperacion(request):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([ConfirmacionRecuperacionThrottle])
 def confirmar_recuperacion(request):
