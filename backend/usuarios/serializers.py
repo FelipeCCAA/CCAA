@@ -13,7 +13,7 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
         model = PerfilUsuario
         fields = [
             "cargo", "area", "area_etiqueta", "turno", "rol", "rol_etiqueta",
-            "nivel", "nivel_etiqueta",
+            "nivel", "nivel_etiqueta", "empresa", "sucursal",
         ]
 
 

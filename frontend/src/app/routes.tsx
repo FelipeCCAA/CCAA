@@ -18,6 +18,7 @@ import Maestros from "../pages/Maestros/Maestros";
 import Auditoria from "../pages/Auditoria/Auditoria";
 import Administracion from "../pages/Administracion/Administracion";
 import Inventario from "../pages/Inventario/Inventario";
+import Abastecimiento from "../pages/Abastecimiento/Abastecimiento";
 
 
 /*
@@ -84,6 +85,8 @@ function RoutesApp(){
                         path="/dashboard"
                         element={<Dashboard />}
                     />
+
+                    <Route path="/abastecimiento" element={<Abastecimiento />} />
 
                     <Route
                         path="/produccion"

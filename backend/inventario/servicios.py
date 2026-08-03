@@ -1,0 +1,625 @@
+"""Operaciones transaccionales del libro de inventario.
+
+Ninguna vista debe modificar ``Existencia`` directamente. Cada variación
+queda acompañada por un movimiento inmutable dentro de la misma transacción.
+"""
+
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models import F
+
+from .models import (
+    Aprobacion, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
+    InspeccionMaterial, LoteInventario, MovimientoInventario, Notificacion,
+    ReservaInventario, Ubicacion,
+)
+
+
+def _notificar_area(area, *, tipo, titulo, mensaje, documento_tipo, documento_id):
+    from usuarios.models import PerfilUsuario
+
+    destinatarios = PerfilUsuario.objects.filter(area=area, usuario__is_active=True).values_list("usuario_id", flat=True)
+    Notificacion.objects.bulk_create([
+        Notificacion(
+            destinatario_id=usuario_id, tipo=tipo, titulo=titulo, mensaje=mensaje,
+            documento_tipo=documento_tipo, documento_id=documento_id,
+        )
+        for usuario_id in destinatarios
+    ])
+
+
+def actualizar_alertas_inventario():
+    from datetime import timedelta
+    from django.utils import timezone
+    from .models import Alerta, Insumo
+
+    tipos = ["stock_minimo", "punto_reposicion", "proximo_vencer", "cuarentena_atrasada"]
+    Alerta.objects.filter(tipo__in=tipos, activa=True).update(activa=False, resuelta_en=timezone.now())
+    nuevas = []
+    for insumo in Insumo.objects.filter(activo=True):
+        disponible = sum(
+            (e.cantidad_disponible for e in Existencia.objects.select_related("lote").filter(lote__insumo=insumo)),
+            Decimal("0"),
+        )
+        if insumo.stock_minimo > 0 and disponible < insumo.stock_minimo:
+            nuevas.append(Alerta(tipo="stock_minimo", severidad=Alerta.Severidad.CRITICA, insumo=insumo, mensaje=f"Stock disponible {disponible}, bajo mínimo {insumo.stock_minimo}."))
+        elif insumo.punto_reposicion > 0 and disponible <= insumo.punto_reposicion:
+            nuevas.append(Alerta(tipo="punto_reposicion", severidad=Alerta.Severidad.ADVERTENCIA, insumo=insumo, mensaje=f"Stock disponible {disponible}, alcanzó el punto de reposición {insumo.punto_reposicion}."))
+    limite = timezone.localdate() + timedelta(days=30)
+    for lote in LoteInventario.objects.filter(activo=True, vencimiento__isnull=False, vencimiento__lte=limite):
+        nuevas.append(Alerta(tipo="proximo_vencer", severidad=Alerta.Severidad.ADVERTENCIA, lote=lote, insumo=lote.insumo, mensaje=f"Lote {lote.codigo} vence el {lote.vencimiento}."))
+    umbral = timezone.now() - timedelta(hours=48)
+    for inspeccion in InspeccionMaterial.objects.filter(estado=InspeccionMaterial.Estado.PENDIENTE, creada_en__lt=umbral).select_related("lote__insumo"):
+        nuevas.append(Alerta(tipo="cuarentena_atrasada", severidad=Alerta.Severidad.CRITICA, lote=inspeccion.lote, insumo=inspeccion.lote.insumo, mensaje=f"Lote {inspeccion.lote.codigo} lleva más de 48 horas en cuarentena."))
+    Alerta.objects.bulk_create(nuevas)
+    return nuevas
+
+
+@transaction.atomic
+def decidir_solicitud_compra(*, solicitud, aprobador, decision, comentario=""):
+    from .models import SolicitudCompra
+
+    solicitud = SolicitudCompra.objects.select_for_update().get(pk=solicitud.pk)
+    if solicitud.solicitante_id == aprobador.id:
+        raise ValidationError("El solicitante no puede aprobar su propia solicitud.")
+    if solicitud.estado not in {SolicitudCompra.Estado.ENVIADA, SolicitudCompra.Estado.PENDIENTE}:
+        raise ValidationError("La solicitud no está pendiente de aprobación.")
+    if decision not in Aprobacion.Decision.values:
+        raise ValidationError("La decisión no es válida.")
+    Aprobacion.objects.create(
+        documento_tipo="inventario.SolicitudCompra", documento_id=solicitud.pk,
+        aprobador=aprobador, decision=decision, comentario=comentario,
+    )
+    solicitud.estado = (
+        SolicitudCompra.Estado.APROBADA
+        if decision == Aprobacion.Decision.APROBADA
+        else SolicitudCompra.Estado.RECHAZADA
+    )
+    solicitud.save(update_fields=["estado"])
+    return solicitud
+
+
+def _cantidad(valor) -> Decimal:
+    cantidad = Decimal(str(valor))
+    if cantidad <= 0:
+        raise ValidationError("La cantidad debe ser mayor que cero.")
+    return cantidad
+
+
+@transaction.atomic
+def registrar_entrada(*, lote, ubicacion, cantidad, usuario, documento_tipo, documento_id):
+    cantidad = _cantidad(cantidad)
+    existencia, _ = Existencia.objects.select_for_update().get_or_create(
+        lote=lote, ubicacion=ubicacion,
+        defaults={"cantidad_fisica": 0, "cantidad_reservada": 0},
+    )
+    anterior = existencia.cantidad_fisica
+    existencia.cantidad_fisica = F("cantidad_fisica") + cantidad
+    existencia.save(update_fields=["cantidad_fisica"])
+    existencia.refresh_from_db()
+    movimiento = MovimientoInventario(
+        tipo=MovimientoInventario.Tipo.RECEPCION,
+        lote=lote, cantidad=cantidad, destino=ubicacion,
+        documento_tipo=documento_tipo, documento_id=documento_id, usuario=usuario,
+        saldo_anterior=anterior, saldo_posterior=existencia.cantidad_fisica,
+    )
+    movimiento.full_clean()
+    movimiento.save()
+    return movimiento
+
+
+@transaction.atomic
+def cambiar_estado_calidad(*, lote_id, estado, usuario, documento_tipo, documento_id, motivo=""):
+    lote = LoteInventario.objects.select_for_update().get(pk=lote_id)
+    permitidos = {
+        LoteInventario.EstadoCalidad.PENDIENTE: {
+            LoteInventario.EstadoCalidad.MUESTRA,
+            LoteInventario.EstadoCalidad.ANALISIS,
+            LoteInventario.EstadoCalidad.APROBADO,
+            LoteInventario.EstadoCalidad.RECHAZADO,
+            LoteInventario.EstadoCalidad.BLOQUEADO,
+        },
+        LoteInventario.EstadoCalidad.MUESTRA: {
+            LoteInventario.EstadoCalidad.ANALISIS,
+            LoteInventario.EstadoCalidad.APROBADO,
+            LoteInventario.EstadoCalidad.RECHAZADO,
+        },
+        LoteInventario.EstadoCalidad.ANALISIS: {
+            LoteInventario.EstadoCalidad.APROBADO,
+            LoteInventario.EstadoCalidad.OBSERVADO,
+            LoteInventario.EstadoCalidad.RECHAZADO,
+            LoteInventario.EstadoCalidad.BLOQUEADO,
+        },
+    }
+    if estado not in permitidos.get(lote.estado_calidad, set()):
+        raise ValidationError(f"No se puede pasar de {lote.estado_calidad} a {estado}.")
+    lote.estado_calidad = estado
+    lote.save(update_fields=["estado_calidad"])
+    tipo = MovimientoInventario.Tipo.LIBERACION if lote.utilizable else (
+        MovimientoInventario.Tipo.RECHAZO if estado == LoteInventario.EstadoCalidad.RECHAZADO
+        else MovimientoInventario.Tipo.BLOQUEO
+    )
+    for existencia in Existencia.objects.select_for_update().filter(lote=lote):
+        MovimientoInventario.objects.create(
+            tipo=tipo, lote=lote, cantidad=existencia.cantidad_fisica,
+            origen=existencia.ubicacion, destino=existencia.ubicacion,
+            documento_tipo=documento_tipo, documento_id=documento_id,
+            usuario=usuario, motivo=motivo,
+            saldo_anterior=existencia.cantidad_fisica,
+            saldo_posterior=existencia.cantidad_fisica,
+        )
+    return lote
+
+
+@transaction.atomic
+def reservar_fefo(*, insumo_id, cantidad, usuario, documento_tipo, documento_id):
+    cantidad = _cantidad(cantidad)
+    candidatas = list(
+        Existencia.objects.select_for_update()
+        .select_related("lote", "ubicacion")
+        .filter(lote__insumo_id=insumo_id, lote__activo=True)
+        .order_by(F("lote__vencimiento").asc(nulls_last=True), "lote__recibido_en", "id")
+    )
+    restantes = cantidad
+    reservas = []
+    for existencia in candidatas:
+        disponible = existencia.cantidad_disponible
+        if disponible <= 0:
+            continue
+        tomada = min(disponible, restantes)
+        anterior = existencia.cantidad_reservada
+        existencia.cantidad_reservada += tomada
+        existencia.full_clean()
+        existencia.save(update_fields=["cantidad_reservada"])
+        MovimientoInventario.objects.create(
+            tipo=MovimientoInventario.Tipo.RESERVA, lote=existencia.lote,
+            cantidad=tomada, origen=existencia.ubicacion,
+            documento_tipo=documento_tipo, documento_id=documento_id,
+            usuario=usuario, saldo_anterior=anterior,
+            saldo_posterior=existencia.cantidad_reservada,
+        )
+        reservas.append((existencia, tomada))
+        restantes -= tomada
+        if restantes == 0:
+            break
+    if restantes > 0:
+        raise ValidationError(f"Stock disponible insuficiente. Faltan {restantes}.")
+    return reservas
+
+
+@transaction.atomic
+def entregar_reserva(*, existencia_id, cantidad, destino, usuario, documento_tipo, documento_id):
+    cantidad = _cantidad(cantidad)
+    existencia = Existencia.objects.select_for_update().select_related("lote", "ubicacion").get(pk=existencia_id)
+    if not existencia.lote.utilizable:
+        raise ValidationError("El lote no está aprobado, está bloqueado, rechazado o vencido.")
+    if existencia.cantidad_reservada < cantidad or existencia.cantidad_fisica < cantidad:
+        raise ValidationError("La cantidad supera la existencia reservada.")
+    anterior = existencia.cantidad_fisica
+    existencia.cantidad_fisica -= cantidad
+    existencia.cantidad_reservada -= cantidad
+    existencia.full_clean()
+    existencia.save(update_fields=["cantidad_fisica", "cantidad_reservada"])
+    destino_existencia, _ = Existencia.objects.select_for_update().get_or_create(
+        lote=existencia.lote, ubicacion=destino,
+        defaults={"cantidad_fisica": 0, "cantidad_reservada": 0},
+    )
+    destino_existencia.cantidad_fisica = F("cantidad_fisica") + cantidad
+    destino_existencia.save(update_fields=["cantidad_fisica"])
+    return MovimientoInventario.objects.create(
+        tipo=MovimientoInventario.Tipo.ENTREGA, lote=existencia.lote,
+        cantidad=cantidad, origen=existencia.ubicacion, destino=destino,
+        documento_tipo=documento_tipo, documento_id=documento_id,
+        usuario=usuario, saldo_anterior=anterior,
+        saldo_posterior=existencia.cantidad_fisica,
+    )
+
+
+@transaction.atomic
+def recibir_detalle_compra(*, recepcion, detalle_orden_id, ubicacion, codigo_lote,
+                           cantidad, usuario, vencimiento=None, elaboracion=None,
+                           cantidad_danada=0, temperatura=None,
+                           embalaje_conforme=True, certificado_recibido=False):
+    from .models import DetalleOrdenCompra
+
+    detalle_orden = DetalleOrdenCompra.objects.select_for_update().select_related("insumo", "orden__proveedor").get(pk=detalle_orden_id)
+    insumo = detalle_orden.insumo
+    cantidad = _cantidad(cantidad)
+    if detalle_orden.cantidad_recibida + cantidad > detalle_orden.cantidad:
+        raise ValidationError("La recepción supera la cantidad pendiente de la orden.")
+    if insumo.requiere_lote and not str(codigo_lote).strip():
+        raise ValidationError("Este material exige número de lote.")
+    if insumo.requiere_vencimiento and vencimiento is None:
+        raise ValidationError("Este material exige fecha de vencimiento.")
+    if insumo.requiere_temperatura and temperatura is None:
+        raise ValidationError("Este material exige temperatura de recepción.")
+    if insumo.requiere_certificado and not certificado_recibido:
+        raise ValidationError("Este material exige certificado del proveedor.")
+    if insumo.requiere_calidad and ubicacion.tipo != Ubicacion.Tipo.CUARENTENA:
+        raise ValidationError("El material sujeto a Calidad debe ingresar a cuarentena.")
+
+    estado = (
+        LoteInventario.EstadoCalidad.PENDIENTE
+        if insumo.requiere_calidad else LoteInventario.EstadoCalidad.NO_REQUIERE
+    )
+    lote = LoteInventario.objects.create(
+        insumo=insumo, proveedor=detalle_orden.orden.proveedor,
+        codigo=codigo_lote or f"SIN-LOTE-{recepcion.pk}-{detalle_orden.pk}",
+        elaboracion=elaboracion, vencimiento=vencimiento, estado_calidad=estado,
+    )
+    detalle = DetalleRecepcionCompra.objects.create(
+        recepcion=recepcion, detalle_orden=detalle_orden, lote=lote,
+        ubicacion_temporal=ubicacion, cantidad_recibida=cantidad,
+        cantidad_danada=cantidad_danada, temperatura=temperatura,
+        embalaje_conforme=embalaje_conforme,
+        certificado_recibido=certificado_recibido,
+    )
+    util = cantidad - Decimal(str(cantidad_danada))
+    if util <= 0:
+        raise ValidationError("La cantidad utilizable debe ser mayor que cero.")
+    registrar_entrada(
+        lote=lote, ubicacion=ubicacion, cantidad=util, usuario=usuario,
+        documento_tipo="inventario.DetalleRecepcionCompra", documento_id=detalle.pk,
+    )
+    detalle_orden.cantidad_recibida += cantidad
+    detalle_orden.save(update_fields=["cantidad_recibida"])
+    if insumo.requiere_calidad:
+        from django.db.models import Q
+        from .models import PlantillaInspeccion
+        hoy = lote.recibido_en.date()
+        plantilla = PlantillaInspeccion.objects.filter(
+            Q(insumo=insumo) | Q(insumo__isnull=True, categoria=insumo.categoria),
+            activa=True, vigente_desde__lte=hoy,
+        ).filter(Q(vigente_hasta__isnull=True) | Q(vigente_hasta__gte=hoy)).order_by("-insumo_id", "-version").first()
+        InspeccionMaterial.objects.create(lote=lote, plantilla=plantilla)
+        from usuarios.models import PerfilUsuario
+        _notificar_area(
+            PerfilUsuario.Area.CALIDAD, tipo="inspeccion_material_solicitada",
+            titulo="Material en cuarentena",
+            mensaje=f"{insumo.nombre}, lote {lote.codigo}, requiere inspección.",
+            documento_tipo="inventario.LoteInventario", documento_id=lote.pk,
+        )
+    actualizar_alertas_inventario()
+    return detalle
+
+
+@transaction.atomic
+def decidir_inspeccion(*, inspeccion_id, decision, usuario, resultados, observaciones=""):
+    inspeccion = InspeccionMaterial.objects.select_for_update().select_related("lote").get(pk=inspeccion_id)
+    mapa = {
+        InspeccionMaterial.Estado.APROBADA: LoteInventario.EstadoCalidad.APROBADO,
+        InspeccionMaterial.Estado.OBSERVADA: LoteInventario.EstadoCalidad.OBSERVADO,
+        InspeccionMaterial.Estado.RECHAZADA: LoteInventario.EstadoCalidad.RECHAZADO,
+        InspeccionMaterial.Estado.BLOQUEADA: LoteInventario.EstadoCalidad.BLOQUEADO,
+    }
+    if decision not in mapa:
+        raise ValidationError("La decisión final no es válida.")
+    if inspeccion.estado in mapa:
+        raise ValidationError("La inspección ya tiene una decisión final.")
+    if inspeccion.plantilla_id:
+        for campo in inspeccion.plantilla.campos:
+            clave = campo.get("clave")
+            if campo.get("obligatorio") and (clave not in resultados or resultados.get(clave) in (None, "")):
+                raise ValidationError(f"Falta completar el campo obligatorio '{clave}'.")
+            valor = resultados.get(clave)
+            if valor not in (None, "") and isinstance(valor, (int, float)):
+                if campo.get("min") is not None and valor < campo["min"]:
+                    raise ValidationError(f"'{clave}' está bajo el mínimo permitido.")
+                if campo.get("max") is not None and valor > campo["max"]:
+                    raise ValidationError(f"'{clave}' supera el máximo permitido.")
+    inspeccion.estado = decision
+    inspeccion.responsable = usuario
+    inspeccion.resultados = resultados
+    inspeccion.observaciones = observaciones
+    from django.utils import timezone
+    inspeccion.decidida_en = timezone.now()
+    inspeccion.save(update_fields=["estado", "responsable", "resultados", "observaciones", "decidida_en"])
+    cambiar_estado_calidad(
+        lote_id=inspeccion.lote_id, estado=mapa[decision], usuario=usuario,
+        documento_tipo="inventario.InspeccionMaterial", documento_id=inspeccion.pk,
+        motivo=observaciones,
+    )
+    from usuarios.models import PerfilUsuario
+    for area in (PerfilUsuario.Area.BODEGA, PerfilUsuario.Area.COMPRAS):
+        _notificar_area(
+            area, tipo=f"material_{decision}",
+            titulo=f"Decisión de Calidad: {inspeccion.lote.insumo.nombre}",
+            mensaje=f"Lote {inspeccion.lote.codigo}: {decision}.",
+            documento_tipo="inventario.InspeccionMaterial", documento_id=inspeccion.pk,
+        )
+    actualizar_alertas_inventario()
+    return inspeccion
+
+
+@transaction.atomic
+def reservar_solicitud_material(*, solicitud, usuario):
+    if solicitud.estado not in {solicitud.Estado.ENVIADA, solicitud.Estado.APROBADA}:
+        raise ValidationError("La MRQ no está lista para reservar.")
+    for detalle in DetalleSolicitudMaterial.objects.select_for_update().filter(solicitud=solicitud):
+        cantidad = detalle.cantidad_aprobada or detalle.cantidad_solicitada
+        if not detalle.cantidad_aprobada:
+            detalle.cantidad_aprobada = cantidad
+            detalle.save(update_fields=["cantidad_aprobada"])
+        selecciones = reservar_fefo(
+            insumo_id=detalle.insumo_id, cantidad=cantidad, usuario=usuario,
+            documento_tipo="inventario.SolicitudMaterial", documento_id=solicitud.pk,
+        )
+        for existencia, tomada in selecciones:
+            ReservaInventario.objects.create(detalle=detalle, existencia=existencia, cantidad=tomada)
+    solicitud.estado = solicitud.Estado.PREPARADA
+    solicitud.save(update_fields=["estado"])
+    actualizar_alertas_inventario()
+    return solicitud
+
+
+@transaction.atomic
+def entregar_solicitud_material(*, solicitud, destino, entrega_por, recibe_por, selecciones=None, observaciones=""):
+    from .models import DetalleEntregaProduccion, EntregaProduccion, SolicitudMaterial
+
+    solicitud = SolicitudMaterial.objects.select_for_update().get(pk=solicitud.pk)
+    if solicitud.estado not in {SolicitudMaterial.Estado.PREPARADA, SolicitudMaterial.Estado.PARCIAL}:
+        raise ValidationError("La MRQ no está preparada para entrega.")
+    reservas = ReservaInventario.objects.select_for_update().select_related(
+        "existencia__lote", "detalle"
+    ).filter(detalle__solicitud=solicitud, activa=True)
+    por_id = {int(item["reserva"]): Decimal(str(item["cantidad"])) for item in (selecciones or [])}
+    entrega = EntregaProduccion.objects.create(
+        solicitud=solicitud, entregada_por=entrega_por,
+        recibida_por=recibe_por, observaciones=observaciones,
+    )
+    alguna = False
+    for reserva in reservas:
+        cantidad = por_id.get(reserva.pk, reserva.cantidad if not selecciones else Decimal("0"))
+        if cantidad <= 0:
+            continue
+        if cantidad > reserva.cantidad:
+            raise ValidationError("La entrega supera la cantidad reservada.")
+        entregar_reserva(
+            existencia_id=reserva.existencia_id, cantidad=cantidad, destino=destino,
+            usuario=entrega_por, documento_tipo="inventario.EntregaProduccion",
+            documento_id=entrega.pk,
+        )
+        DetalleEntregaProduccion.objects.create(
+            entrega=entrega, detalle_solicitud=reserva.detalle,
+            lote=reserva.existencia.lote, cantidad=cantidad,
+        )
+        reserva.detalle.cantidad_entregada = F("cantidad_entregada") + cantidad
+        reserva.detalle.save(update_fields=["cantidad_entregada"])
+        reserva.cantidad -= cantidad
+        reserva.activa = reserva.cantidad > 0
+        reserva.save(update_fields=["cantidad", "activa"])
+        alguna = True
+    if not alguna:
+        raise ValidationError("No se seleccionó ninguna cantidad para entregar.")
+    pendientes = DetalleSolicitudMaterial.objects.filter(solicitud=solicitud).filter(
+        cantidad_entregada__lt=F("cantidad_aprobada")
+    ).exists()
+    solicitud.estado = SolicitudMaterial.Estado.PARCIAL if pendientes else SolicitudMaterial.Estado.ENTREGADA
+    solicitud.save(update_fields=["estado"])
+    actualizar_alertas_inventario()
+    return entrega
+
+
+@transaction.atomic
+def trasladar_existencia(*, existencia_id, destino, cantidad, usuario, documento_tipo, documento_id, motivo=""):
+    cantidad = _cantidad(cantidad)
+    origen = Existencia.objects.select_for_update().select_related("lote", "ubicacion").get(pk=existencia_id)
+    if origen.cantidad_fisica < cantidad or origen.cantidad_fisica - origen.cantidad_reservada < cantidad:
+        raise ValidationError("La cantidad supera el saldo físico no reservado.")
+    if origen.lote.estado_calidad in {
+        LoteInventario.EstadoCalidad.PENDIENTE,
+        LoteInventario.EstadoCalidad.MUESTRA,
+        LoteInventario.EstadoCalidad.ANALISIS,
+    } and destino.tipo != Ubicacion.Tipo.CUARENTENA:
+        raise ValidationError("Un lote en cuarentena solo puede trasladarse a otra ubicación de cuarentena.")
+    if origen.lote.estado_calidad in {
+        LoteInventario.EstadoCalidad.RECHAZADO,
+        LoteInventario.EstadoCalidad.BLOQUEADO,
+    } and destino.tipo != Ubicacion.Tipo.RECHAZADO:
+        raise ValidationError("Un lote rechazado o bloqueado solo puede ir a una ubicación de rechazados.")
+    anterior = origen.cantidad_fisica
+    origen.cantidad_fisica -= cantidad
+    origen.save(update_fields=["cantidad_fisica"])
+    llegada, _ = Existencia.objects.select_for_update().get_or_create(
+        lote=origen.lote, ubicacion=destino,
+        defaults={"cantidad_fisica": 0, "cantidad_reservada": 0},
+    )
+    llegada.cantidad_fisica = F("cantidad_fisica") + cantidad
+    llegada.save(update_fields=["cantidad_fisica"])
+    movimiento = MovimientoInventario.objects.create(
+        tipo=MovimientoInventario.Tipo.TRASLADO, lote=origen.lote,
+        cantidad=cantidad, origen=origen.ubicacion, destino=destino,
+        documento_tipo=documento_tipo, documento_id=documento_id,
+        usuario=usuario, motivo=motivo, saldo_anterior=anterior,
+        saldo_posterior=origen.cantidad_fisica,
+    )
+    actualizar_alertas_inventario()
+    return movimiento
+
+
+@transaction.atomic
+def crear_ajuste(*, existencia, tipo, cantidad, motivo, solicitante):
+    from .models import AjusteInventario
+
+    ajuste = AjusteInventario(
+        existencia=existencia, tipo=tipo, cantidad=_cantidad(cantidad),
+        motivo=motivo, solicitante=solicitante,
+    )
+    ajuste.full_clean()
+    ajuste.save()
+    return ajuste
+
+
+@transaction.atomic
+def decidir_y_aplicar_ajuste(*, ajuste, aprobador, aprobar):
+    from django.utils import timezone
+    from .models import AjusteInventario
+
+    ajuste = AjusteInventario.objects.select_for_update().select_related("existencia__lote", "existencia__ubicacion").get(pk=ajuste.pk)
+    if ajuste.estado != AjusteInventario.Estado.PENDIENTE:
+        raise ValidationError("El ajuste ya fue decidido.")
+    if ajuste.solicitante_id == aprobador.id:
+        raise ValidationError("El solicitante no puede aprobar su propio ajuste.")
+    ajuste.aprobador = aprobador
+    if not aprobar:
+        ajuste.estado = AjusteInventario.Estado.RECHAZADO
+        ajuste.save(update_fields=["aprobador", "estado"])
+        return ajuste
+    existencia = Existencia.objects.select_for_update().get(pk=ajuste.existencia_id)
+    anterior = existencia.cantidad_fisica
+    positivo = ajuste.tipo == AjusteInventario.Tipo.POSITIVO
+    if not positivo and existencia.cantidad_fisica - existencia.cantidad_reservada < ajuste.cantidad:
+        raise ValidationError("El ajuste dejaría stock físico negativo o afectaría una reserva.")
+    existencia.cantidad_fisica = anterior + ajuste.cantidad if positivo else anterior - ajuste.cantidad
+    existencia.save(update_fields=["cantidad_fisica"])
+    tipo_mov = (
+        MovimientoInventario.Tipo.AJUSTE_POSITIVO if positivo
+        else MovimientoInventario.Tipo.MERMA if ajuste.tipo == AjusteInventario.Tipo.MERMA
+        else MovimientoInventario.Tipo.AJUSTE_NEGATIVO
+    )
+    MovimientoInventario.objects.create(
+        tipo=tipo_mov, lote=existencia.lote, cantidad=ajuste.cantidad,
+        origen=existencia.ubicacion, destino=existencia.ubicacion,
+        documento_tipo="inventario.AjusteInventario", documento_id=ajuste.pk,
+        usuario=aprobador, motivo=ajuste.motivo,
+        saldo_anterior=anterior, saldo_posterior=existencia.cantidad_fisica,
+    )
+    ajuste.estado = AjusteInventario.Estado.APLICADO
+    ajuste.aplicado_en = timezone.now()
+    ajuste.save(update_fields=["aprobador", "estado", "aplicado_en"])
+    actualizar_alertas_inventario()
+    return ajuste
+
+
+@transaction.atomic
+def registrar_devolucion(*, detalle_entrega, cantidad, estado_material, motivo, usuario, ubicacion_destino):
+    from .models import DevolucionProduccion
+
+    devolucion = DevolucionProduccion(
+        detalle_entrega=detalle_entrega, cantidad=_cantidad(cantidad),
+        estado_material=estado_material, motivo=motivo, registrada_por=usuario,
+    )
+    devolucion.full_clean()
+    ya_devuelto = DevolucionProduccion.objects.filter(detalle_entrega=detalle_entrega).aggregate(
+        total=Sum("cantidad")
+    )["total"] or Decimal("0")
+    if ya_devuelto + devolucion.cantidad > detalle_entrega.cantidad:
+        raise ValidationError("La suma de devoluciones supera la cantidad originalmente entregada.")
+    if estado_material != DevolucionProduccion.EstadoMaterial.MERMA:
+        tipo_esperado = (
+            Ubicacion.Tipo.DISPONIBLE
+            if estado_material == DevolucionProduccion.EstadoMaterial.UTILIZABLE
+            else Ubicacion.Tipo.RECHAZADO
+        )
+        if ubicacion_destino is None or ubicacion_destino.tipo != tipo_esperado:
+            raise ValidationError("La ubicación destino no corresponde al estado del material devuelto.")
+    devolucion.save()
+    movimiento_entrega = MovimientoInventario.objects.filter(
+        tipo=MovimientoInventario.Tipo.ENTREGA,
+        documento_tipo="inventario.EntregaProduccion",
+        documento_id=detalle_entrega.entrega_id,
+        lote=detalle_entrega.lote,
+    ).order_by("-id").first()
+    if not movimiento_entrega or not movimiento_entrega.destino_id:
+        raise ValidationError("No se encontró la ubicación de la entrega original.")
+    origen = Existencia.objects.select_for_update().get(
+        lote=detalle_entrega.lote, ubicacion_id=movimiento_entrega.destino_id,
+    )
+    if origen.cantidad_fisica < devolucion.cantidad:
+        raise ValidationError("La devolución supera el material existente en Producción.")
+    if estado_material == DevolucionProduccion.EstadoMaterial.MERMA:
+        anterior = origen.cantidad_fisica
+        origen.cantidad_fisica -= devolucion.cantidad
+        origen.save(update_fields=["cantidad_fisica"])
+        MovimientoInventario.objects.create(
+            tipo=MovimientoInventario.Tipo.MERMA, lote=origen.lote,
+            cantidad=devolucion.cantidad, origen=origen.ubicacion,
+            documento_tipo="inventario.DevolucionProduccion", documento_id=devolucion.pk,
+            usuario=usuario, motivo=motivo, saldo_anterior=anterior,
+            saldo_posterior=origen.cantidad_fisica,
+        )
+    else:
+        trasladar_existencia(
+            existencia_id=origen.pk, destino=ubicacion_destino,
+            cantidad=devolucion.cantidad, usuario=usuario,
+            documento_tipo="inventario.DevolucionProduccion", documento_id=devolucion.pk,
+            motivo=motivo,
+        )
+    return devolucion
+
+
+@transaction.atomic
+def ejecutar_mrp_semana(*, semana, usuario):
+    """Explota el programa publicado sin modificar Planificación ni sus bloques."""
+    from datetime import timedelta
+    from math import ceil
+
+    from planificacion.models import BloquePlan, SemanaPlan
+    from .models import (
+        ConsumoProducto, DetalleOrdenCompra, EjecucionMRP, InsumoProveedor,
+        OrdenCompra, ResultadoMRP,
+    )
+
+    semana = SemanaPlan.objects.prefetch_related("bloques__codigo__producto", "bloques__equipo").get(pk=semana.pk)
+    if semana.estado != SemanaPlan.Estado.PUBLICADA:
+        raise ValidationError("El MRP solo puede ejecutarse sobre una semana publicada.")
+    bloques = [
+        b for b in semana.bloques.all()
+        if b.tipo == BloquePlan.Tipo.PRODUCCION
+        and b.cantidad_kg and b.codigo_id and b.codigo.producto_id
+        and b.equipo.tipo == "linea"
+    ]
+    bruta: dict[int, Decimal] = {}
+    fechas: dict[int, object] = {}
+    for bloque in bloques:
+        consumos = ConsumoProducto.objects.filter(producto_id=bloque.codigo.producto_id)
+        fecha = semana.fecha_del_dia(bloque.dia)
+        for consumo in consumos:
+            requerido = Decimal(bloque.cantidad_kg) * consumo.cantidad_por_kg
+            bruta[consumo.insumo_id] = bruta.get(consumo.insumo_id, Decimal("0")) + requerido
+            fechas[consumo.insumo_id] = min(fechas.get(consumo.insumo_id, fecha), fecha)
+
+    ejecucion = EjecucionMRP.objects.create(
+        fecha_corte=semana.fecha_inicio,
+        horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
+        ejecutada_por=usuario,
+        parametros={"semana": semana.pk, "codigo": semana.codigo},
+    )
+    for insumo_id, necesidad_bruta in bruta.items():
+        existencias = Existencia.objects.select_related("lote").filter(lote__insumo_id=insumo_id)
+        disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
+        programadas = sum(
+            (
+                d.cantidad - d.cantidad_recibida
+                for d in DetalleOrdenCompra.objects.filter(
+                    insumo_id=insumo_id,
+                    orden__estado__in=[OrdenCompra.Estado.APROBADA, OrdenCompra.Estado.ENVIADA, OrdenCompra.Estado.PARCIAL],
+                )
+            ),
+            Decimal("0"),
+        )
+        from .models import Insumo
+        insumo = Insumo.objects.get(pk=insumo_id)
+        neta = max(Decimal("0"), necesidad_bruta + insumo.stock_seguridad - disponible - programadas)
+        proveedor = InsumoProveedor.objects.filter(insumo_id=insumo_id, principal=True).order_by("id").first()
+        sugerida = neta
+        lead_time = insumo.plazo_reposicion_dias
+        explicacion = {"formula": "bruta + seguridad - disponible - recepciones"}
+        if proveedor:
+            sugerida = max(sugerida, proveedor.compra_minima) if sugerida > 0 else Decimal("0")
+            multiplo = proveedor.multiplo_compra or Decimal("1")
+            sugerida = Decimal(ceil(sugerida / multiplo)) * multiplo if sugerida > 0 else Decimal("0")
+            lead_time = proveedor.lead_time_dias
+            explicacion.update({"proveedor": proveedor.proveedor.nombre, "minimo": str(proveedor.compra_minima), "multiplo": str(multiplo)})
+        requerida = fechas[insumo_id]
+        ResultadoMRP.objects.create(
+            ejecucion=ejecucion, insumo=insumo, fecha_requerida=requerida,
+            necesidad_bruta=necesidad_bruta, disponible_proyectado=disponible,
+            recepciones_programadas=programadas, necesidad_neta=neta,
+            compra_sugerida=sugerida,
+            fecha_sugerida_orden=requerida - timedelta(days=lead_time),
+            explicacion=explicacion,
+        )
+    return ejecucion

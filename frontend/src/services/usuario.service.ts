@@ -55,6 +55,21 @@ export async function obtenerTrabajadores(): Promise<Trabajador[]> {
   return data;
 }
 
+export interface NuevoTrabajador {
+  username: string; email?: string; nombre?: string; apellido?: string;
+  area: string; nivel: "admin" | "trabajador"; cargo?: string; turno?: string;
+}
+
+export async function crearTrabajador(datos: NuevoTrabajador): Promise<Trabajador> {
+  const { data } = await api.post<Trabajador>("usuarios/trabajadores/", datos);
+  return data;
+}
+
+export async function cambiarEstadoTrabajador(id: number, activo: boolean): Promise<Trabajador> {
+  const { data } = await api.patch<Trabajador>(`usuarios/trabajadores/${id}/`, { activo });
+  return data;
+}
+
 
 /** Solicita el correo de recuperación sin revelar si la cuenta existe. */
 export async function solicitarRecuperacion(

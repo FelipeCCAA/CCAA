@@ -175,6 +175,36 @@ class PanelAdministracionTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 403)
 
+    def test_administrador_general_crea_administrador_de_area_sin_contrasena_visible(self):
+        self.cliente.force_authenticate(self.admin)
+        respuesta = self.cliente.post(
+            "/api/usuarios/trabajadores/",
+            {"username": "jefa-bodega", "area": "bodega", "nivel": "admin", "cargo": "Jefatura"},
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 201)
+        creado = User.objects.get(username="jefa-bodega")
+        self.assertTrue(creado.has_usable_password())
+        self.assertEqual(creado.perfil.area, PerfilUsuario.Area.BODEGA)
+        self.assertEqual(creado.perfil.nivel, PerfilUsuario.Nivel.ADMIN)
+
+    def test_administrador_de_area_solo_crea_trabajadores_de_su_area(self):
+        jefe = User.objects.create_user("jefe-secado", password="x")
+        PerfilUsuario.objects.create(
+            usuario=jefe, area=PerfilUsuario.Area.SECADO,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+        )
+        self.cliente.force_authenticate(jefe)
+        respuesta = self.cliente.post(
+            "/api/usuarios/trabajadores/",
+            {"username": "nuevo", "area": "calidad", "nivel": "admin"},
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 201)
+        perfil = User.objects.get(username="nuevo").perfil
+        self.assertEqual(perfil.area, PerfilUsuario.Area.SECADO)
+        self.assertEqual(perfil.nivel, PerfilUsuario.Nivel.TRABAJADOR)
+
 
 def rutas_de_la_api():
     """

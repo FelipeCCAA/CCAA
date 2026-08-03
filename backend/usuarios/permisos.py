@@ -95,3 +95,48 @@ class EscribeCalidad(PermisoPorRol):
 
     roles_escritura = (Rol.CALIDAD, Rol.ADMIN)
     mensaje_escritura = "Solo Calidad puede autorizar la liberación de un lote."
+
+
+class PermisoPorArea(BasePermission):
+    """Lectura autenticada; escritura para el área indicada o administración general."""
+
+    areas_escritura: tuple[str, ...] = ()
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS or request.user.is_superuser:
+            return True
+        perfil = getattr(request.user, "perfil", None)
+        return bool(
+            perfil
+            and perfil.area
+            in (*self.areas_escritura, PerfilUsuario.Area.ADMINISTRACION)
+        )
+
+
+class EscribeBodega(PermisoPorArea):
+    areas_escritura = (PerfilUsuario.Area.BODEGA,)
+    message = "Solo Bodega puede mover, reservar o entregar inventario."
+
+
+class EscribeCompras(PermisoPorArea):
+    areas_escritura = (PerfilUsuario.Area.COMPRAS,)
+    message = "Solo Compras puede administrar solicitudes y órdenes de compra."
+
+
+class EscribeRecepcionCompra(PermisoPorArea):
+    areas_escritura = (PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.BODEGA)
+    message = "Solo Recepción o Bodega puede registrar compras recibidas."
+
+
+class EscribeMRQ(PermisoPorArea):
+    areas_escritura = (
+        PerfilUsuario.Area.RECEPCION,
+        PerfilUsuario.Area.CONDENSACION,
+        PerfilUsuario.Area.SECADO,
+        PerfilUsuario.Area.ENVASE,
+        PerfilUsuario.Area.CALIDAD,
+        PerfilUsuario.Area.BODEGA,
+    )
+    message = "Tu área no puede crear o modificar solicitudes de materiales."

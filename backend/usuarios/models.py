@@ -2,6 +2,33 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+class Empresa(models.Model):
+    rut = models.CharField(max_length=20, unique=True)
+    nombre = models.CharField(max_length=160)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
+class Sucursal(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="sucursales")
+    codigo = models.CharField(max_length=30)
+    nombre = models.CharField(max_length=140)
+    direccion = models.CharField(max_length=250, blank=True)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["empresa", "codigo"], name="sucursal_codigo_unico_empresa")]
+        ordering = ["empresa", "nombre"]
+
+    def __str__(self):
+        return f"{self.empresa} · {self.nombre}"
+
+
 class Rol(models.TextChoices):
     """
     Los cinco roles del proceso, tal como los define el prototipo
@@ -36,6 +63,8 @@ class PerfilUsuario(models.Model):
         ENVASE = "envase", "Envase"
         CALIDAD = "calidad", "Calidad"
         BODEGA = "bodega", "Bodega"
+        COMPRAS = "compras", "Compras"
+        DESPACHO = "despacho", "Despacho"
         ADMINISTRACION = "administracion", "Administración general"
 
     usuario = models.OneToOneField(
@@ -62,6 +91,14 @@ class PerfilUsuario(models.Model):
         default=Rol.LECTURA
     )
 
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.PROTECT, related_name="perfiles", null=True, blank=True
+    )
+
+    sucursal = models.ForeignKey(
+        Sucursal, on_delete=models.PROTECT, related_name="perfiles", null=True, blank=True
+    )
+
     nivel = models.CharField(
         max_length=20,
         choices=Nivel.choices,
@@ -74,6 +111,12 @@ class PerfilUsuario(models.Model):
 
     def __str__(self):
         return self.usuario.username
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.sucursal_id and self.empresa_id and self.sucursal.empresa_id != self.empresa_id:
+            raise ValidationError({"sucursal": "La sucursal no pertenece a la empresa seleccionada."})
 
 
 def rol_de(usuario) -> str | None:
