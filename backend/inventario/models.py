@@ -76,6 +76,19 @@ class ConsumoProducto(models.Model):
         constraints = [models.UniqueConstraint(fields=["producto", "insumo"], name="consumo_unico_producto_insumo")]
 
 
+class ConsumoLoteProduccion(models.Model):
+    """Cabecera auditable del descuento automático de una receta."""
+    lote_produccion = models.OneToOneField(
+        "produccion.Lote", on_delete=models.PROTECT, related_name="consumo_inventario"
+    )
+    kg_base = models.DecimalField(max_digits=14, decimal_places=3)
+    registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    registrado_en = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Consumo {self.lote_produccion}"
+
+
 class CicloCIP(models.Model):
     class Estado(models.TextChoices):
         PROGRAMADO = "programado", "Programado"
@@ -224,6 +237,8 @@ class MovimientoInventario(models.Model):
         RESERVA = "reserva", "Reserva"
         LIBERAR_RESERVA = "liberar_reserva", "Liberación de reserva"
         ENTREGA = "entrega", "Entrega a Producción"
+        SALIDA = "salida", "Salida de Bodega"
+        CONSUMO = "consumo", "Consumo de material"
         DEVOLUCION = "devolucion", "Devolución desde Producción"
         AJUSTE_POSITIVO = "ajuste_positivo", "Ajuste positivo"
         AJUSTE_NEGATIVO = "ajuste_negativo", "Ajuste negativo"

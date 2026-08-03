@@ -145,6 +145,11 @@ class ExistenciaSerializer(serializers.ModelSerializer):
 
 
 class MovimientoSerializer(serializers.ModelSerializer):
+    lote_codigo = serializers.CharField(source="lote.codigo", read_only=True)
+    insumo_nombre = serializers.CharField(source="lote.insumo.nombre", read_only=True)
+    origen_codigo = serializers.CharField(source="origen.codigo", read_only=True, allow_null=True)
+    destino_codigo = serializers.CharField(source="destino.codigo", read_only=True, allow_null=True)
+
     class Meta:
         model = MovimientoInventario
         fields = "__all__"

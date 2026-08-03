@@ -5,7 +5,10 @@ export interface Insumo {
   unidad: string; stock_actual: string; contenido_envase: string;
   stock_fisico: number; stock_disponible: number; stock_bloqueado: number;
   eoq: string | null; punto_reposicion: string;
+  categoria: string; requiere_lote: boolean; requiere_vencimiento: boolean; requiere_calidad: boolean;
 }
+
+export interface UbicacionInventario { id: number; codigo: string; bodega_nombre: string; tipo: string; activo: boolean }
 
 export interface Existencia {
   id: number; lote: number; lote_codigo: string; insumo_nombre: string;
@@ -30,6 +33,17 @@ export interface OrdenCompra {
 
 export interface Notificacion {
   id: number; tipo: string; titulo: string; mensaje: string; leida_en: string | null; creada_en: string;
+}
+
+export interface MovimientoInventario {
+  id: number; tipo: string; lote: number; lote_codigo: string; insumo_nombre: string;
+  cantidad: string; origen_codigo: string | null; destino_codigo: string | null;
+  motivo: string; fecha: string;
+}
+
+export interface AjusteInventario {
+  id: number; existencia: number; tipo: "positivo" | "negativo" | "merma";
+  cantidad: string; motivo: string; estado: string; solicitante: number; aprobador: number | null;
 }
 
 export interface ResultadoMRP {
@@ -57,6 +71,50 @@ export const obtenerInspecciones = () => lista<InspeccionMaterial>("inventario/i
 export const obtenerMRQ = () => lista<SolicitudMaterial>("inventario/mrq/");
 export const obtenerOrdenesCompra = () => lista<OrdenCompra>("inventario/ordenes-compra/");
 export const obtenerNotificaciones = () => lista<Notificacion>("inventario/notificaciones/");
+export const obtenerMovimientos = () => lista<MovimientoInventario>("inventario/movimientos/");
+export const obtenerAjustes = () => lista<AjusteInventario>("inventario/ajustes/");
+export const obtenerUbicaciones = () => lista<UbicacionInventario>("inventario/ubicaciones/");
+
+export async function crearMaterial(datos: {
+  codigo: string; nombre: string; categoria: string; area: string; unidad: string;
+  requiere_lote: boolean; requiere_vencimiento: boolean; requiere_calidad: boolean;
+}) {
+  const { data } = await api.post<Insumo>("inventario/insumos/", datos);
+  return data;
+}
+
+export async function ingresarMaterial(datos: {
+  insumo: number; codigo_lote: string; ubicacion: number; cantidad: number;
+  elaboracion?: string; vencimiento?: string;
+}) {
+  const { data } = await api.post<MovimientoInventario>("inventario/movimientos/ingresar-material/", datos);
+  return data;
+}
+
+export async function relacionarMaterialReceta(datos: { producto: number; insumo: number; cantidad_por_kg: number }) {
+  const { data } = await api.post("inventario/consumos/", datos);
+  return data;
+}
+
+export async function consumirRecetaProduccion(lote_produccion: number) {
+  const { data } = await api.post<{ consumo: number; movimientos: MovimientoInventario[] }>("inventario/movimientos/consumir-receta/", { lote_produccion });
+  return data;
+}
+
+export async function registrarSalida(datos: { existencia: number; cantidad: number; tipo: "salida" | "consumo"; motivo: string }) {
+  const { data } = await api.post<MovimientoInventario>("inventario/movimientos/salida/", datos);
+  return data;
+}
+
+export async function crearAjuste(datos: { existencia: number; tipo: "positivo" | "negativo" | "merma"; cantidad: number; motivo: string }) {
+  const { data } = await api.post<AjusteInventario>("inventario/ajustes/", datos);
+  return data;
+}
+
+export async function decidirAjuste(id: number, decision: "aprobar" | "rechazar") {
+  const { data } = await api.post<AjusteInventario>(`inventario/ajustes/${id}/decidir/`, { decision });
+  return data;
+}
 
 export async function decidirInspeccion(id: number, decision: string, observaciones = "") {
   const { data } = await api.post<InspeccionMaterial>(`inventario/inspecciones/${id}/decidir/`, { decision, observaciones, resultados: {} });

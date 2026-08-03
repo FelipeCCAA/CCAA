@@ -175,16 +175,17 @@ class PanelAdministracionTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 403)
 
-    def test_administrador_general_crea_administrador_de_area_sin_contrasena_visible(self):
+    def test_administrador_general_crea_administrador_de_area_con_contrasena_inicial(self):
         self.cliente.force_authenticate(self.admin)
         respuesta = self.cliente.post(
             "/api/usuarios/trabajadores/",
-            {"username": "jefa-bodega", "area": "bodega", "nivel": "admin", "cargo": "Jefatura"},
+            {"username": "jefa-bodega", "area": "bodega", "nivel": "admin", "cargo": "Jefatura", "password": "Clave-inicial-2026!"},
             format="json",
         )
         self.assertEqual(respuesta.status_code, 201)
         creado = User.objects.get(username="jefa-bodega")
         self.assertTrue(creado.has_usable_password())
+        self.assertTrue(creado.check_password("Clave-inicial-2026!"))
         self.assertEqual(creado.perfil.area, PerfilUsuario.Area.BODEGA)
         self.assertEqual(creado.perfil.nivel, PerfilUsuario.Nivel.ADMIN)
 
@@ -197,7 +198,7 @@ class PanelAdministracionTests(TestCase):
         self.cliente.force_authenticate(jefe)
         respuesta = self.cliente.post(
             "/api/usuarios/trabajadores/",
-            {"username": "nuevo", "area": "calidad", "nivel": "admin"},
+            {"username": "nuevo", "area": "calidad", "nivel": "admin", "password": "Clave-inicial-2026!"},
             format="json",
         )
         self.assertEqual(respuesta.status_code, 201)

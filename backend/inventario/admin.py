@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from .models import (
-    Adjunto, AjusteInventario, Alerta, Aprobacion, Bodega, CicloCIP, ConsumoProducto, DetalleOrdenCompra,
+    Adjunto, AjusteInventario, Alerta, Aprobacion, Bodega, CicloCIP, ConsumoLoteProduccion, ConsumoProducto, DetalleOrdenCompra,
     DetalleRecepcionCompra, DetalleSolicitudMaterial, EjecucionMRP,
     DevolucionProduccion, EntregaProduccion, Existencia, InspeccionMaterial, Insumo,
     InsumoProveedor, LiberacionExcepcionalMaterial, LoteInventario,
@@ -66,5 +66,5 @@ admin.site.register([
     Notificacion,
     Aprobacion,
     PlantillaInspeccion, NoConformidadMaterial, LiberacionExcepcionalMaterial,
-    Adjunto, Alerta, AjusteInventario, DevolucionProduccion,
+    Adjunto, Alerta, AjusteInventario, DevolucionProduccion, ConsumoLoteProduccion,
 ])

@@ -58,6 +58,7 @@ export async function obtenerTrabajadores(): Promise<Trabajador[]> {
 export interface NuevoTrabajador {
   username: string; email?: string; nombre?: string; apellido?: string;
   area: string; nivel: "admin" | "trabajador"; cargo?: string; turno?: string;
+  password: string;
 }
 
 export async function crearTrabajador(datos: NuevoTrabajador): Promise<Trabajador> {

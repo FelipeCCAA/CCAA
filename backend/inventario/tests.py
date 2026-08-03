@@ -16,9 +16,9 @@ from .models import (
     DetalleSolicitudMaterial, Ubicacion,
 )
 from .servicios import (
-    decidir_inspeccion, decidir_solicitud_compra, entregar_reserva,
+    consumir_receta_produccion, decidir_inspeccion, decidir_solicitud_compra, entregar_reserva,
     entregar_solicitud_material,
-    ejecutar_mrp_semana, recibir_detalle_compra, registrar_entrada,
+    ejecutar_mrp_semana, recibir_detalle_compra, registrar_entrada, registrar_salida,
     reservar_fefo, reservar_solicitud_material,
 )
 
@@ -106,6 +106,33 @@ class InventarioTests(TestCase):
         self.assertEqual(resultado.necesidad_bruta, Decimal("40"))
         self.assertEqual(resultado.necesidad_neta, Decimal("40"))
 
+    def test_consumo_de_lote_productivo_usa_receta_y_no_se_duplica(self):
+        from datetime import date
+        from produccion.models import Lote
+
+        bodega = Bodega.objects.create(codigo="BP", nombre="Bodega producción")
+        ubicacion = Ubicacion.objects.create(bodega=bodega, codigo="DISP")
+        lote_material = LoteInventario.objects.create(
+            insumo=self.bolsa, codigo="B-RECETA",
+            estado_calidad=LoteInventario.EstadoCalidad.APROBADO,
+        )
+        registrar_entrada(
+            lote=lote_material, ubicacion=ubicacion, cantidad=100,
+            usuario=self.admin, documento_tipo="recepcion", documento_id=1,
+        )
+        lote_produccion = Lote.objects.create(
+            codigo_lote="LP-RECETA", producto=self.producto, fecha=date(2026, 8, 3),
+            kg_producidos=1000, estado=Lote.Estado.PRODUCIDO,
+        )
+        _, movimientos = consumir_receta_produccion(lote_produccion=lote_produccion, usuario=self.admin)
+        existencia = Existencia.objects.get(lote=lote_material, ubicacion=ubicacion)
+        self.assertEqual(existencia.cantidad_fisica, Decimal("60"))
+        self.assertEqual(sum((m.cantidad for m in movimientos), Decimal("0")), Decimal("40"))
+        self.assertEqual(movimientos[0].documento_tipo, "produccion.Lote")
+        self.assertEqual(movimientos[0].documento_id, lote_produccion.pk)
+        with self.assertRaisesMessage(ValidationError, "ya fue consumida"):
+            consumir_receta_produccion(lote_produccion=lote_produccion, usuario=self.admin)
+
 
 class LibroInventarioTests(TestCase):
     def setUp(self):
@@ -151,6 +178,37 @@ class LibroInventarioTests(TestCase):
                 insumo_id=self.insumo.id, cantidad=1, usuario=self.usuario,
                 documento_tipo="mrq", documento_id=1,
             )
+
+    def test_cuarentena_no_permite_salida_ni_consumo(self):
+        lote = self._lote("LQ-SAL", LoteInventario.EstadoCalidad.PENDIENTE)
+        registrar_entrada(
+            lote=lote, ubicacion=self.cuarentena, cantidad=10,
+            usuario=self.usuario, documento_tipo="recepcion", documento_id=1,
+        )
+        existencia = Existencia.objects.get(lote=lote)
+        with self.assertRaisesMessage(ValidationError, "Solo puede salir"):
+            registrar_salida(
+                existencia_id=existencia.id, cantidad=1, usuario=self.usuario,
+                documento_tipo="consumo", documento_id=1, motivo="Prueba", consumo=True,
+            )
+        existencia.refresh_from_db()
+        self.assertEqual(existencia.cantidad_fisica, 10)
+
+    def test_consumo_aprobado_descuenta_y_crea_movimiento(self):
+        lote = self._lote("L-OK", LoteInventario.EstadoCalidad.APROBADO)
+        registrar_entrada(
+            lote=lote, ubicacion=self.disponible, cantidad=10,
+            usuario=self.usuario, documento_tipo="recepcion", documento_id=1,
+        )
+        existencia = Existencia.objects.get(lote=lote)
+        movimiento = registrar_salida(
+            existencia_id=existencia.id, cantidad=3, usuario=self.usuario,
+            documento_tipo="orden-produccion", documento_id=8,
+            motivo="Consumo lote productivo", consumo=True,
+        )
+        existencia.refresh_from_db()
+        self.assertEqual(existencia.cantidad_fisica, 7)
+        self.assertEqual(movimiento.tipo, MovimientoInventario.Tipo.CONSUMO)
 
     def test_fefo_reserva_el_vencimiento_mas_cercano(self):
         from datetime import timedelta

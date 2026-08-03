@@ -4,11 +4,12 @@ Ninguna vista debe modificar ``Existencia`` directamente. Cada variación
 queda acompañada por un movimiento inmutable dentro de la misma transacción.
 """
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Sum
+from django.utils import timezone
 
 from .models import (
     Aprobacion, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
@@ -91,6 +92,10 @@ def _cantidad(valor) -> Decimal:
 @transaction.atomic
 def registrar_entrada(*, lote, ubicacion, cantidad, usuario, documento_tipo, documento_id):
     cantidad = _cantidad(cantidad)
+    if lote.utilizable and ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+        raise ValidationError("Un lote aprobado debe ingresar a una ubicación disponible.")
+    if not lote.utilizable and ubicacion.tipo != Ubicacion.Tipo.CUARENTENA:
+        raise ValidationError("Un lote pendiente de Calidad solo puede ingresar a cuarentena.")
     existencia, _ = Existencia.objects.select_for_update().get_or_create(
         lote=lote, ubicacion=ubicacion,
         defaults={"cantidad_fisica": 0, "cantidad_reservada": 0},
@@ -108,6 +113,112 @@ def registrar_entrada(*, lote, ubicacion, cantidad, usuario, documento_tipo, doc
     movimiento.full_clean()
     movimiento.save()
     return movimiento
+
+
+@transaction.atomic
+def registrar_salida(*, existencia_id, cantidad, usuario, documento_tipo, documento_id, motivo, consumo=False):
+    """Descuenta material liberado dejando un movimiento auditable."""
+    cantidad = _cantidad(cantidad)
+    existencia = Existencia.objects.select_for_update().select_related("lote", "ubicacion").get(pk=existencia_id)
+    if not existencia.lote.utilizable or existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+        raise ValidationError("Solo puede salir o consumirse material aprobado por Calidad y vigente.")
+    if existencia.cantidad_fisica - existencia.cantidad_reservada < cantidad:
+        raise ValidationError("La salida supera el stock disponible no reservado.")
+    if not str(motivo).strip():
+        raise ValidationError("La salida o consumo exige un motivo.")
+    anterior = existencia.cantidad_fisica
+    existencia.cantidad_fisica -= cantidad
+    existencia.full_clean()
+    existencia.save(update_fields=["cantidad_fisica"])
+    movimiento = MovimientoInventario.objects.create(
+        tipo=MovimientoInventario.Tipo.CONSUMO if consumo else MovimientoInventario.Tipo.SALIDA,
+        lote=existencia.lote, cantidad=cantidad, origen=existencia.ubicacion,
+        documento_tipo=documento_tipo, documento_id=documento_id,
+        usuario=usuario, motivo=motivo, saldo_anterior=anterior,
+        saldo_posterior=existencia.cantidad_fisica,
+    )
+    actualizar_alertas_inventario()
+    return movimiento
+
+
+@transaction.atomic
+def ingresar_material_manual(*, insumo, codigo_lote, ubicacion, cantidad, usuario, elaboracion=None, vencimiento=None):
+    """Crea el lote de proveedor y su entrada; Calidad decide su disponibilidad."""
+    from .models import InspeccionMaterial
+
+    if insumo.requiere_lote and not str(codigo_lote).strip():
+        raise ValidationError("El material exige un código de lote.")
+    if insumo.requiere_vencimiento and not vencimiento:
+        raise ValidationError("El material exige fecha de vencimiento.")
+    estado = (
+        LoteInventario.EstadoCalidad.PENDIENTE
+        if insumo.requiere_calidad else LoteInventario.EstadoCalidad.NO_REQUIERE
+    )
+    lote = LoteInventario.objects.filter(
+        insumo=insumo, codigo=codigo_lote or f"SIN-LOTE-{timezone.now():%Y%m%d%H%M%S}", proveedor=None
+    ).first()
+    if lote is None:
+        lote = LoteInventario.objects.create(
+            insumo=insumo, codigo=codigo_lote or f"SIN-LOTE-{timezone.now():%Y%m%d%H%M%S}",
+            elaboracion=elaboracion or None, vencimiento=vencimiento or None,
+            estado_calidad=estado,
+        )
+    elif lote.estado_calidad != estado:
+        raise ValidationError("El lote existente tiene un estado de Calidad incompatible.")
+    movimiento = registrar_entrada(
+        lote=lote, ubicacion=ubicacion, cantidad=cantidad, usuario=usuario,
+        documento_tipo="inventario.IngresoManual", documento_id=lote.pk,
+    )
+    if insumo.requiere_calidad and not InspeccionMaterial.objects.filter(lote=lote).exists():
+        InspeccionMaterial.objects.create(lote=lote, estado=InspeccionMaterial.Estado.PENDIENTE)
+    return movimiento
+
+
+@transaction.atomic
+def consumir_receta_produccion(*, lote_produccion, usuario):
+    """Descuenta por FEFO la receta declarada para los kg reales del lote."""
+    from .models import ConsumoLoteProduccion, ConsumoProducto
+
+    if lote_produccion.estado == lote_produccion.Estado.ANULADO:
+        raise ValidationError("No se puede consumir inventario para un lote anulado.")
+    if not lote_produccion.kg_producidos or lote_produccion.kg_producidos <= 0:
+        raise ValidationError("El lote debe tener kilos producidos informados.")
+    if ConsumoLoteProduccion.objects.filter(lote_produccion=lote_produccion).exists():
+        raise ValidationError("La receta de este lote de Producción ya fue consumida.")
+    receta = list(ConsumoProducto.objects.filter(producto=lote_produccion.producto).select_related("insumo"))
+    if not receta:
+        raise ValidationError("El producto no tiene materiales configurados en la receta de Inventario.")
+    cabecera = ConsumoLoteProduccion.objects.create(
+        lote_produccion=lote_produccion, kg_base=lote_produccion.kg_producidos,
+        registrado_por=usuario,
+    )
+    movimientos = []
+    for componente in receta:
+        restante = (Decimal(lote_produccion.kg_producidos) * componente.cantidad_por_kg).quantize(
+            Decimal("0.001"), rounding=ROUND_HALF_UP
+        )
+        if restante <= 0:
+            continue
+        candidatas = Existencia.objects.select_for_update().select_related("lote", "ubicacion").filter(
+            lote__insumo=componente.insumo, lote__activo=True,
+            ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+        ).order_by(F("lote__vencimiento").asc(nulls_last=True), "lote__recibido_en", "id")
+        for existencia in candidatas:
+            disponible = existencia.cantidad_disponible
+            if disponible <= 0:
+                continue
+            tomada = min(disponible, restante)
+            movimientos.append(registrar_salida(
+                existencia_id=existencia.pk, cantidad=tomada, usuario=usuario,
+                documento_tipo="produccion.Lote", documento_id=lote_produccion.pk,
+                motivo=f"Consumo automático receta · {lote_produccion.codigo_lote}", consumo=True,
+            ))
+            restante -= tomada
+            if restante == 0:
+                break
+        if restante > 0:
+            raise ValidationError(f"Stock insuficiente de {componente.insumo.nombre}. Faltan {restante}.")
+    return cabecera, movimientos
 
 
 @transaction.atomic

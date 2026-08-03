@@ -134,6 +134,13 @@ def trabajadores(request):
         datos = request.data
         if not datos.get("username"):
             return Response({"error": "El nombre de usuario es obligatorio."}, status=400)
+        password = datos.get("password", "")
+        if not password:
+            return Response({"error": "La contraseña inicial es obligatoria."}, status=400)
+        try:
+            validate_password(password)
+        except DjangoValidationError as error:
+            return Response({"error": " ".join(error.messages)}, status=400)
         perfil_actor = getattr(request.user, "perfil", None)
         es_general = request.user.is_superuser or (
             perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
@@ -147,12 +154,8 @@ def trabajadores(request):
                 usuario = User.objects.create_user(
                     username=datos["username"], email=datos.get("email", ""),
                     first_name=datos.get("nombre", ""), last_name=datos.get("apellido", ""),
+                    password=password,
                 )
-                import secrets
-                # Contraseña aleatoria que nadie conoce: permite que el token
-                # nativo de invitación/recuperación sea válido sin exponerla.
-                usuario.set_password(secrets.token_urlsafe(32))
-                usuario.save(update_fields=["password"])
                 PerfilUsuario.objects.create(
                     usuario=usuario, area=area, nivel=nivel,
                     empresa_id=datos.get("empresa") if es_general else perfil_actor.empresa_id,

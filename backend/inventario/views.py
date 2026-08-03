@@ -32,10 +32,10 @@ from .serializers import (
     SolicitudMaterialSerializer, UbicacionSerializer,
 )
 from .servicios import (
-    crear_ajuste, decidir_inspeccion, decidir_solicitud_compra,
+    consumir_receta_produccion, crear_ajuste, decidir_inspeccion, decidir_solicitud_compra,
     decidir_y_aplicar_ajuste, entregar_solicitud_material,
     ejecutar_mrp_semana, recibir_detalle_compra, registrar_devolucion,
-    reservar_solicitud_material, trasladar_existencia,
+    ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
 )
 
 
@@ -107,6 +107,69 @@ class MovimientoViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = MovimientoInventario.objects.select_related("lote__insumo", "origen", "destino", "usuario")
     serializer_class = MovimientoSerializer
     permission_classes = [EscribeBodega]
+
+    @action(detail=False, methods=["post"], url_path="entrada")
+    def entrada(self, request):
+        try:
+            movimiento = registrar_entrada(
+                lote=LoteInventario.objects.get(pk=request.data.get("lote")),
+                ubicacion=Ubicacion.objects.get(pk=request.data.get("ubicacion")),
+                cantidad=request.data.get("cantidad"), usuario=request.user,
+                documento_tipo=request.data.get("documento_tipo", "inventario.EntradaManual"),
+                documento_id=request.data.get("documento_id") or 0,
+            )
+        except (LoteInventario.DoesNotExist, Ubicacion.DoesNotExist, DjangoValidationError, ValueError) as error:
+            mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else str(error)
+            return Response({"error": mensaje}, status=400)
+        return Response(self.get_serializer(movimiento).data, status=201)
+
+    @action(detail=False, methods=["post"], url_path="ingresar-material")
+    def ingresar_material(self, request):
+        try:
+            movimiento = ingresar_material_manual(
+                insumo=Insumo.objects.get(pk=request.data.get("insumo")),
+                codigo_lote=request.data.get("codigo_lote", ""),
+                ubicacion=Ubicacion.objects.get(pk=request.data.get("ubicacion")),
+                cantidad=request.data.get("cantidad"), usuario=request.user,
+                elaboracion=request.data.get("elaboracion"), vencimiento=request.data.get("vencimiento"),
+            )
+        except (Insumo.DoesNotExist, Ubicacion.DoesNotExist, DjangoValidationError, ValueError) as error:
+            mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else str(error)
+            return Response({"error": mensaje}, status=400)
+        return Response(self.get_serializer(movimiento).data, status=201)
+
+    @action(detail=False, methods=["post"], url_path="salida")
+    def salida(self, request):
+        try:
+            movimiento = registrar_salida(
+                existencia_id=request.data.get("existencia"), cantidad=request.data.get("cantidad"),
+                usuario=request.user,
+                documento_tipo=request.data.get("documento_tipo", "inventario.SalidaManual"),
+                documento_id=request.data.get("documento_id") or 0,
+                motivo=request.data.get("motivo", ""),
+                consumo=request.data.get("tipo") == "consumo",
+            )
+        except (Existencia.DoesNotExist, DjangoValidationError, ValueError) as error:
+            mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else str(error)
+            return Response({"error": mensaje}, status=409)
+        return Response(self.get_serializer(movimiento).data, status=201)
+
+    @action(detail=False, methods=["post"], url_path="consumir-receta")
+    def consumir_receta(self, request):
+        from produccion.models import Lote
+        try:
+            cabecera, movimientos = consumir_receta_produccion(
+                lote_produccion=Lote.objects.get(pk=request.data.get("lote_produccion")),
+                usuario=request.user,
+            )
+        except (Lote.DoesNotExist, DjangoValidationError) as error:
+            mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else "El lote de Producción no existe."
+            return Response({"error": mensaje}, status=409)
+        return Response({
+            "consumo": cabecera.pk,
+            "lote_produccion": cabecera.lote_produccion_id,
+            "movimientos": self.get_serializer(movimientos, many=True).data,
+        }, status=201)
 
     @action(detail=False, methods=["post"], url_path="trasladar")
     def trasladar(self, request):
