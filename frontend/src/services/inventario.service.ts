@@ -2,7 +2,10 @@ import api from "./api";
 
 export interface Insumo {
   id: number; codigo: string; nombre: string; area: string; area_etiqueta: string;
-  unidad: string; stock_actual: string; contenido_envase: string;
+  unidad: string; contenido_envase: string;
+  /* Los tres se calculan desde el libro de existencias; no hay un saldo
+     guardado en el material. Un número al lado, editable y sin movimiento que
+     lo respalde, se desincroniza y además parece autorizado. */
   stock_fisico: number; stock_disponible: number; stock_bloqueado: number;
   eoq: string | null; punto_reposicion: string;
   categoria: string; requiere_lote: boolean; requiere_vencimiento: boolean; requiere_calidad: boolean;

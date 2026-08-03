@@ -44,7 +44,6 @@ class InventarioTests(TestCase):
             area=PerfilUsuario.Area.SECADO,
             unidad="un",
             contenido_envase=1,
-            stock_actual=100,
             demanda_anual=10000,
             costo_por_pedido=50,
             costo_mantencion_unitario=2,
@@ -80,9 +79,9 @@ class InventarioTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         material = respuesta.json()["materiales"][0]
         self.assertEqual(Decimal(material["requerido"]), Decimal("40000"))
-        # El MRP usa el libro de existencias, no el campo legado
-        # ``stock_actual``. Sin una entrada trazable, esas 100 unidades no
-        # existen para planificación.
+        # El MRP usa el libro de existencias y no hay otro sitio de donde
+        # sacar el saldo: sin una entrada trazable, no hay stock que descontar
+        # del requerimiento.
         self.assertEqual(material["envases_a_pedir"], 40000)
 
     def test_administrador_de_area_no_ve_insumos_de_otra_area(self):

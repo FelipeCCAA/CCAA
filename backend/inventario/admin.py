@@ -14,10 +14,11 @@ from .models import (
 
 @admin.register(Insumo)
 class InsumoAdmin(admin.ModelAdmin):
-    list_display = ["codigo", "nombre", "area", "stock_actual", "unidad", "activo"]
+    # Sin columna de stock: el saldo no vive aquí, se calcula desde el libro
+    # de existencias. Mostrar un número de esta tabla lo daría por bueno.
+    list_display = ["codigo", "nombre", "area", "unidad", "activo"]
     list_filter = ["area", "activo"]
     search_fields = ["codigo", "nombre"]
-    readonly_fields = ["stock_actual"]
 
 
 @admin.register(CicloCIP)

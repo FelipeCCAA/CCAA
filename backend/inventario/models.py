@@ -41,8 +41,12 @@ class Insumo(models.Model):
     vida_util_dias = models.PositiveIntegerField(default=0)
     stock_minimo = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     stock_maximo = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    # No hay `stock_actual`. El saldo se calcula desde `Existencia`, que a su
+    # vez solo cambia junto a un `MovimientoInventario` — un número guardado
+    # al lado, editable y sin movimiento que lo respalde, se desincroniza y
+    # además parece autorizado. Los que sí se guardan son los **parámetros**
+    # (mínimo, máximo, seguridad): esos los decide alguien, no se deducen.
     stock_seguridad = models.DecimalField(max_digits=14, decimal_places=3, default=0)
-    stock_actual = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     demanda_anual = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     costo_por_pedido = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     costo_mantencion_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=0)
