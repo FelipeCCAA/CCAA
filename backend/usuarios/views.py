@@ -23,6 +23,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
+from .models import PerfilUsuario
 from .serializers import (
     ConfirmacionRecuperacionSerializer,
     SolicitudRecuperacionSerializer,
@@ -125,17 +126,94 @@ def yo(request):
     return Response(UsuarioSerializer(request.user).data)
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([EsAdministrador])
 def trabajadores(request):
     """Lista de usuarios y perfiles para el panel propio de Administración."""
+    if request.method == "POST":
+        datos = request.data
+        if not datos.get("username"):
+            return Response({"error": "El nombre de usuario es obligatorio."}, status=400)
+        password = datos.get("password", "")
+        if not password:
+            return Response({"error": "La contraseña inicial es obligatoria."}, status=400)
+        try:
+            validate_password(password)
+        except DjangoValidationError as error:
+            return Response({"error": " ".join(error.messages)}, status=400)
+        perfil_actor = getattr(request.user, "perfil", None)
+        es_general = request.user.is_superuser or (
+            perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
+        )
+        area = datos.get("area") if es_general else perfil_actor.area
+        nivel = datos.get("nivel", PerfilUsuario.Nivel.TRABAJADOR) if es_general else PerfilUsuario.Nivel.TRABAJADOR
+        if area not in PerfilUsuario.Area.values or nivel not in PerfilUsuario.Nivel.values:
+            return Response({"error": "Área o nivel inválido."}, status=400)
+        try:
+            with transaction.atomic():
+                usuario = User.objects.create_user(
+                    username=datos["username"], email=datos.get("email", ""),
+                    first_name=datos.get("nombre", ""), last_name=datos.get("apellido", ""),
+                    password=password,
+                )
+                PerfilUsuario.objects.create(
+                    usuario=usuario, area=area, nivel=nivel,
+                    empresa_id=datos.get("empresa") if es_general else perfil_actor.empresa_id,
+                    sucursal_id=datos.get("sucursal") if es_general else perfil_actor.sucursal_id,
+                    cargo=datos.get("cargo", ""), turno=datos.get("turno", ""),
+                )
+        except DatabaseError:
+            return Response({"error": "No se pudo crear el usuario."}, status=400)
+        return Response(TrabajadorSerializer(usuario).data, status=201)
+
     usuarios = User.objects.select_related("perfil").order_by(
         "first_name", "last_name", "username"
     )
     perfil = getattr(request.user, "perfil", None)
     if not request.user.is_superuser and perfil.area != perfil.Area.ADMINISTRACION:
         usuarios = usuarios.filter(perfil__area=perfil.area)
+    if not request.user.is_superuser and perfil:
+        if perfil.empresa_id:
+            usuarios = usuarios.filter(perfil__empresa_id=perfil.empresa_id)
+        if perfil.sucursal_id:
+            usuarios = usuarios.filter(perfil__sucursal_id=perfil.sucursal_id)
     return Response(TrabajadorSerializer(usuarios, many=True).data)
+
+
+@api_view(["PATCH"])
+@permission_classes([EsAdministrador])
+def actualizar_trabajador(request, usuario_id):
+    actor = request.user
+    perfil_actor = getattr(actor, "perfil", None)
+    usuario = User.objects.select_related("perfil").filter(pk=usuario_id).first()
+    if not usuario:
+        return Response({"error": "El usuario no existe."}, status=404)
+    perfil = getattr(usuario, "perfil", None)
+    es_general = actor.is_superuser or (
+        perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
+    )
+    if not es_general and (
+        not perfil or perfil.area != perfil_actor.area
+        or perfil.empresa_id != perfil_actor.empresa_id
+        or perfil.sucursal_id != perfil_actor.sucursal_id
+    ):
+        return Response({"error": "No puedes administrar usuarios de otra área."}, status=403)
+    if usuario == actor and any(campo in request.data for campo in ("nivel", "area", "empresa", "sucursal")):
+        return Response({"error": "No puedes modificar tus propios permisos."}, status=403)
+    usuario.is_active = request.data.get("activo", usuario.is_active)
+    usuario.email = request.data.get("email", usuario.email)
+    usuario.first_name = request.data.get("nombre", usuario.first_name)
+    usuario.last_name = request.data.get("apellido", usuario.last_name)
+    usuario.save(update_fields=["is_active", "email", "first_name", "last_name"])
+    if perfil:
+        perfil.cargo = request.data.get("cargo", perfil.cargo)
+        perfil.turno = request.data.get("turno", perfil.turno)
+        if es_general:
+            perfil.area = request.data.get("area", perfil.area)
+            perfil.nivel = request.data.get("nivel", perfil.nivel)
+        perfil.full_clean()
+        perfil.save()
+    return Response(TrabajadorSerializer(usuario).data)
 
 
 @api_view(["POST"])

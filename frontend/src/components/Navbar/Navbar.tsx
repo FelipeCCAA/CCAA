@@ -37,6 +37,11 @@ import logo from "../../assets/logos/logo-campos-australes-normal.png";
 
 const modulos = [
   {
+    etiqueta: "Abastecimiento y Bodega",
+    ruta: "/abastecimiento",
+    icono: Boxes,
+  },
+  {
     etiqueta: "Panel general",
     ruta: "/dashboard",
     icono: LayoutDashboard,

@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     confirmar_recuperacion,
+    actualizar_trabajador,
     login,
     logout,
     solicitar_recuperacion,
@@ -13,6 +14,7 @@ urlpatterns = [
     path("logout/", logout, name="logout"),
     path("yo/", yo, name="yo"),
     path("trabajadores/", trabajadores, name="trabajadores"),
+    path("trabajadores/<int:usuario_id>/", actualizar_trabajador, name="actualizar-trabajador"),
     path(
         "recuperar-contrasena/",
         solicitar_recuperacion,

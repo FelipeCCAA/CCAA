@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import {
   BadgeCheck,
   BriefcaseBusiness,
@@ -8,6 +9,8 @@ import {
 } from "lucide-react";
 
 import {
+  cambiarEstadoTrabajador,
+  crearTrabajador,
   obtenerTrabajadores,
   type Trabajador,
 } from "../../services/usuario.service";
@@ -45,6 +48,8 @@ function Administracion() {
   const [area, setArea] = useState("");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [nuevo, setNuevo] = useState<{ username: string; email: string; nombre: string; apellido: string; area: string; nivel: "admin" | "trabajador"; cargo: string; password: string }>({ username: "", email: "", nombre: "", apellido: "", area: "secado", nivel: "trabajador", cargo: "", password: "" });
 
   useEffect(() => {
     let vigente = true;
@@ -83,7 +88,6 @@ function Administracion() {
         trabajador.email,
         trabajador.perfil?.cargo,
         trabajador.perfil?.area,
-        trabajador.perfil?.turno,
       ]
         .filter(Boolean)
         .join(" ")
@@ -94,6 +98,28 @@ function Administracion() {
   }, [area, busqueda, trabajadores]);
 
   const activos = trabajadores.filter((t) => t.activo).length;
+  const guardarNuevo = async (evento: React.FormEvent) => {
+    evento.preventDefault();
+    try {
+      const creado = await crearTrabajador(nuevo);
+      setTrabajadores((actuales) => [...actuales, creado]);
+      setNuevo({ username: "", email: "", nombre: "", apellido: "", area: "secado", nivel: "trabajador", cargo: "", password: "" });
+      setMostrarFormulario(false);
+      setError("");
+    } catch (errorCreacion) {
+      const mensaje = axios.isAxiosError(errorCreacion) && typeof errorCreacion.response?.data?.error === "string"
+        ? errorCreacion.response.data.error
+        : "No se pudo crear el usuario. Revisa los datos ingresados.";
+      setError(mensaje);
+    }
+  };
+
+  const alternar = async (trabajador: Trabajador) => {
+    try {
+      const actualizado = await cambiarEstadoTrabajador(trabajador.id, !trabajador.activo);
+      setTrabajadores((actuales) => actuales.map((t) => t.id === actualizado.id ? actualizado : t));
+    } catch { setError("No se pudo cambiar el estado del usuario."); }
+  };
   return (
     <div className="px-8 py-10">
       <div className="mx-auto max-w-7xl">
@@ -114,6 +140,26 @@ function Administracion() {
           <Indicador etiqueta="Cuentas activas" valor={activos} icono={BadgeCheck} />
           <Indicador etiqueta="Áreas registradas" valor={areas.length} icono={BriefcaseBusiness} />
           <Indicador etiqueta="Administradores" valor={trabajadores.filter((t) => t.perfil?.nivel === "admin" || t.rol === "admin").length} icono={ShieldCheck} />
+        </section>
+
+        <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-semibold text-slate-800">Personal</h2><p className="mt-1 text-sm text-slate-400">Crea una cuenta con contraseña inicial para ingreso inmediato.</p></div><button type="button" onClick={() => setMostrarFormulario((visible) => !visible)} className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">{mostrarFormulario ? "Cancelar" : "Agregar trabajador"}</button></div>
+          {mostrarFormulario && <>
+          <h3 className="mt-6 font-semibold text-slate-700">Nuevo trabajador</h3>
+          <form onSubmit={guardarNuevo} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <input required placeholder="Usuario" value={nuevo.username} onChange={(e) => setNuevo({ ...nuevo, username: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+            <input type="email" placeholder="Correo corporativo" value={nuevo.email} onChange={(e) => setNuevo({ ...nuevo, email: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+            <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+            <input placeholder="Apellido" value={nuevo.apellido} onChange={(e) => setNuevo({ ...nuevo, apellido: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+            <input required type="password" minLength={8} autoComplete="new-password" placeholder="Contraseña inicial" value={nuevo.password} onChange={(e) => setNuevo({ ...nuevo, password: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+            <select value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm">
+              {["recepcion", "condensacion", "secado", "envase", "calidad", "bodega", "compras", "despacho", "administracion"].map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
+            <input placeholder="Cargo" value={nuevo.cargo} onChange={(e) => setNuevo({ ...nuevo, cargo: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+            <button className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">Crear usuario</button>
+          </form>
+          </>}
         </section>
 
         <section className="mt-10 overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -160,7 +206,6 @@ function Administracion() {
                     <th className="px-6 py-3 font-medium">Trabajador</th>
                     <th className="px-6 py-3 font-medium">Área</th>
                     <th className="px-6 py-3 font-medium">Cargo</th>
-                    <th className="px-6 py-3 font-medium">Turno</th>
                     <th className="px-6 py-3 font-medium">Rol</th>
                     <th className="px-6 py-3 font-medium">Estado</th>
                   </tr>
@@ -174,16 +219,15 @@ function Administracion() {
                       </td>
                       <td className="px-6 py-4 text-slate-600">{trabajador.perfil?.area || "Sin área"}</td>
                       <td className="px-6 py-4 text-slate-600">{trabajador.perfil?.cargo || "—"}</td>
-                      <td className="px-6 py-4 text-slate-600">{trabajador.perfil?.turno || "—"}</td>
                       <td className="px-6 py-4">
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                           {trabajador.perfil?.nivel_etiqueta || (trabajador.rol === "admin" ? "Administrador" : "Sin nivel")}
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={trabajador.activo ? "text-green-700" : "text-slate-400"}>
+                        <button type="button" onClick={() => void alternar(trabajador)} className={trabajador.activo ? "text-green-700 hover:underline" : "text-slate-400 hover:underline"}>
                           {trabajador.activo ? "Activo" : "Inactivo"}
-                        </span>
+                        </button>
                       </td>
                     </tr>
                   ))}

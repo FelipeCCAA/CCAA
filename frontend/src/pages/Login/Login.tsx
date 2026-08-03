@@ -38,9 +38,25 @@ function Login() {
 
       // Administración tiene una portada propia. Los demás roles conservan
       // el destino solicitado o entran al panel operativo general.
-      navegar(sesion.usuario.perfil?.nivel === "admin" || sesion.usuario.rol === "admin" ? "/administracion" : destino, {
+      const area = sesion.usuario.perfil?.area;
+      const porArea: Record<string, string> = {
+        recepcion: "/recepcion",
+        condensacion: "/produccion",
+        secado: "/produccion",
+        envase: "/produccion",
+        calidad: "/liberacion",
+        bodega: "/abastecimiento",
+        compras: "/abastecimiento",
+        despacho: "/abastecimiento",
+      };
+      navegar(
+        sesion.usuario.perfil?.nivel === "admin" || sesion.usuario.rol === "admin"
+          ? "/administracion"
+          : (area && porArea[area]) || destino,
+        {
         replace: true,
-      });
+        },
+      );
     } catch (error) {
       // El backend responde 400 si falta un campo, 401 si las credenciales no
       // son válidas y 403 si la cuenta está desactivada; en los tres casos
