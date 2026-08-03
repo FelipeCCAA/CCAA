@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'recepcion',
     'calidad',
     'inocuidad',
+    'inventario',
     'planificacion',
     'auditoria',
     "corsheaders",

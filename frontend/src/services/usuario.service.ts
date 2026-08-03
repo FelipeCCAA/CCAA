@@ -42,6 +42,20 @@ export async function obtenerUsuarioActual(): Promise<Usuario> {
 }
 
 
+export interface Trabajador extends Usuario {
+  activo: boolean;
+  ultimo_acceso: string | null;
+}
+
+
+/** Personal visible únicamente para el rol administrador. */
+export async function obtenerTrabajadores(): Promise<Trabajador[]> {
+  const { data } = await api.get<Trabajador[]>("usuarios/trabajadores/");
+
+  return data;
+}
+
+
 /** Solicita el correo de recuperación sin revelar si la cuenta existe. */
 export async function solicitarRecuperacion(
   email: string,

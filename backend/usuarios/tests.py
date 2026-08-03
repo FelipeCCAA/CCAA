@@ -128,6 +128,54 @@ class SesionTests(TestCase):
         self.assertEqual(self.cliente.get("/api/usuarios/yo/").status_code, 401)
 
 
+class PanelAdministracionTests(TestCase):
+    def setUp(self):
+        self.cliente = APIClient()
+        self.admin = User.objects.create_user(
+            username="administradora", password="clave-de-prueba"
+        )
+        PerfilUsuario.objects.create(
+            usuario=self.admin,
+            rol=Rol.ADMIN,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+            area=PerfilUsuario.Area.ADMINISTRACION,
+        )
+        self.trabajador = User.objects.create_user(
+            username="operador-area",
+            password="clave-de-prueba",
+            first_name="Juan",
+            last_name="Soto",
+        )
+        PerfilUsuario.objects.create(
+            usuario=self.trabajador,
+            rol=Rol.PRODUCCION,
+            area="Secado",
+            cargo="Operador",
+            turno="A",
+        )
+
+    def test_admin_ve_trabajadores_y_su_area(self):
+        self.cliente.force_authenticate(self.admin)
+
+        respuesta = self.cliente.get("/api/usuarios/trabajadores/")
+
+        self.assertEqual(respuesta.status_code, 200)
+        trabajador = next(
+            usuario for usuario in respuesta.json()
+            if usuario["username"] == "operador-area"
+        )
+        self.assertEqual(trabajador["perfil"]["area"], "Secado")
+        self.assertEqual(trabajador["perfil"]["cargo"], "Operador")
+        self.assertTrue(trabajador["activo"])
+
+    def test_otro_rol_no_puede_ver_el_personal(self):
+        self.cliente.force_authenticate(self.trabajador)
+
+        respuesta = self.cliente.get("/api/usuarios/trabajadores/")
+
+        self.assertEqual(respuesta.status_code, 403)
+
+
 def rutas_de_la_api():
     """
     Todas las rutas de `/api/` que no llevan parámetros, descubiertas del

@@ -25,6 +25,19 @@ ROLES_AUTORIZADORES = (Rol.CALIDAD, Rol.ADMIN)
 
 class PerfilUsuario(models.Model):
 
+    class Nivel(models.TextChoices):
+        ADMIN = "admin", "Administrador de área"
+        TRABAJADOR = "trabajador", "Trabajador"
+
+    class Area(models.TextChoices):
+        RECEPCION = "recepcion", "Recepción"
+        CONDENSACION = "condensacion", "Condensación"
+        SECADO = "secado", "Secado"
+        ENVASE = "envase", "Envase"
+        CALIDAD = "calidad", "Calidad"
+        BODEGA = "bodega", "Bodega"
+        ADMINISTRACION = "administracion", "Administración general"
+
     usuario = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -36,10 +49,7 @@ class PerfilUsuario(models.Model):
         blank=True
     )
 
-    area = models.CharField(
-        max_length=100,
-        blank=True
-    )
+    area = models.CharField(max_length=30, choices=Area.choices, blank=True)
 
     turno = models.CharField(
         max_length=50,
@@ -50,6 +60,12 @@ class PerfilUsuario(models.Model):
         max_length=20,
         choices=Rol.choices,
         default=Rol.LECTURA
+    )
+
+    nivel = models.CharField(
+        max_length=20,
+        choices=Nivel.choices,
+        default=Nivel.TRABAJADOR,
     )
 
     class Meta:
@@ -78,4 +94,19 @@ def rol_de(usuario) -> str | None:
 
     perfil = getattr(usuario, "perfil", None)
 
-    return perfil.rol if perfil else None
+    if not perfil:
+        return None
+
+    # El área determina el permiso operativo. Un administrador de Secado
+    # administra su personal, pero no se convierte por eso en administrador
+    # global de maestros o de otras áreas.
+    por_area = {
+        PerfilUsuario.Area.RECEPCION: Rol.RECEPCION,
+        PerfilUsuario.Area.CONDENSACION: Rol.PRODUCCION,
+        PerfilUsuario.Area.SECADO: Rol.PRODUCCION,
+        PerfilUsuario.Area.ENVASE: Rol.PRODUCCION,
+        PerfilUsuario.Area.CALIDAD: Rol.CALIDAD,
+    }
+    if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
+        return Rol.ADMIN
+    return por_area.get(perfil.area, perfil.rol)

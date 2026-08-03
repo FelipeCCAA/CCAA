@@ -29,9 +29,12 @@ const CLAVE = "ccaa.sesion";
 export interface PerfilUsuario {
   cargo: string;
   area: string;
+  area_etiqueta: string;
   turno: string;
   rol: string;
   rol_etiqueta: string;
+  nivel: "admin" | "trabajador";
+  nivel_etiqueta: string;
 }
 
 

@@ -14,7 +14,19 @@ evita.
 
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
-from .models import Rol, rol_de
+from .models import PerfilUsuario, Rol, rol_de
+
+
+class EsAdministrador(BasePermission):
+    """Autoriza exclusivamente al rol efectivo de Administración."""
+
+    message = "Solo Administración puede consultar esta información."
+
+    def has_permission(self, request, view):
+        if request.user.is_superuser:
+            return True
+        perfil = getattr(request.user, "perfil", None)
+        return bool(perfil and perfil.nivel == PerfilUsuario.Nivel.ADMIN)
 
 
 class PermisoPorRol(BasePermission):

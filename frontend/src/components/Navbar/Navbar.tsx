@@ -9,6 +9,8 @@ import {
   ClipboardList,
   Database,
   History,
+  Users,
+  Boxes,
   LogOut,
 } from "lucide-react";
 
@@ -85,6 +87,21 @@ function Navbar() {
 
   const navegar = useNavigate();
   const sesion = obtenerSesion();
+  const modulosVisibles = sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin"
+    ? [
+        {
+          etiqueta: "Administración",
+          ruta: "/administracion",
+          icono: Users,
+        },
+        {
+          etiqueta: "Inventario y MRP",
+          ruta: "/inventario",
+          icono: Boxes,
+        },
+        ...modulos,
+      ]
+    : modulos;
 
   const salir = async () => {
 
@@ -121,7 +138,7 @@ function Navbar() {
 
       <nav className="flex-1 space-y-1 px-4">
 
-        {modulos.map((modulo) => {
+        {modulosVisibles.map((modulo) => {
 
           const Icono = modulo.icono;
 
