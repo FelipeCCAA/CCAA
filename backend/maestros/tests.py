@@ -330,3 +330,41 @@ class DossierSembradoTests(TestCase):
         for documento in DocumentoLiberacion.objects.all():
             with self.subTest(documento=documento.codigo or documento.nombre):
                 documento.full_clean()
+
+
+class MandanteUnicoPorClienteTests(TestCase):
+    """
+    Un código de cliente, un mandante.
+
+    El segmento de cliente del SKU no tiene forma de distinguir dos mandantes
+    que lo compartan: sus productos salen con SKU idénticos y —como el código
+    de lote lleva el SKU dentro— también con el mismo código de lote. La base
+    de desarrollo llegó a tener «Nestle» y «Nestlé» a la vez, y los productos
+    de ese cliente quedaron repartidos entre las dos fichas sin que nada
+    avisara, porque nada lo impedía.
+    """
+
+    def test_no_se_repite_el_codigo_de_cliente(self):
+        Mandante.objects.create(nombre="Nestlé", codigo_cliente="nestle")
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Mandante.objects.create(nombre="Nestle SA", codigo_cliente="nestle")
+
+    def test_dos_mandantes_pueden_no_tener_codigo(self):
+        """
+        Uno sin código es uno que todavía no genera SKU, y puede haber varios
+        así: exigirles un código impediría registrar un mandante hasta que
+        alguien decidiera qué segmento le toca.
+        """
+        Mandante.objects.create(nombre="Cliente nuevo")
+        Mandante.objects.create(nombre="Otro cliente nuevo")
+
+        self.assertEqual(Mandante.objects.filter(codigo_cliente="").count(), 2)
+
+    def test_los_mandantes_sembrados_no_comparten_codigo(self):
+        """La fusión de la migración 0022, comprobada sobre el resultado."""
+        con_codigo = Mandante.objects.exclude(codigo_cliente="")
+        codigos = [m.codigo_cliente for m in con_codigo]
+
+        self.assertEqual(len(codigos), len(set(codigos)))

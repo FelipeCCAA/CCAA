@@ -240,23 +240,22 @@ class Command(BaseCommand):
         """
         El mandante que corresponde a ese código de cliente.
 
-        Si hay más de uno con el mismo código —pasa: la base de desarrollo
-        tiene «Nestle» y «Nestlé»— se usa el más antiguo y se avisa. Elegir en
-        silencio repartiría los productos del mismo cliente entre dos fichas.
+        Devuelve uno solo sin desempatar nada: la restricción
+        `mandante_unico_por_codigo_cliente` garantiza que no haya dos. Hubo un
+        tiempo en que sí los había —«Nestle» y «Nestlé» a la vez— y este
+        método elegía el más antiguo y avisaba; ese aviso ya no puede
+        dispararse, así que no está.
         """
-        candidatos = list(Mandante.objects.filter(codigo_cliente=clave).order_by("id"))
+        mandante = Mandante.objects.filter(codigo_cliente=clave).first()
 
-        if not candidatos:
-            nombre = {"nestle": "Nestlé", "colun": "Colun", "soprole": "Soprole"}.get(
-                clave, "CCAA"
-            )
-            return Mandante.objects.create(nombre=nombre, codigo_cliente=clave), None
+        if mandante is not None:
+            return mandante
 
-        if len(candidatos) > 1:
-            duplicados = ", ".join(f"«{m.nombre}»" for m in candidatos)
-            return candidatos[0], f"{clave}: hay {len(candidatos)} mandantes ({duplicados})"
+        nombre = {"nestle": "Nestlé", "colun": "Colun", "soprole": "Soprole"}.get(
+            clave, "CCAA"
+        )
 
-        return candidatos[0], None
+        return Mandante.objects.create(nombre=nombre, codigo_cliente=clave)
 
     def _atributos(self, datos, mandante):
         return {
@@ -275,7 +274,7 @@ class Command(BaseCommand):
         }
 
     def _cargar(self, datos):
-        mandante, aviso = self._mandante(datos["cliente"])
+        mandante = self._mandante(datos["cliente"])
 
         producto, creado = Producto.objects.update_or_create(
             nombre=datos["nombre"],
@@ -283,7 +282,7 @@ class Command(BaseCommand):
             defaults=self._atributos(datos, mandante),
         )
 
-        return {**datos, "sku": producto.codigo, "creado": creado, "aviso": aviso}
+        return {**datos, "sku": producto.codigo, "creado": creado}
 
     # ------------------------------------------------------------ informe
 
@@ -303,13 +302,6 @@ class Command(BaseCommand):
             )
             for r in corregidos:
                 self.stdout.write(f"  · {r['nombre']}\n      {r['corregido']}")
-
-        avisos = sorted({r["aviso"] for r in resultados if r["aviso"]})
-
-        if avisos:
-            self.stdout.write(self.style.WARNING("\nMandantes que revisar:"))
-            for aviso in avisos:
-                self.stdout.write(f"  · {aviso}")
 
         self._informar_colisiones(resultados)
 

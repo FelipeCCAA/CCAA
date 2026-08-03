@@ -41,6 +41,22 @@ class Mandante(models.Model):
         verbose_name = "Mandante"
         verbose_name_plural = "Mandantes"
         ordering = ["nombre"]
+        constraints = [
+            # Un código de cliente, un mandante. El segmento del SKU no tiene
+            # forma de distinguir dos mandantes que lo compartan: sus productos
+            # saldrían con SKU idénticos —y con el mismo código de lote, que
+            # lleva el SKU dentro—. La base de desarrollo llegó a tener
+            # «Nestle» y «Nestlé» a la vez, y los productos de un mismo cliente
+            # quedaron repartidos entre las dos fichas.
+            #
+            # Los vacíos sí se repiten: un mandante sin código es uno que
+            # todavía no genera SKU, y puede haber varios así.
+            models.UniqueConstraint(
+                fields=["codigo_cliente"],
+                condition=~models.Q(codigo_cliente=""),
+                name="mandante_unico_por_codigo_cliente",
+            )
+        ]
 
     def __str__(self):
         return self.nombre
