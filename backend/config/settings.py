@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 
@@ -130,8 +131,19 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # pierde. No usar para operar.
 
 DB_ENGINE = os.getenv("DB_ENGINE", "postgres").lower()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DB_ENGINE == "sqlite":
+if DATABASE_URL:
+    # Vercel Marketplace (por ejemplo Neon) entrega la conexion completa en
+    # DATABASE_URL. Tiene prioridad sobre las variables DB_* individuales.
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=int(os.getenv("DB_CONN_MAX_AGE", "0")),
+            conn_health_checks=True,
+        )
+    }
+elif DB_ENGINE == "sqlite":
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -265,17 +277,3 @@ REST_FRAMEWORK = {
         "password_reset_confirm": "10/hour",
     },
 }
-
-if os.environ.get("DB_ENGINE") == "postgresql":
-    DATABASES["default"] = {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ["DB_NAME"],
-        "USER": os.environ["DB_USER"],
-        "PASSWORD": os.environ["DB_PASSWORD"],
-        "HOST": os.environ.get("DB_HOST", "localhost"),
-        "PORT": os.environ.get("DB_PORT", "5432"),
-        "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
-        "OPTIONS": {
-            "sslmode": os.environ.get("DB_SSLMODE", "prefer"),
-        },
-    }
