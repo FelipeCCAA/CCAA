@@ -15,7 +15,7 @@ import { NavLink, Outlet } from "react-router-dom";
   problema, y por eso ordena mejor que agrupar por tabla.
 
       Panel · Materiales · Stock · Bodegas
-      Compras · Proveedores · Calidad · Pedidos · MRP
+      Compras · Proveedores · Recepción · Calidad · Pedidos · MRP
 
   Cada pestaña carga lo suyo (ver `useCarga`). En este módulo los permisos son
   **por área** —Bodega, Compras, Calidad—, así que a cualquiera le van a
@@ -30,6 +30,7 @@ const PESTANAS = [
   { a: "bodegas", texto: "Bodegas" },
   { a: "compras", texto: "Compras" },
   { a: "proveedores", texto: "Proveedores" },
+  { a: "recepcion", texto: "Recepción" },
   { a: "calidad", texto: "Calidad" },
   { a: "pedidos", texto: "Pedidos" },
   { a: "mrp", texto: "MRP" },

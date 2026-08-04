@@ -36,7 +36,7 @@ from .servicios import (
     consumir_receta_produccion, crear_ajuste, decidir_inspeccion, decidir_solicitud_compra,
     decidir_y_aplicar_ajuste, entregar_solicitud_material,
     convertir_solicitud_en_ordenes, crear_solicitud_desde_mrp,
-    ejecutar_mrp_semana, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
+    ejecutar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
 )
 
@@ -315,9 +315,22 @@ class SolicitudCompraViewSet(viewsets.ModelViewSet):
 
 
 class OrdenCompraViewSet(viewsets.ModelViewSet):
-    queryset = OrdenCompra.objects.select_related("proveedor", "bodega_entrega").prefetch_related("detalles")
+    queryset = OrdenCompra.objects.select_related("proveedor", "bodega_entrega").prefetch_related("detalles__insumo")
     serializer_class = OrdenCompraSerializer
     permission_classes = [EscribeCompras]
+
+    @action(detail=True, methods=["post"], url_path="enviar")
+    def enviar(self, request, pk=None):
+        """
+        La manda al proveedor. Hasta aquí era un borrador, y el MRP no cuenta
+        un borrador como recepción programada: no compromete a nadie.
+        """
+        try:
+            orden = enviar_orden_compra(orden=self.get_object())
+        except DjangoValidationError as error:
+            return Response({"error": error.messages[0]}, status=409)
+
+        return Response(self.get_serializer(orden).data)
 
 
 class DetalleSolicitudCompraViewSet(viewsets.ModelViewSet):

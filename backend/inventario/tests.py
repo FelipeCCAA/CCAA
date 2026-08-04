@@ -21,7 +21,7 @@ from .servicios import (
     consumir_receta_produccion, convertir_solicitud_en_ordenes,
     crear_solicitud_desde_mrp, decidir_inspeccion, decidir_solicitud_compra, entregar_reserva,
     entregar_solicitud_material,
-    ejecutar_mrp_semana, recibir_detalle_compra, registrar_entrada, registrar_salida,
+    ejecutar_mrp_semana, enviar_orden_compra, recibir_detalle_compra, registrar_entrada, registrar_salida,
     reservar_fefo, reservar_solicitud_material,
 )
 
@@ -820,3 +820,142 @@ class ProveedorPrincipalTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         nuevo.refresh_from_db()
         self.assertTrue(nuevo.principal)
+
+
+class CicloDeLaOrdenTests(TestCase):
+    """
+    El estado de la orden avanza solo, según lo que llega.
+
+    `parcial` y `recibida` existían en el modelo y no los ponía nadie: una
+    orden entregada por completo seguía figurando abierta, y Compras no tenía
+    cómo saber qué estaba pendiente sin sumar las líneas a mano.
+    """
+
+    def setUp(self):
+        from .models import DetalleOrdenCompra
+
+        self.usuario = User.objects.create_user("recepcionista", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+            area=PerfilUsuario.Area.RECEPCION,
+        )
+
+        self.bolsa = Insumo.objects.create(
+            codigo="R-BOLSA", nombre="Bolsa 25 kg",
+            area=PerfilUsuario.Area.BODEGA, unidad="un",
+            requiere_calidad=False, requiere_lote=False,
+        )
+        self.reactivo = Insumo.objects.create(
+            codigo="R-REACT", nombre="Reactivo",
+            area=PerfilUsuario.Area.CALIDAD, unidad="L",
+            requiere_calidad=True, requiere_lote=True,
+        )
+
+        proveedor = Proveedor.objects.create(rut="90.1-1", nombre="Envases Sur")
+        self.bodega = Bodega.objects.create(codigo="BR", nombre="Bodega recepción")
+        self.disponible = Ubicacion.objects.create(
+            bodega=self.bodega, codigo="DISP", tipo=Ubicacion.Tipo.DISPONIBLE
+        )
+        self.cuarentena = Ubicacion.objects.create(
+            bodega=self.bodega, codigo="CUAR", tipo=Ubicacion.Tipo.CUARENTENA
+        )
+
+        self.orden = OrdenCompra.objects.create(
+            numero="OC-R-1", proveedor=proveedor, bodega_entrega=self.bodega,
+            estado=OrdenCompra.Estado.BORRADOR,
+        )
+        self.linea_bolsa = DetalleOrdenCompra.objects.create(
+            orden=self.orden, insumo=self.bolsa, cantidad=1000, costo_unitario=120,
+        )
+        self.linea_reactivo = DetalleOrdenCompra.objects.create(
+            orden=self.orden, insumo=self.reactivo, cantidad=20, costo_unitario=8000,
+        )
+
+    def _recepcion(self):
+        return RecepcionCompra.objects.create(
+            orden=self.orden, guia="G-1", receptor=self.usuario
+        )
+
+    def test_solo_se_envia_un_borrador(self):
+        enviar_orden_compra(orden=self.orden)
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenCompra.Estado.ENVIADA)
+
+        with self.assertRaisesMessage(ValidationError, "solo se envía un borrador"):
+            enviar_orden_compra(orden=self.orden)
+
+    def test_una_orden_sin_lineas_no_se_envia(self):
+        vacia = OrdenCompra.objects.create(
+            numero="OC-R-VACIA", proveedor=self.orden.proveedor,
+            bodega_entrega=self.bodega,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "no tiene líneas"):
+            enviar_orden_compra(orden=vacia)
+
+    def test_recibir_una_linea_deja_la_orden_parcial(self):
+        recibir_detalle_compra(
+            recepcion=self._recepcion(), detalle_orden_id=self.linea_bolsa.id,
+            ubicacion=self.disponible, codigo_lote="", cantidad=1000,
+            usuario=self.usuario,
+        )
+
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenCompra.Estado.PARCIAL)
+
+    def test_recibirlo_todo_deja_la_orden_recibida(self):
+        recepcion = self._recepcion()
+
+        recibir_detalle_compra(
+            recepcion=recepcion, detalle_orden_id=self.linea_bolsa.id,
+            ubicacion=self.disponible, codigo_lote="", cantidad=1000,
+            usuario=self.usuario,
+        )
+        recibir_detalle_compra(
+            recepcion=recepcion, detalle_orden_id=self.linea_reactivo.id,
+            ubicacion=self.cuarentena, codigo_lote="LOTE-R-9", cantidad=20,
+            usuario=self.usuario,
+        )
+
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenCompra.Estado.RECIBIDA)
+
+    def test_una_orden_cancelada_no_se_reabre_al_recibir(self):
+        """
+        Los estados finales son decisiones de alguien. Recibir contra una orden
+        cancelada es un problema aparte, y no se arregla cambiándole el estado
+        por debajo.
+        """
+        self.orden.estado = OrdenCompra.Estado.CANCELADA
+        self.orden.save(update_fields=["estado"])
+
+        recibir_detalle_compra(
+            recepcion=self._recepcion(), detalle_orden_id=self.linea_bolsa.id,
+            ubicacion=self.disponible, codigo_lote="", cantidad=500,
+            usuario=self.usuario,
+        )
+
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenCompra.Estado.CANCELADA)
+
+    def test_el_material_de_calidad_entra_en_cuarentena_y_no_se_puede_usar(self):
+        from .models import LoteInventario
+
+        detalle = recibir_detalle_compra(
+            recepcion=self._recepcion(), detalle_orden_id=self.linea_reactivo.id,
+            ubicacion=self.cuarentena, codigo_lote="LOTE-R-1", cantidad=20,
+            usuario=self.usuario,
+        )
+
+        lote = LoteInventario.objects.get(pk=detalle.lote_id)
+        self.assertEqual(lote.estado_calidad, LoteInventario.EstadoCalidad.PENDIENTE)
+        self.assertFalse(lote.utilizable)
+
+    def test_no_se_recibe_mas_de_lo_pedido(self):
+        with self.assertRaisesMessage(ValidationError, "supera la cantidad pendiente"):
+            recibir_detalle_compra(
+                recepcion=self._recepcion(), detalle_orden_id=self.linea_bolsa.id,
+                ubicacion=self.disponible, codigo_lote="", cantidad=1500,
+                usuario=self.usuario,
+            )

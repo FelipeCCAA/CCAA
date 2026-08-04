@@ -46,9 +46,49 @@ export interface SolicitudMaterial {
   prioridad: number; detalles: Array<{ id: number; insumo_nombre: string; cantidad_solicitada: string; cantidad_entregada: string }>;
 }
 
+/*
+  Una línea de orden de compra.
+
+  Trae **qué exige el material al recibirlo**. `recibir_detalle_compra` rechaza
+  la recepción si falta el lote, el vencimiento, la temperatura o el
+  certificado que el material declara; descubrirlo al enviar el formulario
+  obliga a rehacerlo con el camión esperando en el andén.
+*/
+export interface DetalleOrdenCompra {
+  id: number;
+  insumo: number;
+  insumo_nombre: string;
+  insumo_unidad: string;
+  cantidad: string;
+  cantidad_recibida: string;
+  costo_unitario: string;
+  requiere_lote: boolean;
+  requiere_vencimiento: boolean;
+  requiere_temperatura: boolean;
+  requiere_certificado: boolean;
+  requiere_calidad: boolean;
+}
+
+
 export interface OrdenCompra {
-  id: number; numero: string; proveedor_nombre: string; estado: string;
-  fecha_comprometida: string | null; detalles: Array<{ id: number; insumo_nombre: string; cantidad: string; cantidad_recibida: string }>;
+  id: number;
+  numero: string;
+  proveedor: number;
+  proveedor_nombre: string;
+  bodega_entrega: number;
+  estado: string;
+  fecha_comprometida: string | null;
+  detalles: DetalleOrdenCompra[];
+}
+
+
+export interface RecepcionCompra {
+  id: number;
+  orden: number;
+  guia: string;
+  factura: string;
+  recibida_en: string;
+  observaciones: string;
 }
 
 /*
@@ -295,6 +335,60 @@ export const obtenerSolicitudesCompra = () =>
 export const obtenerDetallesSolicitudCompra = () =>
   lista<DetalleSolicitudCompra>("inventario/detalles-solicitud-compra/");
 export const obtenerBodegas = () => lista<Bodega>("inventario/bodegas/");
+
+
+export const obtenerRecepcionesCompra = () =>
+  lista<RecepcionCompra>("inventario/recepciones-compra/");
+
+
+/* La orden pasa de borrador a enviada: hasta entonces no compromete a nadie y
+   el MRP no la cuenta como recepción programada. */
+export async function enviarOrdenCompra(id: number): Promise<OrdenCompra> {
+  const { data } = await api.post<OrdenCompra>(
+    `inventario/ordenes-compra/${id}/enviar/`,
+    {},
+  );
+
+  return data;
+}
+
+
+/* La cabecera del documento del proveedor: guía y factura. Las líneas se
+   reciben una por una contra su renglón de la orden. */
+export async function crearRecepcionCompra(datos: {
+  orden: number;
+  guia: string;
+  factura?: string;
+  observaciones?: string;
+}): Promise<RecepcionCompra> {
+  const { data } = await api.post<RecepcionCompra>(
+    "inventario/recepciones-compra/",
+    datos,
+  );
+
+  return data;
+}
+
+
+/*
+  Recibe una línea. Crea el lote de proveedor, lo manda a cuarentena si el
+  material pasa por Calidad —y abre su inspección—, registra la entrada y
+  suma a lo recibido de la orden.
+
+  Rechaza si supera lo pendiente, si falta un dato que el material exige, o si
+  la ubicación no corresponde al tipo que su liberación necesita.
+*/
+export async function recibirLineaCompra(
+  recepcion: number,
+  datos: Record<string, unknown>,
+): Promise<{ detalle: number; lote: number }> {
+  const { data } = await api.post<{ detalle: number; lote: number }>(
+    `inventario/recepciones-compra/${recepcion}/recibir/`,
+    datos,
+  );
+
+  return data;
+}
 
 
 export const obtenerProveedores = () => lista<Proveedor>("inventario/proveedores/");

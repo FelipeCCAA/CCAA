@@ -417,6 +417,72 @@ def entregar_reserva(*, existencia_id, cantidad, destino, usuario, documento_tip
     )
 
 
+def _avanzar_estado_orden(orden):
+    """
+    Mueve la orden a parcial o recibida según lo que ya llegó.
+
+    Sin `atomic` propio: siempre se llama desde dentro de la transacción de la
+    recepción, y un punto de retorno anidado aquí no protegería nada que la de
+    afuera no proteja ya.
+
+    Los dos estados existían en el modelo y no los ponía nadie: una orden
+    entregada por completo seguía figurando abierta, y Compras no tenía cómo
+    saber qué estaba pendiente sin sumar las líneas a mano.
+
+    Se guarda en vez de derivarse porque el resto de los estados —cancelada,
+    cerrada— son decisiones de alguien y no se deducen de las cantidades. Un
+    campo mitad calculado y mitad decidido confunde más de lo que ahorra.
+
+    Las canceladas y cerradas no se tocan: son finales, y recibir contra una
+    orden cerrada es un problema aparte que no se arregla cambiándole el
+    estado por debajo.
+    """
+    from .models import OrdenCompra
+
+    if orden.estado in {OrdenCompra.Estado.CANCELADA, OrdenCompra.Estado.CERRADA}:
+        return
+
+    detalles = list(orden.detalles.all())
+    completa = all(d.cantidad_recibida >= d.cantidad for d in detalles)
+    algo = any(d.cantidad_recibida > 0 for d in detalles)
+
+    nuevo = (
+        OrdenCompra.Estado.RECIBIDA
+        if detalles and completa
+        else OrdenCompra.Estado.PARCIAL if algo else orden.estado
+    )
+
+    if nuevo != orden.estado:
+        orden.estado = nuevo
+        orden.save(update_fields=["estado"])
+
+
+@transaction.atomic
+def enviar_orden_compra(*, orden):
+    """
+    La orden sale al proveedor.
+
+    Hasta que se envía es un borrador: el MRP no la cuenta como recepción
+    programada, y con razón — un borrador no compromete a nadie. Enviarla es
+    lo que la vuelve un compromiso, y a partir de ahí resta de lo que hay que
+    volver a pedir.
+    """
+    from .models import OrdenCompra
+
+    if orden.estado != OrdenCompra.Estado.BORRADOR:
+        raise ValidationError(
+            f"La orden está «{orden.get_estado_display()}»: solo se envía un borrador."
+        )
+
+    if not orden.detalles.exists():
+        raise ValidationError("La orden no tiene líneas que enviar.")
+
+    orden.estado = OrdenCompra.Estado.ENVIADA
+    orden.save(update_fields=["estado"])
+
+    return orden
+
+
 @transaction.atomic
 def recibir_detalle_compra(*, recepcion, detalle_orden_id, ubicacion, codigo_lote,
                            cantidad, usuario, vencimiento=None, elaboracion=None,
@@ -465,6 +531,7 @@ def recibir_detalle_compra(*, recepcion, detalle_orden_id, ubicacion, codigo_lot
     )
     detalle_orden.cantidad_recibida += cantidad
     detalle_orden.save(update_fields=["cantidad_recibida"])
+    _avanzar_estado_orden(detalle_orden.orden)
     if insumo.requiere_calidad:
         from django.db.models import Q
         from .models import PlantillaInspeccion

@@ -211,6 +211,26 @@ class DetalleSolicitudCompraSerializer(serializers.ModelSerializer):
 
 class DetalleOrdenCompraSerializer(serializers.ModelSerializer):
     insumo_nombre = serializers.CharField(source="insumo.nombre", read_only=True)
+    insumo_unidad = serializers.CharField(source="insumo.unidad", read_only=True)
+
+    # Qué exige este material al recibirlo. Viaja con la línea para que la
+    # pantalla pida solo lo que corresponde: `recibir_detalle_compra` rechaza
+    # la recepción si falta el lote, el vencimiento, la temperatura o el
+    # certificado que el material declara, y descubrirlo al enviar el
+    # formulario obliga a rehacerlo con el camión esperando.
+    requiere_lote = serializers.BooleanField(source="insumo.requiere_lote", read_only=True)
+    requiere_vencimiento = serializers.BooleanField(
+        source="insumo.requiere_vencimiento", read_only=True
+    )
+    requiere_temperatura = serializers.BooleanField(
+        source="insumo.requiere_temperatura", read_only=True
+    )
+    requiere_certificado = serializers.BooleanField(
+        source="insumo.requiere_certificado", read_only=True
+    )
+    requiere_calidad = serializers.BooleanField(
+        source="insumo.requiere_calidad", read_only=True
+    )
 
     class Meta:
         model = DetalleOrdenCompra
