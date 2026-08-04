@@ -269,6 +269,7 @@ class ApiCerradaTests(TestCase):
     # Sin el login nadie podría obtener un token, y quien olvidó su contraseña
     # tampoco puede identificarse para pedir una nueva.
     ABIERTAS = {
+        "/api/salud/",
         "/api/usuarios/login/",
         "/api/usuarios/recuperar-contrasena/",
         "/api/usuarios/restablecer-contrasena/",

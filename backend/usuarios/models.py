@@ -112,6 +112,17 @@ class PerfilUsuario(models.Model):
     def __str__(self):
         return self.usuario.username
 
+    @property
+    def es_admin_de_area(self):
+        return self.nivel == self.Nivel.ADMIN
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        es_staff = self.usuario.is_superuser or self.es_admin_de_area
+        if self.usuario.is_staff != es_staff:
+            User.objects.filter(pk=self.usuario_id).update(is_staff=es_staff)
+            self.usuario.is_staff = es_staff
+
     def clean(self):
         from django.core.exceptions import ValidationError
 

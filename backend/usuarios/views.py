@@ -12,15 +12,17 @@ from django.core.mail import get_connection
 from django.db import DatabaseError, transaction
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
-from rest_framework import status
+from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import (
+    action,
     api_view,
     authentication_classes,
     permission_classes,
     throttle_classes,
 )
 from rest_framework.permissions import AllowAny
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
@@ -31,7 +33,7 @@ from .serializers import (
     TrabajadorSerializer,
     UsuarioSerializer,
 )
-from .permisos import EsAdministrador
+from .permisos import IsAdminDeArea
 
 
 logger = logging.getLogger(__name__)
@@ -128,94 +130,127 @@ def yo(request):
     return Response(UsuarioSerializer(request.user).data)
 
 
-@api_view(["GET", "POST"])
-@permission_classes([EsAdministrador])
-def trabajadores(request):
-    """Lista de usuarios y perfiles para el panel propio de Administración."""
-    if request.method == "POST":
-        datos = request.data
-        if not datos.get("username"):
-            return Response({"error": "El nombre de usuario es obligatorio."}, status=400)
-        password = datos.get("password", "")
-        if not password:
-            return Response({"error": "La contraseña inicial es obligatoria."}, status=400)
-        try:
-            validate_password(password)
-        except DjangoValidationError as error:
-            return Response({"error": " ".join(error.messages)}, status=400)
-        perfil_actor = getattr(request.user, "perfil", None)
-        es_general = request.user.is_superuser or (
-            perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
-        )
-        area = datos.get("area") if es_general else perfil_actor.area
-        nivel = datos.get("nivel", PerfilUsuario.Nivel.TRABAJADOR) if es_general else PerfilUsuario.Nivel.TRABAJADOR
-        if area not in PerfilUsuario.Area.values or nivel not in PerfilUsuario.Nivel.values:
-            return Response({"error": "Área o nivel inválido."}, status=400)
-        try:
-            with transaction.atomic():
-                usuario = User.objects.create_user(
-                    username=datos["username"], email=datos.get("email", ""),
-                    first_name=datos.get("nombre", ""), last_name=datos.get("apellido", ""),
-                    password=password,
-                )
-                PerfilUsuario.objects.create(
-                    usuario=usuario, area=area, nivel=nivel,
-                    empresa_id=datos.get("empresa") if es_general else perfil_actor.empresa_id,
-                    sucursal_id=datos.get("sucursal") if es_general else perfil_actor.sucursal_id,
-                    cargo=datos.get("cargo", ""), turno=datos.get("turno", ""),
-                )
-        except DatabaseError:
-            return Response({"error": "No se pudo crear el usuario."}, status=400)
-        return Response(TrabajadorSerializer(usuario).data, status=201)
+class TrabajadorViewSet(viewsets.ModelViewSet):
+    serializer_class = TrabajadorSerializer
+    permission_classes = [IsAdminDeArea]
+    pagination_class = None
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
-    usuarios = User.objects.select_related("perfil").order_by(
-        "first_name", "last_name", "username"
-    )
-    perfil = getattr(request.user, "perfil", None)
-    if not request.user.is_superuser and perfil.area != perfil.Area.ADMINISTRACION:
+    def get_queryset(self):
+        usuarios = User.objects.select_related(
+            "perfil", "perfil__empresa", "perfil__sucursal"
+        ).order_by("first_name", "last_name", "username")
+        if self.request.user.is_superuser:
+            return usuarios
+
+        perfil = self.request.user.perfil
+        usuarios = usuarios.filter(is_superuser=False)
+        if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
+            if perfil.empresa_id:
+                usuarios = usuarios.filter(perfil__empresa_id=perfil.empresa_id)
+            if perfil.sucursal_id:
+                usuarios = usuarios.filter(perfil__sucursal_id=perfil.sucursal_id)
+            return usuarios
+
         usuarios = usuarios.filter(perfil__area=perfil.area)
-    if not request.user.is_superuser and perfil:
         if perfil.empresa_id:
             usuarios = usuarios.filter(perfil__empresa_id=perfil.empresa_id)
         if perfil.sucursal_id:
             usuarios = usuarios.filter(perfil__sucursal_id=perfil.sucursal_id)
-    return Response(TrabajadorSerializer(usuarios, many=True).data)
+        return usuarios
 
+    def perform_create(self, serializer):
+        perfil = getattr(self.request.user, "perfil", None)
+        if self.request.user.is_superuser or (
+            perfil and perfil.area == PerfilUsuario.Area.ADMINISTRACION
+        ):
+            serializer.save()
+            return
 
-@api_view(["PATCH"])
-@permission_classes([EsAdministrador])
-def actualizar_trabajador(request, usuario_id):
-    actor = request.user
-    perfil_actor = getattr(actor, "perfil", None)
-    usuario = User.objects.select_related("perfil").filter(pk=usuario_id).first()
-    if not usuario:
-        return Response({"error": "El usuario no existe."}, status=404)
-    perfil = getattr(usuario, "perfil", None)
-    es_general = actor.is_superuser or (
-        perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
+        perfil = self.request.user.perfil
+        serializer.save(
+            area=perfil.area,
+            nivel=PerfilUsuario.Nivel.TRABAJADOR,
+            empresa=perfil.empresa,
+            sucursal=perfil.sucursal,
+        )
+
+    def perform_update(self, serializer):
+        objetivo = self.get_object()
+        perfil_actor = getattr(self.request.user, "perfil", None)
+        es_general = self.request.user.is_superuser or (
+            perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
+        )
+        if not self.request.user.is_superuser and objetivo.perfil.es_admin_de_area:
+            raise PermissionDenied(
+                "Un administrador de área no puede modificar a otro administrador."
+            )
+        if not es_general:
+            if {"area", "nivel", "empresa", "sucursal"}.intersection(self.request.data):
+                raise PermissionDenied(
+                    "No puedes modificar el área ni los permisos del trabajador."
+                )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance == self.request.user:
+            raise PermissionDenied("No puedes desactivar tu propia cuenta.")
+        if not self.request.user.is_superuser and instance.perfil.es_admin_de_area:
+            raise PermissionDenied(
+                "Un administrador de área no puede desactivar a otro administrador."
+            )
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
+        Token.objects.filter(user=instance).delete()
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="restablecer-contrasena",
+        throttle_classes=[SolicitudRecuperacionThrottle],
     )
-    if not es_general and (
-        not perfil or perfil.area != perfil_actor.area
-        or perfil.empresa_id != perfil_actor.empresa_id
-        or perfil.sucursal_id != perfil_actor.sucursal_id
-    ):
-        return Response({"error": "No puedes administrar usuarios de otra área."}, status=403)
-    if usuario == actor and any(campo in request.data for campo in ("nivel", "area", "empresa", "sucursal")):
-        return Response({"error": "No puedes modificar tus propios permisos."}, status=403)
-    usuario.is_active = request.data.get("activo", usuario.is_active)
-    usuario.email = request.data.get("email", usuario.email)
-    usuario.first_name = request.data.get("nombre", usuario.first_name)
-    usuario.last_name = request.data.get("apellido", usuario.last_name)
-    usuario.save(update_fields=["is_active", "email", "first_name", "last_name"])
-    if perfil:
-        perfil.cargo = request.data.get("cargo", perfil.cargo)
-        perfil.turno = request.data.get("turno", perfil.turno)
-        if es_general:
-            perfil.area = request.data.get("area", perfil.area)
-            perfil.nivel = request.data.get("nivel", perfil.nivel)
-        perfil.full_clean()
-        perfil.save()
-    return Response(TrabajadorSerializer(usuario).data)
+    def restablecer_contrasena(self, request, pk=None):
+        usuario = self.get_object()
+        if not request.user.is_superuser and usuario.perfil.es_admin_de_area:
+            return Response(
+                {"error": "Un administrador de área no puede restablecer a otro administrador."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not usuario.is_active or not usuario.email:
+            return Response(
+                {"error": "El trabajador debe estar activo y tener un correo registrado."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        formulario = PasswordResetForm(data={"email": usuario.email})
+        formulario.is_valid()
+        try:
+            formulario.save(
+                request=request._request,
+                use_https=request.is_secure(),
+                token_generator=default_token_generator,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                subject_template_name="usuarios/password_reset_subject.txt",
+                email_template_name="usuarios/password_reset_email.txt",
+                html_email_template_name="usuarios/password_reset_email.html",
+                extra_email_context={"reset_url": settings.PASSWORD_RESET_FRONTEND_URL},
+            )
+        except ImproperlyConfigured as error:
+            logger.error("El correo no está configurado: %s", error)
+            return Response(
+                {"error": "El servicio de correo no está disponible."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except DatabaseError:
+            logger.exception("No se pudo solicitar el restablecimiento administrado")
+            return Response(
+                {"error": "No se pudo procesar la solicitud."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(
+            {"mensaje": "Se enviaron las instrucciones de restablecimiento."},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 @api_view(["POST"])
