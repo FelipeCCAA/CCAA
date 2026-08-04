@@ -1,10 +1,12 @@
 import { Fragment, useState } from "react";
-import { AlertTriangle, CalendarClock, Play } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, CalendarClock, FileOutput, Play } from "lucide-react";
 
 import {
   calcularMRP,
   ejecutarMRPSemana,
   obtenerEjecucionesMRP,
+  solicitarCompraDesdeMRP,
   type EjecucionMRP,
   type ResultadoMRP,
 } from "../../services/inventario.service";
@@ -185,9 +187,28 @@ function Mrp() {
   const [error, setError] = useState("");
   const [reciente, setReciente] = useState<EjecucionMRP | null>(null);
 
+  const [solicitando, setSolicitando] = useState(false);
+  const [solicitud, setSolicitud] = useState("");
+
   const [producto, setProducto] = useState("");
   const [kilos, setKilos] = useState("");
   const [simulacion, setSimulacion] = useState<ResultadoMRP | null>(null);
+
+  const solicitar = async (ejecucion: number) => {
+    setError("");
+    setSolicitando(true);
+
+    try {
+      const creada = await solicitarCompraDesdeMRP(ejecucion);
+      setSolicitud(creada.numero);
+    } catch (e) {
+      setError(
+        mensajeDe(e, "No se pudo generar la solicitud de compra."),
+      );
+    } finally {
+      setSolicitando(false);
+    }
+  };
 
   const publicadas = (semanas.datos ?? []).filter((s) => s.estado === PUBLICADA);
 
@@ -238,6 +259,18 @@ function Mrp() {
 
       {error && <Aviso>{error}</Aviso>}
 
+      {/* La solicitud queda en borrador: alguien la envía a aprobación y
+          alguien distinto la aprueba. El MRP calcula, no compra. */}
+      {solicitud && (
+        <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 text-sm text-green-800">
+          Solicitud <strong>{solicitud}</strong> creada en borrador.{" "}
+          <Link to="../compras" className="font-medium underline">
+            Ir a compras
+          </Link>{" "}
+          para enviarla a aprobación.
+        </div>
+      )}
+
       <Tarjeta
         titulo="MRP semanal"
         descripcion="Explota el programa publicado bloque por bloque, cada uno con la receta vigente a su fecha, y calcula qué comprar y cuándo pedirlo."
@@ -280,16 +313,35 @@ function Mrp() {
           </Vacio>
         ) : aMostrar ? (
           <>
-            <p className="flex items-center gap-2 border-b border-slate-100 px-5 py-3 text-sm text-slate-500">
-              <CalendarClock className="h-4 w-4 text-slate-400" />
-              Corte {aMostrar.fecha_corte} · horizonte hasta{" "}
-              {aMostrar.horizonte_hasta}
-              {reciente && (
-                <span className="ml-2 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                  recién ejecutado
-                </span>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+
+              <p className="flex items-center gap-2 text-sm text-slate-500">
+                <CalendarClock className="h-4 w-4 text-slate-400" />
+                Corte {aMostrar.fecha_corte} · horizonte hasta{" "}
+                {aMostrar.horizonte_hasta}
+                {reciente && (
+                  <span className="ml-2 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                    recién ejecutado
+                  </span>
+                )}
+              </p>
+
+              {/* El eslabón que faltaba. Sin esto, el cálculo terminaba en la
+                  pantalla y alguien volvía a teclear las cantidades en otro
+                  formulario — que es donde se pierde el «para cuándo». */}
+              {aMostrar.resultados.some((r) => Number(r.compra_sugerida) > 0) && (
+                <button
+                  type="button"
+                  disabled={solicitando}
+                  onClick={() => void solicitar(aMostrar.id)}
+                  className="flex shrink-0 items-center gap-2 rounded-xl border border-green-700 px-4 py-2 text-sm font-semibold text-green-800 hover:bg-green-50 disabled:opacity-40"
+                >
+                  <FileOutput className="h-4 w-4" />
+                  {solicitando ? "Generando…" : "Generar solicitud de compra"}
+                </button>
               )}
-            </p>
+
+            </div>
             <TablaSemanal ejecucion={aMostrar} />
           </>
         ) : (

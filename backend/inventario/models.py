@@ -571,6 +571,14 @@ class EjecucionMRP(models.Model):
     ejecutada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     parametros = models.JSONField(default=dict)
 
+    class Meta:
+        # La más reciente primero. Sin `ordering` el orden lo decide la base y
+        # es arbitrario: la pantalla tomaba la primera de la lista creyendo que
+        # era la última ejecución y mostraba una vieja y vacía justo después de
+        # haber corrido el cálculo. Que «la última» sea la primera es una
+        # propiedad de la colección, no de una pantalla.
+        ordering = ["-creada_en", "-id"]
+
 
 class ResultadoMRP(models.Model):
     ejecucion = models.ForeignKey(EjecucionMRP, on_delete=models.CASCADE, related_name="resultados")

@@ -35,6 +35,7 @@ from .serializers import (
 from .servicios import (
     consumir_receta_produccion, crear_ajuste, decidir_inspeccion, decidir_solicitud_compra,
     decidir_y_aplicar_ajuste, entregar_solicitud_material,
+    convertir_solicitud_en_ordenes, crear_solicitud_desde_mrp,
     ejecutar_mrp_semana, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
 )
@@ -288,6 +289,30 @@ class SolicitudCompraViewSet(viewsets.ModelViewSet):
             return Response({"error": error.messages[0]}, status=409)
         return Response(self.get_serializer(solicitud).data)
 
+    @action(detail=True, methods=["post"], url_path="convertir")
+    def convertir(self, request, pk=None):
+        """
+        Emite las órdenes de compra de esta solicitud, una por proveedor.
+
+        El estado `convertida` existía en el modelo y no era alcanzable: nada
+        convertía nada, así que una solicitud aprobada se quedaba aprobada
+        para siempre y la orden se tecleaba aparte.
+        """
+        try:
+            ordenes = convertir_solicitud_en_ordenes(
+                solicitud=self.get_object(),
+                usuario=request.user,
+                bodega=Bodega.objects.get(pk=request.data.get("bodega")),
+            )
+        except Bodega.DoesNotExist:
+            return Response(
+                {"error": "Indica la bodega donde se recibe el material."}, status=400
+            )
+        except DjangoValidationError as error:
+            return Response({"error": error.messages[0]}, status=409)
+
+        return Response(OrdenCompraSerializer(ordenes, many=True).data, status=201)
+
 
 class OrdenCompraViewSet(viewsets.ModelViewSet):
     queryset = OrdenCompra.objects.select_related("proveedor", "bodega_entrega").prefetch_related("detalles")
@@ -458,6 +483,35 @@ class EjecucionMRPViewSet(viewsets.ReadOnlyModelViewSet):
             mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else "La semana no existe."
             return Response({"error": mensaje}, status=409)
         return Response(self.get_serializer(ejecucion).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="solicitar-compra")
+    def solicitar_compra(self, request, pk=None):
+        """
+        Pasa lo que este cálculo dice que falta a una solicitud de compra.
+
+        Cierra el circuito. Hasta aquí el MRP calculaba y ahí terminaba:
+        alguien leía la pantalla y volvía a teclear las cantidades, que es
+        donde se pierde el «para cuándo» y donde aparecen las diferencias
+        entre lo calculado y lo pedido.
+        """
+        from django.db import IntegrityError
+
+        try:
+            solicitud = crear_solicitud_desde_mrp(
+                ejecucion=self.get_object(), usuario=request.user
+            )
+        except IntegrityError:
+            # `numero` lleva el id de la ejecución y es único, así que un
+            # segundo intento sobre el mismo cálculo choca aquí. Es la
+            # garantía de no duplicar la compra, no un accidente.
+            return Response(
+                {"error": "Esta ejecución ya generó su solicitud de compra."},
+                status=409,
+            )
+        except DjangoValidationError as error:
+            return Response({"error": error.messages[0]}, status=409)
+
+        return Response(SolicitudCompraSerializer(solicitud).data, status=201)
 
 
 class PlantillaInspeccionViewSet(viewsets.ModelViewSet):

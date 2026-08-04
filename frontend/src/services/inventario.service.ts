@@ -34,6 +34,45 @@ export interface OrdenCompra {
   fecha_comprometida: string | null; detalles: Array<{ id: number; insumo_nombre: string; cantidad: string; cantidad_recibida: string }>;
 }
 
+/*
+  Solicitud de compra: lo que se pide antes de que exista una orden.
+
+  Pasa por `borrador → pendiente → aprobada → convertida`. La aprobación la da
+  alguien distinto del solicitante —el backend rechaza que sean el mismo— y
+  «convertida» significa que ya se emitieron sus órdenes.
+*/
+export interface SolicitudCompra {
+  id: number;
+  numero: string;
+  area: string;
+  solicitante: number;
+  motivo: string;
+  estado: string;
+  creada_en: string;
+}
+
+
+export interface DetalleSolicitudCompra {
+  id: number;
+  solicitud: number;
+  insumo: number;
+  insumo_nombre: string;
+  cantidad: string;
+  fecha_requerida: string;
+  /* Cierto si la línea salió del cálculo del MRP en vez de escribirse a
+     mano. Es lo que se pregunta después de un quiebre. */
+  origen_mrp: boolean;
+}
+
+
+export interface Bodega {
+  id: number;
+  codigo: string;
+  nombre: string;
+  activo: boolean;
+}
+
+
 export interface Notificacion {
   id: number; tipo: string; titulo: string; mensaje: string; leida_en: string | null; creada_en: string;
 }
@@ -195,6 +234,72 @@ export const obtenerExistenciasDeLote = (lote: number) =>
 export const obtenerMovimientosDeLote = (lote: number) =>
   lista<MovimientoInventario>(`inventario/movimientos/?lote=${lote}`);
 export const obtenerEjecucionesMRP = () => lista<EjecucionMRP>("inventario/ejecuciones-mrp/");
+export const obtenerSolicitudesCompra = () =>
+  lista<SolicitudCompra>("inventario/solicitudes-compra/");
+export const obtenerDetallesSolicitudCompra = () =>
+  lista<DetalleSolicitudCompra>("inventario/detalles-solicitud-compra/");
+export const obtenerBodegas = () => lista<Bodega>("inventario/bodegas/");
+
+
+/*
+  Pasa lo que el MRP dice que falta a una solicitud de compra.
+
+  Cierra el circuito: hasta aquí el cálculo terminaba en la pantalla y alguien
+  volvía a teclear las cantidades. Responde 409 si esa ejecución ya generó su
+  solicitud — duplicar la compra es peor que fallar, porque la segunda orden
+  llega igual y hay que devolverla.
+*/
+export async function solicitarCompraDesdeMRP(
+  ejecucion: number,
+): Promise<SolicitudCompra> {
+  const { data } = await api.post<SolicitudCompra>(
+    `inventario/ejecuciones-mrp/${ejecucion}/solicitar-compra/`,
+    {},
+  );
+
+  return data;
+}
+
+
+export async function enviarSolicitudCompra(id: number): Promise<SolicitudCompra> {
+  const { data } = await api.post<SolicitudCompra>(
+    `inventario/solicitudes-compra/${id}/enviar/`,
+    {},
+  );
+
+  return data;
+}
+
+
+/* La decide alguien distinto del solicitante: el backend lo exige y por eso
+   la pantalla no ofrece el botón a quien la creó. */
+export async function decidirSolicitudCompra(
+  id: number,
+  decision: "aprobada" | "rechazada",
+  comentario = "",
+): Promise<SolicitudCompra> {
+  const { data } = await api.post<SolicitudCompra>(
+    `inventario/solicitudes-compra/${id}/decidir/`,
+    { decision, comentario },
+  );
+
+  return data;
+}
+
+
+/* Emite las órdenes, **una por proveedor**. Un material sin proveedor
+   principal detiene la conversión entera en vez de partir la solicitud. */
+export async function convertirSolicitudEnOrdenes(
+  id: number,
+  bodega: number,
+): Promise<OrdenCompra[]> {
+  const { data } = await api.post<OrdenCompra[]>(
+    `inventario/solicitudes-compra/${id}/convertir/`,
+    { bodega },
+  );
+
+  return data;
+}
 
 
 /*

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -17,7 +18,8 @@ from .models import (
     DetalleSolicitudMaterial, Ubicacion,
 )
 from .servicios import (
-    consumir_receta_produccion, decidir_inspeccion, decidir_solicitud_compra, entregar_reserva,
+    consumir_receta_produccion, convertir_solicitud_en_ordenes,
+    crear_solicitud_desde_mrp, decidir_inspeccion, decidir_solicitud_compra, entregar_reserva,
     entregar_solicitud_material,
     ejecutar_mrp_semana, recibir_detalle_compra, registrar_entrada, registrar_salida,
     reservar_fefo, reservar_solicitud_material,
@@ -477,3 +479,234 @@ class CompraCalidadTests(TestCase):
         )
         solicitud.refresh_from_db()
         self.assertEqual(solicitud.estado, SolicitudCompra.Estado.APROBADA)
+
+
+class CircuitoDeCompraTests(TestCase):
+    """
+    De lo que el MRP dice que falta a la orden del proveedor.
+
+    Eran dos callejones sin salida del modelo: el estado `convertida` no lo
+    alcanzaba nadie y `origen_mrp` no lo ponía nadie. Los dos apuntaban al
+    mismo eslabón ausente, y sin él el MRP calculaba para que después alguien
+    volviera a teclear las cantidades en otro formulario — que es donde se
+    pierde el «para cuándo» y donde aparecen las diferencias entre lo que el
+    sistema calculó y lo que se pidió.
+    """
+
+    def setUp(self):
+        from .models import EjecucionMRP, ResultadoMRP
+
+        self.usuario = User.objects.create_user("compras", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+            area=PerfilUsuario.Area.COMPRAS,
+        )
+        self.jefe = User.objects.create_user("jefe-compras", password="x")
+
+        self.bolsa = Insumo.objects.create(
+            codigo="C-BOLSA", nombre="Bolsa 25 kg",
+            area=PerfilUsuario.Area.BODEGA, unidad="un",
+        )
+        self.reactivo = Insumo.objects.create(
+            codigo="C-REACT", nombre="Reactivo",
+            area=PerfilUsuario.Area.CALIDAD, unidad="L",
+        )
+
+        self.envases = Proveedor.objects.create(rut="76.1-1", nombre="Envases del Sur")
+        self.quimica = Proveedor.objects.create(rut="76.2-2", nombre="Química Austral")
+
+        self.bodega = Bodega.objects.create(codigo="BC", nombre="Bodega central")
+
+        self.ejecucion = EjecucionMRP.objects.create(
+            fecha_corte=date(2026, 8, 10), horizonte_hasta=date(2026, 8, 16),
+            ejecutada_por=self.usuario,
+        )
+        # Una línea con compra sugerida y otra sin ella: la segunda no debe
+        # pedirse.
+        ResultadoMRP.objects.create(
+            ejecucion=self.ejecucion, insumo=self.bolsa,
+            fecha_requerida=date(2026, 8, 12), necesidad_bruta=800,
+            disponible_proyectado=0, necesidad_neta=800, compra_sugerida=1000,
+            fecha_sugerida_orden=date(2026, 8, 2),
+        )
+        ResultadoMRP.objects.create(
+            ejecucion=self.ejecucion, insumo=self.reactivo,
+            fecha_requerida=date(2026, 8, 14), necesidad_bruta=50,
+            disponible_proyectado=200, necesidad_neta=0, compra_sugerida=0,
+            fecha_sugerida_orden=date(2026, 8, 14),
+        )
+
+    def _proveedores_principales(self):
+        from .models import InsumoProveedor
+
+        InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.envases, principal=True,
+            costo_unitario=120,
+        )
+        InsumoProveedor.objects.create(
+            insumo=self.reactivo, proveedor=self.quimica, principal=True,
+            costo_unitario=8000,
+        )
+
+    # ------------------------------------------------------- desde el MRP
+
+    def test_solo_se_pide_lo_que_el_mrp_sugiere_comprar(self):
+        """
+        Una necesidad que el stock o las órdenes en camino ya cubren no se
+        vuelve a pedir.
+        """
+        solicitud = crear_solicitud_desde_mrp(
+            ejecucion=self.ejecucion, usuario=self.usuario
+        )
+
+        self.assertEqual(solicitud.detalles.count(), 1)
+        self.assertEqual(solicitud.detalles.get().insumo, self.bolsa)
+
+    def test_las_lineas_quedan_marcadas_como_venidas_del_mrp(self):
+        """Es lo que se pregunta después de un quiebre: si esto salió del
+        cálculo o alguien lo agregó a mano."""
+        solicitud = crear_solicitud_desde_mrp(
+            ejecucion=self.ejecucion, usuario=self.usuario
+        )
+
+        self.assertTrue(solicitud.detalles.get().origen_mrp)
+
+    def test_manda_la_fecha_en_que_se_necesita_no_la_de_emitir(self):
+        """Quien tramita decide cuándo lo hace; el plazo de la planta no se
+        mueve por eso."""
+        solicitud = crear_solicitud_desde_mrp(
+            ejecucion=self.ejecucion, usuario=self.usuario
+        )
+
+        self.assertEqual(solicitud.detalles.get().fecha_requerida, date(2026, 8, 12))
+
+    def test_el_mismo_calculo_no_genera_dos_solicitudes(self):
+        """
+        La unicidad del número lo impide. Duplicar la compra es peor que
+        fallar: la segunda orden llega igual y hay que devolverla.
+        """
+        from django.db import IntegrityError
+
+        crear_solicitud_desde_mrp(ejecucion=self.ejecucion, usuario=self.usuario)
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                crear_solicitud_desde_mrp(
+                    ejecucion=self.ejecucion, usuario=self.usuario
+                )
+
+    def test_una_ejecucion_sin_faltantes_no_genera_solicitud(self):
+        from .models import EjecucionMRP
+
+        vacia = EjecucionMRP.objects.create(
+            fecha_corte=date(2026, 9, 1), horizonte_hasta=date(2026, 9, 7),
+            ejecutada_por=self.usuario,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "no sugiere comprar nada"):
+            crear_solicitud_desde_mrp(ejecucion=vacia, usuario=self.usuario)
+
+    # --------------------------------------------------- a orden de compra
+
+    def _solicitud_aprobada(self):
+        from .models import DetalleSolicitudCompra
+
+        solicitud = SolicitudCompra.objects.create(
+            numero="SC-1", area=PerfilUsuario.Area.COMPRAS,
+            solicitante=self.usuario, motivo="prueba",
+            estado=SolicitudCompra.Estado.APROBADA,
+        )
+        for insumo, cantidad, cuando in (
+            (self.bolsa, 1000, date(2026, 8, 12)),
+            (self.reactivo, 20, date(2026, 8, 20)),
+        ):
+            DetalleSolicitudCompra.objects.create(
+                solicitud=solicitud, insumo=insumo, cantidad=cantidad,
+                fecha_requerida=cuando,
+            )
+        return solicitud
+
+    def test_se_emite_una_orden_por_proveedor(self):
+        """
+        Una sola orden obligaría a elegir un proveedor y mandarle renglones
+        que no vende.
+        """
+        self._proveedores_principales()
+        solicitud = self._solicitud_aprobada()
+
+        ordenes = convertir_solicitud_en_ordenes(
+            solicitud=solicitud, usuario=self.usuario, bodega=self.bodega
+        )
+
+        self.assertEqual(len(ordenes), 2)
+        self.assertEqual({o.proveedor for o in ordenes}, {self.envases, self.quimica})
+
+        for orden in ordenes:
+            self.assertEqual(orden.detalles.count(), 1)
+
+    def test_la_orden_promete_la_fecha_mas_apretada_de_sus_lineas(self):
+        """Prometer la más holgada dejaría a la planta sin material creyendo
+        que va en plazo."""
+        from .models import InsumoProveedor
+
+        for insumo, costo in ((self.bolsa, 120), (self.reactivo, 8000)):
+            InsumoProveedor.objects.create(
+                insumo=insumo, proveedor=self.envases, principal=True,
+                costo_unitario=costo,
+            )
+
+        orden = convertir_solicitud_en_ordenes(
+            solicitud=self._solicitud_aprobada(),
+            usuario=self.usuario,
+            bodega=self.bodega,
+        )[0]
+
+        self.assertEqual(orden.fecha_comprometida, date(2026, 8, 12))
+
+    def test_un_material_sin_proveedor_detiene_la_conversion_entera(self):
+        """
+        Emitir lo que sí se puede y callar el resto parte la solicitud sin que
+        nadie lo note: lo que quedó fuera no se vuelve a mirar porque la
+        solicitud figura convertida.
+        """
+        from .models import InsumoProveedor
+
+        InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.envases, principal=True,
+            costo_unitario=120,
+        )
+        solicitud = self._solicitud_aprobada()
+
+        with self.assertRaisesMessage(ValidationError, "Reactivo"):
+            convertir_solicitud_en_ordenes(
+                solicitud=solicitud, usuario=self.usuario, bodega=self.bodega
+            )
+
+        self.assertEqual(OrdenCompra.objects.count(), 0)
+        solicitud.refresh_from_db()
+        self.assertEqual(solicitud.estado, SolicitudCompra.Estado.APROBADA)
+
+    def test_solo_se_convierte_una_solicitud_aprobada(self):
+        self._proveedores_principales()
+        solicitud = self._solicitud_aprobada()
+        solicitud.estado = SolicitudCompra.Estado.PENDIENTE
+        solicitud.save(update_fields=["estado"])
+
+        with self.assertRaisesMessage(ValidationError, "aprobada"):
+            convertir_solicitud_en_ordenes(
+                solicitud=solicitud, usuario=self.usuario, bodega=self.bodega
+            )
+
+    def test_la_solicitud_convertida_queda_marcada(self):
+        """El estado existía en el modelo desde el principio y no lo alcanzaba
+        nadie: nada convertía nada."""
+        self._proveedores_principales()
+        solicitud = self._solicitud_aprobada()
+
+        convertir_solicitud_en_ordenes(
+            solicitud=solicitud, usuario=self.usuario, bodega=self.bodega
+        )
+
+        solicitud.refresh_from_db()
+        self.assertEqual(solicitud.estado, SolicitudCompra.Estado.CONVERTIDA)

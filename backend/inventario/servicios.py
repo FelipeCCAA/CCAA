@@ -842,3 +842,159 @@ def ejecutar_mrp_semana(*, semana, usuario):
             explicacion=explicacion,
         )
     return ejecucion
+
+
+@transaction.atomic
+def crear_solicitud_desde_mrp(*, ejecucion, usuario, area=None):
+    """
+    Convierte lo que el MRP dice que falta en una solicitud de compra.
+
+    Es el eslabón que faltaba. El MRP calculaba qué comprar y ahí terminaba:
+    alguien tenía que leer la pantalla y volver a teclear las cantidades en un
+    formulario, que es donde se pierde el «para cuándo» y donde aparecen las
+    diferencias entre lo que el sistema calculó y lo que se pidió.
+
+    Solo entran las líneas con compra sugerida: una necesidad neta cubierta
+    por el stock o por órdenes ya emitidas no se pide de nuevo.
+
+    `origen_mrp` queda marcado en cada línea. Sirve para lo que se pregunta
+    después de un quiebre: si esto salió del cálculo o alguien lo agregó a
+    mano.
+
+    El número lleva el id de la ejecución y `numero` es único, así que
+    ejecutar esto dos veces sobre el mismo cálculo falla en vez de duplicar la
+    compra. No es un efecto secundario afortunado: es la garantía.
+    """
+    from usuarios.models import PerfilUsuario
+
+    from .models import DetalleSolicitudCompra, SolicitudCompra
+
+    lineas = [r for r in ejecucion.resultados.all() if r.compra_sugerida > 0]
+
+    if not lineas:
+        raise ValidationError(
+            "Esta ejecución no sugiere comprar nada: el stock y las órdenes "
+            "ya emitidas cubren la necesidad."
+        )
+
+    perfil = getattr(usuario, "perfil", None)
+
+    solicitud = SolicitudCompra.objects.create(
+        numero=f"SC-MRP-{ejecucion.pk}",
+        area=area or (perfil.area if perfil else PerfilUsuario.Area.BODEGA),
+        solicitante=usuario,
+        motivo=(
+            f"Generada desde el MRP del {ejecucion.fecha_corte} "
+            f"(horizonte hasta {ejecucion.horizonte_hasta})."
+        ),
+        estado=SolicitudCompra.Estado.BORRADOR,
+    )
+
+    DetalleSolicitudCompra.objects.bulk_create([
+        DetalleSolicitudCompra(
+            solicitud=solicitud,
+            insumo_id=linea.insumo_id,
+            cantidad=linea.compra_sugerida,
+            # La fecha en que se necesita el material, no la de emitir la
+            # orden: quien recibe la solicitud decide cuándo la tramita, pero
+            # el plazo de la planta no se mueve.
+            fecha_requerida=linea.fecha_requerida,
+            origen_mrp=True,
+        )
+        for linea in lineas
+    ])
+
+    return solicitud
+
+
+@transaction.atomic
+def convertir_solicitud_en_ordenes(*, solicitud, usuario, bodega):
+    """
+    Emite las órdenes de compra de una solicitud aprobada.
+
+    **Una orden por proveedor.** Una solicitud puede pedir sacos a uno y
+    reactivos a otro; una sola orden obligaría a elegir un proveedor y
+    mandarle renglones que no vende. El proveedor de cada material es el que
+    esté marcado como principal.
+
+    Un material sin proveedor principal **detiene la conversión entera** y se
+    informa cuáles son. La alternativa —emitir las órdenes que sí se pueden y
+    dejar el resto callado— parte la solicitud sin que nadie lo note, y lo que
+    quedó fuera no se vuelve a mirar porque la solicitud figura convertida.
+
+    El estado `convertida` existía en el modelo desde el principio y no era
+    alcanzable: nada convertía nada.
+    """
+    from .models import (
+        DetalleOrdenCompra, InsumoProveedor, OrdenCompra, SolicitudCompra,
+    )
+
+    if solicitud.estado != SolicitudCompra.Estado.APROBADA:
+        raise ValidationError(
+            "Solo se convierte una solicitud aprobada. Esta está "
+            f"«{solicitud.get_estado_display()}»."
+        )
+
+    detalles = list(solicitud.detalles.select_related("insumo"))
+
+    if not detalles:
+        raise ValidationError("La solicitud no tiene líneas que convertir.")
+
+    principales = {
+        ip.insumo_id: ip
+        for ip in InsumoProveedor.objects.filter(
+            insumo_id__in=[d.insumo_id for d in detalles], principal=True
+        ).select_related("proveedor")
+    }
+
+    huerfanos = [d.insumo.nombre for d in detalles if d.insumo_id not in principales]
+
+    if huerfanos:
+        raise ValidationError(
+            "Sin proveedor principal, no se puede emitir la orden de: "
+            f"{', '.join(sorted(huerfanos))}. Asígnalo en el catálogo de "
+            "materiales."
+        )
+
+    por_proveedor: dict[int, list] = {}
+
+    for detalle in detalles:
+        por_proveedor.setdefault(principales[detalle.insumo_id].proveedor_id, []).append(
+            detalle
+        )
+
+    ordenes = []
+
+    # Orden estable: dos ejecuciones sobre la misma solicitud tienen que
+    # numerar igual, y un diccionario no lo garantiza.
+    for correlativo, proveedor_id in enumerate(sorted(por_proveedor), start=1):
+        lineas = por_proveedor[proveedor_id]
+
+        orden = OrdenCompra.objects.create(
+            numero=f"OC-{solicitud.numero}-{correlativo:02d}",
+            solicitud=solicitud,
+            proveedor_id=proveedor_id,
+            bodega_entrega=bodega,
+            estado=OrdenCompra.Estado.BORRADOR,
+            # El compromiso más apretado de la orden: si una línea se necesita
+            # antes, la orden entera tiene esa fecha. Prometer la más holgada
+            # dejaría a la planta sin material creyendo que va en plazo.
+            fecha_comprometida=min(d.fecha_requerida for d in lineas),
+        )
+
+        DetalleOrdenCompra.objects.bulk_create([
+            DetalleOrdenCompra(
+                orden=orden,
+                insumo_id=d.insumo_id,
+                cantidad=d.cantidad,
+                costo_unitario=principales[d.insumo_id].costo_unitario,
+            )
+            for d in lineas
+        ])
+
+        ordenes.append(orden)
+
+    solicitud.estado = SolicitudCompra.Estado.CONVERTIDA
+    solicitud.save(update_fields=["estado"])
+
+    return ordenes
