@@ -112,7 +112,14 @@ class UbicacionSerializer(serializers.ModelSerializer):
 
 class LoteInventarioSerializer(serializers.ModelSerializer):
     insumo_nombre = serializers.CharField(source="insumo.nombre", read_only=True)
+    insumo_codigo = serializers.CharField(source="insumo.codigo", read_only=True)
+    insumo_unidad = serializers.CharField(source="insumo.unidad", read_only=True)
+    proveedor_nombre = serializers.CharField(
+        source="proveedor.nombre", read_only=True, allow_null=True
+    )
     estado_etiqueta = serializers.CharField(source="get_estado_calidad_display", read_only=True)
+    # Los dos se calculan y no se guardan. `utilizable` es el que decide si el
+    # material puede salir: aprobado, vigente y no vencido.
     vencido = serializers.BooleanField(read_only=True)
     utilizable = serializers.BooleanField(read_only=True)
 

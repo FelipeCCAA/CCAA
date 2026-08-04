@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   consumirRecetaProduccion,
@@ -203,7 +204,16 @@ function Stock() {
                     <td className={`${claseCelda} font-medium text-slate-800`}>
                       {e.insumo_nombre}
                     </td>
-                    <td className={`${claseCelda} text-slate-600`}>{e.lote_codigo}</td>
+                    <td className={claseCelda}>
+                      {/* El lote es lo que se sigue: desde aquí se llega a su
+                          ficha, con dónde está y todo lo que le pasó. */}
+                      <Link
+                        to={`lotes/${e.lote}`}
+                        className="font-medium text-green-700 hover:underline"
+                      >
+                        {e.lote_codigo}
+                      </Link>
+                    </td>
                     <td className={`${claseCelda} text-slate-600`}>
                       {e.ubicacion_codigo}
                     </td>

@@ -42,6 +42,12 @@ export interface MovimientoInventario {
   id: number; tipo: string; lote: number; lote_codigo: string; insumo_nombre: string;
   cantidad: string; origen_codigo: string | null; destino_codigo: string | null;
   motivo: string; fecha: string;
+  /* El saldo antes y después. Es lo que hace auditable el libro: la cifra de
+     existencias se reconstruye recorriendo los movimientos, en vez de haber
+     que creerle a un número guardado. */
+  saldo_anterior: string; saldo_posterior: string;
+  /* Qué lo originó: «produccion.Lote», «inventario.SalidaManual»… */
+  documento_tipo: string; documento_id: number;
 }
 
 export interface AjusteInventario {
@@ -142,6 +148,52 @@ export const obtenerMovimientos = () => lista<MovimientoInventario>("inventario/
 export const obtenerAjustes = () => lista<AjusteInventario>("inventario/ajustes/");
 export const obtenerUbicaciones = () => lista<UbicacionInventario>("inventario/ubicaciones/");
 export const obtenerAlertas = () => lista<Alerta>("inventario/alertas/");
+
+
+/*
+  Un lote de proveedor: la unidad de trazabilidad de bodega.
+
+  `utilizable` es lo que decide si puede salir —aprobado por Calidad, vigente
+  y no vencido— y lo calcula el backend. Repetir esa condición en el cliente
+  daría una segunda definición de «se puede usar», libre de discrepar con la
+  que el servicio aplica al descontar.
+*/
+export interface LoteInventario {
+  id: number;
+  codigo: string;
+  insumo: number;
+  insumo_nombre: string;
+  insumo_codigo: string;
+  insumo_unidad: string;
+  proveedor: number | null;
+  proveedor_nombre: string | null;
+  elaboracion: string | null;
+  vencimiento: string | null;
+  estado_calidad: string;
+  estado_etiqueta: string;
+  recibido_en: string;
+  activo: boolean;
+  vencido: boolean;
+  utilizable: boolean;
+}
+
+
+export const obtenerLotesInventario = () =>
+  lista<LoteInventario>("inventario/lotes/");
+
+export async function obtenerLoteInventario(id: number): Promise<LoteInventario> {
+  const { data } = await api.get<LoteInventario>(`inventario/lotes/${id}/`);
+
+  return data;
+}
+
+/* Acotados al lote. El backend filtra: los listados van paginados, así que
+   descartar en el cliente dejaría fuera lo que no vino en la primera página. */
+export const obtenerExistenciasDeLote = (lote: number) =>
+  lista<Existencia>(`inventario/existencias/?lote=${lote}`);
+
+export const obtenerMovimientosDeLote = (lote: number) =>
+  lista<MovimientoInventario>(`inventario/movimientos/?lote=${lote}`);
 export const obtenerEjecucionesMRP = () => lista<EjecucionMRP>("inventario/ejecuciones-mrp/");
 
 

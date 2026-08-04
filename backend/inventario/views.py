@@ -92,13 +92,29 @@ class LoteInventarioViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [EscribeBodega]
 
 
-class ExistenciaViewSet(viewsets.ReadOnlyModelViewSet):
+class FiltraPorLoteMixin:
+    """
+    `?lote=<id>` acota el listado a un lote.
+
+    Lo necesita la ficha del lote: sin filtro habría que traer la tabla entera
+    y descartar en el cliente, que además está paginada — o sea que el
+    movimiento que se busca puede no venir en la primera página.
+    """
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        lote = self.request.query_params.get("lote")
+
+        return consulta.filter(lote_id=lote) if lote else consulta
+
+
+class ExistenciaViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
     queryset = Existencia.objects.select_related("lote__insumo", "ubicacion__bodega")
     serializer_class = ExistenciaSerializer
     permission_classes = [EscribeBodega]
 
 
-class MovimientoViewSet(viewsets.ReadOnlyModelViewSet):
+class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
     queryset = MovimientoInventario.objects.select_related("lote__insumo", "origen", "destino", "usuario")
     serializer_class = MovimientoSerializer
     permission_classes = [EscribeBodega]

@@ -33,6 +33,7 @@ import Abastecimiento from "../pages/Abastecimiento/Abastecimiento";
 import AbastecimientoPanel from "../pages/Abastecimiento/Panel";
 import AbastecimientoMateriales from "../pages/Abastecimiento/Materiales";
 import AbastecimientoStock from "../pages/Abastecimiento/Stock";
+import AbastecimientoDetalleLote from "../pages/Abastecimiento/DetalleLoteInventario";
 import AbastecimientoCompras from "../pages/Abastecimiento/Compras";
 import AbastecimientoCalidad from "../pages/Abastecimiento/Calidad";
 import AbastecimientoPedidos from "../pages/Abastecimiento/Pedidos";
@@ -110,6 +111,13 @@ function RoutesApp(){
                         <Route index element={<AbastecimientoPanel />} />
                         <Route path="materiales" element={<AbastecimientoMateriales />} />
                         <Route path="stock" element={<AbastecimientoStock />} />
+                        {/* La primera ruta de detalle del sistema. Hasta aquí
+                            todo eran listas y ningún documento tenía URL: no
+                            se podía enlazar, ni compartir, ni volver a él. */}
+                        <Route
+                            path="stock/lotes/:id"
+                            element={<AbastecimientoDetalleLote />}
+                        />
                         <Route path="compras" element={<AbastecimientoCompras />} />
                         <Route path="calidad" element={<AbastecimientoCalidad />} />
                         <Route path="pedidos" element={<AbastecimientoPedidos />} />
