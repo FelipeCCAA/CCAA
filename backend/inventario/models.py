@@ -128,6 +128,16 @@ class Proveedor(models.Model):
 
 
 class InsumoProveedor(models.Model):
+    """
+    A quién se le compra un material y en qué condiciones.
+
+    No son datos de referencia: **entran en un cálculo que el sistema presenta
+    como autoritativo**. El MRP sube la cantidad sugerida al mínimo de compra,
+    la redondea al múltiplo y resta el plazo de entrega para decir cuándo hay
+    que emitir la orden. Unas condiciones desactualizadas no se ven distintas
+    de unas al día: producen cifras que parecen correctas.
+    """
+
     insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, related_name="proveedores")
     proveedor = models.ForeignKey(Proveedor, on_delete=models.PROTECT, related_name="insumos")
     principal = models.BooleanField(default=False)
@@ -138,7 +148,19 @@ class InsumoProveedor(models.Model):
     lead_time_dias = models.PositiveIntegerField(default=0)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["insumo", "proveedor"], name="insumo_proveedor_unico")]
+        constraints = [
+            models.UniqueConstraint(fields=["insumo", "proveedor"], name="insumo_proveedor_unico"),
+            # **Un principal por material.** Nada lo impedía, y los dos que lo
+            # consultan elegían distinto: el MRP tomaba el más antiguo y la
+            # conversión a orden el último del queryset. O sea que el cálculo
+            # salía con las condiciones de un proveedor y la orden se emitía
+            # al otro, sin que nada avisara.
+            models.UniqueConstraint(
+                fields=["insumo"],
+                condition=models.Q(principal=True),
+                name="insumo_un_solo_proveedor_principal",
+            ),
+        ]
 
 
 class Bodega(models.Model):

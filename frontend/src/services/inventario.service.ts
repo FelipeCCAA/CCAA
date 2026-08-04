@@ -82,6 +82,45 @@ export interface DetalleSolicitudCompra {
 }
 
 
+export interface Proveedor {
+  id: number;
+  rut: string;
+  nombre: string;
+  email: string;
+  telefono: string;
+  activo: boolean;
+}
+
+
+/*
+  Condiciones de compra de un material con un proveedor.
+
+  No son datos de referencia: **entran en un cálculo que el sistema presenta
+  como autoritativo**. El MRP sube la cantidad sugerida al mínimo, la redondea
+  al múltiplo y resta el plazo para decir cuándo emitir la orden. Unas
+  condiciones desactualizadas no se ven distintas de unas al día — producen
+  cifras que parecen correctas.
+
+  Solo puede haber **un principal por material**: es el que el MRP consulta y
+  a quien se le emite la orden.
+*/
+export interface InsumoProveedor {
+  id: number;
+  insumo: number;
+  insumo_nombre: string;
+  insumo_codigo: string;
+  insumo_unidad: string;
+  proveedor: number;
+  proveedor_nombre: string;
+  principal: boolean;
+  codigo_proveedor: string;
+  costo_unitario: string;
+  compra_minima: string;
+  multiplo_compra: string;
+  lead_time_dias: number;
+}
+
+
 export interface Bodega {
   id: number;
   codigo: string;
@@ -256,6 +295,36 @@ export const obtenerSolicitudesCompra = () =>
 export const obtenerDetallesSolicitudCompra = () =>
   lista<DetalleSolicitudCompra>("inventario/detalles-solicitud-compra/");
 export const obtenerBodegas = () => lista<Bodega>("inventario/bodegas/");
+
+
+export const obtenerProveedores = () => lista<Proveedor>("inventario/proveedores/");
+export const obtenerInsumoProveedores = () =>
+  lista<InsumoProveedor>("inventario/insumo-proveedores/");
+
+
+export async function crearProveedor(datos: {
+  rut: string;
+  nombre: string;
+  email?: string;
+  telefono?: string;
+}): Promise<Proveedor> {
+  const { data } = await api.post<Proveedor>("inventario/proveedores/", datos);
+
+  return data;
+}
+
+
+export async function guardarCondiciones(
+  id: number | null,
+  datos: Record<string, unknown>,
+): Promise<InsumoProveedor> {
+
+  const { data } = id
+    ? await api.patch<InsumoProveedor>(`inventario/insumo-proveedores/${id}/`, datos)
+    : await api.post<InsumoProveedor>("inventario/insumo-proveedores/", datos);
+
+  return data;
+}
 
 
 export async function crearBodega(datos: {

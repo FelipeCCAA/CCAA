@@ -90,10 +90,46 @@ class ProveedorSerializer(serializers.ModelSerializer):
 
 class InsumoProveedorSerializer(serializers.ModelSerializer):
     proveedor_nombre = serializers.CharField(source="proveedor.nombre", read_only=True)
+    insumo_nombre = serializers.CharField(source="insumo.nombre", read_only=True)
+    insumo_codigo = serializers.CharField(source="insumo.codigo", read_only=True)
+    insumo_unidad = serializers.CharField(source="insumo.unidad", read_only=True)
 
     class Meta:
         model = InsumoProveedor
         fields = "__all__"
+
+    def validate(self, datos):
+        """
+        Traduce el choque de la restricción a un mensaje que dice qué hacer.
+
+        Sin esto, marcar un segundo proveedor como principal revienta con un
+        error de base de datos: el operador ve un 500 y no que ya hay uno.
+        """
+        principal = datos.get(
+            "principal", getattr(self.instance, "principal", False)
+        )
+        insumo = datos.get("insumo", getattr(self.instance, "insumo", None))
+
+        if not principal or insumo is None:
+            return datos
+
+        otros = InsumoProveedor.objects.filter(insumo=insumo, principal=True)
+
+        if self.instance is not None:
+            otros = otros.exclude(pk=self.instance.pk)
+
+        actual = otros.select_related("proveedor").first()
+
+        if actual is not None:
+            raise serializers.ValidationError({
+                "principal": (
+                    f"{insumo.nombre} ya tiene a {actual.proveedor.nombre} como "
+                    "proveedor principal. Quítaselo antes de marcar otro: el "
+                    "MRP calcula con sus condiciones y la orden se emite a él."
+                )
+            })
+
+        return datos
 
 
 class BodegaSerializer(serializers.ModelSerializer):

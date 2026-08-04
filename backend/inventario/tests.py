@@ -710,3 +710,113 @@ class CircuitoDeCompraTests(TestCase):
 
         solicitud.refresh_from_db()
         self.assertEqual(solicitud.estado, SolicitudCompra.Estado.CONVERTIDA)
+
+
+class ProveedorPrincipalTests(TestCase):
+    """
+    Un solo proveedor principal por material.
+
+    Nada lo impedía, y los dos que lo consultan elegían distinto: el MRP
+    tomaba el más antiguo y la conversión a orden el último del queryset. O
+    sea que el cálculo salía con las condiciones de un proveedor y la orden se
+    emitía al otro, sin que nada avisara.
+    """
+
+    def setUp(self):
+        self.usuario = User.objects.create_user("compras-p", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+            area=PerfilUsuario.Area.COMPRAS,
+        )
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(self.usuario)
+
+        self.bolsa = Insumo.objects.create(
+            codigo="P-BOLSA", nombre="Bolsa 25 kg",
+            area=PerfilUsuario.Area.BODEGA, unidad="un",
+        )
+        self.uno = Proveedor.objects.create(rut="80.1-1", nombre="Envases Uno")
+        self.otro = Proveedor.objects.create(rut="80.2-2", nombre="Envases Dos")
+
+    def test_la_base_impide_dos_principales(self):
+        from django.db import IntegrityError
+
+        from .models import InsumoProveedor
+
+        InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.uno, principal=True
+        )
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                InsumoProveedor.objects.create(
+                    insumo=self.bolsa, proveedor=self.otro, principal=True
+                )
+
+    def test_varios_no_principales_si_conviven(self):
+        """Tener alternativas cotizadas es normal; lo que no puede haber son
+        dos que manden."""
+        from .models import InsumoProveedor
+
+        InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.uno, principal=True
+        )
+        InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.otro, principal=False
+        )
+
+        self.assertEqual(
+            InsumoProveedor.objects.filter(insumo=self.bolsa).count(), 2
+        )
+
+    def test_la_api_explica_quien_es_el_principal_actual(self):
+        """
+        Un error de base de datos sale como 500 y no dice qué hacer. El
+        serializer lo traduce antes de llegar ahí.
+        """
+        from .models import InsumoProveedor
+
+        InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.uno, principal=True
+        )
+
+        respuesta = self.cliente.post(
+            "/api/inventario/insumo-proveedores/",
+            {
+                "insumo": self.bolsa.id,
+                "proveedor": self.otro.id,
+                "principal": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("Envases Uno", str(respuesta.data))
+
+    def test_cambiar_el_principal_exige_quitar_el_anterior(self):
+        """El camino correcto: primero se le quita a uno, después se le pone
+        al otro. Dos pasos, pero en ningún momento hay dos."""
+        from .models import InsumoProveedor
+
+        actual = InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.uno, principal=True
+        )
+        nuevo = InsumoProveedor.objects.create(
+            insumo=self.bolsa, proveedor=self.otro, principal=False
+        )
+
+        self.cliente.patch(
+            f"/api/inventario/insumo-proveedores/{actual.id}/",
+            {"principal": False},
+            format="json",
+        )
+        respuesta = self.cliente.patch(
+            f"/api/inventario/insumo-proveedores/{nuevo.id}/",
+            {"principal": True},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        nuevo.refresh_from_db()
+        self.assertTrue(nuevo.principal)
