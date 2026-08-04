@@ -274,6 +274,27 @@ class AdjuntoSerializer(serializers.ModelSerializer):
 
 
 class AlertaSerializer(serializers.ModelSerializer):
+    """
+    Una alerta se lee de un vistazo o no sirve.
+
+    Por eso viajan los nombres y no solo las claves foráneas: el panel la
+    muestra sin una segunda consulta, y una alerta que dice «insumo 47» obliga
+    a ir a buscar cuál es justo cuando lo urgente es actuar.
+    """
+
+    insumo_nombre = serializers.CharField(
+        source="insumo.nombre", read_only=True, allow_null=True
+    )
+    insumo_codigo = serializers.CharField(
+        source="insumo.codigo", read_only=True, allow_null=True
+    )
+    lote_codigo = serializers.CharField(
+        source="lote.codigo", read_only=True, allow_null=True
+    )
+    severidad_etiqueta = serializers.CharField(
+        source="get_severidad_display", read_only=True
+    )
+
     class Meta:
         model = Alerta
         fields = "__all__"

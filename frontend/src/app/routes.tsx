@@ -18,8 +18,25 @@ import Maestros from "../pages/Maestros/Maestros";
 import Auditoria from "../pages/Auditoria/Auditoria";
 import Registros from "../pages/Registros/Registros";
 import Administracion from "../pages/Administracion/Administracion";
-import Inventario from "../pages/Inventario/Inventario";
+
+/*
+  Abastecimiento es una sección con pestañas, no una página. El orden de las
+  subrutas es el ciclo del material —se compra, llega, Calidad lo libera, entra
+  a stock, se pide y se consume— y es lo que ordena la navegación.
+
+  `/inventario` ya no existe: su listado de materiales vive en la pestaña de
+  materiales y su simulador en la de MRP. Eran dos pantallas contestando la
+  misma pregunta con distinta granularidad, sin enlace entre ellas y con el
+  mismo icono en el menú.
+*/
 import Abastecimiento from "../pages/Abastecimiento/Abastecimiento";
+import AbastecimientoPanel from "../pages/Abastecimiento/Panel";
+import AbastecimientoMateriales from "../pages/Abastecimiento/Materiales";
+import AbastecimientoStock from "../pages/Abastecimiento/Stock";
+import AbastecimientoCompras from "../pages/Abastecimiento/Compras";
+import AbastecimientoCalidad from "../pages/Abastecimiento/Calidad";
+import AbastecimientoPedidos from "../pages/Abastecimiento/Pedidos";
+import AbastecimientoMrp from "../pages/Abastecimiento/Mrp";
 
 
 /*
@@ -79,7 +96,6 @@ function RoutesApp(){
                             path="/administracion"
                             element={<Administracion />}
                         />
-                        <Route path="/inventario" element={<Inventario />} />
                     </Route>
 
                     <Route
@@ -87,7 +103,18 @@ function RoutesApp(){
                         element={<Dashboard />}
                     />
 
-                    <Route path="/abastecimiento" element={<Abastecimiento />} />
+                    {/* La pestaña activa vive en la URL: un enlace a
+                        /abastecimiento/compras lleva a compras, y el botón de
+                        volver del navegador funciona entre pestañas. */}
+                    <Route path="/abastecimiento" element={<Abastecimiento />}>
+                        <Route index element={<AbastecimientoPanel />} />
+                        <Route path="materiales" element={<AbastecimientoMateriales />} />
+                        <Route path="stock" element={<AbastecimientoStock />} />
+                        <Route path="compras" element={<AbastecimientoCompras />} />
+                        <Route path="calidad" element={<AbastecimientoCalidad />} />
+                        <Route path="pedidos" element={<AbastecimientoPedidos />} />
+                        <Route path="mrp" element={<AbastecimientoMrp />} />
+                    </Route>
 
                     <Route
                         path="/produccion"

@@ -35,51 +35,46 @@ import logo from "../../assets/logos/logo-campos-australes-normal.png";
   ruta aquí y queda navegable.
 */
 
-const modulos = [
+/*
+  Los módulos van agrupados y en el orden del flujo de planta: llega la leche,
+  se planifica, se produce, Calidad libera. Antes eran once enlaces planos
+  ordenados por cuándo se fueron agregando —«Abastecimiento» arriba de «Panel
+  general»— y con dos entradas distintas, mismo icono, para el mismo dominio:
+  «Abastecimiento y Bodega» y «Inventario y MRP». Esta última ya no existe:
+  su contenido son dos pestañas dentro de abastecimiento.
+
+  `ruta: null` significa que la pantalla todavía no existe. Se muestra apagada
+  para que se vea el alcance del sistema, pero no navega a ninguna parte.
+*/
+const GRUPOS = [
   {
-    etiqueta: "Abastecimiento y Bodega",
-    ruta: "/abastecimiento",
-    icono: Boxes,
+    titulo: null,
+    modulos: [
+      { etiqueta: "Panel general", ruta: "/dashboard", icono: LayoutDashboard },
+    ],
   },
   {
-    etiqueta: "Panel general",
-    ruta: "/dashboard",
-    icono: LayoutDashboard,
+    titulo: "Operación",
+    modulos: [
+      { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
+      { etiqueta: "Recepción y silos", ruta: "/recepcion", icono: Truck },
+      { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
+      { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
+    ],
   },
   {
-    etiqueta: "Producción",
-    ruta: "/produccion",
-    icono: Factory,
+    titulo: "Calidad",
+    modulos: [
+      { etiqueta: "Liberación de producto", ruta: "/liberacion", icono: ClipboardCheck },
+      { etiqueta: "Registros de planta", ruta: "/registros", icono: ClipboardList },
+    ],
   },
   {
-    etiqueta: "Recepción y silos",
-    ruta: "/recepcion",
-    icono: Truck,
-  },
-  {
-    etiqueta: "Liberación de producto",
-    ruta: "/liberacion",
-    icono: ClipboardCheck,
-  },
-  {
-    etiqueta: "Registros de planta",
-    ruta: "/registros",
-    icono: ClipboardList,
-  },
-  {
-    etiqueta: "Planificación",
-    ruta: "/planificacion",
-    icono: CalendarRange,
-  },
-  {
-    etiqueta: "Maestros",
-    ruta: "/maestros",
-    icono: Database,
-  },
-  {
-    etiqueta: "Auditoría",
-    ruta: "/auditoria",
-    icono: History,
+    titulo: "Configuración",
+    modulos: [
+      { etiqueta: "Maestros", ruta: "/maestros", icono: Database },
+      { etiqueta: "Auditoría", ruta: "/auditoria", icono: History },
+    ],
   },
 ];
 
@@ -92,21 +87,24 @@ function Navbar() {
 
   const navegar = useNavigate();
   const sesion = obtenerSesion();
-  const modulosVisibles = sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin"
-    ? [
-        {
-          etiqueta: "Administración",
-          ruta: "/administracion",
-          icono: Users,
-        },
-        {
-          etiqueta: "Inventario y MRP",
-          ruta: "/inventario",
-          icono: Boxes,
-        },
-        ...modulos,
-      ]
-    : modulos;
+  const esAdmin =
+    sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin";
+
+  // Administración se agrega al grupo de configuración en vez de encabezar el
+  // menú: es de mantención, no de trabajo diario.
+  const grupos = esAdmin
+    ? GRUPOS.map((grupo) =>
+        grupo.titulo === "Configuración"
+          ? {
+              ...grupo,
+              modulos: [
+                { etiqueta: "Administración", ruta: "/administracion", icono: Users },
+                ...grupo.modulos,
+              ],
+            }
+          : grupo,
+      )
+    : GRUPOS;
 
   const salir = async () => {
 
@@ -141,59 +139,73 @@ function Navbar() {
 
       {/* Módulos */}
 
-      <nav className="flex-1 space-y-1 px-4">
+      <nav className="flex-1 overflow-y-auto px-4 pb-4">
 
-        {modulosVisibles.map((modulo) => {
+        {grupos.map((grupo) => (
 
-          const Icono = modulo.icono;
+          <div key={grupo.titulo ?? "inicio"} className="mb-6 space-y-1">
 
-          if (!modulo.ruta) {
+            {grupo.titulo && (
+              <p className="px-4 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                {grupo.titulo}
+              </p>
+            )}
 
-            return (
+            {grupo.modulos.map((modulo) => {
 
-              <div
-                key={modulo.etiqueta}
-                className={`${enlaceBase} cursor-default text-slate-300`}
-                title="Módulo aún no desarrollado"
-              >
+              const Icono = modulo.icono;
 
-                <Icono className="h-5 w-5" />
+              if (!modulo.ruta) {
 
-                <span className="flex-1">{modulo.etiqueta}</span>
+                return (
 
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+                  <div
+                    key={modulo.etiqueta}
+                    className={`${enlaceBase} cursor-default text-slate-300`}
+                    title="Módulo aún no desarrollado"
+                  >
 
-                  Pronto
+                    <Icono className="h-5 w-5" />
 
-                </span>
+                    <span className="flex-1">{modulo.etiqueta}</span>
 
-              </div>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
 
-            );
+                      Pronto
 
-          }
+                    </span>
 
-          return (
+                  </div>
 
-            <NavLink
-              key={modulo.etiqueta}
-              to={modulo.ruta}
-              className={({ isActive }) =>
-                isActive
-                  ? `${enlaceBase} bg-green-50 text-green-700`
-                  : `${enlaceBase} text-slate-600 hover:bg-slate-50 hover:text-slate-900`
+                );
+
               }
-            >
 
-              <Icono className="h-5 w-5" />
+              return (
 
-              {modulo.etiqueta}
+                <NavLink
+                  key={modulo.etiqueta}
+                  to={modulo.ruta}
+                  className={({ isActive }) =>
+                    isActive
+                      ? `${enlaceBase} bg-green-50 text-green-700`
+                      : `${enlaceBase} text-slate-600 hover:bg-slate-50 hover:text-slate-900`
+                  }
+                >
 
-            </NavLink>
+                  <Icono className="h-5 w-5" />
 
-          );
+                  {modulo.etiqueta}
 
-        })}
+                </NavLink>
+
+              );
+
+            })}
+
+          </div>
+
+        ))}
 
       </nav>
 

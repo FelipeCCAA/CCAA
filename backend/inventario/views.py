@@ -485,8 +485,29 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
 
 
 class AlertaViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Las alertas vigentes. Solo de lectura: no se marcan como vistas.
+
+    Una alerta se apaga arreglando lo que la causó —reponiendo el material,
+    liberando el lote— y `actualizar_alertas_inventario()` la recalcula en la
+    siguiente operación. Poder cerrarlas a mano dejaría el panel limpio con el
+    problema intacto, que es la forma más rápida de que nadie vuelva a mirarlo.
+
+    Por omisión salen solo las activas; `?historico=1` trae también las
+    resueltas, que es lo que sirve para preguntarse con qué frecuencia se
+    repite un quiebre.
+    """
+
     queryset = Alerta.objects.select_related("insumo", "lote")
     serializer_class = AlertaSerializer
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+
+        if self.request.query_params.get("historico"):
+            return consulta
+
+        return consulta.filter(activa=True)
 
 
 @api_view(["POST"])

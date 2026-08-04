@@ -52,6 +52,43 @@ export interface AjusteInventario {
 export interface ResultadoMRP {
   kilos_producir: string;
   materiales: Array<{ insumo: string; unidad: string; requerido: string; stock: string; faltante: string; envases_a_pedir: number; eoq: string | null }>;
+  /* Falso cuando la explosión no llegó hasta el final —un intermedio sin
+     receta, un ciclo—. La lista está incompleta y hay que decirlo: con ella
+     se emite una orden de compra corta. */
+  receta_completa: boolean;
+}
+
+
+/*
+  Alerta vigente del inventario.
+
+  Las calcula el backend en cada operación de stock (stock mínimo, punto de
+  reposición, próximo a vencer, cuarentena atrasada) y **no se cierran a
+  mano**: se apagan arreglando lo que las causó. Poder marcarlas como vistas
+  dejaría el panel limpio con el problema intacto.
+*/
+export interface Alerta {
+  id: number;
+  tipo: string;
+  severidad: "info" | "advertencia" | "critica";
+  severidad_etiqueta: string;
+  insumo: number | null;
+  insumo_nombre: string | null;
+  insumo_codigo: string | null;
+  lote: number | null;
+  lote_codigo: string | null;
+  mensaje: string;
+  activa: boolean;
+  creada_en: string;
+}
+
+
+export interface EjecucionMRP {
+  id: number;
+  creada_en: string;
+  fecha_corte: string;
+  horizonte_hasta: string;
+  parametros: Record<string, unknown>;
 }
 
 export async function obtenerInsumos(): Promise<Insumo[]> {
@@ -77,6 +114,8 @@ export const obtenerNotificaciones = () => lista<Notificacion>("inventario/notif
 export const obtenerMovimientos = () => lista<MovimientoInventario>("inventario/movimientos/");
 export const obtenerAjustes = () => lista<AjusteInventario>("inventario/ajustes/");
 export const obtenerUbicaciones = () => lista<UbicacionInventario>("inventario/ubicaciones/");
+export const obtenerAlertas = () => lista<Alerta>("inventario/alertas/");
+export const obtenerEjecucionesMRP = () => lista<EjecucionMRP>("inventario/ejecuciones-mrp/");
 
 export async function crearMaterial(datos: {
   codigo: string; nombre: string; categoria: string; area: string; unidad: string;
