@@ -10,6 +10,8 @@ import {
   History,
   Users,
   Boxes,
+  GitBranch,
+  Wrench,
   LogOut,
 } from "lucide-react";
 
@@ -35,6 +37,18 @@ import logo from "../../assets/logos/logo-campos-australes-normal.png";
 */
 
 const modulos = [
+  {
+    etiqueta: "Procesamiento y trazabilidad",
+    ruta: "/procesos",
+    icono: GitBranch,
+    areas: ["condensacion", "secado", "envase", "administracion"],
+  },
+  {
+    etiqueta: "Mantenimiento",
+    ruta: "/mantenimiento",
+    icono: Wrench,
+    areas: ["mantenimiento", "administracion"],
+  },
   {
     etiqueta: "Abastecimiento y Bodega",
     ruta: "/abastecimiento",
@@ -86,6 +100,11 @@ function Navbar() {
 
   const navegar = useNavigate();
   const sesion = obtenerSesion();
+  const area = sesion?.usuario.perfil?.area;
+  const esGlobal = sesion?.usuario.rol === "admin";
+  const modulosPorArea = modulos.filter((modulo) =>
+    !("areas" in modulo) || esGlobal || (area && modulo.areas?.includes(area)),
+  );
   const modulosVisibles = sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin"
     ? [
         {
@@ -98,9 +117,9 @@ function Navbar() {
           ruta: "/inventario",
           icono: Boxes,
         },
-        ...modulos,
+        ...modulosPorArea,
       ]
-    : modulos;
+    : modulosPorArea;
 
   const salir = async () => {
 

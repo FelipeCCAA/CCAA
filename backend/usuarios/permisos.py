@@ -146,3 +146,8 @@ class EscribeMRQ(PermisoPorArea):
         PerfilUsuario.Area.BODEGA,
     )
     message = "Tu área no puede crear o modificar solicitudes de materiales."
+
+
+class EscribeMantenimiento(PermisoPorArea):
+    areas_escritura = (PerfilUsuario.Area.MANTENIMIENTO,)
+    message = "Solo Mantenimiento puede modificar planes y órdenes de trabajo."

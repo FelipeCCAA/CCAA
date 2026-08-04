@@ -1,4 +1,6 @@
 from django.db import transaction
+from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
@@ -115,26 +117,50 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         al cambio de estado, porque una descarga sin su movimiento dejaría el
         saldo del silo mintiendo.
         """
-        recepcion = self.get_object()
-
-        if recepcion.silo is None:
-            return Response(
-                {"detail": "La recepción no tiene silo de destino asignado."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not recepcion.puede_pasar_a(Recepcion.Estado.DESCARGADA):
-            return Response(
-                {
-                    "detail": (
-                        f"Una recepción {recepcion.get_estado_display().lower()} no "
-                        "puede descargarse. Debe estar liberada."
-                    )
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-
         with transaction.atomic():
+            recepcion = Recepcion.objects.select_for_update().select_related("silo").get(
+                pk=self.get_object().pk
+            )
+            movimiento_existente = MovimientoSilo.objects.filter(
+                origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+                origen_id=recepcion.id,
+            ).first()
+            if movimiento_existente:
+                if recepcion.estado != Recepcion.Estado.DESCARGADA:
+                    recepcion.estado = Recepcion.Estado.DESCARGADA
+                    recepcion.save(update_fields=["estado"])
+                return Response(self.get_serializer(recepcion).data)
+
+            if recepcion.silo_id is None:
+                return Response(
+                    {"detail": "La recepción no tiene silo de destino asignado."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not recepcion.puede_pasar_a(Recepcion.Estado.DESCARGADA):
+                return Response(
+                    {"detail": f"Una recepción {recepcion.get_estado_display().lower()} no puede descargarse. Debe estar liberada."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            silo = Silo.objects.select_for_update().get(pk=recepcion.silo_id)
+            ocupacion_actual = MovimientoSilo.objects.filter(silo=silo).aggregate(
+                total=Coalesce(
+                    Sum(Case(
+                        When(tipo=MovimientoSilo.Tipo.SALIDA, then=-F("litros")),
+                        default=F("litros"),
+                        output_field=DecimalField(max_digits=14, decimal_places=2),
+                    )),
+                    Value(0),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                )
+            )["total"]
+            if ocupacion_actual + recepcion.litros > silo.capacidad_l:
+                disponible = silo.capacidad_l - ocupacion_actual
+                return Response(
+                    {"detail": f"El silo {silo.codigo} no tiene capacidad suficiente. Disponible: {disponible} L."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
             MovimientoSilo.objects.create(
                 silo=recepcion.silo,
                 tipo=MovimientoSilo.Tipo.INGRESO,
@@ -176,31 +202,41 @@ def ocupacion(request):
     Un saldo negativo se informa tal cual: significa que el registro está
     descuadrado, y ocultarlo haría que el error nunca se descubriera.
     """
-    silos = list(Silo.objects.filter(activo=True))
-    # Todos los movimientos de una vez: son pocos por silo y evita una
-    # consulta por cada uno.
-    movimientos = list(MovimientoSilo.objects.all())
-
-    ocupaciones = [dominio.ocupacion_silo(silo, movimientos) for silo in silos]
+    silos = Silo.objects.filter(activo=True).annotate(
+        litros_ocupados=Coalesce(
+            Sum(Case(
+                When(movimientos__tipo=MovimientoSilo.Tipo.SALIDA, then=-F("movimientos__litros")),
+                default=F("movimientos__litros"),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )),
+            Value(0),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        )
+    )
+    ocupaciones = []
+    for silo in silos:
+        porcentaje = (
+            silo.litros_ocupados / silo.capacidad_l * 100
+            if silo.capacidad_l
+            else 0
+        )
+        ocupaciones.append({
+            "silo_id": silo.id,
+            "codigo": silo.codigo,
+            "litros": silo.litros_ocupados,
+            "capacidad": silo.capacidad_l,
+            "pct": round(porcentaje, 1),
+            "excedido": silo.litros_ocupados > silo.capacidad_l,
+            "negativo": silo.litros_ocupados < 0,
+        })
 
     return Response(
         {
-            "silos": [
-                {
-                    "silo_id": o.silo_id,
-                    "codigo": o.codigo,
-                    "litros": o.litros,
-                    "capacidad": o.capacidad,
-                    "pct": o.pct,
-                    "excedido": o.excedido,
-                    "negativo": o.negativo,
-                }
-                for o in ocupaciones
-            ],
-            "litros_totales": sum(o.litros for o in ocupaciones),
+            "silos": ocupaciones,
+            "litros_totales": sum(o["litros"] for o in ocupaciones),
             "alertas": {
-                "excedidos": [o.codigo for o in ocupaciones if o.excedido],
-                "negativos": [o.codigo for o in ocupaciones if o.negativo],
+                "excedidos": [o["codigo"] for o in ocupaciones if o["excedido"]],
+                "negativos": [o["codigo"] for o in ocupaciones if o["negativo"]],
             },
         }
     )

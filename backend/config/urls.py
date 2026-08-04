@@ -51,4 +51,8 @@ urlpatterns = [
 
     path("api/auditoria/", include("auditoria.urls")),
 
+    path("api/procesos/", include("procesos.urls")),
+
+    path("api/mantenimiento/", include("mantenimiento.urls")),
+
 ]

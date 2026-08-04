@@ -477,6 +477,7 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
     queryset = Adjunto.objects.select_related("autor")
     serializer_class = AdjuntoSerializer
     permission_classes = [EscribeRecepcionCompra]
+    http_method_names = ["get", "post", "head", "options"]
 
     def perform_create(self, serializer):
         import hashlib

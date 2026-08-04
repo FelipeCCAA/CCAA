@@ -65,6 +65,7 @@ class PerfilUsuario(models.Model):
         BODEGA = "bodega", "Bodega"
         COMPRAS = "compras", "Compras"
         DESPACHO = "despacho", "Despacho"
+        MANTENIMIENTO = "mantenimiento", "Mantenimiento"
         ADMINISTRACION = "administracion", "Administración general"
 
     usuario = models.OneToOneField(

@@ -75,6 +75,8 @@ INSTALLED_APPS = [
     'inventario',
     'planificacion',
     'auditoria',
+    'procesos',
+    'mantenimiento',
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
@@ -203,6 +205,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+MAX_UPLOAD_SIZE = int(os.environ.get("DJANGO_MAX_UPLOAD_MB", "15")) * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
+FILE_UPLOAD_MAX_MEMORY_SIZE = min(MAX_UPLOAD_SIZE, 5 * 1024 * 1024)
 
 
 # Recuperación de contraseña

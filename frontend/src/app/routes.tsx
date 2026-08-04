@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import RutaProtegida from "../components/RutaProtegida/RutaProtegida";
@@ -19,6 +20,15 @@ import Auditoria from "../pages/Auditoria/Auditoria";
 import Administracion from "../pages/Administracion/Administracion";
 import Inventario from "../pages/Inventario/Inventario";
 import Abastecimiento from "../pages/Abastecimiento/Abastecimiento";
+
+const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
+const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
+
+const diferido = (componente: React.ReactNode) => (
+  <Suspense fallback={<div className="p-10 text-sm text-slate-500">Cargando módulo…</div>}>
+    {componente}
+  </Suspense>
+);
 
 
 /*
@@ -87,6 +97,10 @@ function RoutesApp(){
                     />
 
                     <Route path="/abastecimiento" element={<Abastecimiento />} />
+
+                    <Route path="/procesos" element={diferido(<Procesos />)} />
+
+                    <Route path="/mantenimiento" element={diferido(<Mantenimiento />)} />
 
                     <Route
                         path="/produccion"
