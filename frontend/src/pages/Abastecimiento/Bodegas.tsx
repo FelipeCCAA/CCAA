@@ -5,6 +5,7 @@ import {
   crearBodega,
   crearUbicacion,
   obtenerBodegas,
+  obtenerCatalogosInventario,
   obtenerUbicaciones,
   type UbicacionInventario,
 } from "../../services/inventario.service";
@@ -36,27 +37,21 @@ import {
   dejar que se descubra al primer ingreso rechazado.
 */
 
-const TIPOS = [
-  ["disponible", "Disponible", "Material liberado, listo para consumir."],
-  ["cuarentena", "Cuarentena", "Recién recibido, esperando a Calidad."],
-  ["rechazado", "Rechazado", "Lo que Calidad no aprobó."],
-  ["produccion", "Producción", "Entregado a planta."],
-];
-
-const AREAS = [
-  ["bodega", "Bodega"],
-  ["recepcion", "Recepción"],
-  ["condensacion", "Condensación"],
-  ["secado", "Secado"],
-  ["envase", "Envase"],
-  ["calidad", "Calidad"],
-];
-
+/* Qué significa cada tipo. Las **etiquetas** vienen del backend; esto es la
+   explicación, que es de la pantalla y no del catálogo. Un tipo nuevo aparece
+   igual en el desplegable, solo que sin descripción. */
+const QUE_ES: Record<string, string> = {
+  disponible: "Material liberado, listo para consumir.",
+  cuarentena: "Recién recibido, esperando a Calidad.",
+  rechazado: "Lo que Calidad no aprobó.",
+  produccion: "Entregado a planta.",
+};
 
 function Bodegas() {
 
   const bodegas = useCarga(obtenerBodegas);
   const ubicaciones = useCarga(obtenerUbicaciones);
+  const catalogos = useCarga(obtenerCatalogosInventario);
 
   const [error, setError] = useState("");
   const [nuevaBodega, setNuevaBodega] = useState({
@@ -164,9 +159,9 @@ function Bodegas() {
                 }
                 className={`${claseCampo} sm:col-span-2`}
               >
-                {AREAS.map(([valor, etiqueta]) => (
-                  <option key={valor} value={valor}>
-                    {etiqueta}
+                {(catalogos.datos?.area ?? []).map((o) => (
+                  <option key={o.valor} value={o.valor}>
+                    {o.etiqueta}
                   </option>
                 ))}
               </select>
@@ -218,16 +213,16 @@ function Bodegas() {
                   }
                   className={claseCampo}
                 >
-                  {TIPOS.map(([valor, etiqueta]) => (
-                    <option key={valor} value={valor}>
-                      {etiqueta}
+                  {(catalogos.datos?.tipo_ubicacion ?? []).map((o) => (
+                    <option key={o.valor} value={o.valor}>
+                      {o.etiqueta}
                     </option>
                   ))}
                 </select>
               </div>
 
               <p className="text-sm text-slate-500">
-                {TIPOS.find(([v]) => v === nuevaUbicacion.tipo)?.[2]}
+                {QUE_ES[nuevaUbicacion.tipo]}
               </p>
 
               <button className={claseBoton} disabled={!nuevaUbicacion.bodega}>

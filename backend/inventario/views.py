@@ -640,3 +640,27 @@ def calcular_mrp(request):
         # y con ella se emite una orden de compra corta.
         "receta_completa": explosion.completa,
     })
+
+
+@api_view(["GET"])
+def catalogos(request):
+    """
+    Opciones de los desplegables del módulo.
+
+    Se sirven desde aquí y no se escriben en el frontend por la misma razón
+    que en maestros y planificación: una copia en el cliente ofrece tarde o
+    temprano un valor que el backend rechaza. Ya pasó — la pantalla de bodegas
+    llevaba la lista de áreas a mano y se quedó sin «despacho» ni
+    «mantenimiento» en cuanto el maestro las incorporó.
+    """
+    def opciones(choices):
+        return [{"valor": v, "etiqueta": e} for v, e in choices]
+
+    return Response(
+        {
+            "area": opciones(PerfilUsuario.Area.choices),
+            "tipo_ubicacion": opciones(Ubicacion.Tipo.choices),
+            "categoria_insumo": opciones(Insumo.Categoria.choices),
+            "unidad_insumo": opciones(Insumo.Unidad.choices),
+        }
+    )

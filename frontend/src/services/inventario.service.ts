@@ -337,6 +337,29 @@ export const obtenerDetallesSolicitudCompra = () =>
 export const obtenerBodegas = () => lista<Bodega>("inventario/bodegas/");
 
 
+/*
+  Opciones de los desplegables del módulo.
+
+  Vienen del backend y no se escriben aquí: una copia en el cliente ofrece
+  tarde o temprano un valor que el servidor rechaza. Pasó — la pantalla de
+  bodegas llevaba la lista de áreas a mano y se quedó sin «despacho» ni
+  «mantenimiento» en cuanto el maestro las incorporó.
+*/
+export interface CatalogosInventario {
+  area: { valor: string; etiqueta: string }[];
+  tipo_ubicacion: { valor: string; etiqueta: string }[];
+  categoria_insumo: { valor: string; etiqueta: string }[];
+  unidad_insumo: { valor: string; etiqueta: string }[];
+}
+
+
+export async function obtenerCatalogosInventario(): Promise<CatalogosInventario> {
+  const { data } = await api.get<CatalogosInventario>("inventario/catalogos/");
+
+  return data;
+}
+
+
 export const obtenerRecepcionesCompra = () =>
   lista<RecepcionCompra>("inventario/recepciones-compra/");
 

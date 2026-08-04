@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    catalogos,
     AdjuntoViewSet, AjusteInventarioViewSet, AlertaViewSet, BodegaViewSet, CicloCIPViewSet,
     DetalleOrdenCompraViewSet,
     DetalleSolicitudCompraViewSet, DetalleSolicitudMaterialViewSet,
@@ -42,4 +43,8 @@ router.register("liberaciones-excepcionales", LiberacionExcepcionalViewSet)
 router.register("adjuntos", AdjuntoViewSet)
 router.register("alertas", AlertaViewSet)
 
-urlpatterns = [path("mrp/", calcular_mrp), path("", include(router.urls))]
+urlpatterns = [
+    path("mrp/", calcular_mrp),
+    path("catalogos/", catalogos),
+    path("", include(router.urls)),
+]

@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import {
   crearMaterial,
+  obtenerCatalogosInventario,
   obtenerInsumos,
 } from "../../services/inventario.service";
 
@@ -32,17 +33,6 @@ import {
   respalde, se desincroniza y además parece autorizado.
 */
 
-const CATEGORIAS = [
-  ["materia_prima", "Materia prima"],
-  ["empaque", "Empaque"],
-  ["produccion", "Insumo productivo"],
-  ["quimico", "Químico"],
-  ["limpieza", "Limpieza"],
-  ["repuesto", "Repuesto"],
-  ["seguridad", "Seguridad"],
-  ["otro", "Otro"],
-];
-
 const VACIO = {
   codigo: "",
   nombre: "",
@@ -57,6 +47,7 @@ const VACIO = {
 function Materiales() {
 
   const insumos = useCarga(obtenerInsumos);
+  const catalogos = useCarga(obtenerCatalogosInventario);
 
   const [nuevo, setNuevo] = useState(VACIO);
   const [error, setError] = useState("");
@@ -125,9 +116,9 @@ function Materiales() {
                 onChange={(e) => setNuevo({ ...nuevo, categoria: e.target.value })}
                 className={claseCampo}
               >
-                {CATEGORIAS.map(([valor, etiqueta]) => (
-                  <option key={valor} value={valor}>
-                    {etiqueta}
+                {(catalogos.datos?.categoria_insumo ?? []).map((o) => (
+                  <option key={o.valor} value={o.valor}>
+                    {o.etiqueta}
                   </option>
                 ))}
               </select>
@@ -137,9 +128,11 @@ function Materiales() {
                 onChange={(e) => setNuevo({ ...nuevo, unidad: e.target.value })}
                 className={claseCampo}
               >
-                <option value="kg">Kilogramos</option>
-                <option value="L">Litros</option>
-                <option value="un">Unidades</option>
+                {(catalogos.datos?.unidad_insumo ?? []).map((o) => (
+                  <option key={o.valor} value={o.valor}>
+                    {o.etiqueta}
+                  </option>
+                ))}
               </select>
 
               <label className="flex items-center gap-2 text-sm text-slate-700">
