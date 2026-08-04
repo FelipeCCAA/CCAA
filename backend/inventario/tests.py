@@ -98,7 +98,12 @@ class InventarioTests(TestCase):
         from maestros.models import Equipo
         from planificacion.models import BloquePlan, CodigoProduccion, SemanaPlan
 
-        equipo = Equipo.objects.create(codigo="linea-mrp", nombre="Línea MRP", tipo=Equipo.Tipo.LINEA)
+        equipo = Equipo.objects.create(
+            codigo="linea-mrp",
+            nombre="Línea MRP",
+            tipo=Equipo.Tipo.LINEA,
+            consume_materiales=True,
+        )
         codigo = CodigoProduccion.objects.create(
             codigo="MRP-1", producto=self.producto, categoria="secado_ccaa",
             rendimiento_lh=1000,
@@ -115,6 +120,58 @@ class InventarioTests(TestCase):
         resultado = ejecucion.resultados.get(insumo=self.bolsa)
         self.assertEqual(resultado.necesidad_bruta, Decimal("40"))
         self.assertEqual(resultado.necesidad_neta, Decimal("40"))
+
+    def test_quien_consume_materiales_lo_dice_el_maestro_no_su_tipo(self):
+        """
+        El bloque cuenta según `consume_materiales`, no según el tipo del
+        equipo. Antes el filtro comparaba `tipo == "linea"`, y cuando las
+        líneas 1 y 2 se reconocieron como las torres Egron y cambiaron de
+        tipo, sus bloques dejaron de contar: el MRP siguió corriendo y
+        devolviendo cifras, solo que cortas.
+
+        Una orden de compra corta no se ve distinta de una completa. Por eso
+        se prueba con una **torre**, que es el tipo que el filtro anterior
+        dejaba fuera.
+        """
+        from datetime import date
+        from maestros.models import Equipo
+        from planificacion.models import BloquePlan, CodigoProduccion, SemanaPlan
+
+        torre = Equipo.objects.create(
+            codigo="torre-mrp",
+            nombre="Torre MRP",
+            tipo=Equipo.Tipo.TORRE,
+            consume_materiales=True,
+        )
+        # El evaporador que la alimenta lleva el mismo código de producción.
+        # Si contara también, el MRP pediría los sacos dos veces.
+        evaporador = Equipo.objects.create(
+            codigo="evap-mrp",
+            nombre="Evaporador MRP",
+            tipo=Equipo.Tipo.EVAPORADOR,
+            consume_leche=True,
+        )
+        codigo = CodigoProduccion.objects.create(
+            codigo="MRP-2", producto=self.producto, categoria="secado_ccaa",
+            rendimiento_lh=1000,
+        )
+        semana = SemanaPlan.objects.create(
+            codigo="W9", anio=2026, fecha_inicio=date(2026, 3, 2),
+            estado=SemanaPlan.Estado.PUBLICADA,
+        )
+
+        for equipo in (torre, evaporador):
+            BloquePlan.objects.create(
+                semana=semana, equipo=equipo, dia=0, hora_inicio=8, hora_fin=9,
+                tipo=BloquePlan.Tipo.PRODUCCION, codigo=codigo, cantidad_kg=1000,
+            )
+
+        ejecucion = ejecutar_mrp_semana(semana=semana, usuario=self.admin)
+        resultado = ejecucion.resultados.get(insumo=self.bolsa)
+
+        # 1.000 kg × 0,04 = 40 bolsas. Cuarenta, no ochenta: el bloque del
+        # evaporador no vuelve a contarlas.
+        self.assertEqual(resultado.necesidad_bruta, Decimal("40"))
 
     def test_consumo_de_lote_productivo_usa_receta_y_no_se_duplica(self):
         from datetime import date

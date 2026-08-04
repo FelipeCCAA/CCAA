@@ -765,11 +765,17 @@ def ejecutar_mrp_semana(*, semana, usuario):
     semana = SemanaPlan.objects.prefetch_related("bloques__codigo__producto", "bloques__equipo").get(pk=semana.pk)
     if semana.estado != SemanaPlan.Estado.PUBLICADA:
         raise ValidationError("El MRP solo puede ejecutarse sobre una semana publicada.")
+    # Solo el equipo del final de la cadena. Un mismo código se programa en el
+    # evaporador y en la torre que lo recibe; contar los dos pediría los sacos
+    # dos veces. Cuál cuenta lo dice el maestro (`consume_materiales`) y no una
+    # comparación contra `tipo` aquí: cuando las líneas 1 y 2 se reconocieron
+    # como las torres Egron y cambiaron de tipo, el filtro anterior las dejó
+    # fuera y el MRP siguió devolviendo cifras, solo que cortas.
     bloques = [
         b for b in semana.bloques.all()
         if b.tipo == BloquePlan.Tipo.PRODUCCION
         and b.cantidad_kg and b.codigo_id and b.codigo.producto_id
-        and b.equipo.tipo == "linea"
+        and b.equipo.consume_materiales
     ]
     # Los catálogos se cargan una vez para toda la semana: `explosionar` es
     # dominio puro y no consulta, así que releerlos por bloque serían tantas

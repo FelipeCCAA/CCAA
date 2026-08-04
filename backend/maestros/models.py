@@ -296,6 +296,18 @@ class Equipo(models.Model):
     *y* en la línea que lo recibe; si los dos bloques restaran leche, el
     balance la contaría dos veces. Solo los evaporadores la consumen. Marcar
     de más aquí hace desaparecer leche del balance sin que nadie lo note.
+
+    **`consume_materiales` es la misma regla por el otro extremo.** El saco y
+    la etiqueta los consume el equipo del final de la cadena —la torre, la
+    línea de mantequilla—, no el evaporador que la alimenta. Son dos banderas
+    y no una sola invertida porque hay equipos que no son ninguna de las dos
+    cosas: la carga de precondensado no resta leche ni pide envases.
+
+    Las dos son campos del maestro y no una comparación contra `tipo` en el
+    código, y hay motivo: el MRP filtraba `tipo == "linea"`, y cuando las
+    líneas 1 y 2 se reconocieron como las torres Egron y cambiaron de tipo,
+    sus bloques dejaron de contar. El MRP siguió corriendo y devolviendo
+    cifras, solo que cortas — que es la peor forma de fallar.
     """
 
     class Tipo(models.TextChoices):
@@ -320,6 +332,15 @@ class Equipo(models.Model):
         help_text=(
             "Solo los evaporadores. Marcarlo en una línea que recibe lo que "
             "el evaporador ya produjo restaría la misma leche dos veces."
+        ),
+    )
+    consume_materiales = models.BooleanField(
+        "Consume materiales del MRP",
+        default=False,
+        help_text=(
+            "Solo el equipo del final de la cadena: la torre o la línea que "
+            "envasa. Marcarlo también en el evaporador que la alimenta haría "
+            "que el MRP pidiera los sacos dos veces."
         ),
     )
     orden = models.PositiveSmallIntegerField(
@@ -947,19 +968,23 @@ class RecetaComponente(models.Model):
         verbose_name_plural = "Componentes de receta"
         ordering = ["receta", "producto__nombre", "insumo__nombre"]
         constraints = [
-            # `nulls_distinct=False` en las dos: sin eso PostgreSQL considera
-            # distintos dos NULL y la misma receta admitiría el mismo insumo
-            # repetido —cada fila con `producto` nulo—, que es como se
+            # Los NULL se dejan **distintos**, que es lo que PostgreSQL hace
+            # por omisión, y es imprescindible: los componentes que son insumo
+            # llevan `producto` nulo, así que con `nulls_distinct=False` la
+            # primera restricción los haría colisionar entre sí y una receta
+            # admitiría un solo insumo. Pasó: se escribió al revés y ninguna
+            # prueba lo notó porque todas cargaban un componente de cada tipo.
+            #
+            # Lo que cada una impide sigue en pie: no repetir el mismo
+            # producto ni el mismo insumo dentro de una receta, que es como se
             # duplicaría una cantidad sin que nadie lo viera.
             models.UniqueConstraint(
                 fields=["receta", "producto"],
                 name="componente_unico_por_receta",
-                nulls_distinct=False,
             ),
             models.UniqueConstraint(
                 fields=["receta", "insumo"],
                 name="componente_insumo_unico_por_receta",
-                nulls_distinct=False,
             ),
             # Uno de los dos, y solo uno. Un componente con ambos tendría dos
             # cantidades para el mismo renglón; uno sin ninguno es una

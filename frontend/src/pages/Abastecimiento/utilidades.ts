@@ -11,6 +11,31 @@ import { useCallback, useEffect, useRef, useState } from "react";
 */
 
 
+/*
+  El motivo que dio el backend, o uno por defecto.
+
+  Los servicios de inventario responden `{"error": "..."}` y el resto de la
+  API `{"detail": "..."}`; se leen los dos. Vale la pena: los motivos que
+  manda este módulo son concretos —«Stock insuficiente de Bolsa 25 kg. Faltan
+  3400», «El solicitante no puede aprobar su propia solicitud»— y taparlos con
+  un «no se pudo» obliga a adivinar qué corregir.
+*/
+export function mensajeDe(error: unknown, porDefecto: string): string {
+  const datos = (error as { response?: { data?: unknown } })?.response?.data;
+
+  if (datos && typeof datos === "object") {
+    const { error: motivo, detail } = datos as {
+      error?: string;
+      detail?: string;
+    };
+
+    return motivo ?? detail ?? porDefecto;
+  }
+
+  return porDefecto;
+}
+
+
 /** Formato chileno. Los saldos llevan hasta tres decimales, como el modelo. */
 export function numero(valor: string | number | null | undefined): string {
   if (valor === null || valor === undefined || valor === "") {

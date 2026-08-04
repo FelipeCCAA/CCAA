@@ -370,6 +370,33 @@ class ComponenteInsumoTests(BaseRecetas):
 
         self.assertIn("unidad", error.exception.message_dict)
 
+    def test_una_receta_admite_varios_insumos(self):
+        """
+        Lo normal: un saco y una etiqueta. Las dos filas llevan `producto`
+        nulo, y con `nulls_distinct=False` en la unicidad de `(receta,
+        producto)` colisionaban entre sí — una receta aceptaba **un solo**
+        insumo. Se escribió así y ninguna prueba lo notó porque todas cargaban
+        un componente de cada tipo.
+        """
+        self._con_insumo(self.receta_mantequilla, self.bolsa, 1)
+        self._con_insumo(self.receta_mantequilla, self.etiqueta, 2)
+
+        self.assertEqual(
+            self.receta_mantequilla.componentes.filter(insumo__isnull=False).count(),
+            2,
+        )
+
+    def test_no_se_repite_el_mismo_insumo_en_una_receta(self):
+        """Lo que la unicidad sí tiene que impedir: dos cantidades para el
+        mismo renglón."""
+        from django.db import IntegrityError, transaction
+
+        self._con_insumo(self.receta_mantequilla, self.bolsa, 1)
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                self._con_insumo(self.receta_mantequilla, self.bolsa, 5)
+
     def test_el_insumo_se_escala_con_la_cantidad(self):
         self._con_insumo(self.receta_mantequilla, self.bolsa, 0.04)
 

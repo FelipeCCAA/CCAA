@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { Fragment, useState } from "react";
+import { AlertTriangle, CalendarClock, Play } from "lucide-react";
 
 import {
   calcularMRP,
+  ejecutarMRPSemana,
   obtenerEjecucionesMRP,
+  type EjecucionMRP,
   type ResultadoMRP,
 } from "../../services/inventario.service";
 
@@ -12,12 +14,15 @@ import {
   type ProductoMaestro,
 } from "../../services/maestros.service";
 
+import { obtenerSemanas } from "../../services/planificacion.service";
+
 import { Aviso, Tarjeta, Vacio } from "./componentes";
 import {
   claseBoton,
   claseCampo,
   claseCelda,
   claseEncabezado,
+  mensajeDe,
   numero,
   useCarga,
 } from "./utilidades";
@@ -28,52 +33,311 @@ import {
 
   Hay dos, y responden preguntas distintas:
 
-  - El **simulador** de aquí abajo: «si produzco 20.000 kg de esto, qué
-    necesito». Explota la receta vigente **hoy** y sirve para cotizar o para
-    decidir si se puede correr un lote.
+  - El **semanal** explota el programa publicado bloque por bloque, cada uno a
+    su fecha, y deja la cadena entera de la resta: necesidad bruta, lo que hay,
+    lo que ya viene en camino, lo que falta de verdad y cuándo hay que
+    pedirlo. Es el que sirve para comprar.
 
-  - El **MRP semanal**, que explota el programa publicado de planificación
-    bloque por bloque, a la fecha de cada bloque, y deja `EjecucionMRP` con
-    sus `ResultadoMRP`: necesidad bruta, disponible proyectado, recepciones ya
-    programadas y compra sugerida con su fecha límite de pedido. Es el que
-    sirve para comprar.
+  - El **simulador**: «si produzco 20.000 kg de esto, qué necesito». Explota la
+    receta vigente hoy y sirve para cotizar o para decidir si se puede correr
+    un lote.
 
-  El semanal está escrito y probado en el backend desde hace tiempo y **no se
-  podía ejecutar desde ninguna pantalla**. Aquí se listan sus ejecuciones; el
-  botón de correrlo y la tabla de resultados son la fase siguiente.
+  El semanal estaba escrito y probado en el backend desde hacía tiempo y **no
+  se podía ejecutar desde ninguna pantalla**. Este es el botón que faltaba.
 */
+
+/** Una semana en borrador todavía se mueve; comprar contra ella es comprar
+    contra algo que nadie firmó. El backend lo rechaza y aquí ni se ofrece. */
+const PUBLICADA = "publicada";
+
+
+function TablaSemanal({ ejecucion }: { ejecucion: EjecucionMRP }) {
+
+  const [detalle, setDetalle] = useState<number | null>(null);
+
+  if (ejecucion.resultados.length === 0) {
+    return (
+      <Vacio>
+        La explosión no arrojó necesidades: o la semana no tiene bloques de
+        producción, o sus productos no tienen receta con insumos.
+      </Vacio>
+    );
+  }
+
+  // Lo que hay que pedir primero encabeza: es una lista para actuar, no un
+  // informe. A igual fecha, primero lo de mayor cantidad.
+  const filas = [...ejecucion.resultados].sort(
+    (a, b) =>
+      a.fecha_sugerida_orden.localeCompare(b.fecha_sugerida_orden) ||
+      Number(b.compra_sugerida) - Number(a.compra_sugerida),
+  );
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full">
+
+        <thead className="bg-slate-50">
+          <tr>
+            <th className={claseEncabezado}>Material</th>
+            <th className={claseEncabezado}>Necesidad bruta</th>
+            <th className={claseEncabezado}>Disponible</th>
+            <th className={claseEncabezado}>Ya pedido</th>
+            <th className={claseEncabezado}>Falta</th>
+            <th className={claseEncabezado}>Comprar</th>
+            <th className={claseEncabezado}>Pedir antes de</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {filas.map((r) => {
+            const falta = Number(r.necesidad_neta) > 0;
+            const abierto = detalle === r.id;
+
+            return (
+              <Fragment key={r.id}>
+
+                <tr
+                  onClick={() => setDetalle(abierto ? null : r.id)}
+                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                  title="Ver de dónde sale el número"
+                >
+                  <td className={`${claseCelda} font-medium text-slate-800`}>
+                    {r.insumo_nombre}
+                  </td>
+                  <td className={`${claseCelda} text-slate-600`}>
+                    {numero(r.necesidad_bruta)}
+                  </td>
+                  <td className={`${claseCelda} text-slate-600`}>
+                    {numero(r.disponible_proyectado)}
+                  </td>
+                  <td className={`${claseCelda} text-slate-600`}>
+                    {numero(r.recepciones_programadas)}
+                  </td>
+                  <td className={claseCelda}>
+                    <span
+                      className={
+                        falta ? "font-semibold text-amber-700" : "text-slate-400"
+                      }
+                    >
+                      {numero(r.necesidad_neta)}
+                    </span>
+                  </td>
+                  <td className={`${claseCelda} font-semibold text-green-700`}>
+                    {numero(r.compra_sugerida)}
+                  </td>
+                  <td className={claseCelda}>
+                    <span className={falta ? "text-slate-700" : "text-slate-400"}>
+                      {r.fecha_sugerida_orden}
+                    </span>
+                  </td>
+                </tr>
+
+                {/* De dónde sale la cifra. Un número de compra que no se puede
+                    reconstruir no se firma — y la cantidad sugerida casi nunca
+                    es la neta: la suben el mínimo y el múltiplo del proveedor. */}
+                {abierto && (
+                  <tr className="border-t border-slate-100 bg-slate-50">
+                    <td colSpan={7} className="px-5 py-4">
+                      <p className="text-sm text-slate-600">
+                        Requerido el <strong>{r.fecha_requerida}</strong>.{" "}
+                        {r.explicacion.formula && (
+                          <>
+                            Fórmula: <code>{r.explicacion.formula}</code>.{" "}
+                          </>
+                        )}
+                        {r.explicacion.proveedor ? (
+                          <>
+                            Proveedor <strong>{r.explicacion.proveedor}</strong>,
+                            compra mínima {r.explicacion.minimo}, múltiplo{" "}
+                            {r.explicacion.multiplo}.
+                          </>
+                        ) : (
+                          <span className="text-amber-700">
+                            Sin proveedor principal: la cantidad sugerida es la
+                            neta sin redondear y la fecha usa el plazo de
+                            reposición del material.
+                          </span>
+                        )}
+                      </p>
+                    </td>
+                  </tr>
+                )}
+
+              </Fragment>
+            );
+          })}
+        </tbody>
+
+      </table>
+    </div>
+  );
+}
+
 
 function Mrp() {
 
   const ejecuciones = useCarga(obtenerEjecucionesMRP);
+  const semanas = useCarga(obtenerSemanas);
   const productos = useCarga(obtenerProductosMaestros);
+
+  const [semana, setSemana] = useState("");
+  const [corriendo, setCorriendo] = useState(false);
+  const [error, setError] = useState("");
+  const [reciente, setReciente] = useState<EjecucionMRP | null>(null);
 
   const [producto, setProducto] = useState("");
   const [kilos, setKilos] = useState("");
-  const [resultado, setResultado] = useState<ResultadoMRP | null>(null);
-  const [error, setError] = useState("");
+  const [simulacion, setSimulacion] = useState<ResultadoMRP | null>(null);
+
+  const publicadas = (semanas.datos ?? []).filter((s) => s.estado === PUBLICADA);
 
   const terminados = (productos.datos ?? []).filter(
     (p: ProductoMaestro) => p.naturaleza === "terminado",
   );
+
+  const correr = async () => {
+    setError("");
+    setCorriendo(true);
+
+    try {
+      setReciente(await ejecutarMRPSemana(Number(semana)));
+      await ejecuciones.recargar();
+    } catch (e) {
+      setError(
+        mensajeDe(
+          e,
+          "No se pudo ejecutar el MRP. La semana tiene que estar publicada.",
+        ),
+      );
+    } finally {
+      setCorriendo(false);
+    }
+  };
 
   const simular = async (evento: React.FormEvent) => {
     evento.preventDefault();
     setError("");
 
     try {
-      setResultado(await calcularMRP(Number(producto), Number(kilos)));
-    } catch {
+      setSimulacion(await calcularMRP(Number(producto), Number(kilos)));
+    } catch (e) {
       setError(
-        "No se pudo calcular. Revisa que el producto tenga una receta vigente con insumos declarados.",
+        mensajeDe(
+          e,
+          "No se pudo calcular. Revisa que el producto tenga una receta vigente con insumos declarados.",
+        ),
       );
     }
   };
+
+  // La última ejecución guardada, mientras no se corra una en esta visita.
+  const aMostrar = reciente ?? (ejecuciones.datos ?? [])[0] ?? null;
 
   return (
     <div className="space-y-8">
 
       {error && <Aviso>{error}</Aviso>}
+
+      <Tarjeta
+        titulo="MRP semanal"
+        descripcion="Explota el programa publicado bloque por bloque, cada uno con la receta vigente a su fecha, y calcula qué comprar y cuándo pedirlo."
+        acciones={
+          <div className="flex shrink-0 gap-2">
+            <select
+              value={semana}
+              onChange={(e) => setSemana(e.target.value)}
+              className={claseCampo}
+            >
+              <option value="">Semana publicada…</option>
+              {publicadas.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.codigo} · {s.fecha_inicio}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              disabled={!semana || corriendo}
+              onClick={() => void correr()}
+              className={`${claseBoton} flex items-center gap-2`}
+            >
+              <Play className="h-4 w-4" />
+              {corriendo ? "Ejecutando…" : "Ejecutar"}
+            </button>
+          </div>
+        }
+        sinRelleno
+      >
+        {semanas.error ? (
+          <div className="p-5">
+            <Aviso>No se pudo cargar el plan: {semanas.error}</Aviso>
+          </div>
+        ) : publicadas.length === 0 && !semanas.cargando ? (
+          <Vacio>
+            No hay ninguna semana publicada. El MRP solo corre sobre un plan
+            firmado: uno en borrador todavía se mueve.
+          </Vacio>
+        ) : aMostrar ? (
+          <>
+            <p className="flex items-center gap-2 border-b border-slate-100 px-5 py-3 text-sm text-slate-500">
+              <CalendarClock className="h-4 w-4 text-slate-400" />
+              Corte {aMostrar.fecha_corte} · horizonte hasta{" "}
+              {aMostrar.horizonte_hasta}
+              {reciente && (
+                <span className="ml-2 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                  recién ejecutado
+                </span>
+              )}
+            </p>
+            <TablaSemanal ejecucion={aMostrar} />
+          </>
+        ) : (
+          <Vacio>
+            Todavía no se ha ejecutado el MRP sobre ninguna semana. Elige una
+            arriba y ejecútalo.
+          </Vacio>
+        )}
+      </Tarjeta>
+
+      {(ejecuciones.datos ?? []).length > 1 && (
+        <Tarjeta
+          titulo="Ejecuciones anteriores"
+          descripcion="Cada ejecución queda guardada con sus resultados: es lo que permite preguntarse después por qué se compró lo que se compró."
+          sinRelleno
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className={claseEncabezado}>Ejecutada</th>
+                  <th className={claseEncabezado}>Corte</th>
+                  <th className={claseEncabezado}>Horizonte</th>
+                  <th className={claseEncabezado}>Materiales</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(ejecuciones.datos ?? []).map((e) => (
+                  <tr key={e.id} className="border-t border-slate-100">
+                    <td className={`${claseCelda} text-slate-600`}>
+                      {e.creada_en?.slice(0, 10)}
+                    </td>
+                    <td className={`${claseCelda} text-slate-600`}>
+                      {e.fecha_corte}
+                    </td>
+                    <td className={`${claseCelda} text-slate-600`}>
+                      {e.horizonte_hasta}
+                    </td>
+                    <td className={`${claseCelda} text-slate-500`}>
+                      {e.resultados.length}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Tarjeta>
+      )}
 
       <Tarjeta
         titulo="Simulador"
@@ -110,12 +374,12 @@ function Mrp() {
 
         </form>
 
-        {resultado && (
+        {simulacion && (
           <div className="mt-6">
 
             {/* Una lista incompleta se parece demasiado a una completa, y con
                 ella se emite una orden de compra corta. */}
-            {!resultado.receta_completa && (
+            {!simulacion.receta_completa && (
               <p className="mb-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 La receta no se pudo explotar hasta el final: hay un producto
@@ -124,10 +388,8 @@ function Mrp() {
               </p>
             )}
 
-            {resultado.materiales.length === 0 ? (
-              <Vacio>
-                La receta vigente de este producto no declara insumos.
-              </Vacio>
+            {simulacion.materiales.length === 0 ? (
+              <Vacio>La receta vigente de este producto no declara insumos.</Vacio>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -143,7 +405,7 @@ function Mrp() {
                   </thead>
 
                   <tbody>
-                    {resultado.materiales.map((m) => (
+                    {simulacion.materiales.map((m) => (
                       <tr key={m.insumo} className="border-t border-slate-100">
                         <td className={`${claseCelda} font-medium text-slate-800`}>
                           {m.insumo}
@@ -176,52 +438,6 @@ function Mrp() {
               </div>
             )}
 
-          </div>
-        )}
-      </Tarjeta>
-
-      <Tarjeta
-        titulo="Ejecuciones del MRP semanal"
-        descripcion="Explota el programa publicado bloque por bloque, cada uno con la receta vigente a su fecha."
-        sinRelleno
-      >
-        {ejecuciones.error ? (
-          <div className="p-5">
-            <Aviso>{ejecuciones.error}</Aviso>
-          </div>
-        ) : ejecuciones.cargando ? (
-          <Vacio>Cargando…</Vacio>
-        ) : (ejecuciones.datos ?? []).length === 0 ? (
-          <Vacio>
-            Todavía no se ha ejecutado el MRP semanal sobre ninguna semana
-            publicada.
-          </Vacio>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className={claseEncabezado}>Ejecutada</th>
-                  <th className={claseEncabezado}>Corte</th>
-                  <th className={claseEncabezado}>Horizonte</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(ejecuciones.datos ?? []).map((e) => (
-                  <tr key={e.id} className="border-t border-slate-100">
-                    <td className={`${claseCelda} text-slate-600`}>
-                      {e.creada_en?.slice(0, 10)}
-                    </td>
-                    <td className={`${claseCelda} text-slate-600`}>
-                      {e.fecha_corte}
-                    </td>
-                    <td className={`${claseCelda} text-slate-600`}>
-                      {e.horizonte_hasta}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
       </Tarjeta>

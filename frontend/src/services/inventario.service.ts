@@ -83,12 +83,39 @@ export interface Alerta {
 }
 
 
+/*
+  Una línea del MRP semanal: qué falta de un material y para cuándo.
+
+  La cadena de la resta está entera —bruta, disponible, ya pedido, neta— y no
+  solo el resultado, porque un número de compra que no se puede reconstruir no
+  se firma. `explicacion` trae además la fórmula y, si hay proveedor
+  principal, su mínimo y su múltiplo de compra: son los que hacen que la
+  cantidad sugerida no coincida con la neta.
+*/
+export interface ResultadoMRPSemanal {
+  id: number;
+  insumo: number;
+  insumo_nombre: string;
+  fecha_requerida: string;
+  necesidad_bruta: string;
+  disponible_proyectado: string;
+  recepciones_programadas: string;
+  necesidad_neta: string;
+  compra_sugerida: string;
+  /* Cuándo hay que emitir la orden para que llegue a tiempo: la fecha
+     requerida menos el plazo de reposición del proveedor. */
+  fecha_sugerida_orden: string;
+  explicacion: Record<string, string>;
+}
+
+
 export interface EjecucionMRP {
   id: number;
   creada_en: string;
   fecha_corte: string;
   horizonte_hasta: string;
   parametros: Record<string, unknown>;
+  resultados: ResultadoMRPSemanal[];
 }
 
 export async function obtenerInsumos(): Promise<Insumo[]> {
@@ -116,6 +143,27 @@ export const obtenerAjustes = () => lista<AjusteInventario>("inventario/ajustes/
 export const obtenerUbicaciones = () => lista<UbicacionInventario>("inventario/ubicaciones/");
 export const obtenerAlertas = () => lista<Alerta>("inventario/alertas/");
 export const obtenerEjecucionesMRP = () => lista<EjecucionMRP>("inventario/ejecuciones-mrp/");
+
+
+/*
+  Corre el MRP sobre una semana **publicada** del plan.
+
+  Explota cada bloque de producción a la fecha de ese bloque, así que una
+  receta que cambia a mitad de semana se respeta: el martes se planifica con
+  la de antes y el jueves con la nueva.
+
+  El backend responde 409 si la semana no está publicada. Es lo correcto: un
+  plan en borrador todavía se mueve, y comprar contra él es comprar contra
+  algo que nadie firmó.
+*/
+export async function ejecutarMRPSemana(semana: number): Promise<EjecucionMRP> {
+  const { data } = await api.post<EjecucionMRP>(
+    "inventario/ejecuciones-mrp/ejecutar/",
+    { semana },
+  );
+
+  return data;
+}
 
 export async function crearMaterial(datos: {
   codigo: string; nombre: string; categoria: string; area: string; unidad: string;
