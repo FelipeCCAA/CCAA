@@ -11,7 +11,24 @@ export interface Insumo {
   categoria: string; requiere_lote: boolean; requiere_vencimiento: boolean; requiere_calidad: boolean;
 }
 
-export interface UbicacionInventario { id: number; codigo: string; bodega_nombre: string; tipo: string; activo: boolean }
+/*
+  Dónde vive el material.
+
+  El `tipo` no es una etiqueta: `registrar_entrada` manda a **cuarentena** lo
+  que requiere Calidad y a **disponible** lo que no, y rechaza la entrada si
+  no coincide. Una bodega sin ubicación de cuarentena no puede recibir nada
+  que pase por Calidad.
+*/
+export interface UbicacionInventario {
+  id: number;
+  codigo: string;
+  bodega: number;
+  bodega_nombre: string;
+  tipo: "disponible" | "cuarentena" | "rechazado" | "produccion";
+  tipo_etiqueta: string;
+  descripcion: string;
+  activo: boolean;
+}
 
 export interface Existencia {
   id: number; lote: number; lote_codigo: string; insumo_nombre: string;
@@ -239,6 +256,32 @@ export const obtenerSolicitudesCompra = () =>
 export const obtenerDetallesSolicitudCompra = () =>
   lista<DetalleSolicitudCompra>("inventario/detalles-solicitud-compra/");
 export const obtenerBodegas = () => lista<Bodega>("inventario/bodegas/");
+
+
+export async function crearBodega(datos: {
+  codigo: string;
+  nombre: string;
+  area: string;
+}): Promise<Bodega> {
+  const { data } = await api.post<Bodega>("inventario/bodegas/", datos);
+
+  return data;
+}
+
+
+export async function crearUbicacion(datos: {
+  bodega: number;
+  codigo: string;
+  tipo: string;
+  descripcion?: string;
+}): Promise<UbicacionInventario> {
+  const { data } = await api.post<UbicacionInventario>(
+    "inventario/ubicaciones/",
+    datos,
+  );
+
+  return data;
+}
 
 
 /*

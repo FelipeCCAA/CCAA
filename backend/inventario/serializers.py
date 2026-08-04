@@ -104,6 +104,10 @@ class BodegaSerializer(serializers.ModelSerializer):
 
 class UbicacionSerializer(serializers.ModelSerializer):
     bodega_nombre = serializers.CharField(source="bodega.nombre", read_only=True)
+    # El tipo decide qué puede entrar: `registrar_entrada` manda a cuarentena
+    # lo que requiere Calidad y a disponible lo que no. Viaja rotulado para
+    # que la pantalla no tenga que traducir los códigos por su cuenta.
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
 
     class Meta:
         model = Ubicacion

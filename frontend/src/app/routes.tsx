@@ -34,6 +34,7 @@ import AbastecimientoPanel from "../pages/Abastecimiento/Panel";
 import AbastecimientoMateriales from "../pages/Abastecimiento/Materiales";
 import AbastecimientoStock from "../pages/Abastecimiento/Stock";
 import AbastecimientoDetalleLote from "../pages/Abastecimiento/DetalleLoteInventario";
+import AbastecimientoBodegas from "../pages/Abastecimiento/Bodegas";
 import AbastecimientoCompras from "../pages/Abastecimiento/Compras";
 import AbastecimientoCalidad from "../pages/Abastecimiento/Calidad";
 import AbastecimientoPedidos from "../pages/Abastecimiento/Pedidos";
@@ -118,6 +119,7 @@ function RoutesApp(){
                             path="stock/lotes/:id"
                             element={<AbastecimientoDetalleLote />}
                         />
+                        <Route path="bodegas" element={<AbastecimientoBodegas />} />
                         <Route path="compras" element={<AbastecimientoCompras />} />
                         <Route path="calidad" element={<AbastecimientoCalidad />} />
                         <Route path="pedidos" element={<AbastecimientoPedidos />} />
