@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 
@@ -74,6 +75,8 @@ INSTALLED_APPS = [
     'inventario',
     'planificacion',
     'auditoria',
+    'procesos',
+    'mantenimiento',
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
@@ -130,8 +133,19 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # pierde. No usar para operar.
 
 DB_ENGINE = os.getenv("DB_ENGINE", "postgres").lower()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DB_ENGINE == "sqlite":
+if DATABASE_URL:
+    # Vercel Marketplace (por ejemplo Neon) entrega la conexion completa en
+    # DATABASE_URL. Tiene prioridad sobre las variables DB_* individuales.
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=int(os.getenv("DB_CONN_MAX_AGE", "0")),
+            conn_health_checks=True,
+        )
+    }
+elif DB_ENGINE == "sqlite":
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -191,6 +205,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+MAX_UPLOAD_SIZE = int(os.environ.get("DJANGO_MAX_UPLOAD_MB", "15")) * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
+FILE_UPLOAD_MAX_MEMORY_SIZE = min(MAX_UPLOAD_SIZE, 5 * 1024 * 1024)
 
 
 # Recuperación de contraseña
@@ -265,17 +283,3 @@ REST_FRAMEWORK = {
         "password_reset_confirm": "10/hour",
     },
 }
-
-if os.environ.get("DB_ENGINE") == "postgresql":
-    DATABASES["default"] = {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ["DB_NAME"],
-        "USER": os.environ["DB_USER"],
-        "PASSWORD": os.environ["DB_PASSWORD"],
-        "HOST": os.environ.get("DB_HOST", "localhost"),
-        "PORT": os.environ.get("DB_PORT", "5432"),
-        "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
-        "OPTIONS": {
-            "sslmode": os.environ.get("DB_SSLMODE", "prefer"),
-        },
-    }

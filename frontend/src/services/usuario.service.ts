@@ -71,6 +71,15 @@ export async function cambiarEstadoTrabajador(id: number, activo: boolean): Prom
   return data;
 }
 
+export async function solicitarRestablecimientoTrabajador(
+  id: number,
+): Promise<{ mensaje: string }> {
+  const { data } = await api.post<{ mensaje: string }>(
+    `usuarios/trabajadores/${id}/restablecer-contrasena/`,
+  );
+  return data;
+}
+
 
 /** Solicita el correo de recuperación sin revelar si la cuenta existe. */
 export async function solicitarRecuperacion(

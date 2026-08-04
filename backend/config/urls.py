@@ -15,10 +15,18 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import path, include
 
 
+def salud(_request):
+    """Comprobacion publica y liviana para el despliegue."""
+    return JsonResponse({"estado": "ok"})
+
+
 urlpatterns = [
+
+    path("api/salud/", salud, name="salud"),
 
     path(
         "admin/",
@@ -42,5 +50,9 @@ urlpatterns = [
     path("api/inventario/", include("inventario.urls")),
 
     path("api/auditoria/", include("auditoria.urls")),
+
+    path("api/procesos/", include("procesos.urls")),
+
+    path("api/mantenimiento/", include("mantenimiento.urls")),
 
 ]

@@ -427,7 +427,25 @@ class DescargaTests(BaseAPIRecepcion):
         self.cliente.post(ruta)
         respuesta = self.cliente.post(ruta)
 
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["estado"], "descargada")
+        self.assertEqual(MovimientoSilo.objects.count(), 1)
+
+    def test_no_se_descarga_si_supera_la_capacidad_del_silo(self):
+        MovimientoSilo.objects.create(
+            silo=self.silo,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=90000,
+            fecha_hora=instante(20),
+        )
+        recepcion = self._recepcion(Recepcion.Estado.LIBERADA)
+
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{recepcion.id}/descargar/"
+        )
+
         self.assertEqual(respuesta.status_code, 409)
+        self.assertIn("Disponible: 10000", respuesta.json()["detail"])
         self.assertEqual(MovimientoSilo.objects.count(), 1)
 
     def test_no_se_descarga_sin_silo_asignado(self):

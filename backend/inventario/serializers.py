@@ -339,6 +339,21 @@ class AdjuntoSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["autor", "hash_sha256", "creado_en"]
 
+    def validate_archivo(self, archivo):
+        from pathlib import Path
+        from django.conf import settings
+
+        extensiones = {".pdf", ".xlsx", ".xls", ".csv", ".png", ".jpg", ".jpeg", ".webp"}
+        extension = Path(archivo.name).suffix.lower()
+        if extension not in extensiones:
+            raise serializers.ValidationError(
+                "Formato no permitido. Usa PDF, Excel, CSV o una imagen JPG/PNG/WEBP."
+            )
+        if archivo.size > settings.MAX_UPLOAD_SIZE:
+            limite_mb = settings.MAX_UPLOAD_SIZE // (1024 * 1024)
+            raise serializers.ValidationError(f"El archivo supera el límite de {limite_mb} MB.")
+        return archivo
+
 
 class AlertaSerializer(serializers.ModelSerializer):
     """

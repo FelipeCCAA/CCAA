@@ -45,6 +45,24 @@ class LoginTests(TestCase):
         self.assertEqual(datos["usuario"]["perfil"]["rol_etiqueta"], "Producción")
         self.assertEqual(datos["usuario"]["rol"], "produccion")
 
+    def test_login_no_exige_csrf_aunque_haya_sesion_de_admin(self):
+        """La cookie de /admin/ no debe bloquear el login JSON del frontend."""
+        admin = User.objects.create_superuser(
+            username="admin-sesion",
+            password="clave-admin",
+        )
+        cliente = APIClient(enforce_csrf_checks=True)
+        cliente.force_login(admin)
+
+        respuesta = cliente.post(
+            "/api/usuarios/login/",
+            {"username": "operador", "password": "clave-de-prueba"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.json()["token"])
+
     def test_contrasena_incorrecta_no_entrega_token(self):
         respuesta = self.cliente.post(
             "/api/usuarios/login/",
@@ -251,6 +269,7 @@ class ApiCerradaTests(TestCase):
     # Sin el login nadie podría obtener un token, y quien olvidó su contraseña
     # tampoco puede identificarse para pedir una nueva.
     ABIERTAS = {
+        "/api/salud/",
         "/api/usuarios/login/",
         "/api/usuarios/recuperar-contrasena/",
         "/api/usuarios/restablecer-contrasena/",

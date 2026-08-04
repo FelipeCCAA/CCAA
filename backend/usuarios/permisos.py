@@ -17,16 +17,22 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission
 from .models import PerfilUsuario, Rol, rol_de
 
 
-class EsAdministrador(BasePermission):
-    """Autoriza exclusivamente al rol efectivo de Administración."""
+class IsAdminDeArea(BasePermission):
+    """Autoriza superusuarios y administradores de área habilitados."""
 
-    message = "Solo Administración puede consultar esta información."
+    message = "Solo un administrador de área puede gestionar trabajadores."
 
     def has_permission(self, request, view):
-        if request.user.is_superuser:
+        usuario = request.user
+        if not usuario or not usuario.is_authenticated:
+            return False
+        if usuario.is_superuser:
             return True
-        perfil = getattr(request.user, "perfil", None)
-        return bool(perfil and perfil.nivel == PerfilUsuario.Nivel.ADMIN)
+        perfil = getattr(usuario, "perfil", None)
+        return bool(usuario.is_staff and perfil and perfil.es_admin_de_area)
+
+
+EsAdministrador = IsAdminDeArea
 
 
 class PermisoPorRol(BasePermission):
@@ -158,3 +164,8 @@ class EscribeMRQ(PermisoPorArea):
         PerfilUsuario.Area.BODEGA,
     )
     message = "Tu área no puede crear o modificar solicitudes de materiales."
+
+
+class EscribeMantenimiento(PermisoPorArea):
+    areas_escritura = (PerfilUsuario.Area.MANTENIMIENTO,)
+    message = "Solo Mantenimiento puede modificar planes y órdenes de trabajo."

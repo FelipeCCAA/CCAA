@@ -105,6 +105,7 @@ class MovimientoSiloSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MovimientoSilo
+        validators = []
         fields = [
             "id",
             "silo",

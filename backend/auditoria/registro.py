@@ -37,6 +37,9 @@ APPS_AUDITADAS = {
     "inocuidad",
     "planificacion",
     "usuarios",
+    "inventario",
+    "procesos",
+    "mantenimiento",
 }
 
 #: Campos que nunca se registran, aunque cambien.

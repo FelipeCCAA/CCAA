@@ -227,6 +227,13 @@ class MovimientoSilo(models.Model):
         verbose_name_plural = "Movimientos de silo"
         ordering = ["-fecha_hora"]
         indexes = [models.Index(fields=["silo", "fecha_hora"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["origen_tipo", "origen_id"],
+                condition=models.Q(origen_tipo="recepcion"),
+                name="una_descarga_por_recepcion",
+            )
+        ]
 
     def __str__(self):
         return f"{self.get_tipo_display()} · {self.litros} L · {self.silo}"

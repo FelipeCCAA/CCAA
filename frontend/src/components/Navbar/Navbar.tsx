@@ -11,8 +11,11 @@ import {
   History,
   Users,
   Boxes,
+  GitBranch,
+  Wrench,
   LogOut,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import {
   cargoParaMostrar,
@@ -27,26 +30,41 @@ import logo from "../../assets/logos/logo-campos-australes-normal.png";
 
 
 /*
-  Módulos del sistema.
+  Módulos del sistema, agrupados y en el orden del flujo de planta: llega la
+  leche, se planifica, se produce, Calidad libera.
 
-  `ruta` en null significa que la página todavía no existe. Se muestra en el
-  menú (para que se vea el alcance del sistema) pero no es un enlace, así
-  nadie llega a una pantalla en blanco. Al crear la página, se le pone su
-  ruta aquí y queda navegable.
-*/
+  Antes eran enlaces planos ordenados por cuándo se fueron agregando
+  —«Abastecimiento» arriba de «Panel general»— y con dos entradas distintas,
+  mismo icono, para el mismo dominio: «Abastecimiento y Bodega» e «Inventario
+  y MRP». Esta última ya no existe: su contenido son dos pestañas dentro de
+  abastecimiento.
 
-/*
-  Los módulos van agrupados y en el orden del flujo de planta: llega la leche,
-  se planifica, se produce, Calidad libera. Antes eran once enlaces planos
-  ordenados por cuándo se fueron agregando —«Abastecimiento» arriba de «Panel
-  general»— y con dos entradas distintas, mismo icono, para el mismo dominio:
-  «Abastecimiento y Bodega» y «Inventario y MRP». Esta última ya no existe:
-  su contenido son dos pestañas dentro de abastecimiento.
+  **`areas` restringe a quién se le muestra el módulo.** Un módulo sin `areas`
+  lo ve cualquiera; uno que las declara, solo quien trabaja ahí (y quien tenga
+  rol de administración, que ve todo). No es seguridad —eso lo aplica el
+  backend— sino no ofrecerle a un operador de envase una pantalla que no le
+  toca.
 
   `ruta: null` significa que la pantalla todavía no existe. Se muestra apagada
   para que se vea el alcance del sistema, pero no navega a ninguna parte.
 */
-const GRUPOS = [
+
+/* El tipo va declarado y no inferido: sin él, TypeScript deduce una forma
+   distinta por grupo —los que no declaran `areas` quedan sin ese campo— y
+   filtrarlos todos con la misma función deja de compilar. */
+interface Modulo {
+  etiqueta: string;
+  ruta: string | null;
+  icono: LucideIcon;
+  areas?: string[];
+}
+
+interface Grupo {
+  titulo: string | null;
+  modulos: Modulo[];
+}
+
+const GRUPOS: Grupo[] = [
   {
     titulo: null,
     modulos: [
@@ -59,7 +77,19 @@ const GRUPOS = [
       { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
       { etiqueta: "Recepción y silos", ruta: "/recepcion", icono: Truck },
       { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
+      {
+        etiqueta: "Procesamiento y trazabilidad",
+        ruta: "/procesos",
+        icono: GitBranch,
+        areas: ["condensacion", "secado", "envase", "administracion"],
+      },
       { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
+      {
+        etiqueta: "Mantenimiento",
+        ruta: "/mantenimiento",
+        icono: Wrench,
+        areas: ["mantenimiento", "administracion"],
+      },
     ],
   },
   {
@@ -90,21 +120,26 @@ function Navbar() {
   const esAdmin =
     sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin";
 
+  const area = sesion?.usuario.perfil?.area;
+
+  /* Un módulo sin `areas` lo ve cualquiera; uno que las declara, solo quien
+     trabaja ahí. Administración ve todo. */
+  const leToca = (modulo: { areas?: string[] }) =>
+    !modulo.areas || esAdmin || (!!area && modulo.areas.includes(area));
+
   // Administración se agrega al grupo de configuración en vez de encabezar el
   // menú: es de mantención, no de trabajo diario.
-  const grupos = esAdmin
-    ? GRUPOS.map((grupo) =>
-        grupo.titulo === "Configuración"
-          ? {
-              ...grupo,
-              modulos: [
-                { etiqueta: "Administración", ruta: "/administracion", icono: Users },
-                ...grupo.modulos,
-              ],
-            }
-          : grupo,
-      )
-    : GRUPOS;
+  const grupos = GRUPOS.map((grupo) => ({
+    ...grupo,
+    modulos: (grupo.titulo === "Configuración" && esAdmin
+      ? [
+          { etiqueta: "Administración", ruta: "/administracion", icono: Users },
+          ...grupo.modulos,
+        ]
+      : grupo.modulos
+    ).filter(leToca),
+    // Un grupo que se queda sin módulos no debe dejar su título suelto.
+  })).filter((grupo) => grupo.modulos.length > 0);
 
   const salir = async () => {
 

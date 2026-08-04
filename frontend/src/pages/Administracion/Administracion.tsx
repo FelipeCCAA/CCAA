@@ -3,6 +3,7 @@ import axios from "axios";
 import {
   BadgeCheck,
   BriefcaseBusiness,
+  KeyRound,
   Search,
   ShieldCheck,
   Users,
@@ -12,9 +13,10 @@ import {
   cambiarEstadoTrabajador,
   crearTrabajador,
   obtenerTrabajadores,
+  solicitarRestablecimientoTrabajador,
   type Trabajador,
 } from "../../services/usuario.service";
-import { nombreParaMostrar } from "../../services/sesion";
+import { nombreParaMostrar, obtenerSesion } from "../../services/sesion";
 
 
 function Indicador({
@@ -48,8 +50,13 @@ function Administracion() {
   const [area, setArea] = useState("");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [aviso, setAviso] = useState("");
+  const [procesandoId, setProcesandoId] = useState<number | null>(null);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
-  const [nuevo, setNuevo] = useState<{ username: string; email: string; nombre: string; apellido: string; area: string; nivel: "admin" | "trabajador"; cargo: string; password: string }>({ username: "", email: "", nombre: "", apellido: "", area: "secado", nivel: "trabajador", cargo: "", password: "" });
+  const sesion = obtenerSesion();
+  const areaPropia = sesion?.usuario.perfil?.area ?? "secado";
+  const administraTodaLaPlanta = !sesion?.usuario.perfil || areaPropia === "administracion";
+  const [nuevo, setNuevo] = useState<{ username: string; email: string; nombre: string; apellido: string; area: string; nivel: "admin" | "trabajador"; cargo: string; password: string }>({ username: "", email: "", nombre: "", apellido: "", area: areaPropia, nivel: "trabajador", cargo: "", password: "" });
 
   useEffect(() => {
     let vigente = true;
@@ -103,9 +110,10 @@ function Administracion() {
     try {
       const creado = await crearTrabajador(nuevo);
       setTrabajadores((actuales) => [...actuales, creado]);
-      setNuevo({ username: "", email: "", nombre: "", apellido: "", area: "secado", nivel: "trabajador", cargo: "", password: "" });
+      setNuevo({ username: "", email: "", nombre: "", apellido: "", area: areaPropia, nivel: "trabajador", cargo: "", password: "" });
       setMostrarFormulario(false);
       setError("");
+      setAviso("Trabajador creado correctamente.");
     } catch (errorCreacion) {
       const mensaje = axios.isAxiosError(errorCreacion) && typeof errorCreacion.response?.data?.error === "string"
         ? errorCreacion.response.data.error
@@ -119,6 +127,24 @@ function Administracion() {
       const actualizado = await cambiarEstadoTrabajador(trabajador.id, !trabajador.activo);
       setTrabajadores((actuales) => actuales.map((t) => t.id === actualizado.id ? actualizado : t));
     } catch { setError("No se pudo cambiar el estado del usuario."); }
+  };
+
+  const enviarRestablecimiento = async (trabajador: Trabajador) => {
+    if (!trabajador.email) {
+      setError("El trabajador debe tener un correo registrado.");
+      return;
+    }
+    setProcesandoId(trabajador.id);
+    setError("");
+    setAviso("");
+    try {
+      const respuesta = await solicitarRestablecimientoTrabajador(trabajador.id);
+      setAviso(respuesta.mensaje);
+    } catch {
+      setError("No se pudo enviar el correo de restablecimiento.");
+    } finally {
+      setProcesandoId(null);
+    }
   };
   return (
     <div className="px-8 py-10">
@@ -152,15 +178,18 @@ function Administracion() {
             <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input placeholder="Apellido" value={nuevo.apellido} onChange={(e) => setNuevo({ ...nuevo, apellido: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input required type="password" minLength={8} autoComplete="new-password" placeholder="Contraseña inicial" value={nuevo.password} onChange={(e) => setNuevo({ ...nuevo, password: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
-            <select value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm">
+            <select disabled={!administraTodaLaPlanta} value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100">
               {["recepcion", "condensacion", "secado", "envase", "calidad", "bodega", "compras", "despacho", "administracion"].map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
-            <select value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
+            <select disabled={!administraTodaLaPlanta} value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
             <input placeholder="Cargo" value={nuevo.cargo} onChange={(e) => setNuevo({ ...nuevo, cargo: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <button className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">Crear usuario</button>
           </form>
           </>}
         </section>
+
+        {aviso && <p className="mt-6 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">{aviso}</p>}
+        {error && <p className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>}
 
         <section className="mt-10 overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
@@ -194,8 +223,6 @@ function Administracion() {
 
           {cargando ? (
             <p className="px-6 py-10 text-sm text-slate-400">Cargando personal…</p>
-          ) : error ? (
-            <p className="px-6 py-10 text-sm text-red-700">{error}</p>
           ) : visibles.length === 0 ? (
             <p className="px-6 py-10 text-sm text-slate-400">No hay trabajadores que coincidan con los filtros.</p>
           ) : (
@@ -208,6 +235,7 @@ function Administracion() {
                     <th className="px-6 py-3 font-medium">Cargo</th>
                     <th className="px-6 py-3 font-medium">Rol</th>
                     <th className="px-6 py-3 font-medium">Estado</th>
+                    <th className="px-6 py-3 font-medium">Seguridad</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -227,6 +255,17 @@ function Administracion() {
                       <td className="px-6 py-4">
                         <button type="button" onClick={() => void alternar(trabajador)} className={trabajador.activo ? "text-green-700 hover:underline" : "text-slate-400 hover:underline"}>
                           {trabajador.activo ? "Activo" : "Inactivo"}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          type="button"
+                          disabled={!trabajador.activo || !trabajador.email || procesandoId === trabajador.id}
+                          onClick={() => void enviarRestablecimiento(trabajador)}
+                          className="inline-flex items-center gap-2 text-slate-600 hover:text-green-700 disabled:cursor-not-allowed disabled:text-slate-300"
+                        >
+                          <KeyRound className="h-4 w-4" />
+                          {procesandoId === trabajador.id ? "Enviando…" : "Restablecer"}
                         </button>
                       </td>
                     </tr>

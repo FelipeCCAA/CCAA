@@ -1,7 +1,10 @@
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from rest_framework import serializers
 
-from .models import PerfilUsuario, rol_de
+from .models import Empresa, PerfilUsuario, Sucursal, rol_de
 
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
@@ -51,13 +54,93 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
 
 class TrabajadorSerializer(UsuarioSerializer):
-    """Datos de personal visibles en el panel administrativo."""
+    """Lectura y escritura segura de usuarios junto con su perfil."""
 
-    activo = serializers.BooleanField(source="is_active", read_only=True)
+    nombre = serializers.CharField(source="first_name", required=False, allow_blank=True)
+    apellido = serializers.CharField(source="last_name", required=False, allow_blank=True)
+    activo = serializers.BooleanField(source="is_active", required=False)
     ultimo_acceso = serializers.DateTimeField(source="last_login", read_only=True)
+    password = serializers.CharField(write_only=True, required=False, trim_whitespace=False)
+    area = serializers.ChoiceField(
+        choices=PerfilUsuario.Area.choices, write_only=True, required=False
+    )
+    nivel = serializers.ChoiceField(
+        choices=PerfilUsuario.Nivel.choices, write_only=True, required=False
+    )
+    cargo = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    turno = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    empresa = serializers.PrimaryKeyRelatedField(
+        queryset=Empresa.objects.filter(activa=True), write_only=True, required=False,
+        allow_null=True,
+    )
+    sucursal = serializers.PrimaryKeyRelatedField(
+        queryset=Sucursal.objects.filter(activa=True), write_only=True, required=False,
+        allow_null=True,
+    )
 
     class Meta(UsuarioSerializer.Meta):
-        fields = UsuarioSerializer.Meta.fields + ["activo", "ultimo_acceso"]
+        fields = UsuarioSerializer.Meta.fields + [
+            "activo", "ultimo_acceso", "password", "area", "nivel", "cargo",
+            "turno", "empresa", "sucursal",
+        ]
+        extra_kwargs = {"email": {"required": False, "allow_blank": True}}
+
+    def validate(self, attrs):
+        password = attrs.get("password")
+        if self.instance is None and not password:
+            raise serializers.ValidationError(
+                {"password": "La contraseña inicial es obligatoria."}
+            )
+        if password:
+            candidato = self.instance or User(username=attrs.get("username", ""))
+            try:
+                validate_password(password, user=candidato)
+            except DjangoValidationError as error:
+                raise serializers.ValidationError({"password": error.messages}) from error
+
+        perfil_actual = getattr(self.instance, "perfil", None)
+        empresa = attrs.get("empresa", getattr(perfil_actual, "empresa", None))
+        sucursal = attrs.get("sucursal", getattr(perfil_actual, "sucursal", None))
+        if sucursal and empresa and sucursal.empresa_id != empresa.id:
+            raise serializers.ValidationError(
+                {"sucursal": "La sucursal no pertenece a la empresa seleccionada."}
+            )
+        return attrs
+
+    @staticmethod
+    def _extraer_perfil(validated_data):
+        return {
+            campo: validated_data.pop(campo)
+            for campo in ("area", "nivel", "cargo", "turno", "empresa", "sucursal")
+            if campo in validated_data
+        }
+
+    @transaction.atomic
+    def create(self, validated_data):
+        datos_perfil = self._extraer_perfil(validated_data)
+        password = validated_data.pop("password")
+        usuario = User.objects.create_user(password=password, **validated_data)
+        perfil = PerfilUsuario(usuario=usuario, **datos_perfil)
+        perfil.full_clean()
+        perfil.save()
+        return usuario
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        datos_perfil = self._extraer_perfil(validated_data)
+        password = validated_data.pop("password", None)
+        for campo, valor in validated_data.items():
+            setattr(instance, campo, valor)
+        if password:
+            instance.set_password(password)
+        instance.save()
+
+        perfil, _ = PerfilUsuario.objects.get_or_create(usuario=instance)
+        for campo, valor in datos_perfil.items():
+            setattr(perfil, campo, valor)
+        perfil.full_clean()
+        perfil.save()
+        return instance
 
 
 class SolicitudRecuperacionSerializer(serializers.Serializer):
