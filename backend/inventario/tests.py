@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto, Receta, RecetaComponente
@@ -96,7 +97,7 @@ class InventarioTests(TestCase):
         self.assertEqual(respuesta.json()["count"], 1)
 
     def test_mrp_usa_semana_publicada_y_consumo_por_producto(self):
-        from datetime import date
+        from datetime import date, timedelta
         from maestros.models import Equipo
         from planificacion.models import BloquePlan, CodigoProduccion, SemanaPlan
 
@@ -135,7 +136,7 @@ class InventarioTests(TestCase):
         se prueba con una **torre**, que es el tipo que el filtro anterior
         dejaba fuera.
         """
-        from datetime import date
+        from datetime import date, timedelta
         from maestros.models import Equipo
         from planificacion.models import BloquePlan, CodigoProduccion, SemanaPlan
 
@@ -176,7 +177,7 @@ class InventarioTests(TestCase):
         self.assertEqual(resultado.necesidad_bruta, Decimal("40"))
 
     def test_consumo_de_lote_productivo_usa_receta_y_no_se_duplica(self):
-        from datetime import date
+        from datetime import date, timedelta
         from produccion.models import Lote
 
         bodega = Bodega.objects.create(codigo="BP", nombre="Bodega producción")
@@ -959,3 +960,189 @@ class CicloDeLaOrdenTests(TestCase):
                 ubicacion=self.disponible, codigo_lote="", cantidad=1500,
                 usuario=self.usuario,
             )
+
+
+class NoConformidadTests(TestCase):
+    """
+    Cerrar una no conformidad de material deja constancia de qué se hizo.
+
+    `cerrada` era un booleano suelto: decía que el asunto se acabó y no qué se
+    hizo, quién lo hizo ni cuándo. Para material que Calidad rechazó, eso es
+    exactamente lo que un auditor pide.
+    """
+
+    def setUp(self):
+        from .models import (
+            InspeccionMaterial, LiberacionExcepcionalMaterial, LoteInventario,
+            NoConformidadMaterial,
+        )
+
+        self.calidad = User.objects.create_user("calidad-nc", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.calidad,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+            area=PerfilUsuario.Area.CALIDAD,
+        )
+        self.jefe = User.objects.create_user("jefe-nc", password="x")
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(self.calidad)
+
+        self.insumo = Insumo.objects.create(
+            codigo="NC-BOLSA", nombre="Bolsa 25 kg",
+            area=PerfilUsuario.Area.BODEGA, unidad="un", requiere_calidad=True,
+        )
+        self.lote = LoteInventario.objects.create(
+            insumo=self.insumo, codigo="PROV-NC-1",
+            estado_calidad=LoteInventario.EstadoCalidad.RECHAZADO,
+        )
+        self.inspeccion = InspeccionMaterial.objects.create(
+            lote=self.lote, estado=InspeccionMaterial.Estado.RECHAZADA
+        )
+        self.modelo = NoConformidadMaterial
+        self.modelo_liberacion = LiberacionExcepcionalMaterial
+
+    def _no_conformidad(self, destino=None, **extra):
+        return self.modelo.objects.create(
+            inspeccion=self.inspeccion,
+            descripcion="Bolsas con perforaciones",
+            destino=destino or self.modelo.Destino.DEVOLUCION,
+            creada_por=self.calidad,
+            **extra,
+        )
+
+    def _cerrar(self, nc, accion="Devueltas al proveedor con guía 4471."):
+        return self.cliente.post(
+            f"/api/inventario/no-conformidades/{nc.id}/cerrar/",
+            {"accion_tomada": accion},
+            format="json",
+        )
+
+    def _concesion(self, **extra):
+        datos = {
+            "lote": self.lote,
+            "cantidad": 50,
+            "uso_especifico": "Solo para producto de consumo interno.",
+            "justificacion": "Defecto cosmético, no afecta la barrera.",
+            "solicitante": self.jefe,
+            "aprobada_calidad_por": self.calidad,
+            "vence_en": timezone.now() + timedelta(days=30),
+        }
+        datos.update(extra)
+
+        return self.modelo_liberacion.objects.create(**datos)
+
+    # ------------------------------------------------------------- cierre
+
+    def test_cerrar_deja_quien_cuando_y_que_hizo(self):
+        nc = self._no_conformidad()
+
+        respuesta = self._cerrar(nc)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        nc.refresh_from_db()
+        self.assertTrue(nc.cerrada)
+        self.assertEqual(nc.cerrada_por, self.calidad)
+        self.assertIsNotNone(nc.cerrada_en)
+        self.assertIn("4471", nc.accion_tomada)
+
+    def test_no_se_cierra_sin_decir_que_se_hizo(self):
+        nc = self._no_conformidad()
+
+        respuesta = self._cerrar(nc, accion="   ")
+
+        self.assertEqual(respuesta.status_code, 409)
+        nc.refresh_from_db()
+        self.assertFalse(nc.cerrada)
+
+    def test_no_se_cierra_dos_veces(self):
+        nc = self._no_conformidad()
+        self._cerrar(nc)
+
+        respuesta = self._cerrar(nc, accion="Otra cosa")
+
+        self.assertEqual(respuesta.status_code, 409)
+
+    def test_no_se_puede_marcar_cerrada_por_patch(self):
+        """
+        El cierre pasa por su acción, que exige la constancia. Si `cerrada`
+        fuera escribible, un PATCH se saltaría la regla entera.
+        """
+        nc = self._no_conformidad()
+
+        self.cliente.patch(
+            f"/api/inventario/no-conformidades/{nc.id}/",
+            {"cerrada": True},
+            format="json",
+        )
+
+        nc.refresh_from_db()
+        self.assertFalse(nc.cerrada)
+
+    # ------------------------------------------------ liberación excepcional
+
+    def test_destino_excepcional_exige_la_concesion_enlazada(self):
+        """
+        «Se liberó por concesión» sin poder mostrar cuál deja el material usado
+        sin respaldo — que es peor que no documentarlo, porque parece que sí
+        lo tiene.
+        """
+        nc = self._no_conformidad(destino=self.modelo.Destino.EXCEPCIONAL)
+
+        respuesta = self._cerrar(nc, accion="Se usó bajo concesión.")
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertIn("concesión", str(respuesta.data))
+
+    def test_una_concesion_vencida_no_ampara_el_cierre(self):
+        vencida = self._concesion(vence_en=timezone.now() - timedelta(days=1))
+        nc = self._no_conformidad(
+            destino=self.modelo.Destino.EXCEPCIONAL, liberacion=vencida
+        )
+
+        respuesta = self._cerrar(nc, accion="Se usó bajo concesión.")
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertIn("vencida", str(respuesta.data))
+
+    def test_con_concesion_vigente_si_cierra(self):
+        nc = self._no_conformidad(
+            destino=self.modelo.Destino.EXCEPCIONAL, liberacion=self._concesion()
+        )
+
+        respuesta = self._cerrar(nc, accion="Se usó en producto de consumo interno.")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+
+    def test_vigente_mira_el_vencimiento_y_no_solo_la_marca(self):
+        """`vence_en` existía desde el principio y nadie lo miraba: una
+        concesión de marzo figuraba igual de válida en agosto."""
+        self.assertTrue(self._concesion().vigente)
+        self.assertFalse(
+            self._concesion(vence_en=timezone.now() - timedelta(minutes=1)).vigente
+        )
+        self.assertFalse(self._concesion(activa=False).vigente)
+
+    def test_quien_solicita_la_concesion_no_la_aprueba(self):
+        """
+        Misma segregación que en las solicitudes de compra, y aquí pesa más:
+        lo que se autoriza es usar material que Calidad no aprobó.
+        """
+        respuesta = self.cliente.post(
+            "/api/inventario/liberaciones-excepcionales/",
+            {
+                "lote": self.lote.id,
+                "cantidad": "50",
+                "uso_especifico": "Consumo interno",
+                "justificacion": "Defecto cosmético",
+                "solicitante": self.calidad.id,
+                "vence_en": (timezone.now() + timedelta(days=30)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("no puede aprobarla", str(respuesta.data))
+
+    def test_la_segunda_firma_tiene_que_ser_de_otra_persona(self):
+        with self.assertRaisesMessage(ValidationError, "dos firmas"):
+            self._concesion(aprobada_jefatura_por=self.calidad).full_clean()

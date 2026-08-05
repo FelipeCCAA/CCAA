@@ -313,23 +313,78 @@ class PlantillaInspeccionSerializer(serializers.ModelSerializer):
 
 
 class NoConformidadSerializer(serializers.ModelSerializer):
+    destino_etiqueta = serializers.CharField(source="get_destino_display", read_only=True)
+    lote_codigo = serializers.CharField(source="inspeccion.lote.codigo", read_only=True)
+    insumo_nombre = serializers.CharField(
+        source="inspeccion.lote.insumo.nombre", read_only=True
+    )
+    cerrada_por_nombre = serializers.CharField(
+        source="cerrada_por.username", read_only=True, allow_null=True
+    )
+    # Si la concesión que la resolvió sigue amparando algo. Se calcula desde su
+    # vencimiento, no se guarda.
+    liberacion_vigente = serializers.BooleanField(
+        source="liberacion.vigente", read_only=True, allow_null=True
+    )
+
     class Meta:
         model = NoConformidadMaterial
         fields = "__all__"
-        read_only_fields = ["creada_por", "creada_en"]
+        # El cierre pasa por `cerrar_no_conformidad`, que exige decir qué se
+        # hizo. Dejarlos escribibles permitiría marcarla cerrada por PATCH
+        # saltándose esa regla.
+        read_only_fields = [
+            "creada_por", "creada_en", "cerrada", "cerrada_por", "cerrada_en",
+            "accion_tomada",
+        ]
 
 
 class LiberacionExcepcionalSerializer(serializers.ModelSerializer):
+    lote_codigo = serializers.CharField(source="lote.codigo", read_only=True)
+    insumo_nombre = serializers.CharField(source="lote.insumo.nombre", read_only=True)
+    solicitante_nombre = serializers.CharField(
+        source="solicitante.username", read_only=True
+    )
+    calidad_nombre = serializers.CharField(
+        source="aprobada_calidad_por.username", read_only=True
+    )
+    jefatura_nombre = serializers.CharField(
+        source="aprobada_jefatura_por.username", read_only=True, allow_null=True
+    )
+    # `activa` dice lo que alguien marcó; `vigente` dice si además no ha
+    # vencido. `vence_en` existía desde el principio y nadie lo miraba.
+    vigente = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = LiberacionExcepcionalMaterial
         fields = "__all__"
         read_only_fields = ["aprobada_calidad_por", "autorizada_en"]
 
     def validate(self, datos):
-        if datos.get("cantidad", 0) <= 0:
-            raise serializers.ValidationError({"cantidad": "Debe ser mayor que cero."})
-        if not str(datos.get("justificacion", "")).strip() or not str(datos.get("uso_especifico", "")).strip():
-            raise serializers.ValidationError("La justificación y el uso específico son obligatorios.")
+        """
+        El modelo valida y aquí se le llama.
+
+        Antes esto repetía a mano dos de las reglas del modelo y se saltaba las
+        otras —la segregación de firmas—, así que quien solicitaba la concesión
+        podía aprobarla por Calidad. Es lo mismo que las solicitudes de compra
+        ya impedían, y aquí pesa más: lo que se autoriza es usar material que
+        Calidad no aprobó.
+        """
+        instancia = self.instance or LiberacionExcepcionalMaterial()
+
+        for campo, valor in datos.items():
+            setattr(instancia, campo, valor)
+
+        # `aprobada_calidad_por` es de solo lectura y lo pone la vista con el
+        # usuario de la sesión, así que hay que ponerlo antes de validar.
+        usuario = getattr(self.context.get("request"), "user", None)
+
+        if instancia.aprobada_calidad_por_id is None and usuario is not None:
+            instancia.aprobada_calidad_por = usuario
+
+        instancia.clean()
+
+        return datos
         return datos
 
 

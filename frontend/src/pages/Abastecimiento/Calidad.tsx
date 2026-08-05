@@ -8,6 +8,7 @@ import {
 import { obtenerSesion } from "../../services/sesion";
 
 import { Aviso, Estado, Tarjeta, Vacio } from "./componentes";
+import NoConformidades from "./NoConformidades";
 import { claseCelda, claseEncabezado, useCarga } from "./utilidades";
 
 
@@ -144,26 +145,7 @@ function Calidad() {
         )}
       </Tarjeta>
 
-      <Tarjeta titulo="Lo que falta en esta pestaña">
-        <ul className="space-y-2 text-sm text-slate-500">
-          <li>
-            · <span className="font-medium text-slate-700">No conformidades</span> de
-            material, con su acción correctiva.
-          </li>
-          <li>
-            ·{" "}
-            <span className="font-medium text-slate-700">
-              Liberación excepcional
-            </span>
-            : usar bajo concesión una cantidad acotada de un lote no aprobado,
-            con doble firma y vencimiento. El backend ya lo modela.
-          </li>
-          <li>
-            · <span className="font-medium text-slate-700">Plantillas de inspección</span>{" "}
-            por material o categoría, con sus límites.
-          </li>
-        </ul>
-      </Tarjeta>
+      <NoConformidades />
 
     </div>
   );

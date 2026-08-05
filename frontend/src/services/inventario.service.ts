@@ -615,3 +615,92 @@ export async function entregarMRQ(id: number) {
   const { data } = await api.post<{ entrega: number; estado: string }>(`inventario/mrq/${id}/entregar/`, {});
   return data;
 }
+
+
+/*
+  No conformidad de un material inspeccionado.
+
+  `cerrada` sola no dice nada: el cierre exige **qué se hizo**, y si el destino
+  es liberación excepcional, la concesión vigente que lo ampara. Por eso esos
+  campos son de solo lectura y el cierre tiene su propia acción.
+*/
+export interface NoConformidad {
+  id: number;
+  inspeccion: number;
+  lote_codigo: string;
+  insumo_nombre: string;
+  descripcion: string;
+  destino: string;
+  destino_etiqueta: string;
+  cerrada: boolean;
+  accion_tomada: string;
+  cerrada_por: number | null;
+  cerrada_por_nombre: string | null;
+  cerrada_en: string | null;
+  liberacion: number | null;
+  liberacion_vigente: boolean | null;
+  creada_en: string;
+}
+
+
+/*
+  Concesión: usar una cantidad acotada de un lote que Calidad no aprobó, para
+  un uso concreto y con vencimiento.
+
+  `vigente` se calcula desde `vence_en`, que antes se guardaba y nadie miraba —
+  una concesión de marzo figuraba igual de válida en agosto.
+*/
+export interface LiberacionExcepcional {
+  id: number;
+  lote: number;
+  lote_codigo: string;
+  insumo_nombre: string;
+  cantidad: string;
+  uso_especifico: string;
+  justificacion: string;
+  solicitante: number;
+  solicitante_nombre: string;
+  calidad_nombre: string;
+  jefatura_nombre: string | null;
+  autorizada_en: string;
+  vence_en: string;
+  activa: boolean;
+  vigente: boolean;
+}
+
+
+export const obtenerNoConformidades = () =>
+  lista<NoConformidad>("inventario/no-conformidades/");
+
+export const obtenerLiberacionesExcepcionales = () =>
+  lista<LiberacionExcepcional>("inventario/liberaciones-excepcionales/");
+
+
+export async function crearNoConformidad(datos: {
+  inspeccion: number;
+  descripcion: string;
+  destino: string;
+  liberacion?: number | null;
+}): Promise<NoConformidad> {
+  const { data } = await api.post<NoConformidad>(
+    "inventario/no-conformidades/",
+    datos,
+  );
+
+  return data;
+}
+
+
+/* No es un PATCH `cerrada=true`: el cierre exige la constancia de qué se hizo
+   y, si el destino es concesión, que esa concesión siga vigente. */
+export async function cerrarNoConformidad(
+  id: number,
+  accion_tomada: string,
+): Promise<NoConformidad> {
+  const { data } = await api.post<NoConformidad>(
+    `inventario/no-conformidades/${id}/cerrar/`,
+    { accion_tomada },
+  );
+
+  return data;
+}

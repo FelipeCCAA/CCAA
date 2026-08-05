@@ -33,7 +33,8 @@ from .serializers import (
     SolicitudMaterialSerializer, UbicacionSerializer,
 )
 from .servicios import (
-    consumir_receta_produccion, crear_ajuste, decidir_inspeccion, decidir_solicitud_compra,
+    cerrar_no_conformidad, consumir_receta_produccion, crear_ajuste,
+    decidir_inspeccion, decidir_solicitud_compra,
     decidir_y_aplicar_ajuste, entregar_solicitud_material,
     convertir_solicitud_en_ordenes, crear_solicitud_desde_mrp,
     ejecutar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
@@ -534,12 +535,34 @@ class PlantillaInspeccionViewSet(viewsets.ModelViewSet):
 
 
 class NoConformidadViewSet(viewsets.ModelViewSet):
-    queryset = NoConformidadMaterial.objects.select_related("inspeccion__lote", "creada_por")
+    queryset = NoConformidadMaterial.objects.select_related(
+        "inspeccion__lote__insumo", "creada_por", "cerrada_por", "liberacion"
+    )
     serializer_class = NoConformidadSerializer
     permission_classes = [EscribeCalidad]
 
     def perform_create(self, serializer):
         serializer.save(creada_por=self.request.user)
+
+    @action(detail=True, methods=["post"], url_path="cerrar")
+    def cerrar(self, request, pk=None):
+        """
+        Cierra dejando qué se hizo con el material.
+
+        No es un `PATCH cerrada=true`: el cierre exige la acción tomada y, si
+        el destino es liberación excepcional, una concesión vigente que lo
+        ampare. Por eso esos campos son de solo lectura en el serializer.
+        """
+        try:
+            no_conformidad = cerrar_no_conformidad(
+                no_conformidad=self.get_object(),
+                usuario=request.user,
+                accion_tomada=request.data.get("accion_tomada", ""),
+            )
+        except DjangoValidationError as error:
+            return Response({"error": error.messages[0]}, status=409)
+
+        return Response(self.get_serializer(no_conformidad).data)
 
 
 class LiberacionExcepcionalViewSet(viewsets.ModelViewSet):

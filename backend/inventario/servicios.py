@@ -1065,3 +1065,54 @@ def convertir_solicitud_en_ordenes(*, solicitud, usuario, bodega):
     solicitud.save(update_fields=["estado"])
 
     return ordenes
+
+
+@transaction.atomic
+def cerrar_no_conformidad(*, no_conformidad, usuario, accion_tomada):
+    """
+    Cierra una no conformidad de material dejando qué se hizo con él.
+
+    `cerrada` era un booleano suelto: decía que el asunto se acabó y no qué se
+    hizo, quién lo hizo ni cuándo. Para el material que Calidad rechazó, esa
+    es justamente la información que un auditor pide.
+
+    Si el destino es **liberación excepcional**, exige la concesión enlazada y
+    vigente. Cerrar diciendo «se liberó por concesión» sin poder mostrar cuál
+    —con su cantidad, su uso autorizado y su vencimiento— deja el material
+    usado sin respaldo, que es peor que no haberlo documentado: parece que sí
+    lo tiene.
+    """
+    from .models import NoConformidadMaterial
+
+    if no_conformidad.cerrada:
+        raise ValidationError("Esta no conformidad ya está cerrada.")
+
+    if not str(accion_tomada or "").strip():
+        raise ValidationError(
+            "Registra qué se hizo con el material antes de cerrar."
+        )
+
+    if no_conformidad.destino == NoConformidadMaterial.Destino.EXCEPCIONAL:
+        liberacion = no_conformidad.liberacion
+
+        if liberacion is None:
+            raise ValidationError(
+                "El destino es liberación excepcional: enlaza la concesión que "
+                "la autoriza antes de cerrar."
+            )
+
+        if not liberacion.vigente:
+            raise ValidationError(
+                "La concesión enlazada está vencida o inactiva: no ampara el "
+                "uso del material."
+            )
+
+    no_conformidad.accion_tomada = accion_tomada.strip()
+    no_conformidad.cerrada_por = usuario
+    no_conformidad.cerrada_en = timezone.now()
+    no_conformidad.cerrada = True
+    no_conformidad.save(
+        update_fields=["accion_tomada", "cerrada_por", "cerrada_en", "cerrada"]
+    )
+
+    return no_conformidad

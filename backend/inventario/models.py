@@ -453,6 +453,49 @@ class NoConformidadMaterial(models.Model):
     creada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     creada_en = models.DateTimeField(auto_now_add=True)
 
+    # Cómo terminó. `cerrada` era un booleano suelto: decía que el asunto se
+    # acabó y no qué se hizo, quién lo hizo ni cuándo. Una no conformidad de
+    # material sin eso no es un registro de inocuidad, es una casilla.
+    accion_tomada = models.TextField(
+        "Acción tomada", blank=True,
+        help_text="Qué se hizo con el material. Obligatoria para cerrar.",
+    )
+    cerrada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="no_conformidades_cerradas", null=True, blank=True,
+    )
+    cerrada_en = models.DateTimeField(null=True, blank=True)
+
+    # La concesión con que se resolvió, cuando el destino es liberación
+    # excepcional. Sin el enlace, «se resolvió por concesión» no lleva a
+    # ninguna concesión concreta y no hay cómo auditar bajo qué condiciones
+    # se usó el material.
+    liberacion = models.ForeignKey(
+        "LiberacionExcepcionalMaterial", on_delete=models.PROTECT,
+        related_name="no_conformidades", null=True, blank=True,
+        verbose_name="Liberación excepcional que la resolvió",
+    )
+
+    class Meta:
+        ordering = ["cerrada", "-creada_en"]
+        constraints = [
+            # Cerrada exige las tres cosas juntas. Por separado se puede
+            # marcar cerrada y dejar en blanco qué se hizo, que es como se
+            # pierde el rastro justo en el registro que existe para dejarlo.
+            models.CheckConstraint(
+                condition=models.Q(cerrada=False)
+                | (
+                    models.Q(cerrada_por__isnull=False)
+                    & models.Q(cerrada_en__isnull=False)
+                    & ~models.Q(accion_tomada="")
+                ),
+                name="nc_cerrada_dice_quien_cuando_y_que_hizo",
+            )
+        ]
+
+    def __str__(self):
+        return f"NC {self.pk} · {self.get_destino_display()}"
+
 
 class LiberacionExcepcionalMaterial(models.Model):
     lote = models.ForeignKey(LoteInventario, on_delete=models.PROTECT, related_name="liberaciones_excepcionales")
@@ -466,11 +509,53 @@ class LiberacionExcepcionalMaterial(models.Model):
     vence_en = models.DateTimeField()
     activa = models.BooleanField(default=True)
 
+    class Meta:
+        ordering = ["-autorizada_en"]
+
+    def __str__(self):
+        return f"Concesión {self.pk} · {self.lote.codigo} · {self.cantidad}"
+
+    @property
+    def vigente(self) -> bool:
+        """
+        ¿Sigue amparando algo?
+
+        Se calcula y no se guarda: un booleano almacenado no se entera de que
+        pasó la fecha. `vence_en` existía desde el principio y **nadie lo
+        miraba** — una concesión de marzo seguía figurando igual de válida en
+        agosto.
+        """
+        from django.utils import timezone
+
+        return self.activa and self.vence_en > timezone.now()
+
     def clean(self):
-        if self.cantidad <= 0:
+        if self.cantidad is not None and self.cantidad <= 0:
             raise ValidationError({"cantidad": "Debe ser mayor que cero."})
+
         if not self.justificacion.strip() or not self.uso_especifico.strip():
             raise ValidationError("La justificación y el uso específico son obligatorios.")
+
+        # Quien pide la concesión no la aprueba. Es la misma segregación que
+        # ya rige en las solicitudes de compra, y aquí pesa más: lo que se
+        # está autorizando es usar material que Calidad no aprobó.
+        if self.solicitante_id and self.solicitante_id == self.aprobada_calidad_por_id:
+            raise ValidationError({
+                "aprobada_calidad_por": (
+                    "Quien solicita la concesión no puede aprobarla por Calidad."
+                )
+            })
+
+        if (
+            self.aprobada_jefatura_por_id
+            and self.aprobada_jefatura_por_id == self.aprobada_calidad_por_id
+        ):
+            raise ValidationError({
+                "aprobada_jefatura_por": (
+                    "La segunda firma tiene que ser de otra persona: dos firmas "
+                    "de la misma no son dos firmas."
+                )
+            })
 
 
 class Adjunto(models.Model):
