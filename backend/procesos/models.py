@@ -161,6 +161,45 @@ class EntradaProceso(models.Model):
         if not self.ejecucion.editable:
             raise ValidationError("No se pueden agregar entradas a una ejecución cerrada o cancelada.")
 
+        self._validar_autorizacion_de_reproceso()
+
+    def _validar_autorizacion_de_reproceso(self):
+        """
+        Regla de planta № 7: no se agrega rework sin autorización.
+
+        Un reproceso es producto que ya falló una vez y vuelve a entrar a la
+        cadena. Meterlo sin que Calidad lo haya evaluado arrastra el defecto
+        al lote nuevo — y con la trazabilidad hacia adelante, a todos los que
+        salgan de él.
+
+        **La ausencia de liberación no es autorización.** Un lote sin
+        expediente tramitado no es un lote aprobado: es uno que nadie miró. Es
+        la misma distinción que hace la recepción con el Delvo, y la que
+        `Liberacion` existe para no perder — por eso la fila se crea en
+        `pendiente` desde que el lote se produce.
+
+        La concesión sí autoriza: es Calidad diciendo «úsalo bajo estas
+        condiciones», que es precisamente una autorización.
+        """
+        if self.tipo != self.Tipo.REPROCESO or not self.lote_id:
+            return
+
+        from calidad.models import Liberacion
+
+        autorizado = Liberacion.objects.filter(
+            lote_id=self.lote_id,
+            estado__in=[Liberacion.Estado.LIBERADO, Liberacion.Estado.CONCESION],
+        ).exists()
+
+        if not autorizado:
+            raise ValidationError({
+                "lote": (
+                    f"El lote {self.lote.codigo_lote} no está liberado por "
+                    "Calidad: un reproceso sin autorización arrastra el defecto "
+                    "al lote nuevo."
+                )
+            })
+
 
 class SalidaProceso(models.Model):
     class Naturaleza(models.TextChoices):

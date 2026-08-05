@@ -545,3 +545,115 @@ class EquipoHabilitadoPorAseoTests(TestCase):
         )
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
+
+
+class ReworkAutorizadoTests(TestCase):
+    """
+    Regla de planta № 7: no se agrega rework sin autorización.
+
+    Un reproceso es producto que ya falló una vez y vuelve a entrar a la
+    cadena. Meterlo sin que Calidad lo haya evaluado arrastra el defecto al
+    lote nuevo — y con la trazabilidad hacia adelante, a todos los que salgan
+    de él.
+    """
+
+    def setUp(self):
+        self.usuario = User.objects.create_user("operador-rw", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            area=PerfilUsuario.Area.SECADO,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+        )
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(self.usuario)
+
+        mandante = Mandante.objects.create(nombre="CCAA rework")
+        producto = Producto.objects.create(
+            nombre="Polvo rework", familia="polvo", mandante=mandante
+        )
+
+        def lote(codigo):
+            return Lote.objects.create(
+                codigo_lote=codigo, producto=producto, fecha=date(2026, 8, 1)
+            )
+
+        self.rework = lote("RW-REWORK")
+        self.normal = lote("RW-NORMAL")
+
+        proceso = Proceso.objects.create(codigo="rw", nombre="Proceso rework")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="e", nombre="Etapa",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        self.ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-RW-1", etapa=etapa
+        )
+
+    def _liberacion(self, lote, estado):
+        from calidad.models import Liberacion
+
+        return Liberacion.objects.create(lote=lote, estado=estado)
+
+    def _entrada(self, lote, tipo):
+        return self.cliente.post(
+            "/api/procesos/entradas/",
+            {
+                "ejecucion": self.ejecucion.id,
+                "lote": lote.id,
+                "tipo": tipo,
+                "cantidad": "100",
+            },
+            format="json",
+        )
+
+    def test_un_reproceso_sin_liberacion_no_entra(self):
+        """
+        La ausencia de liberación no es autorización: un lote sin expediente
+        tramitado no es uno aprobado, es uno que nadie miró.
+        """
+        respuesta = self._entrada(self.rework, "reproceso")
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("no está liberado", str(respuesta.data))
+
+    def test_un_reproceso_pendiente_tampoco(self):
+        from calidad.models import Liberacion
+
+        self._liberacion(self.rework, Liberacion.Estado.PENDIENTE)
+
+        self.assertEqual(self._entrada(self.rework, "reproceso").status_code, 400)
+
+    def test_un_reproceso_rechazado_tampoco(self):
+        from calidad.models import Liberacion
+
+        self._liberacion(self.rework, Liberacion.Estado.RECHAZADO)
+
+        self.assertEqual(self._entrada(self.rework, "reproceso").status_code, 400)
+
+    def test_un_reproceso_liberado_si_entra(self):
+        from calidad.models import Liberacion
+
+        self._liberacion(self.rework, Liberacion.Estado.LIBERADO)
+
+        respuesta = self._entrada(self.rework, "reproceso")
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+
+    def test_la_concesion_tambien_autoriza(self):
+        """Es Calidad diciendo «úsalo bajo estas condiciones», que es
+        precisamente una autorización."""
+        from calidad.models import Liberacion
+
+        self._liberacion(self.rework, Liberacion.Estado.CONCESION)
+
+        self.assertEqual(
+            self._entrada(self.rework, "reproceso").status_code, 201
+        )
+
+    def test_una_entrada_principal_no_exige_liberacion(self):
+        """
+        La regla es del reproceso. Exigirla a toda entrada detendría la
+        producción normal: la leche que entra al evaporador no se libera, se
+        libera lo que sale.
+        """
+        self.assertEqual(self._entrada(self.normal, "principal").status_code, 201)

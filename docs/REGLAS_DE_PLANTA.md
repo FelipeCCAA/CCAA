@@ -168,7 +168,7 @@ Las quince del documento, contrastadas:
 | 4 | No cerrar una etapa con controles obligatorios pendientes | Implementado en `procesos` |
 | 5 | No liberar un lote con dossier incompleto | Implementado |
 | 6 | No consumir material en cuarentena | Implementado |
-| 7 | No agregar rework sin autorización | **No implementado** — no existe rework |
+| 7 | No agregar rework sin autorización | **Implementado** — ver §5.2 |
 | 8 | No modificar registros aprobados sin nueva versión | Parcial |
 | 9 | Toda corrección deja auditoría | Implementado — app `auditoria` |
 | 10 | Los documentos obsoletos no generan tareas | Implementado — `activo` |
@@ -178,8 +178,8 @@ Las quince del documento, contrastadas:
 | 14 | Aprobaciones registran usuario, fecha y hora | Implementado |
 | 15 | Un equipo no puede producir y estar en CIP a la vez | **Implementado** — ver §5.1 |
 
-La 7 queda pendiente por otra razón: **no existe el rework** en el sistema, así
-que no hay qué autorizar todavía.
+**Las quince están implementadas.** Lo que sigue faltando del rework no es la
+regla sino su ciclo completo — ver §5.2.
 
 ### 5.1 Habilitación del equipo por aseo
 
@@ -205,6 +205,27 @@ no sirve el viernes»—. Cuánto dura un aseo lo decide Calidad y no está escr
 en ninguna parte; inventar una ventana sería peor que no tenerla, porque
 bloquearía producción con un número que nadie acordó. Es la quinta decisión
 pendiente de §8.
+
+### 5.2 Rework autorizado
+
+`EntradaProceso._validar_autorizacion_de_reproceso()`. Una entrada de tipo
+**reproceso** exige que su lote tenga liberación de Calidad en `liberado` o
+`liberado_concesion`.
+
+La concesión autoriza porque es Calidad diciendo «úsalo bajo estas
+condiciones», que es precisamente una autorización. `pendiente`, `en revisión`
+y `rechazado` no autorizan, y **la ausencia de liberación tampoco**: un lote
+sin expediente tramitado no es uno aprobado, es uno que nadie miró. Es la misma
+distinción que hace la recepción con el Delvo.
+
+La regla es solo del reproceso. Exigirla a toda entrada detendría la producción
+normal: la leche que entra al evaporador no se libera — se libera lo que sale.
+
+**Lo que falta del ciclo de rework** (§17 del flujo de fábrica): pesar, rotular,
+almacenar segregado, la evaluación explícita de Calidad sobre el rework como
+tal, el paso a descarte y el `Seguimiento FEFO`. Hoy el reproceso se expresa
+con `SalidaProceso.Naturaleza.REPROCESO` y `EntradaProceso.Tipo.REPROCESO`,
+que cubren la trazabilidad pero no el circuito de bodega.
 
 ---
 
