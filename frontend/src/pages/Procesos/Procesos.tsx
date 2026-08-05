@@ -4,12 +4,13 @@ import { GitBranch, Search } from "lucide-react";
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import StatusBadge from "../../components/ui/StatusBadge";
 import { obtenerEjecuciones, obtenerGenealogia, type EjecucionProceso, type Genealogia } from "../../services/procesos.service";
+import ArbolGenealogia from "./ArbolGenealogia";
 
 export default function Procesos() {
   const [ejecuciones, setEjecuciones] = useState<EjecucionProceso[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
-  const [loteId, setLoteId] = useState("");
+  const [lote, setLote] = useState("");
   const [direccion, setDireccion] = useState<"atras" | "adelante">("atras");
   const [genealogia, setGenealogia] = useState<Genealogia | null>(null);
 
@@ -24,14 +25,19 @@ export default function Procesos() {
 
   const buscar = async (evento: React.FormEvent) => {
     evento.preventDefault();
-    const id = Number(loteId);
-    if (!Number.isInteger(id) || id <= 0) {
-      setError("Ingresa el identificador numérico de un lote.");
+    if (!lote.trim()) {
+      setError("Escribe el código del lote.");
       return;
     }
+
     setError("");
-    try { setGenealogia(await obtenerGenealogia(id, direccion)); }
-    catch { setError("No se encontró el lote o no fue posible reconstruir su genealogía."); }
+
+    try {
+      setGenealogia(await obtenerGenealogia(lote, direccion));
+    } catch {
+      setGenealogia(null);
+      setError(`No existe el lote «${lote.trim()}» o no se pudo reconstruir su genealogía.`);
+    }
   };
 
   return (
@@ -48,11 +54,11 @@ export default function Procesos() {
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Consultar genealogía</h2></div>
           <form onSubmit={buscar} className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <input value={loteId} onChange={(e) => setLoteId(e.target.value)} placeholder="ID del lote" className="rounded-xl border border-slate-300 px-4 py-2.5" />
+            <input value={lote} onChange={(e) => setLote(e.target.value)} placeholder="Código del lote (p. ej. CCAA6212010102010201-01)" className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5" />
             <select value={direccion} onChange={(e) => setDireccion(e.target.value as "atras" | "adelante")} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5"><option value="atras">Hacia atrás</option><option value="adelante">Hacia adelante</option></select>
             <button className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-700 px-5 py-2.5 font-semibold text-white"><Search className="h-4 w-4" />Buscar</button>
           </form>
-          {genealogia && <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{genealogia.nodos.map((nodo) => <div key={nodo.id} className="rounded-xl border border-slate-200 p-4"><p className="font-semibold text-slate-800">{nodo.codigo}</p><p className="mt-1 text-sm text-slate-500">{nodo.producto} · {nodo.fecha}</p></div>)}</div>}
+          {genealogia && <div className="mt-5"><ArbolGenealogia genealogia={genealogia} direccion={direccion} /></div>}
         </section>
 
         <section>

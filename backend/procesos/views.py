@@ -71,7 +71,13 @@ class EjecucionProcesoViewSet(viewsets.ModelViewSet):
                 usuario=request.user,
             )
         except DjangoValidationError as error:
-            return Response({"error": error.message}, status=status.HTTP_400_BAD_REQUEST)
+            # `.messages[0]` y no `.message`: el segundo solo existe cuando el
+            # error se levantó con un string suelto. Con un dict o una lista
+            # —como los que levanta `SalidaProceso.clean()` en este mismo
+            # módulo— no existe, y el 400 se convertiría en un 500.
+            return Response(
+                {"error": error.messages[0]}, status=status.HTTP_400_BAD_REQUEST
+            )
         return Response(self.get_serializer(ejecucion).data)
 
 
@@ -90,10 +96,33 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
 
 
 @api_view(["GET"])
-def trazabilidad(request, lote_id):
+def trazabilidad(request, lote):
+    """
+    Genealogía de un lote, hacia atrás o hacia adelante.
+
+    Acepta el **código de lote** además del id. El id es de la base de datos y
+    nadie en planta lo conoce: quien pregunta de dónde salió un saco tiene en
+    la mano un `CCAA6212010102010201-01`, no un 47. Pedirle el id volvía la
+    pantalla inservible para quien la necesita.
+    """
+    from produccion.models import Lote
+
     direccion = request.query_params.get("direccion", "atras")
+
+    if str(lote).isdigit():
+        encontrado = Lote.objects.filter(pk=int(lote)).first()
+    else:
+        encontrado = Lote.objects.filter(codigo_lote=lote).first()
+
+    if encontrado is None:
+        return Response(
+            {"error": f"No existe un lote «{lote}»."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
     try:
-        datos = genealogia_lote(lote_id, direccion)
+        datos = genealogia_lote(encontrado.pk, direccion)
     except ValueError as error:
         return Response({"error": str(error)}, status=400)
-    return Response(datos)
+
+    return Response({**datos, "raiz": encontrado.pk})

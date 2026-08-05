@@ -106,3 +106,106 @@ class ProcesosIndustrialesTests(TestCase):
     def test_api_no_permite_borrado_fisico_de_ejecucion(self):
         respuesta = self.cliente.delete(f"/api/procesos/ejecuciones/{self.ejecucion.id}/")
         self.assertEqual(respuesta.status_code, 405)
+
+
+class TrazabilidadPorCodigoTests(TestCase):
+    """
+    La genealogía se consulta por el **código de lote**.
+
+    El id es de la base de datos y nadie en planta lo conoce: quien pregunta de
+    dónde salió un saco tiene en la mano un `CCAA…-01`, no un 47. Pedirle el id
+    volvía la pantalla inservible para quien la necesita.
+    """
+
+    def setUp(self):
+        from maestros.models import Mandante, Producto
+        from produccion.models import Lote
+
+        from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, SalidaProceso
+
+        self.usuario = User.objects.create_user("operador-tz", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            area=PerfilUsuario.Area.SECADO,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+        )
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(self.usuario)
+
+        mandante = Mandante.objects.create(nombre="CCAA trazabilidad")
+        producto = Producto.objects.create(
+            nombre="Leche en polvo tz", familia="polvo", mandante=mandante
+        )
+
+        def lote(codigo):
+            return Lote.objects.create(
+                codigo_lote=codigo, producto=producto, fecha=date(2026, 8, 1)
+            )
+
+        # Dos lotes de leche entran al secado y sale uno de polvo.
+        self.leche_a = lote("CCAA-TZ-A")
+        self.leche_b = lote("CCAA-TZ-B")
+        self.polvo = lote("CCAA-TZ-POLVO")
+
+        proceso = Proceso.objects.create(codigo="tz", nombre="Secado tz")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="secado", nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        ejecucion = EjecucionProceso.objects.create(codigo="EJ-TZ-1", etapa=etapa)
+
+        for origen in (self.leche_a, self.leche_b):
+            EntradaProceso.objects.create(
+                ejecucion=ejecucion, lote=origen, cantidad=1000
+            )
+
+        SalidaProceso.objects.create(
+            ejecucion=ejecucion, lote=self.polvo, cantidad=120
+        )
+
+    def _consultar(self, referencia, direccion="atras"):
+        return self.cliente.get(
+            f"/api/procesos/trazabilidad/lotes/{referencia}/",
+            {"direccion": direccion},
+        )
+
+    def test_se_consulta_por_codigo_de_lote(self):
+        respuesta = self._consultar("CCAA-TZ-POLVO")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        codigos = {n["codigo"] for n in respuesta.data["nodos"]}
+        self.assertEqual(codigos, {"CCAA-TZ-POLVO", "CCAA-TZ-A", "CCAA-TZ-B"})
+
+    def test_el_id_sigue_funcionando(self):
+        """Lo usan los enlaces internos; solo la persona necesita el código."""
+        respuesta = self._consultar(self.polvo.pk)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data["raiz"], self.polvo.pk)
+
+    def test_devuelve_la_raiz_para_saber_desde_donde_dibujar(self):
+        respuesta = self._consultar("CCAA-TZ-POLVO")
+
+        self.assertEqual(respuesta.data["raiz"], self.polvo.pk)
+
+    def test_los_enlaces_dicen_que_salio_de_que(self):
+        """Sin ellos son lotes sueltos: la relación es la trazabilidad."""
+        respuesta = self._consultar("CCAA-TZ-POLVO")
+
+        enlaces = {(e["origen"], e["destino"]) for e in respuesta.data["enlaces"]}
+        self.assertEqual(
+            enlaces,
+            {(self.leche_a.pk, self.polvo.pk), (self.leche_b.pk, self.polvo.pk)},
+        )
+
+    def test_hacia_adelante_encuentra_la_descendencia(self):
+        respuesta = self._consultar("CCAA-TZ-A", direccion="adelante")
+
+        codigos = {n["codigo"] for n in respuesta.data["nodos"]}
+        self.assertIn("CCAA-TZ-POLVO", codigos)
+
+    def test_un_lote_que_no_existe_responde_404_con_su_motivo(self):
+        respuesta = self._consultar("CCAA-NO-EXISTE")
+
+        self.assertEqual(respuesta.status_code, 404)
+        self.assertIn("CCAA-NO-EXISTE", str(respuesta.data))

@@ -14,6 +14,8 @@ router.register("entradas", EntradaProcesoViewSet)
 router.register("salidas", SalidaProcesoViewSet)
 
 urlpatterns = [
-    path("trazabilidad/lotes/<int:lote_id>/", trazabilidad, name="trazabilidad-lote"),
+    # <str:> y no <int:>: acepta el código de lote además del id, porque el id
+    # es de la base y nadie en planta lo conoce.
+    path("trazabilidad/lotes/<str:lote>/", trazabilidad, name="trazabilidad-lote"),
     path("", include(router.urls)),
 ]

@@ -136,11 +136,40 @@ class FallaEquipo(models.Model):
 
 
 class RepuestoUtilizado(models.Model):
+    """
+    Repuesto consumido en una orden de trabajo.
+
+    **El repuesto pasa por bodega**: se pide por MRQ, bodega lo reserva y lo
+    entrega, y es esa entrega la que mueve el stock. Este registro no descuenta
+    nada — descontarlo aquí lo restaría dos veces.
+
+    Por eso lleva `entrega`: es la línea de entrega que lo respalda, y sin ella
+    no hay forma de saber si el material salió por bodega o alguien lo tomó del
+    pañol. Las dos cosas se ven idénticas en la orden de trabajo, y en el
+    segundo caso el saldo de bodega queda mintiendo sin que nadie se entere.
+
+    Se admite sin respaldo a propósito —una urgencia de madrugada no se detiene
+    porque bodega esté cerrada— pero queda marcado. Lo que no se puede es no
+    distinguirlo.
+    """
+
     orden = models.ForeignKey(
         OrdenTrabajo, on_delete=models.PROTECT, related_name="repuestos"
     )
     insumo = models.ForeignKey(
         "inventario.Insumo", on_delete=models.PROTECT, related_name="usos_mantenimiento"
+    )
+    entrega = models.ForeignKey(
+        "inventario.DetalleEntregaProduccion",
+        on_delete=models.PROTECT,
+        related_name="repuestos_mantenimiento",
+        null=True,
+        blank=True,
+        verbose_name="Entrega de bodega que lo respalda",
+        help_text=(
+            "La línea de entrega con que bodega lo despachó. Sin ella el "
+            "consumo no tiene respaldo en el libro de inventario."
+        ),
     )
     cantidad = models.DecimalField(max_digits=12, decimal_places=3)
     costo_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -152,6 +181,45 @@ class RepuestoUtilizado(models.Model):
             )
         ]
 
+    @property
+    def respaldado(self) -> bool:
+        """¿Salió por bodega? Se calcula, no se guarda."""
+        return self.entrega_id is not None
+
     def clean(self):
         if self.orden.estado in {OrdenTrabajo.Estado.CERRADA, OrdenTrabajo.Estado.CANCELADA}:
             raise ValidationError("No se agregan repuestos a una orden finalizada.")
+
+        if self.entrega_id is None:
+            return
+
+        # El insumo tiene que ser el que bodega entregó. Si no coinciden, uno
+        # de los dos está mal y no hay forma de saber cuál — así que ninguno
+        # sirve como respaldo del otro.
+        entregado = self.entrega.lote.insumo_id
+
+        if self.insumo_id and self.insumo_id != entregado:
+            raise ValidationError({
+                "entrega": (
+                    f"Esa entrega es de {self.entrega.lote.insumo.nombre}, no del "
+                    "repuesto indicado."
+                )
+            })
+
+        # No se puede consumir más de lo que bodega despachó en esa línea. Una
+        # entrega puede cubrir varias órdenes, así que se suma lo ya imputado.
+        ya_usado = (
+            RepuestoUtilizado.objects.filter(entrega_id=self.entrega_id)
+            .exclude(pk=self.pk)
+            .aggregate(total=models.Sum("cantidad"))["total"]
+            or 0
+        )
+
+        if ya_usado + (self.cantidad or 0) > self.entrega.cantidad:
+            disponible = self.entrega.cantidad - ya_usado
+            raise ValidationError({
+                "cantidad": (
+                    f"Esa entrega despachó {self.entrega.cantidad} y ya tiene "
+                    f"{ya_usado} imputado: quedan {disponible}."
+                )
+            })

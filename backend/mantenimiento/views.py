@@ -58,7 +58,13 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
                 usuario=request.user,
             )
         except DjangoValidationError as error:
-            return Response({"error": error.message}, status=status.HTTP_400_BAD_REQUEST)
+            # `.messages[0]` y no `.message`: el segundo solo existe cuando el
+            # error se levantó con un string suelto. Con un dict o una lista
+            # —como los que levanta `SalidaProceso.clean()` en este mismo
+            # módulo— no existe, y el 400 se convertiría en un 500.
+            return Response(
+                {"error": error.messages[0]}, status=status.HTTP_400_BAD_REQUEST
+            )
         return Response(self.get_serializer(orden).data)
 
 
