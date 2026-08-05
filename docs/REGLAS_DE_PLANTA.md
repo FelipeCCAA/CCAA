@@ -164,7 +164,7 @@ Las quince del documento, contrastadas:
 |---|---|---|
 | 1 | No descargar leche sin aprobación de Calidad | Implementado |
 | 2 | No utilizar un silo bloqueado | Parcial |
-| 3 | No iniciar producción con equipo sin aseo aprobado | **No implementado** |
+| 3 | No iniciar producción con equipo sin aseo aprobado | **Parcial** — ver §5.1 |
 | 4 | No cerrar una etapa con controles obligatorios pendientes | Implementado en `procesos` |
 | 5 | No liberar un lote con dossier incompleto | Implementado |
 | 6 | No consumir material en cuarentena | Implementado |
@@ -176,11 +176,35 @@ Las quince del documento, contrastadas:
 | 12 | Falla crítica de inocuidad bloquea el lote | Implementado — PCC 1 y PPRO, **sin concesión** |
 | 13 | Estados cambian por acciones controladas | Implementado |
 | 14 | Aprobaciones registran usuario, fecha y hora | Implementado |
-| 15 | Un equipo no puede producir y estar en CIP a la vez | **No implementado** |
+| 15 | Un equipo no puede producir y estar en CIP a la vez | **Implementado** — ver §5.1 |
 
-Las tres pendientes (3, 7 y 15) comparten raíz: **el aseo y el estado del
-equipo no bloquean nada todavía**. `CicloCIP` existe y ya referencia al maestro
-de equipos, pero nada consulta si un equipo está en CIP antes de dejar producir.
+La 7 queda pendiente por otra razón: **no existe el rework** en el sistema, así
+que no hay qué autorizar todavía.
+
+### 5.1 Habilitación del equipo por aseo
+
+`inventario.servicios.motivo_equipo_no_habilitado()` y `equipo_produciendo()`,
+enganchados en `procesos.transicionar_ejecucion` (al entrar en EJECUCIÓN) y en
+`CicloCIPSerializer` (al poner un CIP EN CURSO).
+
+Lo que impide hoy:
+
+- Producir con un CIP **en curso** sobre ese equipo (regla 15).
+- Producir cuando el último aseo del equipo quedó **observado** (§18.5: aseo
+  crítico rechazado → equipo no habilitado). Un aseo conforme posterior lo
+  rehabilita: bloquea hasta que otro lo reemplace, no para siempre.
+- Iniciar un CIP sobre un equipo **produciendo** (regla 15 por el otro lado).
+  Con una sola dirección, la regla se cumplía o no según cuál de las dos
+  acciones llegara primero.
+
+Un CIP **programado** no bloquea: todavía no ocurrió, y tratarlo como resultado
+detendría la producción por un aseo futuro.
+
+**Lo que falta y por qué:** la **caducidad** del aseo — «el CIP del martes ya
+no sirve el viernes»—. Cuánto dura un aseo lo decide Calidad y no está escrito
+en ninguna parte; inventar una ventana sería peor que no tenerla, porque
+bloquearía producción con un número que nadie acordó. Es la quinta decisión
+pendiente de §8.
 
 ---
 
@@ -221,6 +245,7 @@ el módulo ni el proveedor de leche.
 | ¿`OrdenProduccion` sobre `Lote` como unidad central? | TI + planta |
 | ¿Dieciocho roles con permisos por acción, o el modelo actual de rol × área? | TI |
 | Qué controles de recepción son obligatorios además del Delvo | Calidad |
+| ¿Cuánto vale un aseo? Sin ventana de caducidad, un CIP viejo habilita igual | Calidad |
 
 ---
 

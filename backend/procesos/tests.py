@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -367,3 +368,180 @@ class BalanceDeMasaTests(TestCase):
         # Ninguna aparece en los dos lados: no son comparables.
         self.assertFalse(balance["l"]["comparable"])
         self.assertFalse(balance["kg"]["comparable"])
+
+
+class EquipoHabilitadoPorAseoTests(TestCase):
+    """
+    Reglas de planta 3 y 15 (`docs/REGLAS_DE_PLANTA.md` §5).
+
+    Un equipo no puede estar produciendo y en CIP a la vez —es física antes que
+    informática, hay soda circulando por dentro— y un aseo observado deja el
+    equipo no habilitado hasta que otro lo reemplace (§18.5 del flujo de
+    fábrica).
+
+    Se prueban **las dos direcciones**: con una sola, la regla se cumple o no
+    según cuál de las dos acciones llegue primero.
+    """
+
+    def setUp(self):
+        from maestros.models import Mandante, Producto
+
+        self.usuario = User.objects.create_user("operador-aseo", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            area=PerfilUsuario.Area.SECADO,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+        )
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(self.usuario)
+
+        self.equipo = Equipo.objects.create(
+            codigo="torre-aseo", nombre="Torre aseo", tipo=Equipo.Tipo.TORRE
+        )
+
+        mandante = Mandante.objects.create(nombre="CCAA aseo")
+        producto = Producto.objects.create(
+            nombre="Producto aseo", familia="polvo", mandante=mandante
+        )
+        lote = Lote.objects.create(
+            codigo_lote="ASEO-1", producto=producto, fecha=date(2026, 8, 1)
+        )
+
+        proceso = Proceso.objects.create(codigo="aseo-p", nombre="Proceso aseo")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="e", nombre="Etapa",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        self.ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-ASEO-1", etapa=etapa, equipo=self.equipo,
+            responsable=self.usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=self.ejecucion, lote=lote, cantidad=100
+        )
+
+    def _cip(self, estado, hace_horas=1):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from inventario.models import CicloCIP
+
+        return CicloCIP.objects.create(
+            area=PerfilUsuario.Area.SECADO, equipo=self.equipo,
+            inicio=timezone.now() - timedelta(hours=hace_horas), estado=estado,
+        )
+
+    def _arrancar(self):
+        """Lleva la ejecución hasta intentar entrar en producción."""
+        transicionar_ejecucion(
+            ejecucion_id=self.ejecucion.pk,
+            estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+            usuario=self.usuario,
+        )
+        return transicionar_ejecucion(
+            ejecucion_id=self.ejecucion.pk,
+            estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+            usuario=self.usuario,
+        )
+
+    # ------------------------------------------- el CIP bloquea producir
+
+    def test_sin_cip_el_equipo_arranca(self):
+        self.assertEqual(
+            self._arrancar().estado, EjecucionProceso.Estado.EJECUCION
+        )
+
+    def test_un_equipo_en_cip_no_puede_producir(self):
+        from inventario.models import CicloCIP
+
+        self._cip(CicloCIP.Estado.EN_CURSO)
+
+        with self.assertRaisesMessage(ValidationError, "está en CIP"):
+            self._arrancar()
+
+    def test_un_aseo_completado_no_estorba(self):
+        from inventario.models import CicloCIP
+
+        self._cip(CicloCIP.Estado.COMPLETADO)
+
+        self.assertEqual(
+            self._arrancar().estado, EjecucionProceso.Estado.EJECUCION
+        )
+
+    def test_un_aseo_observado_deja_el_equipo_no_habilitado(self):
+        """§18.5: aseo crítico rechazado → equipo no habilitado."""
+        from inventario.models import CicloCIP
+
+        self._cip(CicloCIP.Estado.OBSERVADO)
+
+        with self.assertRaisesMessage(ValidationError, "quedó observado"):
+            self._arrancar()
+
+    def test_un_aseo_conforme_posterior_rehabilita(self):
+        """El observado bloquea hasta que otro lo reemplace, no para siempre."""
+        from inventario.models import CicloCIP
+
+        self._cip(CicloCIP.Estado.OBSERVADO, hace_horas=5)
+        self._cip(CicloCIP.Estado.COMPLETADO, hace_horas=1)
+
+        self.assertEqual(
+            self._arrancar().estado, EjecucionProceso.Estado.EJECUCION
+        )
+
+    def test_un_cip_programado_no_bloquea(self):
+        """
+        Todavía no ocurrió. Tratar un aseo futuro como resultado detendría la
+        producción por algo que aún no pasó.
+        """
+        from inventario.models import CicloCIP
+
+        self._cip(CicloCIP.Estado.PROGRAMADO)
+
+        self.assertEqual(
+            self._arrancar().estado, EjecucionProceso.Estado.EJECUCION
+        )
+
+    # ------------------------------------------- producir bloquea el CIP
+
+    def test_no_se_asea_un_equipo_que_esta_produciendo(self):
+        from django.utils import timezone
+
+        from inventario.models import CicloCIP
+
+        self._arrancar()
+
+        respuesta = self.cliente.post(
+            "/api/inventario/cip/",
+            {
+                "area": PerfilUsuario.Area.SECADO,
+                "equipo": self.equipo.id,
+                "inicio": timezone.now().isoformat(),
+                "estado": CicloCIP.Estado.EN_CURSO,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("está produciendo", str(respuesta.data))
+
+    def test_programar_un_cip_futuro_si_se_puede_mientras_produce(self):
+        """Programar no es asear: la máquina se sigue lavando después."""
+        from django.utils import timezone
+
+        from inventario.models import CicloCIP
+
+        self._arrancar()
+
+        respuesta = self.cliente.post(
+            "/api/inventario/cip/",
+            {
+                "area": PerfilUsuario.Area.SECADO,
+                "equipo": self.equipo.id,
+                "inicio": timezone.now().isoformat(),
+                "estado": CicloCIP.Estado.PROGRAMADO,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)

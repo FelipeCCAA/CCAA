@@ -23,6 +23,20 @@ def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
             raise ValidationError("Para iniciar se requiere equipo y usuario responsable.")
         if not ejecucion.entradas.exists():
             raise ValidationError("Para iniciar se requiere al menos una entrada de proceso.")
+
+        # Reglas de planta 3 y 15: no se produce en un equipo que está en CIP
+        # ni en uno cuyo último aseo quedó observado. La primera es física
+        # antes que informática — hay soda circulando por dentro.
+        from inventario.servicios import motivo_equipo_no_habilitado
+
+        # Ojo con el nombre: `motivo` es el parámetro de esta función —el
+        # porqué de la transición, que va al evento—. Llamar igual a esta
+        # variable lo pisaba con `None` y el evento quedaba sin motivo.
+        impedimento = motivo_equipo_no_habilitado(ejecucion.equipo)
+
+        if impedimento:
+            raise ValidationError(impedimento)
+
         if ejecucion.inicio is None:
             ejecucion.inicio = timezone.now()
 

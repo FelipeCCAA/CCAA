@@ -76,10 +76,39 @@ class InsumoSerializer(serializers.ModelSerializer):
 class CicloCIPSerializer(serializers.ModelSerializer):
     area_etiqueta = serializers.CharField(source="get_area_display", read_only=True)
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    equipo_nombre = serializers.CharField(
+        source="equipo.nombre", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = CicloCIP
         fields = "__all__"
+
+    def validate(self, datos):
+        """
+        No se empieza un CIP sobre un equipo que está produciendo.
+
+        Es la regla 15 por el otro lado. Con solo una de las dos direcciones,
+        la regla se cumple o no según cuál de las dos acciones llegue primero:
+        si producción arranca antes, el CIP entraría igual y quedarían las dos
+        cosas ocurriendo a la vez sobre la misma máquina.
+        """
+        from .servicios import equipo_produciendo
+
+        instancia = self.instance or CicloCIP()
+
+        for campo, valor in datos.items():
+            setattr(instancia, campo, valor)
+
+        if instancia.estado != CicloCIP.Estado.EN_CURSO:
+            return datos
+
+        motivo = equipo_produciendo(instancia.equipo)
+
+        if motivo:
+            raise serializers.ValidationError({"equipo": motivo})
+
+        return datos
 
 
 class ProveedorSerializer(serializers.ModelSerializer):

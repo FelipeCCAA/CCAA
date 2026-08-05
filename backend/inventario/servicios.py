@@ -1175,3 +1175,78 @@ def cerrar_no_conformidad(*, no_conformidad, usuario, accion_tomada):
     )
 
     return no_conformidad
+
+
+def motivo_equipo_no_habilitado(equipo):
+    """
+    Por qué este equipo no puede producir, o `None` si puede.
+
+    Aplica dos de las reglas de planta (`docs/REGLAS_DE_PLANTA.md` §5):
+
+    - **№ 15** — un equipo no puede estar produciendo y en CIP a la vez. Es
+      física antes que informática: hay soda circulando por dentro.
+    - **№ 3** — no se inicia producción con un equipo sin aseo aprobado. Aquí
+      se aplica la parte que el documento define sin ambigüedad (§18.5): un
+      aseo **observado** deja el equipo no habilitado hasta que otro lo
+      reemplace.
+
+    Lo que **no** se aplica es la caducidad del aseo —«el CIP del martes ya no
+    sirve el viernes»— porque cuánto dura un aseo lo decide Calidad y no está
+    escrito en ninguna parte. Inventar una ventana sería peor que no tenerla:
+    bloquearía producción con un número que nadie acordó.
+
+    Devuelve el motivo y no un booleano, por lo mismo que `puede_liberar`: un
+    «no» sin causa obliga a adivinar qué corregir.
+    """
+    from .models import CicloCIP
+
+    if equipo is None:
+        return None
+
+    if CicloCIP.objects.filter(
+        equipo=equipo, estado=CicloCIP.Estado.EN_CURSO
+    ).exists():
+        return f"{equipo.nombre} está en CIP: no puede producir mientras se asea."
+
+    # El último aseo con desenlace. Los programados no cuentan: todavía no
+    # ocurrieron, y tratarlos como resultado bloquearía por un aseo futuro.
+    ultimo = (
+        CicloCIP.objects.filter(equipo=equipo)
+        .exclude(estado=CicloCIP.Estado.PROGRAMADO)
+        .order_by("-inicio")
+        .first()
+    )
+
+    if ultimo is not None and ultimo.estado == CicloCIP.Estado.OBSERVADO:
+        return (
+            f"El último aseo de {equipo.nombre} quedó observado: el equipo no "
+            "está habilitado hasta que se repita y quede conforme."
+        )
+
+    return None
+
+
+def equipo_produciendo(equipo):
+    """
+    ¿Hay una ejecución de proceso corriendo en este equipo?
+
+    Es la regla № 15 por el otro lado: tampoco se empieza un CIP sobre un
+    equipo que está produciendo. Con solo una de las dos direcciones, la regla
+    se cumple o no según cuál de las dos acciones llegue primero.
+    """
+    from procesos.models import EjecucionProceso
+
+    if equipo is None:
+        return None
+
+    corriendo = EjecucionProceso.objects.filter(
+        equipo=equipo, estado=EjecucionProceso.Estado.EJECUCION
+    ).first()
+
+    if corriendo is None:
+        return None
+
+    return (
+        f"{equipo.nombre} está produciendo ({corriendo.codigo}): no se puede "
+        "asear mientras corre."
+    )
