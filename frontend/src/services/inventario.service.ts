@@ -666,6 +666,10 @@ export interface LiberacionExcepcional {
   vence_en: string;
   activa: boolean;
   vigente: boolean;
+  /* Cuánto se ha consumido bajo ella y cuánto queda. Se suman del libro de
+     movimientos: la concesión ampara una cantidad, no el lote entero. */
+  cantidad_usada: string;
+  saldo: string;
 }
 
 

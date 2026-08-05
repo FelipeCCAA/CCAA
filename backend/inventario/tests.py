@@ -1146,3 +1146,159 @@ class NoConformidadTests(TestCase):
     def test_la_segunda_firma_tiene_que_ser_de_otra_persona(self):
         with self.assertRaisesMessage(ValidationError, "dos firmas"):
             self._concesion(aprobada_jefatura_por=self.calidad).full_clean()
+
+
+class ConsumoBajoConcesionTests(TestCase):
+    """
+    Una concesión ampara **solo la cantidad autorizada**, no el lote entero.
+
+    Antes se registraba y no hacía nada: el lote seguía bloqueado y la
+    concesión documentaba algo que no podía ocurrir. Ahora es el único camino
+    para sacar material que Calidad no aprobó, y el movimiento registra cuál
+    lo autorizó.
+
+    El lote sigue con `utilizable = False`, así que no entra en el stock
+    disponible ni lo toma el FEFO: la concesión autoriza un uso concreto, y
+    repartirlo por ahí sería lo que justamente no se autorizó.
+    """
+
+    def setUp(self):
+        from .models import LiberacionExcepcionalMaterial
+
+        self.usuario = User.objects.create_user("bodega-conc", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+            area=PerfilUsuario.Area.BODEGA,
+        )
+        self.calidad = User.objects.create_user("calidad-conc", password="x")
+
+        self.insumo = Insumo.objects.create(
+            codigo="CC-BOLSA", nombre="Bolsa 25 kg",
+            area=PerfilUsuario.Area.BODEGA, unidad="un", requiere_calidad=True,
+        )
+        bodega = Bodega.objects.create(codigo="BCC", nombre="Bodega")
+        self.cuarentena = Ubicacion.objects.create(
+            bodega=bodega, codigo="CUAR", tipo=Ubicacion.Tipo.CUARENTENA
+        )
+
+        self.lote = LoteInventario.objects.create(
+            insumo=self.insumo, codigo="PROV-CC-1",
+            estado_calidad=LoteInventario.EstadoCalidad.RECHAZADO,
+        )
+        self.existencia = Existencia.objects.create(
+            lote=self.lote, ubicacion=self.cuarentena, cantidad_fisica=1000
+        )
+        self.modelo = LiberacionExcepcionalMaterial
+
+    def _concesion(self, cantidad=200, **extra):
+        datos = {
+            "lote": self.lote,
+            "cantidad": cantidad,
+            "uso_especifico": "Solo producto de consumo interno.",
+            "justificacion": "Impresión corrida; no afecta la barrera.",
+            "solicitante": self.usuario,
+            "aprobada_calidad_por": self.calidad,
+            "vence_en": timezone.now() + timedelta(days=30),
+        }
+        datos.update(extra)
+
+        return self.modelo.objects.create(**datos)
+
+    def _sacar(self, cantidad, liberacion=None):
+        return registrar_salida(
+            existencia_id=self.existencia.pk, cantidad=cantidad,
+            usuario=self.usuario, documento_tipo="inventario.SalidaManual",
+            documento_id=0, motivo="Consumo interno autorizado", consumo=True,
+            liberacion=liberacion,
+        )
+
+    # ----------------------------------------------------- sin concesión
+
+    def test_sin_concesion_el_material_rechazado_no_sale(self):
+        with self.assertRaisesMessage(ValidationError, "aprobado por Calidad"):
+            self._sacar(10)
+
+    def test_la_concesion_no_lo_vuelve_stock_disponible(self):
+        """
+        El lote sigue bloqueado para todo lo demás. Si entrara al disponible,
+        el FEFO lo repartiría en cualquier pedido — que es lo contrario de un
+        uso autorizado.
+        """
+        self._concesion()
+
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.cantidad_disponible, Decimal("0"))
+        self.assertFalse(self.lote.utilizable)
+
+    # ----------------------------------------------------- con concesión
+
+    def test_con_concesion_sale_y_el_movimiento_dice_cual(self):
+        concesion = self._concesion()
+
+        movimiento = self._sacar(50, liberacion=concesion)
+
+        self.assertEqual(movimiento.liberacion, concesion)
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.cantidad_fisica, Decimal("950"))
+
+    def test_no_se_saca_mas_de_lo_autorizado(self):
+        concesion = self._concesion(cantidad=200)
+
+        with self.assertRaisesMessage(ValidationError, "quedan"):
+            self._sacar(201, liberacion=concesion)
+
+    def test_el_saldo_se_suma_del_libro_y_se_agota(self):
+        """Un contador guardado se desincroniza, y lo que se desajustaría es
+        cuánto material no aprobado salió de bodega."""
+        concesion = self._concesion(cantidad=200)
+
+        self._sacar(120, liberacion=concesion)
+        concesion.refresh_from_db()
+        self.assertEqual(concesion.cantidad_usada, Decimal("120"))
+        self.assertEqual(concesion.saldo, Decimal("80"))
+
+        self._sacar(80, liberacion=concesion)
+        concesion.refresh_from_db()
+        self.assertEqual(concesion.saldo, Decimal("0"))
+
+        with self.assertRaisesMessage(ValidationError, "quedan"):
+            self._sacar(1, liberacion=concesion)
+
+    def test_una_concesion_de_otro_lote_no_sirve(self):
+        otro = LoteInventario.objects.create(
+            insumo=self.insumo, codigo="PROV-CC-2",
+            estado_calidad=LoteInventario.EstadoCalidad.RECHAZADO,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "es del lote"):
+            self._sacar(10, liberacion=self._concesion(lote=otro))
+
+    def test_una_concesion_vencida_no_ampara(self):
+        vencida = self._concesion(vence_en=timezone.now() - timedelta(days=1))
+
+        with self.assertRaisesMessage(ValidationError, "vencida o inactiva"):
+            self._sacar(10, liberacion=vencida)
+
+    def test_una_concesion_inactiva_no_ampara(self):
+        with self.assertRaisesMessage(ValidationError, "vencida o inactiva"):
+            self._sacar(10, liberacion=self._concesion(activa=False))
+
+    def test_ni_dos_firmas_hacen_consumible_lo_vencido(self):
+        """
+        Una concesión asume un riesgo conocido y medido sobre la calidad del
+        material. Una fecha de vencimiento pasada no es un riesgo que dos
+        firmas puedan asumir.
+        """
+        self.lote.vencimiento = timezone.localdate() - timedelta(days=1)
+        self.lote.save(update_fields=["vencimiento"])
+
+        with self.assertRaisesMessage(ValidationError, "vencido"):
+            self._sacar(10, liberacion=self._concesion())
+
+    def test_no_se_saca_mas_de_lo_que_hay_aunque_la_concesion_alcance(self):
+        """La concesión autoriza, no inventa material."""
+        concesion = self._concesion(cantidad=5000)
+
+        with self.assertRaisesMessage(ValidationError, "supera el stock"):
+            self._sacar(1500, liberacion=concesion)

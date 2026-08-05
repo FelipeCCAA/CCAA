@@ -187,7 +187,7 @@ function NoConformidades() {
 
       <Tarjeta
         titulo="Concesiones"
-        descripcion="Usar una cantidad acotada de un lote que Calidad no aprobó, para un uso concreto y con vencimiento. Dos firmas de personas distintas."
+        descripcion="Amparan una cantidad acotada de un lote que Calidad no aprobó, para un uso concreto y con vencimiento. El lote sigue bloqueado para todo lo demás: no entra al stock disponible ni lo toma el FEFO."
         sinRelleno
       >
         {concesiones.error ? (
@@ -206,7 +206,8 @@ function NoConformidades() {
                 <tr>
                   <th className={claseEncabezado}>Material</th>
                   <th className={claseEncabezado}>Lote</th>
-                  <th className={claseEncabezado}>Cantidad</th>
+                  <th className={claseEncabezado}>Autorizado</th>
+                  <th className={claseEncabezado}>Queda</th>
                   <th className={claseEncabezado}>Uso autorizado</th>
                   <th className={claseEncabezado}>Firmas</th>
                   <th className={claseEncabezado}>Vence</th>
@@ -223,6 +224,20 @@ function NoConformidades() {
                     </td>
                     <td className={`${claseCelda} text-slate-600`}>
                       {numero(c.cantidad)}
+                    </td>
+
+                    {/* Lo que todavía ampara. Una concesión agotada ya no
+                        deja salir material aunque siga vigente. */}
+                    <td className={claseCelda}>
+                      <span
+                        className={
+                          Number(c.saldo) > 0
+                            ? "font-medium text-green-700"
+                            : "text-slate-400"
+                        }
+                      >
+                        {numero(c.saldo)}
+                      </span>
                     </td>
                     <td className={`${claseCelda} text-slate-500`}>
                       {c.uso_especifico}

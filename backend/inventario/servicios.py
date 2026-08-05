@@ -171,12 +171,29 @@ def registrar_entrada(*, lote, ubicacion, cantidad, usuario, documento_tipo, doc
 
 
 @transaction.atomic
-def registrar_salida(*, existencia_id, cantidad, usuario, documento_tipo, documento_id, motivo, consumo=False):
-    """Descuenta material liberado dejando un movimiento auditable."""
+def registrar_salida(*, existencia_id, cantidad, usuario, documento_tipo, documento_id, motivo, consumo=False, liberacion=None):
+    """
+    Descuenta material liberado dejando un movimiento auditable.
+
+    `liberacion` es el único camino para sacar material que Calidad **no**
+    aprobó, y ampara **solo la cantidad autorizada** — no el lote entero. Un
+    lote bajo concesión sigue con `utilizable = False`, así que no entra en el
+    stock disponible ni lo toma el FEFO: la concesión autoriza un uso concreto
+    y repartirlo por ahí sería justamente lo que no se autorizó.
+
+    Lo vencido no se ampara. Una concesión asume un riesgo conocido y medido
+    sobre la calidad del material; una fecha de vencimiento pasada no es un
+    riesgo que dos firmas puedan asumir.
+    """
     cantidad = _cantidad(cantidad)
     existencia = Existencia.objects.select_for_update().select_related("lote", "ubicacion").get(pk=existencia_id)
-    if not existencia.lote.utilizable or existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
-        raise ValidationError("Solo puede salir o consumirse material aprobado por Calidad y vigente.")
+
+    if liberacion is None:
+        if not existencia.lote.utilizable or existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+            raise ValidationError("Solo puede salir o consumirse material aprobado por Calidad y vigente.")
+    else:
+        _validar_concesion(liberacion, existencia, cantidad)
+
     if existencia.cantidad_fisica - existencia.cantidad_reservada < cantidad:
         raise ValidationError("La salida supera el stock disponible no reservado.")
     if not str(motivo).strip():
@@ -191,9 +208,51 @@ def registrar_salida(*, existencia_id, cantidad, usuario, documento_tipo, docume
         documento_tipo=documento_tipo, documento_id=documento_id,
         usuario=usuario, motivo=motivo, saldo_anterior=anterior,
         saldo_posterior=existencia.cantidad_fisica,
+        liberacion=liberacion,
     )
     actualizar_alertas_inventario()
     return movimiento
+
+
+def _validar_concesion(liberacion, existencia, cantidad):
+    """
+    Qué tiene que cumplirse para sacar material bajo concesión.
+
+    Se bloquea la concesión con `select_for_update` antes de sumar lo ya
+    usado: sin eso, dos salidas simultáneas leen el mismo saldo y las dos se
+    aprueban, que es como se consume el doble de lo autorizado.
+    """
+    from .models import LiberacionExcepcionalMaterial
+
+    liberacion = (
+        LiberacionExcepcionalMaterial.objects.select_for_update()
+        .select_related("lote")
+        .get(pk=liberacion.pk)
+    )
+
+    if liberacion.lote_id != existencia.lote_id:
+        raise ValidationError(
+            f"La concesión es del lote {liberacion.lote.codigo}, no de este."
+        )
+
+    if not liberacion.vigente:
+        raise ValidationError(
+            "La concesión está vencida o inactiva: ya no ampara el uso del "
+            "material."
+        )
+
+    # Ni dos firmas hacen consumible lo vencido.
+    if existencia.lote.vencido:
+        raise ValidationError(
+            "El lote está vencido. Una concesión cubre un defecto de calidad, "
+            "no una fecha de vencimiento pasada."
+        )
+
+    if cantidad > liberacion.saldo:
+        raise ValidationError(
+            f"La concesión autorizó {liberacion.cantidad} y quedan "
+            f"{liberacion.saldo}."
+        )
 
 
 @transaction.atomic

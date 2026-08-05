@@ -354,6 +354,15 @@ class LiberacionExcepcionalSerializer(serializers.ModelSerializer):
     # `activa` dice lo que alguien marcó; `vigente` dice si además no ha
     # vencido. `vence_en` existía desde el principio y nadie lo miraba.
     vigente = serializers.BooleanField(read_only=True)
+    # Cuánto se ha consumido bajo ella y cuánto queda. Se suman del libro de
+    # movimientos: un contador guardado se desincroniza, y lo que se estaría
+    # desajustando es cuánto material no aprobado salió de bodega.
+    cantidad_usada = serializers.DecimalField(
+        max_digits=16, decimal_places=3, read_only=True
+    )
+    saldo = serializers.DecimalField(
+        max_digits=16, decimal_places=3, read_only=True
+    )
 
     class Meta:
         model = LiberacionExcepcionalMaterial

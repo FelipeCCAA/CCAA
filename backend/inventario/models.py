@@ -284,6 +284,19 @@ class MovimientoInventario(models.Model):
     saldo_anterior = models.DecimalField(max_digits=16, decimal_places=3)
     saldo_posterior = models.DecimalField(max_digits=16, decimal_places=3)
 
+    # Qué concesión autorizó esta salida, cuando el material no estaba
+    # aprobado. Va en el movimiento y no en un contador aparte: el libro es lo
+    # que se audita, y así «cuánto material no aprobado salió bajo esta
+    # concesión» se responde sumando, no creyéndole a un número guardado.
+    liberacion = models.ForeignKey(
+        "LiberacionExcepcionalMaterial",
+        on_delete=models.PROTECT,
+        related_name="movimientos",
+        null=True,
+        blank=True,
+        verbose_name="Concesión que la autorizó",
+    )
+
     class Meta:
         ordering = ["-fecha", "-id"]
 
@@ -514,6 +527,26 @@ class LiberacionExcepcionalMaterial(models.Model):
 
     def __str__(self):
         return f"Concesión {self.pk} · {self.lote.codigo} · {self.cantidad}"
+
+    @property
+    def cantidad_usada(self):
+        """
+        Cuánto se ha consumido bajo esta concesión.
+
+        Se suma del libro de movimientos y no se guarda en un contador: un
+        saldo guardado se desincroniza, y aquí lo que se estaría desajustando
+        es cuánto material no aprobado salió de bodega.
+        """
+        from decimal import Decimal
+
+        return self.movimientos.aggregate(
+            total=models.Sum("cantidad")
+        )["total"] or Decimal("0")
+
+    @property
+    def saldo(self):
+        """Lo que todavía ampara."""
+        return self.cantidad - self.cantidad_usada
 
     @property
     def vigente(self) -> bool:

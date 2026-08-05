@@ -161,6 +161,15 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
                 documento_id=request.data.get("documento_id") or 0,
                 motivo=request.data.get("motivo", ""),
                 consumo=request.data.get("tipo") == "consumo",
+                # Único camino para sacar material que Calidad no aprobó, y
+                # solo por la cantidad que la concesión autorizó.
+                liberacion=(
+                    LiberacionExcepcionalMaterial.objects.filter(
+                        pk=request.data.get("liberacion")
+                    ).first()
+                    if request.data.get("liberacion")
+                    else None
+                ),
             )
         except (Existencia.DoesNotExist, DjangoValidationError, ValueError) as error:
             mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else str(error)
