@@ -1,0 +1,237 @@
+# Reglas de planta — umbrales, decisiones y fórmulas
+
+**Origen:** `Flujo Fabrica.md` (2026-08-05), secciones 4–20 y 25–27.
+**Estado:** extraído y contrastado contra el código el 2026-08-05.
+
+---
+
+## Para qué existe este archivo
+
+`Flujo Fabrica.md` mezcla dos cosas: conocimiento de planta —umbrales reales,
+puntos de decisión, fórmulas— y un encargo dirigido a una IA («Actúa como
+arquitecto…», §1 y §29). Lo segundo caduca en cuanto se usa; lo primero es lo
+que hay que poder citar dentro de cinco años cuando alguien pregunte de dónde
+salió un límite.
+
+Este archivo separa lo primero. Cada regla lleva **su umbral, qué dispara, de
+dónde sale y si está implementada**. La última columna es la que hace útil el
+documento: sin ella es una lista de buenas intenciones.
+
+Lo que **no** va aquí: recomendaciones de arquitectura, listas de tecnología y
+fases de implementación. Eso se decide, no se hereda.
+
+---
+
+## 1. Recepción de leche fresca
+
+### 1.1 Umbrales
+
+| Control | Límite | Qué dispara | Estado |
+|---|---|---|---|
+| Temperatura | ≤ **8 °C** en recepción (objetivo ~4 °C en predio) | Sobre el límite: retener, informar y evaluar | **Implementado** — `recepcion.dominio.LIMITES["temperatura_max"] = 8.0` |
+| Crioscopía | ≥ **−0,512 °C** sugiere agua añadida | Repetir análisis · revisar pool · identificar origen · informar Calidad | **Implementado con otro valor** — ver §1.3 |
+| Acidez | ≤ 18,0 | Retiene | Implementado. **No viene de este documento**, viene de `MODELO_DATOS.md` §8.5 |
+| pH | 6,5 – 6,9 | Retiene | Implementado. Mismo origen que la acidez |
+
+### 1.2 Antibióticos
+
+El documento describe una cadena completa:
+
+```
+POSITIVO → repetir análisis → ¿se confirma?
+                                   │
+                                  SÍ → bloquear camión
+                                     → no descargar
+                                     → identificar proveedor
+                                     → bloquear módulos asociados
+                                     → informar Operaciones
+                                     → informar Calidad
+                                     → abrir no conformidad
+```
+
+**Lo que ya existe:** un `delvo` o `inhibidores` positivo **retiene la
+recepción automáticamente**, y `delvo` es control decisivo — sin su resultado
+no se puede liberar, porque su ausencia no es «conforme», es que nadie lo
+midió (`recepcion/dominio.py`).
+
+**Lo que falta:** todo lo que viene después del positivo. Hoy la recepción
+queda retenida y ahí termina. No hay repetición del análisis, ni confirmación,
+ni bloqueo del camión, ni bloqueo de los módulos de ese proveedor, ni apertura
+de no conformidad, ni aviso a las dos áreas.
+
+Falta también el concepto de **módulo** y el de **proveedor de leche**, sin los
+cuales «bloquear los módulos asociados» no se puede expresar.
+
+### 1.3 Discrepancia de crioscopía — pendiente de resolver
+
+| | Valor |
+|---|---|
+| `Flujo Fabrica.md` §6.3 | **−0,512 °C** |
+| `recepcion/dominio.py` | **−0,510 °C** |
+
+No es un error de tipeo indiferente: la crioscopía detecta aguado, y un valor
+**menos negativo** que el límite es sospechoso. El código es más estricto
+(−0,510 retiene antes que −0,512), así que la diferencia no deja pasar leche
+aguada — retiene un poco de leche que el documento aceptaría.
+
+El comentario del código dice que los límites son «REFERENCIALES y están
+pendientes de confirmar con Calidad». Este documento parece ser esa
+confirmación. **Falta que Calidad diga cuál manda** antes de tocar el número.
+
+### 1.4 Estados del documento
+
+```
+REGISTRADO → ESPERANDO MUESTREO → EN ANÁLISIS → ANÁLISIS COMPLETADO
+           → APROBADO PARA DESCARGA → DESCARGANDO → DESCARGADO
+
+alterna:  EN ANÁLISIS → RETENIDO → REANÁLISIS → RECHAZADO → BLOQUEADO
+                     → DESTINO DEFINIDO
+```
+
+**Regla dura (§7.3):** no se puede registrar una descarga si el módulo no está
+en `APROBADO PARA DESCARGA`.
+
+El sistema ya impide descargar una recepción retenida, pero con una máquina de
+estados más corta que ésta.
+
+---
+
+## 2. Descremación
+
+| Parámetro | Valor | Estado |
+|---|---|---|
+| RPM de la descremadora | **1.395 RPM** | No implementado |
+| Materia grasa de leche descremada | **≤ 0,1 %** | No implementado |
+| Materia grasa de crema para despacho | **42 % – 43 %** | No implementado |
+
+Si no alcanza las RPM: quitar alarma, reintentar, informar a Mantenimiento.
+
+Control cada hora sobre descremadora, pasteurizador, bombas, válvulas,
+conexiones, caudalímetros, temperaturas, fugas y obstrucciones.
+
+**No existe el proceso de descremación en el sistema.** Ninguno de estos
+valores tiene dónde vivir todavía.
+
+---
+
+## 3. Estandarización — la fórmula RC
+
+```
+RC = % materia grasa / % sólidos no grasos
+```
+
+Es el cálculo central de la fábrica: decide qué producto sale. Los productos
+se nombran por su RC (`RC 0,201`, `RC 0,422`), y el maestro de productos ya usa
+esos nombres.
+
+El flujo del documento (§10):
+
+1. Consultar leche entera disponible: cantidad, grasa, SNG.
+2. Consultar descremada: cantidad, grasa, SNG.
+3. Calcular leche entera requerida, leche a descremar, descremada a agregar,
+   crema esperada y producto final esperado.
+4. Generar **hoja RC**.
+5. Transferir, agitar **30 minutos**, tomar muestra, analizar.
+6. Calcular **RC real**.
+7. Si cumple: liberar silo y avisar a Condensación. Si no: calcular corrección,
+   agregar leche entera o descremada, reagitar y reanalizar.
+
+**No implementado.** Es el hueco más grande entre el silo y el evaporador: hoy
+el sistema no sabe cómo se decide qué producto va a producirse.
+
+---
+
+## 4. Condensación y secado
+
+| Regla | Estado |
+|---|---|
+| PCC de uperización con límite por equipo | **Implementado** — `produccion.ControlProceso`, límites por registro |
+| Checklist de cuerpos extraños por evaporador | **Implementado** — tres plantillas distintas (SCH2, SCH3, VEB) |
+| Inspección preoperativa E1/E2 | **Implementado** — plantilla cargada |
+| Monitoreo PPRO E1-E2 y Rovemas | **Implementado** — `inocuidad.MonitoreoPPRO` |
+| Detector de metales (PCC) | **Implementado** |
+
+Los evaporadores son **Scheffers 2, Scheffers 3 y VEB**; las torres, **Egron 1
+y 2**; las envasadoras, **Rovema 3 y 4**. Todos existen en `maestros.Equipo`.
+
+---
+
+## 5. Reglas de negocio esenciales (§25)
+
+Las quince del documento, contrastadas:
+
+| # | Regla | Estado |
+|---|---|---|
+| 1 | No descargar leche sin aprobación de Calidad | Implementado |
+| 2 | No utilizar un silo bloqueado | Parcial |
+| 3 | No iniciar producción con equipo sin aseo aprobado | **No implementado** |
+| 4 | No cerrar una etapa con controles obligatorios pendientes | Implementado en `procesos` |
+| 5 | No liberar un lote con dossier incompleto | Implementado |
+| 6 | No consumir material en cuarentena | Implementado |
+| 7 | No agregar rework sin autorización | **No implementado** — no existe rework |
+| 8 | No modificar registros aprobados sin nueva versión | Parcial |
+| 9 | Toda corrección deja auditoría | Implementado — app `auditoria` |
+| 10 | Los documentos obsoletos no generan tareas | Implementado — `activo` |
+| 11 | Trazabilidad hacia atrás y adelante | Implementado — `procesos.genealogia_lote` |
+| 12 | Falla crítica de inocuidad bloquea el lote | Implementado — PCC 1 y PPRO, **sin concesión** |
+| 13 | Estados cambian por acciones controladas | Implementado |
+| 14 | Aprobaciones registran usuario, fecha y hora | Implementado |
+| 15 | Un equipo no puede producir y estar en CIP a la vez | **No implementado** |
+
+Las tres pendientes (3, 7 y 15) comparten raíz: **el aseo y el estado del
+equipo no bloquean nada todavía**. `CicloCIP` existe y ya referencia al maestro
+de equipos, pero nada consulta si un equipo está en CIP antes de dejar producir.
+
+---
+
+## 6. Trazabilidad completa (§26)
+
+La cadena hacia atrás que la planta necesita poder recorrer:
+
+```
+LOTE TERMINADO → pallets → bolsas → Rovema → silo de polvo → torre Egron
+               → precondensado → evaporador → vale de estandarización
+               → silos de leche fresca → camiones → módulos → proveedores
+```
+
+**Hasta dónde llega hoy:** `procesos.genealogia_lote` recorre lote a lote por
+las entradas y salidas de proceso. Cubre desde el precondensado hacia adelante.
+
+**Dónde se corta:** en el vale de estandarización. De ahí hacia atrás —silos,
+camiones, módulos, proveedores— no hay cadena, porque no existen ni el vale ni
+el módulo ni el proveedor de leche.
+
+---
+
+## 7. Lo que este documento aporta y no estaba en ninguna parte
+
+1. La cadena de escalamiento de antibióticos (§1.2).
+2. La fórmula RC y el procedimiento de estandarización (§3).
+3. Los parámetros de descremación (§2).
+4. El umbral de crioscopía, que además contradice al código (§1.3).
+5. El tiempo de agitación —30 minutos— antes de tomar muestra.
+
+---
+
+## 8. Lo que queda por decidir
+
+| Decisión | Quién |
+|---|---|
+| Crioscopía: ¿−0,512 o −0,510? | Calidad |
+| ¿`OrdenProduccion` sobre `Lote` como unidad central? | TI + planta |
+| ¿Dieciocho roles con permisos por acción, o el modelo actual de rol × área? | TI |
+| Qué controles de recepción son obligatorios además del Delvo | Calidad |
+
+---
+
+## Nota sobre las secciones no extraídas
+
+`Flujo Fabrica.md` §21–24 y §29 recomiendan Redis, Celery, Celery Beat, Docker
+y Nginx sin nombrar el problema que resuelven. No se extraen aquí porque no son
+reglas de planta.
+
+Dicho eso, hay **un** motivo real para un programador de tareas y conviene
+dejarlo anotado: `actualizar_alertas_inventario()` solo corre cuando alguien
+mueve stock, así que un lote que entra a cuarentena un viernes no genera la
+alerta de «cuarentena atrasada» hasta que alguien toca el inventario el lunes —
+justo la alerta que existe para avisar de eso.
