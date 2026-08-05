@@ -91,6 +91,24 @@ class EscribeRecepcion(PermisoPorRol):
     mensaje_escritura = "Solo Recepción puede registrar recepciones de leche."
 
 
+class EscribePlanta(PermisoPorRol):
+    """
+    Registros de máquina: aseos, inspecciones preoperativas, calibraciones.
+
+    Los llena quien opera el equipo —Producción— y Calidad los revisa y los
+    marca observados cuando algo no cuadra. Las dos áreas escriben sobre el
+    mismo registro a propósito: separarlas obligaría a Calidad a pedirle a
+    Producción que corrija lo que Calidad detectó, y la auditoría ya deja
+    constancia de quién tocó qué.
+    """
+
+    roles_escritura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    mensaje_escritura = (
+        "Solo Producción, Calidad y Administración registran los formularios "
+        "de máquina."
+    )
+
+
 class EscribeCalidad(PermisoPorRol):
     """
     Liberación de producto. Aún sin módulo.

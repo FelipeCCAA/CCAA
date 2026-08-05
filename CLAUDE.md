@@ -50,7 +50,7 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 Integrar el delta del levantamiento (`LEVANTAMIENTO_PLANTA.md` §2–§5) siguiendo el backlog
 `docs/levantamiento-2026-07/Backlog_Mejoras_App_CCAA.md`.
 
-**P0 aplicado** (2026-07-30): campo `area` en `DocumentoLiberacion`, siembra de los 19 registros
+**P0 aplicado** (2026-07-30): campo `area` en `DocumentoLiberacion`, siembra de los registros
 del Dossier, `generar_codigo_lote` con sus pruebas, `ControlProceso`+`ControlProcesoLectura` con
 el PCC 1, y la app `inocuidad` con `MonitoreoPPRO`+`PproLectura`.
 
@@ -99,6 +99,79 @@ límite que regía en mayo. Las claves que el PCC vigila dentro de `valores` (`t
 rotule igual que el dominio las evalúa: si divergieran, el PCC dejaría de vigilar en silencio.
 
 La captura está en el **panel de inocuidad de la ficha del lote**.
+
+**Documentos que cumple el propio dato** (2026-07-31). Once de los diecinueve registros del
+Dossier son datos que la aplicación ya captura, y pedir además una casilla es doble digitación —
+peor aún: la casilla puede decir «cumplido» sobre un PCC 1 incumplido.
+`DocumentoLiberacion.evidencia` declara qué registro lo cumple, y
+`calidad.dominio.documentos_con_evidencia` lo resuelve.
+
+**Solo cinco están atados**, y es deliberado: un documento cumplido *de más* deja salir producto.
+Los seis restantes dependen del equipo donde se registró, y `MonitoreoPPRO.equipo` todavía es
+texto libre — un monitoreo de cuerpos extraños daría por cumplidos los tres checklists
+(evaporadores, E1-E2, Rovema) cuando solo se hizo uno. Para habilitarlos hace falta que ese campo
+referencie el maestro de equipos (el mismo cambio que se hizo con `BloquePlan`), y que el maestro
+tenga las Rovemas y las torres E1/E2.
+
+| Documento | Lo cumple |
+|---|---|
+| `CCAA.REC.FORM.005` Trazabilidad | la asignación de silos del lote |
+| `CCAA.Cond.FORM.010` PCC 1 | un `ControlProceso` en VEB, SCH2 o SCH3 |
+| `CCAA.Sec.FORM.025` Pulverización | un `ControlProceso` en E1 o E2 |
+| `CCAA.Sec.FORM.001` Fisicoquímico | un `Analisis` del lote |
+| `CCAA.ENV.FORM.001` Detector de metales | un `MonitoreoPPRO` de ese tipo |
+
+El expediente **distingue** el cumplimiento por dato del visto manual: no es lo mismo «hay control
+de proceso» que «alguien lo marcó».
+
+**El checklist tiene 21 documentos, no 19.** El Dossier lista el checklist de cuerpos extraños
+como un solo registro (`Cond.FORM.005/014/016`), pero en planta son tres formatos con **piezas
+distintas**: el Scheffers 2 tiene pulmones y coil, el Scheffers 3 tapas por efecto, y el VEB
+cuatro efectos. Una plantilla única pediría el estado de piezas que ese evaporador no tiene, y el
+checklist se marcaría igual sin decir qué se revisó.
+
+**Plantillas cargadas** (desde `Documentos Planta/`, no inventadas): los cuatro checklists de
+cuerpos extraños —Scheffers 2, Scheffers 3, VEB y Rovemas 3-4—. `maestros.tests` exige que solo
+tengan plantilla los documentos declarados en `PLANTILLAS_DE_UN_FORMATO_REAL` junto a su formato
+de origen: agregar una obliga a decir de dónde salió.
+
+Dos documentos **no deberían llevar plantilla nunca**: el PPRO E1-E2 (`Sec.FORM.022`) son lecturas
+horarias OK/No-OK de tres tipos que `MonitoreoPPRO` ya modela, y la dosificación de lecitina son
+lecturas horarias, o sea `ControlProcesoLectura`. Darles formulario sería volver a teclear lo que
+el modelo captura.
+
+**Ojo con el tipo `lista`**: está en el contrato de la plantilla pero `FormularioDinamico` no lo
+dibuja — cae al campo de texto por defecto, sin avisar. Hay una prueba que impide usarlo hasta que
+se implemente.
+
+**Los registros que no son por lote viven en el equipo y su período** (2026-07-31). En el catálogo
+de planta **solo 12 de 204 documentos son por lote**; el resto son aseos por ciclo, monitoreos por
+turno y programas. `DocumentoLiberacion.frecuencia` decide dónde vive el dato, y `RegistroEquipo`
+—hermano de `RegistroCalidad`, mismo contrato de plantilla— cuelga del equipo y su fecha. El
+checklist del lote lo **consume**: un aseo semanal se llena una vez y cubre todos los lotes de esa
+semana.
+
+La ventana se deduce de la frecuencia y **no se guarda**: un `vigente_hasta` almacenado se
+desincroniza al corregir la fecha del registro, y un lote quedaría cubierto por un aseo que ya no
+lo alcanza. La excepción es `segun_programa`, sin período deducible: ahí el registro declara su
+vigencia y sin ella **no cubre nada**.
+
+La captura vive en **`/registros`**, organizada por equipo y fecha — quien asea una torre no
+piensa en lotes. Los campos los dibuja `components/CampoDePlantilla`, el mismo componente que el
+expediente: un solo renderizador para un solo contrato.
+
+**La frecuencia es un dato configurable, no una constante del código.** Se edita en la pestaña
+**Documentos de liberación** de Maestros —o en el admin—, y la escribe **Calidad**, no
+Administración: es quien responde por el checklist, y que Producción pudiera bajar la frecuencia
+de un documento le dejaría reducir lo que se le exige. Cambiarla mueve el formulario entre el
+expediente del lote y `/registros`, sin desplegar.
+
+**Las frecuencias sembradas se cargan solo cuando el formato las declara.** El catálogo del levantamiento
+tiene una columna de frecuencia que **no coincide** con los formularios: clasifica los checklists
+de cuerpos extraños como «Según programa» mientras el formato dice «Al inicio del ciclo de
+producción». Manda el formato. El resto se queda en `por_lote`, que además es el valor seguro:
+pasarse de frecuencia solo molesta, quedarse corto deja que un registro cubra lotes que nunca
+revisó.
 
 La pantalla cubre productos, mandantes y silos (estos últimos de solo lectura: su ocupación es un
 saldo del libro de movimientos, y un formulario invitaría a «corregirlo» escribiéndolo). Las
@@ -152,11 +225,13 @@ copiarlos crudos del Excel.
 
 **Lo siguiente, en este orden:**
 
-1. La `plantilla` de cada uno de los 19 documentos, contra su formato real. Hoy van como
-   atestación, y eso es deliberado: una plantilla inventada se completa igual y da el documento
-   por cumplido.
-2. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
-3. Cargar el maestro de productos completo (hoy hay 3 de los 23 del Excel) y resolver las
+1. La `plantilla` de los documentos que siguen siendo manuales, contra su **formato real**. Los
+   archivos están en `Documentos Planta/` (ignorada por git: 1,8 GB y no todo es de producción).
+   Inventarlas es el error que hay que evitar: una plantilla inventada se completa igual y da el
+   documento por cumplido.
+2. Habilitar la evidencia de los seis documentos que hoy no se pueden atar — ver abajo.
+3. Las tres pestañas que faltan en Maestros: especificaciones, documentos de liberación y recetas.
+4. Cargar el maestro de productos completo (hoy hay 3 de los 23 del Excel) y resolver las
    decisiones abiertas del SKU.
 
 **Pendiente con Calidad:** los 19 se sembraron con `aplica_a = ["polvo"]`. Cuáles exigen además

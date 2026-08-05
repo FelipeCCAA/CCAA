@@ -151,6 +151,8 @@ def catalogos(request):
         {
             "silo_tipo": opciones(Silo.Tipo.choices),
             "equipo_tipo": opciones(Equipo.Tipo.choices),
+            "area_documento": opciones(DocumentoLiberacion.Area.choices),
+            "frecuencia_documento": opciones(DocumentoLiberacion.Frecuencia.choices),
             "naturaleza_comercial": opciones(Producto.NaturalezaComercial.choices),
             "categoria": opciones(Producto.Categoria.choices),
             "tipo": opciones(Producto.TipoProducto.choices),

@@ -6,6 +6,7 @@ import {
   Truck,
   ClipboardCheck,
   CalendarRange,
+  ClipboardList,
   Database,
   History,
   Users,
@@ -73,6 +74,11 @@ const modulos = [
     etiqueta: "Liberación de producto",
     ruta: "/liberacion",
     icono: ClipboardCheck,
+  },
+  {
+    etiqueta: "Registros de planta",
+    ruta: "/registros",
+    icono: ClipboardList,
   },
   {
     etiqueta: "Planificación",

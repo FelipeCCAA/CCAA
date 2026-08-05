@@ -20,13 +20,21 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from inocuidad.models import MonitoreoPPRO
 from maestros.models import DocumentoLiberacion, Especificacion
-from produccion.models import Analisis, Lote
+from produccion.models import (
+    Analisis,
+    ControlProceso,
+    ControlProcesoLectura,
+    Lote,
+)
+from recepcion.models import MovimientoSilo
 from usuarios.models import rol_de
-from usuarios.permisos import EscribeCalidad
+from usuarios.permisos import EscribeCalidad, EscribePlanta
 
 from . import dominio
-from .models import Liberacion, RegistroCalidad
+from .models import Liberacion, RegistroCalidad, RegistroEquipo
+from .serializers_equipo import RegistroEquipoSerializer
 from .serializers import (
     ConcesionSerializer,
     FirmaSerializer,
@@ -140,9 +148,6 @@ def _contexto_del_lote(lote, bloquear=False):
     motor que no sepa bloquear filas no hace nada en absoluto, en silencio: de
     eso avisa el check `calidad.E001`.
     """
-    from inocuidad.models import MonitoreoPPRO
-    from produccion.models import ControlProceso, ControlProcesoLectura
-
     registros = RegistroCalidad.objects.filter(lote=lote)
     analisis = Analisis.objects.filter(lote=lote)
 
@@ -175,16 +180,53 @@ def _contexto_del_lote(lote, bloquear=False):
     # consulta por monitoreo dentro del dominio.
     monitoreos = monitoreos.prefetch_related("lecturas")
 
+    documentos = list(DocumentoLiberacion.objects.all())
+
+    # Los documentos que el propio dato del sistema da por cumplidos: el PCC 1
+    # lo cumple su control de proceso, no una casilla. Se calcula aquí y se
+    # pasa al dominio, que sigue sin consultar la base.
+    movimientos = MovimientoSilo.objects.filter(
+        tipo=MovimientoSilo.Tipo.SALIDA,
+        origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+        origen_id=lote.id,
+    )
+
+    lista_controles = list(controles)
+    lista_monitoreos = list(monitoreos)
+    lista_analisis = list(analisis)
+
+    cumplidos_por_dato = dominio.documentos_con_evidencia(
+        documentos,
+        lote.id,
+        controles=lista_controles,
+        monitoreos=lista_monitoreos,
+        analisis=lista_analisis,
+        movimientos=list(movimientos),
+    )
+
+    # Los registros periódicos que pueden cubrir a este lote. Se traen los del
+    # documento y se filtra por ventana en el dominio, que es quien sabe qué
+    # significa «semanal».
+    cubiertos_por_periodo = dominio.documentos_cubiertos_por_periodo(
+        documentos,
+        lote,
+        RegistroEquipo.objects.filter(
+            documento__in=documentos, estado=RegistroEquipo.Estado.COMPLETADO
+        ).select_related("equipo", "documento"),
+    )
+
     return {
         "lote": lote,
         "producto": lote.producto,
-        "documentos": list(DocumentoLiberacion.objects.all()),
+        "documentos": documentos,
+        "cumplidos_por_dato": cumplidos_por_dato,
+        "cubiertos_por_periodo": cubiertos_por_periodo,
         "registros": list(registros),
-        "analisis": list(analisis),
+        "analisis": lista_analisis,
         "especificaciones": list(Especificacion.objects.filter(producto=lote.producto)),
-        "controles": list(controles),
+        "controles": lista_controles,
         "lecturas_control": list(lecturas_control),
-        "monitoreos": list(monitoreos),
+        "monitoreos": lista_monitoreos,
     }
 
 
@@ -225,19 +267,67 @@ def expedientes(request):
     documentos = list(DocumentoLiberacion.objects.all())
     especificaciones = list(Especificacion.objects.all())
 
+    # Lo que la inocuidad y la evidencia necesitan, para TODOS los lotes de la
+    # página en una consulta por tabla.
+    #
+    # El listado tiene que contar igual que el detalle. Si aquí no entrara la
+    # evidencia, la lista diría «faltan 18 de 19» y la ficha del mismo lote
+    # diría otra cosa — dos números para el mismo hecho, y el usuario sin saber
+    # cuál creer.
+    ids = [lote.id for lote in lotes]
+
+    controles = list(ControlProceso.objects.filter(lote_id__in=ids))
+    lecturas_control = list(
+        ControlProcesoLectura.objects.filter(control__lote_id__in=ids)
+    )
+    monitoreos = list(
+        MonitoreoPPRO.objects.filter(lote_id__in=ids).prefetch_related("lecturas")
+    )
+    movimientos = list(
+        MovimientoSilo.objects.filter(
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id__in=ids,
+        )
+    )
+
+    def _del_lote(registros, lote_id, campo="lote_id"):
+        return [r for r in registros if getattr(r, campo, None) == lote_id]
+
     filas = []
     for lote in lotes:
         registros = list(lote.registros_calidad.all())
+        analisis = list(lote.analisis.all())
         exigibles = dominio.documentos_aplicables(documentos, lote.producto)
-        avance = dominio.avance_checklist(registros, exigibles, lote.id)
+
+        suyos_control = _del_lote(controles, lote.id)
+        suyos_monitoreo = _del_lote(monitoreos, lote.id)
+        suyos_movimiento = _del_lote(movimientos, lote.id, "origen_id")
+
+        cumplidos_por_dato = dominio.documentos_con_evidencia(
+            documentos,
+            lote.id,
+            controles=suyos_control,
+            monitoreos=suyos_monitoreo,
+            analisis=analisis,
+            movimientos=suyos_movimiento,
+        )
+
+        avance = dominio.avance_checklist(
+            registros, exigibles, lote.id, cumplidos_por_dato
+        )
 
         decision = dominio.puede_liberar(
             lote=lote,
             producto=lote.producto,
             documentos=documentos,
             registros=registros,
-            analisis=list(lote.analisis.all()),
+            analisis=analisis,
             especificaciones=especificaciones,
+            controles=suyos_control,
+            lecturas_control=lecturas_control,
+            monitoreos=suyos_monitoreo,
+            cumplidos_por_dato=cumplidos_por_dato,
         )
 
         liberacion = getattr(lote, "liberacion", None)
@@ -479,3 +569,85 @@ def conceder(request, lote_id):
         motivo=datos.validated_data["motivo"],
         observacion=datos.validated_data["observacion"],
     )
+
+
+class RegistroEquipoViewSet(viewsets.ModelViewSet):
+    """
+    Registros que pertenecen al equipo y su período, no a un lote.
+
+    Escriben Producción y Calidad: quien está en la máquina llena el aseo o la
+    inspección, y Calidad revisa. El checklist de los lotes de ese período los
+    consume solo.
+    """
+
+    queryset = RegistroEquipo.objects.select_related("documento", "equipo")
+    serializer_class = RegistroEquipoSerializer
+    permission_classes = [EscribePlanta]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        parametros = self.request.query_params
+
+        documento = parametros.get("documento")
+        if documento:
+            consulta = consulta.filter(documento_id=documento)
+
+        equipo = parametros.get("equipo")
+        if equipo:
+            consulta = consulta.filter(equipo_id=equipo)
+
+        desde = parametros.get("desde")
+        if desde:
+            consulta = consulta.filter(fecha__gte=desde)
+
+        hasta = parametros.get("hasta")
+        if hasta:
+            consulta = consulta.filter(fecha__lte=hasta)
+
+        estado = parametros.get("estado")
+        if estado:
+            consulta = consulta.filter(estado=estado)
+
+        return consulta
+
+    def perform_create(self, serializer):
+        self._guardar_firmando(serializer)
+
+    def perform_update(self, serializer):
+        self._guardar_firmando(serializer)
+
+    def _guardar_firmando(self, serializer):
+        """
+        Quién completó el registro lo pone el servidor, no el cliente.
+
+        Es la misma razón que en la liberación: un registro que dice haber
+        sido completado por otro no prueba nada.
+        """
+        from django.utils import timezone
+
+        completado = (
+            serializer.validated_data.get("estado") == RegistroEquipo.Estado.COMPLETADO
+        )
+
+        serializer.save(
+            completado_por=self.request.user if completado else None,
+            completado_en=timezone.now() if completado else None,
+        )
+
+
+@api_view(["GET"])
+def documentos_periodicos(request):
+    """
+    Los documentos que NO son por lote, para armar la pantalla de registros.
+
+    Se sirven aparte del catálogo completo porque la pantalla de planta solo
+    trabaja con estos: mezclarlos con los del expediente obligaría a filtrar
+    en el cliente y a repetir ahí la regla de qué es periódico.
+    """
+    from maestros.serializers import DocumentoLiberacionSerializer
+
+    documentos = DocumentoLiberacion.objects.exclude(
+        frecuencia=DocumentoLiberacion.Frecuencia.POR_LOTE
+    ).order_by("orden")
+
+    return Response(DocumentoLiberacionSerializer(documentos, many=True).data)

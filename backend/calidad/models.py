@@ -232,3 +232,90 @@ class Liberacion(models.Model):
     def puede_pasar_a(self, estado: str) -> bool:
         """¿Es válido el salto desde el estado actual al pedido?"""
         return estado in self.TRANSICIONES.get(self.estado, [])
+
+
+class RegistroEquipo(models.Model):
+    """
+    Un formulario de planta que **no pertenece a un lote sino a un equipo y a
+    un período**: el aseo semanal de una torre, la inspección preoperativa de
+    un turno, la calibración de un detector.
+
+    Es el hermano de `RegistroCalidad`: mismo contrato de plantilla, mismos
+    estados, y el checklist de liberación lo consume igual. La diferencia está
+    en la clave — uno cuelga del lote y el otro del equipo y su fecha.
+
+    Por qué existe (`DocumentoLiberacion.Frecuencia`): un aseo hecho el lunes
+    cubre todos los lotes de esa semana. Guardado por lote habría que teclear
+    la misma limpieza una vez por lote, y esas copias pueden divergir; o
+    registrarla una vez y dejar el resto de los lotes de la semana sin poder
+    liberarse aunque la máquina sí se aseó.
+
+    No reemplaza a un modelo con campos propios cuando el registro necesita
+    validarse de verdad: un CIP con etapas, pH 5,5–8,5 y conductividad merece
+    su modelo en `inocuidad`. Esto cubre los que son un formulario y ya.
+    """
+
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        COMPLETADO = "completado", "Completado"
+        OBSERVADO = "observado", "Observado"
+
+    documento = models.ForeignKey(
+        DocumentoLiberacion,
+        on_delete=models.PROTECT,
+        related_name="registros_equipo",
+        verbose_name="Documento",
+    )
+    equipo = models.ForeignKey(
+        "maestros.Equipo",
+        on_delete=models.PROTECT,
+        related_name="registros",
+        null=True,
+        blank=True,
+        verbose_name="Equipo",
+        help_text="Vacío cuando el registro no es de una máquina concreta",
+    )
+    fecha = models.DateField("Fecha del registro")
+    # Solo para `segun_programa`, donde el período no se deduce de la
+    # frecuencia. En los demás lo calcula `dominio.cubre_al_lote`.
+    vigente_hasta = models.DateField(
+        "Vigente hasta",
+        null=True,
+        blank=True,
+        help_text="Solo para los registros «según programa»: hasta cuándo cubre",
+    )
+    turno = models.CharField("Turno", max_length=5, blank=True)
+
+    valores = models.JSONField("Valores del formulario", default=dict, blank=True)
+    estado = models.CharField(
+        "Estado", max_length=20, choices=Estado.choices, default=Estado.BORRADOR
+    )
+    observacion = models.TextField("Observación", blank=True)
+
+    completado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="registros_equipo",
+        null=True,
+        blank=True,
+        verbose_name="Completado por",
+    )
+    completado_en = models.DateTimeField("Completado en", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Registro de equipo"
+        verbose_name_plural = "Registros de equipo"
+        ordering = ["-fecha", "documento__orden"]
+        constraints = [
+            # Un registro por documento, equipo, fecha y turno. Sin esto, dos
+            # capturas del mismo aseo conviven y el checklist tomaría
+            # cualquiera de las dos.
+            models.UniqueConstraint(
+                fields=["documento", "equipo", "fecha", "turno"],
+                name="registro_equipo_unico_por_periodo",
+            )
+        ]
+
+    def __str__(self):
+        donde = self.equipo or "planta"
+        return f"{self.documento.nombre} · {donde} · {self.fecha}"

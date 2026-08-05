@@ -17,18 +17,6 @@ import Liberacion from "../pages/Liberacion/Liberacion";
 import Planificacion from "../pages/Planificacion/Planificacion";
 import Maestros from "../pages/Maestros/Maestros";
 import Auditoria from "../pages/Auditoria/Auditoria";
-import Administracion from "../pages/Administracion/Administracion";
-import Inventario from "../pages/Inventario/Inventario";
-import Abastecimiento from "../pages/Abastecimiento/Abastecimiento";
-
-const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
-const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
-
-const diferido = (componente: React.ReactNode) => (
-  <Suspense fallback={<div className="p-10 text-sm text-slate-500">Cargando módulo…</div>}>
-    {componente}
-  </Suspense>
-);
 
 
 /*
@@ -125,6 +113,11 @@ function RoutesApp(){
                     <Route
                         path="/maestros"
                         element={<Maestros />}
+                    />
+
+                    <Route
+                        path="/registros"
+                        element={<Registros />}
                     />
 
                     <Route

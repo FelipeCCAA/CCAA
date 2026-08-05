@@ -193,12 +193,20 @@ class DocumentoLiberacionSerializer(serializers.ModelSerializer):
     """
 
     campos = serializers.SerializerMethodField()
+    frecuencia_etiqueta = serializers.CharField(
+        source="get_frecuencia_display", read_only=True
+    )
+    area_etiqueta = serializers.CharField(source="get_area_display", read_only=True)
 
     class Meta:
         model = DocumentoLiberacion
         fields = [
             "id",
             "codigo",
+            "area",
+            "area_etiqueta",
+            "frecuencia",
+            "frecuencia_etiqueta",
             "nombre",
             "aplica_a",
             "instruccion",

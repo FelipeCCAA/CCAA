@@ -144,15 +144,50 @@ class DossierSembradoTests(TestCase):
     """
 
     # Los 19 del Dossier CCAA.Calidad.FORM.023, repartidos por etapa del flujo.
+    #
+    # Son 21 documentos y no 19 porque el checklist de cuerpos extraños se
+    # separó en uno por evaporador: en planta son tres formatos con piezas
+    # distintas —Scheffers 2 tiene pulmones y coil, el VEB tiene cuatro
+    # efectos— y una plantilla única pediría el estado de piezas que ese
+    # evaporador no tiene.
     POR_AREA = {
         "recepcion": 1,
-        "condensacion": 3,
+        "condensacion": 5,
         "secado": 8,
         "envase": 7,
     }
 
-    def test_estan_los_diecinueve(self):
-        self.assertEqual(DocumentoLiberacion.objects.count(), 19)
+    def test_estan_los_del_dossier(self):
+        self.assertEqual(DocumentoLiberacion.objects.count(), 21)
+
+    def test_el_checklist_de_cuerpos_extranos_va_por_evaporador(self):
+        """
+        Uno solo obligaría a elegir un evaporador y dejar los otros dos sin
+        sus piezas, o a mezclar las tres listas. Las dos cosas convierten el
+        checklist en un trámite: se marca igual y no dice qué se revisó.
+        """
+        codigos = {"CCAA.Cond.FORM.005", "CCAA.Cond.FORM.014", "CCAA.Cond.FORM.016"}
+
+        checklists = DocumentoLiberacion.objects.filter(codigo__in=codigos)
+
+        self.assertEqual(checklists.count(), 3)
+
+        # Cada uno con sus piezas: si dos coincidieran, sobraría uno.
+        piezas = [
+            tuple(c["clave"] for c in d.plantilla) for d in checklists
+        ]
+        self.assertEqual(len(set(piezas)), 3)
+
+    def test_solo_el_veb_tiene_cuarto_efecto(self):
+        """La diferencia que hace que no puedan compartir plantilla."""
+        veb = DocumentoLiberacion.objects.get(codigo="CCAA.Cond.FORM.016")
+        sch3 = DocumentoLiberacion.objects.get(codigo="CCAA.Cond.FORM.014")
+
+        claves_veb = {c["clave"] for c in veb.plantilla}
+        claves_sch3 = {c["clave"] for c in sch3.plantilla}
+
+        self.assertIn("tapa_sup_4_estado", claves_veb)
+        self.assertNotIn("tapa_sup_4_estado", claves_sch3)
 
     def test_cada_area_tiene_los_suyos(self):
         for area, esperados in self.POR_AREA.items():
@@ -187,16 +222,66 @@ class DossierSembradoTests(TestCase):
 
         self.assertEqual(sin_codigo, 1, "solo el disco de uperización")
 
-    def test_entran_como_atestacion(self):
+    #: Los únicos documentos con plantilla cargada, y de dónde salió cada una.
+    #: La lista es explícita para que agregar una plantilla exija declarar su
+    #: formato de origen aquí — que es la forma de que nadie invente una.
+    PLANTILLAS_DE_UN_FORMATO_REAL = {
+        "CCAA.Sec.FORM.007": "Check list cuerpos extraños Rovema 3 y 4",
+        "CCAA.Cond.FORM.005": "Check list CE Scheffers 2",
+        "CCAA.Cond.FORM.014": "Checklist CE Scheffer 3",
+        "CCAA.Cond.FORM.016": "Checklist CE VEB",
+    }
+
+    def test_solo_tienen_plantilla_los_que_salen_de_un_formato_real(self):
         """
-        La plantilla de cada formulario se define después, contra su formato
-        real. Inventarla ahora sería peor que dejarla vacía: un formulario que
-        pide campos equivocados se completa igual y da el documento por
-        cumplido.
+        Una plantilla inventada es peor que ninguna: un formulario que pide
+        campos equivocados se completa igual y da el documento por cumplido.
+        Los demás siguen como atestación hasta tener su formato a la vista.
         """
-        for documento in DocumentoLiberacion.objects.all():
-            with self.subTest(documento=documento.codigo or documento.nombre):
-                self.assertEqual(documento.plantilla, [])
+        con_plantilla = {
+            d.codigo
+            for d in DocumentoLiberacion.objects.all()
+            if d.plantilla
+        }
+
+        self.assertEqual(con_plantilla, set(self.PLANTILLAS_DE_UN_FORMATO_REAL))
+
+    def test_los_campos_de_una_plantilla_declaran_su_tipo(self):
+        """
+        Un campo sin tipo lo dibuja el frontend como texto libre, y un estado
+        OK/A que se teclea a mano deja de ser un estado.
+        """
+        tipos = {
+            "texto", "entero", "decimal", "fecha", "fechaHora", "hora",
+            "booleano", "enum", "objeto",
+        }
+
+        for documento in DocumentoLiberacion.objects.exclude(plantilla=[]):
+            for campo in documento.plantilla:
+                with self.subTest(documento=documento.codigo, campo=campo.get("clave")):
+                    self.assertIn(campo.get("tipo"), tipos)
+                    self.assertTrue(campo.get("clave"))
+                    self.assertTrue(campo.get("etiqueta"))
+
+    def test_un_enum_declara_sus_valores(self):
+        for documento in DocumentoLiberacion.objects.exclude(plantilla=[]):
+            for campo in documento.plantilla:
+                if campo.get("tipo") != "enum":
+                    continue
+
+                with self.subTest(documento=documento.codigo, campo=campo["clave"]):
+                    self.assertTrue(campo.get("valores"))
+
+    def test_ninguna_plantilla_usa_un_tipo_que_la_pantalla_no_dibuja(self):
+        """
+        `lista` está en el contrato pero el formulario dinámico no lo dibuja:
+        cae al campo de texto por defecto, sin avisar. Una lectura horaria
+        declarada así se convertiría en un cuadro de texto libre.
+        """
+        for documento in DocumentoLiberacion.objects.exclude(plantilla=[]):
+            for campo in documento.plantilla:
+                with self.subTest(documento=documento.codigo, campo=campo.get("clave")):
+                    self.assertNotEqual(campo.get("tipo"), "lista")
 
     def test_todos_aplican_al_polvo(self):
         """

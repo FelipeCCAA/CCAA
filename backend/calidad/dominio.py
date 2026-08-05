@@ -64,6 +64,14 @@ class EstadoDocumento:
     observado: bool
     iniciado: bool
     faltantes: list[dict[str, Any]] = field(default_factory=list)
+    #: Lo cumple el registro del sistema y no una casilla. Se distingue para
+    #: que el expediente pueda decir de dónde viene el cumplimiento: «hay
+    #: control de proceso» no es lo mismo que «alguien lo marcó».
+    cumplido_por_dato: bool = False
+    #: El registro periódico que lo cubre, si lo hay. Va el objeto y no un
+    #: booleano porque el expediente tiene que poder decir CUÁL lo cubre —«el
+    #: aseo semanal del 28-07»—, o quien audita no llega al papel.
+    cubierto_por: Any = None
 
 
 @dataclass(frozen=True)
@@ -358,10 +366,219 @@ def cotejar_con_analisis(
 
 # -------------------------------------------------------------------- checklist
 
+#: Fuentes de datos que pueden dar por cumplido un documento del Dossier.
+#: El nombre es el que va en `DocumentoLiberacion.evidencia["fuente"]`.
+FUENTE_CONTROL_PROCESO = "control_proceso"
+FUENTE_MONITOREO_PPRO = "monitoreo_ppro"
+FUENTE_ANALISIS = "analisis"
+FUENTE_ASIGNACION_LECHE = "asignacion_leche"
+
+
+def _coincide(registro: Any, criterio: dict) -> bool:
+    """
+    ¿Este registro satisface el criterio del documento?
+
+    Compara **solo las claves que el criterio declara**, y todas tienen que
+    coincidir. Un criterio vacío lo cumple cualquier registro de la fuente;
+    uno que declara `equipo` exige ese equipo.
+
+    Se compara en minúsculas y sin espacios porque `equipo` viaja como texto
+    libre en los monitoreos, y «E1 » no debería fallar contra «e1».
+    """
+    def normal(valor):
+        return str(valor or "").strip().lower()
+
+    for campo, esperado in criterio.items():
+        if campo == "fuente":
+            continue
+
+        # `campo_en` acepta varios valores: el PCC 1 de uperización se registra
+        # en cualquiera de los tres evaporadores, y exigir uno concreto dejaría
+        # el documento sin cumplir según en cuál se corrió.
+        if campo.endswith("_en"):
+            valor = getattr(registro, campo[:-3], None)
+
+            if normal(valor) not in {normal(e) for e in (esperado or [])}:
+                return False
+
+            continue
+
+        if normal(getattr(registro, campo, None)) != normal(esperado):
+            return False
+
+    return True
+
+
+def documentos_con_evidencia(
+    documentos: Iterable[Any],
+    lote_id: int,
+    controles: Iterable[Any] = (),
+    monitoreos: Iterable[Any] = (),
+    analisis: Iterable[Any] = (),
+    movimientos: Iterable[Any] = (),
+) -> set[int]:
+    """
+    Documentos del checklist que el propio dato del sistema da por cumplidos.
+
+    Once de los diecinueve registros del Dossier son datos que la aplicación
+    ya captura: el PCC 1 vive en `ControlProceso`, los PPRO en
+    `MonitoreoPPRO`, el fisicoquímico en `Analisis`, la trazabilidad en la
+    asignación de silos. Pedir además una casilla es doble digitación — y algo
+    peor: la casilla puede decir «cumplido» sobre un PCC 1 incumplido.
+
+    Un documento se cumple con su dato cuando **existe al menos un registro
+    del lote** que coincide con el criterio. Que ese registro además esté
+    conforme es otra pregunta y la responden las reglas de inocuidad, que
+    bloquean por su cuenta. Aquí solo se responde si el registro existe: es
+    exactamente lo que la casilla afirmaba.
+
+    Devuelve ids y no objetos porque es lo que `avance_checklist` necesita
+    para cruzarlo con los registros manuales.
+    """
+    por_fuente = {
+        FUENTE_CONTROL_PROCESO: [
+            c for c in (controles or []) if getattr(c, "lote_id", None) == lote_id
+        ],
+        FUENTE_MONITOREO_PPRO: [
+            m for m in (monitoreos or []) if getattr(m, "lote_id", None) == lote_id
+        ],
+        FUENTE_ANALISIS: [
+            a for a in (analisis or []) if getattr(a, "lote_id", None) == lote_id
+        ],
+        # La asignación de leche son las salidas de silo con origen en el lote.
+        FUENTE_ASIGNACION_LECHE: [
+            m
+            for m in (movimientos or [])
+            if getattr(m, "tipo", None) == "salida"
+            and getattr(m, "origen_tipo", None) == "lote"
+            and getattr(m, "origen_id", None) == lote_id
+        ],
+    }
+
+    cumplidos = set()
+
+    for documento in documentos or []:
+        criterio = getattr(documento, "evidencia", None) or {}
+        candidatos = por_fuente.get(criterio.get("fuente"))
+
+        # Sin fuente declarada, o con una que no existe, el documento sigue
+        # siendo manual. No se inventa una equivalencia.
+        if not candidatos:
+            continue
+
+        if any(_coincide(registro, criterio) for registro in candidatos):
+            cumplidos.add(documento.id)
+
+    return cumplidos
+
+
+# ------------------------------------------------- registros por período
+
+#: Frecuencias que NO producen un formulario por lote. El registro pertenece
+#: al equipo y a su período, y el lote lo consume si su fecha cae dentro.
+FRECUENCIA_POR_LOTE = "por_lote"
+
+
+def _misma_semana(una, otra) -> bool:
+    """Semana ISO: el aseo del lunes cubre hasta el domingo."""
+    return una.isocalendar()[:2] == otra.isocalendar()[:2]
+
+
+def cubre_al_lote(registro: Any, documento: Any, lote: Any) -> bool:
+    """
+    ¿Este registro periódico cubre al lote?
+
+    La ventana sale de la frecuencia del documento y **no se guarda**: un
+    `vigente_hasta` almacenado se desincroniza en cuanto alguien corrige la
+    fecha del registro, y entonces un lote quedaría cubierto por un aseo que
+    ya no lo alcanza.
+
+    - `diaria`, `por_ciclo`, `por_turno`: el mismo día. Además, si el
+      documento es por turno y ambos lo declaran, tienen que coincidir — un
+      aseo del turno A no dice nada del turno B.
+    - `semanal`: la misma semana ISO.
+    - `segun_programa`: no hay período deducible, así que el registro tiene
+      que declarar hasta cuándo cubre. Sin `vigente_hasta` no cubre nada: es
+      preferible pedir el dato a inventar una vigencia.
+    """
+    if registro is None or lote is None:
+        return False
+
+    fecha_lote = getattr(lote, "fecha", None)
+    fecha_registro = getattr(registro, "fecha", None)
+
+    if fecha_lote is None or fecha_registro is None:
+        return False
+
+    frecuencia = getattr(documento, "frecuencia", FRECUENCIA_POR_LOTE)
+
+    if frecuencia == "semanal":
+        return _misma_semana(fecha_registro, fecha_lote)
+
+    if frecuencia == "segun_programa":
+        hasta = getattr(registro, "vigente_hasta", None)
+
+        return hasta is not None and fecha_registro <= fecha_lote <= hasta
+
+    # Diaria, por ciclo y por turno: el mismo día.
+    if fecha_registro != fecha_lote:
+        return False
+
+    if frecuencia == "por_turno":
+        turno_registro = (getattr(registro, "turno", "") or "").strip()
+        turno_lote = (getattr(lote, "turno", "") or "").strip()
+
+        # Si alguno no declara turno no se puede afirmar que coincidan, pero
+        # tampoco que no: el registro del día se acepta. Exigirlo dejaría sin
+        # cubrir lotes que en planta sí lo están.
+        if turno_registro and turno_lote:
+            return turno_registro == turno_lote
+
+    return True
+
+
+def documentos_cubiertos_por_periodo(
+    documentos: Iterable[Any],
+    lote: Any,
+    registros_equipo: Iterable[Any] = (),
+) -> dict[int, Any]:
+    """
+    Documentos que un registro periódico da por cumplidos, y cuál los cumple.
+
+    Devuelve el registro y no solo el id porque el expediente tiene que poder
+    decir **cuál** lo cubre: «el aseo semanal del 28-07», no «está cubierto».
+    Sin eso, quien audita no puede llegar al papel.
+
+    Solo cuentan los registros completados. Uno en borrador es trabajo a
+    medias, y uno observado es una alerta abierta — igual que en el checklist
+    por lote.
+    """
+    por_documento = {}
+
+    for documento in documentos or []:
+        if getattr(documento, "frecuencia", FRECUENCIA_POR_LOTE) == FRECUENCIA_POR_LOTE:
+            continue
+
+        for registro in registros_equipo or []:
+            if getattr(registro, "documento_id", None) != documento.id:
+                continue
+
+            if getattr(registro, "estado", None) != COMPLETADO:
+                continue
+
+            if cubre_al_lote(registro, documento, lote):
+                por_documento[documento.id] = registro
+                break
+
+    return por_documento
+
+
 def avance_checklist(
     registros: Iterable[Any],
     documentos_exigibles: Sequence[Any],
     lote_id: int | None = None,
+    cumplidos_por_dato: set[int] | None = None,
+    cubiertos_por_periodo: dict[int, Any] | None = None,
 ) -> AvanceChecklist:
     """
     Avance documental de un lote, derivado de sus registros de calidad.
@@ -375,6 +592,16 @@ def avance_checklist(
     este — y como el checklist completo es lo que habilita la liberación, el
     error deja salir producto. Lo detectó una prueba del prototipo y hay una de
     regresión que lo cubre.
+
+    `cumplidos_por_dato` son los documentos que el propio registro del sistema
+    satisface (`documentos_con_evidencia`): el PCC 1 lo cumple su control de
+    proceso, no una casilla. Se pasa aparte y no se mezcla con los registros
+    manuales para que se vea de dónde viene cada cumplimiento — en el
+    expediente y aquí.
+
+    `cubiertos_por_periodo` son los que cubre un registro del equipo
+    (`documentos_cubiertos_por_periodo`): el aseo semanal de la torre cubre
+    todos los lotes de su semana, y por eso no se llena uno por lote.
     """
     exigibles = list(documentos_exigibles or [])
 
@@ -384,17 +611,31 @@ def avance_checklist(
         if lote_id is None or r.lote_id == lote_id
     }
 
+    por_dato = cumplidos_por_dato or set()
+    por_periodo = cubiertos_por_periodo or {}
+
     detalle = []
     for documento in exigibles:
         registro = por_documento.get(documento.id)
+
+        # El dato del sistema cumple el documento por sí solo. Una
+        # observación manual sigue pesando: si alguien abrió el registro y lo
+        # marcó observado, eso es una alerta que el dato no borra.
+        lo_cumple_el_dato = documento.id in por_dato
+        cubierto = por_periodo.get(documento.id)
+
+        resuelto = lo_cumple_el_dato or cubierto is not None
+
         detalle.append(
             EstadoDocumento(
                 documento=documento,
                 registro=registro,
-                completo=registro_completo(registro, documento),
+                completo=resuelto or registro_completo(registro, documento),
                 observado=getattr(registro, "estado", None) == OBSERVADO,
-                iniciado=registro is not None,
-                faltantes=campos_faltantes(registro, documento),
+                iniciado=resuelto or registro is not None,
+                faltantes=[] if resuelto else campos_faltantes(registro, documento),
+                cumplido_por_dato=lo_cumple_el_dato,
+                cubierto_por=cubierto,
             )
         )
 
@@ -471,6 +712,8 @@ def puede_liberar(
     controles: Iterable[Any] = (),
     lecturas_control: Iterable[Any] = (),
     monitoreos: Iterable[Any] = (),
+    cumplidos_por_dato: set[int] | None = None,
+    cubiertos_por_periodo: dict[int, Any] | None = None,
 ) -> DecisionLiberacion:
     """
     ¿Se puede liberar este lote?
@@ -501,7 +744,9 @@ def puede_liberar(
         bloqueos.append("El lote aún está en proceso: primero hay que cerrar la producción.")
 
     exigibles = documentos_aplicables(documentos, producto)
-    avance = avance_checklist(registros, exigibles, lote.id)
+    avance = avance_checklist(
+        registros, exigibles, lote.id, cumplidos_por_dato, cubiertos_por_periodo
+    )
 
     if not avance.total:
         bloqueos.append("No hay documentos configurados para esta familia de producto.")

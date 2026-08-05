@@ -25,6 +25,8 @@ export interface OpcionCatalogo {
 export interface CatalogosSku {
   silo_tipo: OpcionCatalogo[];
   equipo_tipo: OpcionCatalogo[];
+  area_documento: OpcionCatalogo[];
+  frecuencia_documento: OpcionCatalogo[];
   naturaleza_comercial: OpcionCatalogo[];
   categoria: OpcionCatalogo[];
   tipo: OpcionCatalogo[];
@@ -259,6 +261,58 @@ export async function guardarSilo(
   const { data } = id
     ? await api.patch<Silo>(`maestros/silos/${id}/`, datos)
     : await api.post<Silo>("maestros/silos/", datos);
+
+  return data;
+}
+
+
+/* -------------------------------------------- documentos de liberación */
+
+/*
+  El catálogo del checklist. Lo escribe **Calidad**, no Administración: el
+  módulo promete que Calidad cambia un campo y el formulario cambia sin
+  desplegar, y si para eso hubiera que pedírselo a un administrador la promesa
+  quedaría vacía.
+*/
+
+export interface DocumentoLiberacion {
+  id: number;
+  codigo: string;
+  nombre: string;
+  area: string;
+  area_etiqueta: string;
+  /* Decide DÓNDE vive el registro: por lote va en el expediente del lote; el
+     resto pertenece al equipo y su período, y se lleva en Registros de
+     planta. Cambiarla mueve el formulario de una pantalla a la otra. */
+  frecuencia: string;
+  frecuencia_etiqueta: string;
+  aplica_a: string[];
+  instruccion: string;
+  campos: number;
+  fuente: string;
+  orden: number;
+  activo: boolean;
+}
+
+
+export async function obtenerDocumentos(): Promise<DocumentoLiberacion[]> {
+  const { data } = await api.get<Pagina<DocumentoLiberacion>>(
+    "maestros/documentos/",
+  );
+
+  return data.results;
+}
+
+
+export async function editarDocumento(
+  id: number,
+  cambios: Partial<DocumentoLiberacion>,
+): Promise<DocumentoLiberacion> {
+
+  const { data } = await api.patch<DocumentoLiberacion>(
+    `maestros/documentos/${id}/`,
+    cambios,
+  );
 
   return data;
 }

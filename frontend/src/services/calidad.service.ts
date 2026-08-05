@@ -121,6 +121,10 @@ export interface EstadoDocumento {
   completo: boolean;
   observado: boolean;
   iniciado: boolean;
+  /* Lo cumple el registro del sistema, no una casilla: hay control de
+     proceso, hay análisis, hay monitoreo. Se distingue porque no es lo mismo
+     que alguien lo haya marcado. */
+  cumplido_por_dato: boolean;
   faltantes: string[];
 }
 
