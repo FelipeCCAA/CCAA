@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'planificacion',
     'auditoria',
     'procesos',
+    'recoleccion',
     'mantenimiento',
     "corsheaders",
     "rest_framework",

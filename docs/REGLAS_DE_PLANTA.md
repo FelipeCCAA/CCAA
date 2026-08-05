@@ -22,6 +22,33 @@ fases de implementación. Eso se decide, no se hereda.
 
 ---
 
+## 0. Recolección en predios
+
+| Regla | Estado |
+|---|---|
+| Prueba de alcohol **positiva** → la leche no sube al camión | **Implementado** — `recoleccion.CargaPredio.clean()` |
+| Evaluación visual no conforme → no se carga | **Implementado** |
+| Leche que no se carga exige decir **por qué** (la desviación que se le informa al proveedor) | **Implementado** |
+| Leche cargada exige indicar en **qué módulo** | **Implementado** — `CheckConstraint` |
+| A un proveedor **bloqueado** no se le recolecta | **Implementado** — el bloqueo lo pondrá la cadena de antibióticos (§1.2) |
+
+La app `recoleccion` cubre proveedor de leche, predio, conductor, módulo, la
+recolección del día y la carga por predio. Reutiliza `maestros.Vehiculo` para
+camión y carro: crear un `Camion` propio habría dejado la misma placa en dos
+tablas.
+
+**Lo que falta:** sala y estanque del predio, ruta, tipo de módulo, el voucher
+que se emite en el predio, y el enlace con `recepcion.Recepcion` — hoy la
+recolección y la recepción no se conocen entre sí, así que la cadena sigue
+cortada aunque los dos extremos existan.
+
+**Lo que el documento pide y no se construyó a propósito:** el «estado de
+sincronización» del formulario (§4.3). Implica captura sin señal en el predio,
+que es una arquitectura distinta —cola local, resolución de conflictos— y no
+una casilla. Se decide antes de construirla.
+
+---
+
 ## 1. Recepción de leche fresca
 
 ### 1.1 Umbrales
@@ -242,9 +269,12 @@ LOTE TERMINADO → pallets → bolsas → Rovema → silo de polvo → torre Egr
 **Hasta dónde llega hoy:** `procesos.genealogia_lote` recorre lote a lote por
 las entradas y salidas de proceso. Cubre desde el precondensado hacia adelante.
 
-**Dónde se corta:** en el vale de estandarización. De ahí hacia atrás —silos,
-camiones, módulos, proveedores— no hay cadena, porque no existen ni el vale ni
-el módulo ni el proveedor de leche.
+**El otro extremo ya existe:** `recoleccion` cubre proveedor → predio → carga →
+módulo → camión (§0).
+
+**Dónde se corta:** en el medio. Faltan el **vale de estandarización** —que no
+existe— y el **enlace entre recolección y recepción**: hoy las dos puntas de la
+cadena están construidas y no se conocen entre sí.
 
 ---
 
