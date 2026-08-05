@@ -62,6 +62,7 @@ class EjecucionProcesoSerializer(serializers.ModelSerializer):
     salidas = SalidaProcesoSerializer(many=True, read_only=True)
     eventos = EventoProcesoSerializer(many=True, read_only=True)
     acciones_permitidas = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
 
     class Meta:
         model = EjecucionProceso
@@ -70,3 +71,34 @@ class EjecucionProcesoSerializer(serializers.ModelSerializer):
 
     def get_acciones_permitidas(self, ejecucion):
         return sorted(EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set()))
+
+    def get_balance(self, ejecucion):
+        """
+        Cuánto entró y cuánto salió, **por unidad**.
+
+        Se agrupa por unidad porque una evaporación entra en litros y sale en
+        kilos: sumarlo todo junto daría un número que no significa nada.
+        `convertible` marca las unidades que aparecen en los dos lados, que son
+        las únicas donde la comparación tiene sentido —y las únicas donde el
+        modelo impide que salga más de lo que entró—.
+        """
+        entradas: dict[str, float] = {}
+        salidas: dict[str, float] = {}
+
+        for entrada in ejecucion.entradas.all():
+            clave = (entrada.unidad or "").strip().lower()
+            entradas[clave] = entradas.get(clave, 0) + float(entrada.cantidad)
+
+        for salida in ejecucion.salidas.all():
+            clave = (salida.unidad or "").strip().lower()
+            salidas[clave] = salidas.get(clave, 0) + float(salida.cantidad)
+
+        return [
+            {
+                "unidad": unidad,
+                "entro": entradas.get(unidad, 0),
+                "salio": salidas.get(unidad, 0),
+                "comparable": unidad in entradas and unidad in salidas,
+            }
+            for unidad in sorted(set(entradas) | set(salidas))
+        ]

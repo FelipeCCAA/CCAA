@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -199,6 +201,51 @@ class SalidaProceso(models.Model):
             raise ValidationError({"lote": "Toda salida inventariable debe identificar un lote."})
         if self.naturaleza == self.Naturaleza.MERMA and not self.motivo.strip():
             raise ValidationError({"motivo": "Toda merma requiere un motivo."})
+
+        self._validar_balance()
+
+    def _validar_balance(self):
+        """
+        No puede salir más de lo que entró.
+
+        La merma cuenta como salida: la pérdida también es masa que se fue, y
+        excluirla dejaría el hueco por donde se cuadra cualquier diferencia.
+
+        **Solo se comparan unidades que aparecen en los dos lados.** Una
+        evaporación entra en litros y sale en kilos: ahí no hay exceso, hay una
+        transformación, y sin un factor de conversión declarado cualquier
+        comparación sería inventada. Cuando la unidad aparece solo en las
+        salidas, el balance no dice nada — y decir nada es lo correcto, en vez
+        de rechazar una corrida legítima.
+        """
+        from django.db.models import Sum
+
+        if self.cantidad is None or not self.ejecucion_id:
+            return
+
+        unidad = (self.unidad or "").strip().lower()
+
+        def total(consulta):
+            return consulta.filter(unidad__iexact=unidad).aggregate(
+                t=Sum("cantidad")
+            )["t"] or Decimal("0")
+
+        entro = total(self.ejecucion.entradas)
+
+        # Sin entradas en esta unidad no hay con qué comparar: es el caso de
+        # la transformación, no el de un exceso.
+        if entro <= 0:
+            return
+
+        salio = total(self.ejecucion.salidas.exclude(pk=self.pk))
+
+        if salio + self.cantidad > entro:
+            raise ValidationError({
+                "cantidad": (
+                    f"Entraron {entro} {self.unidad} y ya salieron {salio}: "
+                    f"quedan {entro - salio}. No puede salir más de lo que entró."
+                )
+            })
 
 
 class EventoProceso(models.Model):

@@ -209,3 +209,161 @@ class TrazabilidadPorCodigoTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 404)
         self.assertIn("CCAA-NO-EXISTE", str(respuesta.data))
+
+
+class BalanceDeMasaTests(TestCase):
+    """
+    No puede salir más masa de la que entró.
+
+    La trampa está en las unidades: una evaporación entra en litros y sale en
+    kilos. Ahí no hay exceso, hay una transformación, y sin un factor de
+    conversión declarado cualquier comparación sería inventada. Por eso solo se
+    comparan las unidades que aparecen en los **dos** lados.
+    """
+
+    def setUp(self):
+        self.usuario = User.objects.create_user("operador-bal", password="x")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            area=PerfilUsuario.Area.SECADO,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+        )
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(self.usuario)
+
+        mandante = Mandante.objects.create(nombre="CCAA balance")
+        producto = Producto.objects.create(
+            nombre="Producto balance", familia="polvo", mandante=mandante
+        )
+        self.lote = Lote.objects.create(
+            codigo_lote="BAL-1", producto=producto, fecha=date(2026, 8, 1)
+        )
+        self.otro = Lote.objects.create(
+            codigo_lote="BAL-2", producto=producto, fecha=date(2026, 8, 1)
+        )
+        # Un tercer lote para las mezclas: `EntradaProceso` es único por
+        # (ejecución, lote, tipo), así que «varios orígenes» significa lotes
+        # distintos y no la misma entrada repetida.
+        self.tercero = Lote.objects.create(
+            codigo_lote="BAL-3", producto=producto, fecha=date(2026, 8, 1)
+        )
+
+        proceso = Proceso.objects.create(codigo="bal", nombre="Balance")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="e1", nombre="Etapa",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        self.ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-BAL-1", etapa=etapa
+        )
+
+    def _entrada(self, cantidad, unidad="kg", lote=None):
+        return EntradaProceso.objects.create(
+            ejecucion=self.ejecucion, lote=lote or self.lote, cantidad=cantidad,
+            unidad=unidad,
+        )
+
+    def _salida(self, cantidad, unidad="kg", **extra):
+        datos = {
+            "ejecucion": self.ejecucion.id,
+            "lote": self.otro.id,
+            "cantidad": str(cantidad),
+            "unidad": unidad,
+            "naturaleza": "principal",
+        }
+        datos.update(extra)
+
+        return self.cliente.post("/api/procesos/salidas/", datos, format="json")
+
+    # ------------------------------------------------- la misma unidad
+
+    def test_no_sale_mas_de_lo_que_entro(self):
+        self._entrada(1000)
+
+        respuesta = self._salida(1001)
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("más de lo que entró", str(respuesta.data))
+
+    def test_lo_que_entro_si_puede_salir_entero(self):
+        self._entrada(1000)
+
+        self.assertEqual(self._salida(1000).status_code, 201)
+
+    def test_las_salidas_se_acumulan(self):
+        """Tres salidas de 400 no caben en 1.000 aunque cada una quepa sola."""
+        self._entrada(1000)
+
+        self.assertEqual(self._salida(400).status_code, 201)
+        self.assertEqual(self._salida(400).status_code, 201)
+
+        respuesta = self._salida(400)
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("quedan 200", str(respuesta.data))
+
+    def test_la_merma_cuenta_como_salida(self):
+        """
+        La pérdida también es masa que se fue. Excluirla dejaría el hueco por
+        donde se cuadra cualquier diferencia.
+        """
+        self._entrada(1000)
+        self._salida(900)
+
+        respuesta = self._salida(
+            200, lote=None, naturaleza="merma", motivo="Barrido de línea"
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("más de lo que entró", str(respuesta.data))
+
+    def test_varias_entradas_suman(self):
+        """Una mezcla tiene varios orígenes y todos aportan."""
+        self._entrada(600)
+        self._entrada(600, lote=self.tercero)
+
+        self.assertEqual(self._salida(1200).status_code, 201)
+
+    # ------------------------------------------------ unidades distintas
+
+    def test_una_transformacion_de_unidad_no_se_bloquea(self):
+        """
+        Evaporación: entran 20.000 litros y salen 5.000 kilos. No hay exceso,
+        hay una transformación — y sin factor de conversión declarado,
+        compararlas sería inventar.
+        """
+        self._entrada(20000, unidad="L")
+
+        self.assertEqual(self._salida(5000, unidad="kg").status_code, 201)
+
+    def test_pero_dentro_de_la_misma_unidad_si_se_controla(self):
+        """Aunque haya una transformación en curso, lo que entra y sale en la
+        misma unidad sigue teniendo que cuadrar."""
+        self._entrada(20000, unidad="L")
+        self._entrada(100, unidad="kg", lote=self.tercero)
+
+        self.assertEqual(self._salida(5000, unidad="kg").status_code, 400)
+
+    def test_la_unidad_no_distingue_mayusculas(self):
+        """«Kg» y «kg» son la misma unidad; tratarlas como distintas abriría
+        la puerta a saltarse el control con un cambio de caja."""
+        self._entrada(1000, unidad="kg")
+
+        self.assertEqual(self._salida(1500, unidad="KG").status_code, 400)
+
+    # ----------------------------------------------------------- balance
+
+    def test_el_balance_viaja_agrupado_por_unidad(self):
+        self._entrada(20000, unidad="L")
+        self._salida(5000, unidad="kg")
+
+        respuesta = self.cliente.get(
+            f"/api/procesos/ejecuciones/{self.ejecucion.id}/"
+        )
+        balance = {b["unidad"]: b for b in respuesta.data["balance"]}
+
+        self.assertEqual(balance["l"]["entro"], 20000)
+        self.assertEqual(balance["kg"]["salio"], 5000)
+        # Ninguna aparece en los dos lados: no son comparables.
+        self.assertFalse(balance["l"]["comparable"])
+        self.assertFalse(balance["kg"]["comparable"])
