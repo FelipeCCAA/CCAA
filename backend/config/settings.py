@@ -272,7 +272,7 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         # Sesion tambien, para poder navegar la API desde el navegador
-        # estando logueado en /admin/.
+        # estando logueado en /api/admin/.
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [

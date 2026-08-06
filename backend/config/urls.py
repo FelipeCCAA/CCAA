@@ -28,8 +28,9 @@ urlpatterns = [
 
     path("api/salud/", salud, name="salud"),
 
+    # Bajo /api para que Vercel lo envíe siempre al servicio Django.
     path(
-        "admin/",
+        "api/admin/",
         admin.site.urls
     ),
 

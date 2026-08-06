@@ -35,7 +35,7 @@ class AuditoriaMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        origen = "admin" if request.path.startswith("/admin/") else "api"
+        origen = "admin" if request.path.startswith("/api/admin/") else "api"
         testigo = fijar_actor(Actor(usuario=_UsuarioDiferido(request), ip=_ip_de(request), origen=origen))
 
         try:
