@@ -18,8 +18,8 @@ import {
   type Alerta,
 } from "../../services/inventario.service";
 
-import { Aviso, Indicador, Tarjeta, Vacio } from "./componentes";
-import { numero, useCarga } from "./utilidades";
+import { Aviso, Indicador, Tarjeta, Vacio } from "../../components/seccion/componentes";
+import { numero, useCarga } from "../../components/seccion/utilidades";
 
 
 /*

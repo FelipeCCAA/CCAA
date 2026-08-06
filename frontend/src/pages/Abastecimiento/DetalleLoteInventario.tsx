@@ -7,13 +7,13 @@ import {
   obtenerMovimientosDeLote,
 } from "../../services/inventario.service";
 
-import { Aviso, Estado, Tarjeta, Vacio } from "./componentes";
+import { Aviso, Estado, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import {
   claseCelda,
   claseEncabezado,
   numero,
   useCarga,
-} from "./utilidades";
+} from "../../components/seccion/utilidades";
 
 
 /*

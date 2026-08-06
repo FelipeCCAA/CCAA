@@ -14,7 +14,7 @@ import {
 
 import { obtenerSesion } from "../../services/sesion";
 
-import { Aviso, Estado, Tarjeta, Vacio } from "./componentes";
+import { Aviso, Estado, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import {
   claseCampo,
   claseCelda,
@@ -22,7 +22,7 @@ import {
   mensajeDe,
   numero,
   useCarga,
-} from "./utilidades";
+} from "../../components/seccion/utilidades";
 
 
 /*

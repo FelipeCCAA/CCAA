@@ -7,9 +7,9 @@ import {
 
 import { obtenerSesion } from "../../services/sesion";
 
-import { Aviso, Estado, Tarjeta, Vacio } from "./componentes";
+import { Aviso, Estado, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import NoConformidades from "./NoConformidades";
-import { claseCelda, claseEncabezado, useCarga } from "./utilidades";
+import { claseCelda, claseEncabezado, useCarga } from "../../components/seccion/utilidades";
 
 
 /*

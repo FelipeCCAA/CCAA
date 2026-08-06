@@ -10,7 +10,7 @@ import {
 
 import { obtenerSesion } from "../../services/sesion";
 
-import { Aviso, Estado, Tarjeta, Vacio } from "./componentes";
+import { Aviso, Estado, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import {
   claseBoton,
   claseCampo,
@@ -19,7 +19,7 @@ import {
   mensajeDe,
   numero,
   useCarga,
-} from "./utilidades";
+} from "../../components/seccion/utilidades";
 
 
 /*

@@ -12,6 +12,7 @@ import {
   Users,
   Boxes,
   GitBranch,
+  Milk,
   Wrench,
   LogOut,
 } from "lucide-react";
@@ -75,6 +76,7 @@ const GRUPOS: Grupo[] = [
     titulo: "Operación",
     modulos: [
       { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
+      { etiqueta: "Recolección en predios", ruta: "/recoleccion", icono: Milk },
       { etiqueta: "Recepción y silos", ruta: "/recepcion", icono: Truck },
       { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
       {

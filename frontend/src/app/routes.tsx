@@ -13,6 +13,7 @@ import RestablecerContrasena from "../pages/RecuperarContrasena/RestablecerContr
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Produccion from "../pages/Produccion/Produccion";
 import Recepcion from "../pages/Recepcion/Recepcion";
+import RecoleccionPredios from "../pages/Recoleccion/Recoleccion";
 import Liberacion from "../pages/Liberacion/Liberacion";
 import Planificacion from "../pages/Planificacion/Planificacion";
 import Maestros from "../pages/Maestros/Maestros";
@@ -148,6 +149,8 @@ function RoutesApp(){
                         path="/produccion"
                         element={<Produccion />}
                     />
+
+                    <Route path="/recoleccion" element={<RecoleccionPredios />} />
 
                     <Route
                         path="/recepcion"

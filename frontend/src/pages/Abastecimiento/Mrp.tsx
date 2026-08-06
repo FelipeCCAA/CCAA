@@ -18,7 +18,7 @@ import {
 
 import { obtenerSemanas } from "../../services/planificacion.service";
 
-import { Aviso, Tarjeta, Vacio } from "./componentes";
+import { Aviso, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import {
   claseBoton,
   claseCampo,
@@ -27,7 +27,7 @@ import {
   mensajeDe,
   numero,
   useCarga,
-} from "./utilidades";
+} from "../../components/seccion/utilidades";
 
 
 /*
