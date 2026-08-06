@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'produccion',
     'recepcion',
     'recoleccion',
+    'estandarizacion',
     'calidad',
     'inocuidad',
     'inventario',

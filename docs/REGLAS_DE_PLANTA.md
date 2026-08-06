@@ -32,20 +32,17 @@ fases de implementación. Eso se decide, no se hereda.
 | Leche cargada exige indicar en **qué módulo** | **Implementado** — `CheckConstraint` |
 | A un proveedor **bloqueado** no se le recolecta | **Implementado** — el bloqueo lo pondrá la cadena de antibióticos (§1.2) |
 
-La app `recoleccion` cubre proveedor de leche, predio, conductor, módulo, la
-recolección del día y la carga por predio. Reutiliza `maestros.Vehiculo` para
-camión y carro: crear un `Camion` propio habría dejado la misma placa en dos
-tablas.
+La app `recoleccion` modela **ruta → parada → recolección → carga de módulo**,
+con `idempotencia` UUID para la captura sin señal en el predio. Está enlazada a
+recepción por `Recepcion.carga_recoleccion` y `Recepcion.modulo`.
 
-**Lo que falta:** sala y estanque del predio, ruta, tipo de módulo, el voucher
-que se emite en el predio, y el enlace con `recepcion.Recepcion` — hoy la
-recolección y la recepción no se conocen entre sí, así que la cadena sigue
-cortada aunque los dos extremos existan.
-
-**Lo que el documento pide y no se construyó a propósito:** el «estado de
-sincronización» del formulario (§4.3). Implica captura sin señal en el predio,
-que es una arquitectura distinta —cola local, resolución de conflictos— y no
-una casilla. Se decide antes de construirla.
+**Lo que falta, y es lo que impide la regla de antibióticos:** `proveedor`,
+`predio`, `sala` y `modulo` son `CharField` de texto libre, y `conductor`
+apunta a `User` cuando la mayoría de los conductores no entra al sistema.
+«Bloquear los módulos asociados al proveedor» (§1.2) no se puede expresar
+contra un string, y la trazabilidad hacia atrás llega a un texto en vez de a un
+proveedor. Convertirlos en referencias a maestros es el mismo trabajo que ya se
+hizo con los equipos.
 
 ---
 
@@ -163,8 +160,40 @@ El flujo del documento (§10):
 7. Si cumple: liberar silo y avisar a Condensación. Si no: calcular corrección,
    agregar leche entera o descremada, reagitar y reanalizar.
 
-**No implementado.** Es el hueco más grande entre el silo y el evaporador: hoy
-el sistema no sabe cómo se decide qué producto va a producirse.
+**La matemática está implementada** en `estandarizacion/dominio.py`, sin ORM y
+comprobada recalculando: las pruebas no verifican que la fórmula esté escrita,
+sino que la mezcla que devuelve **dé el RC pedido**.
+
+| Función | Qué responde |
+|---|---|
+| `calcular_mezcla` | cuántos litros de entera y de descremada para un RC y un volumen |
+| `evaluar_rc` | si el RC medido después de agitar cumple, y qué agregar si no |
+| `litros_a_agregar` | cuántos litros de la leche correctora hacen falta |
+
+Tres decisiones del cálculo:
+
+- **Un objetivo inalcanzable se dice, no se calcula.** La fórmula devolvería un
+  volumen negativo o mayor que el total; entregarlo sería darle a alguien un
+  número para teclear en una válvula.
+- **Que falte leche avisa pero no impide calcular.** El operador puede estar
+  planificando contra un silo que se está llenando.
+- **La tolerancia del RC es un parámetro.** La define Calidad; el valor por
+  omisión (0,005) es referencial.
+
+### 3.1 Un límite físico que el cálculo destapó
+
+**RC 0,422 exige leche entera de al menos ~3,63 % de grasa** (con 8,6 % de SNG).
+Mezclar entera con descremada solo **baja** el RC —nunca lo sube por encima del
+de la entera—, así que con leche al 3,6 % ese producto no se puede estandarizar:
+habría que agregar crema.
+
+No es una limitación del programa. En planta se traduce en «esta leche no da
+para el producto de RC 0,422», que es una decisión de qué producir. El sistema
+lo dice con el detalle de en cuánto está cada leche.
+
+**Lo que falta:** el vale de estandarización como documento —con su ciclo de
+transferir, agitar 30 minutos, muestrear y corregir—, y la crema como tercera
+entrada de la mezcla.
 
 ---
 
