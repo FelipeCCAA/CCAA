@@ -34,6 +34,14 @@
       }
     },
     {
+      "source": "/(login|recuperar-contrasena|restablecer-contrasena|dashboard|abastecimiento|procesos|mantenimiento|produccion|recepcion|liberacion|planificacion|maestros|registros|auditoria|administracion|inventario)",
+      "destination": {
+        "type": "service",
+        "service": "frontend",
+        "path": "/index.html"
+      }
+    },
+    {
       "source": "/(.*)",
       "destination": {
         "type": "service",
