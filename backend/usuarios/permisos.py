@@ -91,6 +91,15 @@ class EscribeRecepcion(PermisoPorRol):
     mensaje_escritura = "Solo Recepción puede registrar recepciones de leche."
 
 
+class DecideCalidadRecepcion(PermisoPorRol):
+    """La muestra puede decidirla Calidad o Recepción, según el turno."""
+
+    roles_escritura = (Rol.RECEPCION, Rol.CALIDAD, Rol.ADMIN)
+    mensaje_escritura = (
+        "Solo Calidad, Recepción o Administración pueden decidir una muestra."
+    )
+
+
 class EscribePlanta(PermisoPorRol):
     """
     Registros de máquina: aseos, inspecciones preoperativas, calibraciones.

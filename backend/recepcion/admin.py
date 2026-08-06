@@ -6,11 +6,36 @@ from .models import MovimientoSilo, Recepcion
 @admin.register(Recepcion)
 class RecepcionAdmin(admin.ModelAdmin):
     # Sin columna de veredicto: se calcula desde los controles, no es un campo.
-    list_display = ["fecha", "hora", "guia", "procedencia", "tipo_leche", "litros", "silo", "estado"]
+    list_display = [
+        "fecha",
+        "hora",
+        "guia",
+        "modulo",
+        "codigo_muestra",
+        "tipo_leche",
+        "litros",
+        "silo",
+        "estado",
+    ]
     list_filter = ["estado", "procedencia", "tipo_leche", "turno", "silo"]
-    search_fields = ["guia", "vehiculo__placa", "observacion"]
+    search_fields = ["guia", "modulo", "codigo_muestra", "vehiculo__placa", "observacion"]
     date_hierarchy = "fecha"
-    autocomplete_fields = ["vehiculo", "silo", "operador"]
+    autocomplete_fields = [
+        "vehiculo",
+        "silo",
+        "operador",
+        "muestreado_por",
+        "calidad_por",
+        "silo_asignado_por",
+    ]
+    readonly_fields = [
+        "muestreado_por",
+        "muestreado_en",
+        "calidad_por",
+        "calidad_en",
+        "silo_asignado_por",
+        "silo_asignado_en",
+    ]
 
 
 @admin.register(MovimientoSilo)

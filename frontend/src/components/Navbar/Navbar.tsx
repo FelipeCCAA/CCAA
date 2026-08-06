@@ -1,256 +1,165 @@
+import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-
 import {
-  LayoutDashboard,
-  Factory,
-  Truck,
-  ClipboardCheck,
+  Boxes,
   CalendarRange,
+  ClipboardCheck,
   ClipboardList,
   Database,
-  History,
-  Users,
-  Boxes,
+  Factory,
   GitBranch,
-  Wrench,
+  History,
+  LayoutDashboard,
   LogOut,
+  Menu,
+  Truck,
+  Users,
+  Warehouse,
+  Wrench,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 
-import {
-  cargoParaMostrar,
-  cerrarSesion,
-  nombreParaMostrar,
-  obtenerSesion,
-} from "../../services/sesion";
-
+import { cargoParaMostrar, cerrarSesion, nombreParaMostrar, obtenerSesion } from "../../services/sesion";
 import { cerrarSesionEnServidor } from "../../services/usuario.service";
-
 import logo from "../../assets/logos/logo-campos-australes-normal.png";
 
 
-/*
-  Módulos del sistema.
+interface Modulo {
+  etiqueta: string;
+  ruta: string;
+  icono: LucideIcon;
+  areas?: string[];
+}
 
-  `ruta` en null significa que la página todavía no existe. Se muestra en el
-  menú (para que se vea el alcance del sistema) pero no es un enlace, así
-  nadie llega a una pantalla en blanco. Al crear la página, se le pone su
-  ruta aquí y queda navegable.
-*/
+interface Grupo {
+  etiqueta: string;
+  modulos: Modulo[];
+}
 
-const modulos = [
+const gruposBase: Grupo[] = [
   {
-    etiqueta: "Procesamiento y trazabilidad",
-    ruta: "/procesos",
-    icono: GitBranch,
-    areas: ["condensacion", "secado", "envase", "administracion"],
+    etiqueta: "Inicio",
+    modulos: [{ etiqueta: "Panel general", ruta: "/dashboard", icono: LayoutDashboard }],
   },
   {
-    etiqueta: "Mantenimiento",
-    ruta: "/mantenimiento",
-    icono: Wrench,
-    areas: ["mantenimiento", "administracion"],
+    etiqueta: "Flujo de planta",
+    modulos: [
+      { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
+      { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
+      { etiqueta: "Recepción y silos", ruta: "/recepcion", icono: Truck },
+      { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
+      { etiqueta: "Procesos", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion"] },
+      { etiqueta: "Liberación", ruta: "/liberacion", icono: ClipboardCheck },
+      { etiqueta: "Registros de planta", ruta: "/registros", icono: ClipboardList },
+    ],
   },
   {
-    etiqueta: "Abastecimiento y Bodega",
-    ruta: "/abastecimiento",
-    icono: Boxes,
+    etiqueta: "Soporte",
+    modulos: [
+      { etiqueta: "Inventario y MRP", ruta: "/inventario", icono: Warehouse, areas: ["administracion"] },
+      { etiqueta: "Mantenimiento", ruta: "/mantenimiento", icono: Wrench, areas: ["mantenimiento", "administracion"] },
+    ],
   },
   {
-    etiqueta: "Panel general",
-    ruta: "/dashboard",
-    icono: LayoutDashboard,
-  },
-  {
-    etiqueta: "Producción",
-    ruta: "/produccion",
-    icono: Factory,
-  },
-  {
-    etiqueta: "Recepción y silos",
-    ruta: "/recepcion",
-    icono: Truck,
-  },
-  {
-    etiqueta: "Liberación de producto",
-    ruta: "/liberacion",
-    icono: ClipboardCheck,
-  },
-  {
-    etiqueta: "Registros de planta",
-    ruta: "/registros",
-    icono: ClipboardList,
-  },
-  {
-    etiqueta: "Planificación",
-    ruta: "/planificacion",
-    icono: CalendarRange,
-  },
-  {
-    etiqueta: "Maestros",
-    ruta: "/maestros",
-    icono: Database,
-  },
-  {
-    etiqueta: "Auditoría",
-    ruta: "/auditoria",
-    icono: History,
+    etiqueta: "Gestión",
+    modulos: [
+      { etiqueta: "Maestros", ruta: "/maestros", icono: Database },
+      { etiqueta: "Auditoría", ruta: "/auditoria", icono: History },
+      { etiqueta: "Administración", ruta: "/administracion", icono: Users, areas: ["administracion"] },
+    ],
   },
 ];
 
-
-const enlaceBase =
-  "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors";
+const enlaceBase = "group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition";
 
 
 function Navbar() {
-
+  const [abierto, setAbierto] = useState(false);
   const navegar = useNavigate();
   const sesion = obtenerSesion();
   const area = sesion?.usuario.perfil?.area;
-  const esGlobal = sesion?.usuario.rol === "admin";
-  const modulosPorArea = modulos.filter((modulo) =>
-    !("areas" in modulo) || esGlobal || (area && modulo.areas?.includes(area)),
-  );
-  const modulosVisibles = sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin"
-    ? [
-        {
-          etiqueta: "Administración",
-          ruta: "/administracion",
-          icono: Users,
-        },
-        {
-          etiqueta: "Inventario y MRP",
-          ruta: "/inventario",
-          icono: Boxes,
-        },
-        ...modulosPorArea,
-      ]
-    : modulosPorArea;
+  const esAdmin = sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin";
+
+  const grupos = gruposBase
+    .map((grupo) => ({
+      ...grupo,
+      modulos: grupo.modulos.filter((modulo) => {
+        if (!modulo.areas) return true;
+        if (modulo.ruta === "/inventario" || modulo.ruta === "/administracion") return esAdmin;
+        return esAdmin || Boolean(area && modulo.areas.includes(area));
+      }),
+    }))
+    .filter((grupo) => grupo.modulos.length > 0);
 
   const salir = async () => {
-
-    // Se invalida el token en el servidor. Si la llamada falla (servidor
-    // caído, red), igual se cierra en el navegador: dejar al usuario dentro
-    // porque no se pudo avisar sería peor.
     try {
       await cerrarSesionEnServidor();
     } catch (error) {
       console.error("No se pudo invalidar el token en el servidor:", error);
     }
-
     cerrarSesion();
     navegar("/login", { replace: true });
-
   };
 
-  return (
-    <aside className="sticky top-0 flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
-
-      {/* Logo */}
-
-      <div className="px-6 py-8">
-
-        <img
-          src={logo}
-          alt="Campos Australes"
-          className="w-40"
-        />
-
+  const contenido = (
+    <>
+      <div className="flex h-20 items-center justify-between border-b border-slate-100 px-5">
+        <img src={logo} alt="Campos Australes" className="w-40" />
+        <button type="button" onClick={() => setAbierto(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 md:hidden" aria-label="Cerrar menú"><X className="h-5 w-5" /></button>
       </div>
 
-      {/* Módulos */}
-
-      <nav className="flex-1 space-y-1 px-4">
-
-        {modulosVisibles.map((modulo) => {
-
-          const Icono = modulo.icono;
-
-          if (!modulo.ruta) {
-
-            return (
-
-              <div
-                key={modulo.etiqueta}
-                className={`${enlaceBase} cursor-default text-slate-300`}
-                title="Módulo aún no desarrollado"
-              >
-
-                <Icono className="h-5 w-5" />
-
-                <span className="flex-1">{modulo.etiqueta}</span>
-
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
-
-                  Pronto
-
-                </span>
-
+      <nav className="flex-1 overflow-y-auto px-3 py-5">
+        <div className="space-y-6">
+          {grupos.map((grupo) => (
+            <section key={grupo.etiqueta}>
+              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{grupo.etiqueta}</p>
+              <div className="space-y-1">
+                {grupo.modulos.map((modulo) => {
+                  const Icono = modulo.icono;
+                  return (
+                    <NavLink
+                      key={modulo.ruta}
+                      to={modulo.ruta}
+                      onClick={() => setAbierto(false)}
+                      className={({ isActive }) => isActive ? `${enlaceBase} bg-emerald-50 text-emerald-800` : `${enlaceBase} text-slate-600 hover:bg-slate-50 hover:text-slate-950`}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <Icono className={`h-[18px] w-[18px] shrink-0 ${isActive ? "text-emerald-700" : "text-slate-400 group-hover:text-slate-600"}`} strokeWidth={1.8} />
+                          <span className="truncate">{modulo.etiqueta}</span>
+                          {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-600" />}
+                        </>
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
-
-            );
-
-          }
-
-          return (
-
-            <NavLink
-              key={modulo.etiqueta}
-              to={modulo.ruta}
-              className={({ isActive }) =>
-                isActive
-                  ? `${enlaceBase} bg-green-50 text-green-700`
-                  : `${enlaceBase} text-slate-600 hover:bg-slate-50 hover:text-slate-900`
-              }
-            >
-
-              <Icono className="h-5 w-5" />
-
-              {modulo.etiqueta}
-
-            </NavLink>
-
-          );
-
-        })}
-
+            </section>
+          ))}
+        </div>
       </nav>
 
-      {/* Usuario */}
-
-      <div className="border-t border-slate-200 p-4">
-
-        <div className="mb-3 px-2">
-
-          <p className="text-sm font-medium text-slate-800">
-
-            {sesion ? nombreParaMostrar(sesion.usuario) : "Sin sesión"}
-
-          </p>
-
-          <p className="text-xs text-slate-400">
-
-            {sesion ? cargoParaMostrar(sesion.usuario) : ""}
-
-          </p>
-
+      <div className="border-t border-slate-100 p-3">
+        <div className="mb-2 flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-xs font-bold uppercase text-white">{sesion ? nombreParaMostrar(sesion.usuario).slice(0, 2) : "—"}</span>
+          <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{sesion ? nombreParaMostrar(sesion.usuario) : "Sin sesión"}</p><p className="truncate text-[11px] text-slate-400">{sesion ? cargoParaMostrar(sesion.usuario) : ""}</p></div>
         </div>
-
-        <button
-          type="button"
-          onClick={salir}
-          className={`${enlaceBase} w-full text-slate-600 hover:bg-slate-50 hover:text-slate-900`}
-        >
-
-          <LogOut className="h-5 w-5" />
-
-          Cerrar sesión
-
-        </button>
-
+        <button type="button" onClick={salir} className={`${enlaceBase} w-full text-slate-500 hover:bg-rose-50 hover:text-rose-700`}><LogOut className="h-[18px] w-[18px]" strokeWidth={1.8} />Cerrar sesión</button>
       </div>
+    </>
+  );
 
-    </aside>
+  return (
+    <>
+      <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:hidden">
+        <img src={logo} alt="Campos Australes" className="w-36" />
+        <button type="button" onClick={() => setAbierto(true)} className="rounded-xl border border-slate-200 p-2.5 text-slate-600" aria-label="Abrir menú"><Menu className="h-5 w-5" /></button>
+      </header>
+
+      {abierto && <button type="button" className="fixed inset-0 z-40 bg-slate-950/40 md:hidden" onClick={() => setAbierto(false)} aria-label="Cerrar menú" />}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-slate-200 bg-white transition-transform duration-200 md:sticky md:top-0 md:h-screen md:translate-x-0 ${abierto ? "translate-x-0" : "-translate-x-full"}`}>{contenido}</aside>
+    </>
   );
 }
 

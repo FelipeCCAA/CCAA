@@ -17,6 +17,15 @@ class RecepcionSerializer(serializers.ModelSerializer):
         source="operador.get_full_name", read_only=True
     )
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    muestreado_por_nombre = serializers.CharField(
+        source="muestreado_por.get_full_name", read_only=True
+    )
+    calidad_por_nombre = serializers.CharField(
+        source="calidad_por.get_full_name", read_only=True
+    )
+    silo_asignado_por_nombre = serializers.CharField(
+        source="silo_asignado_por.get_full_name", read_only=True
+    )
 
     # El veredicto de los controles se calcula, no se guarda: al corregir un
     # límite, todas las recepciones quedan reevaluadas.
@@ -31,6 +40,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "guia",
             "vehiculo",
             "vehiculo_placa",
+            "modulo",
             "procedencia",
             "tipo_leche",
             "litros",
@@ -44,7 +54,31 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "estado_etiqueta",
             "motivo",
             "observacion",
+            "codigo_muestra",
+            "muestreado_por",
+            "muestreado_por_nombre",
+            "muestreado_en",
+            "calidad_por",
+            "calidad_por_nombre",
+            "calidad_en",
+            "silo_asignado_por",
+            "silo_asignado_por_nombre",
+            "silo_asignado_en",
             "evaluacion",
+        ]
+        read_only_fields = [
+            "silo",
+            "operador",
+            "controles",
+            "estado",
+            "motivo",
+            "codigo_muestra",
+            "muestreado_por",
+            "muestreado_en",
+            "calidad_por",
+            "calidad_en",
+            "silo_asignado_por",
+            "silo_asignado_en",
         ]
 
     def get_evaluacion(self, recepcion):

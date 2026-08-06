@@ -4,10 +4,11 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
 from maestros.models import Silo
-from usuarios.permisos import EscribeRecepcion
+from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
 
 from . import dominio
 from .models import MovimientoSilo, Recepcion
@@ -15,9 +16,21 @@ from .serializers import MovimientoSiloSerializer, RecepcionSerializer
 
 
 class RecepcionViewSet(viewsets.ModelViewSet):
-    queryset = Recepcion.objects.select_related("vehiculo", "silo", "operador")
+    queryset = Recepcion.objects.select_related(
+        "vehiculo",
+        "silo",
+        "operador",
+        "muestreado_por",
+        "calidad_por",
+        "silo_asignado_por",
+    )
     serializer_class = RecepcionSerializer
     permission_classes = [EscribeRecepcion]
+
+    def get_permissions(self):
+        if self.action == "decidir_calidad":
+            return [DecideCalidadRecepcion()]
+        return super().get_permissions()
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -53,59 +66,147 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         if serializer.validated_data.get("operador") is None:
             extra["operador"] = self.request.user
 
-        estado = self._estado_segun_controles(serializer)
-        if estado is not None:
-            extra["estado"] = estado
-
-        serializer.save(**extra)
+        serializer.save(estado=Recepcion.Estado.REGISTRADA, **extra)
 
     def perform_update(self, serializer):
-        """
-        Los controles pueden llegar después de registrar el camión, así que al
-        editarlos el estado vuelve a derivarse. Una recepción ya descargada o
-        cerrada no se toca: su leche ya entró al silo.
-        """
-        estado = self._estado_segun_controles(serializer)
+        serializer.save()
 
-        intocables = (Recepcion.Estado.DESCARGADA, Recepcion.Estado.CERRADA)
+    @action(detail=True, methods=["post"], url_path="tomar-muestra")
+    def tomar_muestra(self, request, pk=None):
+        """Identifica la muestra del módulo y lo entrega a la cola de Calidad."""
+        codigo = str(request.data.get("codigo_muestra", "")).strip()
+        if not codigo:
+            return Response(
+                {"codigo_muestra": "Debes identificar la muestra."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if estado is not None and serializer.instance.estado not in intocables:
-            serializer.save(estado=estado)
-        else:
-            serializer.save()
+        with transaction.atomic():
+            recepcion = Recepcion.objects.select_for_update().get(pk=self.get_object().pk)
+            if recepcion.estado != Recepcion.Estado.REGISTRADA:
+                return Response(
+                    {"detail": "Solo una recepción en espera puede ser muestreada."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if Recepcion.objects.exclude(pk=recepcion.pk).filter(codigo_muestra=codigo).exists():
+                return Response(
+                    {"codigo_muestra": "Este código de muestra ya está en uso."},
+                    status=status.HTTP_409_CONFLICT,
+                )
 
-    @staticmethod
-    def _estado_segun_controles(serializer):
-        """
-        El estado que corresponde a los controles informados, o None si no hay
-        con qué decidir todavía.
+            recepcion.codigo_muestra = codigo
+            recepcion.muestreado_por = request.user
+            recepcion.muestreado_en = timezone.now()
+            recepcion.estado = Recepcion.Estado.MUESTREADA
+            recepcion.save(
+                update_fields=["codigo_muestra", "muestreado_por", "muestreado_en", "estado"]
+            )
 
-        Es lo que faltaba para que el flujo funcione: el veredicto se calculaba
-        y se mostraba en pantalla, pero no movía la recepción. Quedaba en
-        `registrada` para siempre, el botón de descargar nunca aparecía, y por
-        tanto la ocupación del silo no cambiaba nunca.
+        return Response(self.get_serializer(recepcion).data)
 
-        Si quien llama manda un `estado` explícito, manda el suyo: la pantalla
-        de Recepción puede necesitar retener a mano por algo que los controles
-        no capturan.
-        """
-        if "estado" in serializer.initial_data:
-            return None
+    @action(detail=True, methods=["post"], url_path="decidir-calidad")
+    def decidir_calidad(self, request, pk=None):
+        """Registra los resultados y deja el módulo aprobado o retenido."""
+        controles = request.data.get("controles")
+        if not isinstance(controles, dict):
+            return Response(
+                {"controles": "Debes informar los controles de la muestra."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        controles = serializer.validated_data.get(
-            "controles", getattr(serializer.instance, "controles", None)
-        )
+        try:
+            controles = RecepcionSerializer().validate_controles(controles)
+        except DRFValidationError as error:
+            return Response({"controles": error.detail}, status=status.HTTP_400_BAD_REQUEST)
 
         evaluacion = dominio.evaluar_recepcion(controles)
+        decision_manual = request.data.get("decision")
+        motivo_manual = str(request.data.get("motivo", "")).strip()
 
-        if not evaluacion.analizada:
-            return None
+        if decision_manual == "retener" and not motivo_manual:
+            return Response(
+                {"motivo": "Una retención manual debe indicar el motivo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if decision_manual != "retener" and not evaluacion.analizada:
+            return Response(
+                {"controles": f"Falta completar: {', '.join(evaluacion.faltantes)}."},
+                status=status.HTTP_409_CONFLICT,
+            )
 
-        return (
-            Recepcion.Estado.LIBERADA
-            if evaluacion.liberable
-            else Recepcion.Estado.RETENIDA
-        )
+        with transaction.atomic():
+            recepcion = Recepcion.objects.select_for_update().get(pk=self.get_object().pk)
+            if recepcion.estado not in (Recepcion.Estado.MUESTREADA, Recepcion.Estado.RETENIDA):
+                return Response(
+                    {"detail": "La recepción debe estar muestreada para decidir su calidad."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            retenida = decision_manual == "retener" or not evaluacion.liberable
+            recepcion.controles = controles
+            recepcion.estado = (
+                Recepcion.Estado.RETENIDA if retenida else Recepcion.Estado.LIBERADA
+            )
+            recepcion.motivo = motivo_manual or (
+                " · ".join(evaluacion.motivos) if retenida else ""
+            )
+            recepcion.calidad_por = request.user
+            recepcion.calidad_en = timezone.now()
+            recepcion.save(
+                update_fields=[
+                    "controles",
+                    "estado",
+                    "motivo",
+                    "calidad_por",
+                    "calidad_en",
+                ]
+            )
+
+        return Response(self.get_serializer(recepcion).data)
+
+    @action(detail=True, methods=["post"], url_path="asignar-silo")
+    def asignar_silo(self, request, pk=None):
+        """Asigna el destino solo después de la aprobación de Calidad."""
+        try:
+            silo = Silo.objects.get(pk=request.data.get("silo"), activo=True)
+        except (Silo.DoesNotExist, TypeError, ValueError):
+            return Response(
+                {"silo": "Selecciona un silo activo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            recepcion = Recepcion.objects.select_for_update().get(pk=self.get_object().pk)
+            if recepcion.estado != Recepcion.Estado.LIBERADA:
+                return Response(
+                    {"detail": "El silo se asigna solo después de la aprobación de Calidad."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            tipo_esperado = (
+                Silo.Tipo.TK_LD
+                if recepcion.tipo_leche == Recepcion.TipoLeche.DESCREMADA
+                else Silo.Tipo.SILO
+            )
+            if silo.tipo != tipo_esperado:
+                etiqueta = (
+                    "TK de leche descremada"
+                    if tipo_esperado == Silo.Tipo.TK_LD
+                    else "silo de leche entera"
+                )
+                return Response(
+                    {"silo": f"Esta carga requiere un {etiqueta}."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            recepcion.silo = silo
+            recepcion.silo_asignado_por = request.user
+            recepcion.silo_asignado_en = timezone.now()
+            recepcion.save(
+                update_fields=["silo", "silo_asignado_por", "silo_asignado_en"]
+            )
+
+        return Response(self.get_serializer(recepcion).data)
 
     @action(detail=True, methods=["post"])
     def descargar(self, request, pk=None):

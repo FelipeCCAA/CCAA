@@ -62,10 +62,10 @@ class Recepcion(models.Model):
         C = "C", "Turno C"
 
     class Estado(models.TextChoices):
-        REGISTRADA = "registrada", "Registrada"
-        MUESTREADA = "muestreada", "Muestreada"
+        REGISTRADA = "registrada", "En espera de muestra"
+        MUESTREADA = "muestreada", "Muestra tomada"
         ANALIZADA = "analizada", "Analizada"
-        LIBERADA = "liberada", "Liberada"
+        LIBERADA = "liberada", "Aprobada por Calidad"
         RETENIDA = "retenida", "Retenida"
         DESCARGADA = "descargada", "Descargada"
         CERRADA = "cerrada", "Cerrada"
@@ -92,6 +92,12 @@ class Recepcion(models.Model):
         null=True,
         blank=True,
         verbose_name="Camión",
+    )
+    modulo = models.CharField(
+        "Módulo / compartimiento",
+        max_length=40,
+        blank=True,
+        help_text="Identificador del módulo transportado dentro del camión",
     )
     procedencia = models.CharField(
         "Procedencia", max_length=20, choices=Procedencia.choices, blank=True
@@ -130,6 +136,34 @@ class Recepcion(models.Model):
         "Motivo", blank=True, help_text="Obligatorio si la recepción se retiene"
     )
     observacion = models.TextField("Observación", blank=True)
+    codigo_muestra = models.CharField("Código de muestra", max_length=80, blank=True)
+    muestreado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="muestras_recepcion_tomadas",
+        null=True,
+        blank=True,
+        verbose_name="Muestreado por",
+    )
+    muestreado_en = models.DateTimeField("Fecha y hora de muestreo", null=True, blank=True)
+    calidad_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="decisiones_calidad_recepcion",
+        null=True,
+        blank=True,
+        verbose_name="Decisión de calidad por",
+    )
+    calidad_en = models.DateTimeField("Fecha y hora de decisión", null=True, blank=True)
+    silo_asignado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="silos_recepcion_asignados",
+        null=True,
+        blank=True,
+        verbose_name="Silo asignado por",
+    )
+    silo_asignado_en = models.DateTimeField("Fecha y hora de asignación", null=True, blank=True)
 
     class Meta:
         verbose_name = "Recepción de leche"
@@ -138,7 +172,12 @@ class Recepcion(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(litros__gte=0), name="recepcion_litros_no_negativos"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["codigo_muestra"],
+                condition=~models.Q(codigo_muestra=""),
+                name="codigo_muestra_recepcion_unico",
+            ),
         ]
 
     def __str__(self):
