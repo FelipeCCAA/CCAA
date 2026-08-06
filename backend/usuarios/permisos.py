@@ -118,6 +118,24 @@ class EscribePlanta(PermisoPorRol):
     )
 
 
+class EscribeEstandarizacion(PermisoPorRol):
+    """
+    Vales de estandarización: la mezcla de entera y descremada hasta el RC.
+
+    Escriben **Recepción y Producción**, no una sola. El vale nace en el área
+    de silos —que es de Recepción— y lo consume Condensación, que es
+    Producción; el turno de noche lo llena quien está, y en planta esa persona
+    no siempre es de la misma área. Separarlas obligaría a esperar a alguien
+    para registrar una agitación que ya empezó.
+    """
+
+    roles_escritura = (Rol.RECEPCION, Rol.PRODUCCION, Rol.ADMIN)
+    mensaje_escritura = (
+        "Solo Recepción, Producción o Administración registran vales de "
+        "estandarización."
+    )
+
+
 class EscribeCalidad(PermisoPorRol):
     """
     Liberación de producto. Aún sin módulo.

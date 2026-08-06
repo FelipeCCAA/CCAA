@@ -39,6 +39,7 @@ urlpatterns = [
 
     path("api/recepcion/", include("recepcion.urls")),
     path("api/recoleccion/", include("recoleccion.urls")),
+    path("api/estandarizacion/", include("estandarizacion.urls")),
 
 
     path("api/calidad/", include("calidad.urls")),
