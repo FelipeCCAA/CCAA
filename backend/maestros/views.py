@@ -1,7 +1,9 @@
+from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from produccion.dominio import especificacion_vigente
 from usuarios.permisos import EscribeAdministracion, EscribeCalidad
 
 from .models import (
@@ -51,9 +53,19 @@ class ProductoViewSet(viewsets.ModelViewSet):
 
 
 class EspecificacionViewSet(viewsets.ModelViewSet):
+    """
+    Los rangos de calidad de un producto, versionados.
+
+    **La escribe Calidad, no Administración** (desde 2026-08-06). Es la misma
+    corrección que ya se hizo con el checklist de liberación y con las recetas:
+    una especificación decide qué producto sale como conforme, y quien responde
+    por eso es Calidad. Que Administración pudiera moverle los rangos a un
+    producto le dejaría cambiar el veredicto de un lote sin medirlo de nuevo.
+    """
+
     queryset = Especificacion.objects.select_related("producto")
     serializer_class = EspecificacionSerializer
-    permission_classes = [EscribeAdministracion]
+    permission_classes = [EscribeCalidad]
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -63,6 +75,32 @@ class EspecificacionViewSet(viewsets.ModelViewSet):
             consulta = consulta.filter(producto_id=producto)
 
         return consulta
+
+    def get_serializer_context(self):
+        """
+        Cuáles son las versiones vigentes hoy, resueltas **una sola vez** con
+        la misma función que usa el veredicto.
+
+        Se calcula aquí y no en el serializador porque la regla necesita ver
+        todas las versiones del producto a la vez —gana la de vigencia más
+        reciente— y hacerlo por fila sería una consulta por especificación.
+        """
+        contexto = super().get_serializer_context()
+
+        if getattr(self, "swagger_fake_view", False):
+            return contexto
+
+        todas = list(Especificacion.objects.all())
+        hoy = timezone.localdate()
+
+        vigentes = {
+            especificacion_vigente(todas, producto_id, hoy)
+            for producto_id in {e.producto_id for e in todas}
+        }
+
+        contexto["vigentes_hoy"] = {e.id for e in vigentes if e is not None}
+
+        return contexto
 
 
 class EquipoViewSet(viewsets.ModelViewSet):

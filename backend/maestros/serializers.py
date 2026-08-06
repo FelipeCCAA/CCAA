@@ -147,6 +147,7 @@ class VehiculoSerializer(serializers.ModelSerializer):
 
 class EspecificacionSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    es_vigente = serializers.SerializerMethodField()
 
     class Meta:
         model = Especificacion
@@ -159,7 +160,27 @@ class EspecificacionSerializer(serializers.ModelSerializer):
             "vigente_hasta",
             "rangos",
             "fuente",
+            "es_vigente",
         ]
+
+    def get_es_vigente(self, especificacion) -> bool:
+        """
+        Si esta versión es la que hoy manda para su producto.
+
+        **La resuelve el backend con la misma función que el veredicto**
+        (`produccion.dominio.especificacion_vigente`). Calcularlo en la pantalla
+        pediría reimplementar la regla de solape —gana la vigencia más reciente
+        y, a igualdad, la versión mayor—, y una lista que marca «vigente» a una
+        versión distinta de la que audita el lote miente justo donde importa.
+
+        Sin ese contexto responde `False` en vez de adivinar: el viewset
+        siempre lo provee, pero el serializador se puede usar suelto —desde el
+        shell, desde otra vista— y ahí «no sé» tiene que leerse como «no
+        afirmo», no como «sí».
+        """
+        vigentes = self.context.get("vigentes_hoy")
+
+        return especificacion.id in vigentes if vigentes is not None else False
 
     def validate(self, datos):
         """

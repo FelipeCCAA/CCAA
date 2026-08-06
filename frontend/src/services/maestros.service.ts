@@ -316,3 +316,58 @@ export async function editarDocumento(
 
   return data;
 }
+
+
+/*
+  Especificaciones de calidad: los rangos aceptables de un producto,
+  versionados en el tiempo.
+
+  Un lote se audita contra la versión vigente en SU fecha, no contra la actual.
+  Por eso `es_vigente` lo calcula el backend con la misma función que el
+  veredicto: reproducir aquí la regla de solape —gana la vigencia más reciente
+  y, a igualdad, la versión mayor— daría una lista que marca vigente a una
+  versión distinta de la que audita el lote.
+*/
+
+export interface Rango {
+  min?: number | null;
+  max?: number | null;
+  obligatorio?: boolean;
+}
+
+export interface Especificacion {
+  id: number;
+  producto: number;
+  producto_nombre: string;
+  version: number;
+  vigente_desde: string;
+  vigente_hasta: string | null;
+  rangos: Record<string, Rango>;
+  fuente: string;
+  es_vigente: boolean;
+}
+
+export async function obtenerEspecificaciones(): Promise<Especificacion[]> {
+  const { data } = await api.get<Pagina<Especificacion>>(
+    "maestros/especificaciones/",
+  );
+
+  return data.results;
+}
+
+export type NuevaEspecificacion = Omit<
+  Especificacion,
+  "id" | "producto_nombre" | "es_vigente"
+>;
+
+export async function guardarEspecificacion(
+  id: number | null,
+  datos: NuevaEspecificacion,
+): Promise<Especificacion> {
+
+  const { data } = id
+    ? await api.put<Especificacion>(`maestros/especificaciones/${id}/`, datos)
+    : await api.post<Especificacion>("maestros/especificaciones/", datos);
+
+  return data;
+}

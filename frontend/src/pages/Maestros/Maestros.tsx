@@ -11,15 +11,20 @@ import {
   editarDocumento,
   guardarSilo,
   guardarVehiculo,
+  guardarEspecificacion,
   obtenerDocumentos,
+  obtenerEspecificaciones,
   type CatalogosSku,
   type DocumentoLiberacion,
   type Equipo,
+  type Especificacion,
   type Mandante,
   type ProductoMaestro,
   type Silo,
   type Vehiculo,
 } from "../../services/maestros.service";
+
+import { obtenerParametros, type Parametro } from "../../services/produccion.service";
 
 import {
   guardarCodigo,
@@ -32,6 +37,7 @@ import {
 import { puedeEscribir } from "../../services/sesion";
 
 import FormularioEquipo from "./FormularioEquipo";
+import FormularioEspecificacion from "./FormularioEspecificacion";
 import FormularioMaestro, { type Campo } from "./FormularioMaestro";
 import FormularioMandante from "./FormularioMandante";
 import FormularioProducto from "./FormularioProducto";
@@ -40,12 +46,18 @@ import FormularioProducto from "./FormularioProducto";
 /*
   Maestros del sistema.
 
-  Cubre productos, mandantes, máquinas y silos, que es lo que se configura
-  desde la operación. Las **especificaciones de calidad** y el **catálogo de documentos
-  de liberación** siguen en el admin de Django a propósito: sus formularios son
-  JSON (rangos por parámetro, plantilla del documento) y darles una pantalla es
-  un trabajo aparte — además el que decide sobre ellos es Calidad, no
-  Administración.
+  Cubre productos, mandantes, especificaciones, máquinas y silos.
+
+  Las **especificaciones** y el **catálogo de documentos** los escribe Calidad,
+  no Administración: son los que deciden qué sale conforme y qué se exige para
+  liberar. El permiso lo aplica el backend; aquí solo se deja de ofrecer lo que
+  va a rechazar.
+
+  De los formularios JSON queda uno en el admin: la **plantilla** de cada
+  documento de liberación, que se construye contra el formato real de planta.
+  Los rangos de una especificación ya no: se editan con una fila por parámetro
+  del catálogo, así que no hay forma de escribir una clave que el modelo
+  rechaza.
 
   Los silos van de solo lectura: su ocupación no se edita, se calcula desde el
   libro de movimientos, y darles un formulario aquí invitaría a "corregir" un
@@ -55,6 +67,7 @@ import FormularioProducto from "./FormularioProducto";
 type Pestana =
   | "productos"
   | "mandantes"
+  | "especificaciones"
   | "equipos"
   | "silos"
   | "camiones"
@@ -64,6 +77,7 @@ type Pestana =
 const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "productos", etiqueta: "Productos" },
   { clave: "mandantes", etiqueta: "Mandantes" },
+  { clave: "especificaciones", etiqueta: "Especificaciones" },
   { clave: "equipos", etiqueta: "Máquinas" },
   { clave: "silos", etiqueta: "Silos y estanques" },
   { clave: "camiones", etiqueta: "Camiones" },
@@ -71,6 +85,19 @@ const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "documentos", etiqueta: "Documentos de liberación" },
 ];
 
+
+
+/*
+  El nombre legible de un parámetro, según el catálogo del backend.
+
+  Si el catálogo todavía no llegó, se muestra la clave cruda en vez de una
+  etiqueta escrita aquí: una tabla de nombres en el frontend se separa del
+  modelo sin que nadie lo note, y esta pantalla existe justamente para no
+  tener que conocer las claves.
+*/
+function etiquetaParametro(parametros: Parametro[], clave: string): string {
+  return parametros.find((p) => p.clave === clave)?.etiqueta ?? clave;
+}
 
 
 /*
@@ -202,6 +229,14 @@ function Maestros() {
   const [codigos, setCodigos] = useState<CodigoProduccion[]>([]);
   const [catPlan, setCatPlan] = useState<CatalogosPlanificacion | null>(null);
   const [documentos, setDocumentos] = useState<DocumentoLiberacion[]>([]);
+  const [especificaciones, setEspecificaciones] = useState<Especificacion[]>([]);
+  const [parametros, setParametros] = useState<Parametro[]>([]);
+  /* Qué especificación se está editando y cómo: crear, editar la versión o
+     abrir una nueva. Los tres usan el mismo formulario. */
+  const [spec, setSpec] = useState<{
+    modo: "nueva" | "editar" | "version";
+    inicial: Especificacion | null;
+  } | null>(null);
   /* Qué documento se está guardando, para no dejar la fila muda al hacer clic. */
   const [guardandoDoc, setGuardandoDoc] = useState<number | null>(null);
   const [catalogos, setCatalogos] = useState<CatalogosSku | null>(null);
@@ -236,7 +271,7 @@ function Maestros() {
     try {
 
       // Los listados van juntos: sin ellos no hay nada que mostrar.
-      const [p, m, e, s, v, k, d] = await Promise.all([
+      const [p, m, e, s, v, k, d, esp] = await Promise.all([
         obtenerProductosMaestros(),
         obtenerMandantes(),
         obtenerEquipos(),
@@ -244,6 +279,7 @@ function Maestros() {
         obtenerVehiculosMaestros(),
         obtenerCodigos(),
         obtenerDocumentos(),
+        obtenerEspecificaciones(),
       ]);
 
       setProductos(p);
@@ -253,6 +289,7 @@ function Maestros() {
       setCamiones(v);
       setCodigos(k);
       setDocumentos(d);
+      setEspecificaciones(esp);
 
     } catch {
       setError(
@@ -279,6 +316,13 @@ function Maestros() {
       .then(setCatPlan)
       .catch(() => setCatPlan(null));
 
+    // El catálogo de parámetros medibles alimenta el formulario de rangos.
+    // Viene del backend por la misma razón que el resto: escribir las nueve
+    // claves aquí dejaría ofrecer una que `Especificacion.clean()` rechaza.
+    obtenerParametros()
+      .then(setParametros)
+      .catch(() => setParametros([]));
+
   }, []);
 
   useEffect(() => {
@@ -287,9 +331,13 @@ function Maestros() {
     return () => clearTimeout(temporizador);
   }, [cargar]);
 
-  // El checklist lo escribe Calidad, no Administración: el módulo promete que
-  // Calidad cambia un campo y el formulario cambia sin desplegar.
-  const puedeEditarDocumentos = puedeEscribir("calidad");
+  /*
+    Lo que decide sobre la calidad del producto lo escribe Calidad, no
+    Administración: el checklist —el módulo promete que Calidad cambia un campo
+    y el formulario cambia sin desplegar— y las especificaciones, que son las
+    que dicen qué sale conforme.
+  */
+  const puedeEditarCalidad = puedeEscribir("calidad");
 
   const cambiarFrecuencia = async (
     documento: DocumentoLiberacion,
@@ -314,6 +362,35 @@ function Maestros() {
     }
   };
 
+  /*
+    Productos sin especificación vigente hoy.
+
+    Es lo primero que la pestaña tiene que decir, porque es la causa del
+    «Sin especificación» que aparece en Producción: sin ella no hay veredicto
+    y el lote **no se puede liberar por ninguna vía**, ni siquiera por
+    concesión —no se concede una excepción sobre algo que nunca se midió—.
+
+    Qué versión está vigente lo dice el backend en `es_vigente`, con la misma
+    función que audita el lote. Aquí solo se resta.
+  */
+  const conVigente = new Set(
+    especificaciones.filter((e) => e.es_vigente).map((e) => e.producto),
+  );
+  const sinEspecificacion = productos.filter(
+    (p) => p.activo && !conVigente.has(p.id),
+  );
+
+  const guardarSpec = async (
+    id: number | null,
+    datos: Parameters<typeof guardarEspecificacion>[1],
+  ) => {
+    await guardarEspecificacion(id, datos);
+    setSpec(null);
+    // Se recarga la lista entera y no se parchea la fila: crear una versión
+    // cambia cuál es la vigente, y esa respuesta la da el backend.
+    setEspecificaciones(await obtenerEspecificaciones());
+  };
+
   const celda = "px-4 py-3 text-sm";
   const encabezado =
     "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500";
@@ -333,9 +410,9 @@ function Maestros() {
             </h1>
 
             <p className="mt-2 max-w-3xl text-slate-500">
-              Productos, mandantes, máquinas y estanques: la configuración
-              del entorno productivo. El SKU del producto se genera desde sus
-              atributos, no se escribe a mano.
+              Productos, especificaciones, máquinas y estanques: la
+              configuración del entorno productivo. El SKU del producto se
+              genera desde sus atributos, no se escribe a mano.
             </p>
 
           </div>
@@ -573,6 +650,191 @@ function Maestros() {
 
             )}
 
+            {/* Especificaciones de calidad */}
+
+            {pestana === "especificaciones" && (
+
+              <div className="space-y-6">
+
+                {/*
+                  El aviso va primero porque es la causa del «Sin
+                  especificación» de Producción, y porque el efecto no es
+                  cosmético: esos lotes no se liberan por ninguna vía.
+                */}
+                {sinEspecificacion.length > 0 && (
+                  <section className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-5">
+
+                    <h2 className="text-sm font-semibold text-amber-900">
+                      {sinEspecificacion.length}{" "}
+                      {sinEspecificacion.length === 1
+                        ? "producto activo no tiene especificación vigente"
+                        : "productos activos no tienen especificación vigente"}
+                    </h2>
+
+                    <p className="mt-1 text-sm text-amber-800">
+                      Sus lotes salen como <strong>«Sin especificación»</strong>{" "}
+                      y <strong>no se pueden liberar</strong>, ni siquiera por
+                      concesión: no se concede una excepción sobre algo que
+                      nunca se midió.
+                    </p>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {sinEspecificacion.map((p) => (
+                        <span
+                          key={p.id}
+                          className="rounded-full bg-white px-3 py-1 text-xs text-amber-900"
+                        >
+                          {p.nombre}
+                        </span>
+                      ))}
+                    </div>
+
+                  </section>
+                )}
+
+                <section className="rounded-2xl border border-slate-200 bg-white">
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-3">
+
+                    <p className="max-w-3xl text-sm text-slate-500">
+                      Los rangos que decide si un lote es conforme. Un lote se
+                      audita contra la versión vigente en <strong>su</strong>{" "}
+                      fecha, no contra la de hoy — por eso se versiona en vez
+                      de corregirse encima.
+                    </p>
+
+                    {puedeEditarCalidad && (
+                      <button
+                        type="button"
+                        onClick={() => setSpec({ modo: "nueva", inicial: null })}
+                        className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Nueva especificación
+                      </button>
+                    )}
+
+                  </div>
+
+                  <div className="overflow-x-auto">
+
+                    <table className="w-full">
+
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className={encabezado}>Producto</th>
+                          <th className={encabezado}>Versión</th>
+                          <th className={encabezado}>Vigencia</th>
+                          <th className={encabezado}>Parámetros</th>
+                          <th className={encabezado}>Fuente</th>
+                          <th className={encabezado}></th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+
+                        {especificaciones.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={6}
+                              className="px-6 py-10 text-center text-sm text-slate-400"
+                            >
+                              Todavía no hay especificaciones cargadas.
+                            </td>
+                          </tr>
+                        )}
+
+                        {especificaciones.map((e) => (
+
+                          <tr key={e.id} className="border-t border-slate-100">
+
+                            <td className={`${celda} font-medium text-slate-800`}>
+                              {e.producto_nombre}
+                            </td>
+
+                            <td className={celda}>
+                              <span className="text-slate-600">v{e.version}</span>
+                              {e.es_vigente && (
+                                <span className="ml-2 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                                  vigente
+                                </span>
+                              )}
+                            </td>
+
+                            <td className={`${celda} text-slate-600`}>
+                              {e.vigente_desde} →{" "}
+                              {e.vigente_hasta ?? (
+                                <span className="text-slate-400">sin término</span>
+                              )}
+                            </td>
+
+                            <td className={`${celda} text-slate-600`}>
+                              {Object.entries(e.rangos).map(([clave, r]) => (
+                                <span
+                                  key={clave}
+                                  className="mr-1.5 inline-block rounded-lg bg-slate-100 px-2 py-0.5 text-xs"
+                                  title={r.obligatorio ? "Obligatorio" : "Opcional"}
+                                >
+                                  {etiquetaParametro(parametros, clave)}{" "}
+                                  {r.min ?? "—"}…{r.max ?? "—"}
+                                  {r.obligatorio && "*"}
+                                </span>
+                              ))}
+                            </td>
+
+                            <td className={`${celda} text-slate-500`}>
+                              {e.fuente || "—"}
+                            </td>
+
+                            <td className={`${celda} whitespace-nowrap text-right`}>
+                              {puedeEditarCalidad && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setSpec({ modo: "version", inicial: e })
+                                    }
+                                    className="rounded-lg px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
+                                  >
+                                    Nueva versión
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setSpec({ modo: "editar", inicial: e })
+                                    }
+                                    title="Editar esta versión"
+                                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
+                            </td>
+
+                          </tr>
+
+                        ))}
+
+                      </tbody>
+
+                    </table>
+
+                  </div>
+
+                  {!puedeEditarCalidad && (
+                    <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                      Solo Calidad edita las especificaciones: son las que
+                      deciden qué producto sale como conforme.
+                    </p>
+                  )}
+
+                </section>
+
+              </div>
+
+            )}
+
             {/* Máquinas */}
 
             {pestana === "equipos" && (
@@ -718,7 +980,7 @@ function Maestros() {
                           </td>
 
                           <td className={celda}>
-                            {puedeEditarDocumentos ? (
+                            {puedeEditarCalidad ? (
                               <select
                                 className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-800 focus:border-green-500 focus:outline-none disabled:opacity-50"
                                 value={d.frecuencia}
@@ -756,7 +1018,7 @@ function Maestros() {
 
                 </div>
 
-                {!puedeEditarDocumentos && (
+                {!puedeEditarCalidad && (
                   <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
                     Solo Calidad cambia el checklist: es quien responde por él.
                   </p>
@@ -1102,9 +1364,10 @@ function Maestros() {
         )}
 
         <p className="mt-6 text-xs text-slate-400">
-          Las especificaciones de calidad y el catálogo de documentos de
-          liberación se administran desde el admin de Django: sus formularios
-          son plantillas JSON y los decide Calidad.
+          Lo que decide sobre la calidad del producto —especificaciones y
+          checklist— lo escribe Calidad, no Administración. Del admin de Django
+          queda una cosa: la <strong>plantilla</strong> de cada documento de
+          liberación, que se construye contra el formato real de planta.
         </p>
 
       </div>
@@ -1167,6 +1430,17 @@ function Maestros() {
             setEditandoMandante(null);
           }}
           alGuardar={cargar}
+        />
+      )}
+
+      {spec && (
+        <FormularioEspecificacion
+          modo={spec.modo}
+          inicial={spec.inicial}
+          productos={productos}
+          parametros={parametros}
+          onGuardar={guardarSpec}
+          onCerrar={() => setSpec(null)}
         />
       )}
 
