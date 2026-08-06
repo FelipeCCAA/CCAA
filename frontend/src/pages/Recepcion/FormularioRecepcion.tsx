@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { ArrowRight, FlaskConical, Layers3, Truck, Warehouse, X } from "lucide-react";
 
 import { crearRecepcion, type Vehiculo } from "../../services/recepcion.service";
+import {
+  obtenerCargasPendientes,
+  type CargaEsperada,
+} from "../../services/recoleccion.service";
 
 
 interface Props {
@@ -16,6 +20,8 @@ const hoy = () => new Date().toISOString().slice(0, 10);
 
 function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
   const [fecha, setFecha] = useState(hoy());
+  const [cargaRecoleccion, setCargaRecoleccion] = useState("");
+  const [cargasEsperadas, setCargasEsperadas] = useState<CargaEsperada[]>([]);
   const [hora, setHora] = useState("");
   const [guia, setGuia] = useState("");
   const [vehiculo, setVehiculo] = useState("");
@@ -28,6 +34,23 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    const tarea = setTimeout(() => {
+      void obtenerCargasPendientes().then(setCargasEsperadas).catch(() => setCargasEsperadas([]));
+    }, 0);
+    return () => clearTimeout(tarea);
+  }, []);
+
+  const seleccionarCarga = (valor: string) => {
+    setCargaRecoleccion(valor);
+    const carga = cargasEsperadas.find((item) => item.id === Number(valor));
+    if (!carga) return;
+    setVehiculo(String(carga.vehiculo));
+    setModulo(carga.modulo);
+    setLitros(carga.litros);
+    setGuia(carga.codigo);
+  };
+
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
     evento.preventDefault();
     setError("");
@@ -36,6 +59,7 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
     try {
       await crearRecepcion({
         fecha,
+        carga_recoleccion: cargaRecoleccion ? Number(cargaRecoleccion) : undefined,
         hora: hora || undefined,
         guia: guia || undefined,
         vehiculo: vehiculo ? Number(vehiculo) : undefined,
@@ -76,6 +100,29 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
 
         <form onSubmit={enviar}>
           <div className="space-y-5 p-5 sm:p-8">
+            {cargasEsperadas.length > 0 && (
+              <section className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+                <label className="mb-1.5 block text-xs font-semibold text-emerald-800">
+                  Carga esperada desde Recolección
+                </label>
+                <select
+                  value={cargaRecoleccion}
+                  onChange={(e) => seleccionarCarga(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-3.5 text-sm text-slate-800"
+                >
+                  <option value="">Recepción manual / sin carga programada</option>
+                  {cargasEsperadas.map((carga) => (
+                    <option key={carga.id} value={carga.id}>
+                      {carga.codigo} · {carga.vehiculo_placa} · {carga.modulo} · {carga.predio} · {Number(carga.litros).toLocaleString("es-CL")} L
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-emerald-700">
+                  Al seleccionarla se completan camión, módulo, guía y litros, evitando doble digitación.
+                </p>
+              </section>
+            )}
+
             <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-800">
               <p className="font-semibold">Registra una fila por cada módulo del camión.</p>
               <p className="mt-1 text-xs leading-5 text-blue-700">Si el camión trae más de un módulo, repite la guía y el vehículo indicando Módulo 1, Módulo 2, etc. Cada uno recibirá su propia muestra y decisión.</p>

@@ -28,11 +28,8 @@ urlpatterns = [
 
     path("api/salud/", salud, name="salud"),
 
-    # Bajo /api para que Vercel lo envíe siempre al servicio Django.
-    path(
-        "api/admin/",
-        admin.site.urls
-    ),
+    # El panel administrativo no forma parte de la API REST.
+    path("admin/", admin.site.urls),
 
     path("api/usuarios/", include("usuarios.urls")),
 
@@ -41,6 +38,8 @@ urlpatterns = [
     path("api/produccion/", include("produccion.urls")),
 
     path("api/recepcion/", include("recepcion.urls")),
+
+    path("api/recoleccion/", include("recoleccion.urls")),
 
     path("api/calidad/", include("calidad.urls")),
 

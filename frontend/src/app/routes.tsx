@@ -10,18 +10,18 @@ import MainLayout from "../layouts/mainlayout";
 import Login from "../pages/Login/Login";
 import RecuperarContrasena from "../pages/RecuperarContrasena/RecuperarContrasena";
 import RestablecerContrasena from "../pages/RecuperarContrasena/RestablecerContrasena";
-import Dashboard from "../pages/Dashboard/Dashboard";
-import Produccion from "../pages/Produccion/Produccion";
-import Recepcion from "../pages/Recepcion/Recepcion";
-import Liberacion from "../pages/Liberacion/Liberacion";
-import Planificacion from "../pages/Planificacion/Planificacion";
-import Maestros from "../pages/Maestros/Maestros";
-import Auditoria from "../pages/Auditoria/Auditoria";
-import Administracion from "../pages/Administracion/Administracion";
-import Inventario from "../pages/Inventario/Inventario";
-import Abastecimiento from "../pages/Abastecimiento/Abastecimiento";
-import Registros from "../pages/Registros/Registros";
-
+const Dashboard = lazy(() => import("../pages/Dashboard/Dashboard"));
+const Produccion = lazy(() => import("../pages/Produccion/Produccion"));
+const Recepcion = lazy(() => import("../pages/Recepcion/Recepcion"));
+const Recoleccion = lazy(() => import("../pages/Recoleccion/Recoleccion"));
+const Liberacion = lazy(() => import("../pages/Liberacion/Liberacion"));
+const Planificacion = lazy(() => import("../pages/Planificacion/Planificacion"));
+const Maestros = lazy(() => import("../pages/Maestros/Maestros"));
+const Auditoria = lazy(() => import("../pages/Auditoria/Auditoria"));
+const Administracion = lazy(() => import("../pages/Administracion/Administracion"));
+const Inventario = lazy(() => import("../pages/Inventario/Inventario"));
+const Abastecimiento = lazy(() => import("../pages/Abastecimiento/Abastecimiento"));
+const Registros = lazy(() => import("../pages/Registros/Registros"));
 const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
 const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
 
@@ -87,17 +87,17 @@ function RoutesApp(){
                     <Route element={<RutaAdmin />}>
                         <Route
                             path="/administracion"
-                            element={<Administracion />}
+                            element={diferido(<Administracion />)}
                         />
-                        <Route path="/inventario" element={<Inventario />} />
+                        <Route path="/inventario" element={diferido(<Inventario />)} />
                     </Route>
 
                     <Route
                         path="/dashboard"
-                        element={<Dashboard />}
+                        element={diferido(<Dashboard />)}
                     />
 
-                    <Route path="/abastecimiento" element={<Abastecimiento />} />
+                    <Route path="/abastecimiento" element={diferido(<Abastecimiento />)} />
 
                     <Route path="/procesos" element={diferido(<Procesos />)} />
 
@@ -105,37 +105,39 @@ function RoutesApp(){
 
                     <Route
                         path="/produccion"
-                        element={<Produccion />}
+                        element={diferido(<Produccion />)}
                     />
+
+                    <Route path="/recoleccion" element={diferido(<Recoleccion />)} />
 
                     <Route
                         path="/recepcion"
-                        element={<Recepcion />}
+                        element={diferido(<Recepcion />)}
                     />
 
                     <Route
                         path="/liberacion"
-                        element={<Liberacion />}
+                        element={diferido(<Liberacion />)}
                     />
 
                     <Route
                         path="/planificacion"
-                        element={<Planificacion />}
+                        element={diferido(<Planificacion />)}
                     />
 
                     <Route
                         path="/maestros"
-                        element={<Maestros />}
+                        element={diferido(<Maestros />)}
                     />
 
                     <Route
                         path="/registros"
-                        element={<Registros />}
+                        element={diferido(<Registros />)}
                     />
 
                     <Route
                         path="/auditoria"
-                        element={<Auditoria />}
+                        element={diferido(<Auditoria />)}
                     />
 
                 </Route>

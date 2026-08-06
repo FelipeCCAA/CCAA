@@ -35,6 +35,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
         model = Recepcion
         fields = [
             "id",
+            "carga_recoleccion",
             "fecha",
             "hora",
             "guia",
@@ -65,6 +66,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "silo_asignado_por_nombre",
             "silo_asignado_en",
             "evaluacion",
+            "diferencia_recoleccion_litros",
         ]
         read_only_fields = [
             "silo",
@@ -79,6 +81,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "calidad_en",
             "silo_asignado_por",
             "silo_asignado_en",
+            "diferencia_recoleccion_litros",
         ]
 
     def get_evaluacion(self, recepcion):
@@ -122,6 +125,21 @@ class RecepcionSerializer(serializers.ModelSerializer):
         return controles
 
     def validate(self, datos):
+        carga = datos.get(
+            "carga_recoleccion", getattr(self.instance, "carga_recoleccion", None)
+        )
+        if carga:
+            vehiculo = datos.get("vehiculo", getattr(self.instance, "vehiculo", None))
+            modulo = datos.get("modulo", getattr(self.instance, "modulo", ""))
+            if vehiculo and vehiculo.pk != carga.recoleccion.parada.ruta.vehiculo_id:
+                raise serializers.ValidationError(
+                    {"vehiculo": "El camión no coincide con la carga de Recolección."}
+                )
+            if modulo and modulo.strip() != carga.modulo:
+                raise serializers.ValidationError(
+                    {"modulo": "El módulo no coincide con la carga de Recolección."}
+                )
+
         estado = datos.get("estado", getattr(self.instance, "estado", None))
         motivo = datos.get("motivo", getattr(self.instance, "motivo", "") or "")
 

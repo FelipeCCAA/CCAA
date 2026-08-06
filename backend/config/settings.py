@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     'maestros',
     'produccion',
     'recepcion',
+    'recoleccion',
     'calidad',
     'inocuidad',
     'inventario',
@@ -272,7 +273,7 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         # Sesion tambien, para poder navegar la API desde el navegador
-        # estando logueado en /api/admin/.
+        # estando logueado en /admin/.
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [

@@ -56,6 +56,7 @@ export interface EvaluacionRecepcion {
 
 export interface Recepcion {
   id: number;
+  carga_recoleccion: number | null;
   fecha: string;
   hora: string | null;
   guia: string;
@@ -90,6 +91,7 @@ export interface Recepcion {
 
 export interface RecepcionNueva {
   fecha: string;
+  carga_recoleccion?: number;
   hora?: string;
   tipo_leche: string;
   litros: string;

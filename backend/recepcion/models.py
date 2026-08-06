@@ -83,6 +83,15 @@ class Recepcion(models.Model):
     }
 
     fecha = models.DateField("Fecha")
+    carga_recoleccion = models.OneToOneField(
+        "recoleccion.CargaModulo",
+        on_delete=models.PROTECT,
+        related_name="recepcion_planta",
+        null=True,
+        blank=True,
+        verbose_name="Carga esperada de Recolección",
+        help_text="Vínculo opcional para conservar recepciones manuales autorizadas.",
+    )
     hora = models.TimeField("Hora", null=True, blank=True)
     guia = models.CharField("Guía", max_length=60, blank=True)
     vehiculo = models.ForeignKey(
@@ -182,6 +191,12 @@ class Recepcion(models.Model):
 
     def __str__(self):
         return f"{self.fecha} · {self.litros} L · {self.silo or 'sin silo'}"
+
+    @property
+    def diferencia_recoleccion_litros(self):
+        if not self.carga_recoleccion_id:
+            return None
+        return self.litros - self.carga_recoleccion.litros
 
     def clean(self):
         if not isinstance(self.controles, dict):

@@ -11,6 +11,7 @@ import {
   History,
   LayoutDashboard,
   LogOut,
+  MapPinned,
   Menu,
   Truck,
   Users,
@@ -47,6 +48,7 @@ const gruposBase: Grupo[] = [
     modulos: [
       { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
       { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
+      { etiqueta: "Recolección", ruta: "/recoleccion", icono: MapPinned },
       { etiqueta: "Recepción y silos", ruta: "/recepcion", icono: Truck },
       { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
       { etiqueta: "Procesos", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion"] },

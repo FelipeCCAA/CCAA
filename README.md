@@ -110,7 +110,7 @@ DB_HOST=127.0.0.1
 DB_PORT=5432
 ```
 
-Queda en `http://127.0.0.1:8000/`. La raíz responde 404: solo existen `/api/admin/` y
+Queda en `http://127.0.0.1:8000/`. La raíz responde 404: solo existen `/admin/` y
 `/api/`. El archivo `.env` es local de cada equipo y no se versiona.
 
 **Si ya se venía trabajando con SQLite**, los datos se traen sin perder nada.
@@ -204,7 +204,7 @@ respuesta pública es siempre la misma aunque el correo no exista, para impedir
 la enumeración de cuentas.
 
 El administrador conserva además la posibilidad de cambiar manualmente una
-contraseña desde `/api/admin/`.
+contraseña desde `/admin/`.
 
 La URL del frontend, la duración del enlace y el remitente se configuran con:
 
@@ -271,7 +271,7 @@ Las clases están en [backend/usuarios/permisos.py](backend/usuarios/permisos.py
 El frontend consulta el rol solo para no ofrecer botones que el backend va a
 rechazar; el permiso se aplica en el servidor.
 
-Para probar la API a mano conviene entrar antes a `/api/admin/`: la sesión del
+Para probar la API a mano conviene entrar antes a `/admin/`: la sesión del
 navegador también autentica, así que las URLs se pueden abrir directamente.
 
 ---
@@ -345,4 +345,4 @@ de Calidad, y por eso ya está construido: los formularios son datos, no código
 Lo que bloquean es **ponerlo a operar**: sin las especificaciones oficiales y sin saber
 qué documentos exige cada familia, el motor funciona pero libera contra rangos
 referenciales y contra un checklist inventado. Se responden cargando datos desde
-`/api/admin/`, no modificando código.
+`/admin/`, no modificando código.

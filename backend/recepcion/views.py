@@ -18,6 +18,7 @@ from .serializers import MovimientoSiloSerializer, RecepcionSerializer
 class RecepcionViewSet(viewsets.ModelViewSet):
     queryset = Recepcion.objects.select_related(
         "vehiculo",
+        "carga_recoleccion__recoleccion__parada__ruta__vehiculo",
         "silo",
         "operador",
         "muestreado_por",
@@ -62,6 +63,11 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         # Quien registra queda como operador si no se indicó otro: el dato es
         # para auditoría y teclearlo a mano solo lo hace menos fiable.
         extra = {}
+
+        carga = serializer.validated_data.get("carga_recoleccion")
+        if carga:
+            extra["vehiculo"] = carga.recoleccion.parada.ruta.vehiculo
+            extra["modulo"] = carga.modulo
 
         if serializer.validated_data.get("operador") is None:
             extra["operador"] = self.request.user
