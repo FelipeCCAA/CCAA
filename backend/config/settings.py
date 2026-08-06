@@ -218,7 +218,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = min(MAX_UPLOAD_SIZE, 5 * 1024 * 1024)
 # variables de entorno.
 PASSWORD_RESET_FRONTEND_URL = os.environ.get(
     "PASSWORD_RESET_FRONTEND_URL",
-    "http://localhost:5173/restablecer-contrasena",
+    "http://localhost:5173/#/restablecer-contrasena",
 )
 PASSWORD_RESET_TIMEOUT = int(os.environ.get("PASSWORD_RESET_TIMEOUT", "3600"))
 
