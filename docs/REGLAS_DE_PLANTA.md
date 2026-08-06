@@ -191,9 +191,41 @@ No es una limitación del programa. En planta se traduce en «esta leche no da
 para el producto de RC 0,422», que es una decisión de qué producir. El sistema
 lo dice con el detalle de en cuánto está cada leche.
 
-**Lo que falta:** el vale de estandarización como documento —con su ciclo de
-transferir, agitar 30 minutos, muestrear y corregir—, y la crema como tercera
-entrada de la mezcla.
+### 3.2 El vale, con su ciclo (aplicado 2026-08-06)
+
+`estandarizacion.ValeEstandarizacion` es la hoja RC del paso 4, y el eslabón que
+la trazabilidad hacia atrás necesita entre el precondensado y los silos de leche
+fresca. Su ciclo es el de los pasos 5 a 7:
+
+```
+calculado → transferido → agitando → muestreado ┬ conforme    → liberado
+                              ↑                 └ no conforme → corrigiendo ┘
+```
+
+Cada paso es una acción del servicio y no un `PATCH estado=…`, y hay tres reglas
+que solo se sostienen así:
+
+- **No se muestrea antes de los 30 minutos** (`MINUTOS_DE_AGITACION`). Una
+  muestra tomada antes mide una mezcla que todavía no es homogénea. La hora de
+  inicio la pone el servidor: aceptarla del cliente permitiría declarar treinta
+  minutos que no ocurrieron.
+- **Liberar no se pide, se calcula.** `decidir` no acepta el destino; lo deduce
+  del RC medido.
+- **Corregir reinicia el reloj y borra el análisis.** Agregar leche deshace la
+  homogeneidad.
+
+La composición de las dos leches se guarda **en el vale**, no se lee del silo al
+mirarlo: el silo cambia con cada ingreso y un vale de mayo se audita contra la
+leche que había en mayo. `rc_real` se calcula y no se guarda.
+
+`calcular/` responde la mezcla **sin crear el vale** —es el paso que el operador
+repite variando el volumen— y la pantalla (`/estandarizacion`) no ofrece crear
+hasta que hay una mezcla posible: un vale imposible se descubriría después de
+transferir.
+
+**Lo que falta:** la crema como tercera entrada de la mezcla, que es lo que
+haría estandarizable un RC 0,422 con leche pobre (§3.1). Pendiente de confirmar
+con Fabricación si en planta se hace así.
 
 ---
 
