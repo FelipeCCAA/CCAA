@@ -15,8 +15,11 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto, Silo
+from usuarios.models import PerfilUsuario, Rol
 
 from . import servicios
 from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
@@ -277,6 +280,114 @@ class TransicionesTests(BaseVale):
 
         with self.assertRaises(ValidationError):
             servicios.anular(vale_id=vale.pk, motivo="me arrepentí")
+
+
+class ApiTests(BaseVale):
+    """
+    La API por encima del servicio. Lo que se comprueba no es que responda 200,
+    sino que **no ofrezca un atajo alrededor de las reglas**.
+    """
+
+    def setUp(self):
+        operador = get_user_model().objects.create_user(username="api", password="x")
+        PerfilUsuario.objects.create(usuario=operador, rol=Rol.RECEPCION)
+
+        self.cliente = APIClient()
+        self.cliente.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=operador).key}"
+        )
+
+    def test_el_estado_no_se_mueve_con_un_patch(self):
+        """
+        La regla de liberación vive en `decidir`, que la calcula. Si `estado`
+        fuera escribible, un `PATCH estado=liberado` liberaría un vale sin
+        muestra y sin RC — la regla completa se saltaría con una petición.
+        """
+        vale = self.crear_vale()
+
+        respuesta = self.cliente.patch(
+            f"/api/estandarizacion/vales/{vale.pk}/",
+            {"estado": "liberado"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.estado, ValeEstandarizacion.Estado.CALCULADO)
+
+    def test_el_analisis_tampoco_se_escribe_por_patch(self):
+        """Muestrear exige los 30 minutos; un PATCH los esquivaría."""
+        vale = self.crear_vale()
+
+        self.cliente.patch(
+            f"/api/estandarizacion/vales/{vale.pk}/",
+            {"grasa_real": "1.79", "sng_real": "8.90"},
+            format="json",
+        )
+
+        vale.refresh_from_db()
+        self.assertIsNone(vale.grasa_real)
+
+    def test_muestrear_antes_de_tiempo_responde_409(self):
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=5)
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/muestrear/",
+            {"grasa": 1.79, "sng": 8.9},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertIn("minutos agitando", respuesta.json()["detail"])
+
+    def test_calcular_no_crea_nada(self):
+        """
+        Es el paso que el operador repite variando el volumen: guardar cada
+        tanteo llenaría la tabla de vales muertos.
+        """
+        antes = ValeEstandarizacion.objects.count()
+
+        respuesta = self.cliente.post(
+            "/api/estandarizacion/vales/calcular/",
+            {
+                "entera_grasa": 3.9, "entera_sng": 8.6,
+                "descremada_grasa": 0.05, "descremada_sng": 8.9,
+                "rc_objetivo": 0.201, "volumen": 10000,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.json()["posible"])
+        self.assertEqual(ValeEstandarizacion.objects.count(), antes)
+
+    def test_calcular_avisa_cuando_el_rc_no_se_alcanza(self):
+        respuesta = self.cliente.post(
+            "/api/estandarizacion/vales/calcular/",
+            {
+                "entera_grasa": 3.6, "entera_sng": 8.6,
+                "descremada_grasa": 0.05, "descremada_sng": 8.9,
+                "rc_objetivo": 0.422, "volumen": 10000,
+            },
+            format="json",
+        )
+
+        cuerpo = respuesta.json()
+        self.assertFalse(cuerpo["posible"])
+        self.assertIn("no se alcanza", cuerpo["motivo"])
+
+    def test_los_minutos_se_sirven_desde_el_backend(self):
+        """
+        La pantalla dibuja la cuenta regresiva contra este número. Escribirlo
+        en el frontend crearía una copia que puede ofrecer el botón antes que
+        el servidor.
+        """
+        respuesta = self.cliente.get("/api/estandarizacion/vales/catalogos/")
+
+        self.assertEqual(
+            respuesta.json()["minutos_agitacion"], MINUTOS_DE_AGITACION
+        )
 
 
 class ReglasDelDocumentoTests(BaseVale):

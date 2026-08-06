@@ -19,6 +19,7 @@ const Dashboard = lazy(() => import("../pages/Dashboard/Dashboard"));
 const Produccion = lazy(() => import("../pages/Produccion/Produccion"));
 const Recepcion = lazy(() => import("../pages/Recepcion/Recepcion"));
 const Recoleccion = lazy(() => import("../pages/Recoleccion/Recoleccion"));
+const Estandarizacion = lazy(() => import("../pages/Estandarizacion/Estandarizacion"));
 const Liberacion = lazy(() => import("../pages/Liberacion/Liberacion"));
 const Planificacion = lazy(() => import("../pages/Planificacion/Planificacion"));
 const Maestros = lazy(() => import("../pages/Maestros/Maestros"));
@@ -162,6 +163,11 @@ function RoutesApp(){
                     <Route
                         path="/recepcion"
                         element={diferido(<Recepcion />)}
+                    />
+
+                    <Route
+                        path="/estandarizacion"
+                        element={diferido(<Estandarizacion />)}
                     />
 
                     <Route

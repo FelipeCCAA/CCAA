@@ -74,6 +74,9 @@ const ESCRITURA: Record<string, Rol[]> = {
   produccion: ["produccion", "admin"],
   recepcion: ["recepcion", "admin"],
   calidad: ["calidad", "admin"],
+  // El vale nace en el área de silos —Recepción— y lo consume Condensación,
+  // que es Producción. Copia de `EscribeEstandarizacion`.
+  estandarizacion: ["recepcion", "produccion", "admin"],
 };
 
 
