@@ -134,7 +134,13 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # pierde. No usar para operar.
 
 DB_ENGINE = os.getenv("DB_ENGINE", "postgres").lower()
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Neon/Vercel puede publicar la conexión con cualquiera de estos nombres.
+# DATABASE_URL conserva prioridad; la URL sin pool es una última alternativa.
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("POSTGRES_URL")
+    or os.getenv("DATABASE_URL_UNPOOLED")
+)
 
 if DATABASE_URL:
     # Vercel Marketplace (por ejemplo Neon) entrega la conexion completa en
