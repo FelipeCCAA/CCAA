@@ -209,7 +209,7 @@ contraseña desde `/admin/`.
 La URL del frontend, la duración del enlace y el remitente se configuran con:
 
 ```text
-PASSWORD_RESET_FRONTEND_URL=http://localhost:5173/restablecer-contrasena
+PASSWORD_RESET_FRONTEND_URL=http://localhost:5173/#/restablecer-contrasena
 PASSWORD_RESET_TIMEOUT=3600
 DEFAULT_FROM_EMAIL=no-responder@dominio.cl
 ```

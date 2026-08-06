@@ -1,170 +1,138 @@
-"""
-Pruebas de la recolección en predios.
-
-Lo que se fija aquí es la regla que decide si la leche sube al camión —la
-prueba de alcohol— y la trazabilidad mínima: qué predio, de qué proveedor, en
-qué módulo.
-"""
-
 from datetime import date
-from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError
-from django.test import TestCase
-from rest_framework.test import APIClient
+from django.utils import timezone
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APITestCase
 
 from maestros.models import Vehiculo
+from recepcion.models import Recepcion
 from usuarios.models import PerfilUsuario, Rol
 
-from .models import (
-    CargaPredio, Conductor, Modulo, Predio, ProveedorLeche, Recoleccion,
-)
+from .models import CargaModulo, ParadaRuta, Recoleccion, RutaRecoleccion
 
 
-class RecoleccionTests(TestCase):
+class FlujoRecoleccionTests(APITestCase):
     def setUp(self):
-        self.usuario = User.objects.create_user("recepcionista-rec", password="x")
-        PerfilUsuario.objects.create(
-            usuario=self.usuario,
-            area=PerfilUsuario.Area.RECEPCION,
-            rol=Rol.RECEPCION,
-        )
-        self.cliente = APIClient()
-        self.cliente.force_authenticate(self.usuario)
+        self.usuario = User.objects.create_user("recolector", password="secreto")
+        PerfilUsuario.objects.create(usuario=self.usuario, rol=Rol.RECEPCION)
+        token = Token.objects.create(user=self.usuario)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self.vehiculo = Vehiculo.objects.create(placa="ABCD12", numero="12")
 
-        self.proveedor = ProveedorLeche.objects.create(
-            rut="12.345.678-9", nombre="Agrícola Los Robles"
+        respuesta = self.client.post(
+            "/api/recoleccion/rutas/",
+            {
+                "codigo": "R-2026-001",
+                "fecha": date.today().isoformat(),
+                "vehiculo": self.vehiculo.pk,
+            },
         )
-        self.predio = Predio.objects.create(
-            proveedor=self.proveedor, codigo="P-01", nombre="Fundo El Alto"
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.ruta_id = respuesta.data["id"]
+        respuesta = self.client.post(
+            "/api/recoleccion/paradas/",
+            {
+                "ruta": self.ruta_id,
+                "orden": 1,
+                "proveedor": "Proveedor Sur",
+                "predio": "Predio Uno",
+                "sala": "Sala 1",
+            },
         )
-        self.conductor = Conductor.objects.create(
-            rut="9.876.543-2", nombre="Pedro Soto"
-        )
-        self.camion = Vehiculo.objects.create(placa="ABCD-11", tipo="Camión")
-        self.carro = Vehiculo.objects.create(placa="EFGH-22", tipo="Carro")
-        self.modulo = Modulo.objects.create(vehiculo=self.camion, numero="1")
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.parada_id = respuesta.data["id"]
 
-        self.recoleccion = Recoleccion.objects.create(
-            codigo="REC-2026-001", fecha=date(2026, 8, 5),
-            conductor=self.conductor, camion=self.camion, carro=self.carro,
+    def registrar(self, alcohol="conforme", muestra="M-001"):
+        return self.client.post(
+            "/api/recoleccion/recolecciones/",
+            {
+                "parada": self.parada_id,
+                "fecha_hora": timezone.now().isoformat(),
+                "litros_medidos": "1000.00",
+                "temperatura": "4.20",
+                "alcohol": alcohol,
+                "codigo_muestra": muestra,
+            },
         )
 
-    def _carga(self, **extra):
+    def test_flujo_conforme_carga_modulo_y_cierra_ruta(self):
+        registro = self.registrar()
+        self.assertEqual(registro.status_code, 201, registro.data)
+        self.assertEqual(
+            RutaRecoleccion.objects.get(pk=self.ruta_id).estado,
+            RutaRecoleccion.Estado.EN_CURSO,
+        )
+
+        carga = self.client.post(
+            f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/",
+            {
+                "codigo": "CARGA-001",
+                "modulo": "M1",
+                "estanque_origen": "E1",
+                "litros": "1000.00",
+            },
+        )
+        self.assertEqual(carga.status_code, 201, carga.data)
+        self.assertEqual(
+            ParadaRuta.objects.get(pk=self.parada_id).estado,
+            ParadaRuta.Estado.COMPLETADA,
+        )
+
+        cierre = self.client.post(f"/api/recoleccion/rutas/{self.ruta_id}/cerrar/")
+        self.assertEqual(cierre.status_code, 200, cierre.data)
+        self.assertEqual(cierre.data["estado"], RutaRecoleccion.Estado.CERRADA)
+
+    def test_reintento_de_carga_es_idempotente(self):
+        registro = self.registrar()
+        datos = {"codigo": "CARGA-IDEM", "modulo": "M1", "litros": "500.00"}
+        primera = self.client.post(
+            f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/", datos
+        )
+        segunda = self.client.post(
+            f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/", datos
+        )
+        self.assertEqual(primera.status_code, 201, primera.data)
+        self.assertEqual(segunda.status_code, 200, segunda.data)
+        self.assertEqual(CargaModulo.objects.count(), 1)
+
+    def test_alcohol_no_conforme_impide_cargar(self):
+        registro = self.registrar(alcohol="no_conforme", muestra="")
+        self.assertEqual(registro.status_code, 201, registro.data)
+        self.assertEqual(registro.data["estado"], Recoleccion.Estado.RECHAZADA)
+
+        carga = self.client.post(
+            f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/",
+            {"codigo": "NO-CARGAR", "modulo": "M1", "litros": "500.00"},
+        )
+        self.assertEqual(carga.status_code, 409, carga.data)
+
+    def test_no_permite_superar_litros_medidos(self):
+        registro = self.registrar()
+        carga = self.client.post(
+            f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/",
+            {"codigo": "EXCESO", "modulo": "M1", "litros": "1000.01"},
+        )
+        self.assertEqual(carga.status_code, 409, carga.data)
+
+    def test_recepcion_se_vincula_una_sola_vez_con_la_carga(self):
+        registro = self.registrar()
+        carga = self.client.post(
+            f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/",
+            {"codigo": "VINCULO", "modulo": "M1", "litros": "900.00"},
+        )
         datos = {
-            "recoleccion": self.recoleccion.id,
-            "predio": self.predio.id,
-            "modulo": self.modulo.id,
-            "litros": "3200.00",
-            "temperatura": "4.20",
-            "alcohol": CargaPredio.Alcohol.NEGATIVA,
-            "visual": CargaPredio.Visual.CONFORME,
-            "muestra_tomada": True,
-            "cargada": True,
+            "fecha": date.today().isoformat(),
+            "carga_recoleccion": carga.data["id"],
+            "tipo_leche": "Entera",
+            "litros": "890.00",
         }
-        datos.update(extra)
+        primera = self.client.post("/api/recepcion/recepciones/", datos)
+        segunda = self.client.post("/api/recepcion/recepciones/", datos)
+        self.assertEqual(primera.status_code, 201, primera.data)
+        self.assertEqual(segunda.status_code, 400, segunda.data)
+        recepcion = Recepcion.objects.get(pk=primera.data["id"])
+        self.assertEqual(recepcion.modulo, "M1")
+        self.assertEqual(recepcion.vehiculo, self.vehiculo)
+        self.assertEqual(recepcion.diferencia_recoleccion_litros, -10)
 
-        return self.cliente.post("/api/recoleccion/cargas/", datos, format="json")
-
-    # -------------------------------------------- la prueba de alcohol
-
-    def test_con_alcohol_negativa_la_leche_se_carga(self):
-        respuesta = self._carga()
-
-        self.assertEqual(respuesta.status_code, 201, respuesta.data)
-
-    def test_con_alcohol_positiva_la_leche_no_sube_al_camion(self):
-        """La regla dura del proceso: es la que decide en el predio."""
-        respuesta = self._carga(alcohol=CargaPredio.Alcohol.POSITIVA)
-
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("no sube al camión", str(respuesta.data))
-
-    def test_una_positiva_si_se_registra_como_no_cargada(self):
-        """
-        El problema hay que poder reconstruirlo después aunque la leche se haya
-        quedado en el predio.
-        """
-        respuesta = self._carga(
-            alcohol=CargaPredio.Alcohol.POSITIVA,
-            cargada=False,
-            modulo=None,
-            observaciones="Alcohol positivo, se deja en el predio.",
-        )
-
-        self.assertEqual(respuesta.status_code, 201, respuesta.data)
-
-    def test_una_evaluacion_visual_no_conforme_tampoco_carga(self):
-        respuesta = self._carga(visual=CargaPredio.Visual.NO_CONFORME)
-
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("no conforme", str(respuesta.data))
-
-    # ------------------------------------------------------ desviación
-
-    def test_no_cargar_exige_decir_por_que(self):
-        """Es la desviación que después se le informa al proveedor."""
-        respuesta = self._carga(cargada=False, modulo=None, observaciones="   ")
-
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("por qué", str(respuesta.data))
-
-    # ---------------------------------------------------- trazabilidad
-
-    def test_lo_cargado_indica_en_que_modulo(self):
-        """
-        Leche que subió al camión y no sabe a qué estanque rompe la
-        trazabilidad justo donde empieza.
-        """
-        from django.db import IntegrityError, transaction
-
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                CargaPredio.objects.create(
-                    recoleccion=self.recoleccion, predio=self.predio,
-                    modulo=None, litros=100, temperatura=4,
-                    alcohol=CargaPredio.Alcohol.NEGATIVA, cargada=True,
-                )
-
-    def test_los_litros_cargados_se_suman_del_detalle(self):
-        """Un total guardado se desincroniza al corregir una carga."""
-        self._carga(litros="3200.00")
-        self._carga(
-            litros="1800.00", cargada=False, modulo=None,
-            observaciones="Estanque con sedimento.",
-        )
-
-        self.recoleccion.refresh_from_db()
-        self.assertEqual(self.recoleccion.litros_cargados, Decimal("3200.00"))
-        self.assertEqual(self.recoleccion.predios_rechazados, ["Fundo El Alto"])
-
-    # -------------------------------------------- proveedor bloqueado
-
-    def test_a_un_proveedor_bloqueado_no_se_le_recolecta(self):
-        self.proveedor.bloqueado = True
-        self.proveedor.motivo_bloqueo = "Antibióticos confirmados."
-        self.proveedor.save()
-
-        respuesta = self._carga()
-
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("bloqueado", str(respuesta.data))
-
-    def test_un_bloqueo_sin_motivo_no_se_guarda(self):
-        """Sin motivo nadie sabe qué tendría que corregirse para
-        desbloquearlo."""
-        with self.assertRaisesMessage(ValidationError, "motivo"):
-            ProveedorLeche(
-                rut="1-9", nombre="Sin motivo", bloqueado=True
-            ).full_clean()
-
-    # ------------------------------------------------------- vehículos
-
-    def test_el_carro_no_puede_ser_el_mismo_camion(self):
-        with self.assertRaisesMessage(ValidationError, "mismo vehículo"):
-            Recoleccion(
-                codigo="REC-X", fecha=date(2026, 8, 5),
-                conductor=self.conductor, camion=self.camion,
-                carro=self.camion,
-            ).clean()

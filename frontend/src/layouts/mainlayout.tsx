@@ -13,7 +13,7 @@ import Navbar from "../components/Navbar/Navbar";
 
 function MainLayout() {
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen flex-col bg-[#f6f8f7] md:flex-row">
 
       <Navbar />
 

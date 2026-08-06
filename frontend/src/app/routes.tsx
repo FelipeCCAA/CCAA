@@ -10,16 +10,23 @@ import MainLayout from "../layouts/mainlayout";
 import Login from "../pages/Login/Login";
 import RecuperarContrasena from "../pages/RecuperarContrasena/RecuperarContrasena";
 import RestablecerContrasena from "../pages/RecuperarContrasena/RestablecerContrasena";
-import Dashboard from "../pages/Dashboard/Dashboard";
-import Produccion from "../pages/Produccion/Produccion";
-import Recepcion from "../pages/Recepcion/Recepcion";
-import RecoleccionPredios from "../pages/Recoleccion/Recoleccion";
-import Liberacion from "../pages/Liberacion/Liberacion";
-import Planificacion from "../pages/Planificacion/Planificacion";
-import Maestros from "../pages/Maestros/Maestros";
-import Auditoria from "../pages/Auditoria/Auditoria";
-import Registros from "../pages/Registros/Registros";
-import Administracion from "../pages/Administracion/Administracion";
+/*
+  Todas las pantallas se cargan con `lazy`: el bundle pasaba de 500 kB y el
+  build lo venía advirtiendo. Nadie entra a mantenimiento y a recolección en la
+  misma sesión, así que no hay razón para descargar las dos.
+*/
+const Dashboard = lazy(() => import("../pages/Dashboard/Dashboard"));
+const Produccion = lazy(() => import("../pages/Produccion/Produccion"));
+const Recepcion = lazy(() => import("../pages/Recepcion/Recepcion"));
+const Recoleccion = lazy(() => import("../pages/Recoleccion/Recoleccion"));
+const Liberacion = lazy(() => import("../pages/Liberacion/Liberacion"));
+const Planificacion = lazy(() => import("../pages/Planificacion/Planificacion"));
+const Maestros = lazy(() => import("../pages/Maestros/Maestros"));
+const Auditoria = lazy(() => import("../pages/Auditoria/Auditoria"));
+const Registros = lazy(() => import("../pages/Registros/Registros"));
+const Administracion = lazy(() => import("../pages/Administracion/Administracion"));
+const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
+const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
 
 /*
   Abastecimiento es una sección con pestañas, no una página. El orden de las
@@ -29,23 +36,23 @@ import Administracion from "../pages/Administracion/Administracion";
   `/inventario` ya no existe: su listado de materiales vive en la pestaña de
   materiales y su simulador en la de MRP. Eran dos pantallas contestando la
   misma pregunta con distinta granularidad, sin enlace entre ellas y con el
-  mismo icono en el menú.
+  mismo icono en el menú. Main la reintrodujo en su rama; no se repone aquí
+  porque el archivo que servía ya no existe.
 */
-import Abastecimiento from "../pages/Abastecimiento/Abastecimiento";
-import AbastecimientoPanel from "../pages/Abastecimiento/Panel";
-import AbastecimientoMateriales from "../pages/Abastecimiento/Materiales";
-import AbastecimientoStock from "../pages/Abastecimiento/Stock";
-import AbastecimientoDetalleLote from "../pages/Abastecimiento/DetalleLoteInventario";
-import AbastecimientoBodegas from "../pages/Abastecimiento/Bodegas";
-import AbastecimientoCompras from "../pages/Abastecimiento/Compras";
-import AbastecimientoProveedores from "../pages/Abastecimiento/Proveedores";
-import AbastecimientoRecepcion from "../pages/Abastecimiento/Recepcion";
-import AbastecimientoCalidad from "../pages/Abastecimiento/Calidad";
-import AbastecimientoPedidos from "../pages/Abastecimiento/Pedidos";
-import AbastecimientoMrp from "../pages/Abastecimiento/Mrp";
-
-const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
-const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
+const Abastecimiento = lazy(() => import("../pages/Abastecimiento/Abastecimiento"));
+const AbastecimientoPanel = lazy(() => import("../pages/Abastecimiento/Panel"));
+const AbastecimientoMateriales = lazy(() => import("../pages/Abastecimiento/Materiales"));
+const AbastecimientoStock = lazy(() => import("../pages/Abastecimiento/Stock"));
+const AbastecimientoDetalleLote = lazy(
+  () => import("../pages/Abastecimiento/DetalleLoteInventario"),
+);
+const AbastecimientoBodegas = lazy(() => import("../pages/Abastecimiento/Bodegas"));
+const AbastecimientoCompras = lazy(() => import("../pages/Abastecimiento/Compras"));
+const AbastecimientoProveedores = lazy(() => import("../pages/Abastecimiento/Proveedores"));
+const AbastecimientoRecepcion = lazy(() => import("../pages/Abastecimiento/Recepcion"));
+const AbastecimientoCalidad = lazy(() => import("../pages/Abastecimiento/Calidad"));
+const AbastecimientoPedidos = lazy(() => import("../pages/Abastecimiento/Pedidos"));
+const AbastecimientoMrp = lazy(() => import("../pages/Abastecimiento/Mrp"));
 
 const diferido = (componente: React.ReactNode) => (
   <Suspense fallback={<div className="p-10 text-sm text-slate-500">Cargando módulo…</div>}>
@@ -109,36 +116,36 @@ function RoutesApp(){
                     <Route element={<RutaAdmin />}>
                         <Route
                             path="/administracion"
-                            element={<Administracion />}
+                            element={diferido(<Administracion />)}
                         />
                     </Route>
 
                     <Route
                         path="/dashboard"
-                        element={<Dashboard />}
+                        element={diferido(<Dashboard />)}
                     />
 
                     {/* La pestaña activa vive en la URL: un enlace a
                         /abastecimiento/compras lleva a compras, y el botón de
                         volver del navegador funciona entre pestañas. */}
-                    <Route path="/abastecimiento" element={<Abastecimiento />}>
-                        <Route index element={<AbastecimientoPanel />} />
-                        <Route path="materiales" element={<AbastecimientoMateriales />} />
-                        <Route path="stock" element={<AbastecimientoStock />} />
+                    <Route path="/abastecimiento" element={diferido(<Abastecimiento />)}>
+                        <Route index element={diferido(<AbastecimientoPanel />)} />
+                        <Route path="materiales" element={diferido(<AbastecimientoMateriales />)} />
+                        <Route path="stock" element={diferido(<AbastecimientoStock />)} />
                         {/* La primera ruta de detalle del sistema. Hasta aquí
                             todo eran listas y ningún documento tenía URL: no
                             se podía enlazar, ni compartir, ni volver a él. */}
                         <Route
                             path="stock/lotes/:id"
-                            element={<AbastecimientoDetalleLote />}
+                            element={diferido(<AbastecimientoDetalleLote />)}
                         />
-                        <Route path="bodegas" element={<AbastecimientoBodegas />} />
-                        <Route path="compras" element={<AbastecimientoCompras />} />
-                        <Route path="proveedores" element={<AbastecimientoProveedores />} />
-                        <Route path="recepcion" element={<AbastecimientoRecepcion />} />
-                        <Route path="calidad" element={<AbastecimientoCalidad />} />
-                        <Route path="pedidos" element={<AbastecimientoPedidos />} />
-                        <Route path="mrp" element={<AbastecimientoMrp />} />
+                        <Route path="bodegas" element={diferido(<AbastecimientoBodegas />)} />
+                        <Route path="compras" element={diferido(<AbastecimientoCompras />)} />
+                        <Route path="proveedores" element={diferido(<AbastecimientoProveedores />)} />
+                        <Route path="recepcion" element={diferido(<AbastecimientoRecepcion />)} />
+                        <Route path="calidad" element={diferido(<AbastecimientoCalidad />)} />
+                        <Route path="pedidos" element={diferido(<AbastecimientoPedidos />)} />
+                        <Route path="mrp" element={diferido(<AbastecimientoMrp />)} />
                     </Route>
 
                     <Route path="/procesos" element={diferido(<Procesos />)} />
@@ -147,39 +154,39 @@ function RoutesApp(){
 
                     <Route
                         path="/produccion"
-                        element={<Produccion />}
+                        element={diferido(<Produccion />)}
                     />
 
-                    <Route path="/recoleccion" element={<RecoleccionPredios />} />
+                    <Route path="/recoleccion" element={diferido(<Recoleccion />)} />
 
                     <Route
                         path="/recepcion"
-                        element={<Recepcion />}
+                        element={diferido(<Recepcion />)}
                     />
 
                     <Route
                         path="/liberacion"
-                        element={<Liberacion />}
+                        element={diferido(<Liberacion />)}
                     />
 
                     <Route
                         path="/planificacion"
-                        element={<Planificacion />}
+                        element={diferido(<Planificacion />)}
                     />
 
                     <Route
                         path="/maestros"
-                        element={<Maestros />}
+                        element={diferido(<Maestros />)}
                     />
 
                     <Route
                         path="/registros"
-                        element={<Registros />}
+                        element={diferido(<Registros />)}
                     />
 
                     <Route
                         path="/auditoria"
-                        element={<Auditoria />}
+                        element={diferido(<Auditoria />)}
                     />
 
                 </Route>

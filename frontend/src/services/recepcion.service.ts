@@ -56,11 +56,13 @@ export interface EvaluacionRecepcion {
 
 export interface Recepcion {
   id: number;
+  carga_recoleccion: number | null;
   fecha: string;
   hora: string | null;
   guia: string;
   vehiculo: number | null;
   vehiculo_placa: string | null;
+  modulo: string;
   procedencia: string;
   tipo_leche: string;
   litros: string;
@@ -73,12 +75,24 @@ export interface Recepcion {
   estado_etiqueta: string;
   motivo: string;
   observacion: string;
+  codigo_muestra: string;
+  muestreado_por: number | null;
+  muestreado_por_nombre: string;
+  muestreado_en: string | null;
+  calidad_por: number | null;
+  calidad_por_nombre: string;
+  calidad_en: string | null;
+  silo_asignado_por: number | null;
+  silo_asignado_por_nombre: string;
+  silo_asignado_en: string | null;
   evaluacion: EvaluacionRecepcion;
 }
 
 
 export interface RecepcionNueva {
   fecha: string;
+  carga_recoleccion?: number;
+  hora?: string;
   tipo_leche: string;
   litros: string;
   silo?: number;
@@ -86,9 +100,8 @@ export interface RecepcionNueva {
   procedencia?: string;
   turno?: string;
   guia?: string;
-  controles: Record<string, number | string>;
-  estado?: string;
-  motivo?: string;
+  modulo?: string;
+  controles?: Record<string, number | string>;
   observacion?: string;
 }
 
@@ -112,10 +125,10 @@ export const CONTROLES_OPCION = [
 ];
 
 export const ESTADOS_RECEPCION = [
-  { valor: "registrada", etiqueta: "Registrada" },
-  { valor: "muestreada", etiqueta: "Muestreada" },
+  { valor: "registrada", etiqueta: "En espera de muestra" },
+  { valor: "muestreada", etiqueta: "Muestra tomada" },
   { valor: "analizada", etiqueta: "Analizada" },
-  { valor: "liberada", etiqueta: "Liberada" },
+  { valor: "liberada", etiqueta: "Aprobada por Calidad" },
   { valor: "retenida", etiqueta: "Retenida" },
   { valor: "descargada", etiqueta: "Descargada" },
   { valor: "cerrada", etiqueta: "Cerrada" },
@@ -163,6 +176,41 @@ export async function descargarRecepcion(id: number): Promise<Recepcion> {
     `recepcion/recepciones/${id}/descargar/`,
   );
 
+  return data;
+}
+
+
+export async function tomarMuestra(
+  id: number,
+  codigo_muestra: string,
+): Promise<Recepcion> {
+  const { data } = await api.post<Recepcion>(
+    `recepcion/recepciones/${id}/tomar-muestra/`,
+    { codigo_muestra },
+  );
+  return data;
+}
+
+
+export async function decidirCalidad(
+  id: number,
+  controles: Record<string, number | string>,
+  decision?: "retener",
+  motivo?: string,
+): Promise<Recepcion> {
+  const { data } = await api.post<Recepcion>(
+    `recepcion/recepciones/${id}/decidir-calidad/`,
+    { controles, decision, motivo },
+  );
+  return data;
+}
+
+
+export async function asignarSilo(id: number, silo: number): Promise<Recepcion> {
+  const { data } = await api.post<Recepcion>(
+    `recepcion/recepciones/${id}/asignar-silo/`,
+    { silo },
+  );
   return data;
 }
 

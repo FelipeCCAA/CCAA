@@ -2,4 +2,7 @@ from django.apps import AppConfig
 
 
 class RecoleccionConfig(AppConfig):
-    name = 'recoleccion'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "recoleccion"
+    verbose_name = "Recolección de leche"
+

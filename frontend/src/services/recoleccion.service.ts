@@ -1,181 +1,67 @@
 import api from "./api";
 
+interface Pagina<T> { results: T[] }
 
-/*
-  Recolección de leche en predios.
-
-  Es el primer eslabón de la cadena: lo que se mide frente al estanque del
-  predio, antes de que la leche suba al camión.
-
-  La regla que decide es la **prueba de alcohol**: positiva y esa leche no
-  sube. Pero se registra igual —como no cargada, con su motivo— porque el
-  problema hay que poder reconstruirlo después aunque la leche se haya quedado
-  en el campo.
-*/
-
-export interface ProveedorLeche {
-  id: number;
-  rut: string;
-  nombre: string;
-  activo: boolean;
-  /* Un proveedor bloqueado no puede entregar leche. Lo pondrá la cadena de
-     antibióticos, que todavía no está implementada. */
-  bloqueado: boolean;
-  motivo_bloqueo: string;
-  predios: number;
+export interface ParadaRuta {
+  id: number; ruta: number; orden: number; proveedor: string; predio: string;
+  sala: string; estado: "pendiente" | "completada" | "no_cargada";
+  recoleccion_id: number | null;
 }
 
-
-export interface Predio {
-  id: number;
-  proveedor: number;
-  proveedor_nombre: string;
-  proveedor_bloqueado: boolean;
-  codigo: string;
-  nombre: string;
-  comuna: string;
-  activo: boolean;
+export interface RutaRecoleccion {
+  id: number; codigo: string; fecha: string; vehiculo: number;
+  vehiculo_placa: string; conductor_nombre: string;
+  estado: "programada" | "en_curso" | "cerrada" | "cancelada";
+  observacion: string; paradas: ParadaRuta[];
 }
 
-
-export interface Conductor {
-  id: number;
-  rut: string;
-  nombre: string;
-  telefono: string;
-  activo: boolean;
+export interface RecoleccionPredio {
+  id: number; parada: number; estado: "registrada" | "cargada" | "rechazada";
 }
 
-
-export interface Modulo {
-  id: number;
-  vehiculo: number;
-  vehiculo_placa: string;
-  numero: string;
-  capacidad_l: string | null;
-  activo: boolean;
+export interface CargaEsperada {
+  id: number; codigo: string; recoleccion: number; modulo: string;
+  estanque_origen: string; litros: string; vehiculo: number;
+  vehiculo_placa: string; proveedor: string; predio: string; recepcionada: boolean;
 }
 
-
-export interface CargaPredio {
-  id: number;
-  recoleccion: number;
-  predio: number;
-  predio_nombre: string;
-  proveedor_nombre: string;
-  modulo: number | null;
-  modulo_numero: string | null;
-  litros: string;
-  temperatura: string;
-  alcohol: "negativa" | "positiva";
-  alcohol_etiqueta: string;
-  visual: "conforme" | "no_conforme";
-  muestra_tomada: boolean;
-  cargada: boolean;
-  observaciones: string;
+export async function obtenerRutas(): Promise<RutaRecoleccion[]> {
+  const { data } = await api.get<Pagina<RutaRecoleccion>>("recoleccion/rutas/");
+  return data.results;
 }
 
-
-export interface Recoleccion {
-  id: number;
-  codigo: string;
-  fecha: string;
-  conductor: number;
-  conductor_nombre: string;
-  camion: number;
-  camion_placa: string;
-  carro: number | null;
-  carro_placa: string | null;
-  estado: string;
-  estado_etiqueta: string;
-  observaciones: string;
-  cargas: CargaPredio[];
-  /* Los dos se calculan del detalle: un total guardado se desincroniza en
-     cuanto alguien corrige una carga. */
-  litros_cargados: string;
-  predios_rechazados: string[];
+export async function obtenerCargasPendientes(): Promise<CargaEsperada[]> {
+  const { data } = await api.get<Pagina<CargaEsperada>>("recoleccion/cargas/", {
+    params: { pendientes: true },
+  });
+  return data.results;
 }
 
-
-async function lista<T>(ruta: string): Promise<T[]> {
-  const { data } = await api.get<T[] | { results: T[] }>(ruta);
-
-  return Array.isArray(data) ? data : data.results;
-}
-
-
-export const obtenerProveedoresLeche = () =>
-  lista<ProveedorLeche>("recoleccion/proveedores/");
-export const obtenerPredios = () => lista<Predio>("recoleccion/predios/");
-export const obtenerConductores = () =>
-  lista<Conductor>("recoleccion/conductores/");
-export const obtenerModulos = () => lista<Modulo>("recoleccion/modulos/");
-export const obtenerRecolecciones = () =>
-  lista<Recoleccion>("recoleccion/recolecciones/");
-
-
-export async function crearRecoleccion(datos: {
-  codigo: string;
-  fecha: string;
-  conductor: number;
-  camion: number;
-  carro?: number | null;
-}): Promise<Recoleccion> {
-  const { data } = await api.post<Recoleccion>(
-    "recoleccion/recolecciones/",
-    datos,
-  );
-
+export async function crearRuta(datos: { codigo: string; fecha: string; vehiculo: number }) {
+  const { data } = await api.post<RutaRecoleccion>("recoleccion/rutas/", datos);
   return data;
 }
 
-
-/* Rechaza si la prueba de alcohol salió positiva y se marcó como cargada, si
-   la leche no se cargó y no se dijo por qué, o si el proveedor está
-   bloqueado. */
-export async function registrarCarga(
-  datos: Record<string, unknown>,
-): Promise<CargaPredio> {
-  const { data } = await api.post<CargaPredio>("recoleccion/cargas/", datos);
-
+export async function crearParada(datos: { ruta: number; orden: number; proveedor: string; predio: string; sala?: string }) {
+  const { data } = await api.post<ParadaRuta>("recoleccion/paradas/", datos);
   return data;
 }
 
-
-export async function crearProveedorLeche(datos: {
-  rut: string;
-  nombre: string;
-}): Promise<ProveedorLeche> {
-  const { data } = await api.post<ProveedorLeche>(
-    "recoleccion/proveedores/",
-    datos,
-  );
-
+export async function registrarRecoleccion(datos: {
+  parada: number; fecha_hora: string; litros_medidos: number; temperatura?: number;
+  alcohol: "conforme" | "no_conforme"; codigo_muestra?: string; observacion?: string;
+}) {
+  const { data } = await api.post<RecoleccionPredio>("recoleccion/recolecciones/", datos);
   return data;
 }
 
-
-export async function crearPredio(datos: {
-  proveedor: number;
-  codigo: string;
-  nombre: string;
-  comuna?: string;
-}): Promise<Predio> {
-  const { data } = await api.post<Predio>("recoleccion/predios/", datos);
-
-  return data;
+export async function agregarCarga(id: number, datos: {
+  codigo: string; modulo: string; estanque_origen?: string; litros: number;
+}) {
+  await api.post(`recoleccion/recolecciones/${id}/cargas/`, datos);
 }
 
-
-export async function crearConductor(datos: {
-  rut: string;
-  nombre: string;
-  telefono?: string;
-}): Promise<Conductor> {
-  const { data } = await api.post<Conductor>(
-    "recoleccion/conductores/",
-    datos,
-  );
-
+export async function cerrarRuta(id: number) {
+  const { data } = await api.post<RutaRecoleccion>(`recoleccion/rutas/${id}/cerrar/`);
   return data;
 }

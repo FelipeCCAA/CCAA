@@ -34,6 +34,70 @@
       }
     },
     {
+      "source": "/login",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/recuperar-contrasena",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/restablecer-contrasena",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/dashboard",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/abastecimiento",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/procesos",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/mantenimiento",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/produccion",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/recepcion",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/liberacion",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/planificacion",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/maestros",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/registros",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/auditoria",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/administracion",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
+      "source": "/inventario",
+      "destination": { "type": "service", "service": "frontend", "path": "/index.html" }
+    },
+    {
       "source": "/(.*)",
       "destination": {
         "type": "service",

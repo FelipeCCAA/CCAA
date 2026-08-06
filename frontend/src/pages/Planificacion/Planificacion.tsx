@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Lock, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Droplets, Lock, Plus } from "lucide-react";
 import axios from "axios";
 
 import {
@@ -18,6 +18,10 @@ import {
 } from "../../services/planificacion.service";
 
 import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
+import {
+  obtenerOcupacion,
+  type Ocupacion,
+} from "../../services/recepcion.service";
 import { puedeEscribir } from "../../services/sesion";
 
 import BalanceLeche from "./BalanceLeche";
@@ -58,6 +62,7 @@ function Planificacion() {
   const [semanaId, setSemanaId] = useState<number | null>(null);
   const [programa, setPrograma] = useState<Programa | null>(null);
   const [codigos, setCodigos] = useState<CodigoProduccion[]>([]);
+  const [ocupacion, setOcupacion] = useState<Ocupacion | null>(null);
 
   const [dia, setDia] = useState(0);
   const [vista, setVista] = useState<"programa" | "contraste">("programa");
@@ -112,6 +117,7 @@ function Planificacion() {
     const t = setTimeout(() => {
       void cargarSemanas();
       void obtenerCodigos().then(setCodigos).catch(() => undefined);
+      void obtenerOcupacion().then(setOcupacion).catch(() => setOcupacion(null));
       // Sin equipos la Gantt no tiene filas que dibujar, pero la pantalla
       // sigue en pie y lo dice.
       void obtenerEquipos().then(setEquipos).catch(() => setEquipos([]));
@@ -349,6 +355,73 @@ function Planificacion() {
 
           {vista === "programa" ? (
             <>
+
+              {/* Inventario físico disponible antes de planificar. */}
+
+              {ocupacion && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="flex items-center gap-2 font-medium text-slate-800">
+                        <Droplets className="h-4 w-4 text-sky-600" />
+                        Leche disponible en silos
+                      </h2>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Saldo real: solo incluye recepciones aprobadas y descargadas,
+                        menos los consumos registrados por Producción.
+                      </p>
+                    </div>
+                    <p className="text-right">
+                      <span className="block text-2xl font-semibold text-slate-800">
+                        {ocupacion.litros_totales.toLocaleString("es-CL")} L
+                      </span>
+                      <span className="text-xs text-slate-500">disponibles en planta</span>
+                    </p>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {ocupacion.silos.map((silo) => {
+                      const porcentaje = Math.max(0, Math.min(100, silo.pct));
+
+                      return (
+                        <div
+                          key={silo.silo_id}
+                          className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2 text-sm">
+                            <span className="font-medium text-slate-700">{silo.codigo}</span>
+                            <span
+                              className={
+                                silo.excedido || silo.negativo
+                                  ? "font-medium text-red-600"
+                                  : "text-slate-500"
+                              }
+                            >
+                              {silo.pct.toLocaleString("es-CL")}%
+                            </span>
+                          </div>
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className={`h-full rounded-full ${
+                                silo.excedido || silo.negativo
+                                  ? "bg-red-500"
+                                  : "bg-sky-500"
+                              }`}
+                              style={{ width: `${porcentaje}%` }}
+                            />
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">
+                            <strong className="font-medium text-slate-700">
+                              {silo.litros.toLocaleString("es-CL")} L
+                            </strong>{" "}
+                            de {silo.capacidad.toLocaleString("es-CL")} L
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
               {/* Carta Gantt */}
 

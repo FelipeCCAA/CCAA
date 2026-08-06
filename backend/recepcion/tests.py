@@ -222,125 +222,17 @@ class BaseAPIRecepcion(TestCase):
         return self.cliente.post("/api/recepcion/recepciones/", datos, format="json")
 
 
-class EstadoSegunControlesTests(BaseAPIRecepcion):
-    """
-    El estado de la recepción sigue al veredicto de sus controles.
+class FlujoRecepcionTests(BaseAPIRecepcion):
+    """Llegada → muestra → Calidad → silo → descarga."""
 
-    Existen porque faltaba: el veredicto se calculaba y se mostraba, pero no
-    movía la recepción. Toda recepción nacía `registrada`, no había forma de
-    llevarla a `liberada` desde la aplicación, el botón de descargar nunca
-    aparecía — y como la ocupación de un silo es el saldo de sus movimientos,
-    la leche registrada nunca llegaba al silo.
-    """
-
-    def test_con_los_controles_en_regla_queda_liberada(self):
-        respuesta = self._crear(
-            controles={
-                "delvo": "Negativo",
-                "inhibidores": "Negativo",
-                "acidez": 16.0,
-                "ph": 6.7,
-                "temperatura": 4.0,
-            }
-        )
-
-        self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(respuesta.json()["estado"], "liberada")
-
-    def test_con_delvo_positivo_queda_retenida(self):
-        respuesta = self._crear(controles={"delvo": "Positivo"})
-
-        self.assertEqual(respuesta.json()["estado"], "retenida")
-
-    def test_sin_el_control_decisivo_se_queda_registrada(self):
-        """No se libera sola leche que nadie midió."""
-        respuesta = self._crear(controles={"acidez": 16.0, "ph": 6.7})
-
-        self.assertEqual(respuesta.json()["estado"], "registrada")
-        self.assertIn("delvo", respuesta.json()["evaluacion"]["faltantes"])
-
-    def test_los_controles_pueden_llegar_despues(self):
-        """El camión se registra al llegar y el laboratorio informa luego."""
-        creada = self._crear().json()
-        self.assertEqual(creada["estado"], "registrada")
-
-        respuesta = self.cliente.patch(
-            f"/api/recepcion/recepciones/{creada['id']}/",
-            {"controles": {"delvo": "Negativo", "acidez": 16.0}},
-            format="json",
-        )
-
-        self.assertEqual(respuesta.json()["estado"], "liberada")
-
-    def test_un_estado_explicito_manda_sobre_el_veredicto(self):
-        """Recepción puede retener a mano por algo que los controles no ven."""
-        respuesta = self._crear(
-            controles={"delvo": "Negativo"},
-            estado="retenida",
-            motivo="El camión llegó con el precinto roto.",
-        )
-
-        self.assertEqual(respuesta.json()["estado"], "retenida")
-
-    def test_una_recepcion_descargada_no_cambia_de_estado_sola(self):
-        """Su leche ya entró al silo: recalcular el estado la desharía."""
-        creada = self._crear(controles={"delvo": "Negativo"}).json()
-        self.cliente.post(f"/api/recepcion/recepciones/{creada['id']}/descargar/")
-
-        self.cliente.patch(
-            f"/api/recepcion/recepciones/{creada['id']}/",
-            {"controles": {"delvo": "Positivo"}},
-            format="json",
-        )
-
-        recepcion = Recepcion.objects.get(pk=creada["id"])
-        self.assertEqual(recepcion.estado, Recepcion.Estado.DESCARGADA)
-
-
-class FlujoCompletoTests(BaseAPIRecepcion):
-    """De registrar el camión a que el silo cambie de saldo."""
-
-    def test_registrar_con_controles_conformes_llega_al_silo(self):
-        vacio = self.cliente.get("/api/recepcion/ocupacion/").json()
-        self.assertEqual(vacio["litros_totales"], 0)
-
-        creada = self._crear(
-            controles={"delvo": "Negativo", "inhibidores": "Negativo", "ph": 6.7}
-        ).json()
-
-        self.assertEqual(creada["estado"], "liberada")
-
-        descarga = self.cliente.post(
-            f"/api/recepcion/recepciones/{creada['id']}/descargar/"
-        )
-
-        self.assertEqual(descarga.status_code, 200)
-        self.assertEqual(descarga.json()["estado"], "descargada")
-
-        ocupacion = self.cliente.get("/api/recepcion/ocupacion/").json()
-
-        self.assertEqual(ocupacion["litros_totales"], 25000)
-        self.assertEqual(MovimientoSilo.objects.count(), 1)
-
-    def test_una_retenida_no_llega_al_silo(self):
-        creada = self._crear(controles={"delvo": "Positivo"}).json()
-
-        respuesta = self.cliente.post(
-            f"/api/recepcion/recepciones/{creada['id']}/descargar/"
-        )
-
-        self.assertEqual(respuesta.status_code, 409)
-        self.assertEqual(
-            self.cliente.get("/api/recepcion/ocupacion/").json()["litros_totales"], 0
-        )
-
-
-class RecepcionAPITests(BaseAPIRecepcion):
     def test_se_registra_una_recepcion(self):
-        respuesta = self._crear()
+        respuesta = self._crear(modulo="Módulo 1")
 
         self.assertEqual(respuesta.status_code, 201)
         self.assertEqual(respuesta.json()["estado"], "registrada")
+        self.assertEqual(respuesta.json()["modulo"], "Módulo 1")
+        self.assertIsNone(respuesta.json()["silo"])
+        self.assertEqual(respuesta.json()["controles"], {})
 
     def test_el_operador_queda_registrado_solo(self):
         """El dato es para auditoría: teclearlo lo haría menos fiable."""
@@ -348,37 +240,127 @@ class RecepcionAPITests(BaseAPIRecepcion):
 
         self.assertEqual(Recepcion.objects.first().operador.username, "op")
 
-    def test_la_evaluacion_de_los_controles_llega_calculada(self):
-        respuesta = self._crear(controles={"delvo": "Positivo", "acidez": 16.0})
+    def test_tomar_muestra_identifica_modulo_y_responsable(self):
+        creada = self._crear(modulo="M1").json()
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{creada['id']}/tomar-muestra/",
+            {"codigo_muestra": "M-2026-001"},
+            format="json",
+        )
 
-        evaluacion = respuesta.json()["evaluacion"]
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["estado"], "muestreada")
+        self.assertEqual(respuesta.json()["codigo_muestra"], "M-2026-001")
+        self.assertIsNotNone(respuesta.json()["muestreado_en"])
 
-        self.assertFalse(evaluacion["conforme"])
-        self.assertEqual(evaluacion["estado_sugerido"], "retenida")
-        self.assertIn("antibióticos", evaluacion["motivos"][0])
+    def test_no_repite_codigo_de_muestra(self):
+        primera = self._crear(modulo="M1").json()
+        segunda = self._crear(modulo="M2").json()
+        ruta = f"/api/recepcion/recepciones/{primera['id']}/tomar-muestra/"
+        self.cliente.post(ruta, {"codigo_muestra": "M-001"}, format="json")
 
-    def test_rechaza_controles_inventados(self):
-        respuesta = self._crear(controles={"inventado": 1})
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{segunda['id']}/tomar-muestra/",
+            {"codigo_muestra": "M-001"},
+            format="json",
+        )
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("controles", respuesta.json())
+        self.assertEqual(respuesta.status_code, 409)
 
-    def test_rechaza_un_valor_no_admitido_en_delvo(self):
-        respuesta = self._crear(controles={"delvo": "Quizás"})
+    def test_calidad_no_decide_antes_del_muestreo(self):
+        creada = self._crear().json()
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{creada['id']}/decidir-calidad/",
+            {"controles": {"delvo": "Negativo"}},
+            format="json",
+        )
 
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 409)
 
-    def test_retener_exige_motivo(self):
-        """Sin motivo, el registro no sirve para auditar."""
-        respuesta = self._crear(estado="retenida")
+    def test_calidad_tambien_puede_decidir_la_muestra(self):
+        creada = self._crear().json()
+        base = f"/api/recepcion/recepciones/{creada['id']}"
+        self.cliente.post(
+            f"{base}/tomar-muestra/", {"codigo_muestra": "M-CAL-001"}, format="json"
+        )
+        usuario = User.objects.create_user(username="calidad", password="x")
+        PerfilUsuario.objects.create(usuario=usuario, rol=Rol.CALIDAD)
+        cliente_calidad = APIClient()
+        cliente_calidad.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=usuario).key}"
+        )
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("motivo", respuesta.json())
+        respuesta = cliente_calidad.post(
+            f"{base}/decidir-calidad/",
+            {"controles": {"delvo": "Negativo"}},
+            format="json",
+        )
 
-    def test_retener_con_motivo_si_se_acepta(self):
-        respuesta = self._crear(estado="retenida", motivo="Delvo positivo")
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["estado"], "liberada")
+        self.assertEqual(respuesta.json()["calidad_por"], usuario.id)
 
-        self.assertEqual(respuesta.status_code, 201)
+    def test_flujo_completo_actualiza_el_saldo_del_silo(self):
+        creada = self._crear(modulo="M1").json()
+        base = f"/api/recepcion/recepciones/{creada['id']}"
+        self.cliente.post(
+            f"{base}/tomar-muestra/", {"codigo_muestra": "M-001"}, format="json"
+        )
+        decision = self.cliente.post(
+            f"{base}/decidir-calidad/",
+            {"controles": {"delvo": "Negativo", "temperatura": 4.5, "ph": 6.7}},
+            format="json",
+        )
+        asignacion = self.cliente.post(
+            f"{base}/asignar-silo/", {"silo": self.silo.id}, format="json"
+        )
+        descarga = self.cliente.post(f"{base}/descargar/")
+
+        self.assertEqual(decision.json()["estado"], "liberada")
+        self.assertEqual(asignacion.json()["silo"], self.silo.id)
+        self.assertEqual(descarga.json()["estado"], "descargada")
+        self.assertEqual(
+            self.cliente.get("/api/recepcion/ocupacion/").json()["litros_totales"],
+            25000,
+        )
+
+    def test_delvo_positivo_retiene_y_no_permite_asignar_silo(self):
+        creada = self._crear().json()
+        base = f"/api/recepcion/recepciones/{creada['id']}"
+        self.cliente.post(
+            f"{base}/tomar-muestra/", {"codigo_muestra": "M-002"}, format="json"
+        )
+        decision = self.cliente.post(
+            f"{base}/decidir-calidad/",
+            {"controles": {"delvo": "Positivo"}},
+            format="json",
+        )
+        asignacion = self.cliente.post(
+            f"{base}/asignar-silo/", {"silo": self.silo.id}, format="json"
+        )
+
+        self.assertEqual(decision.json()["estado"], "retenida")
+        self.assertEqual(asignacion.status_code, 409)
+        self.assertEqual(MovimientoSilo.objects.count(), 0)
+
+    def test_leche_descremada_solo_se_asigna_a_tk_ld(self):
+        creada = self._crear(tipo_leche="Descremada").json()
+        base = f"/api/recepcion/recepciones/{creada['id']}"
+        self.cliente.post(
+            f"{base}/tomar-muestra/", {"codigo_muestra": "M-003"}, format="json"
+        )
+        self.cliente.post(
+            f"{base}/decidir-calidad/",
+            {"controles": {"delvo": "Negativo"}},
+            format="json",
+        )
+
+        respuesta = self.cliente.post(
+            f"{base}/asignar-silo/", {"silo": self.silo.id}, format="json"
+        )
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertIn("descremada", respuesta.json()["silo"])
 
 
 class DescargaTests(BaseAPIRecepcion):

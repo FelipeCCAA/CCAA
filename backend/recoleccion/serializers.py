@@ -1,122 +1,109 @@
 from rest_framework import serializers
 
-from .models import (
-    CargaPredio, Conductor, Modulo, Predio, ProveedorLeche, Recoleccion,
-)
+from .models import CargaModulo, ParadaRuta, Recoleccion, RutaRecoleccion
 
 
-class ProveedorLecheSerializer(serializers.ModelSerializer):
-    predios = serializers.IntegerField(source="predios.count", read_only=True)
+class CargaModuloSerializer(serializers.ModelSerializer):
+    # La idempotencia la resuelve el servicio: reenviar el mismo código
+    # devuelve la carga existente en vez de fallar por la validación única.
+    codigo = serializers.CharField(validators=[])
+    recoleccion = serializers.PrimaryKeyRelatedField(read_only=True)
+    estanque_origen = serializers.CharField(required=False, allow_blank=True)
+    vehiculo = serializers.IntegerField(
+        source="recoleccion.parada.ruta.vehiculo_id", read_only=True
+    )
+    vehiculo_placa = serializers.CharField(
+        source="recoleccion.parada.ruta.vehiculo.placa", read_only=True
+    )
+    proveedor = serializers.CharField(source="recoleccion.parada.proveedor", read_only=True)
+    predio = serializers.CharField(source="recoleccion.parada.predio", read_only=True)
+    recepcionada = serializers.SerializerMethodField()
 
     class Meta:
-        model = ProveedorLeche
-        fields = "__all__"
+        model = CargaModulo
+        fields = [
+            "id", "codigo", "recoleccion", "modulo", "estanque_origen", "litros",
+            "cargada_en", "vehiculo", "vehiculo_placa", "proveedor", "predio",
+            "recepcionada",
+        ]
+        read_only_fields = ["cargada_en"]
 
-    def validate(self, datos):
-        instancia = self.instance or ProveedorLeche()
-
-        for campo, valor in datos.items():
-            setattr(instancia, campo, valor)
-
-        instancia.clean()
-
-        return datos
-
-
-class PredioSerializer(serializers.ModelSerializer):
-    proveedor_nombre = serializers.CharField(
-        source="proveedor.nombre", read_only=True
-    )
-    # Que el proveedor esté bloqueado se ve en el predio, que es donde el
-    # conductor lo mira antes de bajarse del camión.
-    proveedor_bloqueado = serializers.BooleanField(
-        source="proveedor.bloqueado", read_only=True
-    )
-
-    class Meta:
-        model = Predio
-        fields = "__all__"
-
-
-class ConductorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Conductor
-        fields = "__all__"
-
-
-class ModuloSerializer(serializers.ModelSerializer):
-    vehiculo_placa = serializers.CharField(source="vehiculo.placa", read_only=True)
-
-    class Meta:
-        model = Modulo
-        fields = "__all__"
-
-
-class CargaPredioSerializer(serializers.ModelSerializer):
-    predio_nombre = serializers.CharField(source="predio.nombre", read_only=True)
-    proveedor_nombre = serializers.CharField(
-        source="predio.proveedor.nombre", read_only=True
-    )
-    modulo_numero = serializers.CharField(
-        source="modulo.numero", read_only=True, allow_null=True
-    )
-    alcohol_etiqueta = serializers.CharField(
-        source="get_alcohol_display", read_only=True
-    )
-
-    class Meta:
-        model = CargaPredio
-        fields = "__all__"
-
-    def validate(self, datos):
-        """
-        El modelo valida y aquí se le llama.
-
-        DRF no ejecuta `Model.clean()` por su cuenta, así que sin esto la regla
-        que importa —alcohol positivo, no se carga— quedaría escrita y sin
-        efecto.
-        """
-        instancia = self.instance or CargaPredio()
-
-        for campo, valor in datos.items():
-            setattr(instancia, campo, valor)
-
-        instancia.clean()
-
-        return datos
+    def get_recepcionada(self, carga):
+        return hasattr(carga, "recepcion_planta")
 
 
 class RecoleccionSerializer(serializers.ModelSerializer):
-    conductor_nombre = serializers.CharField(
-        source="conductor.nombre", read_only=True
-    )
-    camion_placa = serializers.CharField(source="camion.placa", read_only=True)
-    carro_placa = serializers.CharField(
-        source="carro.placa", read_only=True, allow_null=True
-    )
-    estado_etiqueta = serializers.CharField(
-        source="get_estado_display", read_only=True
-    )
-    cargas = CargaPredioSerializer(many=True, read_only=True)
-
-    # Los dos se calculan del detalle. Un total guardado se desincroniza en
-    # cuanto alguien corrige una carga.
-    litros_cargados = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
-    )
-    predios_rechazados = serializers.ListField(read_only=True)
+    cargas = CargaModuloSerializer(many=True, read_only=True)
+    proveedor = serializers.CharField(source="parada.proveedor", read_only=True)
+    predio = serializers.CharField(source="parada.predio", read_only=True)
 
     class Meta:
         model = Recoleccion
-        fields = "__all__"
-        read_only_fields = ["registrada_por", "creada_en"]
+        fields = [
+            "id", "idempotencia", "parada", "proveedor", "predio", "fecha_hora",
+            "litros_medidos", "temperatura", "alcohol", "codigo_muestra", "estado",
+            "operador", "observacion", "creada_en", "cargas",
+        ]
+        read_only_fields = ["estado", "operador", "creada_en"]
 
-    def validate(self, datos):
-        instancia = self.instance or Recoleccion()
-
-        for campo, valor in datos.items():
-            setattr(instancia, campo, valor)
-
+    def validate(self, attrs):
+        parada = attrs.get("parada", getattr(self.instance, "parada", None))
+        if parada and parada.ruta.estado not in {
+            RutaRecoleccion.Estado.PROGRAMADA,
+            RutaRecoleccion.Estado.EN_CURSO,
+        }:
+            raise serializers.ValidationError(
+                {"parada": "La ruta ya está cerrada o cancelada."}
+            )
+        if self.instance and self.instance.estado in {
+            Recoleccion.Estado.CARGADA,
+            Recoleccion.Estado.RECHAZADA,
+        }:
+            raise serializers.ValidationError("Una recolección finalizada no se edita.")
+        instancia = Recoleccion(**attrs)
         instancia.clean()
+        return attrs
 
-        return datos
+
+class ParadaRutaSerializer(serializers.ModelSerializer):
+    recoleccion_id = serializers.IntegerField(source="recoleccion.id", read_only=True)
+
+    class Meta:
+        model = ParadaRuta
+        fields = [
+            "id", "ruta", "orden", "proveedor", "predio", "sala", "estado",
+            "llegada", "salida", "observacion", "recoleccion_id",
+        ]
+        read_only_fields = ["estado", "llegada", "salida"]
+
+    def validate(self, attrs):
+        ruta = attrs.get("ruta", getattr(self.instance, "ruta", None))
+        if ruta and ruta.estado not in {
+            RutaRecoleccion.Estado.PROGRAMADA,
+            RutaRecoleccion.Estado.EN_CURSO,
+        }:
+            raise serializers.ValidationError({"ruta": "La ruta ya está finalizada."})
+        return attrs
+
+
+class RutaRecoleccionSerializer(serializers.ModelSerializer):
+    paradas = ParadaRutaSerializer(many=True, read_only=True)
+    vehiculo_placa = serializers.CharField(source="vehiculo.placa", read_only=True)
+    conductor_nombre = serializers.CharField(source="conductor.get_full_name", read_only=True)
+
+    class Meta:
+        model = RutaRecoleccion
+        fields = [
+            "id", "codigo", "fecha", "conductor", "conductor_nombre", "vehiculo",
+            "vehiculo_placa", "estado", "observacion", "creada_por", "creada_en",
+            "actualizada_en", "paradas",
+        ]
+        read_only_fields = ["estado", "creada_por", "creada_en", "actualizada_en"]
+
+    def validate(self, attrs):
+        if self.instance and self.instance.estado in {
+            RutaRecoleccion.Estado.CERRADA,
+            RutaRecoleccion.Estado.CANCELADA,
+        }:
+            raise serializers.ValidationError("Una ruta finalizada no se edita.")
+        return attrs

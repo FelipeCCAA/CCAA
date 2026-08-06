@@ -28,10 +28,8 @@ urlpatterns = [
 
     path("api/salud/", salud, name="salud"),
 
-    path(
-        "admin/",
-        admin.site.urls
-    ),
+    # El panel administrativo no forma parte de la API REST.
+    path("admin/", admin.site.urls),
 
     path("api/usuarios/", include("usuarios.urls")),
 
@@ -41,6 +39,7 @@ urlpatterns = [
 
     path("api/recepcion/", include("recepcion.urls")),
     path("api/recoleccion/", include("recoleccion.urls")),
+
 
     path("api/calidad/", include("calidad.urls")),
 
