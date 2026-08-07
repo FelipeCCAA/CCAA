@@ -142,17 +142,53 @@ export async function obtenerOcupacion(): Promise<Ocupacion> {
 }
 
 
+/*
+  `estado` admite varios separados por coma —«Calidad» son las muestreadas y
+  las retenidas— y `q` **se manda al servidor**. Filtrar en el navegador solo
+  alcanzaba a las cincuenta filas descargadas: buscar una guía de la semana
+  pasada respondía «no encontramos recepciones» sobre algo que sí existía.
+*/
 export async function buscarRecepciones(
-  filtros: { estado?: string; silo?: string; pagina?: number } = {},
+  filtros: {
+    estado?: string;
+    silo?: string;
+    q?: string;
+    pagina?: number;
+  } = {},
 ): Promise<Pagina<Recepcion>> {
 
   const { data } = await api.get<Pagina<Recepcion>>("recepcion/recepciones/", {
     params: {
       estado: filtros.estado || undefined,
       silo: filtros.silo || undefined,
+      q: filtros.q?.trim() || undefined,
       page: filtros.pagina && filtros.pagina > 1 ? filtros.pagina : undefined,
     },
   });
+
+  return data;
+}
+
+
+export interface ResumenRecepcion {
+  por_estado: Record<string, number>;
+  total: number;
+  liberadas_sin_silo: number;
+  liberadas_con_silo: number;
+}
+
+
+/*
+  Los contadores del panel, **calculados sobre el total**.
+
+  Antes se contaban sobre la página cargada: con más de cincuenta recepciones
+  dejaban de decir la verdad, y al filtrar la tabla por un estado mostraban
+  ceros en el resto, como si la planta se hubiera vaciado.
+*/
+export async function obtenerResumen(): Promise<ResumenRecepcion> {
+  const { data } = await api.get<ResumenRecepcion>(
+    "recepcion/recepciones/resumen/",
+  );
 
   return data;
 }

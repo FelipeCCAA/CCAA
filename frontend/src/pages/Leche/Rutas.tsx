@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
-import { CheckCircle2, MapPinned, Plus, Route, Truck, X } from "lucide-react";
+import { CheckCircle2, Plus, X } from "lucide-react";
 
 import { obtenerVehiculos, type Vehiculo } from "../../services/recepcion.service";
 import {
@@ -21,7 +21,7 @@ const estadoClase: Record<string, string> = {
   completada: "bg-emerald-50 text-emerald-700", no_cargada: "bg-rose-50 text-rose-700",
 };
 
-function Recoleccion() {
+function Rutas() {
   const [rutas, setRutas] = useState<RutaRecoleccion[]>([]);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [rutaId, setRutaId] = useState<number | null>(null);
@@ -38,11 +38,6 @@ function Recoleccion() {
 
   const editable = puedeEscribir("recepcion");
   const ruta = rutas.find((item) => item.id === rutaId) ?? null;
-  const resumen = useMemo(() => ({
-    programadas: rutas.filter((item) => item.estado === "programada").length,
-    activas: rutas.filter((item) => item.estado === "en_curso").length,
-    pendientes: rutas.flatMap((item) => item.paradas).filter((item) => item.estado === "pendiente").length,
-  }), [rutas]);
 
   const cargar = async () => {
     try {
@@ -100,11 +95,11 @@ function Recoleccion() {
   };
 
   return <div className="space-y-6">
-    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-emerald-700">Origen de la leche</p><h1 className="mt-1 text-2xl font-semibold text-slate-900">Recolección</h1><p className="mt-1 text-sm text-slate-500">Rutas, controles en predio y cargas por módulo antes de llegar a planta.</p></div>{editable && <button onClick={() => setNuevaAbierta(true)} className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white"><Plus className="h-4 w-4"/>Nueva ruta</button>}</header>
+    {/* El título de la pantalla y los contadores del turno viven ahora en la
+        cabecera de la sección y en el Panel. Repetirlos aquí empujaba la
+        primera ruta media pantalla hacia abajo, que es el trabajo real. */}
+    <header className="flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-lg font-semibold text-slate-900">Rutas de recolección</h2><p className="mt-1 text-sm text-slate-500">Programación, controles en predio y cargas por módulo antes de llegar a planta.</p></div>{editable && <button onClick={() => setNuevaAbierta(true)} className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white"><Plus className="h-4 w-4"/>Nueva ruta</button>}</header>
     {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
-    <section className="grid gap-4 sm:grid-cols-3">{[
-      ["Programadas", resumen.programadas, Route], ["En recorrido", resumen.activas, Truck], ["Predios pendientes", resumen.pendientes, MapPinned],
-    ].map(([texto, valor, Icono]) => { const Icon = Icono as typeof Route; return <article key={String(texto)} className="rounded-2xl border border-slate-200 bg-white p-5"><Icon className="h-5 w-5 text-emerald-700"/><p className="mt-4 text-sm text-slate-500">{String(texto)}</p><p className="mt-1 text-2xl font-semibold">{Number(valor)}</p></article>; })}</section>
     <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
       <section className="rounded-2xl border border-slate-200 bg-white p-3"><h2 className="px-2 pb-3 pt-1 text-sm font-semibold">Rutas recientes</h2><div className="space-y-2">{rutas.map((item) => <button key={item.id} onClick={() => setRutaId(item.id)} className={`w-full rounded-xl border p-3 text-left ${rutaId === item.id ? "border-emerald-300 bg-emerald-50" : "border-transparent bg-slate-50"}`}><div className="flex justify-between gap-2"><span className="font-medium">{item.codigo}</span><span className={`rounded-full px-2 py-0.5 text-[11px] ${estadoClase[item.estado]}`}>{item.estado.replace("_", " ")}</span></div><p className="mt-1 text-xs text-slate-500">{item.fecha} · {item.vehiculo_placa} · {item.paradas.length} predios</p></button>)}</div></section>
       <section className="rounded-2xl border border-slate-200 bg-white p-5">{!ruta ? <p className="py-12 text-center text-sm text-slate-500">Crea o selecciona una ruta.</p> : <><div className="flex flex-wrap justify-between gap-3 border-b pb-4"><div><h2 className="font-semibold">{ruta.codigo} · {ruta.vehiculo_placa}</h2><p className="mt-1 text-xs text-slate-500">Cada predio debe quedar completado o no cargado.</p></div>{editable && !["cerrada","cancelada"].includes(ruta.estado) && <button onClick={() => void cerrarRuta(ruta.id).then(cargar).catch((e) => setError(detalleError(e,"No se pudo cerrar.")))} className="rounded-xl border px-3 py-2 text-xs">Cerrar ruta</button>}</div><div className="mt-4 space-y-3">{ruta.paradas.map((p) => <article key={p.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-4"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold">{p.orden}</span><div className="flex-1"><p className="font-medium">{p.predio}</p><p className="text-xs text-slate-500">{p.proveedor}{p.sala ? ` · ${p.sala}` : ""}</p></div><span className={`rounded-full px-2 py-1 text-xs ${estadoClase[p.estado]}`}>{p.estado.replace("_", " ")}</span>{editable && p.estado === "pendiente" && <button onClick={() => setParadaActiva(p)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs text-white">Registrar visita</button>}</article>)}</div>{editable && !["cerrada","cancelada"].includes(ruta.estado) && <form onSubmit={guardarParada} className="mt-5 grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-4"><input required placeholder="Proveedor" value={paradaNueva.proveedor} onChange={(e)=>setParadaNueva({...paradaNueva,proveedor:e.target.value})} className="rounded-lg border px-3 py-2 text-sm"/><input required placeholder="Predio" value={paradaNueva.predio} onChange={(e)=>setParadaNueva({...paradaNueva,predio:e.target.value})} className="rounded-lg border px-3 py-2 text-sm"/><input placeholder="Sala" value={paradaNueva.sala} onChange={(e)=>setParadaNueva({...paradaNueva,sala:e.target.value})} className="rounded-lg border px-3 py-2 text-sm"/><button disabled={guardando} className="rounded-lg bg-slate-800 text-sm text-white">Agregar predio</button></form>}</>}</section>
@@ -118,4 +113,4 @@ function Campo({label,ancho=false,children}:{label:string;ancho?:boolean;childre
 function ModalTitulo({titulo,cerrar}:{titulo:string;cerrar:()=>void}) { return <div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Recolección</p><h2 className="mt-1 text-xl font-semibold">{titulo}</h2></div><button type="button" onClick={cerrar} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5"/></button></div>; }
 function Boton({guardando,texto}:{guardando:boolean;texto:string}) { return <button disabled={guardando} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-medium text-white disabled:opacity-50"><CheckCircle2 className="h-4 w-4"/>{texto}</button>; }
 
-export default Recoleccion;
+export default Rutas;

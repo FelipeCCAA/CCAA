@@ -17,9 +17,26 @@ import RestablecerContrasena from "../pages/RecuperarContrasena/RestablecerContr
 */
 const Dashboard = lazy(() => import("../pages/Dashboard/Dashboard"));
 const Produccion = lazy(() => import("../pages/Produccion/Produccion"));
-const Recepcion = lazy(() => import("../pages/Recepcion/Recepcion"));
-const Recoleccion = lazy(() => import("../pages/Recoleccion/Recoleccion"));
 const Estandarizacion = lazy(() => import("../pages/Estandarizacion/Estandarizacion"));
+
+/*
+  Leche cruda: recolección y recepción, en una sola sección con pestañas.
+
+  Eran dos pantallas que no se hablaban aunque el modelo ya las une
+  (`CargaModulo.recepcion_planta`): la carga que sale del predio es la que
+  llega a planta, y «qué viene en camino» no se veía en ninguna parte. El
+  orden de las subrutas es el viaje de la leche, igual que en abastecimiento
+  es el ciclo del material.
+*/
+const Leche = lazy(() => import("../pages/Leche/Leche"));
+const LechePanel = lazy(() => import("../pages/Leche/Panel"));
+const LecheRutas = lazy(() => import("../pages/Leche/Rutas"));
+const LecheEnCamino = lazy(() => import("../pages/Leche/EnCamino"));
+const LecheMuestreo = lazy(() => import("../pages/Leche/Muestreo"));
+const LecheCalidad = lazy(() => import("../pages/Leche/Calidad"));
+const LecheDescarga = lazy(() => import("../pages/Leche/SiloDescarga"));
+const LecheSilos = lazy(() => import("../pages/Leche/Silos"));
+const LecheHistorial = lazy(() => import("../pages/Leche/Historial"));
 const Liberacion = lazy(() => import("../pages/Liberacion/Liberacion"));
 const Planificacion = lazy(() => import("../pages/Planificacion/Planificacion"));
 const Maestros = lazy(() => import("../pages/Maestros/Maestros"));
@@ -158,12 +175,21 @@ function RoutesApp(){
                         element={diferido(<Produccion />)}
                     />
 
-                    <Route path="/recoleccion" element={diferido(<Recoleccion />)} />
+                    <Route path="/leche" element={diferido(<Leche />)}>
+                        <Route index element={diferido(<LechePanel />)} />
+                        <Route path="rutas" element={diferido(<LecheRutas />)} />
+                        <Route path="en-camino" element={diferido(<LecheEnCamino />)} />
+                        <Route path="muestreo" element={diferido(<LecheMuestreo />)} />
+                        <Route path="calidad" element={diferido(<LecheCalidad />)} />
+                        <Route path="descarga" element={diferido(<LecheDescarga />)} />
+                        <Route path="silos" element={diferido(<LecheSilos />)} />
+                        <Route path="historial" element={diferido(<LecheHistorial />)} />
+                    </Route>
 
-                    <Route
-                        path="/recepcion"
-                        element={diferido(<Recepcion />)}
-                    />
+                    {/* Las dos direcciones anteriores siguen funcionando: hay
+                        enlaces guardados y gente con la ruta en la memoria. */}
+                    <Route path="/recepcion" element={<Navigate to="/leche" replace />} />
+                    <Route path="/recoleccion" element={<Navigate to="/leche/rutas" replace />} />
 
                     <Route
                         path="/estandarizacion"

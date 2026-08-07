@@ -1,5 +1,5 @@
 from django.db import transaction
-from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -37,9 +37,19 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         consulta = super().get_queryset()
         parametros = self.request.query_params
 
+        # `estado` admite varios separados por coma: las pestañas del módulo
+        # agrupan estados —«Calidad» son las muestreadas *y* las retenidas— y
+        # sin esto cada una tendría que traerse todo y filtrar en el cliente,
+        # que es como los contadores terminaban midiendo la página en vez del
+        # total.
         estado = parametros.get("estado")
         if estado:
-            consulta = consulta.filter(estado=estado)
+            estados = [e for e in estado.split(",") if e]
+            consulta = (
+                consulta.filter(estado__in=estados)
+                if len(estados) > 1
+                else consulta.filter(estado=estados[0])
+            )
 
         silo = parametros.get("silo")
         if silo:
@@ -57,7 +67,59 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         if hasta:
             consulta = consulta.filter(fecha__lte=hasta)
 
+        # La búsqueda la resuelve la base, no el cliente. Filtrar en el
+        # navegador solo alcanza a las filas ya descargadas: buscar una guía de
+        # la semana pasada respondía «no encontramos recepciones», que es una
+        # afirmación falsa sobre algo que sí existe.
+        termino = (parametros.get("q") or "").strip()
+        if termino:
+            consulta = consulta.filter(
+                Q(guia__icontains=termino)
+                | Q(modulo__icontains=termino)
+                | Q(codigo_muestra__icontains=termino)
+                | Q(procedencia__icontains=termino)
+                | Q(vehiculo__placa__icontains=termino)
+                | Q(silo__codigo__icontains=termino)
+            )
+
         return consulta
+
+    @action(detail=False, methods=["get"])
+    def resumen(self, request):
+        """
+        Cuántas recepciones hay en cada estado, **sobre el total**.
+
+        El tablero las contaba sobre la página que tenía cargada: con más de
+        cincuenta recepciones dejaba de decir la verdad, y al filtrar por un
+        estado mostraba ceros en todos los demás —como si la planta se hubiera
+        vaciado—. Un contador que solo acierta cuando hay pocos datos es peor
+        que no tenerlo, porque nadie sabe cuándo dejó de acertar.
+
+        Se cuenta sobre el queryset **sin filtros de pantalla**: el resumen
+        describe la planta, no la vista.
+        """
+        base = Recepcion.objects.all()
+
+        por_estado = {
+            fila["estado"]: fila["n"]
+            for fila in base.values("estado").annotate(n=Count("id"))
+        }
+
+        return Response({
+            "por_estado": {
+                estado: por_estado.get(estado, 0)
+                for estado, _ in Recepcion.Estado.choices
+            },
+            "total": base.count(),
+            # Sin silo asignado y ya aprobadas: es el trabajo pendiente que no
+            # se deduce del estado solo.
+            "liberadas_sin_silo": base.filter(
+                estado=Recepcion.Estado.LIBERADA, silo__isnull=True
+            ).count(),
+            "liberadas_con_silo": base.filter(
+                estado=Recepcion.Estado.LIBERADA, silo__isnull=False
+            ).count(),
+        })
 
     def perform_create(self, serializer):
         # Quien registra queda como operador si no se indicó otro: el dato es
