@@ -6,7 +6,6 @@ import {
   borrarBloque,
   cerrarSemana,
   crearSemana,
-  DIAS,
   obtenerCodigos,
   obtenerPrograma,
   obtenerSemanas,
@@ -64,15 +63,17 @@ function Planificacion() {
   const [codigos, setCodigos] = useState<CodigoProduccion[]>([]);
   const [ocupacion, setOcupacion] = useState<Ocupacion | null>(null);
 
-  const [dia, setDia] = useState(0);
   const [vista, setVista] = useState<"programa" | "contraste">("programa");
 
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [firmando, setFirmando] = useState(false);
 
+  /* El día viaja con el bloque nuevo: la carta ya no muestra un día a la vez,
+     así que no hay un «día actual» del que deducirlo. */
   const [nuevoBloque, setNuevoBloque] = useState<{
     equipo: number;
+    dia: number;
     hora: number;
   } | null>(null);
 
@@ -427,35 +428,22 @@ function Planificacion() {
 
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
 
+                {/* El selector de día desapareció: la carta muestra la semana
+                    entera y se desplaza. Elegir un día ya no cambia de vista
+                    —eso partía en dos pantallas una corrida que cruza la
+                    medianoche—, solo mueve el desplazamiento, y eso vive
+                    dentro de la carta porque es quien tiene el scroller. */}
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-
-                  <h2 className="font-medium text-slate-800">Programa horario</h2>
-
-                  <div className="flex flex-wrap gap-1">
-                    {DIAS.map((nombre, i) => (
-                      <button
-                        key={nombre}
-                        type="button"
-                        onClick={() => setDia(i)}
-                        className={`rounded-lg px-3 py-1.5 text-sm ${
-                          dia === i
-                            ? "bg-green-50 font-medium text-green-700"
-                            : "text-slate-500 hover:bg-slate-50"
-                        }`}
-                      >
-                        {nombre.slice(0, 3)}
-                      </button>
-                    ))}
-                  </div>
-
+                  <h2 className="font-medium text-slate-800">
+                    Programa horario de la semana
+                  </h2>
                 </div>
 
                 <Gantt
                   bloques={programa.bloques}
                   equipos={equipos}
-                  dia={dia}
                   puedeEditar={editable}
-                  alCrear={(equipo, hora) => setNuevoBloque({ equipo, hora })}
+                  alCrear={(equipo, dia, hora) => setNuevoBloque({ equipo, dia, hora })}
                   alBorrar={async (bloque) => {
                     await borrarBloque(bloque.id);
                     await cargarPrograma();
@@ -504,7 +492,7 @@ function Planificacion() {
           equipo={nuevoBloque.equipo}
           equipos={equipos}
           horaInicio={nuevoBloque.hora}
-          dia={dia}
+          dia={nuevoBloque.dia}
           codigos={codigos}
           alCerrar={() => setNuevoBloque(null)}
           alGuardar={() => {
