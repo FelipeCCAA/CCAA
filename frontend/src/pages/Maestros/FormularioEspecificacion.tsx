@@ -35,6 +35,65 @@ const TEXTO: Record<Modo, { titulo: string; boton: string }> = {
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 
+/*
+  Por qué falló el guardado, dicho de forma que se pueda actuar.
+
+  **Separa «el servidor lo rechazó» de «no llegué al servidor»**, y no es una
+  distinción de manual: le pasó a Felipe con su servidor de pruebas caído y el
+  mensaje decía «no se pudo guardar la especificación», que suena a que los
+  datos están mal. Se puso a revisar rangos durante un rato por culpa del
+  texto.
+
+  Los nombres de campo del backend se traducen: `non_field_errors` no le dice
+  nada a quien escribe una especificación.
+*/
+const CAMPO: Record<string, string> = {
+  non_field_errors: "",
+  producto: "Producto",
+  version: "Versión",
+  vigente_desde: "Vigente desde",
+  vigente_hasta: "Vigente hasta",
+  rangos: "Rangos",
+  detail: "",
+};
+
+function motivoDelFallo(e: unknown): string {
+  const error = e as {
+    response?: { status?: number; data?: unknown };
+    code?: string;
+  };
+
+  // Sin respuesta no hubo rechazo: la petición no llegó. Es lo que ve
+  // cualquiera con el servidor caído, y merece decirlo con esas palabras.
+  if (!error?.response) {
+    return error?.code === "ECONNABORTED"
+      ? "El servidor tardó demasiado en responder. La especificación no se guardó; revisa que siga en pie e inténtalo otra vez."
+      : "No se pudo contactar al servidor, así que la especificación no se guardó. Revisa que esté corriendo y vuelve a intentarlo — lo que escribiste sigue aquí.";
+  }
+
+  if (error.response.status === 403) {
+    return "Tu rol no puede escribir especificaciones: las edita Calidad.";
+  }
+
+  const datos = error.response.data;
+
+  if (typeof datos !== "object" || datos === null) {
+    return `El servidor rechazó el guardado (error ${error.response.status}).`;
+  }
+
+  const motivos = Object.entries(datos as Record<string, unknown>).map(
+    ([campo, motivo]) => {
+      const texto = Array.isArray(motivo) ? motivo.join(" ") : String(motivo);
+      const etiqueta = CAMPO[campo] ?? campo;
+
+      return etiqueta ? `${etiqueta}: ${texto}` : texto;
+    },
+  );
+
+  return motivos.join(" · ") || "El servidor rechazó el guardado.";
+}
+
+
 function FormularioEspecificacion({
   modo,
   inicial,
@@ -116,15 +175,7 @@ function FormularioEspecificacion({
         fuente,
       });
     } catch (e) {
-      const datos = (e as { response?: { data?: unknown } })?.response?.data;
-
-      setError(
-        typeof datos === "object" && datos
-          ? Object.entries(datos as Record<string, unknown>)
-              .map(([campo, motivo]) => `${campo}: ${String(motivo)}`)
-              .join(" · ")
-          : "No se pudo guardar la especificación.",
-      );
+      setError(motivoDelFallo(e));
     } finally {
       setGuardando(false);
     }

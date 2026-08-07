@@ -52,6 +52,40 @@ class ProductoViewSet(viewsets.ModelViewSet):
         return consulta
 
 
+class VigentesHoy:
+    """
+    Qué versión de cada especificación manda hoy, resuelto **al usarse**.
+
+    Se calculaba al armar el serializador, o sea **antes** de guardar: la
+    respuesta de crear una especificación decía `es_vigente: false` sobre una
+    que sí lo era, porque cuando se resolvió el conjunto la fila todavía no
+    existía. Se veía bien igual solo porque la pantalla recarga la lista
+    después de guardar — un acierto por accidente.
+
+    Aplazarlo hasta la primera consulta lo arregla: en un listado esa primera
+    consulta ocurre al serializar la primera fila, y en un alta ocurre después
+    del `save()`. El resultado se guarda, así que un listado de cincuenta
+    filas sigue costando una sola consulta.
+    """
+
+    def __init__(self):
+        self._ids: set[int] | None = None
+
+    def __contains__(self, especificacion_id) -> bool:
+        if self._ids is None:
+            todas = list(Especificacion.objects.all())
+            hoy = timezone.localdate()
+
+            ganadoras = {
+                especificacion_vigente(todas, producto_id, hoy)
+                for producto_id in {e.producto_id for e in todas}
+            }
+
+            self._ids = {e.id for e in ganadoras if e is not None}
+
+        return especificacion_id in self._ids
+
+
 class EspecificacionViewSet(viewsets.ModelViewSet):
     """
     Los rangos de calidad de un producto, versionados.
@@ -78,27 +112,15 @@ class EspecificacionViewSet(viewsets.ModelViewSet):
 
     def get_serializer_context(self):
         """
-        Cuáles son las versiones vigentes hoy, resueltas **una sola vez** con
-        la misma función que usa el veredicto.
+        Cuáles son las versiones vigentes hoy, con la misma función que usa el
+        veredicto del lote.
 
-        Se calcula aquí y no en el serializador porque la regla necesita ver
-        todas las versiones del producto a la vez —gana la de vigencia más
-        reciente— y hacerlo por fila sería una consulta por especificación.
+        Se resuelve aquí y no fila por fila porque la regla necesita ver todas
+        las versiones del producto a la vez —gana la de vigencia más reciente—
+        y por fila sería una consulta por especificación.
         """
         contexto = super().get_serializer_context()
-
-        if getattr(self, "swagger_fake_view", False):
-            return contexto
-
-        todas = list(Especificacion.objects.all())
-        hoy = timezone.localdate()
-
-        vigentes = {
-            especificacion_vigente(todas, producto_id, hoy)
-            for producto_id in {e.producto_id for e in todas}
-        }
-
-        contexto["vigentes_hoy"] = {e.id for e in vigentes if e is not None}
+        contexto["vigentes_hoy"] = VigentesHoy()
 
         return contexto
 

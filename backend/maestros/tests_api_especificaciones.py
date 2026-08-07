@@ -166,6 +166,24 @@ class VigenciaTests(BaseApiEspecificaciones):
 
         self.assertFalse(versiones[1]["es_vigente"])
 
+    def test_la_respuesta_de_crear_ya_dice_que_es_vigente(self):
+        """
+        La primera especificación de un producto es la vigente, y la respuesta
+        del alta tiene que decirlo.
+
+        Se resolvía al armar el serializador —antes del `save()`—, así que la
+        fila recién creada no estaba en el conjunto y volvía `es_vigente:
+        false`. Se veía bien solo porque la pantalla recarga la lista después
+        de guardar: un acierto por accidente, que se rompe en cuanto alguien
+        use la respuesta del alta.
+        """
+        respuesta = self.calidad.post(
+            "/api/maestros/especificaciones/", self._cuerpo(), format="json"
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertTrue(respuesta.data["es_vigente"])
+
     def test_una_version_partida_por_la_paginacion_no_se_declara_vigente(self):
         """
         La vigencia se calcula sobre **todas** las versiones del producto, no

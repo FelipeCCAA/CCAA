@@ -180,6 +180,9 @@ class EspecificacionSerializer(serializers.ModelSerializer):
         """
         vigentes = self.context.get("vigentes_hoy")
 
+        # `in` y no una comparación de conjuntos: el viewset entrega un objeto
+        # que resuelve la pregunta la primera vez que se le hace, para que un
+        # alta se responda con el estado de **después** de guardar.
         return especificacion.id in vigentes if vigentes is not None else False
 
     def validate(self, datos):
