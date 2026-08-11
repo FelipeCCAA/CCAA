@@ -34,7 +34,17 @@ CONFIGURACION_GRAPH = {
 }
 
 
-@override_settings(**CONFIGURACION_GRAPH)
+# La caché del proyecto vive en la base de datos —de ella dependen los límites
+# de acceso, que tienen que ser compartidos entre workers—. Estas pruebas son de
+# un backend de correo y no deben necesitar base: se les da una caché en memoria
+# para que sigan siendo `SimpleTestCase`. Sin esto, `cache.clear()` intenta una
+# consulta y Django la prohíbe, con razón.
+@override_settings(
+    **CONFIGURACION_GRAPH,
+    CACHES={
+        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    },
+)
 class MicrosoftGraphEmailBackendTests(SimpleTestCase):
     def setUp(self):
         cache.clear()

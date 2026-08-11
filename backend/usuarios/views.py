@@ -26,7 +26,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
-from .models import PerfilUsuario
+from .models import IntentoAcceso, PerfilUsuario
 from .serializers import (
     ConfirmacionRecuperacionSerializer,
     SolicitudRecuperacionSerializer,
@@ -34,6 +34,7 @@ from .serializers import (
     UsuarioSerializer,
 )
 from .permisos import IsAdminDeArea
+from .throttling import LoginIPThrottle, LoginUsuarioThrottle
 from .tenancy import scope_de
 
 
@@ -62,15 +63,68 @@ class ConfirmacionRecuperacionThrottle(RecuperacionThrottle):
     scope = "password_reset_confirm"
 
 
+def _direccion(request):
+    """
+    La dirección de quien llama, resuelta como la resuelve el throttle.
+
+    Detrás de Nginx, `REMOTE_ADDR` es la del proxy —la misma para todo el
+    mundo—, así que hay que leer `X-Forwarded-For`. Pero **no la primera
+    entrada**: esa la escribe el cliente y es pura ficción. Cada proxy añade al
+    final la dirección que él mismo vio, así que la última que puso un proxy de
+    confianza es la única que no se puede falsificar.
+
+    `PROXIES_DE_CONFIANZA` dice cuántos hay delante. Con 0 se ignora la
+    cabecera entera y manda `REMOTE_ADDR`, que es el fallo seguro.
+
+    Se cuenta desde el final igual que `SimpleRateThrottle.get_ident`: si el
+    registro y el límite no coincidieran en qué dirección es cuál, investigar
+    un bloqueo sería imposible.
+    """
+    proxies = getattr(settings, "PROXIES_DE_CONFIANZA", 0)
+    reenviada = request.META.get("HTTP_X_FORWARDED_FOR", "")
+
+    if proxies and reenviada:
+        direcciones = [parte.strip() for parte in reenviada.split(",") if parte.strip()]
+
+        if direcciones:
+            return direcciones[-min(proxies, len(direcciones))][:45] or None
+
+    return request.META.get("REMOTE_ADDR") or None
+
+
+def _anotar_intento(request, usuario, exito, motivo=""):
+    """
+    Deja constancia del intento.
+
+    Nunca falla hacia fuera: si el registro no se puede escribir, el login
+    tiene que seguir funcionando. Una auditoría que tumba el acceso es peor
+    que no tenerla.
+    """
+    try:
+        IntentoAcceso.objects.create(
+            usuario=str(usuario or "")[:150],
+            ip=_direccion(request),
+            exito=exito,
+            motivo=motivo,
+        )
+    except (DatabaseError, ValueError):
+        logger.warning("No se pudo registrar el intento de acceso", exc_info=True)
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([LoginIPThrottle, LoginUsuarioThrottle])
 def login(request):
     """
     Valida las credenciales y entrega un token.
 
     Es el único endpoint abierto de la API: todo lo demás exige presentar
     ese token en la cabecera `Authorization: Token <valor>`.
+
+    Los dos límites del decorador son lo que impide probar contraseñas en masa.
+    Ver `usuarios/throttling.py`: uno por dirección y otro por cuenta, porque
+    protegen de ataques distintos y ninguno basta solo.
     """
     username = request.data.get("username")
     password = request.data.get("password")
@@ -87,18 +141,24 @@ def login(request):
     )
 
     if usuario is None:
+        _anotar_intento(request, username, exito=False, motivo="credenciales")
+
+        # El mensaje es el mismo exista o no la cuenta: distinguirlos
+        # convertiría el login en un comprobador de nombres de usuario.
         return Response(
             {"error": "Usuario o contraseña incorrectos"},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
     if not usuario.is_active:
+        _anotar_intento(request, username, exito=False, motivo="desactivada")
         return Response(
             {"error": "La cuenta está desactivada"},
             status=status.HTTP_403_FORBIDDEN
         )
 
     token, _ = Token.objects.get_or_create(user=usuario)
+    _anotar_intento(request, username, exito=True)
 
     return Response({
         "mensaje": "Login correcto",

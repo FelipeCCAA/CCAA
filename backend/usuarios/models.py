@@ -4,6 +4,51 @@ from django.contrib.auth.models import User
 from .tenancy import empresa_predeterminada_pruebas, sucursal_predeterminada_pruebas
 
 
+class IntentoAcceso(models.Model):
+    """
+    Cada intento de iniciar sesión, exitoso o no.
+
+    Antes no quedaba rastro de ninguno: un ataque de fuerza bruta contra la API
+    era indistinguible de un turno normal, y después de un incidente no había
+    forma de responder «desde dónde y contra qué cuenta». `auditoria` no cubre
+    esto porque captura escrituras de modelos, y un login fallido no escribe
+    nada.
+
+    **El nombre de usuario se guarda como texto, no como clave foránea**: la
+    mitad de los intentos de un ataque son contra cuentas que no existen, y son
+    justamente los que más dicen. Con una FK, esos se perderían.
+
+    **Sin empresa ni sucursal, a diferencia del resto del sistema.** El login
+    ocurre *antes* de saber quién llama: exigirle un tenant obligaría a
+    resolverlo desde un nombre de usuario que puede no existir, y dejaría fuera
+    del registro justo los intentos que más importa ver.
+
+    Nunca se guarda la contraseña, ni siquiera de un intento fallido: un
+    tecleo de una contraseña válida en el campo equivocado terminaría en la
+    base en claro.
+    """
+
+    usuario = models.CharField("Usuario declarado", max_length=150)
+    ip = models.GenericIPAddressField("Dirección", null=True, blank=True)
+    exito = models.BooleanField("Correcto", default=False)
+    motivo = models.CharField("Motivo del rechazo", max_length=60, blank=True)
+    fecha_hora = models.DateTimeField("Fecha y hora", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Intento de acceso"
+        verbose_name_plural = "Intentos de acceso"
+        ordering = ["-fecha_hora"]
+        indexes = [
+            # Las dos preguntas que se le hacen a esta tabla: «qué pasó con
+            # esta cuenta» y «qué está haciendo esta dirección».
+            models.Index(fields=["usuario", "-fecha_hora"]),
+            models.Index(fields=["ip", "-fecha_hora"]),
+        ]
+
+    def __str__(self):
+        return f"{self.usuario} · {'ok' if self.exito else self.motivo}"
+
+
 class Empresa(models.Model):
     rut = models.CharField(max_length=20, unique=True)
     nombre = models.CharField(max_length=160)

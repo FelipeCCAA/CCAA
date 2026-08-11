@@ -270,11 +270,32 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 
+# Cuantos proxies de confianza hay delante de la aplicacion.
+#
+# **De esto depende que el limite por IP no sea esquivable.** Sin declararlo,
+# DRF usa la cabecera `X-Forwarded-For` **entera** como identidad; detras de
+# Nginx, quien ataca manda una cabecera distinta en cada peticion, Nginx le
+# anade la suya, la cadena cambia siempre y cada intento estrena cubo: el
+# limite existe y no frena nada.
+#
+# Con el numero declarado se toma la entrada que anadio **nuestro** proxy --la
+# ultima--, la unica que el cliente no puede escribir.
+#
+# Cero por defecto: sin proxy manda `REMOTE_ADDR` y no se cree ninguna
+# cabecera. Es el fallo seguro. El despliegue con Nginx tiene que poner 1, y si
+# se olvida el sintoma es un limite demasiado estricto --toda la planta
+# comparte cubo-- que se nota, en vez de uno inexistente que no se nota.
+PROXIES_DE_CONFIANZA = int(os.environ.get("PROXIES_DE_CONFIANZA", "0"))
+
 REST_FRAMEWORK = {
     # Los listados van paginados: el historico de produccion son ~954 lotes y
     # va a seguir creciendo. Sin esto, /lotes/ devolveria la tabla entera.
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+
+    # Sin esto DRF usa la cabecera `X-Forwarded-For` entera como identidad y el
+    # limite por IP se esquiva mandando una distinta cada vez.
+    "NUM_PROXIES": PROXIES_DE_CONFIANZA,
 
     # Toda la API exige identificarse. Las excepciones se declaran una por una
     # en su vista (login y recuperación de contraseña), nunca al revés: si un
@@ -291,8 +312,52 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "password_reset_request": "5/hour",
         "password_reset_confirm": "10/hour",
+
+        # Login. Dos limites porque protegen de cosas distintas:
+        #
+        # - Por direccion, holgado: la planta sale a internet por una sola IP,
+        #   asi que treinta personas comparten cuota. Apretarlo aqui deja al
+        #   turno entero fuera por culpa de un atacante, que es una denegacion
+        #   de servicio servida en bandeja.
+        # - Por nombre de usuario, estricto: una persona no falla quince veces
+        #   en una hora contra su propia cuenta. Es el que sobrevive a un
+        #   atacante que rota direcciones, que es lo habitual.
+        "login_ip": os.environ.get("THROTTLE_LOGIN_IP", "60/hour"),
+        "login_usuario": os.environ.get("THROTTLE_LOGIN_USUARIO", "15/hour"),
     },
 }
+
+
+# Caché
+#
+# **De esto depende que los limites de arriba existan.** `SimpleRateThrottle`
+# cuenta en la cache; sin declarar ninguna, Django usa `LocMemCache`, que vive
+# en la memoria de un proceso. Con varios workers de Gunicorn --y mas aun con
+# varias replicas-- un limite de «15 por hora» se convierte en «15 por hora y
+# por worker»: existe en el codigo y no en la practica.
+#
+# Se usa PostgreSQL y no Redis porque ya esta ahi: es compartida, que es la
+# propiedad que hace falta, y no agrega infraestructura que mantener hoy.
+# `CACHE_URL` deja pasar a Redis sin tocar codigo cuando llegue su fase.
+CACHE_URL = os.environ.get("CACHE_URL", "")
+
+if CACHE_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": CACHE_URL,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": "cache_ccaa",
+            # Las entradas de throttle son pequenas y caducan solas. El techo
+            # evita que la tabla crezca sin limite si se cachea algo mas.
+            "OPTIONS": {"MAX_ENTRIES": 10000},
+        }
+    }
 
 validar_entorno_endurecido(
     DJANGO_ENV,
