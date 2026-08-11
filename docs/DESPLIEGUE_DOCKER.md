@@ -138,19 +138,42 @@ CCAA_INITIAL_BRANCH_CODE=PLANTA
 CCAA_INITIAL_BRANCH_NAME=Planta Osorno
 ```
 
-Y estas gobiernan las defensas del acceso. La primera no es opcional con Nginx
-delante:
+Y estas gobiernan las defensas del acceso. `PROXIES_DE_CONFIANZA` es
+**obligatoria**: `compose config` falla sin ella, igual que con las anteriores.
+Que el despliegue no arranque es preferible a que arranque desprotegido.
 
 ```dotenv
-# Sin esto el limite por IP es esquivable: DRF usaria la cabecera
-# X-Forwarded-For entera como identidad y quien ataca estrena contador
-# mandando una distinta en cada peticion.
 PROXIES_DE_CONFIANZA=1
-
 THROTTLE_LOGIN_IP=60/hour
 THROTTLE_LOGIN_USUARIO=15/hour
 TOKEN_TTL_HORAS=12
+RESUMEN_DIAS=90
 ```
+
+Sin ella, DRF usa la cabecera `X-Forwarded-For` **entera** como identidad del
+cliente y el límite por IP se esquiva mandando una distinta en cada petición.
+
+El `nginx.production.conf` de este repositorio ya sirve para esto, y con una
+elección más estricta de lo habitual:
+
+```nginx
+proxy_set_header X-Forwarded-For $remote_addr;
+```
+
+**Sobrescribe** la cabecera en vez de añadir a la que venga (`$proxy_add_x_forwarded_for`,
+que es el idiom más común). El resultado es que siempre lleva exactamente una
+dirección —la que Nginx observó— y lo que el cliente pretenda enviar se
+descarta. Con `PROXIES_DE_CONFIANZA=1` esa es la que se usa.
+
+Si algún día se añade otro proxy delante —una CDN, un balanceador— hay que
+revisar las dos cosas a la vez: esa línea perdería la dirección real del
+cliente, y el número tendría que subir a 2.
+
+**Ninguna de estas variables funciona solo poniéndola en `.env`.** El
+`compose.yml` enumera el entorno del backend una variable a la vez, así que una
+que no esté en esa lista no llega al contenedor — y en una opción de seguridad
+eso es el peor fallo posible: parece configurada y no lo está. Ya están todas
+enumeradas; si se agrega otra, hay que añadirla ahí también.
 
 ## Desbloquear un acceso
 

@@ -21,6 +21,26 @@ x-backend-environment: &backend-environment
   CCAA_INITIAL_COMPANY_NAME: ${CCAA_INITIAL_COMPANY_NAME:?Defina CCAA_INITIAL_COMPANY_NAME}
   CCAA_INITIAL_BRANCH_CODE: ${CCAA_INITIAL_BRANCH_CODE:?Defina CCAA_INITIAL_BRANCH_CODE}
   CCAA_INITIAL_BRANCH_NAME: ${CCAA_INITIAL_BRANCH_NAME:?Defina CCAA_INITIAL_BRANCH_NAME}
+  # Defensas del acceso. Van enumeradas aquí porque compose no pasa el entorno
+  # entero: una variable que solo esté en .env no llega al contenedor, y en una
+  # opción de seguridad eso es el peor fallo posible —parece configurada y no
+  # lo está—.
+  #
+  # `PROXIES_DE_CONFIANZA` es obligatoria y no tiene valor por omisión a
+  # propósito: con Nginx delante y sin ella, el límite por IP se esquiva
+  # mandando una cabecera X-Forwarded-For distinta en cada petición. Que el
+  # despliegue no arranque es preferible a que arranque desprotegido.
+  PROXIES_DE_CONFIANZA: ${PROXIES_DE_CONFIANZA:?Defina PROXIES_DE_CONFIANZA (1 detras de Nginx)}
+  THROTTLE_LOGIN_IP: ${THROTTLE_LOGIN_IP:-60/hour}
+  THROTTLE_LOGIN_USUARIO: ${THROTTLE_LOGIN_USUARIO:-15/hour}
+  TOKEN_TTL_HORAS: ${TOKEN_TTL_HORAS:-12}
+  RESUMEN_DIAS: ${RESUMEN_DIAS:-90}
+  # Vacías por defecto: sin ellas la caché usa PostgreSQL y el MRP corre dentro
+  # de la petición, que es el comportamiento actual. Se rellenan cuando llegue
+  # la fase de Redis.
+  CACHE_URL: ${CACHE_URL:-}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-}
+  CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-1200}
 
 services:
   db:
