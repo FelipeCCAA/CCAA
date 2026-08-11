@@ -458,6 +458,8 @@ class AdjuntoSerializer(serializers.ModelSerializer):
         from pathlib import Path
         from django.conf import settings
 
+        from .adjuntos import ContenidoNoCorresponde, verificar
+
         extensiones = {".pdf", ".xlsx", ".xls", ".csv", ".png", ".jpg", ".jpeg", ".webp"}
         extension = Path(archivo.name).suffix.lower()
         if extension not in extensiones:
@@ -467,6 +469,15 @@ class AdjuntoSerializer(serializers.ModelSerializer):
         if archivo.size > settings.MAX_UPLOAD_SIZE:
             limite_mb = settings.MAX_UPLOAD_SIZE // (1024 * 1024)
             raise serializers.ValidationError(f"El archivo supera el límite de {limite_mb} MB.")
+
+        # La extensión la elige quien sube: renombrar `payload.html` a
+        # `guia.pdf` bastaba para almacenar HTML ejecutable y repartir el
+        # enlace. Se comprueba lo que el archivo trae dentro.
+        try:
+            verificar(archivo)
+        except ContenidoNoCorresponde as error:
+            raise serializers.ValidationError(str(error)) from error
+
         return archivo
 
 

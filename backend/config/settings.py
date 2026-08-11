@@ -328,6 +328,13 @@ REST_FRAMEWORK = {
 }
 
 
+# Cuanto vive un token sin volver a iniciar sesion. Doce horas es un turno:
+# quien trabaja entra una vez y no lo nota, y una clave olvidada en un equipo
+# compartido deja de servir al dia siguiente. Cero lo desactiva, como salida de
+# emergencia. Ver `usuarios/authentication.py`.
+TOKEN_TTL_HORAS = int(os.environ.get("TOKEN_TTL_HORAS", "12"))
+
+
 # Celery
 #
 # Existe para sacar el MRP semanal de la peticion HTTP: la explosion multinivel

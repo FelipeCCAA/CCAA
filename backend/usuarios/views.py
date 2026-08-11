@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import get_connection
 from django.db import DatabaseError, transaction
+from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import status, viewsets
@@ -157,7 +158,18 @@ def login(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    token, _ = Token.objects.get_or_create(user=usuario)
+    token, creado = Token.objects.get_or_create(user=usuario)
+
+    # Se renueva el reloj, no la clave. `Token` es `OneToOne` con el usuario:
+    # todas sus sesiones comparten clave, así que cambiarla aquí echaría del
+    # sistema al terminal de planta cada vez que alguien entra desde el
+    # teléfono. Renovando la fecha, el token caduca por olvido y no por
+    # trabajar — sin esto la caducidad sería inservible, porque conservaría la
+    # fecha del primer login de su vida.
+    if not creado:
+        token.created = timezone.now()
+        token.save(update_fields=["created"])
+
     _anotar_intento(request, username, exito=True)
 
     return Response({
