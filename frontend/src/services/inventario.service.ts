@@ -257,6 +257,14 @@ export interface EjecucionMRP {
   horizonte_hasta: string;
   parametros: Record<string, unknown>;
   resultados: ResultadoMRPSemanal[];
+  /* El cálculo ya no ocurre dentro de la petición: ocupaba un worker de
+     principio a fin. La ejecución llega en cola y hay que preguntar cómo va. */
+  estado: "pendiente" | "en_curso" | "terminada" | "fallida";
+  estado_etiqueta: string;
+  /* Lo dice el backend y no se deduce de la lista de estados: deducirlo aquí
+     obligaría a mantener esa lista en dos sitios. */
+  terminada: boolean;
+  error: string;
 }
 
 export async function obtenerInsumos(): Promise<Insumo[]> {
@@ -549,6 +557,40 @@ export async function ejecutarMRPSemana(semana: number): Promise<EjecucionMRP> {
   );
 
   return data;
+}
+
+
+export async function obtenerEjecucionMRP(id: number): Promise<EjecucionMRP> {
+  const { data } = await api.get<EjecucionMRP>(`inventario/ejecuciones-mrp/${id}/`);
+
+  return data;
+}
+
+
+/*
+  Espera a que el cálculo termine preguntando cada dos segundos.
+
+  Dos segundos y no doscientos milisegundos: el MRP tarda lo que tarda y
+  preguntar más seguido solo carga el backend que este cambio existe para
+  aliviar.
+
+  El techo de intentos evita que una tarea que murió sin dejar rastro deje a la
+  pantalla girando para siempre. Al agotarse **no se inventa un resultado**: se
+  devuelve la última ejecución conocida, con su estado real, y la pantalla dice
+  que sigue en curso.
+*/
+export async function esperarEjecucionMRP(
+  id: number,
+  { intentos = 90, cada = 2000 } = {},
+): Promise<EjecucionMRP> {
+  let ejecucion = await obtenerEjecucionMRP(id);
+
+  for (let n = 0; n < intentos && !ejecucion.terminada; n++) {
+    await new Promise((seguir) => setTimeout(seguir, cada));
+    ejecucion = await obtenerEjecucionMRP(id);
+  }
+
+  return ejecucion;
 }
 
 export async function crearMaterial(datos: {

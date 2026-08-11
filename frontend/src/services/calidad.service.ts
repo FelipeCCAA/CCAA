@@ -189,15 +189,36 @@ export const ESTADOS_LIBERACION = [
 ];
 
 
+/*
+  El listado de expedientes viene **paginado**, y no por comodidad: cada fila
+  evalúa en el servidor el checklist y el veredicto de su lote en memoria, así
+  que sin techo el coste crecía con el histórico completo hasta agotar el
+  tiempo de la función.
+
+  `total` es el de la consulta, no el de la página: es lo que permite decir
+  «50 de 954» en vez de dar a entender que no hay más.
+*/
 export async function buscarExpedientes(
-  filtros: { estado?: string; desde?: string; hasta?: string } = {},
-): Promise<{ resultados: FilaExpediente[]; total: number }> {
+  filtros: {
+    estado?: string;
+    desde?: string;
+    hasta?: string;
+    pagina?: number;
+  } = {},
+): Promise<{
+  resultados: FilaExpediente[];
+  total: number;
+  pagina: number;
+  limite: number;
+  hay_mas: boolean;
+}> {
 
   const { data } = await api.get("calidad/expedientes/", {
     params: {
       estado: filtros.estado || undefined,
       desde: filtros.desde || undefined,
       hasta: filtros.hasta || undefined,
+      pagina: filtros.pagina && filtros.pagina > 1 ? filtros.pagina : undefined,
     },
   });
 

@@ -36,12 +36,13 @@ from .serializers import (
     RecepcionCompraSerializer, SolicitudCompraSerializer,
     SolicitudMaterialSerializer, UbicacionSerializer,
 )
+from .bloqueo import YaEnCurso, solo_uno
 from .servicios import (
     cerrar_no_conformidad, consumir_receta_produccion, crear_ajuste,
     decidir_inspeccion, decidir_solicitud_compra,
     decidir_y_aplicar_ajuste, entregar_solicitud_material,
     convertir_solicitud_en_ordenes, crear_solicitud_desde_mrp,
-    ejecutar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
+    ejecutar_mrp_semana, encolar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
 )
 
@@ -572,16 +573,41 @@ class EjecucionMRPViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="ejecutar")
     def ejecutar(self, request):
+        """
+        Corre el MRP de una semana. **Una a la vez por semana.**
+
+        La explosión multinivel ya no ocurre dentro de la petición: ocupaba un
+        worker de Gunicorn de principio a fin, y con dos workers eso deja al
+        resto de la planta esperando. Se encola y la pantalla consulta cómo va.
+
+        El candado sigue haciendo falta aunque se encole: dos peticiones
+        seguidas —o una persona pulsando dos veces porque no ve respuesta—
+        meterían dos tareas idénticas en la cola.
+        """
         from planificacion.models import SemanaPlan
+
+        semana_id = request.data.get("semana")
+
         try:
-            ejecucion = ejecutar_mrp_semana(
-                semana=_tenant_get(SemanaPlan, request.user, request.data.get("semana"), sucursal="sucursal_id", empresa="sucursal__empresa_id"),
-                usuario=request.user,
+            with solo_uno(f"mrp:semana:{semana_id}"):
+                ejecucion = encolar_mrp_semana(
+                    semana=_tenant_get(SemanaPlan, request.user, semana_id, sucursal="sucursal_id", empresa="sucursal__empresa_id"),
+                    usuario=request.user,
+                )
+        except YaEnCurso:
+            return Response(
+                {"error": "El MRP de esta semana ya se está calculando. "
+                          "Espera a que termine antes de volver a pedirlo."},
+                status=status.HTTP_409_CONFLICT,
             )
         except (SemanaPlan.DoesNotExist, DjangoValidationError) as error:
             mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else "La semana no existe."
             return Response({"error": mensaje}, status=409)
-        return Response(self.get_serializer(ejecucion).data, status=201)
+
+        # 202 y no 201: lo que se devuelve es la ejecución, no el resultado. La
+        # pantalla consulta su estado hasta que termina. Sin worker ya viene
+        # calculada, pero el contrato es el mismo — un solo camino que mantener.
+        return Response(self.get_serializer(ejecucion).data, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["post"], url_path="solicitar-compra")
     def solicitar_compra(self, request, pk=None):

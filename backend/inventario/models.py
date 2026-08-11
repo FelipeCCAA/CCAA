@@ -758,11 +758,36 @@ class EjecucionMRP(models.Model):
         "usuarios.Sucursal", on_delete=models.PROTECT, related_name="ejecuciones_mrp",
         default=sucursal_predeterminada_pruebas,
     )
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "En cola"
+        EN_CURSO = "en_curso", "Calculando"
+        TERMINADA = "terminada", "Terminada"
+        FALLIDA = "fallida", "Fallida"
+
     creada_en = models.DateTimeField(auto_now_add=True)
     fecha_corte = models.DateField()
     horizonte_hasta = models.DateField()
     ejecutada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     parametros = models.JSONField(default=dict)
+
+    # **Estado**, porque el cálculo ya no ocurre dentro de la petición: la
+    # pantalla recibe la ejecución recién creada y consulta cómo va. Sin
+    # estado, una ejecución a medias sería indistinguible de una que no
+    # encontró nada que comprar — y la diferencia entre «todavía no sé» y «no
+    # falta nada» decide si alguien emite una orden de compra.
+    #
+    # El valor por omisión es `terminada` a propósito: las ejecuciones que ya
+    # existen se hicieron enteras dentro de la petición, y marcarlas como
+    # pendientes al migrar diría que hay cálculos en cola que nadie va a correr
+    # nunca. Quien encola una nueva pone `pendiente` explícitamente.
+    estado = models.CharField(
+        "Estado", max_length=12, choices=Estado.choices,
+        default=Estado.TERMINADA, db_index=True,
+    )
+    # El motivo del fallo se guarda: una ejecución fallida sin decir por qué
+    # obliga a repetirla para averiguarlo, y repetirla es justo lo caro.
+    error = models.TextField("Motivo del fallo", blank=True)
+    terminada_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         # La más reciente primero. Sin `ordering` el orden lo decide la base y

@@ -932,8 +932,55 @@ def registrar_devolucion(*, detalle_entrega, cantidad, estado_material, motivo, 
 
 
 @transaction.atomic
-def ejecutar_mrp_semana(*, semana, usuario):
-    """Explota el programa publicado sin modificar Planificación ni sus bloques."""
+def encolar_mrp_semana(*, semana, usuario):
+    """
+    Crea la ejecución y manda el cálculo a la cola. Devuelve la ejecución.
+
+    **Lo que puede fallar rápido, falla aquí**: que la semana no esté publicada
+    se comprueba antes de encolar, para que quien pulsa el botón lo sepa en el
+    acto en vez de tener que consultar el estado para enterarse de un rechazo
+    que no dependía del cálculo.
+
+    Sin broker configurado, Celery corre la tarea en el momento. El contrato es
+    el mismo en los dos casos —siempre se devuelve la ejecución y la pantalla
+    consulta su estado— así que no hay dos caminos que mantener.
+    """
+    from datetime import timedelta
+
+    from planificacion.models import SemanaPlan
+
+    from .models import EjecucionMRP
+    from .tareas import calcular_mrp_semana
+
+    if semana.estado != SemanaPlan.Estado.PUBLICADA:
+        raise ValidationError("El MRP solo puede ejecutarse sobre una semana publicada.")
+
+    ejecucion = EjecucionMRP.objects.create(
+        sucursal=semana.sucursal,
+        fecha_corte=semana.fecha_inicio,
+        horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
+        ejecutada_por=usuario,
+        parametros={"semana": semana.pk, "codigo": semana.codigo},
+        estado=EjecucionMRP.Estado.PENDIENTE,
+    )
+
+    # `on_commit` y no `delay()` a secas: sin esto, con un worker real la tarea
+    # puede empezar antes de que la transacción de esta petición se confirme y
+    # no encontrar la ejecución que acaba de crearse. Es una carrera que solo
+    # aparece bajo carga, que es cuando peor viene.
+    transaction.on_commit(lambda: calcular_mrp_semana.delay(ejecucion.pk))
+
+    return ejecucion
+
+
+def ejecutar_mrp_semana(*, semana, usuario, ejecucion=None):
+    """
+    Explota el programa publicado sin modificar Planificación ni sus bloques.
+
+    `ejecucion` permite rellenar una fila ya creada —la que encoló la
+    petición—. Sin ella crea la suya, que es el camino síncrono de siempre y el
+    que usan las pruebas del cálculo.
+    """
     from datetime import timedelta
     from math import ceil
 
@@ -981,13 +1028,15 @@ def ejecutar_mrp_semana(*, semana, usuario):
             bruta[insumo_id] = bruta.get(insumo_id, Decimal("0")) + cantidad
             fechas[insumo_id] = min(fechas.get(insumo_id, fecha), fecha)
 
-    ejecucion = EjecucionMRP.objects.create(
-        sucursal=semana.sucursal,
-        fecha_corte=semana.fecha_inicio,
-        horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
-        ejecutada_por=usuario,
-        parametros={"semana": semana.pk, "codigo": semana.codigo},
-    )
+    if ejecucion is None:
+        ejecucion = EjecucionMRP.objects.create(
+            sucursal=semana.sucursal,
+            fecha_corte=semana.fecha_inicio,
+            horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
+            ejecutada_por=usuario,
+            parametros={"semana": semana.pk, "codigo": semana.codigo},
+        )
+
     for insumo_id, necesidad_bruta in bruta.items():
         existencias = Existencia.objects.select_related("lote").filter(
             lote__insumo_id=insumo_id, lote__sucursal=semana.sucursal

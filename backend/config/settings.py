@@ -328,6 +328,37 @@ REST_FRAMEWORK = {
 }
 
 
+# Celery
+#
+# Existe para sacar el MRP semanal de la peticion HTTP: la explosion multinivel
+# de una semana ocupaba un worker de Gunicorn de principio a fin, y con dos
+# workers eso deja al resto de la planta esperando.
+#
+# **Sin `CELERY_BROKER_URL` corre en modo `eager`**: la tarea se ejecuta en el
+# momento, dentro de la peticion, igual que antes. Es lo que permite desplegar
+# este codigo antes de que llegue la fase de Redis, y que las pruebas y el
+# entorno local no necesiten infraestructura.
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "")
+CELERY_TASK_ALWAYS_EAGER = not CELERY_BROKER_URL
+
+# En modo `eager` una excepcion de la tarea se propaga a quien la llamo. Se
+# apaga: la tarea ya guarda su propio fallo en la ejecucion, y dejarla propagar
+# haria que el mismo error se comportara distinto con worker y sin el.
+CELERY_TASK_EAGER_PROPAGATES = False
+
+# El resultado no se guarda en Celery: el estado y los datos del MRP viven en
+# `EjecucionMRP`, que es donde la pantalla los consulta. Un segundo lugar donde
+# mirar el mismo hecho es un sitio donde discrepar.
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+
+# Una tarea que no termina en veinte minutos es una tarea rota. Sin techo, un
+# calculo colgado retiene un worker para siempre.
+CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "1200"))
+
+
 # Caché
 #
 # **De esto depende que los limites de arriba existan.** `SimpleRateThrottle`

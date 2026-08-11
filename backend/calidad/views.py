@@ -15,6 +15,7 @@ lo único que va en una transacción.
 """
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
@@ -257,6 +258,30 @@ def _contexto_del_lote(lote, bloquear=False):
     }
 
 
+#: Cuántos expedientes se arman por página, y el techo que nadie puede subir
+#: desde la URL. Cada fila evalúa el checklist y el veredicto de su lote en
+#: memoria: un `limite=100000` en la barra de direcciones sería una forma
+#: trivial de tumbar el backend, así que el máximo no es negociable desde
+#: fuera.
+EXPEDIENTES_POR_PAGINA = 50
+EXPEDIENTES_MAXIMO = 200
+
+
+def _pagina_y_limite(parametros):
+    """Lee la paginación de la petición, acotada y a prueba de basura."""
+
+    def entero(nombre, defecto):
+        try:
+            return max(1, int(parametros.get(nombre, defecto)))
+        except (TypeError, ValueError):
+            return defecto
+
+    return (
+        entero("pagina", 1),
+        min(entero("limite", EXPEDIENTES_POR_PAGINA), EXPEDIENTES_MAXIMO),
+    )
+
+
 @api_view(["GET"])
 @permission_classes([EscribeCalidad])
 def expedientes(request):
@@ -288,6 +313,33 @@ def expedientes(request):
     hasta = parametros.get("hasta")
     if hasta:
         lotes = lotes.filter(fecha__lte=hasta)
+
+    # El estado se filtra **en la consulta**, no después de armar las filas.
+    # Antes se evaluaba el checklist completo de todos los lotes del histórico
+    # y luego se descartaba lo que no coincidía: filtrar no ahorraba nada de
+    # trabajo, solo escondía el resultado.
+    #
+    # «Pendiente» son dos cosas a la vez: el lote sin expediente abierto y el
+    # que lo tiene en ese estado. Se consultan juntas porque para Calidad son
+    # lo mismo —algo que todavía nadie decidió—.
+    estado = parametros.get("estado")
+    if estado == Liberacion.Estado.PENDIENTE:
+        lotes = lotes.filter(
+            Q(liberacion__isnull=True) | Q(liberacion__estado=estado)
+        )
+    elif estado:
+        lotes = lotes.filter(liberacion__estado=estado)
+
+    # Paginación. **Es lo que acota el trabajo**: cada fila evalúa el checklist
+    # y el veredicto del lote en memoria, así que sin techo el coste crecía con
+    # el histórico completo —954 lotes y subiendo— hasta agotar el tiempo de la
+    # petición o la memoria del worker.
+    #
+    # El total se cuenta antes de cortar, para que la pantalla pueda decir
+    # «50 de 954» en vez de creer que hay cincuenta.
+    total = lotes.count()
+    pagina, limite = _pagina_y_limite(parametros)
+    lotes = lotes[(pagina - 1) * limite : pagina * limite]
 
     # Los maestros se cargan una vez y los comparten todos los lotes: sin esto
     # cada lote dispararía sus propias consultas.
@@ -396,15 +448,15 @@ def expedientes(request):
             }
         )
 
-    estado = parametros.get("estado")
-    if estado:
-        filas = [
-            f
-            for f in filas
-            if (f["liberacion"]["estado"] if f["liberacion"] else "pendiente") == estado
-        ]
-
-    return Response({"resultados": filas, "total": len(filas)})
+    return Response({
+        "resultados": filas,
+        # El total de la consulta, no el de la página: es lo que permite
+        # mostrar «50 de 954» y saber que hay más.
+        "total": total,
+        "pagina": pagina,
+        "limite": limite,
+        "hay_mas": pagina * limite < total,
+    })
 
 
 @api_view(["GET"])

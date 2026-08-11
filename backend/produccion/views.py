@@ -1,4 +1,6 @@
+import os
 from collections import Counter, defaultdict
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
@@ -650,6 +652,11 @@ class AnalisisViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         return consulta
 
 
+#: Ventana por defecto del panel, en días. Es un indicador de gestión —«cómo
+#: vamos»—, no el histórico: para eso están los listados, que paginan.
+RESUMEN_DIAS = int(os.environ.get("RESUMEN_DIAS", "90"))
+
+
 @api_view(["GET"])
 def resumen(request):
     """
@@ -670,10 +677,19 @@ def resumen(request):
     )
 
     desde = request.query_params.get("desde")
+    hasta = request.query_params.get("hasta")
+
+    # **Ventana por defecto.** Sin ella, el panel evaluaba la calidad de todo
+    # el histórico en memoria en cada carga: el coste crecía con la planta y
+    # nadie lo notaba hasta que el panel dejaba de responder. Noventa días es
+    # lo que un panel de gestión responde —«cómo vamos»—; para el histórico
+    # completo están el listado de lotes y el de expedientes, que sí paginan.
+    if not desde and not hasta:
+        desde = (timezone.localdate() - timedelta(days=RESUMEN_DIAS)).isoformat()
+
     if desde:
         lotes = lotes.filter(fecha__gte=desde)
 
-    hasta = request.query_params.get("hasta")
     if hasta:
         lotes = lotes.filter(fecha__lte=hasta)
 
@@ -705,6 +721,10 @@ def resumen(request):
 
     return Response(
         {
+            # El periodo viaja en la respuesta: un indicador sin decir sobre
+            # qué ventana está calculado invita a leerlo como si fuera el
+            # total histórico.
+            "periodo": {"desde": desde, "hasta": hasta},
             "lotes": len(lotes),
             "kg_producidos": float(
                 Lote.objects.filter(id__in=[l.id for l in lotes]).aggregate(

@@ -330,11 +330,28 @@ class ResultadoMRPSerializer(serializers.ModelSerializer):
 
 class EjecucionMRPSerializer(serializers.ModelSerializer):
     resultados = ResultadoMRPSerializer(many=True, read_only=True)
+    estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    # La pantalla necesita una sola pregunta para saber si dejar de consultar.
+    # Deducirlo de la lista de estados en el cliente obliga a mantener esa
+    # lista en dos sitios.
+    terminada = serializers.SerializerMethodField()
 
     class Meta:
         model = EjecucionMRP
         fields = "__all__"
-        read_only_fields = ["creada_en", "ejecutada_por", "parametros"]
+        # El estado y el fallo los escribe la tarea. Escribibles desde la API,
+        # cualquiera podría marcar como terminada una ejecución a medias — y
+        # nadie vuelve a mirar algo que figura hecho.
+        read_only_fields = [
+            "creada_en", "ejecutada_por", "parametros",
+            "estado", "error", "terminada_en",
+        ]
+
+    def get_terminada(self, ejecucion) -> bool:
+        return ejecucion.estado in (
+            EjecucionMRP.Estado.TERMINADA,
+            EjecucionMRP.Estado.FALLIDA,
+        )
 
 
 class PlantillaInspeccionSerializer(serializers.ModelSerializer):

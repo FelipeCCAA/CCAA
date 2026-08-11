@@ -58,15 +58,23 @@ function Liberacion() {
   const [filtroEstado, setFiltroEstado] = useState("");
   const [loteAbierto, setLoteAbierto] = useState<number | null>(null);
 
+  /* El listado viene paginado desde el servidor: armar el expediente de cada
+     lote es caro, y sin techo la pantalla pedía el histórico entero. */
+  const [pagina, setPagina] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [hayMas, setHayMas] = useState(false);
+
   const cargar = useCallback(async () => {
 
     setCargando(true);
     setError("");
 
     try {
-      const datos = await buscarExpedientes({ estado: filtroEstado });
+      const datos = await buscarExpedientes({ estado: filtroEstado, pagina });
 
       setFilas([...datos.resultados].sort((a, b) => prioridad(a) - prioridad(b)));
+      setTotal(datos.total);
+      setHayMas(datos.hay_mas);
 
     } catch {
       setError("No se pudo cargar el listado.");
@@ -74,7 +82,7 @@ function Liberacion() {
       setCargando(false);
     }
 
-  }, [filtroEstado]);
+  }, [filtroEstado, pagina]);
 
   // Diferido: agrupa los cambios de filtro en una sola consulta y evita
   // actualizar el estado dentro del propio efecto.
@@ -111,10 +119,12 @@ function Liberacion() {
             Liberación de producto
           </h1>
 
+          {/* Se dice «de cuántos»: con solo el recuento de la página, la
+              pantalla afirmaría que el trabajo pendiente es el que se ve. */}
           <p className="mt-1 text-sm text-slate-500">
             {cargando
               ? "Cargando…"
-              : `${filas.length} lote(s) · ${porFirmar} esperando decisión`}
+              : `${filas.length} de ${total} lote(s) · ${porFirmar} esperando decisión en esta página`}
           </p>
 
         </div>
@@ -267,6 +277,32 @@ function Liberacion() {
           </table>
 
         </div>
+
+        {(pagina > 1 || hayMas) && (
+          <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
+            <button
+              type="button"
+              onClick={() => setPagina((p) => Math.max(1, p - 1))}
+              disabled={pagina <= 1}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-30"
+            >
+              Anterior
+            </button>
+
+            <span className="text-xs font-medium text-slate-500">
+              Página {pagina}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setPagina((p) => p + 1)}
+              disabled={!hayMas}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-30"
+            >
+              Siguiente
+            </button>
+          </div>
+        )}
 
       </div>
 

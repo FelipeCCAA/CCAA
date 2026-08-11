@@ -5,6 +5,7 @@ import { AlertTriangle, CalendarClock, FileOutput, Play } from "lucide-react";
 import {
   calcularMRP,
   ejecutarMRPSemana,
+  esperarEjecucionMRP,
   obtenerEjecucionesMRP,
   solicitarCompraDesdeMRP,
   type EjecucionMRP,
@@ -216,12 +217,41 @@ function Mrp() {
     (p: ProductoMaestro) => p.naturaleza === "terminado",
   );
 
+  /*
+    El cálculo ya no ocurre dentro de la petición: ocupaba un worker de
+    Gunicorn de principio a fin y con workers `sync` tres cálculos dejaban al
+    resto de la planta esperando. La petición devuelve la ejecución en cola y
+    aquí se pregunta cómo va hasta que termina.
+
+    Lo que el usuario ve es lo mismo que antes —pulsa y espera— pero el
+    servidor queda libre mientras tanto.
+  */
   const correr = async () => {
     setError("");
     setCorriendo(true);
 
     try {
-      setReciente(await ejecutarMRPSemana(Number(semana)));
+      const encolada = await ejecutarMRPSemana(Number(semana));
+
+      // Se muestra ya, en cola: sin esto la pantalla no da señal de vida
+      // durante todo el cálculo y se pulsa el botón otra vez.
+      setReciente(encolada);
+
+      const terminada = await esperarEjecucionMRP(encolada.id);
+      setReciente(terminada);
+
+      if (terminada.estado === "fallida") {
+        setError(
+          terminada.error ||
+            "El cálculo falló. Revisa la ejecución en el historial.",
+        );
+      } else if (!terminada.terminada) {
+        setError(
+          "El cálculo está tardando más de lo normal. Sigue en curso: " +
+            "consúltalo en el historial en unos minutos.",
+        );
+      }
+
       await ejecuciones.recargar();
     } catch (e) {
       setError(
