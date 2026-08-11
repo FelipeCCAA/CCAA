@@ -77,6 +77,21 @@ def completar_scope(apps, schema_editor):
             )
         perfil.save(update_fields=["empresa", "sucursal", "alcance"])
 
+    # PostgreSQL aplaza la comprobación de las claves foráneas que acaban de
+    # escribirse, y **no admite `ALTER TABLE` sobre una tabla con eventos de
+    # trigger pendientes**. Las operaciones que siguen a este `RunPython` son
+    # justamente `AlterField` sobre esta tabla, así que sin vaciar la cola la
+    # migración falla con:
+    #
+    #     no se puede hacer ALTER TABLE en «usuarios_perfilusuario»
+    #     porque tiene eventos de «trigger» pendientes
+    #
+    # Solo ocurre cuando hay perfiles que actualizar: con la base vacía el
+    # bucle no escribe nada, no hay eventos pendientes y la migración pasa. Por
+    # eso el CI —que parte de una base limpia— no lo ve, y sí lo ve cualquier
+    # servidor con datos. Se descubrió sobre una base con siete perfiles.
+    schema_editor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
 
 class Migration(migrations.Migration):
     dependencies = [("usuarios", "0007_alter_perfilusuario_area")]

@@ -125,6 +125,79 @@ una base vacía durante una ventana de mantenimiento. No ejecutar `migrate app
 numero_anterior` sin revisar primero `sqlmigrate`: una reversión puede borrar
 datos. La restauración debe ensayarse en staging antes del primer despliegue.
 
+## Variables que exige el despliegue
+
+Además de las de arriba, sin estas cuatro **`usuarios.0008` aborta**: crea la
+empresa y la sucursal iniciales a las que se asignan los perfiles existentes, y
+se niega a inventarlas.
+
+```dotenv
+CCAA_INITIAL_COMPANY_RUT=76.000.000-0
+CCAA_INITIAL_COMPANY_NAME=Campos Australes
+CCAA_INITIAL_BRANCH_CODE=PLANTA
+CCAA_INITIAL_BRANCH_NAME=Planta Osorno
+```
+
+Y estas gobiernan las defensas del acceso. La primera no es opcional con Nginx
+delante:
+
+```dotenv
+# Sin esto el limite por IP es esquivable: DRF usaria la cabecera
+# X-Forwarded-For entera como identidad y quien ataca estrena contador
+# mandando una distinta en cada peticion.
+PROXIES_DE_CONFIANZA=1
+
+THROTTLE_LOGIN_IP=60/hour
+THROTTLE_LOGIN_USUARIO=15/hour
+TOKEN_TTL_HORAS=12
+```
+
+## Desbloquear un acceso
+
+El límite se levanta solo: la ventana es deslizante, así que cada intento
+caduca una hora después de haberse hecho. Cuando no se puede esperar:
+
+**Desde el admin** — *Usuarios › Intentos de acceso*. La columna «Límite» dice
+si esa cuenta está bloqueada y por cuánto; se marcan las filas y se elige
+«Desbloquear el acceso de estas cuentas».
+
+**Desde la consola:**
+
+```bash
+docker compose exec backend python manage.py desbloquear_login --listar
+docker compose exec backend python manage.py desbloquear_login --usuario jperez
+```
+
+Desbloquear una cuenta **no** libera su dirección ni al revés: son dos límites
+que protegen de cosas distintas. Restablecer la contraseña tampoco desbloquea
+—el contador es del intento, no de la cuenta— y reiniciar el contenedor menos,
+porque la caché vive en PostgreSQL para sobrevivir a eso.
+
+## Límite de peticiones en Nginx
+
+El throttle de Django rechaza antes de comprobar la contraseña, que es donde
+está el gasto. Pero una petición rechazada por Django todavía cuesta un ciclo
+completo de Python. Nginx rechaza **antes de que Python arranque**:
+
+```nginx
+# En el bloque http
+limit_req_zone $binary_remote_addr zone=login:10m rate=60r/m;
+limit_req_status 429;
+```
+```nginx
+location = /api/usuarios/login/ {
+    limit_req zone=login burst=20 nodelay;
+    proxy_pass http://backend;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # …el resto de cabeceras habituales
+}
+```
+
+**El ritmo va holgado a propósito.** La planta sale a internet por una sola
+dirección: un `10r/m` dejaría al turno entero fuera por culpa de un atacante.
+El límite estricto es el de **cuenta**, y ese vive en Django porque Nginx no lee
+el cuerpo de la petición.
+
 ## Límites conocidos de esta fase
 
 - Los valores de workers/threads son una base conservadora, no capacidad
