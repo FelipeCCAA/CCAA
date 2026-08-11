@@ -16,6 +16,12 @@ from pathlib import Path
 import dj_database_url
 from dotenv import load_dotenv
 
+from .seguridad import (
+    exigir_postgresql,
+    normalizar_entorno,
+    validar_entorno_endurecido,
+)
+
 
 def env_bool(nombre, predeterminado=False):
     """Lee una variable booleana con valores habituales de despliegue."""
@@ -40,6 +46,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # La configuracion que cambia entre equipos vive en backend/.env, que no se
 # versiona. backend/.env.example lista las variables con valores de ejemplo.
 load_dotenv(BASE_DIR / ".env")
+
+DJANGO_ENV = normalizar_entorno(os.environ.get("DJANGO_ENV"))
 
 
 # Quick-start development settings - unsuitable for production
@@ -123,24 +131,20 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# El motor por defecto es PostgreSQL. El motivo esta escrito en DECISIONES.md,
-# pero el corto es: en SQLite solo escribe uno a la vez y `select_for_update()`
-# NO hace nada -Django ni siquiera emite el FOR UPDATE-, asi que la firma de
-# una liberacion no se puede proteger de una modificacion concurrente. Ese
-# bloqueo es lo que impide firmar contra un checklist que dejo de estar
-# completo mientras se decidia.
-#
-# DB_ENGINE=sqlite existe como salida para quien todavia no tiene un Postgres
-# levantado. No es equivalente: el check `calidad.E001` avisa de lo que se
-# pierde. No usar para operar.
-
-DB_ENGINE = os.getenv("DB_ENGINE", "postgres").lower()
+# PostgreSQL no es una preferencia de despliegue: sus bloqueos de fila y
+# restricciones forman parte de las reglas de negocio. No existe fallback.
+DB_ENGINE = os.getenv("DB_ENGINE", "postgresql")
 # Neon/Vercel puede publicar la conexión con cualquiera de estos nombres.
 # DATABASE_URL conserva prioridad; la URL sin pool es una última alternativa.
 DATABASE_URL = (
     os.getenv("DATABASE_URL")
     or os.getenv("POSTGRES_URL")
     or os.getenv("DATABASE_URL_UNPOOLED")
+)
+
+DATABASE_VARIABLES = ("DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT")
+DATABASE_CONFIGURED = bool(DATABASE_URL) or all(
+    os.getenv(nombre) for nombre in DATABASE_VARIABLES
 )
 
 if DATABASE_URL:
@@ -152,13 +156,6 @@ if DATABASE_URL:
             conn_max_age=int(os.getenv("DB_CONN_MAX_AGE", "0")),
             conn_health_checks=True,
         )
-    }
-elif DB_ENGINE == "sqlite":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
     }
 else:
     DATABASES = {
@@ -176,6 +173,8 @@ else:
     # en el entorno: en local, exigir SSL impediria conectarse.
     if os.getenv("DB_SSLMODE"):
         DATABASES["default"]["OPTIONS"] = {"sslmode": os.getenv("DB_SSLMODE")}
+
+exigir_postgresql(DB_ENGINE, DATABASES["default"]["ENGINE"])
 
 
 # Password validation
@@ -213,6 +212,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 MAX_UPLOAD_SIZE = int(os.environ.get("DJANGO_MAX_UPLOAD_MB", "15")) * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
@@ -267,6 +267,8 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
 SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", False)
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 
 REST_FRAMEWORK = {
     # Los listados van paginados: el historico de produccion son ~954 lotes y
@@ -291,3 +293,18 @@ REST_FRAMEWORK = {
         "password_reset_confirm": "10/hour",
     },
 }
+
+validar_entorno_endurecido(
+    DJANGO_ENV,
+    {
+        "DEBUG": DEBUG,
+        "SECRET_KEY": SECRET_KEY,
+        "ALLOWED_HOSTS": ALLOWED_HOSTS,
+        "SECURE_SSL_REDIRECT": SECURE_SSL_REDIRECT,
+        "SESSION_COOKIE_SECURE": SESSION_COOKIE_SECURE,
+        "CSRF_COOKIE_SECURE": CSRF_COOKIE_SECURE,
+        "SECURE_HSTS_SECONDS": SECURE_HSTS_SECONDS,
+        "CSRF_TRUSTED_ORIGINS": CSRF_TRUSTED_ORIGINS,
+        "DATABASE_CONFIGURED": DATABASE_CONFIGURED,
+    },
+)

@@ -23,9 +23,9 @@ Más recientes primero.
 El proyecto corre sobre **PostgreSQL**. La configuración de la base pasa a
 variables de entorno (`backend/.env`, con `backend/.env.example` de plantilla).
 
-Queda una salida explícita, `DB_ENGINE=sqlite`, para trabajar sin un PostgreSQL
-levantado. **No es equivalente** y el sistema lo dice en voz alta cada vez que
-arranca.
+Desde el hardening de producción del 11 de agosto de 2026 no existe fallback a
+SQLite. `DB_ENGINE` se conserva únicamente para detectar configuraciones
+antiguas y solo acepta `postgresql`/`postgres`.
 
 ### Por qué
 
@@ -110,21 +110,20 @@ Dos detalles del bloqueo que conviene no deshacer sin pensarlo:
   un maestro compartido por todos los lotes: dos firmas de lotes distintos se
   estorbarían entre sí sin motivo.
 
-### Qué se pierde, y cómo se avisa
+### Cómo se impide la degradación
 
-Trabajar con `DB_ENGINE=sqlite` deja el sistema sin ese bloqueo. Para que eso
-no pase inadvertido, el check `calidad.W001` / `calidad.E001` lo informa en
-cada arranque, y la severidad distingue una decisión de un descuido:
+`settings.py` rechaza cualquier motor distinto de PostgreSQL antes de arrancar.
+El check `calidad.E001` permanece como defensa en profundidad si una prueba o
+configuración dinámica reemplaza el motor después de cargar los settings:
 
 | Situación | Resultado |
 |---|---|
 | PostgreSQL | nada |
-| `DB_ENGINE=sqlite` puesto a mano | **aviso** — alguien lo pidió, pero ve qué pierde |
-| Motor sin bloqueo que nadie pidió, con `DEBUG=False` | **error, no arranca** |
+| `DB_ENGINE=sqlite` | **error, no arranca** |
+| Cualquier motor sin bloqueo | **error, no arranca** |
 
-La severidad no depende solo de `DEBUG` a propósito: el runner de pruebas lo
-apaga siempre, así que hacerlo depender de él convertiría el aviso en un error
-que impide correr las pruebas en cualquier equipo sin PostgreSQL.
+La severidad no depende de `DEBUG`: desarrollo integrado y pruebas de
+integración también deben conservar las garantías del motor productivo.
 
 ### Cómo comprobar que sigue en pie
 
@@ -180,9 +179,6 @@ De la primera vez:
 - Las tres pruebas de bloqueo corren de verdad y pasan.
 - Quitando `bloquear=True` de la vista, la suite **falla**
   (`Lists differ: [False] != [True]`). Antes de reescribirlas no fallaba.
-
-En SQLite (`DB_ENGINE=sqlite`): las mismas 206 pruebas OK, 3 saltadas, y el
-aviso `calidad.W001` en cada arranque.
 
 De la segunda, ya con el servicio instalado: las **257 pruebas OK** sobre
 PostgreSQL, con las tres de bloqueo corriendo de verdad en lugar de saltarse,

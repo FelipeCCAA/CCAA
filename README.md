@@ -113,28 +113,9 @@ DB_PORT=5432
 Queda en `http://127.0.0.1:8000/`. La raíz responde 404: solo existen `/admin/` y
 `/api/`. El archivo `.env` es local de cada equipo y no se versiona.
 
-**Si ya se venía trabajando con SQLite**, los datos se traen sin perder nada.
-Antes de cambiar el `.env`, exportar; después de `migrate`, cargar:
-
-```powershell
-# con el .env todavía apuntando a SQLite
-$env:PYTHONUTF8 = "1"
-python manage.py dumpdata --natural-foreign --natural-primary `
-  --exclude contenttypes --exclude auth.permission --exclude admin.logentry `
-  --indent 2 -o datos.json
-
-# ...cambiar el .env a PostgreSQL y correr migrate, y entonces:
-python manage.py loaddata datos.json
-```
-
-`PYTHONUTF8=1` no es opcional: sin él Django escribe el volcado en la
-codificación del sistema y las tildes se pierden al cargarlo.
-
-Para trabajar sin un PostgreSQL levantado se puede poner `DB_ENGINE=sqlite` en
-el `.env`. **No es equivalente**: al arrancar avisa de lo que se pierde
-(`calidad.W001`), y sin esa variable puesta a mano se niega a arrancar con
-`DEBUG=False`. Sirve para programar, no para operar — y las pruebas de bloqueo
-se saltan, que no es lo mismo que pasar.
+SQLite no es un modo soportado. `DB_ENGINE=sqlite` detiene el arranque porque
+los bloqueos de fila y restricciones de PostgreSQL forman parte de las reglas
+del sistema. Desarrollo integrado, CI y producción usan el mismo motor.
 
 Si `Activate.ps1` falla por permisos, ejecutar una vez:
 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
@@ -148,6 +129,26 @@ npm run dev
 ```
 
 Queda en `http://localhost:5173/`. Recarga solo al guardar archivos.
+
+### Entorno reproducible con Docker
+
+La alternativa recomendada para levantar el conjunto completo es:
+
+```powershell
+Copy-Item .env.compose.example .env
+# Reemplazar POSTGRES_PASSWORD en .env
+docker compose up --build
+```
+
+La aplicación queda en `http://localhost:8080`. Solamente Nginx publica un
+puerto; Django y PostgreSQL permanecen dentro de las redes de Compose. Los
+endpoints `/api/salud/` y `/api/salud/listo/` representan liveness y readiness
+respectivamente.
+
+La guía de producción, variables, backup y rollback está en
+[`docs/DESPLIEGUE_DOCKER.md`](docs/DESPLIEGUE_DOCKER.md). El plan completo de
+hardening está en
+[`docs/HARDENING_PRODUCCION.md`](docs/HARDENING_PRODUCCION.md).
 
 ---
 

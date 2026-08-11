@@ -1,32 +1,15 @@
 """
 Comprobación de arranque: que el motor sepa bloquear filas.
 
-Existe por un problema concreto. `select_for_update()` en un backend que no lo
-soporta —SQLite— no falla ni avisa: Django simplemente no emite el `FOR UPDATE`
-y la llamada se compila a nada. El código queda idéntico y la garantía
-desaparece, que es la peor forma de perder una protección.
-
-Aquí se convierte ese silencio en un mensaje. La severidad depende de si el
-motor sin bloqueo fue una decisión o un descuido:
-
-- Con `DB_ENGINE=sqlite` puesto a mano es un **aviso**: alguien lo pidió y
-  conviene que vea qué pierde, pero puede trabajar.
-- Sin haberlo pedido y con DEBUG apagado es un **error** que impide arrancar,
-  porque es una configuración equivocada operando la planta, y operar sin ese
-  bloqueo significa poder firmar la liberación de un lote cuyo checklist dejó
-  de estar completo mientras se decidía.
-
-La severidad no se decide solo por DEBUG porque el runner de pruebas lo apaga
-siempre: eso convertiría el aviso en un error que impide correr las pruebas en
-cualquier equipo sin PostgreSQL.
+Existe como defensa en profundidad. `settings.py` ya rechaza cualquier motor
+que no sea PostgreSQL, pero este check evita una degradación silenciosa si una
+suite o configuración dinámica reemplaza `DATABASES` después de cargar los
+settings. Un motor sin bloqueo siempre es un error.
 
 El motivo largo está en DECISIONES.md.
 """
 
-import os
-
-from django.conf import settings
-from django.core.checks import Error, Warning
+from django.core.checks import Error
 from django.db import connection
 
 
@@ -44,11 +27,6 @@ PISTA = (
 )
 
 
-def se_pidio_sqlite_a_proposito() -> bool:
-    """¿Alguien puso `DB_ENGINE=sqlite`, o esto es un descuido?"""
-    return os.getenv("DB_ENGINE", "").strip().lower() == "sqlite"
-
-
 def motor_soporta_bloqueo(app_configs, **kwargs):
     """Registrada en `CalidadConfig.ready()`."""
     try:
@@ -61,14 +39,10 @@ def motor_soporta_bloqueo(app_configs, **kwargs):
     if soportado:
         return []
 
-    grave = not se_pidio_sqlite_a_proposito() and not settings.DEBUG
-
-    problema = Error if grave else Warning
-
     return [
-        problema(
+        Error(
             MENSAJE % connection.vendor,
             hint=PISTA,
-            id="calidad.E001" if grave else "calidad.W001",
+            id="calidad.E001",
         )
     ]

@@ -15,18 +15,17 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.http import JsonResponse
 from django.urls import path, include
 
-
-def salud(_request):
-    """Comprobacion publica y liviana para el despliegue."""
-    return JsonResponse({"estado": "ok"})
+from .views import liveness, readiness
 
 
 urlpatterns = [
 
-    path("api/salud/", salud, name="salud"),
+    # Se conserva /api/salud/ por compatibilidad como liveness. Readiness
+    # comprueba además que PostgreSQL acepte consultas.
+    path("api/salud/", liveness, name="salud"),
+    path("api/salud/listo/", readiness, name="readiness"),
 
     # El panel administrativo no forma parte de la API REST.
     path("admin/", admin.site.urls),

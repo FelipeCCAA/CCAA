@@ -1,0 +1,112 @@
+name: ccaa
+
+x-backend-environment: &backend-environment
+  DJANGO_ENV: ${DJANGO_ENV:-development}
+  DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-desarrollo-no-usar-en-produccion-cambiar-esta-clave-1234567890}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+  DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-false}
+  DJANGO_SECURE_HSTS_SECONDS: ${DJANGO_SECURE_HSTS_SECONDS:-0}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080}
+  DB_ENGINE: postgresql
+  DB_NAME: ${POSTGRES_DB:-ccaa}
+  DB_USER: ${POSTGRES_USER:-ccaa}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env}
+  DB_HOST: db
+  DB_PORT: 5432
+  DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
+  DJANGO_HEALTHCHECK_HOST: ${DJANGO_HEALTHCHECK_HOST:-localhost}
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ccaa}
+      POSTGRES_USER: ${POSTGRES_USER:-ccaa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [private]
+    logging: &rotated-logs
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  migrate:
+    build:
+      context: ./backend
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: *backend-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      <<: *backend-environment
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os, urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/api/salud/listo/', headers={'Host': os.environ['DJANGO_HEALTHCHECK_HOST'], 'X-Forwarded-Proto': 'https'}); urllib.request.urlopen(r, timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+    networks: [private, egress]
+    logging: *rotated-logs
+
+  nginx:
+    build:
+      context: .
+      dockerfile: infra/nginx/Dockerfile
+      args:
+        VITE_API_URL: /api/
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      DJANGO_HEALTHCHECK_HOST: ${DJANGO_HEALTHCHECK_HOST:-localhost}
+    ports:
+      - "${CCAA_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/api/salud/listo/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    networks: [private, edge]
+    logging: *rotated-logs
+
+networks:
+  private:
+    internal: true
+  egress:
+  edge:
+
+volumes:
+  postgres_data:

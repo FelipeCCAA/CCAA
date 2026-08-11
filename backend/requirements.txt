@@ -3,6 +3,7 @@ Django==6.0.7
 dj-database-url==3.1.2
 django-cors-headers==4.9.0
 djangorestframework==3.17.1
+gunicorn==23.0.0
 # Solo lo usa `manage.py cargar_productos`, que lee el Excel del levantamiento.
 # El comando lo importa dentro de handle() y avisa si falta, así que la
 # aplicación arranca igual sin él.

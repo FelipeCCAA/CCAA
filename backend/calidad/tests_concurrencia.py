@@ -11,14 +11,13 @@ niveles:
   garantía esté; significa que ahí no la hay.
 """
 
-import os
 import threading
 from datetime import date
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.db import OperationalError, connection, connections, transaction
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -53,47 +52,33 @@ class CheckDelMotorTests(TestCase):
         self.assertEqual(len(problemas), 1)
         self.assertIn("select_for_update", problemas[0].msg)
 
-    @override_settings(DEBUG=False)
     def test_un_motor_sin_bloqueo_que_nadie_pidio_impide_arrancar(self):
-        """
-        Es una configuración equivocada operando la planta, no una decisión.
-        """
+        """Un motor sin bloqueo siempre impide arrancar."""
         if connection.features.has_select_for_update:
             self.skipTest("este motor sí soporta bloqueo de filas")
 
-        with patch.dict(os.environ, {"DB_ENGINE": "postgres"}):
-            problemas = motor_soporta_bloqueo(None)
+        problemas = motor_soporta_bloqueo(None)
 
         self.assertEqual(problemas[0].id, "calidad.E001")
         self.assertEqual(problemas[0].level, 40)  # ERROR
 
-    @override_settings(DEBUG=False)
-    def test_haber_pedido_sqlite_a_proposito_deja_arrancar(self):
-        """
-        Con DB_ENGINE=sqlite alguien ya dijo que sabe lo que hace. Si esto
-        fuera un error, no se podrían correr las pruebas en un equipo sin
-        PostgreSQL: el runner de Django apaga DEBUG siempre.
-        """
+    def test_pedir_sqlite_no_degrada_el_error_a_aviso(self):
         if connection.features.has_select_for_update:
             self.skipTest("este motor sí soporta bloqueo de filas")
 
-        with patch.dict(os.environ, {"DB_ENGINE": "sqlite"}):
-            problemas = motor_soporta_bloqueo(None)
+        problemas = motor_soporta_bloqueo(None)
 
-        self.assertEqual(problemas[0].id, "calidad.W001")
-        self.assertEqual(problemas[0].level, 30)  # WARNING
+        self.assertEqual(problemas[0].id, "calidad.E001")
+        self.assertEqual(problemas[0].level, 40)  # ERROR
 
-    @override_settings(DEBUG=True)
-    def test_en_desarrollo_es_solo_un_aviso(self):
-        """Para poder trabajar sin un PostgreSQL levantado."""
+    def test_en_desarrollo_tambien_es_error(self):
         if connection.features.has_select_for_update:
             self.skipTest("este motor sí soporta bloqueo de filas")
 
-        with patch.dict(os.environ, {"DB_ENGINE": "postgres"}):
-            problemas = motor_soporta_bloqueo(None)
+        problemas = motor_soporta_bloqueo(None)
 
-        self.assertEqual(problemas[0].id, "calidad.W001")
-        self.assertEqual(problemas[0].level, 30)  # WARNING
+        self.assertEqual(problemas[0].id, "calidad.E001")
+        self.assertEqual(problemas[0].level, 40)  # ERROR
 
     def test_el_mensaje_explica_que_se_pierde(self):
         """Un aviso que no dice la consecuencia se ignora."""

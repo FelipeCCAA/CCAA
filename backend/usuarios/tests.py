@@ -270,6 +270,7 @@ class ApiCerradaTests(TestCase):
     # tampoco puede identificarse para pedir una nueva.
     ABIERTAS = {
         "/api/salud/",
+        "/api/salud/listo/",
         "/api/usuarios/login/",
         "/api/usuarios/recuperar-contrasena/",
         "/api/usuarios/restablecer-contrasena/",

@@ -23,6 +23,7 @@ db.sqlite3
 
 # Python cache
 .pytest_cache/
+.tmp/
 # Documentos de planta: la fuente de los formatos reales.
 #
 # 1.691 archivos y 1,8 GB, y no todo es de producción — hay salud

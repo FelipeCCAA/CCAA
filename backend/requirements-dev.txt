@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Herramientas de CI/desarrollo; no se instalan en la imagen productiva.
+ruff==0.12.9
