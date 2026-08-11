@@ -5,7 +5,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import Empresa, PerfilUsuario, Sucursal, rol_de
-from .tenancy import scope_de
+from .tenancy import unica_sucursal_activa, scope_de
 
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
@@ -107,6 +107,68 @@ class TrabajadorSerializer(UsuarioSerializer):
                 sucursales = sucursales.filter(pk=scope.sucursal_id)
             self.fields["sucursal"].queryset = sucursales
 
+    @staticmethod
+    def _completar_tenant(attrs, scope_actor):
+        """
+        Deduce empresa/sucursal/alcance cuando el alta no los manda.
+
+        El formulario de personal **no los pide** —la organización tiene una
+        sola planta y no hay nada que elegir—, así que sin esto el alta fallaba
+        con «Debes indicar una sucursal» sobre un campo que la pantalla no
+        muestra.
+
+        Dos deducciones, y la primera es la que pidió Administración:
+
+        - **Administración general nace con alcance de empresa.** Es quien
+          responde por toda la empresa; atarla a una planta le negaría lo que
+          su propio nivel dice que abarca.
+        - El resto trabaja en una planta, y se resuelve sola **si hay una**.
+          Con dos, la elección vuelve a importar y se pide: elegir por el que
+          da de alta es crear al operario en la planta equivocada.
+
+        Solo rellena lo ausente. Un valor enviado a propósito manda, y se sigue
+        validando después contra el alcance de quien crea.
+        """
+        if scope_actor.es_sucursal:
+            # Su planta es la única que puede tocar: no hay nada que deducir.
+            attrs.setdefault("empresa", Empresa.objects.get(pk=scope_actor.empresa_id))
+            attrs.setdefault("sucursal", Sucursal.objects.get(pk=scope_actor.sucursal_id))
+            attrs.setdefault("alcance", PerfilUsuario.Alcance.SUCURSAL)
+            return
+
+        if scope_actor.es_empresa:
+            attrs.setdefault("empresa", Empresa.objects.get(pk=scope_actor.empresa_id))
+
+        empresa = attrs.get("empresa")
+        if empresa is None:
+            # Superusuario que no la indicó: el reproche lo da el modelo, y con
+            # su nombre. Adivinar la empresa sí sería grave.
+            return
+
+        if attrs.get("sucursal") is not None:
+            return
+
+        alcance = attrs.get("alcance")
+        es_administracion_general = (
+            attrs.get("area") == PerfilUsuario.Area.ADMINISTRACION
+            and attrs.get("nivel") == PerfilUsuario.Nivel.ADMIN
+        )
+
+        if alcance == PerfilUsuario.Alcance.EMPRESA or (
+            alcance is None and es_administracion_general
+        ):
+            attrs["alcance"] = PerfilUsuario.Alcance.EMPRESA
+            # Explícito, y no ausente: el campo del modelo tiene un valor por
+            # omisión —la sucursal sembrada en pruebas, y una excepción fuera
+            # de ellas—, así que no mandarlo no es lo mismo que mandar nada.
+            attrs["sucursal"] = None
+            return
+
+        unica = unica_sucursal_activa(empresa.pk)
+        if unica is not None:
+            attrs["sucursal"] = unica
+            attrs["alcance"] = PerfilUsuario.Alcance.SUCURSAL
+
     def validate(self, attrs):
         password = attrs.get("password")
         if self.instance is None and not password:
@@ -124,14 +186,8 @@ class TrabajadorSerializer(UsuarioSerializer):
         request = self.context.get("request")
         scope_actor = scope_de(getattr(request, "user", None)) if request else None
 
-        if self.instance is None and scope_actor and scope_actor.es_sucursal:
-            attrs.setdefault(
-                "empresa", Empresa.objects.get(pk=scope_actor.empresa_id)
-            )
-            attrs.setdefault(
-                "sucursal", Sucursal.objects.get(pk=scope_actor.sucursal_id)
-            )
-            attrs.setdefault("alcance", PerfilUsuario.Alcance.SUCURSAL)
+        if self.instance is None and scope_actor is not None:
+            self._completar_tenant(attrs, scope_actor)
 
         empresa = attrs.get("empresa", getattr(perfil_actual, "empresa", None))
         sucursal = attrs.get("sucursal", getattr(perfil_actual, "sucursal", None))

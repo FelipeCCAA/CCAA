@@ -128,7 +128,7 @@ def exigir_sucursal_permitida(usuario, sucursal) -> None:
         raise PermissionDenied("La sucursal indicada está fuera de tu alcance.")
 
 
-def _unica_sucursal_activa(empresa_id: int | None):
+def unica_sucursal_activa(empresa_id: int | None):
     """
     La única sucursal activa, o `None` si hay cero o varias.
 
@@ -181,7 +181,7 @@ def sucursal_para_escritura(usuario, validated_data, campo: str = "sucursal"):
     if sucursal is None:
         # El superusuario no está acotado a una empresa; el de alcance empresa
         # solo puede caer en la suya.
-        unica = _unica_sucursal_activa(None if scope.es_global else scope.empresa_id)
+        unica = unica_sucursal_activa(None if scope.es_global else scope.empresa_id)
 
         if unica is not None:
             return unica

@@ -19,6 +19,7 @@ sin que nadie lo pida.
 from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.exceptions import ValidationError
+from rest_framework.test import APIClient
 
 from .models import Empresa, PerfilUsuario, Sucursal
 from .tenancy import sucursal_para_escritura
@@ -171,3 +172,96 @@ class AislamientoEntreEmpresasTests(BaseSinSucursales):
             sucursal_para_escritura(
                 self._usuario(PerfilUsuario.Alcance.EMPRESA), {"sucursal": ajena}
             )
+
+
+class AltaDePersonalTests(BaseSinSucursales):
+    """
+    El formulario de personal no pide empresa, sucursal ni alcance: la pantalla
+    no tiene esos campos. Sin deducirlos, el alta fallaba con «Debes indicar
+    una sucursal» sobre algo que el operador no ve.
+    """
+
+    URL = "/api/usuarios/trabajadores/"
+
+    def _crear(self, actor, **datos):
+        self.client.force_authenticate(actor)
+
+        return self.client.post(
+            self.URL,
+            {
+                "username": datos.pop("username"),
+                "password": "una-clave-larga-y-rara-42",
+                **datos,
+            },
+            format="json",
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.administrador = self._usuario(PerfilUsuario.Alcance.EMPRESA)
+
+    def test_administracion_nace_con_alcance_de_empresa(self):
+        """
+        Lo que pidió Administración: es quien responde por toda la empresa, y
+        atarla a una planta le negaría lo que su propio nivel dice que abarca.
+        """
+        respuesta = self._crear(
+            self.administrador,
+            username="nueva.jefa",
+            area=PerfilUsuario.Area.ADMINISTRACION,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        perfil = PerfilUsuario.objects.get(usuario__username="nueva.jefa")
+        self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.EMPRESA)
+        self.assertIsNone(perfil.sucursal_id)
+        self.assertEqual(perfil.empresa_id, self.empresa.pk)
+
+    def test_el_resto_cae_en_la_unica_planta(self):
+        respuesta = self._crear(
+            self.administrador,
+            username="operario",
+            area=PerfilUsuario.Area.SECADO,
+            nivel=PerfilUsuario.Nivel.TRABAJADOR,
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        perfil = PerfilUsuario.objects.get(usuario__username="operario")
+        self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.SUCURSAL)
+        self.assertEqual(perfil.sucursal_id, self.planta.pk)
+
+    def test_con_dos_plantas_el_operario_se_pide(self):
+        """
+        Elegir por quien da de alta es crear al operario en la planta
+        equivocada — y ahí trabajará hasta que alguien lo note.
+        """
+        Sucursal.objects.create(
+            empresa=self.empresa, codigo="PLANTA2", nombre="Segunda"
+        )
+
+        respuesta = self._crear(
+            self.administrador,
+            username="operario2",
+            area=PerfilUsuario.Area.SECADO,
+            nivel=PerfilUsuario.Nivel.TRABAJADOR,
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("sucursal", respuesta.data)
+
+    def test_con_dos_plantas_administracion_sigue_sin_elegir(self):
+        """Su alcance no es una planta: la segunda no le añade ambigüedad."""
+        Sucursal.objects.create(
+            empresa=self.empresa, codigo="PLANTA3", nombre="Tercera"
+        )
+
+        respuesta = self._crear(
+            self.administrador,
+            username="otra.jefa",
+            area=PerfilUsuario.Area.ADMINISTRACION,
+            nivel=PerfilUsuario.Nivel.ADMIN,
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
