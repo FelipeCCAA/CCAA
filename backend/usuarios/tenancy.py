@@ -128,23 +128,73 @@ def exigir_sucursal_permitida(usuario, sucursal) -> None:
         raise PermissionDenied("La sucursal indicada está fuera de tu alcance.")
 
 
+def _unica_sucursal_activa(empresa_id: int | None):
+    """
+    La única sucursal activa, o `None` si hay cero o varias.
+
+    Devolver `None` cuando hay varias es lo que hace segura la resolución
+    automática: con dos plantas, elegir una por el operador sería escribir en
+    la equivocada sin que nadie lo pida.
+
+    `empresa_id` en `None` mira todas: es el caso del superusuario, que no está
+    acotado a ninguna.
+    """
+    from .models import Sucursal
+
+    consulta = Sucursal.objects.filter(activa=True)
+
+    if empresa_id is not None:
+        consulta = consulta.filter(empresa_id=empresa_id)
+
+    candidatas = list(consulta.order_by("pk")[:2])
+
+    return candidatas[0] if len(candidatas) == 1 else None
+
+
 def sucursal_para_escritura(usuario, validated_data, campo: str = "sucursal"):
-    """Resuelve la sucursal sin confiar en un tenant enviado por el cliente."""
+    """
+    Resuelve la sucursal sin confiar en un tenant enviado por el cliente.
+
+    **La organización de CCAA no tiene sucursales**: hay una sola planta. El
+    modelo conserva la dimensión porque quitarla costaría migrar quince modelos
+    con datos encima, y volvería a costar lo mismo el día que haya una segunda.
+    Lo que sí se hace es que nadie tenga que verla.
+
+    Por eso la resolución automática cubre también a los perfiles de **alcance
+    empresa** —los de Administración— y no solo al superusuario. Sin esto, un
+    administrador recibía «Debes indicar una sucursal permitida» sobre un
+    concepto que en su organización no existe, y no podía crear nada.
+
+    En cuanto haya dos plantas la ambigüedad vuelve, y entonces sí hay que
+    indicarla: es la diferencia entre resolver lo que solo tiene una respuesta
+    y adivinar entre dos.
+    """
     scope = scope_de(usuario, requerido=True)
+
     if scope.es_sucursal:
         from .models import Sucursal
 
         return Sucursal.objects.get(pk=scope.sucursal_id)
-    sucursal = validated_data.get(campo)
-    if sucursal is None and scope.es_global:
-        from .models import Sucursal
 
-        candidatas = list(Sucursal.objects.filter(activa=True).order_by("pk")[:2])
-        if len(candidatas) == 1:
-            return candidatas[0]
+    sucursal = validated_data.get(campo)
+
     if sucursal is None:
-        raise serializers.ValidationError({campo: "Debes indicar una sucursal permitida."})
+        # El superusuario no está acotado a una empresa; el de alcance empresa
+        # solo puede caer en la suya.
+        unica = _unica_sucursal_activa(None if scope.es_global else scope.empresa_id)
+
+        if unica is not None:
+            return unica
+
+        raise serializers.ValidationError({
+            campo: (
+                "Hay más de una planta activa: indica en cuál se registra. "
+                "Con una sola, el sistema la resuelve solo."
+            )
+        })
+
     exigir_sucursal_permitida(usuario, sucursal)
+
     return sucursal
 
 
