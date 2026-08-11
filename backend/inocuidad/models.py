@@ -109,6 +109,12 @@ class MonitoreoPPRO(models.Model):
     def __str__(self):
         return f"{self.get_tipo_display()} · {self.lote.codigo_lote} · {self.fecha}"
 
+    def clean(self):
+        if self.lote_id and self.equipo_id and self.lote.sucursal_id != self.equipo.sucursal_id:
+            raise ValidationError(
+                {"equipo": "El equipo debe pertenecer a la sucursal del lote."}
+            )
+
     @property
     def tiene_no_ok(self) -> bool:
         """

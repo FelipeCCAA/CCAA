@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from usuarios.permisos import EscribeEstandarizacion
+from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin
 
 from . import servicios
 from .dominio import Leche, calcular_mezcla
@@ -19,7 +20,15 @@ def _conflicto(error):
     return Response({"detail": error.messages[0]}, status=status.HTTP_409_CONFLICT)
 
 
-class ValeEstandarizacionViewSet(viewsets.ModelViewSet):
+class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "silo_destino__sucursal_id"
+    tenant_lookup_empresa = "silo_destino__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "producto": (None, "mandante__empresa_id"),
+        "silo_entera": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_descremada": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_destino": ("sucursal_id", "sucursal__empresa_id"),
+    }
     queryset = ValeEstandarizacion.objects.select_related(
         "producto", "silo_entera", "silo_descremada", "silo_destino", "responsable"
     )

@@ -33,6 +33,10 @@ jobs:
       DJANGO_ALLOWED_HOSTS: localhost
       DB_ENGINE: postgresql
       DATABASE_URL: postgresql://ccaa:ci-only-password@127.0.0.1:5432/ccaa_ci
+      CCAA_INITIAL_COMPANY_RUT: TENANT-CI
+      CCAA_INITIAL_COMPANY_NAME: Empresa CI
+      CCAA_INITIAL_BRANCH_CODE: CI
+      CCAA_INITIAL_BRANCH_NAME: Sucursal CI
     defaults:
       run:
         working-directory: backend

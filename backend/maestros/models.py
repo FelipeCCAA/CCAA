@@ -10,6 +10,12 @@ modelado y su justificación están en `prototipo/MODELO_DATOS.md`.
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from usuarios.models import Empresa, Sucursal
+from usuarios.tenancy import (
+    empresa_predeterminada_pruebas,
+    sucursal_predeterminada_pruebas,
+)
+
 from .catalogos import CLAVES_PARAMETROS
 
 
@@ -24,7 +30,13 @@ class Mandante(models.Model):
         COLUN = "colun", "Colun"
         SOPROLE = "soprole", "Soprole"
 
-    nombre = models.CharField("Nombre", max_length=120, unique=True)
+    empresa = models.ForeignKey(
+        Empresa,
+        on_delete=models.PROTECT,
+        related_name="mandantes",
+        default=empresa_predeterminada_pruebas,
+    )
+    nombre = models.CharField("Nombre", max_length=120)
     codigo_cliente = models.CharField(
         "Código de cliente (SKU)",
         max_length=20,
@@ -52,10 +64,14 @@ class Mandante(models.Model):
             # Los vacíos sí se repiten: un mandante sin código es uno que
             # todavía no genera SKU, y puede haber varios así.
             models.UniqueConstraint(
-                fields=["codigo_cliente"],
+                fields=["empresa", "codigo_cliente"],
                 condition=~models.Q(codigo_cliente=""),
                 name="mandante_unico_por_codigo_cliente",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["empresa", "nombre"],
+                name="mandante_nombre_unico_empresa",
+            ),
         ]
 
     def __str__(self):
@@ -318,10 +334,15 @@ class Equipo(models.Model):
         CARGA = "carga", "Carga"
         OTRO = "otro", "Otro"
 
+    sucursal = models.ForeignKey(
+        Sucursal,
+        on_delete=models.PROTECT,
+        related_name="equipos",
+        default=sucursal_predeterminada_pruebas,
+    )
     codigo = models.SlugField(
         "Código",
         max_length=40,
-        unique=True,
         help_text="Identificador estable. No se cambia: la planificación lo referencia.",
     )
     nombre = models.CharField("Nombre", max_length=120)
@@ -354,6 +375,11 @@ class Equipo(models.Model):
         verbose_name = "Equipo / máquina"
         verbose_name_plural = "Equipos y máquinas"
         ordering = ["orden", "nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sucursal", "codigo"], name="equipo_codigo_unico_sucursal"
+            )
+        ]
 
     def __str__(self):
         return self.nombre
@@ -373,7 +399,13 @@ class Silo(models.Model):
         TK_LD = "tk_ld", "TK Leche descremada"
         TK_CREMA = "tk_crema", "TK Crema"
 
-    codigo = models.CharField("Código", max_length=40, unique=True)
+    sucursal = models.ForeignKey(
+        Sucursal,
+        on_delete=models.PROTECT,
+        related_name="silos",
+        default=sucursal_predeterminada_pruebas,
+    )
+    codigo = models.CharField("Código", max_length=40)
     tipo = models.CharField("Tipo", max_length=20, choices=Tipo.choices)
     capacidad_l = models.DecimalField(
         "Capacidad", max_digits=12, decimal_places=2, help_text="En litros"
@@ -388,7 +420,10 @@ class Silo(models.Model):
             models.CheckConstraint(
                 condition=models.Q(capacidad_l__gte=0),
                 name="silo_capacidad_no_negativa",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["sucursal", "codigo"], name="silo_codigo_unico_sucursal"
+            ),
         ]
 
     def __str__(self):
@@ -398,6 +433,12 @@ class Silo(models.Model):
 class Vehiculo(models.Model):
     """Camión de transporte de leche, con sus choferes por turno."""
 
+    sucursal = models.ForeignKey(
+        Sucursal,
+        on_delete=models.PROTECT,
+        related_name="vehiculos",
+        default=sucursal_predeterminada_pruebas,
+    )
     numero = models.CharField("Número", max_length=40, blank=True)
     placa = models.CharField("Placa", max_length=20, unique=True)
     tipo = models.CharField("Tipo", max_length=60, default="Camión")
@@ -570,6 +611,12 @@ class DocumentoLiberacion(models.Model):
         "objeto",
     }
 
+    empresa = models.ForeignKey(
+        Empresa,
+        on_delete=models.PROTECT,
+        related_name="documentos_liberacion",
+        default=empresa_predeterminada_pruebas,
+    )
     codigo = models.CharField(
         "Código",
         max_length=80,
@@ -662,7 +709,7 @@ class DocumentoLiberacion(models.Model):
         ordering = ["orden", "nombre"]
         constraints = [
             models.UniqueConstraint(
-                fields=["codigo"],
+                fields=["empresa", "codigo"],
                 condition=~models.Q(codigo=""),
                 name="documento_liberacion_codigo_unico",
             )

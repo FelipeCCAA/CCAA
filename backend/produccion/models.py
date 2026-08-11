@@ -24,6 +24,7 @@ from django.db import models
 
 from maestros.catalogos import CLAVES_PARAMETROS
 from maestros.models import Especificacion, Producto
+from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 
 class Lote(models.Model):
@@ -54,6 +55,13 @@ class Lote(models.Model):
         Estado.ANULADO: [],
     }
 
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal",
+        on_delete=models.PROTECT,
+        related_name="lotes_produccion",
+        default=sucursal_predeterminada_pruebas,
+        verbose_name="Sucursal",
+    )
     codigo_lote = models.CharField(
         "Código de lote",
         max_length=60,
@@ -106,7 +114,7 @@ class Lote(models.Model):
         ordering = ["-fecha", "codigo_lote"]
         constraints = [
             models.UniqueConstraint(
-                fields=["codigo_lote", "producto", "fecha"],
+                fields=["sucursal", "codigo_lote", "producto", "fecha"],
                 name="lote_clave_natural_unica",
             ),
             models.CheckConstraint(
@@ -119,6 +127,14 @@ class Lote(models.Model):
         return f"{self.codigo_lote} · {self.producto} · {self.fecha}"
 
     def clean(self):
+        if (
+            self.sucursal_id
+            and self.producto_id
+            and self.producto.mandante.empresa_id != self.sucursal.empresa_id
+        ):
+            raise ValidationError(
+                {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}
+            )
         if (
             self.hora_inicio is not None
             and self.hora_termino is not None
@@ -287,6 +303,10 @@ class ControlProceso(models.Model):
         return f"Control {self.equipo} · {self.lote.codigo_lote} · {self.fecha}"
 
     def clean(self):
+        if self.lote_id and self.equipo_id and self.lote.sucursal_id != self.equipo.sucursal_id:
+            raise ValidationError(
+                {"equipo": "El equipo debe pertenecer a la sucursal del lote."}
+            )
         if (
             self.hora_inicio_produccion is not None
             and self.hora_termino_produccion is not None

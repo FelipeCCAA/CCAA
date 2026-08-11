@@ -83,6 +83,7 @@ class CicloCIPSerializer(serializers.ModelSerializer):
     class Meta:
         model = CicloCIP
         fields = "__all__"
+        read_only_fields = ["responsable"]
 
     def validate(self, datos):
         """
@@ -300,6 +301,7 @@ class DetalleSolicitudMaterialSerializer(serializers.ModelSerializer):
     class Meta:
         model = DetalleSolicitudMaterial
         fields = "__all__"
+        read_only_fields = ["cantidad_aprobada", "cantidad_entregada"]
 
 
 class SolicitudMaterialSerializer(serializers.ModelSerializer):
@@ -396,7 +398,10 @@ class LiberacionExcepcionalSerializer(serializers.ModelSerializer):
     class Meta:
         model = LiberacionExcepcionalMaterial
         fields = "__all__"
-        read_only_fields = ["aprobada_calidad_por", "autorizada_en"]
+        read_only_fields = [
+            "aprobada_calidad_por", "aprobada_jefatura_por", "autorizada_en",
+            "activa",
+        ]
 
     def validate(self, datos):
         """

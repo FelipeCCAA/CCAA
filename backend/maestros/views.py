@@ -5,6 +5,11 @@ from rest_framework.response import Response
 
 from produccion.dominio import especificacion_vigente
 from usuarios.permisos import EscribeAdministracion, EscribeCalidad
+from usuarios.tenancy import (
+    EmpresaTenantViewSetMixin,
+    QuerysetTenantMixin,
+    SucursalTenantViewSetMixin,
+)
 
 from .models import (
     DocumentoLiberacion,
@@ -27,16 +32,18 @@ from .serializers import (
 )
 
 
-class MandanteViewSet(viewsets.ModelViewSet):
+class MandanteViewSet(EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
     queryset = Mandante.objects.all()
     serializer_class = MandanteSerializer
     permission_classes = [EscribeAdministracion]
+    tenant_lookup_empresa = "empresa_id"
 
 
-class ProductoViewSet(viewsets.ModelViewSet):
+class ProductoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     queryset = Producto.objects.select_related("mandante")
     serializer_class = ProductoSerializer
     permission_classes = [EscribeAdministracion]
+    tenant_lookup_empresa = "mandante__empresa_id"
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -68,12 +75,13 @@ class VigentesHoy:
     filas sigue costando una sola consulta.
     """
 
-    def __init__(self):
+    def __init__(self, queryset):
+        self.queryset = queryset
         self._ids: set[int] | None = None
 
     def __contains__(self, especificacion_id) -> bool:
         if self._ids is None:
-            todas = list(Especificacion.objects.all())
+            todas = list(self.queryset)
             hoy = timezone.localdate()
 
             ganadoras = {
@@ -86,7 +94,7 @@ class VigentesHoy:
         return especificacion_id in self._ids
 
 
-class EspecificacionViewSet(viewsets.ModelViewSet):
+class EspecificacionViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     """
     Los rangos de calidad de un producto, versionados.
 
@@ -100,6 +108,7 @@ class EspecificacionViewSet(viewsets.ModelViewSet):
     queryset = Especificacion.objects.select_related("producto")
     serializer_class = EspecificacionSerializer
     permission_classes = [EscribeCalidad]
+    tenant_lookup_empresa = "producto__mandante__empresa_id"
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -120,12 +129,12 @@ class EspecificacionViewSet(viewsets.ModelViewSet):
         y por fila sería una consulta por especificación.
         """
         contexto = super().get_serializer_context()
-        contexto["vigentes_hoy"] = VigentesHoy()
+        contexto["vigentes_hoy"] = VigentesHoy(self.get_queryset())
 
         return contexto
 
 
-class EquipoViewSet(viewsets.ModelViewSet):
+class EquipoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     """
     Máquinas de la planta.
 
@@ -137,21 +146,27 @@ class EquipoViewSet(viewsets.ModelViewSet):
     queryset = Equipo.objects.all()
     serializer_class = EquipoSerializer
     permission_classes = [EscribeAdministracion]
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
 
 
-class SiloViewSet(viewsets.ModelViewSet):
+class SiloViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     queryset = Silo.objects.all()
     serializer_class = SiloSerializer
     permission_classes = [EscribeAdministracion]
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
 
 
-class VehiculoViewSet(viewsets.ModelViewSet):
+class VehiculoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     queryset = Vehiculo.objects.all()
     serializer_class = VehiculoSerializer
     permission_classes = [EscribeAdministracion]
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
 
 
-class DocumentoLiberacionViewSet(viewsets.ModelViewSet):
+class DocumentoLiberacionViewSet(EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
     """
     El catálogo del checklist de liberación.
 
@@ -165,6 +180,7 @@ class DocumentoLiberacionViewSet(viewsets.ModelViewSet):
     queryset = DocumentoLiberacion.objects.all()
     serializer_class = DocumentoLiberacionSerializer
     permission_classes = [EscribeCalidad]
+    tenant_lookup_empresa = "empresa_id"
 
     def get_queryset(self):
         consulta = super().get_queryset()

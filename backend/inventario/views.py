@@ -12,6 +12,10 @@ from usuarios.permisos import (
     EsAdministrador, EscribeBodega, EscribeCalidad, EscribeCompras,
     EscribeMRQ, EscribeRecepcionCompra,
 )
+from usuarios.tenancy import (
+    EmpresaTenantViewSetMixin, QuerysetTenantMixin, RelacionesTenantMixin,
+    SucursalTenantViewSetMixin, filtrar_por_scope, scope_de, sucursal_para_escritura,
+)
 
 from .models import (
     Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, DetalleEntregaProduccion, DetalleOrdenCompra,
@@ -42,6 +46,13 @@ from .servicios import (
 )
 
 
+def _tenant_get(modelo, usuario, pk, *, sucursal, empresa):
+    return filtrar_por_scope(
+        modelo.objects.all(), usuario,
+        campo_sucursal=sucursal, campo_empresa=empresa,
+    ).get(pk=pk)
+
+
 class FiltroAreaAdminMixin:
     permission_classes = [EsAdministrador]
 
@@ -53,42 +64,64 @@ class FiltroAreaAdminMixin:
         return qs.filter(area=perfil.area) if perfil else qs.none()
 
 
-class InsumoViewSet(FiltroAreaAdminMixin, viewsets.ModelViewSet):
+class InsumoViewSet(FiltroAreaAdminMixin, EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_empresa = "empresa_id"
     queryset = Insumo.objects.prefetch_related("lotes__existencias", "proveedores__proveedor")
     serializer_class = InsumoSerializer
     permission_classes = [EscribeBodega]
 
 
-class CicloCIPViewSet(FiltroAreaAdminMixin, viewsets.ModelViewSet):
+class CicloCIPViewSet(FiltroAreaAdminMixin, SucursalTenantViewSetMixin, RelacionesTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
+    tenant_relation_fields = {"equipo": ("sucursal_id", "sucursal__empresa_id")}
     queryset = CicloCIP.objects.select_related("responsable", "equipo")
     serializer_class = CicloCIPSerializer
 
+    def perform_create(self, serializer):
+        serializer.save(
+            responsable=self.request.user,
+            sucursal=sucursal_para_escritura(self.request.user, serializer.validated_data),
+        )
 
-class ProveedorViewSet(viewsets.ModelViewSet):
+
+class ProveedorViewSet(EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_empresa = "empresa_id"
     queryset = Proveedor.objects.all()
     serializer_class = ProveedorSerializer
     permission_classes = [EscribeCompras]
 
 
-class InsumoProveedorViewSet(viewsets.ModelViewSet):
+class InsumoProveedorViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_empresa = "insumo__empresa_id"
+    tenant_relation_fields = {
+        "insumo": (None, "empresa_id"), "proveedor": (None, "empresa_id"),
+    }
     queryset = InsumoProveedor.objects.select_related("insumo", "proveedor")
     serializer_class = InsumoProveedorSerializer
     permission_classes = [EscribeCompras]
 
 
-class BodegaViewSet(viewsets.ModelViewSet):
-    queryset = Bodega.objects.all()
+class BodegaViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
+    queryset = Bodega.objects.order_by("pk")
     serializer_class = BodegaSerializer
     permission_classes = [EscribeBodega]
 
 
-class UbicacionViewSet(viewsets.ModelViewSet):
+class UbicacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "bodega__sucursal_id"
+    tenant_lookup_empresa = "bodega__sucursal__empresa_id"
+    tenant_relation_fields = {"bodega": ("sucursal_id", "sucursal__empresa_id")}
     queryset = Ubicacion.objects.select_related("bodega")
     serializer_class = UbicacionSerializer
     permission_classes = [EscribeBodega]
 
 
-class LoteInventarioViewSet(viewsets.ReadOnlyModelViewSet):
+class LoteInventarioViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = LoteInventario.objects.select_related("insumo", "proveedor")
     serializer_class = LoteInventarioSerializer
     permission_classes = [EscribeBodega]
@@ -110,13 +143,17 @@ class FiltraPorLoteMixin:
         return consulta.filter(lote_id=lote) if lote else consulta
 
 
-class ExistenciaViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
+class ExistenciaViewSet(FiltraPorLoteMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "ubicacion__bodega__sucursal_id"
+    tenant_lookup_empresa = "ubicacion__bodega__sucursal__empresa_id"
     queryset = Existencia.objects.select_related("lote__insumo", "ubicacion__bodega")
     serializer_class = ExistenciaSerializer
     permission_classes = [EscribeBodega]
 
 
-class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
+class MovimientoViewSet(FiltraPorLoteMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
     queryset = MovimientoInventario.objects.select_related("lote__insumo", "origen", "destino", "usuario")
     serializer_class = MovimientoSerializer
     permission_classes = [EscribeBodega]
@@ -125,8 +162,8 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
     def entrada(self, request):
         try:
             movimiento = registrar_entrada(
-                lote=LoteInventario.objects.get(pk=request.data.get("lote")),
-                ubicacion=Ubicacion.objects.get(pk=request.data.get("ubicacion")),
+                lote=_tenant_get(LoteInventario, request.user, request.data.get("lote"), sucursal="sucursal_id", empresa="sucursal__empresa_id"),
+                ubicacion=_tenant_get(Ubicacion, request.user, request.data.get("ubicacion"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id"),
                 cantidad=request.data.get("cantidad"), usuario=request.user,
                 documento_tipo=request.data.get("documento_tipo", "inventario.EntradaManual"),
                 documento_id=request.data.get("documento_id") or 0,
@@ -140,9 +177,9 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
     def ingresar_material(self, request):
         try:
             movimiento = ingresar_material_manual(
-                insumo=Insumo.objects.get(pk=request.data.get("insumo")),
+                insumo=_tenant_get(Insumo, request.user, request.data.get("insumo"), sucursal=None, empresa="empresa_id"),
                 codigo_lote=request.data.get("codigo_lote", ""),
-                ubicacion=Ubicacion.objects.get(pk=request.data.get("ubicacion")),
+                ubicacion=_tenant_get(Ubicacion, request.user, request.data.get("ubicacion"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id"),
                 cantidad=request.data.get("cantidad"), usuario=request.user,
                 elaboracion=request.data.get("elaboracion"), vencimiento=request.data.get("vencimiento"),
             )
@@ -154,8 +191,9 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["post"], url_path="salida")
     def salida(self, request):
         try:
+            existencia = _tenant_get(Existencia, request.user, request.data.get("existencia"), sucursal="ubicacion__bodega__sucursal_id", empresa="ubicacion__bodega__sucursal__empresa_id")
             movimiento = registrar_salida(
-                existencia_id=request.data.get("existencia"), cantidad=request.data.get("cantidad"),
+                existencia_id=existencia.pk, cantidad=request.data.get("cantidad"),
                 usuario=request.user,
                 documento_tipo=request.data.get("documento_tipo", "inventario.SalidaManual"),
                 documento_id=request.data.get("documento_id") or 0,
@@ -164,9 +202,7 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
                 # Único camino para sacar material que Calidad no aprobó, y
                 # solo por la cantidad que la concesión autorizó.
                 liberacion=(
-                    LiberacionExcepcionalMaterial.objects.filter(
-                        pk=request.data.get("liberacion")
-                    ).first()
+                    filtrar_por_scope(LiberacionExcepcionalMaterial.objects.all(), request.user, campo_sucursal="lote__sucursal_id", campo_empresa="lote__sucursal__empresa_id").filter(pk=request.data.get("liberacion")).first()
                     if request.data.get("liberacion")
                     else None
                 ),
@@ -181,7 +217,7 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
         from produccion.models import Lote
         try:
             cabecera, movimientos = consumir_receta_produccion(
-                lote_produccion=Lote.objects.get(pk=request.data.get("lote_produccion")),
+                lote_produccion=_tenant_get(Lote, request.user, request.data.get("lote_produccion"), sucursal="sucursal_id", empresa="sucursal__empresa_id"),
                 usuario=request.user,
             )
         except (Lote.DoesNotExist, DjangoValidationError) as error:
@@ -196,9 +232,10 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["post"], url_path="trasladar")
     def trasladar(self, request):
         try:
+            existencia = _tenant_get(Existencia, request.user, request.data.get("existencia"), sucursal="ubicacion__bodega__sucursal_id", empresa="ubicacion__bodega__sucursal__empresa_id")
             movimiento = trasladar_existencia(
-                existencia_id=request.data.get("existencia"),
-                destino=Ubicacion.objects.get(pk=request.data.get("destino")),
+                existencia_id=existencia.pk,
+                destino=_tenant_get(Ubicacion, request.user, request.data.get("destino"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id"),
                 cantidad=request.data.get("cantidad"), usuario=request.user,
                 documento_tipo=request.data.get("documento_tipo", "inventario.TrasladoManual"),
                 documento_id=request.data.get("documento_id") or 0,
@@ -210,7 +247,9 @@ class MovimientoViewSet(FiltraPorLoteMixin, viewsets.ReadOnlyModelViewSet):
         return Response(self.get_serializer(movimiento).data, status=201)
 
 
-class AjusteInventarioViewSet(viewsets.ModelViewSet):
+class AjusteInventarioViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "existencia__ubicacion__bodega__sucursal_id"
+    tenant_lookup_empresa = "existencia__ubicacion__bodega__sucursal__empresa_id"
     queryset = AjusteInventario.objects.select_related("existencia__lote__insumo", "solicitante", "aprobador")
     serializer_class = AjusteInventarioSerializer
     permission_classes = [EscribeBodega]
@@ -218,7 +257,7 @@ class AjusteInventarioViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         try:
             ajuste = crear_ajuste(
-                existencia=Existencia.objects.get(pk=request.data.get("existencia")),
+                existencia=_tenant_get(Existencia, request.user, request.data.get("existencia"), sucursal="ubicacion__bodega__sucursal_id", empresa="ubicacion__bodega__sucursal__empresa_id"),
                 tipo=request.data.get("tipo"), cantidad=request.data.get("cantidad"),
                 motivo=request.data.get("motivo", ""), solicitante=request.user,
             )
@@ -239,7 +278,9 @@ class AjusteInventarioViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(ajuste).data)
 
 
-class DevolucionProduccionViewSet(viewsets.ReadOnlyModelViewSet):
+class DevolucionProduccionViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "detalle_entrega__entrega__solicitud__sucursal_id"
+    tenant_lookup_empresa = "detalle_entrega__entrega__solicitud__sucursal__empresa_id"
     queryset = DevolucionProduccion.objects.select_related("detalle_entrega__lote__insumo", "registrada_por")
     serializer_class = DevolucionProduccionSerializer
     permission_classes = [EscribeBodega]
@@ -249,7 +290,7 @@ class DevolucionProduccionViewSet(viewsets.ReadOnlyModelViewSet):
             estado = request.data.get("estado_material")
             destino = None
             if estado != DevolucionProduccion.EstadoMaterial.MERMA:
-                destino = Ubicacion.objects.get(pk=request.data.get("ubicacion_destino"))
+                destino = _tenant_get(Ubicacion, request.user, request.data.get("ubicacion_destino"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id")
                 tipo_esperado = (
                     Ubicacion.Tipo.DISPONIBLE if estado == DevolucionProduccion.EstadoMaterial.UTILIZABLE
                     else Ubicacion.Tipo.RECHAZADO
@@ -259,7 +300,7 @@ class DevolucionProduccionViewSet(viewsets.ReadOnlyModelViewSet):
                         "El material utilizable debe volver a Disponible y el dañado a Rechazados."
                     )
             devolucion = registrar_devolucion(
-                detalle_entrega=DetalleEntregaProduccion.objects.get(pk=request.data.get("detalle_entrega")),
+                detalle_entrega=_tenant_get(DetalleEntregaProduccion, request.user, request.data.get("detalle_entrega"), sucursal="entrega__solicitud__sucursal_id", empresa="entrega__solicitud__sucursal__empresa_id"),
                 cantidad=request.data.get("cantidad"), estado_material=estado,
                 motivo=request.data.get("motivo", ""), usuario=request.user,
                 ubicacion_destino=destino,
@@ -270,13 +311,18 @@ class DevolucionProduccionViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(self.get_serializer(devolucion).data, status=201)
 
 
-class SolicitudCompraViewSet(viewsets.ModelViewSet):
+class SolicitudCompraViewSet(SucursalTenantViewSetMixin, RelacionesTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = SolicitudCompra.objects.select_related("solicitante")
     serializer_class = SolicitudCompraSerializer
     permission_classes = [EscribeCompras]
 
     def perform_create(self, serializer):
-        serializer.save(solicitante=self.request.user)
+        serializer.save(
+            solicitante=self.request.user,
+            sucursal=sucursal_para_escritura(self.request.user, serializer.validated_data),
+        )
 
     @action(detail=True, methods=["post"], url_path="enviar")
     def enviar(self, request, pk=None):
@@ -312,7 +358,7 @@ class SolicitudCompraViewSet(viewsets.ModelViewSet):
             ordenes = convertir_solicitud_en_ordenes(
                 solicitud=self.get_object(),
                 usuario=request.user,
-                bodega=Bodega.objects.get(pk=request.data.get("bodega")),
+                bodega=_tenant_get(Bodega, request.user, request.data.get("bodega"), sucursal="sucursal_id", empresa="sucursal__empresa_id"),
             )
         except Bodega.DoesNotExist:
             return Response(
@@ -324,7 +370,14 @@ class SolicitudCompraViewSet(viewsets.ModelViewSet):
         return Response(OrdenCompraSerializer(ordenes, many=True).data, status=201)
 
 
-class OrdenCompraViewSet(viewsets.ModelViewSet):
+class OrdenCompraViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "bodega_entrega__sucursal_id"
+    tenant_lookup_empresa = "bodega_entrega__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "solicitud": ("sucursal_id", "sucursal__empresa_id"),
+        "proveedor": (None, "empresa_id"),
+        "bodega_entrega": ("sucursal_id", "sucursal__empresa_id"),
+    }
     queryset = OrdenCompra.objects.select_related("proveedor", "bodega_entrega").prefetch_related("detalles__insumo")
     serializer_class = OrdenCompraSerializer
     permission_classes = [EscribeCompras]
@@ -343,25 +396,37 @@ class OrdenCompraViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(orden).data)
 
 
-class DetalleSolicitudCompraViewSet(viewsets.ModelViewSet):
+class DetalleSolicitudCompraViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "solicitud__sucursal_id"
+    tenant_lookup_empresa = "solicitud__sucursal__empresa_id"
+    tenant_relation_fields = {"solicitud": ("sucursal_id", "sucursal__empresa_id"), "insumo": (None, "empresa_id")}
     queryset = DetalleSolicitudCompra.objects.select_related("solicitud", "insumo")
     serializer_class = DetalleSolicitudCompraSerializer
     permission_classes = [EscribeCompras]
 
 
-class DetalleOrdenCompraViewSet(viewsets.ModelViewSet):
+class DetalleOrdenCompraViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "orden__bodega_entrega__sucursal_id"
+    tenant_lookup_empresa = "orden__bodega_entrega__sucursal__empresa_id"
+    tenant_relation_fields = {"orden": ("bodega_entrega__sucursal_id", "bodega_entrega__sucursal__empresa_id"), "insumo": (None, "empresa_id")}
     queryset = DetalleOrdenCompra.objects.select_related("orden", "insumo")
     serializer_class = DetalleOrdenCompraSerializer
     permission_classes = [EscribeCompras]
 
 
-class DetalleSolicitudMaterialViewSet(viewsets.ModelViewSet):
+class DetalleSolicitudMaterialViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "solicitud__sucursal_id"
+    tenant_lookup_empresa = "solicitud__sucursal__empresa_id"
+    tenant_relation_fields = {"solicitud": ("sucursal_id", "sucursal__empresa_id"), "insumo": (None, "empresa_id")}
     queryset = DetalleSolicitudMaterial.objects.select_related("solicitud", "insumo")
     serializer_class = DetalleSolicitudMaterialSerializer
     permission_classes = [EscribeMRQ]
 
 
-class RecepcionCompraViewSet(viewsets.ModelViewSet):
+class RecepcionCompraViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "orden__bodega_entrega__sucursal_id"
+    tenant_lookup_empresa = "orden__bodega_entrega__sucursal__empresa_id"
+    tenant_relation_fields = {"orden": ("bodega_entrega__sucursal_id", "bodega_entrega__sucursal__empresa_id")}
     queryset = RecepcionCompra.objects.select_related("orden", "receptor")
     serializer_class = RecepcionCompraSerializer
     permission_classes = [EscribeRecepcionCompra]
@@ -375,7 +440,7 @@ class RecepcionCompraViewSet(viewsets.ModelViewSet):
         try:
             detalle = recibir_detalle_compra(
                 recepcion=recepcion, detalle_orden_id=request.data.get("detalle_orden"),
-                ubicacion=Ubicacion.objects.get(pk=request.data.get("ubicacion")),
+                ubicacion=_tenant_get(Ubicacion, request.user, request.data.get("ubicacion"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id"),
                 codigo_lote=request.data.get("codigo_lote", ""),
                 cantidad=request.data.get("cantidad"), usuario=request.user,
                 vencimiento=request.data.get("vencimiento") or None,
@@ -391,16 +456,19 @@ class RecepcionCompraViewSet(viewsets.ModelViewSet):
         return Response({"detalle": detalle.pk, "lote": detalle.lote_id}, status=status.HTTP_201_CREATED)
 
 
-class InspeccionMaterialViewSet(viewsets.ReadOnlyModelViewSet):
+class InspeccionMaterialViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
     queryset = InspeccionMaterial.objects.select_related("lote__insumo", "responsable")
     serializer_class = InspeccionMaterialSerializer
     permission_classes = [EscribeCalidad]
 
     @action(detail=True, methods=["post"], url_path="decidir")
     def decidir(self, request, pk=None):
+        inspeccion = self.get_object()
         try:
             inspeccion = decidir_inspeccion(
-                inspeccion_id=pk, decision=request.data.get("decision"),
+                inspeccion_id=inspeccion.pk, decision=request.data.get("decision"),
                 usuario=request.user, resultados=request.data.get("resultados", {}),
                 observaciones=request.data.get("observaciones", ""),
             )
@@ -409,7 +477,10 @@ class InspeccionMaterialViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(self.get_serializer(inspeccion).data)
 
 
-class SolicitudMaterialViewSet(viewsets.ModelViewSet):
+class SolicitudMaterialViewSet(SucursalTenantViewSetMixin, RelacionesTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
+    tenant_relation_fields = {"lote_produccion": ("sucursal_id", "sucursal__empresa_id")}
     queryset = SolicitudMaterial.objects.select_related("solicitante", "lote_produccion").prefetch_related("detalles")
     serializer_class = SolicitudMaterialSerializer
     permission_classes = [EscribeMRQ]
@@ -419,7 +490,10 @@ class SolicitudMaterialViewSet(viewsets.ModelViewSet):
         return [clase() for clase in clases]
 
     def perform_create(self, serializer):
-        serializer.save(solicitante=self.request.user)
+        serializer.save(
+            solicitante=self.request.user,
+            sucursal=sucursal_para_escritura(self.request.user, serializer.validated_data),
+        )
 
     @action(detail=True, methods=["post"], url_path="enviar")
     def enviar(self, request, pk=None):
@@ -454,9 +528,9 @@ class SolicitudMaterialViewSet(viewsets.ModelViewSet):
         try:
             destino_id = request.data.get("destino")
             destino = (
-                Ubicacion.objects.get(pk=destino_id)
+                _tenant_get(Ubicacion, request.user, destino_id, sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id")
                 if destino_id
-                else Ubicacion.objects.filter(tipo=Ubicacion.Tipo.PRODUCCION, activo=True).order_by("id").first()
+                else filtrar_por_scope(Ubicacion.objects.all(), request.user, campo_sucursal="bodega__sucursal_id", campo_empresa="bodega__sucursal__empresa_id").filter(tipo=Ubicacion.Tipo.PRODUCCION, activo=True).order_by("id").first()
             )
             if destino is None:
                 raise Ubicacion.DoesNotExist
@@ -489,7 +563,9 @@ class NotificacionViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(self.get_serializer(notificacion).data)
 
 
-class EjecucionMRPViewSet(viewsets.ReadOnlyModelViewSet):
+class EjecucionMRPViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = EjecucionMRP.objects.select_related("ejecutada_por").prefetch_related("resultados__insumo")
     serializer_class = EjecucionMRPSerializer
     permission_classes = [EsAdministrador]
@@ -499,7 +575,7 @@ class EjecucionMRPViewSet(viewsets.ReadOnlyModelViewSet):
         from planificacion.models import SemanaPlan
         try:
             ejecucion = ejecutar_mrp_semana(
-                semana=SemanaPlan.objects.get(pk=request.data.get("semana")),
+                semana=_tenant_get(SemanaPlan, request.user, request.data.get("semana"), sucursal="sucursal_id", empresa="sucursal__empresa_id"),
                 usuario=request.user,
             )
         except (SemanaPlan.DoesNotExist, DjangoValidationError) as error:
@@ -537,13 +613,18 @@ class EjecucionMRPViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(SolicitudCompraSerializer(solicitud).data, status=201)
 
 
-class PlantillaInspeccionViewSet(viewsets.ModelViewSet):
+class PlantillaInspeccionViewSet(EmpresaTenantViewSetMixin, RelacionesTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_empresa = "empresa_id"
+    tenant_relation_fields = {"insumo": (None, "empresa_id")}
     queryset = PlantillaInspeccion.objects.select_related("insumo")
     serializer_class = PlantillaInspeccionSerializer
     permission_classes = [EscribeCalidad]
 
 
-class NoConformidadViewSet(viewsets.ModelViewSet):
+class NoConformidadViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "inspeccion__lote__sucursal_id"
+    tenant_lookup_empresa = "inspeccion__lote__sucursal__empresa_id"
+    tenant_relation_fields = {"inspeccion": ("lote__sucursal_id", "lote__sucursal__empresa_id")}
     queryset = NoConformidadMaterial.objects.select_related(
         "inspeccion__lote__insumo", "creada_por", "cerrada_por", "liberacion"
     )
@@ -574,7 +655,13 @@ class NoConformidadViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(no_conformidad).data)
 
 
-class LiberacionExcepcionalViewSet(viewsets.ModelViewSet):
+class LiberacionExcepcionalViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "lote": ("sucursal_id", "sucursal__empresa_id"),
+        "solicitante": ("perfil__sucursal_id", "perfil__empresa_id"),
+    }
     queryset = LiberacionExcepcionalMaterial.objects.select_related("lote", "solicitante", "aprobada_calidad_por")
     serializer_class = LiberacionExcepcionalSerializer
     permission_classes = [EscribeCalidad]
@@ -583,7 +670,9 @@ class LiberacionExcepcionalViewSet(viewsets.ModelViewSet):
         serializer.save(aprobada_calidad_por=self.request.user)
 
 
-class AdjuntoViewSet(viewsets.ModelViewSet):
+class AdjuntoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = Adjunto.objects.select_related("autor")
     serializer_class = AdjuntoSerializer
     permission_classes = [EscribeRecepcionCompra]
@@ -597,10 +686,16 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
             for bloque in archivo.chunks():
                 digest.update(bloque)
             archivo.seek(0)
-        serializer.save(autor=self.request.user, hash_sha256=digest.hexdigest())
+        serializer.save(
+            autor=self.request.user,
+            hash_sha256=digest.hexdigest(),
+            sucursal=sucursal_para_escritura(self.request.user, serializer.validated_data),
+        )
 
 
-class AlertaViewSet(viewsets.ReadOnlyModelViewSet):
+class AlertaViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     """
     Las alertas vigentes. Solo de lectura: no se marcan como vistas.
 
@@ -640,17 +735,36 @@ def calcular_mrp(request):
     # A la fecha de hoy: es un cálculo de «qué necesito para producir esto»,
     # así que manda la receta que rige ahora. El descuento de un lote, en
     # cambio, usa la que regía el día del lote.
+    from maestros.models import Producto
+    try:
+        producto = _tenant_get(
+            Producto, request.user, producto_id,
+            sucursal=None, empresa="mandante__empresa_id",
+        )
+    except Producto.DoesNotExist:
+        return Response({"error": "El producto no existe."}, status=status.HTTP_404_NOT_FOUND)
+
     explosion, requerido = insumos_requeridos(
-        producto_id=producto_id, cantidad=kilos, fecha=timezone.localdate()
+        producto_id=producto.pk, cantidad=kilos, fecha=timezone.localdate()
     )
 
-    por_id = {i.id: i for i in Insumo.objects.filter(id__in=requerido)}
+    por_id = {
+        i.id: i for i in filtrar_por_scope(
+            Insumo.objects.filter(id__in=requerido), request.user,
+            campo_empresa="empresa_id",
+        )
+    }
 
     resultado = []
     for insumo_id in sorted(requerido):
         insumo = por_id[insumo_id]
         cantidad = requerido[insumo_id]
-        existencias = Existencia.objects.select_related("lote").filter(lote__insumo=insumo)
+        existencias = filtrar_por_scope(
+            Existencia.objects.select_related("lote").filter(lote__insumo=insumo),
+            request.user,
+            campo_sucursal="ubicacion__bodega__sucursal_id",
+            campo_empresa="ubicacion__bodega__sucursal__empresa_id",
+        )
         disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
         comprar = max(Decimal("0"), cantidad - disponible)
         envase = insumo.contenido_envase or Decimal("1")

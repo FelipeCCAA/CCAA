@@ -16,6 +16,7 @@ automática de que el registro está descuadrado.
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 from maestros.models import Silo, Vehiculo
 
@@ -47,6 +48,12 @@ class Recepcion(models.Model):
     veredicto NO se guarda: se calcula desde los controles, igual que el
     resultado de calidad de un lote.
     """
+
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT,
+        related_name="recepciones_leche",
+        default=sucursal_predeterminada_pruebas,
+    )
 
     class Procedencia(models.TextChoices):
         NESTLE = "Nestlé", "Nestlé"

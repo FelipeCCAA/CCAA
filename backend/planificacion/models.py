@@ -20,6 +20,7 @@ MODELO_DATOS.md §2.2).
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 from maestros.models import Equipo, Mandante, Producto
 
@@ -125,6 +126,12 @@ class SemanaPlan(models.Model):
         PUBLICADA = "publicada", "Publicada"
         CERRADA = "cerrada", "Cerrada"
 
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT,
+        related_name="semanas_planificacion",
+        default=sucursal_predeterminada_pruebas,
+    )
+
     TRANSICIONES = {
         Estado.BORRADOR: [Estado.PUBLICADA],
         # Volver a borrador existe porque el programa cambia: se rompe una
@@ -156,7 +163,7 @@ class SemanaPlan(models.Model):
         ordering = ["-anio", "-fecha_inicio"]
         constraints = [
             models.UniqueConstraint(
-                fields=["codigo", "anio"], name="semana_plan_unica_por_anio"
+                fields=["sucursal", "codigo", "anio"], name="semana_plan_unica_por_anio"
             )
         ]
 
@@ -295,6 +302,11 @@ class BloquePlan(models.Model):
             raise ValidationError(
                 {"codigo": "Un bloque de estado no produce: no lleva código."}
             )
+        if self.semana_id and self.equipo_id and self.semana.sucursal_id != self.equipo.sucursal_id:
+            raise ValidationError({"equipo": "El equipo debe pertenecer a la sucursal de la semana."})
+        if self.codigo_id and self.codigo.producto_id:
+            if self.codigo.producto.mandante.empresa_id != self.semana.sucursal.empresa_id:
+                raise ValidationError({"codigo": "El código debe pertenecer a la empresa de la semana."})
 
 
 class BalanceDia(models.Model):

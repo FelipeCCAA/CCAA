@@ -10,6 +10,8 @@ class RegistroAuditoriaSerializer(serializers.ModelSerializer):
         model = RegistroAuditoria
         fields = [
             "id",
+            "empresa",
+            "sucursal",
             "fecha_hora",
             "usuario",
             "usuario_nombre",

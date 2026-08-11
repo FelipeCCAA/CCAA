@@ -7,9 +7,14 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from usuarios.models import PerfilUsuario
+from usuarios.tenancy import empresa_predeterminada_pruebas, sucursal_predeterminada_pruebas
 
 
 class Insumo(models.Model):
+    empresa = models.ForeignKey(
+        "usuarios.Empresa", on_delete=models.PROTECT, related_name="insumos",
+        default=empresa_predeterminada_pruebas,
+    )
     class Categoria(models.TextChoices):
         MATERIA_PRIMA = "materia_prima", "Materia prima"
         EMPAQUE = "empaque", "Material de empaque"
@@ -25,7 +30,7 @@ class Insumo(models.Model):
         L = "L", "Litros"
         UN = "un", "Unidades"
 
-    codigo = models.CharField(max_length=40, unique=True)
+    codigo = models.CharField(max_length=40)
     nombre = models.CharField(max_length=150)
     descripcion = models.TextField(blank=True)
     codigo_barras = models.CharField(max_length=80, blank=True, db_index=True)
@@ -56,6 +61,7 @@ class Insumo(models.Model):
 
     class Meta:
         ordering = ["area", "nombre"]
+        constraints = [models.UniqueConstraint(fields=["empresa", "codigo"], name="insumo_codigo_unico_empresa")]
 
     @property
     def eoq(self):
@@ -85,6 +91,10 @@ class ConsumoLoteProduccion(models.Model):
 
 
 class CicloCIP(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="ciclos_cip",
+        default=sucursal_predeterminada_pruebas,
+    )
     class Estado(models.TextChoices):
         PROGRAMADO = "programado", "Programado"
         EN_CURSO = "en_curso", "En curso"
@@ -114,7 +124,11 @@ class CicloCIP(models.Model):
 
 
 class Proveedor(models.Model):
-    rut = models.CharField(max_length=20, unique=True)
+    empresa = models.ForeignKey(
+        "usuarios.Empresa", on_delete=models.PROTECT, related_name="proveedores_inventario",
+        default=empresa_predeterminada_pruebas,
+    )
+    rut = models.CharField(max_length=20)
     nombre = models.CharField(max_length=160)
     email = models.EmailField(blank=True)
     telefono = models.CharField(max_length=40, blank=True)
@@ -122,6 +136,7 @@ class Proveedor(models.Model):
 
     class Meta:
         ordering = ["nombre"]
+        constraints = [models.UniqueConstraint(fields=["empresa", "rut"], name="proveedor_rut_unico_empresa")]
 
     def __str__(self):
         return self.nombre
@@ -166,12 +181,15 @@ class InsumoProveedor(models.Model):
 class Bodega(models.Model):
     sucursal = models.ForeignKey(
         "usuarios.Sucursal", on_delete=models.PROTECT, related_name="bodegas",
-        null=True, blank=True,
+        default=sucursal_predeterminada_pruebas,
     )
-    codigo = models.CharField(max_length=30, unique=True)
+    codigo = models.CharField(max_length=30)
     nombre = models.CharField(max_length=120)
     area = models.CharField(max_length=30, choices=PerfilUsuario.Area.choices, default=PerfilUsuario.Area.BODEGA)
     activo = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["sucursal", "codigo"], name="bodega_codigo_unico_sucursal")]
 
     def __str__(self):
         return f"{self.codigo} · {self.nombre}"
@@ -198,6 +216,10 @@ class Ubicacion(models.Model):
 
 
 class LoteInventario(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="lotes_inventario",
+        default=sucursal_predeterminada_pruebas,
+    )
     class EstadoCalidad(models.TextChoices):
         NO_REQUIERE = "no_requiere", "No requiere inspección"
         PENDIENTE = "pendiente", "Pendiente de inspección"
@@ -218,7 +240,7 @@ class LoteInventario(models.Model):
     activo = models.BooleanField(default=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["insumo", "codigo", "proveedor"], name="lote_inventario_unico")]
+        constraints = [models.UniqueConstraint(fields=["sucursal", "insumo", "codigo", "proveedor"], name="lote_inventario_unico")]
         ordering = ["vencimiento", "recibido_en"]
 
     @property
@@ -311,6 +333,10 @@ class MovimientoInventario(models.Model):
 
 
 class SolicitudCompra(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="solicitudes_compra",
+        default=sucursal_predeterminada_pruebas,
+    )
     class Estado(models.TextChoices):
         BORRADOR = "borrador", "Borrador"
         ENVIADA = "enviada", "Enviada"
@@ -320,15 +346,22 @@ class SolicitudCompra(models.Model):
         CONVERTIDA = "convertida", "Convertida en orden de compra"
         CANCELADA = "cancelada", "Cancelada"
 
-    numero = models.CharField(max_length=30, unique=True)
+    numero = models.CharField(max_length=30)
     area = models.CharField(max_length=30, choices=PerfilUsuario.Area.choices)
     solicitante = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="solicitudes_compra")
     motivo = models.TextField()
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.BORRADOR)
     creada_en = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["sucursal", "numero"], name="solicitud_compra_numero_unico_sucursal")]
+
 
 class Aprobacion(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="aprobaciones_inventario",
+        default=sucursal_predeterminada_pruebas,
+    )
     class Decision(models.TextChoices):
         APROBADA = "aprobada", "Aprobada"
         RECHAZADA = "rechazada", "Rechazada"
@@ -432,6 +465,11 @@ class InspeccionMaterial(models.Model):
 
 
 class PlantillaInspeccion(models.Model):
+    empresa = models.ForeignKey(
+        "usuarios.Empresa", on_delete=models.PROTECT,
+        related_name="plantillas_inspeccion_inventario",
+        default=empresa_predeterminada_pruebas,
+    )
     nombre = models.CharField(max_length=160)
     insumo = models.ForeignKey(Insumo, on_delete=models.PROTECT, null=True, blank=True, related_name="plantillas_inspeccion")
     categoria = models.CharField(max_length=30, choices=Insumo.Categoria.choices, blank=True)
@@ -592,6 +630,10 @@ class LiberacionExcepcionalMaterial(models.Model):
 
 
 class Adjunto(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="adjuntos_inventario",
+        default=sucursal_predeterminada_pruebas,
+    )
     documento_tipo = models.CharField(max_length=80)
     documento_id = models.PositiveBigIntegerField()
     tipo = models.CharField(max_length=40)
@@ -602,6 +644,10 @@ class Adjunto(models.Model):
 
 
 class SolicitudMaterial(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="solicitudes_material",
+        default=sucursal_predeterminada_pruebas,
+    )
     class Estado(models.TextChoices):
         BORRADOR = "borrador", "Borrador"
         ENVIADA = "enviada", "Enviada"
@@ -613,7 +659,7 @@ class SolicitudMaterial(models.Model):
         RECHAZADA = "rechazada", "Rechazada"
         CANCELADA = "cancelada", "Cancelada"
 
-    numero = models.CharField(max_length=30, unique=True)
+    numero = models.CharField(max_length=30)
     area = models.CharField(max_length=30, choices=PerfilUsuario.Area.choices)
     lote_produccion = models.ForeignKey("produccion.Lote", on_delete=models.PROTECT, null=True, blank=True, related_name="solicitudes_material")
     solicitante = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="mrq_solicitadas")
@@ -622,6 +668,9 @@ class SolicitudMaterial(models.Model):
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.BORRADOR)
     observaciones = models.TextField(blank=True)
     creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["sucursal", "numero"], name="solicitud_material_numero_unico_sucursal")]
 
 
 class DetalleSolicitudMaterial(models.Model):
@@ -705,6 +754,10 @@ class DevolucionProduccion(models.Model):
 
 
 class EjecucionMRP(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="ejecuciones_mrp",
+        default=sucursal_predeterminada_pruebas,
+    )
     creada_en = models.DateTimeField(auto_now_add=True)
     fecha_corte = models.DateField()
     horizonte_hasta = models.DateField()
@@ -748,6 +801,10 @@ class Notificacion(models.Model):
 
 
 class Alerta(models.Model):
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="alertas_inventario",
+        default=sucursal_predeterminada_pruebas,
+    )
     class Severidad(models.TextChoices):
         INFO = "info", "Informativa"
         ADVERTENCIA = "advertencia", "Advertencia"

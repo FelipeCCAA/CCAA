@@ -34,6 +34,7 @@ from .serializers import (
     UsuarioSerializer,
 )
 from .permisos import IsAdminDeArea
+from .tenancy import scope_de
 
 
 logger = logging.getLogger(__name__)
@@ -144,19 +145,18 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
             return usuarios
 
         perfil = self.request.user.perfil
+        scope = scope_de(self.request.user, requerido=True)
         usuarios = usuarios.filter(is_superuser=False)
         if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
-            if perfil.empresa_id:
-                usuarios = usuarios.filter(perfil__empresa_id=perfil.empresa_id)
-            if perfil.sucursal_id:
-                usuarios = usuarios.filter(perfil__sucursal_id=perfil.sucursal_id)
+            usuarios = usuarios.filter(perfil__empresa_id=scope.empresa_id)
+            if scope.es_sucursal:
+                usuarios = usuarios.filter(perfil__sucursal_id=scope.sucursal_id)
             return usuarios
 
         usuarios = usuarios.filter(perfil__area=perfil.area)
-        if perfil.empresa_id:
-            usuarios = usuarios.filter(perfil__empresa_id=perfil.empresa_id)
-        if perfil.sucursal_id:
-            usuarios = usuarios.filter(perfil__sucursal_id=perfil.sucursal_id)
+        usuarios = usuarios.filter(perfil__empresa_id=scope.empresa_id)
+        if scope.es_sucursal:
+            usuarios = usuarios.filter(perfil__sucursal_id=scope.sucursal_id)
         return usuarios
 
     def perform_create(self, serializer):

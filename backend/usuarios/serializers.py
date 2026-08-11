@@ -5,6 +5,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import Empresa, PerfilUsuario, Sucursal, rol_de
+from .tenancy import scope_de
 
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
@@ -16,7 +17,7 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
         model = PerfilUsuario
         fields = [
             "cargo", "area", "area_etiqueta", "turno", "rol", "rol_etiqueta",
-            "nivel", "nivel_etiqueta", "empresa", "sucursal",
+            "nivel", "nivel_etiqueta", "empresa", "sucursal", "alcance",
         ]
 
 
@@ -69,6 +70,9 @@ class TrabajadorSerializer(UsuarioSerializer):
     )
     cargo = serializers.CharField(write_only=True, required=False, allow_blank=True)
     turno = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    alcance = serializers.ChoiceField(
+        choices=PerfilUsuario.Alcance.choices, write_only=True, required=False
+    )
     empresa = serializers.PrimaryKeyRelatedField(
         queryset=Empresa.objects.filter(activa=True), write_only=True, required=False,
         allow_null=True,
@@ -81,9 +85,27 @@ class TrabajadorSerializer(UsuarioSerializer):
     class Meta(UsuarioSerializer.Meta):
         fields = UsuarioSerializer.Meta.fields + [
             "activo", "ultimo_acceso", "password", "area", "nivel", "cargo",
-            "turno", "empresa", "sucursal",
+            "turno", "empresa", "sucursal", "alcance",
         ]
         extra_kwargs = {"email": {"required": False, "allow_blank": True}}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        scope = scope_de(getattr(request, "user", None)) if request else None
+        if scope is None:
+            self.fields["empresa"].queryset = Empresa.objects.none()
+            self.fields["sucursal"].queryset = Sucursal.objects.none()
+        elif not scope.es_global:
+            self.fields["empresa"].queryset = Empresa.objects.filter(
+                pk=scope.empresa_id, activa=True
+            )
+            sucursales = Sucursal.objects.filter(
+                empresa_id=scope.empresa_id, activa=True
+            )
+            if scope.es_sucursal:
+                sucursales = sucursales.filter(pk=scope.sucursal_id)
+            self.fields["sucursal"].queryset = sucursales
 
     def validate(self, attrs):
         password = attrs.get("password")
@@ -99,11 +121,46 @@ class TrabajadorSerializer(UsuarioSerializer):
                 raise serializers.ValidationError({"password": error.messages}) from error
 
         perfil_actual = getattr(self.instance, "perfil", None)
+        request = self.context.get("request")
+        scope_actor = scope_de(getattr(request, "user", None)) if request else None
+
+        if self.instance is None and scope_actor and scope_actor.es_sucursal:
+            attrs.setdefault(
+                "empresa", Empresa.objects.get(pk=scope_actor.empresa_id)
+            )
+            attrs.setdefault(
+                "sucursal", Sucursal.objects.get(pk=scope_actor.sucursal_id)
+            )
+            attrs.setdefault("alcance", PerfilUsuario.Alcance.SUCURSAL)
+
         empresa = attrs.get("empresa", getattr(perfil_actual, "empresa", None))
         sucursal = attrs.get("sucursal", getattr(perfil_actual, "sucursal", None))
+        alcance = attrs.get(
+            "alcance",
+            getattr(perfil_actual, "alcance", PerfilUsuario.Alcance.SUCURSAL),
+        )
         if sucursal and empresa and sucursal.empresa_id != empresa.id:
             raise serializers.ValidationError(
                 {"sucursal": "La sucursal no pertenece a la empresa seleccionada."}
+            )
+        if alcance == PerfilUsuario.Alcance.SUCURSAL and not sucursal:
+            raise serializers.ValidationError(
+                {"sucursal": "Debes indicar una sucursal para este alcance."}
+            )
+        if alcance == PerfilUsuario.Alcance.EMPRESA and sucursal:
+            raise serializers.ValidationError(
+                {"sucursal": "Un perfil de alcance empresa no lleva sucursal."}
+            )
+        area = attrs.get("area", getattr(perfil_actual, "area", ""))
+        nivel = attrs.get(
+            "nivel", getattr(perfil_actual, "nivel", PerfilUsuario.Nivel.TRABAJADOR)
+        )
+        if alcance == PerfilUsuario.Alcance.EMPRESA and not (
+            area == PerfilUsuario.Area.ADMINISTRACION
+            and nivel == PerfilUsuario.Nivel.ADMIN
+        ):
+            raise serializers.ValidationError(
+                {"alcance": "Solo Administración general puede abarcar toda la empresa."}
             )
         return attrs
 
@@ -111,7 +168,9 @@ class TrabajadorSerializer(UsuarioSerializer):
     def _extraer_perfil(validated_data):
         return {
             campo: validated_data.pop(campo)
-            for campo in ("area", "nivel", "cargo", "turno", "empresa", "sucursal")
+            for campo in (
+                "area", "nivel", "cargo", "turno", "empresa", "sucursal", "alcance"
+            )
             if campo in validated_data
         }
 

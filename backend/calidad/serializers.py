@@ -2,6 +2,9 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from maestros.serializers import DocumentoLiberacionSerializer
+from maestros.models import DocumentoLiberacion
+from produccion.models import Lote
+from usuarios.tenancy import filtrar_por_scope
 
 from . import dominio
 from .models import Liberacion, RegistroCalidad
@@ -47,6 +50,20 @@ class RegistroCalidadSerializer(serializers.ModelSerializer):
         # dato de auditoría y aceptarlos del navegador los haría inútiles.
         read_only_fields = ["completado_por", "completado_en"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if not request:
+            return
+        self.fields["lote"].queryset = filtrar_por_scope(
+            Lote.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        self.fields["documento"].queryset = filtrar_por_scope(
+            DocumentoLiberacion.objects.all(), request.user,
+            campo_empresa="empresa_id",
+        )
+
     def get_completo(self, registro):
         return dominio.registro_completo(registro, registro.documento)
 
@@ -60,12 +77,18 @@ class RegistroCalidadSerializer(serializers.ModelSerializer):
         return valores
 
     def validate(self, datos):
+        lote = datos.get("lote", getattr(self.instance, "lote", None))
         estado = datos.get("estado", getattr(self.instance, "estado", None))
         documento = datos.get("documento", getattr(self.instance, "documento", None))
         valores = datos.get("valores", getattr(self.instance, "valores", None) or {})
         observacion = datos.get(
             "observacion", getattr(self.instance, "observacion", "") or ""
         )
+
+        if lote and documento and lote.sucursal.empresa_id != documento.empresa_id:
+            raise serializers.ValidationError(
+                {"documento": "El documento y el lote deben pertenecer a la misma empresa."}
+            )
 
         if estado == RegistroCalidad.Estado.OBSERVADO and not observacion.strip():
             raise serializers.ValidationError(
@@ -160,6 +183,15 @@ class LiberacionSerializer(serializers.ModelSerializer):
             "concesion",
             "motivo_concesion",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request:
+            self.fields["lote"].queryset = filtrar_por_scope(
+                Lote.objects.all(), request.user,
+                campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+            )
 
     def validate(self, datos):
         intentados = sorted(set(self.DE_LA_FIRMA) & set(self.initial_data or {}))

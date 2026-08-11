@@ -30,7 +30,7 @@ class BaseApiAuditoria(TestCase):
         self.lote = Lote.objects.create(
             codigo_lote="L-1", producto=self.producto, fecha=date(2026, 7, 16)
         )
-        self.cliente, self.usuario = self._cliente(Rol.PRODUCCION)
+        self.cliente, self.usuario = self._cliente(Rol.ADMIN)
 
     def _cliente(self, rol):
         # Sufijo por cantidad: una prueba puede pedir varios clientes del
@@ -78,16 +78,22 @@ class SoloLecturaTests(BaseApiAuditoria):
             APIClient().get("/api/auditoria/registros/").status_code, 401
         )
 
-    def test_cualquier_rol_puede_consultar(self):
+    def test_solo_calidad_y_administracion_pueden_consultar(self):
         """
         La auditoría se mira, no se toca. Restringirla a Administración
         escondería el rastro justo de quien tiene más poder para cambiar cosas.
         """
-        for rol in (Rol.PRODUCCION, Rol.CALIDAD, Rol.RECEPCION):
+        for rol in (Rol.CALIDAD, Rol.ADMIN):
             with self.subTest(rol=rol):
                 cliente, _ = self._cliente(rol)
                 self.assertEqual(
                     cliente.get("/api/auditoria/registros/").status_code, 200
+                )
+        for rol in (Rol.PRODUCCION, Rol.RECEPCION):
+            with self.subTest(rol=rol):
+                cliente, _ = self._cliente(rol)
+                self.assertEqual(
+                    cliente.get("/api/auditoria/registros/").status_code, 403
                 )
 
 

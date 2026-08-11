@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 
 class Proceso(models.Model):
@@ -89,7 +90,7 @@ class EjecucionProceso(models.Model):
     etapa = models.ForeignKey(EtapaProceso, on_delete=models.PROTECT, related_name="ejecuciones")
     sucursal = models.ForeignKey(
         "usuarios.Sucursal", on_delete=models.PROTECT, related_name="ejecuciones_proceso",
-        null=True, blank=True,
+        default=sucursal_predeterminada_pruebas,
     )
     equipo = models.ForeignKey(
         "maestros.Equipo", on_delete=models.PROTECT, related_name="ejecuciones_proceso",
@@ -126,6 +127,10 @@ class EjecucionProceso(models.Model):
     def __str__(self):
         return f"{self.codigo} · {self.etapa.nombre}"
 
+    def clean(self):
+        if self.equipo_id and self.equipo.sucursal_id != self.sucursal_id:
+            raise ValidationError({"equipo": "El equipo debe pertenecer a la sucursal de la ejecución."})
+
     @property
     def editable(self):
         return self.estado not in {self.Estado.CERRADA, self.Estado.CANCELADA}
@@ -161,6 +166,8 @@ class EntradaProceso(models.Model):
         if not self.ejecucion.editable:
             raise ValidationError("No se pueden agregar entradas a una ejecución cerrada o cancelada.")
 
+        if self.lote_id and self.lote.sucursal_id != self.ejecucion.sucursal_id:
+            raise ValidationError({"lote": "El lote debe pertenecer a la sucursal de la ejecución."})
         self._validar_autorizacion_de_reproceso()
 
     def _validar_autorizacion_de_reproceso(self):
@@ -241,6 +248,8 @@ class SalidaProceso(models.Model):
         if self.naturaleza == self.Naturaleza.MERMA and not self.motivo.strip():
             raise ValidationError({"motivo": "Toda merma requiere un motivo."})
 
+        if self.lote_id and self.lote.sucursal_id != self.ejecucion.sucursal_id:
+            raise ValidationError({"lote": "El lote debe pertenecer a la sucursal de la ejecución."})
         self._validar_balance()
 
     def _validar_balance(self):

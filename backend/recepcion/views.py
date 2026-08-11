@@ -9,13 +9,29 @@ from rest_framework.response import Response
 
 from maestros.models import Silo
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
+from usuarios.models import Sucursal
+from usuarios.tenancy import (
+    QuerysetTenantMixin, RelacionesTenantMixin, exigir_sucursal_permitida,
+    filtrar_por_scope, scope_de,
+)
 
 from . import dominio
 from .models import MovimientoSilo, Recepcion
 from .serializers import MovimientoSiloSerializer, RecepcionSerializer
 
 
-class RecepcionViewSet(viewsets.ModelViewSet):
+class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
+    tenant_relation_fields = {
+        "sucursal": ("pk", "empresa_id"),
+        "vehiculo": ("sucursal_id", "sucursal__empresa_id"),
+        "silo": ("sucursal_id", "sucursal__empresa_id"),
+        "carga_recoleccion": (
+            "recoleccion__parada__ruta__vehiculo__sucursal_id",
+            "recoleccion__parada__ruta__vehiculo__sucursal__empresa_id",
+        ),
+    }
     queryset = Recepcion.objects.select_related(
         "vehiculo",
         "carga_recoleccion__recoleccion__parada__ruta__vehiculo",
@@ -98,7 +114,11 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         Se cuenta sobre el queryset **sin filtros de pantalla**: el resumen
         describe la planta, no la vista.
         """
-        base = Recepcion.objects.all()
+        base = filtrar_por_scope(
+            Recepcion.objects.all(), request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
 
         por_estado = {
             fila["estado"]: fila["n"]
@@ -125,6 +145,13 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         # Quien registra queda como operador si no se indicó otro: el dato es
         # para auditoría y teclearlo a mano solo lo hace menos fiable.
         extra = {}
+        scope = scope_de(self.request.user, requerido=True)
+        sucursal = serializer.validated_data.get("sucursal")
+        if scope.es_sucursal:
+            sucursal = Sucursal.objects.get(pk=scope.sucursal_id)
+        elif sucursal is None:
+            raise DRFValidationError({"sucursal": "Debes indicar una sucursal permitida."})
+        exigir_sucursal_permitida(self.request.user, sucursal)
 
         carga = serializer.validated_data.get("carga_recoleccion")
         if carga:
@@ -134,7 +161,7 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         if serializer.validated_data.get("operador") is None:
             extra["operador"] = self.request.user
 
-        serializer.save(estado=Recepcion.Estado.REGISTRADA, **extra)
+        serializer.save(sucursal=sucursal, estado=Recepcion.Estado.REGISTRADA, **extra)
 
     def perform_update(self, serializer):
         serializer.save()
@@ -236,7 +263,10 @@ class RecepcionViewSet(viewsets.ModelViewSet):
     def asignar_silo(self, request, pk=None):
         """Asigna el destino solo después de la aprobación de Calidad."""
         try:
-            silo = Silo.objects.get(pk=request.data.get("silo"), activo=True)
+            silo = filtrar_por_scope(
+                Silo.objects.filter(activo=True), request.user,
+                campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+            ).get(pk=request.data.get("silo"))
         except (Silo.DoesNotExist, TypeError, ValueError):
             return Response(
                 {"silo": "Selecciona un silo activo."},
@@ -249,6 +279,11 @@ class RecepcionViewSet(viewsets.ModelViewSet):
                 return Response(
                     {"detail": "El silo se asigna solo después de la aprobación de Calidad."},
                     status=status.HTTP_409_CONFLICT,
+                )
+            if silo.sucursal_id != recepcion.vehiculo.sucursal_id:
+                return Response(
+                    {"silo": "El silo debe pertenecer a la sucursal de la recepción."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             tipo_esperado = (
@@ -355,7 +390,10 @@ class RecepcionViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(recepcion).data)
 
 
-class MovimientoSiloViewSet(viewsets.ModelViewSet):
+class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "silo__sucursal_id"
+    tenant_lookup_empresa = "silo__sucursal__empresa_id"
+    tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
     queryset = MovimientoSilo.objects.select_related("silo")
     serializer_class = MovimientoSiloSerializer
     permission_classes = [EscribeRecepcion]
@@ -381,7 +419,10 @@ def ocupacion(request):
     Un saldo negativo se informa tal cual: significa que el registro está
     descuadrado, y ocultarlo haría que el error nunca se descubriera.
     """
-    silos = Silo.objects.filter(activo=True).annotate(
+    silos = filtrar_por_scope(
+        Silo.objects.filter(activo=True), request.user,
+        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ).annotate(
         litros_ocupados=Coalesce(
             Sum(Case(
                 When(movimientos__tipo=MovimientoSilo.Tipo.SALIDA, then=-F("movimientos__litros")),

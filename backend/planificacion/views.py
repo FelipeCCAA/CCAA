@@ -22,6 +22,10 @@ from rest_framework.response import Response
 from produccion.models import Lote
 from recepcion.models import MovimientoSilo, Recepcion
 from usuarios.permisos import EscribeProduccion
+from usuarios.tenancy import (
+    QuerysetTenantMixin, RelacionesTenantMixin, SucursalTenantViewSetMixin,
+    filtrar_por_scope,
+)
 
 from . import contraste as contraste_dominio
 from . import dominio
@@ -37,7 +41,12 @@ from .serializers import (
 )
 
 
-class CodigoProduccionViewSet(viewsets.ModelViewSet):
+class CodigoProduccionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_empresa = "producto__mandante__empresa_id"
+    tenant_relation_fields = {
+        "producto": (None, "mandante__empresa_id"),
+        "mandante": (None, "empresa_id"),
+    }
     queryset = CodigoProduccion.objects.select_related("producto", "mandante")
     serializer_class = CodigoProduccionSerializer
     permission_classes = [EscribeProduccion]
@@ -52,7 +61,9 @@ class CodigoProduccionViewSet(viewsets.ModelViewSet):
         return consulta
 
 
-class SemanaPlanViewSet(viewsets.ModelViewSet):
+class SemanaPlanViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = SemanaPlan.objects.select_related("publicada_por")
     serializer_class = SemanaPlanSerializer
     permission_classes = [EscribeProduccion]
@@ -72,7 +83,14 @@ class SemanaPlanViewSet(viewsets.ModelViewSet):
         return consulta
 
 
-class BloquePlanViewSet(viewsets.ModelViewSet):
+class BloquePlanViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "semana__sucursal_id"
+    tenant_lookup_empresa = "semana__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "semana": ("sucursal_id", "sucursal__empresa_id"),
+        "equipo": ("sucursal_id", "sucursal__empresa_id"),
+        "codigo": (None, "producto__mandante__empresa_id"),
+    }
     # `equipo` va en el select_related porque el balance consulta
     # `bloque.equipo.consume_leche` por cada bloque: sin esto, una consulta
     # por fila.
@@ -96,7 +114,12 @@ class BloquePlanViewSet(viewsets.ModelViewSet):
         return consulta
 
 
-class BalanceDiaViewSet(viewsets.ModelViewSet):
+class BalanceDiaViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "semana__sucursal_id"
+    tenant_lookup_empresa = "semana__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "semana": ("sucursal_id", "sucursal__empresa_id")
+    }
     queryset = BalanceDia.objects.all()
     serializer_class = BalanceDiaSerializer
     permission_classes = [EscribeProduccion]
@@ -121,8 +144,17 @@ def _contexto(semana):
                 "codigo", "equipo"
             )
         ),
-        list(CodigoProduccion.objects.all()),
+        list(CodigoProduccion.objects.filter(
+            producto__mandante__empresa_id=semana.sucursal.empresa_id
+        )),
         list(BalanceDia.objects.filter(semana=semana)),
+    )
+
+
+def _semanas_permitidas(request):
+    return filtrar_por_scope(
+        SemanaPlan.objects.all(), request.user,
+        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     )
 
 
@@ -137,7 +169,7 @@ def programa(request, semana_id):
     bloque de evaporador cambia el stock del resto de la semana, y un número
     persistido dejaría de ser cierto sin avisar.
     """
-    semana = get_object_or_404(SemanaPlan, pk=semana_id)
+    semana = get_object_or_404(_semanas_permitidas(request), pk=semana_id)
     bloques, codigos, balances = _contexto(semana)
 
     filas = dominio.balance_semana(bloques, codigos, balances)
@@ -166,7 +198,7 @@ def publicar(request, semana_id):
     programada de la que va a llegar es mandar a planta algo que no se puede
     cumplir.
     """
-    semana = get_object_or_404(SemanaPlan, pk=semana_id)
+    semana = get_object_or_404(_semanas_permitidas(request), pk=semana_id)
 
     with transaction.atomic():
         bloques, codigos, balances = _contexto(semana)
@@ -199,7 +231,7 @@ def reabrir(request, semana_id):
     reprogramar la semana en curso. Se retira la firma de publicación, porque
     dejarla diría que alguien comprometió un programa que ya no es ese.
     """
-    semana = get_object_or_404(SemanaPlan, pk=semana_id)
+    semana = get_object_or_404(_semanas_permitidas(request), pk=semana_id)
 
     if not semana.puede_pasar_a(SemanaPlan.Estado.BORRADOR):
         return Response(
@@ -224,7 +256,7 @@ def reabrir(request, semana_id):
 @permission_classes([EscribeProduccion])
 def cerrar(request, semana_id):
     """Cierra la semana: pasa a histórico y ya solo se contrasta."""
-    semana = get_object_or_404(SemanaPlan, pk=semana_id)
+    semana = get_object_or_404(_semanas_permitidas(request), pk=semana_id)
 
     if not semana.puede_pasar_a(SemanaPlan.Estado.CERRADA):
         return Response(
@@ -253,7 +285,7 @@ def contraste(request, semana_id):
     sale del programa y del balance; lo real, del libro mayor de silos y de
     los lotes. Si el lado real se copiara del plan, siempre cuadraría.
     """
-    semana = get_object_or_404(SemanaPlan, pk=semana_id)
+    semana = get_object_or_404(_semanas_permitidas(request), pk=semana_id)
     bloques, codigos, balances = _contexto(semana)
 
     desde = semana.fecha_inicio
@@ -266,13 +298,15 @@ def contraste(request, semana_id):
         balances,
         # Solo lo descargado: una recepción registrada todavía no entró al silo.
         Recepcion.objects.filter(
+            vehiculo__sucursal_id=semana.sucursal_id,
             fecha__gte=desde, fecha__lte=hasta, estado=Recepcion.Estado.DESCARGADA
         ),
         MovimientoSilo.objects.filter(
+            silo__sucursal_id=semana.sucursal_id,
             tipo=MovimientoSilo.Tipo.SALIDA,
             origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
         ),
-        Lote.objects.filter(fecha__gte=desde, fecha__lte=hasta).exclude(
+        Lote.objects.filter(sucursal_id=semana.sucursal_id, fecha__gte=desde, fecha__lte=hasta).exclude(
             estado=Lote.Estado.ANULADO
         ),
     )

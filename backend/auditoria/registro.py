@@ -207,8 +207,11 @@ def _escribir(instancia, accion, cambios):
         usuario = usuario.resolver()
 
     meta = instancia._meta
+    empresa_id, sucursal_id = _tenant_de(instancia)
 
     Registro.objects.create(
+        empresa_id=empresa_id,
+        sucursal_id=sucursal_id,
         usuario=usuario,
         usuario_nombre=getattr(usuario, "username", "") or "",
         accion=accion,
@@ -220,3 +223,39 @@ def _escribir(instancia, accion, cambios):
         ip=actor.ip,
         origen=actor.origen,
     )
+
+
+def _resolver_ruta(instancia, ruta):
+    valor = instancia
+    try:
+        for parte in ruta.split("."):
+            valor = getattr(valor, parte)
+        return valor
+    except (AttributeError, ObjectDoesNotExist):
+        return None
+
+
+def _tenant_de(instancia):
+    """Obtiene el tenant del dato, no del actor que intenta modificarlo."""
+    for ruta in (
+        "sucursal", "lote.sucursal", "lote_produccion.sucursal",
+        "equipo.sucursal", "vehiculo.sucursal", "silo.sucursal",
+        "bodega.sucursal", "ubicacion.bodega.sucursal",
+        "existencia.ubicacion.bodega.sucursal", "orden.bodega_entrega.sucursal",
+        "solicitud.lote_produccion.sucursal", "ejecucion.sucursal",
+        "ruta.vehiculo.sucursal", "parada.ruta.vehiculo.sucursal",
+        "recoleccion.parada.ruta.vehiculo.sucursal",
+        "control.lote.sucursal", "monitoreo.lote.sucursal",
+    ):
+        sucursal = _resolver_ruta(instancia, ruta)
+        if sucursal is not None and hasattr(sucursal, "empresa_id"):
+            return sucursal.empresa_id, sucursal.pk
+
+    for ruta in (
+        "empresa", "documento.empresa", "mandante.empresa",
+        "producto.mandante.empresa", "codigo.producto.mandante.empresa",
+    ):
+        empresa = _resolver_ruta(instancia, ruta)
+        if empresa is not None and hasattr(empresa, "rut"):
+            return empresa.pk, None
+    return None, None

@@ -2,6 +2,10 @@
 
 from rest_framework import serializers
 
+from maestros.models import DocumentoLiberacion, Equipo
+from usuarios.models import Sucursal
+from usuarios.tenancy import filtrar_por_scope, scope_de
+
 from .models import RegistroEquipo
 from . import dominio
 
@@ -25,6 +29,7 @@ class RegistroEquipoSerializer(serializers.ModelSerializer):
         model = RegistroEquipo
         fields = [
             "id",
+            "sucursal",
             "documento",
             "documento_nombre",
             "documento_codigo",
@@ -54,6 +59,28 @@ class RegistroEquipoSerializer(serializers.ModelSerializer):
             "equipo": {"required": False, "default": None},
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if not request:
+            return
+        scope = scope_de(request.user)
+        sucursales = Sucursal.objects.filter(activa=True)
+        if scope is None:
+            sucursales = sucursales.none()
+        elif not scope.es_global:
+            sucursales = sucursales.filter(empresa_id=scope.empresa_id)
+            if scope.es_sucursal:
+                sucursales = sucursales.filter(pk=scope.sucursal_id)
+        self.fields["sucursal"].queryset = sucursales
+        self.fields["documento"].queryset = filtrar_por_scope(
+            DocumentoLiberacion.objects.all(), request.user, campo_empresa="empresa_id"
+        )
+        self.fields["equipo"].queryset = filtrar_por_scope(
+            Equipo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+
     def get_completo(self, registro):
         return dominio.registro_completo(registro, registro.documento)
 
@@ -68,8 +95,24 @@ class RegistroEquipoSerializer(serializers.ModelSerializer):
         quedaría sin entender por qué su registro no aparece en ningún lote.
         Mejor pedirlo aquí.
         """
+        request = self.context.get("request")
+        scope = scope_de(getattr(request, "user", None)) if request else None
+        if self.instance is None and scope and scope.es_sucursal:
+            datos["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
+
+        sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
         documento = datos.get("documento") or getattr(self.instance, "documento", None)
+        equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
         hasta = datos.get("vigente_hasta", getattr(self.instance, "vigente_hasta", None))
+
+        if sucursal and documento and sucursal.empresa_id != documento.empresa_id:
+            raise serializers.ValidationError(
+                {"documento": "El documento debe pertenecer a la empresa de la sucursal."}
+            )
+        if sucursal and equipo and sucursal.pk != equipo.sucursal_id:
+            raise serializers.ValidationError(
+                {"equipo": "El equipo debe pertenecer a la sucursal del registro."}
+            )
 
         if documento and documento.frecuencia == "segun_programa" and hasta is None:
             raise serializers.ValidationError(

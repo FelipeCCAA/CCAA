@@ -18,6 +18,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from inocuidad.models import MonitoreoPPRO
@@ -29,8 +30,15 @@ from produccion.models import (
     Lote,
 )
 from recepcion.models import MovimientoSilo
-from usuarios.models import rol_de
+from usuarios.models import Sucursal, rol_de
 from usuarios.permisos import EscribeCalidad, EscribePlanta
+from usuarios.tenancy import (
+    QuerysetTenantMixin,
+    SucursalTenantViewSetMixin,
+    exigir_sucursal_permitida,
+    filtrar_por_scope,
+    scope_de,
+)
 
 from . import dominio
 from .models import Liberacion, RegistroCalidad, RegistroEquipo
@@ -48,7 +56,9 @@ from .serializers import (
 )
 
 
-class RegistroCalidadViewSet(viewsets.ModelViewSet):
+class RegistroCalidadViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
     queryset = RegistroCalidad.objects.select_related(
         "lote", "documento", "completado_por"
     )
@@ -97,7 +107,9 @@ class RegistroCalidadViewSet(viewsets.ModelViewSet):
             serializer.save(completado_por=None, completado_en=None)
 
 
-class LiberacionViewSet(viewsets.ModelViewSet):
+class LiberacionViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
     """
     El expediente de autorización de cada lote.
 
@@ -129,6 +141,12 @@ class LiberacionViewSet(viewsets.ModelViewSet):
 
 
 # --------------------------------------------------------------- expedientes
+
+def _lotes_permitidos(request):
+    return filtrar_por_scope(
+        Lote.objects.all(), request.user,
+        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    )
 
 def _contexto_del_lote(lote, bloquear=False):
     """
@@ -185,7 +203,9 @@ def _contexto_del_lote(lote, bloquear=False):
     # consulta por monitoreo dentro del dominio.
     monitoreos = monitoreos.prefetch_related("lecturas")
 
-    documentos = list(DocumentoLiberacion.objects.all())
+    documentos = list(
+        DocumentoLiberacion.objects.filter(empresa_id=lote.sucursal.empresa_id)
+    )
 
     # Los documentos que el propio dato del sistema da por cumplidos: el PCC 1
     # lo cumple su control de proceso, no una casilla. Se calcula aquí y se
@@ -216,7 +236,9 @@ def _contexto_del_lote(lote, bloquear=False):
         documentos,
         lote,
         RegistroEquipo.objects.filter(
-            documento__in=documentos, estado=RegistroEquipo.Estado.COMPLETADO
+            sucursal_id=lote.sucursal_id,
+            documento__in=documentos,
+            estado=RegistroEquipo.Estado.COMPLETADO,
         ).select_related("equipo", "documento"),
     )
 
@@ -248,7 +270,7 @@ def expedientes(request):
     Acepta `estado` (el de la liberación), `producto`, `desde` y `hasta`.
     """
     lotes = (
-        Lote.objects.select_related("producto", "producto__mandante")
+        _lotes_permitidos(request).select_related("producto", "producto__mandante")
         .prefetch_related("analisis", "registros_calidad", "liberacion")
         .exclude(estado__in=[Lote.Estado.EN_PROCESO, Lote.Estado.ANULADO])
     )
@@ -269,8 +291,13 @@ def expedientes(request):
 
     # Los maestros se cargan una vez y los comparten todos los lotes: sin esto
     # cada lote dispararía sus propias consultas.
-    documentos = list(DocumentoLiberacion.objects.all())
-    especificaciones = list(Especificacion.objects.all())
+    documentos = list(filtrar_por_scope(
+        DocumentoLiberacion.objects.all(), request.user, campo_empresa="empresa_id"
+    ))
+    especificaciones = list(filtrar_por_scope(
+        Especificacion.objects.all(), request.user,
+        campo_empresa="producto__mandante__empresa_id",
+    ))
 
     # Lo que la inocuidad y la evidencia necesitan, para TODOS los lotes de la
     # página en una consulta por tabla.
@@ -392,7 +419,8 @@ def expediente(request, lote_id):
     la respuesta no es la misma para Calidad que para Producción.
     """
     lote = get_object_or_404(
-        Lote.objects.select_related("producto", "producto__mandante"), pk=lote_id
+        _lotes_permitidos(request).select_related("producto", "producto__mandante"),
+        pk=lote_id,
     )
     contexto = _contexto_del_lote(lote)
 
@@ -444,7 +472,9 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
     desmarcar un documento entre la comprobación y el guardado, y la
     liberación queda firmada contra un checklist que ya no está completo.
     """
-    lote = get_object_or_404(Lote.objects.select_related("producto"), pk=lote_id)
+    lote = get_object_or_404(
+        _lotes_permitidos(request).select_related("producto"), pk=lote_id
+    )
     rol = rol_de(request.user)
 
     with transaction.atomic():
@@ -528,7 +558,7 @@ def revisar(request, lote_id):
     La firma anterior se borra: dejarla puesta sobre un expediente que volvió
     a revisión diría que alguien autorizó algo que ya no está autorizado.
     """
-    lote = get_object_or_404(Lote, pk=lote_id)
+    lote = get_object_or_404(_lotes_permitidos(request), pk=lote_id)
 
     with transaction.atomic():
         liberacion, _ = Liberacion.objects.get_or_create(lote=lote)
@@ -580,7 +610,9 @@ def conceder(request, lote_id):
     )
 
 
-class RegistroEquipoViewSet(viewsets.ModelViewSet):
+class RegistroEquipoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     """
     Registros que pertenecen al equipo y su período, no a un lote.
 
@@ -620,12 +652,22 @@ class RegistroEquipoViewSet(viewsets.ModelViewSet):
         return consulta
 
     def perform_create(self, serializer):
-        self._guardar_firmando(serializer)
+        scope = scope_de(self.request.user, requerido=True)
+        if scope.es_sucursal:
+            sucursal = Sucursal.objects.get(pk=scope.sucursal_id)
+        else:
+            sucursal = serializer.validated_data.get("sucursal")
+            if sucursal is None:
+                raise PermissionDenied("Debes indicar una sucursal permitida.")
+            exigir_sucursal_permitida(self.request.user, sucursal)
+        self._guardar_firmando(serializer, sucursal=sucursal)
 
     def perform_update(self, serializer):
+        if "sucursal" in self.request.data:
+            raise PermissionDenied("La sucursal no se cambia mediante una edición genérica.")
         self._guardar_firmando(serializer)
 
-    def _guardar_firmando(self, serializer):
+    def _guardar_firmando(self, serializer, **tenant):
         """
         Quién completó el registro lo pone el servidor, no el cliente.
 
@@ -639,6 +681,7 @@ class RegistroEquipoViewSet(viewsets.ModelViewSet):
         )
 
         serializer.save(
+            **tenant,
             completado_por=self.request.user if completado else None,
             completado_en=timezone.now() if completado else None,
         )
@@ -655,8 +698,16 @@ def documentos_periodicos(request):
     """
     from maestros.serializers import DocumentoLiberacionSerializer
 
-    documentos = DocumentoLiberacion.objects.exclude(
-        frecuencia=DocumentoLiberacion.Frecuencia.POR_LOTE
+    documentos = filtrar_por_scope(
+        DocumentoLiberacion.objects.exclude(
+            frecuencia=DocumentoLiberacion.Frecuencia.POR_LOTE
+        ),
+        request.user,
+        campo_empresa="empresa_id",
     ).order_by("orden")
 
-    return Response(DocumentoLiberacionSerializer(documentos, many=True).data)
+    return Response(
+        DocumentoLiberacionSerializer(
+            documentos, many=True, context={"request": request}
+        ).data
+    )

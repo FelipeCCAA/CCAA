@@ -74,6 +74,17 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         }
         ValeEstandarizacion(**silos).clean()
 
+        presentes = [s for s in silos.values() if s is not None]
+        if len({s.sucursal_id for s in presentes}) > 1:
+            raise serializers.ValidationError(
+                {"silo_destino": "Todos los silos deben pertenecer a la misma sucursal."}
+            )
+        producto = attrs.get("producto", getattr(self.instance, "producto", None))
+        if presentes and producto and producto.mandante.empresa_id != presentes[0].sucursal.empresa_id:
+            raise serializers.ValidationError(
+                {"producto": "El producto debe pertenecer a la empresa de los silos."}
+            )
+
         return attrs
 
 

@@ -85,6 +85,17 @@ class BloquePlanSerializer(serializers.ModelSerializer):
 
         validacion = dominio.validar_bloque(propuesto, list(hermanos))
 
+        if propuesto.semana_id and propuesto.equipo_id:
+            if propuesto.semana.sucursal_id != propuesto.equipo.sucursal_id:
+                raise serializers.ValidationError(
+                    {"equipo": "El equipo debe pertenecer a la sucursal de la semana."}
+                )
+        if propuesto.codigo_id and propuesto.codigo.producto_id:
+            if propuesto.codigo.producto.mandante.empresa_id != propuesto.semana.sucursal.empresa_id:
+                raise serializers.ValidationError(
+                    {"codigo": "El código debe pertenecer a la empresa de la semana."}
+                )
+
         if not validacion.permitido:
             raise serializers.ValidationError({"bloqueos": validacion.bloqueos})
 
@@ -131,6 +142,7 @@ class SemanaPlanSerializer(serializers.ModelSerializer):
         model = SemanaPlan
         fields = [
             "id",
+            "sucursal",
             "codigo",
             "anio",
             "fecha_inicio",

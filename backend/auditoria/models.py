@@ -25,6 +25,14 @@ class RegistroAuditoria(models.Model):
         BORRADO = "borrado", "Borrado"
 
     fecha_hora = models.DateTimeField("Fecha y hora", auto_now_add=True, db_index=True)
+    empresa = models.ForeignKey(
+        "usuarios.Empresa", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="registros_auditoria",
+    )
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="registros_auditoria",
+    )
 
     # SET_NULL y no CASCADE: borrar un usuario no puede borrar la historia de
     # lo que hizo, que es justamente lo que la auditoría existe para conservar.

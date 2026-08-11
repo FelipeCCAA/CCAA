@@ -1,9 +1,10 @@
 from copy import copy
 
 from rest_framework import serializers
-from rest_framework.validators import UniqueTogetherValidator
-
 from maestros.catalogos import CLAVES_PARAMETROS
+from maestros.models import Equipo, Especificacion, Producto
+from usuarios.models import Sucursal
+from usuarios.tenancy import filtrar_por_scope, scope_de
 
 from . import dominio
 from .models import Analisis, ControlProceso, ControlProcesoLectura, Lote
@@ -21,6 +22,34 @@ class AnalisisSerializer(serializers.ModelSerializer):
             "especificacion",
             "observacion",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if not request:
+            return
+        self.fields["lote"].queryset = filtrar_por_scope(
+            Lote.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        scope = scope_de(request.user)
+        specs = Especificacion.objects.all()
+        if scope is None:
+            specs = specs.none()
+        elif not scope.es_global:
+            specs = specs.filter(producto__mandante__empresa_id=scope.empresa_id)
+        self.fields["especificacion"].queryset = specs
+
+    def validate(self, datos):
+        lote = datos.get("lote", getattr(self.instance, "lote", None))
+        especificacion = datos.get(
+            "especificacion", getattr(self.instance, "especificacion", None)
+        )
+        if especificacion and lote and especificacion.producto_id != lote.producto_id:
+            raise serializers.ValidationError(
+                {"especificacion": "La especificación debe corresponder al producto del lote."}
+            )
+        return datos
 
     def validate_valores(self, valores):
         if not isinstance(valores, dict):
@@ -56,6 +85,7 @@ class LoteSerializer(serializers.ModelSerializer):
         model = Lote
         fields = [
             "id",
+            "sucursal",
             "codigo_lote",
             "op",
             "producto",
@@ -74,7 +104,8 @@ class LoteSerializer(serializers.ModelSerializer):
             "observacion",
             "calidad",
         ]
-        validators = [
+        validators = []
+        """validators = [
             # El mensaje por defecto de DRF viene en inglés y lo lee quien
             # carga lotes en planta. El código de lote SÍ se repite entre
             # productos y días; lo que no puede repetirse es la combinación.
@@ -86,7 +117,26 @@ class LoteSerializer(serializers.ModelSerializer):
                     "y la misma fecha."
                 ),
             )
-        ]
+        ]"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if not request:
+            return
+        scope = scope_de(request.user)
+        sucursales = Sucursal.objects.filter(activa=True)
+        productos = Producto.objects.all()
+        if scope is None:
+            sucursales = sucursales.none()
+            productos = productos.none()
+        elif not scope.es_global:
+            sucursales = sucursales.filter(empresa_id=scope.empresa_id)
+            productos = productos.filter(mandante__empresa_id=scope.empresa_id)
+            if scope.es_sucursal:
+                sucursales = sucursales.filter(pk=scope.sucursal_id)
+        self.fields["sucursal"].queryset = sucursales
+        self.fields["producto"].queryset = productos
 
     def validate_estado(self, estado):
         """
@@ -143,6 +193,31 @@ class LoteSerializer(serializers.ModelSerializer):
         editarlo después de que alguien firmó por él cambia el significado de
         esa firma sin que nadie se entere.
         """
+        request = self.context.get("request")
+        scope = scope_de(getattr(request, "user", None)) if request else None
+        if self.instance is None and scope and scope.es_sucursal:
+            datos["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
+
+        sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
+        producto = datos.get("producto", getattr(self.instance, "producto", None))
+        if sucursal and producto and producto.mandante.empresa_id != sucursal.empresa_id:
+            raise serializers.ValidationError(
+                {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}
+            )
+
+        codigo = datos.get("codigo_lote", getattr(self.instance, "codigo_lote", None))
+        fecha = datos.get("fecha", getattr(self.instance, "fecha", None))
+        if sucursal and producto and codigo and fecha:
+            repetido = Lote.objects.filter(
+                sucursal=sucursal, codigo_lote=codigo, producto=producto, fecha=fecha
+            )
+            if self.instance:
+                repetido = repetido.exclude(pk=self.instance.pk)
+            if repetido.exists():
+                raise serializers.ValidationError(
+                    {"codigo_lote": "Ya existe ese lote para el producto, fecha y sucursal."}
+                )
+
         if self.instance is None:
             return datos
 
@@ -325,6 +400,16 @@ class ControlProcesoLecturaSerializer(serializers.ModelSerializer):
         model = ControlProcesoLectura
         fields = ["id", "control", "hora", "valores", "observacion"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request:
+            self.fields["control"].queryset = filtrar_por_scope(
+                ControlProceso.objects.all(), request.user,
+                campo_sucursal="lote__sucursal_id",
+                campo_empresa="lote__sucursal__empresa_id",
+            )
+
     def validate_valores(self, valores):
         if not isinstance(valores, dict):
             raise serializers.ValidationError("Debe ser un objeto de valores medidos.")
@@ -378,7 +463,31 @@ class ControlProcesoSerializer(serializers.ModelSerializer):
         # defecto para que la pantalla pueda omitirlos.
         extra_kwargs = {
             "turno": {"required": False, "default": ""},
+            "operador": {"read_only": True},
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if not request:
+            return
+        self.fields["lote"].queryset = filtrar_por_scope(
+            Lote.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        self.fields["equipo"].queryset = filtrar_por_scope(
+            Equipo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+
+    def validate(self, datos):
+        lote = datos.get("lote", getattr(self.instance, "lote", None))
+        equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
+        if lote and equipo and lote.sucursal_id != equipo.sucursal_id:
+            raise serializers.ValidationError(
+                {"equipo": "El equipo debe pertenecer a la sucursal del lote."}
+            )
+        return datos
 
     def get_pcc1(self, control):
         """

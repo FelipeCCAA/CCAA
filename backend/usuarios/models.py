@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+from .tenancy import empresa_predeterminada_pruebas, sucursal_predeterminada_pruebas
+
 
 class Empresa(models.Model):
     rut = models.CharField(max_length=20, unique=True)
@@ -52,6 +54,10 @@ ROLES_AUTORIZADORES = (Rol.CALIDAD, Rol.ADMIN)
 
 class PerfilUsuario(models.Model):
 
+    class Alcance(models.TextChoices):
+        SUCURSAL = "sucursal", "Sucursal"
+        EMPRESA = "empresa", "Toda la empresa"
+
     class Nivel(models.TextChoices):
         ADMIN = "admin", "Administrador de área"
         TRABAJADOR = "trabajador", "Trabajador"
@@ -93,11 +99,25 @@ class PerfilUsuario(models.Model):
     )
 
     empresa = models.ForeignKey(
-        Empresa, on_delete=models.PROTECT, related_name="perfiles", null=True, blank=True
+        Empresa,
+        on_delete=models.PROTECT,
+        related_name="perfiles",
+        default=empresa_predeterminada_pruebas,
     )
 
     sucursal = models.ForeignKey(
-        Sucursal, on_delete=models.PROTECT, related_name="perfiles", null=True, blank=True
+        Sucursal,
+        on_delete=models.PROTECT,
+        related_name="perfiles",
+        null=True,
+        blank=True,
+        default=sucursal_predeterminada_pruebas,
+    )
+
+    alcance = models.CharField(
+        max_length=10,
+        choices=Alcance.choices,
+        default=Alcance.SUCURSAL,
     )
 
     nivel = models.CharField(
@@ -109,6 +129,15 @@ class PerfilUsuario(models.Model):
     class Meta:
         verbose_name = "Perfil de usuario"
         verbose_name_plural = "Perfiles de usuario"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(alcance="sucursal", sucursal__isnull=False)
+                    | models.Q(alcance="empresa", sucursal__isnull=True)
+                ),
+                name="perfil_scope_coherente",
+            )
+        ]
 
     def __str__(self):
         return self.usuario.username
@@ -118,6 +147,7 @@ class PerfilUsuario(models.Model):
         return self.nivel == self.Nivel.ADMIN
 
     def save(self, *args, **kwargs):
+        self.clean()
         super().save(*args, **kwargs)
         es_staff = self.usuario.is_superuser or self.es_admin_de_area
         if self.usuario.is_staff != es_staff:
@@ -127,8 +157,21 @@ class PerfilUsuario(models.Model):
     def clean(self):
         from django.core.exceptions import ValidationError
 
-        if self.sucursal_id and self.empresa_id and self.sucursal.empresa_id != self.empresa_id:
+        super().clean()
+        if not self.empresa_id:
+            raise ValidationError({"empresa": "La empresa es obligatoria."})
+        if self.alcance == self.Alcance.SUCURSAL and not self.sucursal_id:
+            raise ValidationError({"sucursal": "El alcance de sucursal exige una sucursal."})
+        if self.alcance == self.Alcance.EMPRESA and self.sucursal_id:
+            raise ValidationError({"sucursal": "El alcance de empresa no lleva una sucursal."})
+        if self.sucursal_id and self.sucursal.empresa_id != self.empresa_id:
             raise ValidationError({"sucursal": "La sucursal no pertenece a la empresa seleccionada."})
+        if self.alcance == self.Alcance.EMPRESA and not (
+            self.area == self.Area.ADMINISTRACION and self.es_admin_de_area
+        ):
+            raise ValidationError(
+                {"alcance": "Solo Administración general puede abarcar toda la empresa."}
+            )
 
 
 def rol_de(usuario) -> str | None:

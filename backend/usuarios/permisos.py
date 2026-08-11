@@ -15,6 +15,7 @@ evita.
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from .models import PerfilUsuario, Rol, rol_de
+from .tenancy import scope_de
 
 
 class IsAdminDeArea(BasePermission):
@@ -29,7 +30,12 @@ class IsAdminDeArea(BasePermission):
         if usuario.is_superuser:
             return True
         perfil = getattr(usuario, "perfil", None)
-        return bool(usuario.is_staff and perfil and perfil.es_admin_de_area)
+        return bool(
+            usuario.is_staff
+            and perfil
+            and perfil.es_admin_de_area
+            and scope_de(usuario) is not None
+        )
 
 
 EsAdministrador = IsAdminDeArea
@@ -52,7 +58,7 @@ class PermisoPorRol(BasePermission):
             return False
 
         if request.method in SAFE_METHODS:
-            return True
+            return scope_de(request.user) is not None
 
         permitido = rol_de(request.user) in self.roles_escritura
 
@@ -156,7 +162,11 @@ class PermisoPorArea(BasePermission):
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
-        if request.method in SAFE_METHODS or request.user.is_superuser:
+        if request.user.is_superuser:
+            return True
+        if scope_de(request.user) is None:
+            return False
+        if request.method in SAFE_METHODS:
             return True
         perfil = getattr(request.user, "perfil", None)
         return bool(
@@ -191,6 +201,20 @@ class EscribeMRQ(PermisoPorArea):
         PerfilUsuario.Area.BODEGA,
     )
     message = "Tu área no puede crear o modificar solicitudes de materiales."
+
+
+class PuedeVerAuditoria(BasePermission):
+    message = "Solo Calidad o Administración pueden consultar la auditoría."
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.user.is_superuser:
+            return True
+        return scope_de(request.user) is not None and rol_de(request.user) in (
+            Rol.CALIDAD,
+            Rol.ADMIN,
+        )
 
 
 class EscribeMantenimiento(PermisoPorArea):

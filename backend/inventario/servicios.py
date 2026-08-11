@@ -31,7 +31,7 @@ def _notificar_area(area, *, tipo, titulo, mensaje, documento_tipo, documento_id
     ])
 
 
-def actualizar_alertas_inventario():
+def _actualizar_alertas_inventario_legacy():
     from datetime import timedelta
     from django.utils import timezone
     from .models import Alerta, Insumo
@@ -58,6 +58,60 @@ def actualizar_alertas_inventario():
     return nuevas
 
 
+def actualizar_alertas_inventario():
+    """Recalcula alertas por sucursal, sin mezclar saldos entre tenants."""
+    from datetime import timedelta
+
+    from usuarios.models import Sucursal
+    from .models import Alerta, Insumo
+
+    tipos = ["stock_minimo", "punto_reposicion", "proximo_vencer", "cuarentena_atrasada"]
+    Alerta.objects.filter(tipo__in=tipos, activa=True).update(
+        activa=False, resuelta_en=timezone.now()
+    )
+    nuevas = []
+    for insumo in Insumo.objects.filter(activo=True):
+        for sucursal in Sucursal.objects.filter(empresa_id=insumo.empresa_id):
+            existencias = Existencia.objects.select_related("lote").filter(
+                lote__insumo=insumo, lote__sucursal=sucursal
+            )
+            disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
+            if insumo.stock_minimo > 0 and disponible < insumo.stock_minimo:
+                nuevas.append(Alerta(
+                    sucursal=sucursal, tipo="stock_minimo",
+                    severidad=Alerta.Severidad.CRITICA, insumo=insumo,
+                    mensaje=f"Stock disponible {disponible}, bajo mínimo {insumo.stock_minimo}.",
+                ))
+            elif insumo.punto_reposicion > 0 and disponible <= insumo.punto_reposicion:
+                nuevas.append(Alerta(
+                    sucursal=sucursal, tipo="punto_reposicion",
+                    severidad=Alerta.Severidad.ADVERTENCIA, insumo=insumo,
+                    mensaje=f"Stock disponible {disponible}, alcanzó el punto de reposición {insumo.punto_reposicion}.",
+                ))
+    limite = timezone.localdate() + timedelta(days=30)
+    for lote in LoteInventario.objects.filter(
+        activo=True, vencimiento__isnull=False, vencimiento__lte=limite
+    ):
+        nuevas.append(Alerta(
+            sucursal=lote.sucursal, tipo="proximo_vencer",
+            severidad=Alerta.Severidad.ADVERTENCIA, lote=lote, insumo=lote.insumo,
+            mensaje=f"Lote {lote.codigo} vence el {lote.vencimiento}.",
+        ))
+    umbral = timezone.now() - timedelta(hours=48)
+    inspecciones = InspeccionMaterial.objects.filter(
+        estado=InspeccionMaterial.Estado.PENDIENTE, creada_en__lt=umbral
+    ).select_related("lote__insumo", "lote__sucursal")
+    for inspeccion in inspecciones:
+        nuevas.append(Alerta(
+            sucursal=inspeccion.lote.sucursal, tipo="cuarentena_atrasada",
+            severidad=Alerta.Severidad.CRITICA, lote=inspeccion.lote,
+            insumo=inspeccion.lote.insumo,
+            mensaje=f"Lote {inspeccion.lote.codigo} lleva más de 48 horas en cuarentena.",
+        ))
+    Alerta.objects.bulk_create(nuevas)
+    return nuevas
+
+
 @transaction.atomic
 def decidir_solicitud_compra(*, solicitud, aprobador, decision, comentario=""):
     from .models import SolicitudCompra
@@ -70,6 +124,7 @@ def decidir_solicitud_compra(*, solicitud, aprobador, decision, comentario=""):
     if decision not in Aprobacion.Decision.values:
         raise ValidationError("La decisión no es válida.")
     Aprobacion.objects.create(
+        sucursal=solicitud.sucursal,
         documento_tipo="inventario.SolicitudCompra", documento_id=solicitud.pk,
         aprobador=aprobador, decision=decision, comentario=comentario,
     )
@@ -927,19 +982,23 @@ def ejecutar_mrp_semana(*, semana, usuario):
             fechas[insumo_id] = min(fechas.get(insumo_id, fecha), fecha)
 
     ejecucion = EjecucionMRP.objects.create(
+        sucursal=semana.sucursal,
         fecha_corte=semana.fecha_inicio,
         horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
         ejecutada_por=usuario,
         parametros={"semana": semana.pk, "codigo": semana.codigo},
     )
     for insumo_id, necesidad_bruta in bruta.items():
-        existencias = Existencia.objects.select_related("lote").filter(lote__insumo_id=insumo_id)
+        existencias = Existencia.objects.select_related("lote").filter(
+            lote__insumo_id=insumo_id, lote__sucursal=semana.sucursal
+        )
         disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
         programadas = sum(
             (
                 d.cantidad - d.cantidad_recibida
                 for d in DetalleOrdenCompra.objects.filter(
                     insumo_id=insumo_id,
+                    orden__bodega_entrega__sucursal=semana.sucursal,
                     orden__estado__in=[OrdenCompra.Estado.APROBADA, OrdenCompra.Estado.ENVIADA, OrdenCompra.Estado.PARCIAL],
                 )
             ),
@@ -1006,6 +1065,7 @@ def crear_solicitud_desde_mrp(*, ejecucion, usuario, area=None):
     perfil = getattr(usuario, "perfil", None)
 
     solicitud = SolicitudCompra.objects.create(
+        sucursal=ejecucion.sucursal,
         numero=f"SC-MRP-{ejecucion.pk}",
         area=area or (perfil.area if perfil else PerfilUsuario.Area.BODEGA),
         solicitante=usuario,

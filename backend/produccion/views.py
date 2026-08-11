@@ -13,6 +13,12 @@ from rest_framework.response import Response
 from maestros import recetas
 from maestros.models import Especificacion, Producto, Receta, Silo
 from usuarios.permisos import EscribeProduccion
+from usuarios.tenancy import (
+    QuerysetTenantMixin,
+    SucursalTenantViewSetMixin,
+    filtrar_por_scope,
+    scope_de,
+)
 
 from . import dominio
 from .models import (
@@ -30,12 +36,14 @@ from .serializers import (
 )
 
 
-class LoteViewSet(viewsets.ModelViewSet):
+class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
     # `prefetch_related` trae los análisis de todos los lotes en una sola
     # consulta. Sin esto, calcular la calidad de un listado dispararía una
     # consulta por lote.
     queryset = (
-        Lote.objects.select_related("producto", "producto__mandante")
+        Lote.objects.select_related("sucursal", "producto", "producto__mandante")
         .prefetch_related("analisis")
     )
     serializer_class = LoteSerializer
@@ -56,7 +64,12 @@ class LoteViewSet(viewsets.ModelViewSet):
         contexto = super().get_serializer_context()
         # Las especificaciones se cargan una vez y las comparten todos los
         # lotes del listado.
-        contexto["especificaciones"] = list(Especificacion.objects.all())
+        contexto["especificaciones"] = list(
+            filtrar_por_scope(
+                Especificacion.objects.all(), self.request.user,
+                campo_empresa="producto__mandante__empresa_id",
+            )
+        )
         return contexto
 
     def get_queryset(self):
@@ -118,7 +131,7 @@ class LoteViewSet(viewsets.ModelViewSet):
             respuesta = super().create(request, *args, **kwargs)
 
             if lineas:
-                lote = Lote.objects.get(pk=respuesta.data["id"])
+                lote = self.get_queryset().get(pk=respuesta.data["id"])
                 creados = self._crear_asignaciones(lote, lineas)
 
                 if isinstance(creados, Response):
@@ -234,12 +247,18 @@ class LoteViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        producto = get_object_or_404(Producto, pk=producto_id)
+        producto = get_object_or_404(
+            filtrar_por_scope(
+                Producto.objects.all(), request.user,
+                campo_empresa="mandante__empresa_id",
+            ),
+            pk=producto_id,
+        )
 
         # El correlativo distingue dos lotes del mismo producto el mismo día.
         # Se cuenta lo que ya existe en vez de preguntarlo: pedirle al
         # operador un dato que el sistema tiene es como se repite un código.
-        anteriores = Lote.objects.filter(producto=producto, fecha=fecha).count()
+        anteriores = self.get_queryset().filter(producto=producto, fecha=fecha).count()
         correlativo = anteriores + 1
 
         codigo = dominio.generar_codigo_lote(fecha, producto.codigo, correlativo)
@@ -614,7 +633,9 @@ class LoteViewSet(viewsets.ModelViewSet):
         ]
 
 
-class AnalisisViewSet(viewsets.ModelViewSet):
+class AnalisisViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
     queryset = Analisis.objects.select_related("lote")
     serializer_class = AnalisisSerializer
     permission_classes = [EscribeProduccion]
@@ -639,10 +660,13 @@ def resumen(request):
     El cumplimiento de calidad viaja SIEMPRE con su cobertura: un 90 % sobre 3
     lotes de 40 no es una buena noticia, y el panel tiene que poder decirlo.
     """
-    lotes = (
+    lotes = filtrar_por_scope(
         Lote.objects.select_related("producto", "producto__mandante")
         .prefetch_related("analisis")
-        .exclude(estado=Lote.Estado.ANULADO)
+        .exclude(estado=Lote.Estado.ANULADO),
+        request.user,
+        campo_sucursal="sucursal_id",
+        campo_empresa="sucursal__empresa_id",
     )
 
     desde = request.query_params.get("desde")
@@ -654,7 +678,12 @@ def resumen(request):
         lotes = lotes.filter(fecha__lte=hasta)
 
     lotes = list(lotes)
-    especificaciones = list(Especificacion.objects.all())
+    especificaciones = list(
+        filtrar_por_scope(
+            Especificacion.objects.all(), request.user,
+            campo_empresa="producto__mandante__empresa_id",
+        )
+    )
 
     por_resultado = Counter()
     kg_por_producto = defaultdict(float)
@@ -713,7 +742,9 @@ def resumen(request):
     )
 
 
-class ControlProcesoViewSet(viewsets.ModelViewSet):
+class ControlProcesoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
     """
     Control de proceso de un equipo para un lote, con el PCC 1 de uperización.
 
@@ -726,6 +757,12 @@ class ControlProcesoViewSet(viewsets.ModelViewSet):
     )
     serializer_class = ControlProcesoSerializer
     permission_classes = [EscribeProduccion]
+
+    def perform_create(self, serializer):
+        serializer.save(operador=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -746,7 +783,9 @@ class ControlProcesoViewSet(viewsets.ModelViewSet):
         return consulta
 
 
-class ControlProcesoLecturaViewSet(viewsets.ModelViewSet):
+class ControlProcesoLecturaViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "control__lote__sucursal_id"
+    tenant_lookup_empresa = "control__lote__sucursal__empresa_id"
     queryset = ControlProcesoLectura.objects.select_related("control")
     serializer_class = ControlProcesoLecturaSerializer
     permission_classes = [EscribeProduccion]
@@ -788,7 +827,10 @@ def catalogos_inocuidad(request):
         torre —no en una envasadora—, y si el filtro viviera en el cliente
         sería una segunda copia de esa regla, libre de discrepar.
         """
-        consulta = Equipo.objects.filter(activo=True)
+        consulta = filtrar_por_scope(
+            Equipo.objects.filter(activo=True), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
 
         if tipos:
             consulta = consulta.filter(tipo__in=tipos)

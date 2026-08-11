@@ -66,7 +66,9 @@ def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
     return ejecucion
 
 
-def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
+def genealogia_lote(
+    lote_id, direccion, profundidad_maxima=12, sucursal_id=None, empresa_id=None
+):
     from produccion.models import Lote
 
     if direccion not in {"atras", "adelante"}:
@@ -79,7 +81,12 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
 
     while frontera:
         actual_id, profundidad = frontera.pop(0)
-        lote = Lote.objects.select_related("producto").get(pk=actual_id)
+        lotes = Lote.objects.select_related("producto")
+        if sucursal_id is not None:
+            lotes = lotes.filter(sucursal_id=sucursal_id)
+        elif empresa_id is not None:
+            lotes = lotes.filter(sucursal__empresa_id=empresa_id)
+        lote = lotes.get(pk=actual_id)
         nodos[actual_id] = {
             "id": lote.id,
             "codigo": lote.codigo_lote,
@@ -95,6 +102,8 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
                 entrada.lote
                 for salida in ejecuciones
                 for entrada in salida.ejecucion.entradas.select_related("lote__producto")
+                if (sucursal_id is None or entrada.lote.sucursal_id == sucursal_id)
+                and (empresa_id is None or entrada.lote.sucursal.empresa_id == empresa_id)
             ]
             pares = [(rel.id, actual_id) for rel in relacionados]
         else:
@@ -104,6 +113,8 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
                 for entrada in ejecuciones
                 for salida in entrada.ejecucion.salidas.select_related("lote__producto")
                 if salida.lote_id
+                and (sucursal_id is None or salida.lote.sucursal_id == sucursal_id)
+                and (empresa_id is None or salida.lote.sucursal.empresa_id == empresa_id)
             ]
             pares = [(actual_id, rel.id) for rel in relacionados]
 

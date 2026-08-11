@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from usuarios.models import Sucursal
 
 from . import dominio
 from .models import (
@@ -35,6 +36,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
         model = Recepcion
         fields = [
             "id",
+            "sucursal",
             "carga_recoleccion",
             "fecha",
             "hora",
@@ -125,6 +127,10 @@ class RecepcionSerializer(serializers.ModelSerializer):
         return controles
 
     def validate(self, datos):
+        sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
+        if sucursal is not None and not isinstance(sucursal, Sucursal):
+            sucursal = Sucursal.objects.get(pk=sucursal)
+            datos["sucursal"] = sucursal
         carga = datos.get(
             "carga_recoleccion", getattr(self.instance, "carga_recoleccion", None)
         )
@@ -139,6 +145,12 @@ class RecepcionSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"modulo": "El módulo no coincide con la carga de Recolección."}
                 )
+
+        vehiculo = datos.get("vehiculo", getattr(self.instance, "vehiculo", None))
+        if sucursal and vehiculo and sucursal.pk != vehiculo.sucursal_id:
+            raise serializers.ValidationError(
+                {"vehiculo": "El vehículo debe pertenecer a la sucursal."}
+            )
 
         estado = datos.get("estado", getattr(self.instance, "estado", None))
         motivo = datos.get("motivo", getattr(self.instance, "motivo", "") or "")

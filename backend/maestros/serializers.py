@@ -1,5 +1,8 @@
 from rest_framework import serializers
 
+from usuarios.models import Empresa, Sucursal
+from usuarios.tenancy import scope_de
+
 from .catalogos import PARAMETROS
 from .models import (
     DocumentoLiberacion,
@@ -12,6 +15,42 @@ from .models import (
 )
 
 
+def _scope_del_contexto(serializer):
+    request = serializer.context.get("request")
+    return scope_de(getattr(request, "user", None)) if request else None
+
+
+def _restringir_empresa(serializer, campo="empresa"):
+    scope = _scope_del_contexto(serializer)
+    queryset = Empresa.objects.filter(activa=True)
+    if scope is None:
+        queryset = queryset.none()
+    elif not scope.es_global:
+        queryset = queryset.filter(pk=scope.empresa_id)
+    serializer.fields[campo].queryset = queryset
+
+
+def _restringir_sucursal(serializer, campo="sucursal"):
+    scope = _scope_del_contexto(serializer)
+    queryset = Sucursal.objects.filter(activa=True)
+    if scope is None:
+        queryset = queryset.none()
+    elif not scope.es_global:
+        queryset = queryset.filter(empresa_id=scope.empresa_id)
+        if scope.es_sucursal:
+            queryset = queryset.filter(pk=scope.sucursal_id)
+    serializer.fields[campo].queryset = queryset
+
+
+def _restringir_relacion_empresa(serializer, campo, queryset, lookup):
+    scope = _scope_del_contexto(serializer)
+    if scope is None:
+        queryset = queryset.none()
+    elif not scope.es_global:
+        queryset = queryset.filter(**{lookup: scope.empresa_id})
+    serializer.fields[campo].queryset = queryset
+
+
 class MandanteSerializer(serializers.ModelSerializer):
     codigo_cliente_etiqueta = serializers.CharField(
         source="get_codigo_cliente_display", read_only=True
@@ -21,11 +60,16 @@ class MandanteSerializer(serializers.ModelSerializer):
         model = Mandante
         fields = [
             "id",
+            "empresa",
             "nombre",
             "codigo_cliente",
             "codigo_cliente_etiqueta",
             "activo",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_empresa(self)
 
 
 class ProductoSerializer(serializers.ModelSerializer):
@@ -59,6 +103,12 @@ class ProductoSerializer(serializers.ModelSerializer):
             "variante",
             "activo",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_relacion_empresa(
+            self, "mandante", Mandante.objects.all(), "empresa_id"
+        )
 
     def get_sku_legible(self, producto):
         """
@@ -109,6 +159,7 @@ class EquipoSerializer(serializers.ModelSerializer):
         model = Equipo
         fields = [
             "id",
+            "sucursal",
             "codigo",
             "nombre",
             "tipo",
@@ -118,6 +169,10 @@ class EquipoSerializer(serializers.ModelSerializer):
             "activo",
         ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_sucursal(self)
+
 
 class SiloSerializer(serializers.ModelSerializer):
     tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
@@ -126,7 +181,13 @@ class SiloSerializer(serializers.ModelSerializer):
         # Sin campo de ocupación: es un saldo que se calcula desde el libro de
         # movimientos. Vive en /api/recepcion/ocupacion/.
         model = Silo
-        fields = ["id", "codigo", "tipo", "tipo_etiqueta", "capacidad_l", "activo"]
+        fields = [
+            "id", "sucursal", "codigo", "tipo", "tipo_etiqueta", "capacidad_l", "activo"
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_sucursal(self)
 
 
 class VehiculoSerializer(serializers.ModelSerializer):
@@ -134,6 +195,7 @@ class VehiculoSerializer(serializers.ModelSerializer):
         model = Vehiculo
         fields = [
             "id",
+            "sucursal",
             "numero",
             "placa",
             "tipo",
@@ -143,6 +205,10 @@ class VehiculoSerializer(serializers.ModelSerializer):
             "chofer_pm",
             "activo",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_sucursal(self)
 
 
 class EspecificacionSerializer(serializers.ModelSerializer):
@@ -162,6 +228,15 @@ class EspecificacionSerializer(serializers.ModelSerializer):
             "fuente",
             "es_vigente",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_relacion_empresa(
+            self,
+            "producto",
+            Producto.objects.all(),
+            "mandante__empresa_id",
+        )
 
     def get_es_vigente(self, especificacion) -> bool:
         """
@@ -226,6 +301,7 @@ class DocumentoLiberacionSerializer(serializers.ModelSerializer):
         model = DocumentoLiberacion
         fields = [
             "id",
+            "empresa",
             "codigo",
             "area",
             "area_etiqueta",
@@ -240,6 +316,11 @@ class DocumentoLiberacionSerializer(serializers.ModelSerializer):
             "orden",
             "activo",
         ]
+        extra_kwargs = {"codigo": {"required": False, "default": ""}}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_empresa(self)
 
     def get_campos(self, documento):
         """Cuántos campos tiene el formulario. Cero significa solo atestación."""
@@ -251,6 +332,9 @@ class DocumentoLiberacionSerializer(serializers.ModelSerializer):
         reglas. Sin esto, la API podría guardar una plantilla que el admin
         rechaza, y la pantalla la dibujaría a medias sin avisar a nadie.
         """
+        empresa = datos.get("empresa")
+        if empresa is not None and not isinstance(empresa, Empresa):
+            datos["empresa"] = Empresa.objects.get(pk=empresa)
         instancia = DocumentoLiberacion(**{**self._datos_actuales(), **datos})
         instancia.clean()
         return datos

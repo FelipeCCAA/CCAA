@@ -34,6 +34,7 @@ from django.db import models
 
 from maestros.models import DocumentoLiberacion
 from produccion.models import Lote
+from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 
 class RegistroCalidad(models.Model):
@@ -260,6 +261,14 @@ class RegistroEquipo(models.Model):
         COMPLETADO = "completado", "Completado"
         OBSERVADO = "observado", "Observado"
 
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal",
+        on_delete=models.PROTECT,
+        related_name="registros_equipo_planta",
+        default=sucursal_predeterminada_pruebas,
+        verbose_name="Sucursal",
+    )
+
     documento = models.ForeignKey(
         DocumentoLiberacion,
         on_delete=models.PROTECT,
@@ -311,10 +320,21 @@ class RegistroEquipo(models.Model):
             # capturas del mismo aseo conviven y el checklist tomaría
             # cualquiera de las dos.
             models.UniqueConstraint(
-                fields=["documento", "equipo", "fecha", "turno"],
+                fields=["sucursal", "documento", "equipo", "fecha", "turno"],
                 name="registro_equipo_unico_por_periodo",
             )
         ]
+
+    def clean(self):
+        if self.documento_id and self.sucursal_id:
+            if self.documento.empresa_id != self.sucursal.empresa_id:
+                raise ValidationError(
+                    {"documento": "El documento debe pertenecer a la empresa de la sucursal."}
+                )
+        if self.equipo_id and self.sucursal_id and self.equipo.sucursal_id != self.sucursal_id:
+            raise ValidationError(
+                {"equipo": "El equipo debe pertenecer a la sucursal del registro."}
+            )
 
     def __str__(self):
         donde = self.equipo or "planta"

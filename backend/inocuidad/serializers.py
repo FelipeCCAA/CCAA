@@ -1,5 +1,9 @@
 from rest_framework import serializers
 
+from maestros.models import Equipo
+from produccion.models import Lote
+from usuarios.tenancy import filtrar_por_scope
+
 from .models import MonitoreoPPRO, PproLectura
 
 
@@ -11,6 +15,16 @@ class PproLecturaSerializer(serializers.ModelSerializer):
     class Meta:
         model = PproLectura
         fields = ["id", "monitoreo", "hora", "resultado", "resultado_etiqueta", "detalle"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request:
+            self.fields["monitoreo"].queryset = filtrar_por_scope(
+                MonitoreoPPRO.objects.all(), request.user,
+                campo_sucursal="lote__sucursal_id",
+                campo_empresa="lote__sucursal__empresa_id",
+            )
 
 
 class MonitoreoPPROSerializer(serializers.ModelSerializer):
@@ -57,4 +71,28 @@ class MonitoreoPPROSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "equipo": {"required": False, "default": None},
             "turno": {"required": False, "default": ""},
+            "operador": {"read_only": True},
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if not request:
+            return
+        self.fields["lote"].queryset = filtrar_por_scope(
+            Lote.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        self.fields["equipo"].queryset = filtrar_por_scope(
+            Equipo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+
+    def validate(self, datos):
+        lote = datos.get("lote", getattr(self.instance, "lote", None))
+        equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
+        if lote and equipo and lote.sucursal_id != equipo.sucursal_id:
+            raise serializers.ValidationError(
+                {"equipo": "El equipo debe pertenecer a la sucursal del lote."}
+            )
+        return datos

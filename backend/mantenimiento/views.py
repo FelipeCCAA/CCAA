@@ -5,6 +5,7 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from usuarios.permisos import EscribeMantenimiento
+from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope
 from .models import FallaEquipo, OrdenTrabajo, PlanPreventivo, RepuestoUtilizado
 from .serializers import (
     FallaEquipoSerializer, OrdenTrabajoSerializer, PlanPreventivoSerializer,
@@ -13,22 +14,33 @@ from .serializers import (
 from .servicios import transicionar_orden
 
 
-class PlanPreventivoViewSet(viewsets.ModelViewSet):
+class PlanPreventivoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "equipo__sucursal_id"
+    tenant_lookup_empresa = "equipo__sucursal__empresa_id"
+    tenant_relation_fields = {"equipo": ("sucursal_id", "sucursal__empresa_id")}
     queryset = PlanPreventivo.objects.select_related("equipo")
     serializer_class = PlanPreventivoSerializer
     permission_classes = [EscribeMantenimiento]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
 
-class OrdenTrabajoViewSet(viewsets.ModelViewSet):
+class OrdenTrabajoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
+    tenant_relation_fields = {
+        "equipo": ("sucursal_id", "sucursal__empresa_id"),
+        "plan": ("equipo__sucursal_id", "equipo__sucursal__empresa_id"),
+        "responsable": ("perfil__sucursal_id", "perfil__empresa_id"),
+    }
     serializer_class = OrdenTrabajoSerializer
     permission_classes = [EscribeMantenimiento]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        queryset = OrdenTrabajo.objects.select_related(
+        queryset = filtrar_por_scope(OrdenTrabajo.objects.select_related(
             "equipo", "plan", "responsable", "creada_por"
-        ).prefetch_related("fallas", "repuestos__insumo")
+        ).prefetch_related("fallas", "repuestos__insumo"), self.request.user,
+            campo_sucursal="equipo__sucursal_id",
+            campo_empresa="equipo__sucursal__empresa_id",
+        )
         estado = self.request.query_params.get("estado")
         equipo = self.request.query_params.get("equipo")
         if estado:
@@ -68,7 +80,13 @@ class OrdenTrabajoViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(orden).data)
 
 
-class FallaEquipoViewSet(viewsets.ModelViewSet):
+class FallaEquipoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "equipo__sucursal_id"
+    tenant_lookup_empresa = "equipo__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "equipo": ("sucursal_id", "sucursal__empresa_id"),
+        "orden": ("equipo__sucursal_id", "equipo__sucursal__empresa_id"),
+    }
     queryset = FallaEquipo.objects.select_related("equipo", "orden", "reportada_por")
     serializer_class = FallaEquipoSerializer
     permission_classes = [EscribeMantenimiento]
@@ -78,7 +96,12 @@ class FallaEquipoViewSet(viewsets.ModelViewSet):
         serializer.save(reportada_por=self.request.user)
 
 
-class RepuestoUtilizadoViewSet(viewsets.ModelViewSet):
+class RepuestoUtilizadoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "orden__equipo__sucursal_id"
+    tenant_lookup_empresa = "orden__equipo__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "orden": ("equipo__sucursal_id", "equipo__sucursal__empresa_id")
+    }
     queryset = RepuestoUtilizado.objects.select_related("orden", "insumo")
     serializer_class = RepuestoUtilizadoSerializer
     permission_classes = [EscribeMantenimiento]
@@ -88,14 +111,26 @@ class RepuestoUtilizadoViewSet(viewsets.ModelViewSet):
 @api_view(["GET"])
 def resumen(request):
     hoy = timezone.localdate()
+    ordenes = filtrar_por_scope(
+        OrdenTrabajo.objects.all(), request.user,
+        campo_sucursal="equipo__sucursal_id", campo_empresa="equipo__sucursal__empresa_id",
+    )
+    planes = filtrar_por_scope(
+        PlanPreventivo.objects.all(), request.user,
+        campo_sucursal="equipo__sucursal_id", campo_empresa="equipo__sucursal__empresa_id",
+    )
+    fallas = filtrar_por_scope(
+        FallaEquipo.objects.all(), request.user,
+        campo_sucursal="equipo__sucursal_id", campo_empresa="equipo__sucursal__empresa_id",
+    )
     return Response({
-        "ordenes_abiertas": OrdenTrabajo.objects.exclude(
+        "ordenes_abiertas": ordenes.exclude(
             estado__in=[OrdenTrabajo.Estado.CERRADA, OrdenTrabajo.Estado.CANCELADA]
         ).count(),
-        "planes_vencidos": PlanPreventivo.objects.filter(
+        "planes_vencidos": planes.filter(
             activo=True, proxima_ejecucion__lt=hoy
         ).count(),
-        "fallas_criticas_abiertas": FallaEquipo.objects.filter(
+        "fallas_criticas_abiertas": fallas.filter(
             severidad=FallaEquipo.Severidad.CRITICA, cerrada_en__isnull=True
         ).count(),
     })

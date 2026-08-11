@@ -6,13 +6,20 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from usuarios.permisos import EscribeRecepcion
+from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin
 
 from .models import CargaModulo, ParadaRuta, Recoleccion, RutaRecoleccion
 from .serializers import ParadaRutaSerializer, RecoleccionSerializer, RutaRecoleccionSerializer, CargaModuloSerializer
 from .services import agregar_carga, cerrar_ruta
 
 
-class RutaRecoleccionViewSet(viewsets.ModelViewSet):
+class RutaRecoleccionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "vehiculo__sucursal_id"
+    tenant_lookup_empresa = "vehiculo__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "vehiculo": ("sucursal_id", "sucursal__empresa_id"),
+        "conductor": ("perfil__sucursal_id", "perfil__empresa_id"),
+    }
     queryset = RutaRecoleccion.objects.select_related(
         "vehiculo", "conductor", "creada_por"
     ).prefetch_related(
@@ -33,13 +40,23 @@ class RutaRecoleccionViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(ruta).data)
 
 
-class ParadaRutaViewSet(viewsets.ModelViewSet):
+class ParadaRutaViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "ruta__vehiculo__sucursal_id"
+    tenant_lookup_empresa = "ruta__vehiculo__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "ruta": ("vehiculo__sucursal_id", "vehiculo__sucursal__empresa_id")
+    }
     queryset = ParadaRuta.objects.select_related("ruta")
     serializer_class = ParadaRutaSerializer
     permission_classes = [EscribeRecepcion]
 
 
-class RecoleccionViewSet(viewsets.ModelViewSet):
+class RecoleccionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "parada__ruta__vehiculo__sucursal_id"
+    tenant_lookup_empresa = "parada__ruta__vehiculo__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "parada": ("ruta__vehiculo__sucursal_id", "ruta__vehiculo__sucursal__empresa_id")
+    }
     queryset = Recoleccion.objects.select_related(
         "parada__ruta__vehiculo", "operador"
     ).prefetch_related("cargas")
@@ -87,7 +104,9 @@ class RecoleccionViewSet(viewsets.ModelViewSet):
         )
 
 
-class CargaModuloViewSet(viewsets.ReadOnlyModelViewSet):
+class CargaModuloViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "recoleccion__parada__ruta__vehiculo__sucursal_id"
+    tenant_lookup_empresa = "recoleccion__parada__ruta__vehiculo__sucursal__empresa_id"
     queryset = CargaModulo.objects.select_related(
         "recoleccion__parada__ruta__vehiculo", "recepcion_planta"
     )

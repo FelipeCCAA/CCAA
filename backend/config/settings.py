@@ -280,7 +280,7 @@ REST_FRAMEWORK = {
     # en su vista (login y recuperación de contraseña), nunca al revés: si un
     # endpoint nuevo olvida declarar permisos, queda cerrado en vez de abierto.
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "usuarios.authentication.TokenAuthenticationConScope",
         # Sesion tambien, para poder navegar la API desde el navegador
         # estando logueado en /admin/.
         "rest_framework.authentication.SessionAuthentication",

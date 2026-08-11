@@ -4,6 +4,9 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from usuarios.permisos import EscribeProduccion
+from usuarios.tenancy import (
+    QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope, scope_de,
+)
 from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, SalidaProceso
 from .serializers import (
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
@@ -26,7 +29,11 @@ class EtapaProcesoViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
 
-class EjecucionProcesoViewSet(viewsets.ModelViewSet):
+class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
+    tenant_relation_fields = {
+        "sucursal": ("pk", "empresa_id"),
+        "equipo": ("sucursal_id", "sucursal__empresa_id"),
+    }
     serializer_class = EjecucionProcesoSerializer
     permission_classes = [EscribeProduccion]
     http_method_names = ["get", "post", "patch", "head", "options"]
@@ -43,16 +50,23 @@ class EjecucionProcesoViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(estado=estado)
         if etapa:
             queryset = queryset.filter(etapa_id=etapa)
-        perfil = getattr(self.request.user, "perfil", None)
-        if not self.request.user.is_superuser and perfil and perfil.sucursal_id:
-            queryset = queryset.filter(sucursal_id=perfil.sucursal_id)
-        return queryset
+        return filtrar_por_scope(
+            queryset, self.request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
 
     def perform_create(self, serializer):
-        perfil = getattr(self.request.user, "perfil", None)
+        scope = scope_de(self.request.user, requerido=True)
+        sucursal = serializer.validated_data.get("sucursal")
+        if scope.es_sucursal:
+            from usuarios.models import Sucursal
+            sucursal = Sucursal.objects.get(pk=scope.sucursal_id)
+        if sucursal is None:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"sucursal": "Debes indicar una sucursal permitida."})
         serializer.save(
             responsable=self.request.user,
-            sucursal=getattr(perfil, "sucursal", None),
+            sucursal=sucursal,
         )
 
     def perform_update(self, serializer):
@@ -81,14 +95,26 @@ class EjecucionProcesoViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(ejecucion).data)
 
 
-class EntradaProcesoViewSet(viewsets.ModelViewSet):
+class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
+        "lote": ("sucursal_id", "sucursal__empresa_id"),
+    }
     queryset = EntradaProceso.objects.select_related("ejecucion", "lote__producto")
     serializer_class = EntradaProcesoSerializer
     permission_classes = [EscribeProduccion]
     http_method_names = ["get", "post", "head", "options"]
 
 
-class SalidaProcesoViewSet(viewsets.ModelViewSet):
+class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
+        "lote": ("sucursal_id", "sucursal__empresa_id"),
+    }
     queryset = SalidaProceso.objects.select_related("ejecucion", "lote__producto")
     serializer_class = SalidaProcesoSerializer
     permission_classes = [EscribeProduccion]
@@ -109,10 +135,14 @@ def trazabilidad(request, lote):
 
     direccion = request.query_params.get("direccion", "atras")
 
+    lotes = filtrar_por_scope(
+        Lote.objects.all(), request.user,
+        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    )
     if str(lote).isdigit():
-        encontrado = Lote.objects.filter(pk=int(lote)).first()
+        encontrado = lotes.filter(pk=int(lote)).first()
     else:
-        encontrado = Lote.objects.filter(codigo_lote=lote).first()
+        encontrado = lotes.filter(codigo_lote=lote).first()
 
     if encontrado is None:
         return Response(
@@ -121,7 +151,12 @@ def trazabilidad(request, lote):
         )
 
     try:
-        datos = genealogia_lote(encontrado.pk, direccion)
+        scope = scope_de(request.user, requerido=True)
+        datos = genealogia_lote(
+            encontrado.pk, direccion,
+            sucursal_id=scope.sucursal_id if scope.es_sucursal else None,
+            empresa_id=scope.empresa_id if scope.es_empresa else None,
+        )
     except ValueError as error:
         return Response({"error": str(error)}, status=400)
 
