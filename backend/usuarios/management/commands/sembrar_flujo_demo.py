@@ -35,6 +35,7 @@ from estandarizacion.dominio import Leche, calcular_mezcla
 from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Especificacion, Silo, Vehiculo
 from produccion.dominio import generar_codigo_lote
+from produccion import servicios as servicios_produccion
 from produccion.models import Analisis, Lote
 from recepcion import dominio as dominio_recepcion
 from recepcion.models import MovimientoSilo, Recepcion
@@ -317,27 +318,19 @@ class Command(BaseCommand):
             fecha=self.fecha, sku=producto.codigo, correlativo=1
         )
 
-        lote = Lote.objects.create(
-            sucursal=contexto["sucursal"],
-            codigo_lote=codigo,
+        # El lote **nace del vale**, y por eso no elige silo: quien consumió la
+        # leche fue el vale al transferirse, y lo que hace el lote es declarar a
+        # qué producto va esa mezcla ya estandarizada. El servicio comprueba que
+        # el vale esté liberado y que no se saque más de lo preparado.
+        lote = servicios_produccion.abrir_lote_desde_vale(
+            vale=vale,
             producto=producto,
+            codigo_lote=codigo,
             fecha=self.fecha,
+            litros=vale.volumen,
             linea="E1",
             turno="A",
             hora_inicio=time(8, 0),
-            estado=Lote.Estado.EN_PROCESO,
-        )
-
-        # La leche sale del silo que llenó el vale: es lo que hace que el saldo
-        # cuadre con lo que la pantalla de silos muestra.
-        MovimientoSilo.objects.create(
-            silo=vale.silo_destino,
-            tipo=MovimientoSilo.Tipo.SALIDA,
-            litros=vale.volumen,
-            fecha_hora=timezone.now(),
-            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
-            origen_id=lote.id,
-            motivo=f"Asignación de leche al lote {lote.codigo_lote}",
         )
 
         # Rendimiento aproximado de leche a polvo: unos 8,5 kg por cada 100 L.

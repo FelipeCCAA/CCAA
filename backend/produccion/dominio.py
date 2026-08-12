@@ -517,3 +517,69 @@ def evaluar_pcc1(control: Any, lecturas: Iterable[Any] = ()) -> EvaluacionPcc1:
         incumplimientos=incumplimientos,
         sin_lecturas=not propias,
     )
+
+
+@dataclass(frozen=True)
+class DecisionApertura:
+    """Si de este vale puede nacer un lote, y por qué no."""
+
+    permitido: bool
+    bloqueos: tuple[str, ...] = ()
+    litros_disponibles: Decimal = Decimal("0")
+
+
+def puede_abrir_lote_desde(vale, litros, consumido_por_otros_lotes=0) -> DecisionApertura:
+    """
+    ¿Se puede abrir un lote con la leche de este vale?
+
+    **Quien consume el silo es el vale, no el lote.** La leche entra al silo de
+    destino cuando el vale se transfiere, y ahí deja de ser leche cruda: ya está
+    estandarizada al RC que un producto pide. Lo que hace el lote después es
+    declarar **a qué producto** va esa leche.
+
+    De ahí salen las dos reglas:
+
+    1. **Solo un vale liberado.** Un vale que no llegó a liberarse es uno cuyo
+       RC medido no cumple —está en corrección, o se anuló—. Abrir un lote con
+       esa leche es empezar a secar una mezcla que la propia planta declaró
+       fuera de objetivo.
+
+    2. **No se puede sacar más de lo que el vale preparó.** Un vale puede
+       alimentar varias corridas —veinte mil litros no se secan de una vez— pero
+       la suma no puede pasar del volumen preparado. Sin este tope, dos lotes
+       del mismo vale dirían tener leche que nunca existió, y el rendimiento de
+       los dos saldría mal.
+
+    Devuelve motivos, no un booleano, como el resto de las decisiones.
+    """
+    bloqueos = []
+
+    estado = getattr(vale, "estado", None)
+
+    if estado != "liberado":
+        etiqueta = getattr(vale, "get_estado_display", lambda: estado)()
+        bloqueos.append(
+            f"El vale {getattr(vale, 'codigo', '')} está «{etiqueta}» y no "
+            "liberado: su RC medido no cumple el objetivo, así que esa leche "
+            "todavía no es la de ningún producto."
+        )
+
+    preparado = Decimal(str(getattr(vale, "volumen", 0) or 0))
+    ya_usado = Decimal(str(consumido_por_otros_lotes or 0))
+    disponible = preparado - ya_usado
+
+    pedido = Decimal(str(litros or 0))
+
+    if pedido <= 0:
+        bloqueos.append("Los litros que toma el lote tienen que ser mayores que cero.")
+    elif pedido > disponible:
+        bloqueos.append(
+            f"El vale preparó {preparado} L y ya se usaron {ya_usado}: quedan "
+            f"{disponible} L y se piden {pedido}."
+        )
+
+    return DecisionApertura(
+        permitido=not bloqueos,
+        bloqueos=tuple(bloqueos),
+        litros_disponibles=disponible,
+    )

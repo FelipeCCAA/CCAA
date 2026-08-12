@@ -36,6 +36,9 @@ MODELOS = [
     ("procesos", "EntradaProceso"),
     ("procesos", "EventoProceso"),
     ("procesos", "EjecucionProceso"),
+    # El lote va antes que el vale: `Lote.vale` es PROTECT y el vale no se
+    # puede borrar mientras un lote lo referencie.
+    ("produccion", "Lote"),
     ("estandarizacion", "ValeEstandarizacion"),
     ("recepcion", "MovimientoSilo"),
     ("recepcion", "Recepcion"),
@@ -43,7 +46,6 @@ MODELOS = [
     ("recoleccion", "Recoleccion"),
     ("recoleccion", "ParadaRuta"),
     ("recoleccion", "RutaRecoleccion"),
-    ("produccion", "Lote"),
     ("planificacion", "BloquePlan"),
     ("planificacion", "BalanceDia"),
     ("planificacion", "SemanaPlan"),

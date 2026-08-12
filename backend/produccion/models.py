@@ -79,6 +79,20 @@ class Lote(models.Model):
         related_name="lotes",
         verbose_name="Producto",
     )
+
+    vale = models.ForeignKey(
+        "estandarizacion.ValeEstandarizacion",
+        on_delete=models.PROTECT,
+        related_name="lotes",
+        null=True,
+        blank=True,
+        verbose_name="Vale de estandarización",
+        help_text=(
+            "De qué vale salió la leche de este lote. Quien consume el silo es "
+            "el vale; el lote declara a qué producto va esa leche."
+        ),
+    )
+
     fecha = models.DateField("Fecha de producción")
     linea = models.CharField("Línea", max_length=5, choices=Linea.choices, blank=True)
     turno = models.CharField("Turno", max_length=5, choices=Turno.choices, blank=True)
