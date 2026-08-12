@@ -31,14 +31,13 @@ from produccion.models import (
     Lote,
 )
 from recepcion.models import MovimientoSilo
-from usuarios.models import Sucursal, rol_de
+from usuarios.models import rol_de
 from usuarios.permisos import EscribeCalidad, EscribePlanta
 from usuarios.tenancy import (
     QuerysetTenantMixin,
     SucursalTenantViewSetMixin,
-    exigir_sucursal_permitida,
     filtrar_por_scope,
-    scope_de,
+    sucursal_para_escritura,
 )
 
 from . import dominio
@@ -704,15 +703,12 @@ class RegistroEquipoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         return consulta
 
     def perform_create(self, serializer):
-        scope = scope_de(self.request.user, requerido=True)
-        if scope.es_sucursal:
-            sucursal = Sucursal.objects.get(pk=scope.sucursal_id)
-        else:
-            sucursal = serializer.validated_data.get("sucursal")
-            if sucursal is None:
-                raise PermissionDenied("Debes indicar una sucursal permitida.")
-            exigir_sucursal_permitida(self.request.user, sucursal)
-        self._guardar_firmando(serializer, sucursal=sucursal)
+        self._guardar_firmando(
+            serializer,
+            sucursal=sucursal_para_escritura(
+                self.request.user, serializer.validated_data
+            ),
+        )
 
     def perform_update(self, serializer):
         if "sucursal" in self.request.data:

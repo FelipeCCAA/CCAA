@@ -9,10 +9,9 @@ from rest_framework.response import Response
 
 from maestros.models import Silo
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
-from usuarios.models import Sucursal
 from usuarios.tenancy import (
-    QuerysetTenantMixin, RelacionesTenantMixin, exigir_sucursal_permitida,
-    filtrar_por_scope, scope_de,
+    QuerysetTenantMixin, RelacionesTenantMixin,
+    filtrar_por_scope, sucursal_para_escritura,
 )
 
 from . import dominio
@@ -145,13 +144,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         # Quien registra queda como operador si no se indicó otro: el dato es
         # para auditoría y teclearlo a mano solo lo hace menos fiable.
         extra = {}
-        scope = scope_de(self.request.user, requerido=True)
-        sucursal = serializer.validated_data.get("sucursal")
-        if scope.es_sucursal:
-            sucursal = Sucursal.objects.get(pk=scope.sucursal_id)
-        elif sucursal is None:
-            raise DRFValidationError({"sucursal": "Debes indicar una sucursal permitida."})
-        exigir_sucursal_permitida(self.request.user, sucursal)
+        sucursal = sucursal_para_escritura(self.request.user, serializer.validated_data)
 
         carga = serializer.validated_data.get("carga_recoleccion")
         if carga:

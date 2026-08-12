@@ -390,3 +390,68 @@ class CodigoDeClienteOcupadoTests(TestCase):
         """Uno sin código es uno que todavía no genera SKU, y puede haber varios."""
         self.assertEqual(self._crear("Cliente nuevo", "").status_code, 201)
         self.assertEqual(self._crear("Otro sin código", "").status_code, 201)
+
+
+@override_settings(DJANGO_ENV="development")
+class RegistrarRecepcionTests(TestCase):
+    """
+    El ingreso del camión, que es donde se vio el fallo.
+
+    `RecepcionViewSet.perform_create` resolvía el tenant por su cuenta —una de
+    tres copias a mano de la misma regla— y solo contemplaba el perfil de
+    planta: al superusuario le exigía una sucursal que la pantalla no muestra.
+    Ahora pasa por `sucursal_para_escritura`, igual que el resto.
+
+    Con `DJANGO_ENV=development` a propósito: bajo `test` el `default` del campo
+    entrega la sucursal sembrada, `validated_data` nunca viene sin ella y el
+    defecto no se reproduce — la prueba pasaría con el código roto.
+    """
+
+    def setUp(self):
+        from maestros.models import Silo, Vehiculo
+
+        Sucursal.objects.update(activa=False)
+        self.empresa = Empresa.objects.create(rut="76.777.777-7", nombre="CCAA")
+        self.planta = Sucursal.objects.create(
+            empresa=self.empresa, codigo="P", nombre="Planta"
+        )
+        self.silo = Silo.objects.create(
+            sucursal=self.planta, codigo="SILO 1", tipo=Silo.Tipo.SILO,
+            capacidad_l=100000,
+        )
+        self.camion = Vehiculo.objects.create(
+            sucursal=self.planta, placa="BZFF-89", transportista="Transp. Sur"
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(
+            User.objects.create_superuser(username="raiz4", password="x")
+        )
+
+    def _registrar(self):
+        return self.client.post(
+            "/api/recepcion/recepciones/",
+            {
+                "fecha": "2026-08-12",
+                "tipo_leche": "Entera",
+                "litros": "50000.00",
+                "vehiculo": self.camion.id,
+                "procedencia": "Nestlé",
+                "modulo": "M4",
+            },
+            format="json",
+        )
+
+    def test_el_superusuario_no_tiene_que_indicar_la_planta(self):
+        respuesta = self._registrar()
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.json()["estado"], "registrada")
+
+    def test_con_dos_plantas_vuelve_a_pedirse(self):
+        Sucursal.objects.create(empresa=self.empresa, codigo="P2", nombre="Segunda")
+
+        respuesta = self._registrar()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("sucursal", respuesta.data)

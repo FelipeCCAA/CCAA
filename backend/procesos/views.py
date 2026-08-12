@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from usuarios.permisos import EscribeProduccion
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope, scope_de,
+    sucursal_para_escritura,
 )
 from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, SalidaProceso
 from .serializers import (
@@ -56,17 +57,11 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        scope = scope_de(self.request.user, requerido=True)
-        sucursal = serializer.validated_data.get("sucursal")
-        if scope.es_sucursal:
-            from usuarios.models import Sucursal
-            sucursal = Sucursal.objects.get(pk=scope.sucursal_id)
-        if sucursal is None:
-            from rest_framework.exceptions import ValidationError
-            raise ValidationError({"sucursal": "Debes indicar una sucursal permitida."})
         serializer.save(
             responsable=self.request.user,
-            sucursal=sucursal,
+            sucursal=sucursal_para_escritura(
+                self.request.user, serializer.validated_data
+            ),
         )
 
     def perform_update(self, serializer):
