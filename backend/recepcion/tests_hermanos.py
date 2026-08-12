@@ -2,14 +2,17 @@
 Los módulos de un camión comparten los controles de la carga.
 
 Solo la crioscopía se mide por compartimiento; el resto describe la leche que
-trae el camión, y Calidad la teclea una vez. Lo que se fija aquí son los dos
-límites de esa comodidad, que es donde estaba el riesgo:
+trae el camión, y Calidad la teclea una vez. Quién pertenece a la misma carga lo
+dice `llegada_id`, que se asigna al registrar el camión — no se deduce de la
+guía ni de la patente, que son opcionales las dos.
+
+Lo que se fija aquí son los tres límites de esa comodidad:
 
 1. **No se reescribe lo ya decidido.** El veredicto se deriva de los controles
    en vez de guardarse, así que tocarlos después de liberar cambia el veredicto
    de leche que ya está en el silo.
-2. **No se agrupa lo que no es un camión.** Sin patente y sin guía no hay carga
-   común que compartir.
+2. **Dos llegadas distintas no se tocan**, aunque compartan camión, guía y día.
+3. **La crioscopía no se comparte.**
 """
 
 from recepcion.models import Recepcion
@@ -29,6 +32,26 @@ CARGA_LIMPIA = {
 
 class ControlesCompartidosTests(BaseAPIRecepcion):
 
+    def _llegada(self, *modulos, guia="G-1"):
+        """Registra un camión con sus compartimientos, como hace la pantalla."""
+        respuesta = self.cliente.post(
+            "/api/recepcion/recepciones/registrar-llegada/",
+            {
+                "fecha": "2026-07-20",
+                "guia": guia,
+                "vehiculo": self.camion.id,
+                "procedencia": "Nestlé",
+                "tipo_leche": "Entera",
+                "modulos": [
+                    {"modulo": nombre, "litros": "10000.00"} for nombre in modulos
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+
+        return respuesta.json()
+
     def _decidir(self, identificador, controles, **extra):
         self.cliente.post(
             f"/api/recepcion/recepciones/{identificador}/tomar-muestra/",
@@ -45,10 +68,14 @@ class ControlesCompartidosTests(BaseAPIRecepcion):
     def _controles(self, identificador):
         return Recepcion.objects.get(pk=identificador).controles or {}
 
+    def test_los_modulos_de_una_llegada_comparten_el_identificador(self):
+        primero, segundo = self._llegada("M1", "M2")
+
+        self.assertEqual(primero["llegada_id"], segundo["llegada_id"])
+
     def test_un_modulo_pendiente_hereda_los_controles_del_camion(self):
-        """Es la comodidad que justifica todo esto: se teclean una vez."""
-        primero = self._crear(modulo="M1", guia="G-1").json()
-        segundo = self._crear(modulo="M2", guia="G-1").json()
+        """La comodidad que justifica todo esto: se teclean una vez."""
+        primero, segundo = self._llegada("M1", "M2")
 
         self.assertEqual(self._decidir(primero["id"], CARGA_LIMPIA).status_code, 200)
 
@@ -56,13 +83,12 @@ class ControlesCompartidosTests(BaseAPIRecepcion):
 
     def test_no_reescribe_los_controles_de_un_hermano_ya_liberado(self):
         """
-        El caso que motivó el arreglo, y se reprodujo tal cual: el primero
+        El caso que motivó el arreglo, y se reprodujo tal cual: el primer módulo
         quedaba «Aprobada por Calidad» con delvo Negativo, y decidir el segundo
         con delvo Positivo se lo cambiaba. Estado liberado, análisis positivo:
         el registro afirmaba dos cosas incompatibles sobre la misma leche.
         """
-        liberado = self._crear(modulo="M1", guia="G-2").json()
-        segundo = self._crear(modulo="M2", guia="G-2").json()
+        liberado, segundo = self._llegada("M1", "M2")
 
         self._decidir(liberado["id"], CARGA_LIMPIA)
         self.assertEqual(
@@ -80,8 +106,7 @@ class ControlesCompartidosTests(BaseAPIRecepcion):
 
     def test_tampoco_los_de_un_hermano_retenido(self):
         """Su retención se justificó con los valores que tiene."""
-        retenido = self._crear(modulo="M1", guia="G-3").json()
-        segundo = self._crear(modulo="M2", guia="G-3").json()
+        retenido, segundo = self._llegada("M1", "M2")
 
         self._decidir(
             retenido["id"],
@@ -97,32 +122,25 @@ class ControlesCompartidosTests(BaseAPIRecepcion):
 
         self.assertEqual(self._controles(retenido["id"])["delvo"], "Positivo")
 
-    def test_sin_patente_ni_guia_cada_modulo_va_solo(self):
+    def test_dos_llegadas_no_se_contaminan_aunque_coincida_todo(self):
         """
-        No hay camión que compartir. Agruparlos juntaría recepciones que no
-        tienen nada que ver — la base de planta ya trae dos filas así del mismo
-        día.
+        Mismo camión, misma guía, mismo día — y aun así son dos cargas. Es lo
+        que gana `llegada_id` frente a deducir el grupo de campos opcionales:
+        dos viajes del mismo camión con la misma guía existen, y antes se
+        habrían mezclado.
         """
-        suelto = self._crear(modulo="M1", vehiculo=None, guia="").json()
-        otro = self._crear(modulo="M2", vehiculo=None, guia="").json()
+        (primera,) = self._llegada("M1", guia="G-IGUAL")
+        (segunda,) = self._llegada("M1", guia="G-IGUAL")
 
-        self.assertEqual(self._decidir(suelto["id"], CARGA_LIMPIA).status_code, 200)
+        self.assertNotEqual(primera["llegada_id"], segunda["llegada_id"])
 
-        self.assertEqual(self._controles(otro["id"]), {})
+        self._decidir(primera["id"], CARGA_LIMPIA)
 
-    def test_con_guia_pero_sin_patente_si_son_el_mismo_camion(self):
-        """La guía identifica la carga aunque no se haya cargado la patente."""
-        primero = self._crear(modulo="M1", vehiculo=None, guia="G-4").json()
-        segundo = self._crear(modulo="M2", vehiculo=None, guia="G-4").json()
-
-        self._decidir(primero["id"], CARGA_LIMPIA)
-
-        self.assertEqual(self._controles(segundo["id"])["delvo"], "Negativo")
+        self.assertEqual(self._controles(segunda["id"]), {})
 
     def test_la_crioscopia_no_se_comparte(self):
         """Se mide por compartimiento: copiarla daría por medido lo que no lo está."""
-        primero = self._crear(modulo="M1", guia="G-5").json()
-        segundo = self._crear(modulo="M2", guia="G-5").json()
+        primero, segundo = self._llegada("M1", "M2")
 
         self._decidir(primero["id"], CARGA_LIMPIA)
 

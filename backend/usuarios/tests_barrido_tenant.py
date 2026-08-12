@@ -76,6 +76,116 @@ def _viewsets_publicados():
     return encontrados
 
 
+def _acciones_post_de_lista():
+    """
+    Las acciones `@action(detail=False, methods=["post"])`, con su ViewSet.
+
+    Este barrido nació mirando solo `perform_create`, y eso dejó fuera las
+    acciones a medida — que son la mayoría de las escrituras del sistema.
+    `registrar-llegada/` nació con la copia a mano del tenant y pasó por delante
+    sin que nadie la mirara.
+
+    Se recorren las de `detail=False` porque son las que se pueden invocar sin
+    inventar un objeto existente. Las de `detail=True` siguen fuera de alcance,
+    y conviene saberlo en vez de suponer que están cubiertas.
+    """
+    encontradas = []
+
+    def recorrer(patrones):
+        for patron in patrones:
+            hijos = getattr(patron, "url_patterns", None)
+            if hijos is not None:
+                recorrer(hijos)
+                continue
+
+            callback = getattr(patron, "callback", None)
+            clase = getattr(callback, "cls", None)
+
+            if clase is None or not isinstance(clase, type):
+                continue
+            if not issubclass(clase, viewsets.GenericViewSet):
+                continue
+
+            nombre = getattr(callback, "actions", {}).get("post")
+
+            if nombre in (None, "create"):
+                continue
+            # `detail=True` lleva un argumento en la ruta; sin un objeto real no
+            # se puede llamar, y fabricarlo por reflexión seria adivinar.
+            if getattr(getattr(clase, nombre, None), "detail", False):
+                continue
+
+            encontradas.append((clase, nombre))
+
+    recorrer(get_resolver().url_patterns)
+
+    return sorted(set(encontradas), key=lambda par: (par[0].__name__, par[1]))
+
+
+# Lo que dice un manejador que resuelve el tenant por su cuenta y se queda
+# corto: le exige al actor una planta o una empresa que no tiene por qué indicar.
+FRASES_QUE_LO_PIDEN = ("indicar una sucursal", "indicar la empresa")
+
+# Las tres formas legítimas de resolverlo, todas en `usuarios.tenancy`.
+RESOLUTORES = {
+    "sucursal_para_escritura",
+    "unica_sucursal_activa",
+    "unica_empresa_activa",
+}
+
+
+def _pide_el_tenant_sin_resolverlo(funcion) -> bool:
+    """
+    Si este manejador exige el tenant sin pasar por la función que lo resuelve.
+
+    Se mira el **AST y no el texto**: buscar la frase en el código fuente la
+    encuentra también dentro de los comentarios, y este mismo módulo tiene
+    comentarios que citan el mensaje para explicar de dónde viene. La primera
+    versión señalaba cinco inocentes por eso.
+
+    El docstring se descarta por la misma razón. Lo que cuenta es un literal de
+    cadena **en el código**: el mensaje que el manejador devuelve.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    if funcion is None:
+        return False
+
+    try:
+        arbol = ast.parse(textwrap.dedent(inspect.getsource(funcion)))
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        return False
+
+    cuerpo = arbol.body[0]
+    docstring = ast.get_docstring(cuerpo)
+
+    literales = [
+        nodo.value
+        for nodo in ast.walk(cuerpo)
+        if isinstance(nodo, ast.Constant) and isinstance(nodo.value, str)
+    ]
+
+    if docstring in literales:
+        literales.remove(docstring)
+
+    pide = any(
+        frase in literal.lower() for literal in literales for frase in FRASES_QUE_LO_PIDEN
+    )
+
+    if not pide:
+        return False
+
+    llamadas = {
+        nodo.func.id
+        for nodo in ast.walk(cuerpo)
+        if isinstance(nodo, ast.Call) and isinstance(nodo.func, ast.Name)
+    }
+
+    return not (llamadas & RESOLUTORES)
+
+
 class _SerializerDeMentira:
     """
     Lo mínimo que `perform_create` toca de un serializer.
@@ -109,28 +219,76 @@ class NingunaEscrituraPideLaPlantaTests(TestCase):
         self.jefe = User.objects.create_superuser(username="barrido", password="x")
         self.fabrica = APIRequestFactory()
 
-    def _reproche_de_tenant(self, clase):
-        """El mensaje sobre el tenant que suelta este ViewSet, o `None`."""
+    def _vista(self, clase, accion):
         peticion = self.fabrica.post("/", {}, format="json")
         force_authenticate(peticion, user=self.jefe)
 
         vista = clase()
-        vista.action_map = {"post": "create"}
+        vista.action_map = {"post": accion}
         vista.request = vista.initialize_request(peticion)
         vista.format_kwarg = None
-        vista.action = "create"
+        vista.action = accion
         vista.kwargs = {}
 
+        return vista
+
+    def _mirar(self, etiqueta, llamada):
+        """
+        Ejecuta y devuelve el reproche sobre el tenant, si lo hubo.
+
+        Que falle por otra cosa está bien y se ignora: significa que llegó a
+        pedir datos del negocio, o sea que el tenant ya estaba resuelto.
+        """
         try:
-            vista.perform_create(_SerializerDeMentira())
+            llamada()
         except APIException as error:
             texto = str(getattr(error, "detail", error)).lower()
             if any(señal in texto for señal in SEÑALES):
-                return f"{clase.__module__}.{clase.__name__}: {texto[:120]}"
+                return f"{etiqueta}: {texto[:120]}"
         except Exception:
-            # Cualquier otro fallo es del negocio —un campo que falta, una
-            # relación inexistente— y significa que el tenant ya se resolvió.
             pass
+
+        return None
+
+    def _reproche_de_tenant(self, clase):
+        """El mensaje sobre el tenant que suelta el `perform_create`, o `None`."""
+        vista = self._vista(clase, "create")
+
+        return self._mirar(
+            f"{clase.__module__}.{clase.__name__}",
+            lambda: vista.perform_create(_SerializerDeMentira()),
+        )
+
+    def _reproche_de_accion(self, clase, nombre):
+        """
+        Igual, pero llamando a la acción a medida con el cuerpo vacío.
+
+        La acción devuelve `Response` en vez de levantar, así que se inspecciona
+        también lo devuelto.
+
+        **Alcanza menos de lo que parece**, y conviene decirlo: con el cuerpo
+        vacío, una acción que valida sus datos antes de resolver el tenant
+        devuelve su propio 400 y nunca llega a la parte que se quiere medir. Es
+        justo lo que hace `registrar-llegada`. Para eso está la comprobación
+        estática de más abajo, que mira el código y no la respuesta.
+        """
+        vista = self._vista(clase, nombre)
+        etiqueta = f"{clase.__module__}.{clase.__name__}.{nombre}"
+        devuelto = {}
+
+        def llamar():
+            respuesta = getattr(vista, nombre)(vista.request)
+            devuelto["cuerpo"] = getattr(respuesta, "data", None)
+
+        reproche = self._mirar(etiqueta, llamar)
+
+        if reproche is not None:
+            return reproche
+
+        texto = str(devuelto.get("cuerpo", "")).lower()
+
+        if any(señal in texto for señal in SEÑALES):
+            return f"{etiqueta}: {texto[:120]}"
 
         return None
 
@@ -151,6 +309,62 @@ class NingunaEscrituraPideLaPlantaTests(TestCase):
             reproches,
             [],
             "Con una sola planta activa nadie debería tener que indicarla:\n"
+            + "\n".join(reproches),
+        )
+
+    def test_ningun_manejador_post_resuelve_el_tenant_por_su_cuenta(self):
+        """
+        La red que sí llega a todas partes: se mira el **código**, no la
+        respuesta.
+
+        La sonda de arriba no alcanza a una acción que valida su cuerpo antes de
+        resolver el tenant —devuelve su propio 400 y nunca llega—, que es
+        exactamente el caso de `registrar-llegada`. Comprobado: con la copia a
+        mano repuesta, la sonda pasaba en verde.
+
+        Lo que delata a una copia es que **pida el tenant por su cuenta**: un
+        texto que exige indicar la sucursal o la empresa, en un manejador que no
+        llama a `sucursal_para_escritura`. Los usos de lectura de `scope` —
+        acotar un catálogo a la planta de quien pregunta— no piden nada y no
+        aparecen aquí.
+        """
+        manejadores = [
+            (clase, "perform_create") for clase in _viewsets_publicados()
+        ] + _acciones_post_de_lista()
+
+        culpables = [
+            f"{clase.__module__}.{clase.__name__}.{nombre}"
+            for clase, nombre in manejadores
+            if _pide_el_tenant_sin_resolverlo(getattr(clase, nombre, None))
+        ]
+
+        self.assertEqual(
+            culpables,
+            [],
+            "Resuelven el tenant a mano en vez de usar `sucursal_para_escritura`:\n"
+            + "\n".join(culpables),
+        )
+
+    def test_tampoco_las_acciones_a_medida(self):
+        """
+        El hueco que destapó `registrar-llegada/`: el barrido miraba solo los
+        `perform_create` y las acciones a medida pasaban por delante sin que
+        nadie las mirara.
+        """
+        acciones = _acciones_post_de_lista()
+
+        self.assertGreater(len(acciones), 3, "No se descubrieron las acciones POST")
+
+        reproches = [
+            reproche
+            for clase, nombre in acciones
+            if (reproche := self._reproche_de_accion(clase, nombre)) is not None
+        ]
+
+        self.assertEqual(
+            reproches,
+            [],
+            "Acciones que le piden la planta a quien no tiene que indicarla:\n"
             + "\n".join(reproches),
         )
 

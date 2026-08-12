@@ -11,7 +11,7 @@ function Muestreo() {
     <TablaRecepciones
       estados="registrada"
       titulo="Por muestrear"
-      descripcion="Módulos recibidos que todavía no tienen muestra tomada."
+      descripcion="Elige quién realiza la prueba. La crioscopía será por módulo; el resto de los controles se comparte para todo el camión."
       vacio={{
         titulo: "No hay módulos esperando muestra",
         detalle: "Cuando se registre una llegada aparecerá aquí.",

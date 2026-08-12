@@ -12,7 +12,7 @@ function Calidad() {
     <TablaRecepciones
       estados="muestreada,retenida"
       titulo="Muestras por decidir"
-      descripcion="Muestreadas a la espera de decisión, y retenidas que se pueden reanalizar."
+      descripcion="Completa una vez los controles del camión y registra únicamente la crioscopía propia de cada módulo."
       vacio={{
         titulo: "No hay muestras pendientes",
         detalle: "Nada esperando decisión de Calidad.",

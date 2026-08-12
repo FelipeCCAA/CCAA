@@ -13,6 +13,8 @@ movimiento, y un saldo negativo dejaría de ser lo que hoy es, la señal
 automática de que el registro está descuadrado.
 """
 
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -95,6 +97,13 @@ class Recepcion(models.Model):
     }
 
     fecha = models.DateField("Fecha")
+    llegada_id = models.UUIDField(
+        "Identificador de llegada",
+        default=uuid.uuid4,
+        editable=False,
+        db_index=True,
+        help_text="Agrupa todos los modulos que llegaron en el mismo camion.",
+    )
     carga_recoleccion = models.OneToOneField(
         "recoleccion.CargaModulo",
         on_delete=models.PROTECT,

@@ -455,3 +455,68 @@ class RegistrarRecepcionTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("sucursal", respuesta.data)
+
+
+@override_settings(DJANGO_ENV="development")
+class RegistrarLlegadaTests(TestCase):
+    """
+    `registrar-llegada/` es una acción a medida, no un `perform_create`, y nació
+    con la misma copia a mano del tenant que se retiró de las cuatro escrituras:
+    al superusuario le exigía una planta que el formulario no envía.
+    """
+
+    def setUp(self):
+        from maestros.models import Vehiculo
+
+        Sucursal.objects.update(activa=False)
+        self.empresa = Empresa.objects.create(rut="76.444.444-4", nombre="CCAA")
+        self.planta = Sucursal.objects.create(
+            empresa=self.empresa, codigo="U", nombre="Planta"
+        )
+        self.camion = Vehiculo.objects.create(
+            sucursal=self.planta, placa="XXYY-11", transportista="Transp."
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(
+            User.objects.create_superuser(username="raiz5", password="x")
+        )
+
+    def _registrar(self, **extra):
+        return self.client.post(
+            "/api/recepcion/recepciones/registrar-llegada/",
+            {
+                "fecha": "2026-08-12",
+                "guia": "G-9",
+                "vehiculo": self.camion.id,
+                "tipo_leche": "Entera",
+                "modulos": [
+                    {"modulo": "M1", "litros": "20000.00"},
+                    {"modulo": "M2", "litros": "20000.00"},
+                ],
+                **extra,
+            },
+            format="json",
+        )
+
+    def test_el_superusuario_no_tiene_que_indicar_la_planta(self):
+        respuesta = self._registrar()
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        creadas = respuesta.json()
+        self.assertEqual(len(creadas), 2)
+        self.assertEqual(creadas[0]["llegada_id"], creadas[1]["llegada_id"])
+
+    def test_con_dos_plantas_vuelve_a_pedirse(self):
+        Sucursal.objects.create(empresa=self.empresa, codigo="U2", nombre="Segunda")
+
+        respuesta = self._registrar()
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("sucursal", respuesta.data)
+
+    def test_una_planta_inexistente_se_responde_con_400(self):
+        """Antes salía como `DoesNotExist`, o sea un 500 sin mensaje."""
+        respuesta = self._registrar(sucursal=999999)
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("sucursal", respuesta.data)

@@ -1,3 +1,5 @@
+import uuid
+
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
@@ -10,7 +12,7 @@ from rest_framework.response import Response
 
 from maestros.models import Silo
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
-from usuarios.models import PerfilUsuario, Rol
+from usuarios.models import PerfilUsuario, Rol, Sucursal
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin,
     filtrar_por_scope, scope_de, sucursal_para_escritura,
@@ -31,31 +33,6 @@ def _usuarios_recepcion(usuario, sucursal_id):
     if sucursal_id:
         consulta = consulta.filter(perfil__sucursal_id=sucursal_id)
     return consulta.order_by("first_name", "last_name", "username")
-
-
-def _modulos_del_mismo_camion(recepcion):
-    """
-    Los compartimientos que llegaron en la misma carga, con sus filas tomadas.
-
-    Comparten los resultados del camion —todos menos la crioscopia, que se mide
-    por modulo—, asi que Calidad los teclea una vez.
-
-    **El camion tiene que estar identificado**: por su patente o por su guia. Sin
-    ninguna de las dos no hay carga comun que compartir, y agrupar por «los dos
-    vacios» juntaria recepciones que no tienen nada que ver entre si — algo que
-    no es hipotetico, porque la base ya tiene dos filas asi del mismo dia. En
-    ese caso el modulo esta solo, que es la respuesta segura: obliga a teclear
-    sus controles, y teclear de mas solo molesta.
-    """
-    if recepcion.vehiculo_id is None and not recepcion.guia:
-        return Recepcion.objects.select_for_update().filter(pk=recepcion.pk)
-
-    return Recepcion.objects.select_for_update().filter(
-        sucursal_id=recepcion.sucursal_id,
-        fecha=recepcion.fecha,
-        vehiculo_id=recepcion.vehiculo_id,
-        guia=recepcion.guia,
-    )
 
 
 def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
@@ -234,6 +211,102 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     def perform_update(self, serializer):
         serializer.save()
 
+    @action(detail=False, methods=["post"], url_path="registrar-llegada")
+    def registrar_llegada(self, request):
+        """Registra un camion una sola vez y crea sus modulos atomicamente."""
+        modulos = request.data.get("modulos")
+        if not isinstance(modulos, list) or not modulos:
+            return Response(
+                {"modulos": "Agrega al menos un modulo o compartimiento."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        identificadores = [
+            str(item.get("modulo", "")).strip()
+            for item in modulos if isinstance(item, dict)
+        ]
+        if len(identificadores) != len(modulos) or any(not valor for valor in identificadores):
+            return Response(
+                {"modulos": "Cada modulo debe tener un identificador."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len({valor.casefold() for valor in identificadores}) != len(identificadores):
+            return Response(
+                {"modulos": "No repitas el mismo modulo dentro del camion."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # La misma resolución que el resto de las escrituras. Resolverla aquí a
+        # mano volvía a exigirle la planta a quien administra —el formulario no
+        # tiene ese campo— y respondía el mismo 400 que se corrigió en 92513e8.
+        #
+        # Se le pasa la **instancia**, no el id que llega en el cuerpo: la
+        # función comprueba el alcance sobre el objeto. Y un id inexistente se
+        # responde con un 400, no con la `DoesNotExist` que antes salía como 500.
+        indicada = request.data.get("sucursal")
+        elegida = None
+
+        if indicada not in (None, ""):
+            elegida = Sucursal.objects.filter(pk=indicada).first()
+            if elegida is None:
+                return Response(
+                    {"sucursal": "La planta indicada no existe."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        sucursal = sucursal_para_escritura(request.user, {"sucursal": elegida})
+
+        generales = {
+            clave: request.data.get(clave)
+            for clave in (
+                "fecha", "hora", "guia", "vehiculo", "procedencia",
+                "tipo_leche", "turno", "observacion",
+            )
+            if request.data.get(clave) not in (None, "")
+        }
+        serializers = []
+        for item in modulos:
+            datos = {
+                **generales,
+                "sucursal": sucursal.id,
+                "modulo": str(item.get("modulo", "")).strip(),
+                "litros": item.get("litros"),
+            }
+            if item.get("carga_recoleccion"):
+                datos["carga_recoleccion"] = item["carga_recoleccion"]
+            serializer = self.get_serializer(data=datos)
+            serializer.is_valid(raise_exception=True)
+            serializers.append(serializer)
+
+        with transaction.atomic():
+            llegada_id = uuid.uuid4()
+            recepciones = [
+                serializer.save(
+                    sucursal=sucursal,
+                    operador=request.user,
+                    estado=Recepcion.Estado.REGISTRADA,
+                    llegada_id=llegada_id,
+                )
+                for serializer in serializers
+            ]
+            total = sum((recepcion.litros for recepcion in recepciones), 0)
+            primera = recepciones[0]
+            _notificar_recepcion(
+                primera,
+                tipo="leche_recepcionada",
+                titulo="Camion de leche recepcionado",
+                mensaje=(
+                    f"Se recibieron {total} L en {len(recepciones)} modulo(s) del "
+                    f"camion {primera.vehiculo.placa if primera.vehiculo else 'sin patente'}."
+                ),
+                areas=[PerfilUsuario.Area.RECEPCION],
+            )
+
+        return Response(
+            self.get_serializer(recepciones, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["post"], url_path="tomar-muestra")
     def tomar_muestra(self, request, pk=None):
         """Identifica la muestra del módulo y lo entrega a la cola de Calidad."""
@@ -312,7 +385,9 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
             # Solo crioscopia pertenece al modulo. El resto describe el camion
             # completo y se reutiliza en todos sus compartimientos.
-            hermanos = _modulos_del_mismo_camion(recepcion)
+            hermanos = Recepcion.objects.select_for_update().filter(
+                llegada_id=recepcion.llegada_id,
+            )
             compartidos = {}
             for hermano in hermanos:
                 for clave in CONTROLES_POR_CAMION:

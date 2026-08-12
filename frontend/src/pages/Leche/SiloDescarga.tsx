@@ -12,7 +12,7 @@ function SiloDescarga() {
     <TablaRecepciones
       estados="liberada"
       titulo="Aprobadas por Calidad"
-      descripcion="Asigna el silo de destino y registra la descarga. La descarga mueve el saldo del silo."
+      descripcion="Selecciona Silo 1 o cualquier silo creado, descarga y deja sus litros disponibles inmediatamente en Estandarización."
       vacio={{
         titulo: "Nada aprobado esperando descarga",
         detalle: "Las cargas aparecen aquí cuando Calidad las libera.",
