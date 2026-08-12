@@ -121,6 +121,22 @@ export interface RecepcionNueva {
   observacion?: string;
 }
 
+export interface LlegadaCamionNueva {
+  fecha: string;
+  hora?: string;
+  guia?: string;
+  vehiculo: number;
+  procedencia?: string;
+  tipo_leche: string;
+  turno?: string;
+  observacion?: string;
+  modulos: Array<{
+    modulo: string;
+    litros: string;
+    carga_recoleccion?: number;
+  }>;
+}
+
 
 /* Los controles del camión, tal como los declara el backend. */
 export const CONTROLES_NUMERICOS = [
@@ -247,6 +263,16 @@ export async function tomarMuestra(
 export async function obtenerCatalogosFlujo(): Promise<CatalogosFlujoRecepcion> {
   const { data } = await api.get<CatalogosFlujoRecepcion>(
     "recepcion/recepciones/catalogos-flujo/",
+  );
+  return data;
+}
+
+export async function registrarLlegadaCamion(
+  llegada: LlegadaCamionNueva,
+): Promise<Recepcion[]> {
+  const { data } = await api.post<Recepcion[]>(
+    "recepcion/recepciones/registrar-llegada/",
+    llegada,
   );
   return data;
 }

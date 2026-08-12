@@ -42,6 +42,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "id",
             "sucursal",
             "carga_recoleccion",
+            "llegada_id",
             "fecha",
             "hora",
             "guia",
@@ -78,6 +79,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "silo",
+            "llegada_id",
             "operador",
             "controles",
             "controles_camion",

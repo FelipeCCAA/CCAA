@@ -10,6 +10,7 @@ entrar o hacen mentir al saldo de un silo:
 """
 
 from datetime import date, datetime, timezone as tz
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -223,6 +224,33 @@ class BaseAPIRecepcion(TestCase):
 
 
 class FlujoRecepcionTests(BaseAPIRecepcion):
+    def test_registra_un_camion_con_varios_modulos(self):
+        respuesta = self.cliente.post(
+            "/api/recepcion/recepciones/registrar-llegada/",
+            {
+                "fecha": "2026-08-12",
+                "guia": "GUIA-CAMION-1",
+                "vehiculo": self.camion.id,
+                "tipo_leche": "Entera",
+                "modulos": [
+                    {"modulo": "M1", "litros": "12000.00"},
+                    {"modulo": "M2", "litros": "13000.00"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(len(respuesta.json()), 2)
+        self.assertEqual(
+            Recepcion.objects.values_list("llegada_id", flat=True).distinct().count(),
+            1,
+        )
+        self.assertEqual(
+            list(Recepcion.objects.order_by("modulo").values_list("modulo", "litros")),
+            [("M1", Decimal("12000.00")), ("M2", Decimal("13000.00"))],
+        )
+
     """Llegada → muestra → Calidad → silo → descarga."""
 
     def test_se_registra_una_recepcion(self):
