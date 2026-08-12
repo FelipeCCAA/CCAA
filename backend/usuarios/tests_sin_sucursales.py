@@ -17,9 +17,11 @@ sin que nadie lo pida.
 """
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
+
+from maestros.models import Mandante
 
 from .models import Empresa, PerfilUsuario, Sucursal
 from .tenancy import sucursal_para_escritura
@@ -265,3 +267,126 @@ class AltaDePersonalTests(BaseSinSucursales):
         )
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
+
+
+# Sin esto la prueba no comprueba nada: bajo `test` el `default` del campo
+# entrega siempre el tenant sembrado, así que `empresa` nunca llega vacía y la
+# resolución automática no se ejercita jamás. El defecto solo existe donde el
+# default no inventa nada, que es donde corre la aplicación.
+@override_settings(DJANGO_ENV="development")
+class UnaSolaEmpresaTests(TestCase):
+    """
+    El otro lado de la planta única: el **superusuario** no está acotado a
+    ninguna empresa, así que es el único a quien se le podía pedir que la
+    eligiera. Ninguna pantalla la muestra —CCAA es una empresa— y el alta de
+    mandantes moría con «Un superusuario debe indicar la empresa» sobre un
+    desplegable que no existe.
+    """
+
+    URL = "/api/maestros/mandantes/"
+
+    def setUp(self):
+        Empresa.objects.update(activa=False)
+        self.empresa = Empresa.objects.create(
+            rut="76.555.555-5", nombre="Campos Australes"
+        )
+        self.jefe = User.objects.create_superuser(username="raiz", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.jefe)
+
+    def _crear(self, nombre, codigo="nestle"):
+        return self.client.post(
+            self.URL,
+            {"nombre": nombre, "codigo_cliente": codigo, "activo": True},
+            format="json",
+        )
+
+    def test_el_superusuario_no_tiene_que_indicarla(self):
+        respuesta = self._crear("Nestlé")
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(
+            Mandante.objects.get(nombre="Nestlé").empresa_id, self.empresa.pk
+        )
+
+    def test_con_dos_empresas_activas_hay_que_indicarla(self):
+        """
+        Elegir por él sería registrar el mandante en la empresa equivocada —y
+        sus productos heredarían ese error en el SKU.
+        """
+        Empresa.objects.create(rut="77.666.666-6", nombre="Otra")
+
+        respuesta = self._crear("Colun", "colun")
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("empresa", respuesta.data)
+        self.assertFalse(Mandante.objects.filter(nombre="Colun").exists())
+
+    def test_una_empresa_inactiva_no_cuenta(self):
+        self.empresa.activa = False
+        self.empresa.save(update_fields=["activa"])
+
+        self.assertEqual(self._crear("Soprole", "soprole").status_code, 400)
+
+
+class DefaultDeTenantTests(TestCase):
+    """
+    **Sin `override_settings` a propósito.** Esta corre en el entorno de
+    pruebas, que es el único donde el `default` de tenant entrega un valor.
+
+    DRF copia ese mismo callable al campo del serializer, así que lo que
+    devuelve acaba en `validated_data`. Devolviendo `pk` en vez del objeto,
+    guardar reventaba con «Cannot assign "1": debe ser una instancia de
+    Empresa» — un 500, no un error de validación, y solo en pruebas y CI, que
+    es donde nadie lo estaba mirando.
+    """
+
+    def test_el_default_llega_al_serializer_como_objeto(self):
+        jefe = User.objects.create_superuser(username="raiz2", password="x")
+        cliente = APIClient()
+        cliente.force_authenticate(jefe)
+
+        respuesta = cliente.post(
+            "/api/maestros/mandantes/",
+            {"nombre": "Nestlé", "codigo_cliente": "nestle", "activo": True},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertIsNotNone(Mandante.objects.get(nombre="Nestlé").empresa_id)
+
+
+class CodigoDeClienteOcupadoTests(TestCase):
+    """
+    «Un código de cliente, un mandante» lo garantiza una restricción de base de
+    datos — y una restricción avisa con un `IntegrityError`, o sea un **500 y un
+    "no se pudo guardar"** en pantalla, sobre una regla que tiene explicación
+    corta y salida clara.
+    """
+
+    def setUp(self):
+        self.jefe = User.objects.create_superuser(username="raiz3", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.jefe)
+        self.primero = self._crear("Nestlé", "nestle")
+
+    def _crear(self, nombre, codigo):
+        return self.client.post(
+            "/api/maestros/mandantes/",
+            {"nombre": nombre, "codigo_cliente": codigo, "activo": True},
+            format="json",
+        )
+
+    def test_repetir_el_codigo_se_explica_en_vez_de_reventar(self):
+        self.assertEqual(self.primero.status_code, 201, self.primero.data)
+
+        respuesta = self._crear("Nestle S.A.", "nestle")
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.status_code)
+        # El mensaje nombra al que ya lo tiene: sin eso hay que ir a buscarlo.
+        self.assertIn("Nestlé", str(respuesta.data["codigo_cliente"]))
+
+    def test_sin_codigo_se_pueden_repetir(self):
+        """Uno sin código es uno que todavía no genera SKU, y puede haber varios."""
+        self.assertEqual(self._crear("Cliente nuevo", "").status_code, 201)
+        self.assertEqual(self._crear("Otro sin código", "").status_code, 201)

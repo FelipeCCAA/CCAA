@@ -47,7 +47,11 @@ def empresa_predeterminada_pruebas():
         rut=RUT_EMPRESA_PRUEBAS,
         defaults={"nombre": "Empresa aislada de pruebas"},
     )
-    return empresa.pk
+    # El objeto, no su `pk`. Django admite ambos en el `default` de una FK y los
+    # normaliza, pero **DRF copia este mismo callable al serializer**: con el
+    # `pk` a secas, `validated_data["empresa"]` llegaba como entero y guardar
+    # reventaba con «Cannot assign "1": debe ser una instancia de Empresa».
+    return empresa
 
 
 def sucursal_predeterminada_pruebas():
@@ -65,7 +69,7 @@ def sucursal_predeterminada_pruebas():
         codigo=CODIGO_SUCURSAL_PRUEBAS,
         defaults={"nombre": "Sucursal aislada de pruebas"},
     )
-    return sucursal.pk
+    return sucursal
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +150,21 @@ def exigir_sucursal_permitida(usuario, sucursal) -> None:
     scope = scope_de(usuario, requerido=True)
     if not scope.permite_sucursal(sucursal.pk, sucursal.empresa_id):
         raise PermissionDenied("La sucursal indicada está fuera de tu alcance.")
+
+
+def unica_empresa_activa():
+    """
+    La única empresa activa, o `None` si hay cero o varias.
+
+    Mismo criterio que `unica_sucursal_activa`, un nivel más arriba: resolver lo
+    que solo tiene una respuesta es servicial; elegir entre dos es escribir en
+    la empresa equivocada sin que nadie lo pida.
+    """
+    from .models import Empresa
+
+    candidatas = list(Empresa.objects.filter(activa=True).order_by("pk")[:2])
+
+    return candidatas[0] if len(candidatas) == 1 else None
 
 
 def unica_sucursal_activa(empresa_id: int | None):
@@ -260,19 +279,34 @@ class EmpresaTenantViewSetMixin(QuerysetTenantMixin):
 
     def perform_create(self, serializer):
         scope = scope_de(self.request.user, requerido=True)
-        if scope.es_global:
-            empresa = serializer.validated_data.get(self.tenant_write_field)
-            if empresa is None:
-                raise serializers.ValidationError(
-                    {self.tenant_write_field: "Un superusuario debe indicar la empresa."}
-                )
-            serializer.save()
-            return
-        from .models import Empresa
 
-        serializer.save(
-            **{self.tenant_write_field: Empresa.objects.get(pk=scope.empresa_id)}
-        )
+        if not scope.es_global:
+            from .models import Empresa
+
+            serializer.save(
+                **{self.tenant_write_field: Empresa.objects.get(pk=scope.empresa_id)}
+            )
+            return
+
+        # El superusuario no está acotado a ninguna empresa, así que es el único
+        # que puede tener que elegir. Con **una sola activa** no hay elección que
+        # hacer, y exigírsela le pedía un dato que ninguna pantalla muestra: el
+        # alta de mandantes moría con «Un superusuario debe indicar la empresa»
+        # sobre un desplegable que no existe. Mismo criterio que la planta.
+        empresa = serializer.validated_data.get(self.tenant_write_field)
+
+        if empresa is None:
+            empresa = unica_empresa_activa()
+
+        if empresa is None:
+            raise serializers.ValidationError({
+                self.tenant_write_field: (
+                    "Hay más de una empresa activa: indica en cuál se registra. "
+                    "Con una sola, el sistema la resuelve solo."
+                )
+            })
+
+        serializer.save(**{self.tenant_write_field: empresa})
 
     def perform_update(self, serializer):
         if self.tenant_write_field in self.request.data:

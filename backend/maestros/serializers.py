@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from usuarios.models import Empresa, Sucursal
-from usuarios.tenancy import scope_de
+from usuarios.tenancy import scope_de, unica_empresa_activa
 
 from .catalogos import PARAMETROS
 from .models import (
@@ -28,6 +28,27 @@ def _restringir_empresa(serializer, campo="empresa"):
     elif not scope.es_global:
         queryset = queryset.filter(pk=scope.empresa_id)
     serializer.fields[campo].queryset = queryset
+
+    # Y además se resuelve, no solo se restringe. Ninguna pantalla pide la
+    # empresa —CCAA es una—, así que sin esto el campo no llega a
+    # `validated_data` y **los validadores de unicidad de DRF no se ejecutan**:
+    # la restricción la acababa aplicando PostgreSQL, o sea un `IntegrityError`
+    # y un error 500 donde correspondía un mensaje. Con el valor puesto, la
+    # comprobación ocurre antes de escribir y en todos los entornos.
+    serializer.fields[campo].default = lambda: _empresa_del_actor(scope)
+
+
+def _empresa_del_actor(scope):
+    """La empresa en la que escribe este actor, o `None` si es ambiguo."""
+    if scope is None:
+        return None
+
+    if not scope.es_global:
+        return Empresa.objects.filter(pk=scope.empresa_id).first()
+
+    # El superusuario no está acotado a ninguna: se resuelve si hay una sola
+    # activa, y si hay varias se deja vacía para que el viewset lo diga.
+    return unica_empresa_activa()
 
 
 def _restringir_sucursal(serializer, campo="sucursal"):
@@ -70,6 +91,54 @@ class MandanteSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         _restringir_empresa(self)
+
+        # DRF genera solo un `UniqueTogetherValidator` para esta restricción, y
+        # dice «Los campos empresa, codigo_cliente deben formar un conjunto
+        # único»: cierto, y sin utilidad para quien lo lee —no nombra al que ya
+        # lo tiene ni dice cómo seguir—. Se retira para que la regla la explique
+        # `validate()` una sola vez. El de `(empresa, nombre)` se queda: ahí el
+        # mensaje genérico sí basta.
+        self.validators = [
+            validador
+            for validador in self.validators
+            if set(getattr(validador, "fields", ())) != {"empresa", "codigo_cliente"}
+        ]
+
+    def validate(self, attrs):
+        """
+        «Un código de cliente, un mandante», explicado.
+
+        Dos mandantes que compartan el código sacan productos con SKU idénticos
+        —y con el mismo código de lote, que lleva el SKU dentro—. La base lo
+        impide con `mandante_unico_por_codigo_cliente`; esto lo cuenta antes, y
+        con nombre y apellido.
+        """
+        codigo = attrs.get(
+            "codigo_cliente", getattr(self.instance, "codigo_cliente", "")
+        )
+        empresa = attrs.get("empresa") or getattr(self.instance, "empresa", None)
+
+        if not codigo or empresa is None:
+            return attrs
+
+        ocupado = Mandante.objects.filter(empresa=empresa, codigo_cliente=codigo)
+
+        if self.instance is not None:
+            ocupado = ocupado.exclude(pk=self.instance.pk)
+
+        duenio = ocupado.first()
+
+        if duenio is not None:
+            raise serializers.ValidationError({
+                "codigo_cliente": (
+                    f"Ese código de cliente ya es de «{duenio.nombre}». Dos "
+                    "mandantes que lo compartan sacan productos con el mismo "
+                    "SKU —y con el mismo código de lote, que lleva el SKU "
+                    "dentro—. Déjalo vacío si todavía no genera SKU."
+                )
+            })
+
+        return attrs
 
 
 class ProductoSerializer(serializers.ModelSerializer):
