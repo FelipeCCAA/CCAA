@@ -8,9 +8,27 @@ un campo escribible eso se salta con una petición.
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
+from maestros.models import Silo
+from recepcion.models import MovimientoSilo
+
+
+def _saldo(silo):
+    return MovimientoSilo.objects.filter(silo=silo).aggregate(
+        total=Coalesce(
+            Sum(Case(
+                When(tipo=MovimientoSilo.Tipo.SALIDA, then=-F("litros")),
+                default=F("litros"),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )),
+            Value(0),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        )
+    )["total"]
 
 
 def _exigir_transicion(vale, nuevo):
@@ -27,6 +45,58 @@ def transferir(*, vale_id, usuario):
     """Las dos leches ya están en el silo de destino."""
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     _exigir_transicion(vale, ValeEstandarizacion.Estado.TRANSFERIDO)
+
+    ids_silos = [vale.silo_entera_id, vale.silo_destino_id]
+    if vale.silo_descremada_id:
+        ids_silos.append(vale.silo_descremada_id)
+    bloqueados = {
+        silo.id: silo
+        for silo in Silo.objects.select_for_update().filter(pk__in=ids_silos)
+    }
+    entera = bloqueados[vale.silo_entera_id]
+    destino = bloqueados[vale.silo_destino_id]
+    descremada = bloqueados.get(vale.silo_descremada_id)
+
+    if _saldo(entera) < vale.litros_entera:
+        raise ValidationError(
+            f"{entera.codigo} no tiene {vale.litros_entera} L de leche entera disponibles."
+        )
+    if vale.litros_descremada and (
+        descremada is None or _saldo(descremada) < vale.litros_descremada
+    ):
+        codigo = descremada.codigo if descremada else "el TK seleccionado"
+        raise ValidationError(
+            f"{codigo} no tiene {vale.litros_descremada} L de leche descremada disponibles."
+        )
+    if _saldo(destino) + vale.volumen > destino.capacidad_l:
+        disponible = destino.capacidad_l - _saldo(destino)
+        raise ValidationError(
+            f"{destino.codigo} solo tiene {disponible} L de capacidad disponible."
+        )
+
+    ahora = timezone.now()
+    movimientos = [
+        MovimientoSilo(
+            silo=entera, tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=vale.litros_entera, fecha_hora=ahora,
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id,
+        ),
+        MovimientoSilo(
+            silo=destino, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=vale.volumen, fecha_hora=ahora,
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id,
+        ),
+    ]
+    if descremada and vale.litros_descremada:
+        movimientos.append(MovimientoSilo(
+            silo=descremada, tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=vale.litros_descremada, fecha_hora=ahora,
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id,
+        ))
+    MovimientoSilo.objects.bulk_create(movimientos)
 
     vale.estado = ValeEstandarizacion.Estado.TRANSFERIDO
     vale.responsable = vale.responsable or usuario

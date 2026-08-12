@@ -9,6 +9,8 @@ export interface Silo {
   tipo: string;
   tipo_etiqueta: string;
   capacidad_l: string;
+  litros_disponibles?: string;
+  capacidad_disponible?: string;
   activo: boolean;
 }
 
@@ -71,6 +73,8 @@ export interface Recepcion {
   operador_nombre: string;
   turno: string;
   controles: Record<string, number | string>;
+  controles_camion: Record<string, number | string>;
+  controles_modulo: Record<string, number | string>;
   estado: string;
   estado_etiqueta: string;
   motivo: string;
@@ -86,6 +90,18 @@ export interface Recepcion {
   silo_asignado_por_nombre: string;
   silo_asignado_en: string | null;
   evaluacion: EvaluacionRecepcion;
+}
+
+export interface ResponsableRecepcion {
+  id: number;
+  nombre: string;
+  turno: string;
+}
+
+export interface CatalogosFlujoRecepcion {
+  responsables_recepcion: ResponsableRecepcion[];
+  controles_camion: string[];
+  controles_modulo: string[];
 }
 
 
@@ -219,10 +235,18 @@ export async function descargarRecepcion(id: number): Promise<Recepcion> {
 export async function tomarMuestra(
   id: number,
   codigo_muestra: string,
+  responsable: number,
 ): Promise<Recepcion> {
   const { data } = await api.post<Recepcion>(
     `recepcion/recepciones/${id}/tomar-muestra/`,
-    { codigo_muestra },
+    { codigo_muestra, responsable },
+  );
+  return data;
+}
+
+export async function obtenerCatalogosFlujo(): Promise<CatalogosFlujoRecepcion> {
+  const { data } = await api.get<CatalogosFlujoRecepcion>(
+    "recepcion/recepciones/catalogos-flujo/",
   );
   return data;
 }

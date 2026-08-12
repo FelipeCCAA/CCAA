@@ -20,6 +20,7 @@ from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto, Silo
 from usuarios.models import PerfilUsuario, Rol
+from recepcion.models import MovimientoSilo
 
 from . import servicios
 from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
@@ -78,8 +79,30 @@ class BaseVale(TestCase):
 
         return ValeEstandarizacion.objects.create(**datos)
 
+    def abastecer_origenes(self):
+        ahora = timezone.now()
+        MovimientoSilo.objects.bulk_create([
+            MovimientoSilo(
+                silo=self.silo_entera,
+                tipo=MovimientoSilo.Tipo.INGRESO,
+                litros="20000.00",
+                fecha_hora=ahora,
+                origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+                motivo="Preparacion de la prueba",
+            ),
+            MovimientoSilo(
+                silo=self.silo_descremada,
+                tipo=MovimientoSilo.Tipo.INGRESO,
+                litros="20000.00",
+                fecha_hora=ahora,
+                origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+                motivo="Preparacion de la prueba",
+            ),
+        ])
+
     def llevar_a_agitando(self, vale, minutos=MINUTOS_DE_AGITACION):
         """Deja el vale agitando desde hace `minutos`."""
+        self.abastecer_origenes()
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
         servicios.iniciar_agitacion(vale_id=vale.pk)
 
@@ -91,6 +114,33 @@ class BaseVale(TestCase):
 
 
 class AgitacionTests(BaseVale):
+
+    def test_transferir_mueve_litros_entre_silos(self):
+        vale = self.crear_vale()
+        self.abastecer_origenes()
+
+        servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        movimientos = MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id,
+        )
+        self.assertEqual(movimientos.count(), 3)
+        self.assertTrue(movimientos.filter(
+            silo=self.silo_entera,
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            litros="4000.00",
+        ).exists())
+        self.assertTrue(movimientos.filter(
+            silo=self.silo_descremada,
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            litros="6000.00",
+        ).exists())
+        self.assertTrue(movimientos.filter(
+            silo=self.silo_destino,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros="10000.00",
+        ).exists())
 
     def test_no_se_muestrea_antes_de_los_treinta_minutos(self):
         """
@@ -121,6 +171,7 @@ class AgitacionTests(BaseVale):
 
     def test_sin_agitar_no_se_muestrea(self):
         vale = self.crear_vale()
+        self.abastecer_origenes()
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
 
         with self.assertRaises(ValidationError):
@@ -133,6 +184,7 @@ class AgitacionTests(BaseVale):
         ocurrieron.
         """
         vale = self.crear_vale()
+        self.abastecer_origenes()
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
 
         antes = timezone.now()

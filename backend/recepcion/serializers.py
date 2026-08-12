@@ -5,6 +5,8 @@ from . import dominio
 from .models import (
     CONTROLES_DECLARADOS,
     CONTROLES_NUMERICOS,
+    CONTROLES_POR_CAMION,
+    CONTROLES_POR_MODULO,
     VALORES_ADMITIDOS,
     MovimientoSilo,
     Recepcion,
@@ -31,6 +33,8 @@ class RecepcionSerializer(serializers.ModelSerializer):
     # El veredicto de los controles se calcula, no se guarda: al corregir un
     # límite, todas las recepciones quedan reevaluadas.
     evaluacion = serializers.SerializerMethodField()
+    controles_camion = serializers.SerializerMethodField()
+    controles_modulo = serializers.SerializerMethodField()
 
     class Meta:
         model = Recepcion
@@ -53,6 +57,8 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "operador_nombre",
             "turno",
             "controles",
+            "controles_camion",
+            "controles_modulo",
             "estado",
             "estado_etiqueta",
             "motivo",
@@ -74,6 +80,8 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "silo",
             "operador",
             "controles",
+            "controles_camion",
+            "controles_modulo",
             "estado",
             "motivo",
             "codigo_muestra",
@@ -97,6 +105,18 @@ class RecepcionSerializer(serializers.ModelSerializer):
             # puede liberar: no es que esté conforme, es que nadie lo midió.
             "faltantes": evaluacion.faltantes,
             "analizada": evaluacion.analizada,
+        }
+
+    def get_controles_camion(self, recepcion):
+        return {
+            clave: valor for clave, valor in (recepcion.controles or {}).items()
+            if clave in CONTROLES_POR_CAMION
+        }
+
+    def get_controles_modulo(self, recepcion):
+        return {
+            clave: valor for clave, valor in (recepcion.controles or {}).items()
+            if clave in CONTROLES_POR_MODULO
         }
 
     def validate_controles(self, controles):

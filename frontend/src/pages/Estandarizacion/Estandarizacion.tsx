@@ -7,7 +7,7 @@ import {
   type CatalogosEstandarizacion, type ValeEstandarizacion,
 } from "../../services/estandarizacion.service";
 import { obtenerProductos, type Producto } from "../../services/produccion.service";
-import { obtenerSilos, type Silo } from "../../services/recepcion.service";
+import type { Silo } from "../../services/recepcion.service";
 import { puedeEscribir } from "../../services/sesion";
 import { mensajeDe, numero } from "../../components/seccion/utilidades";
 import { Aviso, Tarjeta, Vacio } from "../../components/seccion/componentes";
@@ -74,9 +74,14 @@ function Estandarizacion() {
         que los junte, un maestro caído dejaría la pantalla entera en blanco
         aunque los vales sí hubieran llegado.
       */
-      void obtenerCatalogos().then(setCatalogos).catch(() => setCatalogos(null));
+      void obtenerCatalogos().then((datos) => {
+        setCatalogos(datos);
+        setSilos(datos.silos);
+      }).catch(() => {
+        setCatalogos(null);
+        setSilos([]);
+      });
       void obtenerProductos().then(setProductos).catch(() => setProductos([]));
-      void obtenerSilos().then(setSilos).catch(() => setSilos([]));
     }, 0);
 
     return () => clearTimeout(tarea);
@@ -162,6 +167,13 @@ function Estandarizacion() {
       </header>
 
       {error && <Aviso>{error}</Aviso>}
+
+      {(catalogos?.silos ?? []).some((silo) => Number(silo.litros_disponibles ?? 0) > 0) && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-900">
+          <p className="font-semibold">Leche recepcionada disponible para estandarizar</p>
+          <p className="mt-1 text-xs text-sky-700">{catalogos?.silos.filter((silo) => Number(silo.litros_disponibles ?? 0) > 0).map((silo) => `${silo.codigo}: ${numero(silo.litros_disponibles)} L`).join(" · ")}</p>
+        </div>
+      )}
 
       <section className="grid gap-4 sm:grid-cols-3">
         {([

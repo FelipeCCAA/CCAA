@@ -6,8 +6,8 @@ import {
 } from "lucide-react";
 
 import {
-  buscarRecepciones, descargarRecepcion, obtenerSilos,
-  type Recepcion as RecepcionTipo, type Silo,
+  buscarRecepciones, descargarRecepcion, obtenerCatalogosFlujo, obtenerSilos,
+  type Recepcion as RecepcionTipo, type ResponsableRecepcion, type Silo,
 } from "../../services/recepcion.service";
 import { puedeEscribir } from "../../services/sesion";
 import AccionRecepcion, { type AccionFlujo } from "./AccionRecepcion";
@@ -72,6 +72,7 @@ function TablaRecepciones({
   const [busqueda, setBusqueda] = useState("");
   const [termino, setTermino] = useState("");
   const [silos, setSilos] = useState<Silo[]>([]);
+  const [responsables, setResponsables] = useState<ResponsableRecepcion[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [accion, setAccion] = useState<{
@@ -107,6 +108,9 @@ function TablaRecepciones({
     // Los silos solo alimentan el modal de asignación: van aparte para que un
     // fallo suyo no vacíe la tabla.
     void obtenerSilos().then(setSilos).catch(() => setSilos([]));
+    void obtenerCatalogosFlujo()
+      .then((datos) => setResponsables(datos.responsables_recepcion))
+      .catch(() => setResponsables([]));
   }, []);
 
   // La búsqueda espera a que el usuario deje de teclear: cada pulsación es una
@@ -358,6 +362,7 @@ function TablaRecepciones({
           accion={accion.tipo}
           recepcion={accion.recepcion}
           silos={silos}
+          responsables={responsables}
           alCerrar={() => setAccion(null)}
           alGuardar={cargar}
         />
