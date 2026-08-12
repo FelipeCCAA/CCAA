@@ -12,17 +12,35 @@ RUT_EMPRESA_PRUEBAS = "TENANT-TEST"
 CODIGO_SUCURSAL_PRUEBAS = "TEST"
 
 
-def _exigir_entorno_pruebas() -> None:
-    if settings.DJANGO_ENV not in {"test", "ci"}:
-        raise ImproperlyConfigured(
-            "Empresa y sucursal son obligatorias. Deben obtenerse del actor "
-            "autenticado o indicarse explícitamente; no existe tenant por defecto."
-        )
+def _en_pruebas() -> bool:
+    return settings.DJANGO_ENV in {"test", "ci"}
 
 
 def empresa_predeterminada_pruebas():
-    """Default exclusivo de tests para no introducir fallbacks productivos."""
-    _exigir_entorno_pruebas()
+    """
+    El tenant de pruebas, y **nada** fuera de ellas.
+
+    Estas dos funciones son el `default` de dos docenas de campos. Antes
+    lanzaban `ImproperlyConfigured` fuera de pruebas, para dejar claro que no
+    existe un tenant por omisión. La intención era buena y el mecanismo no:
+    Django pide el `default` de cada campo al construir un modelo vacío, así
+    que **la página «Añadir» del admin reventaba en 22 modelos** —perfiles,
+    lotes, recepciones, equipos, silos— con un error de configuración que no
+    decía nada al que lo veía.
+
+    Devolver `None` conserva la garantía y pierde el ruido: no se inventa
+    ningún tenant, y como el campo es obligatorio en el esquema, el formulario
+    lo pide y `clean()` lo rechaza si falta. Quien olvide indicarlo se lleva un
+    «este campo es obligatorio», que es el reproche correcto, en el sitio
+    correcto y sin tumbar la página.
+
+    El nombre sigue diciendo `_pruebas` porque eso es exactamente lo que hace:
+    fuera de pruebas no hay valor predeterminado. Las migraciones lo referencian
+    por ese nombre, así que no se renombra a la ligera.
+    """
+    if not _en_pruebas():
+        return None
+
     from .models import Empresa
 
     empresa, _ = Empresa.objects.get_or_create(
@@ -33,7 +51,9 @@ def empresa_predeterminada_pruebas():
 
 
 def sucursal_predeterminada_pruebas():
-    _exigir_entorno_pruebas()
+    if not _en_pruebas():
+        return None
+
     from .models import Empresa, Sucursal
 
     empresa, _ = Empresa.objects.get_or_create(
