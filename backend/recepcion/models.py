@@ -33,6 +33,11 @@ CONTROLES_DECLARADOS = {
 
 CONTROLES_NUMERICOS = {"temperatura", "acidez", "ph", "crioscopia"}
 
+# La crioscopia se mide por cada modulo. Los demas resultados describen la
+# carga comun del camion y se comparten entre todos sus compartimientos.
+CONTROLES_POR_MODULO = {"crioscopia"}
+CONTROLES_POR_CAMION = CONTROLES_DECLARADOS - CONTROLES_POR_MODULO
+
 VALORES_ADMITIDOS = {
     "delvo": {"Negativo", "Positivo"},
     "inhibidores": {"Negativo", "Positivo"},
@@ -260,6 +265,7 @@ class MovimientoSilo(models.Model):
 
     class OrigenTipo(models.TextChoices):
         RECEPCION = "recepcion", "Recepción"
+        ESTANDARIZACION = "estandarizacion", "Estandarización"
         LOTE = "lote", "Consumo de lote"
         AJUSTE = "ajuste", "Ajuste manual"
 

@@ -9,6 +9,7 @@ import {
   decidirCalidad,
   tomarMuestra,
   type Recepcion,
+  type ResponsableRecepcion,
   type Silo,
 } from "../../services/recepcion.service";
 
@@ -19,6 +20,7 @@ interface Props {
   accion: AccionFlujo;
   recepcion: Recepcion;
   silos: Silo[];
+  responsables: ResponsableRecepcion[];
   alCerrar: () => void;
   alGuardar: () => void;
 }
@@ -34,13 +36,20 @@ function detalleError(error: unknown): string {
 }
 
 
-function AccionRecepcion({ accion, recepcion, silos, alCerrar, alGuardar }: Props) {
+function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alGuardar }: Props) {
   const muestraSugerida = [recepcion.guia || `REC-${recepcion.id}`, recepcion.modulo || "M1"]
     .join("-")
     .replace(/\s+/g, "-")
     .toUpperCase();
   const [codigoMuestra, setCodigoMuestra] = useState(muestraSugerida);
-  const [controles, setControles] = useState<Record<string, string>>({});
+  const [controles, setControles] = useState<Record<string, string>>(
+    Object.fromEntries(
+      Object.entries(recepcion.controles || {}).map(([clave, valor]) => [clave, String(valor)]),
+    ),
+  );
+  const [responsable, setResponsable] = useState(
+    recepcion.muestreado_por ? String(recepcion.muestreado_por) : "",
+  );
   const [retencionManual, setRetencionManual] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [silo, setSilo] = useState("");
@@ -62,7 +71,7 @@ function AccionRecepcion({ accion, recepcion, silos, alCerrar, alGuardar }: Prop
 
     try {
       if (accion === "muestra") {
-        await tomarMuestra(recepcion.id, codigoMuestra);
+        await tomarMuestra(recepcion.id, codigoMuestra, Number(responsable));
       } else if (accion === "silo") {
         await asignarSilo(recepcion.id, Number(silo));
       } else {
@@ -115,14 +124,19 @@ function AccionRecepcion({ accion, recepcion, silos, alCerrar, alGuardar }: Prop
               <div><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Volumen</p><p className="mt-1 font-semibold text-slate-800">{Number(recepcion.litros).toLocaleString("es-CL")} L</p></div>
             </div>
 
-            {accion === "muestra" && <div><label className={etiqueta}>Código único de muestra *</label><input aria-label="Código de muestra" className={campo} value={codigoMuestra} onChange={(e) => setCodigoMuestra(e.target.value)} required /><p className="mt-2 text-xs leading-5 text-slate-400">Este código acompañará los resultados y la decisión de Calidad.</p></div>}
+            {accion === "muestra" && <div className="space-y-4">
+              <div><label className={etiqueta}>Código único de muestra *</label><input aria-label="Código de muestra" className={campo} value={codigoMuestra} onChange={(e) => setCodigoMuestra(e.target.value)} required /></div>
+              <div><label className={etiqueta}>Responsable de realizar la prueba *</label><select aria-label="Responsable de la prueba" className={campo} value={responsable} onChange={(e) => setResponsable(e.target.value)} required><option value="">Seleccionar usuario de Recepción</option>{responsables.map((usuario) => <option key={usuario.id} value={usuario.id}>{usuario.nombre}{usuario.turno ? ` · ${usuario.turno}` : ""}</option>)}</select>{responsables.length === 0 && <p className="mt-2 text-xs text-amber-700">No hay usuarios activos asignados al área Recepción.</p>}</div>
+              <p className="rounded-xl bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700">La crioscopía se registrará para este módulo. Los demás análisis se compartirán con todos los módulos del mismo camión.</p>
+            </div>}
 
             {accion === "calidad" && <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{CONTROLES_NUMERICOS.map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta} {control.unidad && <span className="font-normal text-slate-400">({control.unidad})</span>}</label><input aria-label={control.etiqueta} type="number" step="any" className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} /></div>)}</div>
+              <div><p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Por camión completo</p><div className="grid grid-cols-2 gap-4 sm:grid-cols-3">{CONTROLES_NUMERICOS.filter((control) => control.clave !== "crioscopia").map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta} {control.unidad && <span className="font-normal text-slate-400">({control.unidad})</span>}</label><input aria-label={control.etiqueta} type="number" step="any" className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} /></div>)}</div></div>
               <div className="grid gap-4 sm:grid-cols-3">{CONTROLES_OPCION.map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta}</label><select aria-label={control.etiqueta} className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} required={control.clave === "delvo"}><option value="">Sin informar</option>{control.valores.map((valor) => <option key={valor} value={valor}>{valor}</option>)}</select></div>)}</div>
+              <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="mb-3 text-xs font-bold uppercase tracking-wider text-violet-700">Solo para {recepcion.modulo || "este módulo"}</p>{CONTROLES_NUMERICOS.filter((control) => control.clave === "crioscopia").map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta} <span className="font-normal text-slate-400">({control.unidad})</span> *</label><input aria-label={control.etiqueta} required type="number" step="any" className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} /></div>)}</div>
               <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-amber-600" checked={retencionManual} onChange={(e) => setRetencionManual(e.target.checked)} /><span><span className="block text-sm font-semibold text-slate-800">Retener por observación operacional</span><span className="mt-1 block text-xs leading-5 text-slate-400">Úsalo para sello roto, contaminación visible u otra condición no representada por un análisis.</span></span></label>
               {retencionManual && <div><label className={etiqueta}>Motivo de retención *</label><textarea aria-label="Motivo de retención" className={`${campo} h-auto py-3`} rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} required /></div>}
-              <div className="flex items-start gap-2 rounded-xl bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />El sistema aprobará solo si el control decisivo está informado y ningún resultado queda fuera de rango.</div>
+              <div className="flex items-start gap-2 rounded-xl bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-700"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />Los controles del camión se reutilizan en sus otros módulos; cada módulo exige su propia crioscopía antes de aprobarse.</div>
             </div>}
 
             {accion === "silo" && <div><label className={etiqueta}>Silo compatible *</label><select aria-label="Silo compatible" className={campo} value={silo} onChange={(e) => setSilo(e.target.value)} required><option value="">Seleccionar destino</option>{silosCompatibles.map((item) => <option key={item.id} value={item.id}>{item.codigo} · capacidad {Number(item.capacidad_l).toLocaleString("es-CL")} L</option>)}</select>{silosCompatibles.length === 0 ? <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700"><AlertTriangle className="h-4 w-4 shrink-0" />No hay silos activos compatibles con leche {recepcion.tipo_leche.toLowerCase()}.</p> : <p className="mt-2 text-xs text-slate-400">Solo se muestran destinos compatibles con {recepcion.tipo_leche.toLowerCase()}.</p>}</div>}
@@ -130,7 +144,7 @@ function AccionRecepcion({ accion, recepcion, silos, alCerrar, alGuardar }: Prop
             {error && <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
           </div>
 
-          <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4"><button type="button" onClick={alCerrar} className="h-10 rounded-xl px-4 text-sm font-semibold text-slate-600 hover:bg-slate-200/60">Cancelar</button><button type="submit" disabled={guardando || (accion === "silo" && silosCompatibles.length === 0)} className="h-10 rounded-xl bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{guardando ? "Guardando…" : configuracion.boton}</button></div>
+          <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4"><button type="button" onClick={alCerrar} className="h-10 rounded-xl px-4 text-sm font-semibold text-slate-600 hover:bg-slate-200/60">Cancelar</button><button type="submit" disabled={guardando || (accion === "silo" && silosCompatibles.length === 0) || (accion === "muestra" && responsables.length === 0)} className="h-10 rounded-xl bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{guardando ? "Guardando…" : configuracion.boton}</button></div>
         </form>
       </div>
     </div>

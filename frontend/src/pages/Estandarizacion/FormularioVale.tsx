@@ -69,6 +69,30 @@ function FormularioVale({
     setMezcla(null);
   };
 
+  const seleccionarOrigen = (
+    campo: "silo_entera" | "silo_descremada",
+    disponible: "entera_disponible" | "descremada_disponible",
+    valor: string,
+  ) => {
+    const silo = silos.find((item) => item.id === Number(valor));
+    setDatos((previo) => ({
+      ...previo,
+      [campo]: valor,
+      [disponible]: silo?.litros_disponibles ?? "",
+    }));
+    setMezcla(null);
+  };
+
+  const silosEntera = silos.filter(
+    (silo) => silo.tipo === "silo" && Number(silo.litros_disponibles ?? 0) > 0,
+  );
+  const silosDescremada = silos.filter(
+    (silo) => silo.tipo === "tk_ld" && Number(silo.litros_disponibles ?? 0) > 0,
+  );
+  const silosDestino = silos.filter(
+    (silo) => silo.tipo === "silo" && ![datos.silo_entera, datos.silo_descremada].includes(String(silo.id)),
+  );
+
   const calcular = async (e: React.FormEvent) => {
     e.preventDefault();
     setOcupado(true);
@@ -207,8 +231,8 @@ function FormularioVale({
               className="control bg-white"
             >
               <option value="">Selecciona</option>
-              {silos.map((s) => (
-                <option key={s.id} value={s.id}>{s.codigo}</option>
+              {silosDestino.map((s) => (
+                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.capacidad_disponible ?? s.capacidad_l).toLocaleString("es-CL")} L libres</option>
               ))}
             </select>
           </Campo>
@@ -219,12 +243,12 @@ function FormularioVale({
           <Campo label="Silo">
             <select
               required value={datos.silo_entera}
-              onChange={(e) => cambiar("silo_entera", e.target.value)}
+              onChange={(e) => seleccionarOrigen("silo_entera", "entera_disponible", e.target.value)}
               className="control bg-white"
             >
               <option value="">Selecciona</option>
-              {silos.map((s) => (
-                <option key={s.id} value={s.id}>{s.codigo}</option>
+              {silosEntera.map((s) => (
+                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.litros_disponibles).toLocaleString("es-CL")} L disponibles</option>
               ))}
             </select>
           </Campo>
@@ -237,7 +261,7 @@ function FormularioVale({
             onChange={(v) => cambiar("entera_sng", v)}
           />
           <Numero
-            label="Disponible (L)" valor={datos.entera_disponible} opcional
+            label="Disponible en silo (L)" valor={datos.entera_disponible} opcional soloLectura
             onChange={(v) => cambiar("entera_disponible", v)}
           />
         </Bloque>
@@ -246,12 +270,12 @@ function FormularioVale({
           <Campo label="Estanque">
             <select
               value={datos.silo_descremada}
-              onChange={(e) => cambiar("silo_descremada", e.target.value)}
+              onChange={(e) => seleccionarOrigen("silo_descremada", "descremada_disponible", e.target.value)}
               className="control bg-white"
             >
               <option value="">Sin estanque declarado</option>
-              {silos.map((s) => (
-                <option key={s.id} value={s.id}>{s.codigo}</option>
+              {silosDescremada.map((s) => (
+                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.litros_disponibles).toLocaleString("es-CL")} L disponibles</option>
               ))}
             </select>
           </Campo>
@@ -264,7 +288,7 @@ function FormularioVale({
             onChange={(v) => cambiar("descremada_sng", v)}
           />
           <Numero
-            label="Disponible (L)" valor={datos.descremada_disponible} opcional
+            label="Disponible en TK (L)" valor={datos.descremada_disponible} opcional soloLectura
             onChange={(v) => cambiar("descremada_disponible", v)}
           />
         </Bloque>
@@ -357,12 +381,13 @@ function Campo({
 
 
 function Numero({
-  label, valor, onChange, opcional = false,
+  label, valor, onChange, opcional = false, soloLectura = false,
 }: {
   label: string;
   valor: string;
   onChange: (valor: string) => void;
   opcional?: boolean;
+  soloLectura?: boolean;
 }) {
   return (
     <Campo label={label}>
@@ -372,8 +397,9 @@ function Numero({
         step="0.01"
         min="0"
         value={valor}
+        readOnly={soloLectura}
         onChange={(e) => onChange(e.target.value)}
-        className="control"
+        className={`control ${soloLectura ? "bg-slate-50 text-slate-500" : ""}`}
       />
     </Campo>
   );

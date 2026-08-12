@@ -1,4 +1,5 @@
 import api from "./api";
+import type { Silo } from "./recepcion.service";
 
 interface Pagina<T> { results: T[] }
 
@@ -72,6 +73,7 @@ export interface CatalogosEstandarizacion {
   */
   minutos_agitacion: number;
   transiciones: Record<string, string[]>;
+  silos: Silo[];
 }
 
 export async function obtenerVales(params?: {

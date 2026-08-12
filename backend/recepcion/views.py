@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
@@ -9,14 +10,50 @@ from rest_framework.response import Response
 
 from maestros.models import Silo
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
+from usuarios.models import PerfilUsuario, Rol
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin,
-    filtrar_por_scope, sucursal_para_escritura,
+    filtrar_por_scope, scope_de, sucursal_para_escritura,
 )
 
 from . import dominio
-from .models import MovimientoSilo, Recepcion
+from .models import CONTROLES_POR_CAMION, CONTROLES_POR_MODULO, MovimientoSilo, Recepcion
 from .serializers import MovimientoSiloSerializer, RecepcionSerializer
+
+
+def _usuarios_recepcion(usuario, sucursal_id):
+    consulta = User.objects.filter(
+        is_active=True,
+        perfil__empresa_id=scope_de(usuario, requerido=True).empresa_id,
+    ).filter(
+        Q(perfil__area=PerfilUsuario.Area.RECEPCION) | Q(perfil__rol=Rol.RECEPCION)
+    )
+    if sucursal_id:
+        consulta = consulta.filter(perfil__sucursal_id=sucursal_id)
+    return consulta.order_by("first_name", "last_name", "username")
+
+
+def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
+    """Crea avisos operativos solo para la misma empresa y planta."""
+    from inventario.models import Notificacion
+
+    destinatarios = PerfilUsuario.objects.filter(
+        area__in=areas,
+        empresa_id=recepcion.sucursal.empresa_id,
+        sucursal_id=recepcion.sucursal_id,
+        usuario__is_active=True,
+    ).values_list("usuario_id", flat=True)
+    Notificacion.objects.bulk_create([
+        Notificacion(
+            destinatario_id=usuario_id,
+            tipo=tipo,
+            titulo=titulo,
+            mensaje=mensaje,
+            documento_tipo="recepcion_leche",
+            documento_id=recepcion.id,
+        )
+        for usuario_id in destinatarios
+    ])
 
 
 class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
@@ -154,7 +191,20 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         if serializer.validated_data.get("operador") is None:
             extra["operador"] = self.request.user
 
-        serializer.save(sucursal=sucursal, estado=Recepcion.Estado.REGISTRADA, **extra)
+        recepcion = serializer.save(
+            sucursal=sucursal, estado=Recepcion.Estado.REGISTRADA, **extra
+        )
+        _notificar_recepcion(
+            recepcion,
+            tipo="leche_recepcionada",
+            titulo="Leche recepcionada",
+            mensaje=(
+                f"Se recibieron {recepcion.litros} L del camion "
+                f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'}, "
+                f"modulo {recepcion.modulo or 'sin identificar'}."
+            ),
+            areas=[PerfilUsuario.Area.RECEPCION],
+        )
 
     def perform_update(self, serializer):
         serializer.save()
@@ -169,6 +219,8 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        responsable_id = request.data.get("responsable") or request.user.id
+
         with transaction.atomic():
             recepcion = Recepcion.objects.select_for_update().get(pk=self.get_object().pk)
             if recepcion.estado != Recepcion.Estado.REGISTRADA:
@@ -182,8 +234,18 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     status=status.HTTP_409_CONFLICT,
                 )
 
+            try:
+                responsable = _usuarios_recepcion(
+                    request.user, recepcion.sucursal_id
+                ).get(pk=responsable_id)
+            except (User.DoesNotExist, TypeError, ValueError):
+                return Response(
+                    {"responsable": "Selecciona un usuario activo del area Recepcion."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             recepcion.codigo_muestra = codigo
-            recepcion.muestreado_por = request.user
+            recepcion.muestreado_por = responsable
             recepcion.muestreado_en = timezone.now()
             recepcion.estado = Recepcion.Estado.MUESTREADA
             recepcion.save(
@@ -207,7 +269,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         except DRFValidationError as error:
             return Response({"controles": error.detail}, status=status.HTTP_400_BAD_REQUEST)
 
-        evaluacion = dominio.evaluar_recepcion(controles)
         decision_manual = request.data.get("decision")
         motivo_manual = str(request.data.get("motivo", "")).strip()
 
@@ -216,12 +277,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 {"motivo": "Una retención manual debe indicar el motivo."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if decision_manual != "retener" and not evaluacion.analizada:
-            return Response(
-                {"controles": f"Falta completar: {', '.join(evaluacion.faltantes)}."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
         with transaction.atomic():
             recepcion = Recepcion.objects.select_for_update().get(pk=self.get_object().pk)
             if recepcion.estado not in (Recepcion.Estado.MUESTREADA, Recepcion.Estado.RETENIDA):
@@ -229,6 +284,42 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     {"detail": "La recepción debe estar muestreada para decidir su calidad."},
                     status=status.HTTP_409_CONFLICT,
                 )
+
+            # Solo crioscopia pertenece al modulo. El resto describe el camion
+            # completo y se reutiliza en todos sus compartimientos.
+            hermanos = Recepcion.objects.select_for_update().filter(
+                sucursal_id=recepcion.sucursal_id,
+                fecha=recepcion.fecha,
+                vehiculo_id=recepcion.vehiculo_id,
+                guia=recepcion.guia,
+            )
+            compartidos = {}
+            for hermano in hermanos:
+                for clave in CONTROLES_POR_CAMION:
+                    valor = (hermano.controles or {}).get(clave)
+                    if valor not in (None, ""):
+                        compartidos.setdefault(clave, valor)
+            compartidos.update({
+                clave: valor for clave, valor in controles.items()
+                if clave in CONTROLES_POR_CAMION and valor not in (None, "")
+            })
+            controles = {
+                **compartidos,
+                **{
+                    clave: valor for clave, valor in controles.items()
+                    if clave in CONTROLES_POR_MODULO
+                },
+            }
+            evaluacion = dominio.evaluar_recepcion(controles)
+            if decision_manual != "retener" and not evaluacion.analizada:
+                return Response(
+                    {"controles": f"Falta completar: {', '.join(evaluacion.faltantes)}."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            for hermano in hermanos.exclude(pk=recepcion.pk):
+                hermano.controles = {**(hermano.controles or {}), **compartidos}
+                hermano.save(update_fields=["controles"])
 
             retenida = decision_manual == "retener" or not evaluacion.liberable
             recepcion.controles = controles
@@ -380,7 +471,36 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             recepcion.estado = Recepcion.Estado.DESCARGADA
             recepcion.save(update_fields=["estado"])
 
+            _notificar_recepcion(
+                recepcion,
+                tipo="leche_disponible_estandarizacion",
+                titulo=f"Leche disponible en {silo.codigo}",
+                mensaje=(
+                    f"Recepcion confirmada: {recepcion.litros} L quedaron en "
+                    f"{silo.codigo} y ya pueden seleccionarse en Estandarizacion."
+                ),
+                areas=[PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CONDENSACION],
+            )
+
         return Response(self.get_serializer(recepcion).data)
+
+    @action(detail=False, methods=["get"], url_path="catalogos-flujo")
+    def catalogos_flujo(self, request):
+        scope = scope_de(request.user, requerido=True)
+        sucursal_id = scope.sucursal_id if scope.es_sucursal else None
+        usuarios = _usuarios_recepcion(request.user, sucursal_id)
+        return Response({
+            "responsables_recepcion": [
+                {
+                    "id": usuario.id,
+                    "nombre": usuario.get_full_name().strip() or usuario.username,
+                    "turno": usuario.perfil.turno,
+                }
+                for usuario in usuarios.select_related("perfil")
+            ],
+            "controles_camion": sorted(CONTROLES_POR_CAMION),
+            "controles_modulo": sorted(CONTROLES_POR_MODULO),
+        })
 
 
 class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):

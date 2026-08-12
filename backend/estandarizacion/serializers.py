@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from maestros.models import Silo
 
 from .models import ValeEstandarizacion
 
@@ -83,6 +84,30 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         if presentes and producto and producto.mandante.empresa_id != presentes[0].sucursal.empresa_id:
             raise serializers.ValidationError(
                 {"producto": "El producto debe pertenecer a la empresa de los silos."}
+            )
+
+        entera = silos["silo_entera"]
+        descremada = silos["silo_descremada"]
+        destino = silos["silo_destino"]
+        if entera and entera.tipo != Silo.Tipo.SILO:
+            raise serializers.ValidationError(
+                {"silo_entera": "Selecciona un silo de leche entera."}
+            )
+        if descremada and descremada.tipo != Silo.Tipo.TK_LD:
+            raise serializers.ValidationError(
+                {"silo_descremada": "Selecciona un TK de leche descremada."}
+            )
+        if destino and destino.tipo != Silo.Tipo.SILO:
+            raise serializers.ValidationError(
+                {"silo_destino": "El destino debe ser un silo de leche."}
+            )
+
+        litros_descremada = attrs.get(
+            "litros_descremada", getattr(self.instance, "litros_descremada", 0)
+        )
+        if litros_descremada and not descremada:
+            raise serializers.ValidationError(
+                {"silo_descremada": "La mezcla requiere un TK de leche descremada."}
             )
 
         return attrs

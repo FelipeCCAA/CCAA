@@ -1,10 +1,13 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db.models.functions import Coalesce
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from usuarios.permisos import EscribeEstandarizacion
-from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin
+from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope
+from maestros.models import Silo
 
 from . import servicios
 from .dominio import Leche, calcular_mezcla
@@ -177,6 +180,21 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         servidor usa para aceptar la muestra, y una copia terminaría ofreciendo
         el botón antes de tiempo.
         """
+        silos = filtrar_por_scope(
+            Silo.objects.filter(activo=True), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        ).annotate(
+            litros_disponibles=Coalesce(
+                Sum(Case(
+                    When(movimientos__tipo="salida", then=-F("movimientos__litros")),
+                    default=F("movimientos__litros"),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                )),
+                Value(0),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )
+        )
+
         return Response({
             "estados": [
                 {"valor": valor, "etiqueta": etiqueta}
@@ -187,4 +205,17 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
                 estado: sorted(destinos)
                 for estado, destinos in ValeEstandarizacion.TRANSICIONES.items()
             },
+            "silos": [
+                {
+                    "id": silo.id,
+                    "codigo": silo.codigo,
+                    "tipo": silo.tipo,
+                    "tipo_etiqueta": silo.get_tipo_display(),
+                    "capacidad_l": silo.capacidad_l,
+                    "litros_disponibles": silo.litros_disponibles,
+                    "capacidad_disponible": silo.capacidad_l - silo.litros_disponibles,
+                    "activo": silo.activo,
+                }
+                for silo in silos
+            ],
         })
