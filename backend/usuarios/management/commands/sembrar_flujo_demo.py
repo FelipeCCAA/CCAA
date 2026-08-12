@@ -340,6 +340,10 @@ class Command(BaseCommand):
         lote.estado = Lote.Estado.PRODUCIDO
         lote.save()
 
+        # Los kilos ya existen: la ejecucion de secado cierra con su salida, y
+        # con eso la cadena queda recorrible de punta a punta.
+        servicios_produccion.registrar_produccion(lote=lote)
+
         especificacion = contexto["especificacion"]
 
         # Valores dentro de rango: el sembrado muestra un lote conforme. Para

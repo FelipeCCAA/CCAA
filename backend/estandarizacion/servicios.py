@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
 from maestros.models import Silo
+from procesos.servicios import cerrar_estandarizacion, registrar_estandarizacion
 from recepcion.models import MovimientoSilo
 
 
@@ -101,6 +102,11 @@ def transferir(*, vale_id, usuario):
     vale.estado = ValeEstandarizacion.Estado.TRANSFERIDO
     vale.responsable = vale.responsable or usuario
     vale.save(update_fields=["estado", "responsable"])
+
+    # El vale queda registrado como ejecucion de la etapa
+    # «Estandarizacion»: es el mismo hecho de planta, y este es el
+    # momento en que la mezcla ocurre de verdad.
+    registrar_estandarizacion(vale=vale)
 
     return vale
 
@@ -190,6 +196,11 @@ def decidir(*, vale_id, usuario):
         vale.observaciones = f"{vale.observaciones}\n{nota}".strip()
 
     vale.save(update_fields=["estado", "responsable", "observaciones"])
+
+    # Cierra la etapa solo si quedo conforme. Un vale que va a
+    # correccion sigue en ejecucion, que es lo que pasa en el silo.
+    if vale.estado == ValeEstandarizacion.Estado.LIBERADO:
+        cerrar_estandarizacion(vale=vale)
 
     return vale, evaluacion
 

@@ -102,7 +102,12 @@ def genealogia_lote(
                 entrada.lote
                 for salida in ejecuciones
                 for entrada in salida.ejecucion.entradas.select_related("lote__producto")
-                if (sucursal_id is None or entrada.lote.sucursal_id == sucursal_id)
+                # Una entrada puede venir de un **silo** y no de un lote:
+                # es el caso de la estandarizacion, que toma leche cruda.
+                # La cadena de lotes termina ahi, y de ahi hacia atras la
+                # responde el libro de movimientos de silo.
+                if entrada.lote_id
+                and (sucursal_id is None or entrada.lote.sucursal_id == sucursal_id)
                 and (empresa_id is None or entrada.lote.sucursal.empresa_id == empresa_id)
             ]
             pares = [(rel.id, actual_id) for rel in relacionados]
@@ -125,3 +130,103 @@ def genealogia_lote(
                 frontera.append((relacionado.id, profundidad + 1))
 
     return {"nodos": list(nodos.values()), "enlaces": enlaces}
+
+
+@transaction.atomic
+def registrar_estandarizacion(*, vale):
+    """
+    Deja el vale registrado como una ejecución de la etapa «Estandarización».
+
+    **Un vale es una ejecución de esa etapa**, no algo que la acompaña: son el
+    mismo hecho de planta visto desde dos sitios. El vale lleva la receta y el
+    RC; la ejecución lleva el lugar en la cadena, que es lo que después responde
+    de qué salió un saco.
+
+    Se registra cuando el vale **se transfiere**, que es cuando la mezcla ocurre
+    de verdad: antes de eso el vale es un cálculo, y una ejecución de algo que
+    no pasó ensucia la trazabilidad con corridas que nunca existieron.
+
+    Las entradas son **silos**, no lotes: esa leche todavía no es de ningún
+    lote. La salida es el silo de destino, por lo mismo.
+
+    Idempotente: si el vale ya tiene su ejecución, la devuelve. Transferir es
+    una acción única, pero un reintento no debería duplicar la corrida.
+    """
+    from .models import EntradaProceso, EtapaProceso, SalidaProceso
+
+    existente = EjecucionProceso.objects.filter(vale=vale).first()
+
+    if existente is not None:
+        return existente
+
+    etapa = (
+        EtapaProceso.objects.filter(
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION, activa=True
+        )
+        .order_by("proceso__version", "orden")
+        .last()
+    )
+
+    if etapa is None:
+        # No es un error del vale: es que nadie declaró el proceso. Se avisa y
+        # no se rompe la transferencia, que es una operación de planta y no
+        # puede depender de que el maestro esté completo.
+        return None
+
+    ejecucion = EjecucionProceso.objects.create(
+        codigo=f"EJ-{vale.codigo}",
+        etapa=etapa,
+        sucursal=vale.silo_destino.sucursal,
+        responsable=vale.responsable,
+        vale=vale,
+        estado=EjecucionProceso.Estado.EJECUCION,
+        inicio=timezone.now(),
+    )
+
+    EntradaProceso.objects.create(
+        ejecucion=ejecucion,
+        silo=vale.silo_entera,
+        tipo=EntradaProceso.Tipo.PRINCIPAL,
+        cantidad=vale.litros_entera,
+        unidad="L",
+    )
+
+    if vale.silo_descremada_id and vale.litros_descremada:
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion,
+            silo=vale.silo_descremada,
+            tipo=EntradaProceso.Tipo.MEZCLA,
+            cantidad=vale.litros_descremada,
+            unidad="L",
+        )
+
+    SalidaProceso.objects.create(
+        ejecucion=ejecucion,
+        silo=vale.silo_destino,
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+        cantidad=vale.volumen,
+        unidad="L",
+    )
+
+    return ejecucion
+
+
+@transaction.atomic
+def cerrar_estandarizacion(*, vale):
+    """
+    Cierra la ejecución del vale cuando su RC quedó conforme.
+
+    El cierre es lo que dice que la etapa terminó bien. Un vale que se va a
+    corrección **no cierra**: sigue en ejecución, que es exactamente lo que
+    está pasando en el silo.
+    """
+    ejecucion = EjecucionProceso.objects.filter(vale=vale).first()
+
+    if ejecucion is None or ejecucion.estado == EjecucionProceso.Estado.CERRADA:
+        return ejecucion
+
+    ejecucion.estado = EjecucionProceso.Estado.CERRADA
+    ejecucion.termino = timezone.now()
+    ejecucion.save(update_fields=["estado", "termino"])
+
+    return ejecucion

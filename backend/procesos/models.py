@@ -100,6 +100,15 @@ class EjecucionProceso(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
         related_name="ejecuciones_proceso", null=True, blank=True,
     )
+    # **Un vale de estandarización ES una ejecución de esa etapa.** No es que
+    # una la acompañe a la otra: son el mismo hecho de planta visto desde dos
+    # sitios —el vale lleva la receta y el RC, la ejecución lleva el lugar en la
+    # cadena—. Uno a uno para que no puedan contradecirse.
+    vale = models.OneToOneField(
+        "estandarizacion.ValeEstandarizacion", on_delete=models.PROTECT,
+        related_name="ejecucion", null=True, blank=True,
+        verbose_name="Vale de estandarización",
+    )
     estado = models.CharField(
         max_length=25, choices=Estado.choices, default=Estado.BORRADOR, db_index=True
     )
@@ -147,7 +156,16 @@ class EntradaProceso(models.Model):
         EjecucionProceso, on_delete=models.PROTECT, related_name="entradas"
     )
     lote = models.ForeignKey(
-        "produccion.Lote", on_delete=models.PROTECT, related_name="entradas_proceso"
+        "produccion.Lote", on_delete=models.PROTECT, related_name="entradas_proceso",
+        null=True, blank=True,
+    )
+    # Las primeras etapas de la planta no consumen lotes: la estandarización
+    # toma leche de un silo y del TK de descremada, y esa leche no es de ningún
+    # lote todavía. Con `lote` obligatorio, esas etapas no se podían registrar y
+    # la cadena de trazabilidad empezaba a mitad del proceso.
+    silo = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT, related_name="entradas_proceso",
+        null=True, blank=True, verbose_name="Silo de origen",
     )
     tipo = models.CharField(max_length=20, choices=Tipo.choices, default=Tipo.PRINCIPAL)
     cantidad = models.DecimalField(max_digits=14, decimal_places=3)
@@ -160,14 +178,33 @@ class EntradaProceso(models.Model):
             models.UniqueConstraint(
                 fields=["ejecucion", "lote", "tipo"], name="entrada_unica_ejecucion_lote_tipo"
             ),
+            # Uno de los dos, nunca los dos ni ninguno: una entrada que no dice
+            # de dónde vino no es trazabilidad, y una que dice dos orígenes
+            # obliga a cada consumidor a elegir cuál cree.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(lote__isnull=False, silo__isnull=True)
+                    | models.Q(lote__isnull=True, silo__isnull=False)
+                ),
+                name="entrada_de_un_lote_o_de_un_silo",
+            ),
         ]
 
     def clean(self):
         if not self.ejecucion.editable:
             raise ValidationError("No se pueden agregar entradas a una ejecución cerrada o cancelada.")
 
+        if bool(self.lote_id) == bool(self.silo_id):
+            raise ValidationError(
+                "Una entrada viene de un lote o de un silo, y hay que decir de cuál."
+            )
+
         if self.lote_id and self.lote.sucursal_id != self.ejecucion.sucursal_id:
             raise ValidationError({"lote": "El lote debe pertenecer a la sucursal de la ejecución."})
+
+        if self.silo_id and self.silo.sucursal_id != self.ejecucion.sucursal_id:
+            raise ValidationError({"silo": "El silo debe pertenecer a la sucursal de la ejecución."})
+
         self._validar_autorizacion_de_reproceso()
 
     def _validar_autorizacion_de_reproceso(self):
@@ -223,6 +260,13 @@ class SalidaProceso(models.Model):
         "produccion.Lote", on_delete=models.PROTECT, related_name="salidas_proceso",
         null=True, blank=True,
     )
+    # La estandarización entrega su mezcla a un silo, no a un lote: la leche
+    # queda ahí hasta que alguien declara a qué producto va. Mismo motivo que
+    # en la entrada.
+    silo = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT, related_name="salidas_proceso",
+        null=True, blank=True, verbose_name="Silo de destino",
+    )
     naturaleza = models.CharField(
         max_length=20, choices=Naturaleza.choices, default=Naturaleza.PRINCIPAL
     )
@@ -243,8 +287,14 @@ class SalidaProceso(models.Model):
     def clean(self):
         if not self.ejecucion.editable:
             raise ValidationError("No se pueden agregar salidas a una ejecución cerrada o cancelada.")
-        if self.naturaleza != self.Naturaleza.MERMA and not self.lote_id:
-            raise ValidationError({"lote": "Toda salida inventariable debe identificar un lote."})
+        if self.naturaleza != self.Naturaleza.MERMA and not (self.lote_id or self.silo_id):
+            raise ValidationError({
+                "lote": "Toda salida inventariable debe identificar un lote o un silo."
+            })
+        if self.lote_id and self.silo_id:
+            raise ValidationError(
+                "Una salida va a un lote o a un silo, no a los dos."
+            )
         if self.naturaleza == self.Naturaleza.MERMA and not self.motivo.strip():
             raise ValidationError({"motivo": "Toda merma requiere un motivo."})
 
