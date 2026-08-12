@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, ArrowDownToLine, Beaker, Droplets, Plus, ShieldCheck,
+  AlertTriangle, ArrowDownToLine, Beaker, Bell, Droplets, FlaskConical, Plus, ShieldCheck,
   Truck, Warehouse, type LucideIcon,
 } from "lucide-react";
 
@@ -14,6 +14,7 @@ import {
 } from "../../services/recoleccion.service";
 import { puedeEscribir } from "../../services/sesion";
 import FormularioRecepcion from "./FormularioRecepcion";
+import { obtenerNotificaciones, type Notificacion } from "../../services/inventario.service";
 
 /*
   El turno de un vistazo.
@@ -85,6 +86,7 @@ function Panel() {
   const [enCamino, setEnCamino] = useState<CargaEsperada[]>([]);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [formulario, setFormulario] = useState(false);
+  const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
 
   const puedeEditar = puedeEscribir("recepcion");
 
@@ -92,6 +94,9 @@ function Panel() {
     void obtenerResumen().then(setResumen).catch(() => setResumen(null));
     void obtenerOcupacion().then(setOcupacion).catch(() => setOcupacion(null));
     void obtenerCargasPendientes().then(setEnCamino).catch(() => setEnCamino([]));
+    void obtenerNotificaciones()
+      .then((datos) => setNotificaciones(datos.filter((item) => item.tipo.startsWith("leche_"))))
+      .catch(() => setNotificaciones([]));
   };
 
   useEffect(() => {
@@ -142,6 +147,17 @@ function Panel() {
         </Link>
       )}
 
+      {notificaciones.length > 0 && (
+        <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-sky-900"><Bell className="h-4 w-4" />Últimos avisos del flujo</div>
+          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+            {notificaciones.slice(0, 4).map((aviso) => (
+              <div key={aviso.id} className="rounded-xl bg-white px-4 py-3 ring-1 ring-sky-100"><p className="text-sm font-semibold text-slate-800">{aviso.titulo}</p><p className="mt-1 text-xs leading-5 text-slate-500">{aviso.mensaje}</p></div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Una sola partición del flujo, y cada casilla lleva a su pestaña. */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Paso
@@ -166,7 +182,7 @@ function Panel() {
         />
       </section>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Paso
           a="silos" etiqueta="Volumen en planta"
           valor={`${formato.format(ocupacion?.litros_totales ?? 0)} L`}
@@ -178,6 +194,12 @@ function Panel() {
           valor={n("descargada") + n("cerrada")}
           detalle={`de ${resumen?.total ?? 0} recepciones registradas`}
           icono={Warehouse}
+        />
+        <Paso
+          a="/estandarizacion" etiqueta="Siguiente área"
+          valor="Estandarizar"
+          detalle="Elegir Silo 1 o cualquier silo creado con leche disponible"
+          icono={FlaskConical} tono="violet"
         />
       </section>
 

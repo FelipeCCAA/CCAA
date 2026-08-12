@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { ArrowRight, Beaker, ChevronRight, FlaskConical, Truck, Warehouse } from "lucide-react";
+import { Link, NavLink, Outlet } from "react-router-dom";
 
 
 /*
@@ -47,20 +48,34 @@ function Leche() {
 
       <div className="mx-auto max-w-[1480px]">
 
-        <header className="mb-6">
+        <header className="mb-6 rounded-3xl bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-800 px-6 py-7 text-white shadow-sm sm:px-8">
 
-          <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">
-            Operación · Leche cruda
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-200">
+            Flujo operativo · Leche cruda
           </p>
 
-          <h1 className="mt-2 text-3xl font-bold text-slate-800">
-            Recolección y recepción
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
+            Del camión a estandarización
           </h1>
 
-          <p className="mt-2 max-w-3xl text-slate-500">
-            Del predio al silo: rutas y controles en origen, llegada a planta,
-            decisión de Calidad y descarga.
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-100">
+            Recepciona el camión, controla cada módulo, descarga en un silo y
+            entrega la leche disponible directamente a Estandarización.
           </p>
+
+          <div className="mt-6 grid gap-2 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-center">
+            <Etapa icono={Truck} numero="1" titulo="Recepción" detalle="Datos del camión" />
+            <ArrowRight className="hidden h-4 w-4 text-emerald-300 md:block" />
+            <Etapa icono={Beaker} numero="2" titulo="Calidad" detalle="Camión + crioscopía por módulo" />
+            <ArrowRight className="hidden h-4 w-4 text-emerald-300 md:block" />
+            <Etapa icono={Warehouse} numero="3" titulo="Silo" detalle="Asignar y descargar" />
+            <ArrowRight className="hidden h-4 w-4 text-emerald-300 md:block" />
+            <Link to="/estandarizacion" className="group flex items-center gap-3 rounded-2xl border border-white/25 bg-white px-4 py-3 text-emerald-950 transition hover:bg-emerald-50">
+              <FlaskConical className="h-5 w-5 text-emerald-700" />
+              <span className="min-w-0 flex-1"><span className="block text-xs font-bold uppercase tracking-wide text-emerald-700">4 · Estandarización</span><span className="block truncate text-xs text-emerald-900/70">Seleccionar silo disponible</span></span>
+              <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+            </Link>
+          </div>
 
         </header>
 
@@ -89,6 +104,15 @@ function Leche() {
 
       </div>
 
+    </div>
+  );
+}
+
+function Etapa({ icono: Icono, numero, titulo, detalle }: { icono: typeof Truck; numero: string; titulo: string; detalle: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/10">
+      <Icono className="h-5 w-5 text-emerald-200" />
+      <span><span className="block text-xs font-bold uppercase tracking-wide text-emerald-200">{numero} · {titulo}</span><span className="block text-xs text-emerald-50/75">{detalle}</span></span>
     </div>
   );
 }
