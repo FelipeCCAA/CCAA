@@ -31,6 +31,13 @@ jobs:
       DJANGO_DEBUG: "false"
       DJANGO_SECRET_KEY: ci-only-not-a-production-secret-012345678901234567890123456789
       DJANGO_ALLOWED_HOSTS: localhost
+      # El cliente de pruebas habla HTTP plano. Con DEBUG=false esta opción vale
+      # `true` por omisión, y entonces `SecurityMiddleware` responde 301 a cada
+      # petición: los tests de API no llegan a la vista y fallan comparando un
+      # redirect contra el código que esperaban. Bajarla aquí no relaja nada,
+      # porque `ci` no es un entorno endurecido y es el job `production-config`
+      # el que comprueba la configuración real de producción.
+      DJANGO_SECURE_SSL_REDIRECT: "false"
       DB_ENGINE: postgresql
       DATABASE_URL: postgresql://ccaa:ci-only-password@127.0.0.1:5432/ccaa_ci
       CCAA_INITIAL_COMPANY_RUT: TENANT-CI
@@ -95,5 +102,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
-      - run: npx tsc --noEmit --pretty false
+      # `tsc -b`, no `--noEmit`: `tsconfig.json` es de tipo solución (`files: []`
+      # más referencias), así que `--noEmit` no compila ningún proyecto y sale
+      # con 0 pase lo que pase. Este paso llevaba tiempo sin comprobar nada.
+      - run: npx tsc -b --pretty false
       - run: npm run build
