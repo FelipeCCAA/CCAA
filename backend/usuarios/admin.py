@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 
-from .models import Empresa, IntentoAcceso, PerfilUsuario, Sucursal
+from .models import AreaDePerfil, Empresa, IntentoAcceso, PerfilUsuario, Sucursal
 from .throttling import (
     LoginUsuarioThrottle,
     clave_de_ip,
@@ -47,21 +47,46 @@ class UsuarioAdmin(UserAdmin):
         return perfil.get_nivel_display() if perfil else "—"
 
 
+class AreaDePerfilInline(admin.TabularInline):
+    """
+    Las otras áreas en las que trabaja esta persona.
+
+    Va aquí dentro y no en su propia pantalla porque no es una entidad del
+    negocio: es un atributo del perfil, y editarlo aparte obligaría a buscar dos
+    veces a la misma persona.
+    """
+
+    model = AreaDePerfil
+    extra = 0
+    verbose_name = "Área adicional"
+    verbose_name_plural = "Otras áreas en las que trabaja"
+
+
 @admin.register(PerfilUsuario)
 class PerfilUsuarioAdmin(admin.ModelAdmin):
     list_display = (
         "usuario", "administrador_de_area", "nivel", "empresa", "sucursal",
-        "area", "cargo", "turno",
+        "area", "otras_areas", "cargo", "turno",
     )
     list_filter = ("nivel", "empresa", "sucursal", "area")
     exclude = ("rol",)
     search_fields = ("usuario__username", "usuario__first_name", "usuario__last_name", "cargo")
     autocomplete_fields = ("usuario",)
     list_select_related = ("usuario", "empresa", "sucursal")
+    inlines = [AreaDePerfilInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("areas_adicionales")
 
     @admin.display(boolean=True, description="Admin. de área")
     def administrador_de_area(self, perfil):
         return perfil.es_admin_de_area
+
+    @admin.display(description="Otras áreas")
+    def otras_areas(self, perfil):
+        return ", ".join(
+            extra.get_area_display() for extra in perfil.areas_adicionales.all()
+        ) or "—"
 
 
 @admin.register(Empresa)

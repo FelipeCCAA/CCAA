@@ -78,6 +78,12 @@ class SinTenantInventadoTests(TestCase):
                 "alcance": PerfilUsuario.Alcance.SUCURSAL,
                 "cargo": "",
                 "turno": "",
+                # El admin manda el formset del inline de áreas adicionales en cada
+                # envío; sin él, el formulario entero es inválido.
+                "areas_adicionales-TOTAL_FORMS": "0",
+                "areas_adicionales-INITIAL_FORMS": "0",
+                "areas_adicionales-MIN_NUM_FORMS": "0",
+                "areas_adicionales-MAX_NUM_FORMS": "1000",
             },
         )
 
@@ -102,6 +108,12 @@ class SinTenantInventadoTests(TestCase):
                 "alcance": PerfilUsuario.Alcance.SUCURSAL,
                 "cargo": "",
                 "turno": "",
+                # El admin manda el formset del inline de áreas adicionales en cada
+                # envío; sin él, el formulario entero es inválido.
+                "areas_adicionales-TOTAL_FORMS": "0",
+                "areas_adicionales-INITIAL_FORMS": "0",
+                "areas_adicionales-MIN_NUM_FORMS": "0",
+                "areas_adicionales-MAX_NUM_FORMS": "1000",
             },
         )
 

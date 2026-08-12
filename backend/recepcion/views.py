@@ -11,6 +11,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
 from maestros.models import Silo
+from usuarios.areas import perfiles_del_area, usuarios_del_area
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
 from usuarios.models import PerfilUsuario, Rol, Sucursal
 from usuarios.tenancy import (
@@ -24,27 +25,37 @@ from .serializers import MovimientoSiloSerializer, RecepcionSerializer
 
 
 def _usuarios_recepcion(usuario, sucursal_id):
-    consulta = User.objects.filter(
-        is_active=True,
-        perfil__empresa_id=scope_de(usuario, requerido=True).empresa_id,
-    ).filter(
-        Q(perfil__area=PerfilUsuario.Area.RECEPCION) | Q(perfil__rol=Rol.RECEPCION)
-    )
-    if sucursal_id:
-        consulta = consulta.filter(perfil__sucursal_id=sucursal_id)
-    return consulta.order_by("first_name", "last_name", "username")
+    """Quién puede figurar como responsable de una muestra."""
+    return usuarios_del_area(
+        PerfilUsuario.Area.RECEPCION,
+        empresa_id=scope_de(usuario, requerido=True).empresa_id,
+        sucursal_id=sucursal_id or None,
+    ).order_by("first_name", "last_name", "username")
 
 
 def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
-    """Crea avisos operativos solo para la misma empresa y planta."""
+    """
+    Crea avisos operativos solo para la misma empresa y planta.
+
+    Pregunta **lo mismo** que `_usuarios_recepcion`. Cuando cada una lo
+    preguntaba a su manera —una miraba `area` o `rol`, esta solo `area`— una
+    persona podía aparecer en el desplegable de responsables y no recibir nunca
+    un aviso; en la base de desarrollo, donde ningún perfil tiene área cargada,
+    la lista de destinatarios salía **vacía siempre** y las notificaciones no
+    llegaban a nadie sin que nada fallara.
+    """
     from inventario.models import Notificacion
 
-    destinatarios = PerfilUsuario.objects.filter(
-        area__in=areas,
-        empresa_id=recepcion.sucursal.empresa_id,
-        sucursal_id=recepcion.sucursal_id,
-        usuario__is_active=True,
-    ).values_list("usuario_id", flat=True)
+    destinatarios = set()
+
+    for area in areas:
+        destinatarios.update(
+            perfiles_del_area(
+                area,
+                empresa_id=recepcion.sucursal.empresa_id,
+                sucursal_id=recepcion.sucursal_id,
+            ).values_list("usuario_id", flat=True)
+        )
     Notificacion.objects.bulk_create([
         Notificacion(
             destinatario_id=usuario_id,

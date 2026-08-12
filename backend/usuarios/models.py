@@ -78,23 +78,40 @@ class Sucursal(models.Model):
 
 class Rol(models.TextChoices):
     """
-    Los cinco roles del proceso, tal como los define el prototipo
+    Los roles del proceso, tal como los define el prototipo
     (prototipo/js/modelo/esquema.js, CATALOGOS.roles).
 
     No son categorías administrativas: cada uno corresponde a quién hace qué
     en planta, y de ahí sale la regla central del sistema — solo Calidad y
     Administración autorizan la liberación de un lote.
+
+    **`OPERARIO` es un comodín y no dice dónde trabaja nadie.** En CCAA la misma
+    persona opera en Recepción y en Fabricación, así que el rol dejó de servir
+    para deducir el área: para eso está `PerfilUsuario.area` y sus áreas
+    adicionales. Un operario sin área asignada no escribe en ninguna parte, y
+    eso es lo correcto — el permiso lo da el área, no la etiqueta.
     """
 
     RECEPCION = "recepcion", "Recepción"
     PRODUCCION = "produccion", "Producción"
     CALIDAD = "calidad", "Calidad"
+    OPERARIO = "operario", "Operario"
     ADMIN = "admin", "Administrador"
     LECTURA = "lectura", "Solo lectura"
 
 
 # Quiénes pueden autorizar una liberación (MODELO_DATOS.md §1).
 ROLES_AUTORIZADORES = (Rol.CALIDAD, Rol.ADMIN)
+
+# Los roles que **sí** nombran un área, para los perfiles antiguos que se
+# cargaron sin ella. Es el respaldo que ya aplicaba `rol_de`, escrito una vez.
+# `operario`, `admin` y `lectura` no aparecen: no dicen dónde trabaja nadie, y
+# tratarlos como si lo dijeran repartiría avisos de Recepción a toda la planta.
+AREAS_QUE_NOMBRA_EL_ROL: dict[str, tuple[str, ...]] = {
+    Rol.RECEPCION: ("recepcion",),
+    Rol.CALIDAD: ("calidad",),
+    Rol.PRODUCCION: ("condensacion", "secado", "envase"),
+}
 
 
 class PerfilUsuario(models.Model):
@@ -217,6 +234,55 @@ class PerfilUsuario(models.Model):
             raise ValidationError(
                 {"alcance": "Solo Administración general puede abarcar toda la empresa."}
             )
+
+
+class AreaDePerfil(models.Model):
+    """
+    Un área más en la que trabaja esta persona.
+
+    En CCAA **una persona desempeña más de una función en más de un área**: el
+    mismo operario puede estar en Recepción por la mañana y en Fabricación por
+    la tarde. Un solo campo `area` no puede decir eso, y quien lo consulta —a
+    quién avisar de que llegó leche, a quién ofrecer como responsable— acaba
+    dejando fuera a media planta.
+
+    `PerfilUsuario.area` sigue siendo el **área principal**, y es la única que
+    hoy concede permisos (`rol_de` y las clases con `areas_escritura`). Estas
+    son las adicionales: suman presencia, **no permisos**. Que un operario de
+    Recepción que también trabaja en Bodega pueda escribir en Bodega es una
+    decisión de quién responde por cada área, no un efecto colateral de
+    apuntarlo aquí.
+    """
+
+    perfil = models.ForeignKey(
+        PerfilUsuario,
+        on_delete=models.CASCADE,
+        related_name="areas_adicionales",
+        verbose_name="Perfil",
+    )
+
+    area = models.CharField("Área", max_length=30, choices=PerfilUsuario.Area.choices)
+
+    class Meta:
+        verbose_name = "Área adicional"
+        verbose_name_plural = "Áreas adicionales"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["perfil", "area"], name="area_adicional_unica_por_perfil"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.perfil.usuario.username} · {self.get_area_display()}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        if self.area and self.area == self.perfil.area:
+            raise ValidationError({
+                "area": "Esa ya es el área principal del perfil; no hace falta repetirla."
+            })
 
 
 def rol_de(usuario) -> str | None:
