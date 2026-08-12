@@ -33,6 +33,31 @@ def _usuarios_recepcion(usuario, sucursal_id):
     return consulta.order_by("first_name", "last_name", "username")
 
 
+def _modulos_del_mismo_camion(recepcion):
+    """
+    Los compartimientos que llegaron en la misma carga, con sus filas tomadas.
+
+    Comparten los resultados del camion —todos menos la crioscopia, que se mide
+    por modulo—, asi que Calidad los teclea una vez.
+
+    **El camion tiene que estar identificado**: por su patente o por su guia. Sin
+    ninguna de las dos no hay carga comun que compartir, y agrupar por «los dos
+    vacios» juntaria recepciones que no tienen nada que ver entre si — algo que
+    no es hipotetico, porque la base ya tiene dos filas asi del mismo dia. En
+    ese caso el modulo esta solo, que es la respuesta segura: obliga a teclear
+    sus controles, y teclear de mas solo molesta.
+    """
+    if recepcion.vehiculo_id is None and not recepcion.guia:
+        return Recepcion.objects.select_for_update().filter(pk=recepcion.pk)
+
+    return Recepcion.objects.select_for_update().filter(
+        sucursal_id=recepcion.sucursal_id,
+        fecha=recepcion.fecha,
+        vehiculo_id=recepcion.vehiculo_id,
+        guia=recepcion.guia,
+    )
+
+
 def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
     """Crea avisos operativos solo para la misma empresa y planta."""
     from inventario.models import Notificacion
@@ -287,12 +312,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
             # Solo crioscopia pertenece al modulo. El resto describe el camion
             # completo y se reutiliza en todos sus compartimientos.
-            hermanos = Recepcion.objects.select_for_update().filter(
-                sucursal_id=recepcion.sucursal_id,
-                fecha=recepcion.fecha,
-                vehiculo_id=recepcion.vehiculo_id,
-                guia=recepcion.guia,
-            )
+            hermanos = _modulos_del_mismo_camion(recepcion)
             compartidos = {}
             for hermano in hermanos:
                 for clave in CONTROLES_POR_CAMION:
@@ -317,7 +337,18 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            for hermano in hermanos.exclude(pk=recepcion.pk):
+            # Se **lee** de todos los hermanos y se **escribe** solo en los que
+            # siguen sin decidir. Un hermano ya liberado o descargado tiene su
+            # veredicto tomado, y el veredicto se deriva de los controles en vez
+            # de guardarse: reescribirselos se lo cambia despues de que la leche
+            # entro al silo, y el registro queda diciendo «Aprobada por Calidad»
+            # mientras su propio analisis dice antibiotico positivo. Un retenido
+            # tampoco: su retencion se justifico con los valores que tiene.
+            pendientes = hermanos.exclude(pk=recepcion.pk).filter(
+                estado__in=(Recepcion.Estado.REGISTRADA, Recepcion.Estado.MUESTREADA)
+            )
+
+            for hermano in pendientes:
                 hermano.controles = {**(hermano.controles or {}), **compartidos}
                 hermano.save(update_fields=["controles"])
 
