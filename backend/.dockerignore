@@ -10,3 +10,7 @@ db.sqlite3
 staticfiles
 .pytest_cache
 .ruff_cache
+**/tests*.py
+requirements-dev.txt
+pyproject.toml
+iniciar_servidor.cmd

@@ -1,7 +1,7 @@
 # Plan maestro de rediseño funcional, técnico y operativo de CCAA
 
 **Fecha:** 4 de agosto de 2026  
-**Base analizada:** repositorio local CCAA, documentación de levantamiento, configuración Vercel/Neon y pruebas existentes.  
+**Base analizada:** repositorio local CCAA, documentación de levantamiento, configuración Docker/Ubuntu y pruebas existentes.
 **Propósito:** servir como base común para UX/UI, desarrollo, BPMN, reglas, pruebas, seguridad, rendimiento y evolución a producción.
 
 ---
@@ -11,7 +11,7 @@
 1. La planta opera una o más líneas de recepción, condensación, secado y envase; los nombres y capacidades definitivos de cada equipo deben confirmarse con Operaciones.
 2. Los límites críticos y especificaciones que aparecen en código o documentos son evidencia del prototipo, no sustituyen la aprobación formal de Calidad/HACCP.
 3. El repositorio contiene módulos funcionales de usuarios, maestros, recepción, planificación, producción, calidad, inocuidad, inventario y auditoría. Mantenimiento, trazabilidad transversal y reportería avanzada todavía no existen como módulos completos.
-4. Vercel y Neon son adecuados para demostración y piloto controlado. La capacidad máxima no está demostrada porque no existe una prueba de carga representativa registrada.
+4. Docker Compose sobre Ubuntu y PostgreSQL son adecuados para el despliegue actual. La capacidad máxima no está demostrada porque no existe una prueba de carga representativa registrada.
 5. Las recomendaciones marcadas **Obligatoria** son necesarias antes de operación crítica. Las marcadas **Deseable** pueden incorporarse gradualmente.
 
 ---
@@ -30,9 +30,9 @@ El principal problema no es la tecnología: es que el crecimiento funcional ha d
 
 | ID | Severidad | Área | Problema comprobado o brecha | Causa | Consecuencia | Recomendación | Complejidad |
 |---|---|---|---|---|---|---|---|
-| D-01 | Crítica | Seguridad | Una credencial de Neon fue compartida durante el despliegue | Gestión manual de secretos | Acceso no autorizado y fuga de datos | Rotar contraseña/URL, secretos Django y tokens; revisar historial | Baja |
+| D-01 | Crítica | Seguridad | Una credencial de base fue compartida durante el despliegue | Gestión manual de secretos | Acceso no autorizado y fuga de datos | Rotar contraseña, secretos Django y tokens; revisar historial | Baja |
 | D-02 | Crítica | Liberación | La trazabilidad completa no está modelada como grafo de genealogía | `Lote` y consumos cubren parte del flujo, no mezclas/divisiones universales | Un lote podría cumplir controles sin demostrar toda su genealogía | Crear ejecución de proceso, entradas, salidas y relaciones entre lotes | Alta |
-| D-03 | Crítica | Archivos | Los `FileField` locales no son durables en ejecución serverless | Sistema de archivos efímero | Pérdida de evidencias y documentos | Blob/S3 compatible, hash, metadatos y validación | Media |
+| D-03 | Crítica | Archivos | Los `FileField` locales no son durables sin un volumen dedicado | Sistema de archivos del contenedor | Pérdida de evidencias y documentos | Volumen persistente o Blob/S3 compatible, hash, metadatos y validación | Media |
 | D-04 | Crítica | Concurrencia | Descarga a silo y algunas operaciones no muestran idempotencia uniforme | Protección transaccional desigual | Doble descarga, saldos o estados inconsistentes | Clave idempotente, bloqueo de recepción/silo y prueba PostgreSQL | Media |
 | D-05 | Crítica | Calidad/Inocuidad | Debe demostrarse con pruebas que toda falla crítica bloquea y nunca admite concesión | Reglas distribuidas entre dominio y vistas | Liberación indebida | Servicio único de decisión, códigos de motivo inmutables y pruebas de regresión | Media |
 | D-06 | Alta | Arquitectura | No existe módulo completo de mantenimiento | Alcance incremental | Fallas, preventivos y paradas quedan fuera de CCAA | Implementar equipos, planes, OT, fallas y repuestos en fase 7 | Alta |
@@ -43,7 +43,7 @@ El principal problema no es la tecnología: es que el crecimiento funcional ha d
 | D-11 | Alta | Calidad | Expedientes agregan y evalúan conjuntos en Python sin paginación uniforme | Endpoint compuesto | Latencia al crecer lotes y documentos | Resumen materializado, filtros, paginación y prefetch específico | Media |
 | D-12 | Alta | Auditoría | Inventario no está incluido uniformemente en todos los mecanismos de auditoría | Cobertura por señales/middleware parcial | Cambios críticos sin historial homogéneo | Registro de eventos de dominio y auditoría transaccional | Media |
 | D-13 | Alta | Usuarios | Permisos combinan rol, nivel y área; falta política declarativa por acción/estado | Evolución incremental | Reglas difíciles de auditar y mantener | Matriz RBAC contextual y permisos por objeto | Alta |
-| D-14 | Alta | Operación | Migraciones no aparecen automatizadas en el despliegue Vercel | Backend serverless sin pipeline operativo | Código nuevo con esquema anterior | Pipeline controlado de migración, backup y rollback | Media |
+| D-14 | Alta | Operación | Las migraciones requieren una etapa explícita y verificable | Falta de pipeline operativo completo | Código nuevo con esquema anterior | Pipeline controlado de migración, backup y rollback | Media |
 | D-15 | Alta | Continuidad | No hay evidencia de restauración ensayada, RPO/RTO o runbooks | Piloto inicial | Recuperación incierta | Backups verificados, simulacro y runbooks | Media |
 | D-16 | Media | Modelo industrial | Producto y receta existen, pero no hay una abstracción universal de etapa con N entradas/N salidas | Modelo centrado en lote terminado | Reprocesos y coproductos se fuerzan a campos particulares | Modelo configurable de ejecución y genealogía | Alta |
 | D-17 | Media | Estados | Cada módulo usa estados propios, pero no existe servicio uniforme de transición | Máquinas distribuidas | Saltos inválidos y botones inconsistentes | Servicios `transicionar()` con precondiciones y auditoría | Media |
@@ -504,7 +504,7 @@ Cachear catálogos de baja variación, permisos/capacidades del usuario, especif
 
 ## 7.7 Archivos
 
-- Almacenamiento de objetos privado, no disco local de Vercel.
+- Almacenamiento de objetos privado o volumen durable, no el sistema efímero del contenedor.
 - URL firmada de duración corta.
 - Límites de tamaño y tipos permitidos.
 - MIME real, extensión, hash SHA-256, usuario y objeto relacionado.
@@ -527,8 +527,8 @@ Cachear catálogos de baja variación, permisos/capacidades del usuario, especif
 - Logs JSON con `request_id`, usuario, planta, ruta, duración y código de dominio; nunca secretos.
 - Captura de excepciones, trazas y métricas: p50/p95/p99, errores, consultas lentas, locks, conexiones, cola y tareas fallidas.
 - Deploy con etapas: pruebas, build, backup, migración compatible, despliegue y smoke test.
-- Vercel puede continuar para frontend/piloto. Para operación continua con workers y tareas largas, evaluar contenedor Django en Railway/Azure/AWS/Render manteniendo React en CDN y PostgreSQL administrado.
-- Neon pooled URL es apropiada para solicitudes serverless, pero el pool comparte capacidad real y no reemplaza la optimización de consultas.
+- El despliegue continuo en Ubuntu debe mantener Nginx, Gunicorn y PostgreSQL aislados, con backups y métricas; Redis/Celery puede incorporarse cuando las tareas largas lo justifiquen.
+- El pool de conexiones comparte capacidad real y no reemplaza la optimización de consultas.
 
 ---
 
@@ -572,9 +572,9 @@ Cachear catálogos de baja variación, permisos/capacidades del usuario, especif
 ## 8.4 Infraestructura
 
 - Mantener región de backend y base cercana.
-- Usar conexión pooled en serverless y conexión directa para migraciones si lo requiere la operación.
+- Mantener conexiones persistentes con un tiempo acotado y medir el máximo admitido por PostgreSQL.
 - Definir timeouts explícitos y límites de concurrencia.
-- Medir cold starts y latencia de reactivación de Neon.
+- Medir CPU, memoria, conexiones y latencia de los contenedores en Ubuntu.
 - Pruebas de carga con datos equivalentes: 20, 50 y 100 usuarios concurrentes; no usar SQLite.
 
 ## 8.5 Reportes
@@ -625,7 +625,7 @@ Cachear catálogos de baja variación, permisos/capacidades del usuario, especif
 | US-001 | Como responsable de seguridad, quiero rotar secretos y limitar credenciales para impedir accesos no autorizados | P0 | Credenciales anteriores inválidas; escaneo sin secretos | SEG-001 | Ninguna | Plataforma | Alto | Baja |
 | US-002 | Como operador de recepción, quiero que una descarga repetida sea idempotente para no duplicar leche en silo | P0 | Dos solicitudes producen un movimiento; prueba concurrente PostgreSQL | REC-002/003 | Silos | Recepción | Crítico | Media |
 | US-003 | Como Calidad, quiero que evidencias permanezcan en almacenamiento privado para conservar el expediente | P0 | Archivo persiste tras deploy; hash y autorización | LIB-002, AUD-001 | Storage | Documentos | Crítico | Media |
-| US-004 | Como administrador, quiero recuperar la base desde backup para asegurar continuidad | P0 | Simulacro documentado dentro del RTO | AUD-001 | Neon | Plataforma | Crítico | Media |
+| US-004 | Como administrador, quiero recuperar la base desde backup para asegurar continuidad | P0 | Simulacro documentado dentro del RTO | AUD-001 | PostgreSQL | Plataforma | Crítico | Media |
 | US-005 | Como administrador de área, quiero gestionar solo trabajadores de mi planta/área para respetar segregación | P0 | Queryset aislado; pruebas 403/404; creación hereda área | SEG-001 | Usuarios | Usuarios | Alto | Media |
 | US-006 | Como operador, quiero ver únicamente mis tareas críticas para priorizar el turno | P1 | Dashboard por rol; enlace a listado filtrado | — | Diseño base | Inicio | Medio | Media |
 | US-007 | Como usuario, quiero mensajes que indiquen el bloqueo y cómo resolverlo | P1 | Error incluye código, faltantes y enlaces | Todas | API de capacidades | UX transversal | Medio | Media |
@@ -747,17 +747,15 @@ Estos son objetivos a validar, no resultados medidos.
 
 - `backend/usuarios`, `maestros`, `recepcion`, `planificacion`, `produccion`, `calidad`, `inocuidad`, `inventario`, `auditoria`.
 - `frontend/src/pages`, `components`, `services` y `app/routes.tsx`.
-- `vercel.json`, `backend/config/settings.py` y documentación de despliegue.
+- `compose.yml`, `compose.production.yml`, `infra/nginx/`, `backend/config/settings.py` y documentación de despliegue.
 - Levantamiento de planta, catálogo de formatos y backlog de julio de 2026.
 
 ## Documentación oficial consultada
 
 - [Django: transacciones](https://docs.djangoproject.com/en/6.0/topics/db/transactions/)
 - [Django: `select_for_update`](https://docs.djangoproject.com/en/6.1/ref/models/querysets/#select-for-update)
-- [Vercel: runtime Python](https://vercel.com/docs/functions/runtimes/python)
-- [Vercel: concurrencia y escalado](https://vercel.com/docs/functions/concurrency-scaling)
-- [Vercel: almacenamiento](https://vercel.com/docs/storage)
-- [Neon: connection pooling](https://neon.com/docs/connect/connection-pooling)
+- [Docker: Compose en producción](https://docs.docker.com/compose/production/)
+- [Gunicorn: configuración](https://docs.gunicorn.org/en/stable/settings.html)
 - [Bizagi: múltiples pools e interacciones](https://help.bizagi.com/platform/en/multiple_pools.htm)
 - [Bizagi: buenas prácticas de modelado](https://help.bizagi.com/platform/en/best_practices_in_modeling.htm)
 

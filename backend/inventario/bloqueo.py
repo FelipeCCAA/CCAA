@@ -2,9 +2,9 @@
 Un candado para operaciones caras que no deben solaparse.
 
 El MRP semanal explota las recetas multinivel de toda una semana **dentro de la
-petición HTTP**. Sacarlo a una cola es lo correcto, pero exige un proceso
-trabajador que el despliegue actual no tiene: en Vercel las funciones son
-efímeras y no hay dónde correr un worker. Mientras tanto, el riesgo concreto no
+petición HTTP**. Sacarlo a una cola es lo correcto, pero exige mantener un
+proceso trabajador de Celery. Mientras ese worker no esté habilitado, el riesgo
+concreto no
 es que tarde: es que **se apile**.
 
 Basta con que tres personas pulsen «calcular» —o que una pulse tres veces

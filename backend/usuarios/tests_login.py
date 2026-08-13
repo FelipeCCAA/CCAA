@@ -142,7 +142,7 @@ class LimiteDeIntentosTests(BaseLogin):
 )
 class DetrasDeUnProxyTests(BaseLogin):
     """
-    El caso del despliegue real: Nginx o Vercel delante.
+    El caso del despliegue real: Nginx delante.
 
     Sin declarar cuántos proxies hay, DRF usa la cabecera `X-Forwarded-For`
     **entera** como identidad. Quien ataca manda una distinta en cada petición,

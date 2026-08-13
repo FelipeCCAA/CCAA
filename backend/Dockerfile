@@ -11,8 +11,7 @@ RUN addgroup --system ccaa && adduser --system --ingroup ccaa ccaa
 COPY requirements.txt ./
 RUN pip install --requirement requirements.txt
 
-COPY . .
-RUN chown -R ccaa:ccaa /app
+COPY --chown=ccaa:ccaa . .
 
 USER ccaa
 

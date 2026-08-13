@@ -1,5 +1,7 @@
 .git
 .github
+.ruff_cache
+**/.ruff_cache
 .venv
 **/.venv
 node_modules
@@ -10,6 +12,18 @@ __pycache__
 **/__pycache__
 *.pyc
 *.log
+test-results
+**/test-results
+**/playwright-report
+frontend/tests
+backend/**/tests*.py
+backend/requirements-dev.txt
+backend/pyproject.toml
+backend/iniciar_servidor.cmd
+docs
+*.md
+*.pptx
+*.xlsx
 .env
 **/.env
 backend/db.sqlite3

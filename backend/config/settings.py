@@ -134,7 +134,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # PostgreSQL no es una preferencia de despliegue: sus bloqueos de fila y
 # restricciones forman parte de las reglas de negocio. No existe fallback.
 DB_ENGINE = os.getenv("DB_ENGINE", "postgresql")
-# Neon/Vercel puede publicar la conexión con cualquiera de estos nombres.
+# Se acepta una URL de conexión para proveedores PostgreSQL administrados.
 # DATABASE_URL conserva prioridad; la URL sin pool es una última alternativa.
 DATABASE_URL = (
     os.getenv("DATABASE_URL")
@@ -148,8 +148,8 @@ DATABASE_CONFIGURED = bool(DATABASE_URL) or all(
 )
 
 if DATABASE_URL:
-    # Vercel Marketplace (por ejemplo Neon) entrega la conexion completa en
-    # DATABASE_URL. Tiene prioridad sobre las variables DB_* individuales.
+    # Algunos proveedores entregan la conexion completa en DATABASE_URL.
+    # Tiene prioridad sobre las variables DB_* individuales.
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,

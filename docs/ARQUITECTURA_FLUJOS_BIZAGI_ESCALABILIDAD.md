@@ -12,7 +12,7 @@ CCAA es una aplicación web para gestionar el ciclo productivo de una planta lá
 
 > Un lote solo puede liberarse si la producción está cerrada, el dossier exigible está completo, la calidad es conforme y los controles de inocuidad no presentan bloqueos. Un producto no conforme puede seguir únicamente por concesión documentada; una falla de inocuidad no admite concesión.
 
-La arquitectura actual es un **monolito modular**: una sola aplicación Django contiene módulos de negocio separados y expone una API REST; React consume esa API; PostgreSQL conserva los datos. En producción temporal, Vercel entrega el frontend estático y ejecuta Django como función Python; Neon presta PostgreSQL con conexión agrupada.
+La arquitectura actual es un **monolito modular**: una sola aplicación Django contiene módulos de negocio separados y expone una API REST; React consume esa API; PostgreSQL conserva los datos. En producción, Docker Compose ejecuta Nginx, Gunicorn/Django y PostgreSQL en un servidor Ubuntu.
 
 ### Dictamen de escalabilidad
 
@@ -49,10 +49,10 @@ Estas cifras muestran amplitud funcional, no capacidad. La capacidad simultánea
 
 ```mermaid
 flowchart LR
-    U[Usuarios de planta\nRecepción · Producción · Calidad\nBodega · Compras · Administración] -->|HTTPS| V[Vercel]
-    V --> F[Frontend React + Vite\ncontenido estático]
-    F -->|REST /api + Token| B[Backend Django + DRF\nfunción Python]
-    B -->|SQL cifrado\nconexión pooler| N[(PostgreSQL Neon)]
+    U[Usuarios de planta\nRecepción · Producción · Calidad\nBodega · Compras · Administración] -->|HTTPS| N[Nginx en Ubuntu]
+    N --> F[Frontend React + Vite\ncontenido estático]
+    F -->|REST /api + Token| B[Backend Django + DRF\nGunicorn]
+    B -->|red privada Docker| P[(PostgreSQL 17)]
     A[Administrador técnico] -->|/admin| B
     B -. pendiente producción .-> E[Correo Microsoft Graph\no proveedor SMTP]
     B -. pendiente durable .-> O[Almacenamiento de archivos\nBlob/S3 compatible]
@@ -66,10 +66,10 @@ flowchart LR
 | API | Django 6, Django REST Framework | Autenticación, permisos, reglas, transacciones y serialización | Implementado |
 | Dominio | Funciones Python puras | Decidir estados, bloqueos, calidad, balances y trazabilidad | Implementado por módulo |
 | Persistencia | Django ORM + PostgreSQL | Datos, restricciones, transacciones y bloqueos de fila | Implementado; PostgreSQL es obligatorio en operación |
-| Hosting | Vercel Services | Rewrites, frontend y ejecución Python serverless | Temporal / piloto |
-| Base administrada | Neon PostgreSQL | Persistencia compartida y pool de conexiones | Implementado |
-| Archivos | `FileField` local | Adjuntos de abastecimiento | **No apto todavía para serverless** |
-| Correo | Backend configurable | Recuperación de contraseña | En Vercel se configuró consola; no entrega correos reales |
+| Hosting | Docker Compose sobre Ubuntu | Nginx, frontend y ejecución Django/Gunicorn | Implementado |
+| Base de datos | PostgreSQL 17 | Persistencia compartida y bloqueos de fila | Implementado en volumen Docker |
+| Archivos | `FileField` local | Adjuntos de abastecimiento | Requiere volumen persistente antes de uso operativo |
+| Correo | Backend configurable | Recuperación de contraseña | Microsoft Graph configurable por entorno |
 
 ### 3.3 Diagrama de componentes del backend
 
@@ -100,15 +100,14 @@ La separación más sólida está en Inventario: las vistas delegan operaciones 
 
 ```mermaid
 flowchart LR
-    GH[GitHub · rama main] -->|push| BUILD[Vercel Build]
-    BUILD --> FE[Servicio frontend\nVite → dist]
-    BUILD --> BE[Servicio backend\nDjango WSGI]
-    ROUTER[Vercel Router] -->|/, /login, pantallas| FE
-    ROUTER -->|/api, /admin, /static| BE
-    BE -->|DATABASE_URL pooler| DB[(Neon PostgreSQL · iad1)]
+    GH[GitHub · rama main] -->|git pull| BUILD[Docker Compose build]
+    BUILD --> FE[Nginx\nVite → dist]
+    BUILD --> BE[Gunicorn\nDjango WSGI]
+    FE -->|/api, /admin| BE
+    BE -->|red privada| DB[(PostgreSQL 17)]
 ```
 
-`vercel.json` define dos servicios dentro del mismo proyecto y enruta `/api`, `/admin` y `/static` al backend. El resto va al frontend. La aplicación usa `VITE_API_URL=/api/`, por lo que navegador y API comparten dominio y se evita CORS en el flujo normal.
+`compose.yml` y `compose.production.yml` definen los servicios y Nginx enruta `/api`, `/admin` y `/static` al backend. El resto va al frontend. La aplicación usa `VITE_API_URL=/api/`, por lo que navegador y API comparten dominio y se evita CORS en el flujo normal.
 
 ---
 
@@ -385,7 +384,7 @@ Principios del modelo:
 |---|---|
 | Backend sin estado de sesión obligatorio | Varias instancias pueden atender peticiones; el token viaja con cada llamada. |
 | PostgreSQL | Restricciones, transacciones y bloqueos reales bajo concurrencia. |
-| Neon con URL `-pooler` | PgBouncer amortigua muchas conexiones serverless breves. |
+| Conexiones persistentes (`DB_CONN_MAX_AGE`) | Reduce el costo de abrir conexiones repetidamente sin agregar otro servicio. |
 | Paginación REST por defecto (50) | Evita devolver tablas completas en ViewSets estándar. |
 | `select_related`/`prefetch_related` en rutas importantes | Reduce consultas N+1 en lotes y expedientes. |
 | Dominio puro | Las reglas se prueban y se pueden reutilizar sin acoplarlas al ORM o UI. |
@@ -404,7 +403,7 @@ Principios del modelo:
 | Asignación de leche a lote no demuestra bloqueo del saldo de silo | Dos lotes pueden consumir simultáneamente sobre un saldo que solo se calcula después | P0 si el stock debe bloquear |
 | Expedientes de Calidad recorren lotes y calculan en Python sin paginación propia | Respuesta lenta al crecer el histórico | P1 |
 | Auditoría excluye actualmente la app `inventario` | Operaciones sensibles de abastecimiento quedan fuera del registro transversal | P0 de cumplimiento |
-| `FileField` usa almacenamiento local | En ejecución serverless el archivo no es una persistencia durable compartida | P0 antes de usar adjuntos |
+| `FileField` usa almacenamiento local | Sin un volumen dedicado, el archivo se pierde al recrear el contenedor | P0 antes de usar adjuntos |
 | Alertas de inventario recorren insumos/existencias en Python | N+1 y costo alto al crecer catálogo/lotes | P1 |
 | MRP, alertas y correo son síncronos | Solicitudes largas, reintentos inseguros y riesgo de timeout | P1 |
 | Solo recuperación de contraseña tiene throttle explícito | Login y endpoints costosos pueden abusarse o saturarse | P1 |
@@ -412,7 +411,7 @@ Principios del modelo:
 | Migraciones y creación de usuario se ejecutaron manualmente | Riesgo de desplegar código antes del esquema | P0 operativo |
 | Correo de producción configurado a consola | La recuperación no llega al usuario | P0 para operación real |
 | Ruta directa `/login` presentó 404 en una prueba de despliegue | Enlaces y recargas profundas pueden fallar según rewrite vigente | P0 de experiencia/despliegue |
-| Runtime Python de Vercel está documentado como Beta | Adecuado para piloto; evaluar plataforma más convencional para operación crítica | Decisión de plataforma |
+| Recursos del contenedor aún no dimensionados con una prueba de carga | Ajustar workers y memoria con métricas del servidor Ubuntu | Decisión de plataforma |
 
 ### 9.3 Concurrencia: qué está protegido y qué no
 
@@ -455,7 +454,7 @@ Estos son **criterios de prueba propuestos**, no resultados obtenidos.
 
 ### P0 — antes de operación real o demostración con datos sensibles
 
-1. **Rotar credenciales expuestas:** regenerar contraseña/URL de Neon y confirmar que la clave Django compartida previamente ya no está vigente.
+1. **Rotar credenciales expuestas:** regenerar la contraseña de PostgreSQL y confirmar que cualquier clave Django compartida previamente ya no está vigente.
 2. **Persistencia de archivos:** conectar `FileField` a Blob/S3 compatible y guardar hash/tamaño/tipo.
 3. **Idempotencia y locks:** bloquear recepción al descargar; usar una restricción que permita un solo ingreso por recepción; serializar consumo de silo o definir si el saldo negativo solo alerta.
 4. **Auditoría:** incluir Inventario y probar que movimientos/decisiones críticos se registren sin recursión ni ruido.
@@ -561,12 +560,12 @@ Las metas deben ser aprobadas por negocio; no son una garantía del proveedor ni
 
 1. **Problema:** la operación en papel/Excel no garantiza una sola versión del dato ni bloqueos automáticos.
 2. **Solución:** una cadena digital desde recepción hasta liberación, con reglas explicables.
-3. **Arquitectura:** React + API Django modular + PostgreSQL, desplegado temporalmente en Vercel/Neon.
+3. **Arquitectura:** React + API Django modular + PostgreSQL, desplegado con Docker Compose sobre Ubuntu.
 4. **Flujo:** planificar → recibir → producir → controlar → liberar → abastecer/auditar.
 5. **Control central:** no se firma una liberación contra datos que puedan cambiar simultáneamente.
 6. **Fortalezas:** dominio probado, trazabilidad, transacciones, permisos y restricciones.
 7. **Límite honesto:** no existe aún una cifra de capacidad porque no se ha ejecutado una prueba de carga representativa.
-8. **Riesgos:** doble descarga, consultas históricas, adjuntos serverless, auditoría de Inventario y operación manual.
+8. **Riesgos:** doble descarga, consultas históricas, persistencia de adjuntos, auditoría de Inventario y operación manual.
 9. **Plan:** cerrar P0, medir piloto, optimizar P1 y recién después ampliar.
 10. **Decisión solicitada:** aprobar piloto controlado y un sprint de endurecimiento, no una promesa de escala sin evidencia.
 
@@ -576,7 +575,7 @@ Las metas deben ser aprobadas por negocio; no son una garantía del proveedor ni
 
 - [ ] Credenciales rotadas y secretos fuera de capturas/repositorio.
 - [ ] `DEBUG=false`, host y HTTPS correctos.
-- [ ] Base Neon conectada mediante URL pooler y misma región que backend.
+- [ ] Volumen PostgreSQL montado, respaldado y con restauración verificada.
 - [ ] Migraciones aplicadas y verificadas.
 - [ ] Usuario de prueba por cada rol.
 - [ ] `/api/salud/`, login, logout y recuperación verificados.
@@ -584,7 +583,7 @@ Las metas deben ser aprobadas por negocio; no son una garantía del proveedor ni
 - [ ] Flujo de recepción, descarga y ocupación probado.
 - [ ] Flujo de apertura, asignación y cierre de lote probado.
 - [ ] Expediente conforme, concesión y bloqueo por inocuidad probados.
-- [ ] Respaldo/exportación de datos antes de borrar Neon.
+- [ ] Respaldo de PostgreSQL antes de cada cambio de esquema o despliegue mayor.
 - [ ] Monitoreo y canal de reporte de errores activos.
 - [ ] Datos de demostración sin información sensible.
 - [ ] Resultado de prueba de carga piloto adjunto a la decisión de salida.
@@ -596,7 +595,7 @@ Las metas deben ser aprobadas por negocio; no son una garantía del proveedor ni
 ### Repositorio
 
 - `README.md`, `CLAUDE.md`, `DECISIONES.md`.
-- `vercel.json`, `frontend/vercel.json`, `backend/config/settings.py` y `backend/config/urls.py`.
+- `compose.yml`, `compose.production.yml`, `infra/nginx/` y `backend/config/settings.py`.
 - Modelos, vistas, serializadores, servicios, dominios y pruebas de todas las apps bajo `backend/`.
 - `docs/ARQUITECTURA_EVOLUTIVA_ABASTECIMIENTO.md`.
 - `docs/levantamiento-2026-07/LEVANTAMIENTO_PLANTA.md` y backlog asociado.
@@ -608,8 +607,5 @@ Las metas deben ser aprobadas por negocio; no son una garantía del proveedor ni
 - Bizagi, buenas prácticas BPMN: <https://help.bizagi.com/platform/en/best_practices_in_modeling.htm>
 - Django 6.0, transacciones: <https://docs.djangoproject.com/en/6.0/topics/db/transactions/>
 - Django, `select_for_update`: <https://docs.djangoproject.com/en/6.1/ref/models/querysets/#select-for-update>
-- Vercel, escalado de concurrencia: <https://vercel.com/docs/functions/concurrency-scaling>
-- Vercel, runtime Python: <https://vercel.com/docs/functions/runtimes/python>
-- Vercel, almacenamiento: <https://vercel.com/docs/storage>
-- Neon, connection pooling: <https://neon.com/docs/connect/connection-pooling>
-
+- Docker, Compose en producción: <https://docs.docker.com/compose/production/>
+- Gunicorn, configuración: <https://docs.gunicorn.org/en/stable/settings.html>
