@@ -90,7 +90,18 @@ class AbrirProcesoTests(BaseApertura):
         self.assertEqual(lote.estado, Lote.Estado.EN_PROCESO)
         self.assertIsNone(lote.kg_producidos)
 
-    def test_abrir_el_proceso_asigna_la_leche_en_la_misma_operacion(self):
+    def test_produccion_ya_no_elige_silos(self):
+        """
+        **Quien consume la leche de los silos es el vale**, no el lote. La leche
+        que entra a una corrida ya está estandarizada al RC que un producto
+        pide, y lo que el lote hace es declarar a qué producto va.
+
+        Antes había aquí dos pruebas que ejercitaban el camino contrario —abrir
+        el lote eligiendo silos y litros—. Una empezó a fallar cuando la regla
+        cambió; la otra **seguía en verde por el motivo equivocado**: esperaba
+        un 400 por unos litros negativos y lo recibía porque el camino entero
+        dejó de existir. Habría pasado igual con cualquier cuerpo.
+        """
         respuesta = self._abrir(
             asignaciones=[
                 {"silo": self.silo_a.id, "litros": 40000},
@@ -98,23 +109,10 @@ class AbrirProcesoTests(BaseApertura):
             ]
         )
 
-        self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(respuesta.data["asignacion"]["asignado"], 60000)
-        self.assertEqual(MovimientoSilo.objects.count(), 2)
-
-    def test_si_la_asignacion_falla_no_queda_un_lote_abierto_sin_leche(self):
-        """
-        Es la razón de que vayan juntas. Un lote creado a medias parece
-        completo, y nadie vuelve a completar lo que ya existe.
-        """
-        respuesta = self._abrir(
-            asignaciones=[
-                {"silo": self.silo_a.id, "litros": 40000},
-                {"silo": self.silo_b.id, "litros": -5},
-            ]
-        )
-
         self.assertEqual(respuesta.status_code, 400)
+        # El mensaje dice por dónde se hace ahora: un rechazo que no indica la
+        # salida deja al operador probando combinaciones.
+        self.assertIn("vale", str(respuesta.data).lower())
         self.assertFalse(Lote.objects.exists())
         self.assertFalse(MovimientoSilo.objects.exists())
 
