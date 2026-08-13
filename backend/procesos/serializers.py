@@ -22,6 +22,7 @@ class EtapaProcesoSerializer(serializers.ModelSerializer):
 
 class EntradaProcesoSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
+    silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
 
     class Meta:
         model = EntradaProceso
@@ -35,6 +36,7 @@ class EntradaProcesoSerializer(serializers.ModelSerializer):
 
 class SalidaProcesoSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
+    silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
 
     class Meta:
         model = SalidaProceso
@@ -58,6 +60,13 @@ class EjecucionProcesoSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
     etapa_nombre = serializers.CharField(source="etapa.nombre", read_only=True)
     equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
+    vale_codigo = serializers.CharField(source="vale.codigo", read_only=True)
+    lote_codigo = serializers.CharField(
+        source="lote_produccion.codigo_lote", read_only=True
+    )
+    producto_nombre = serializers.CharField(
+        source="lote_produccion.producto.nombre", read_only=True
+    )
     entradas = EntradaProcesoSerializer(many=True, read_only=True)
     salidas = SalidaProcesoSerializer(many=True, read_only=True)
     eventos = EventoProcesoSerializer(many=True, read_only=True)

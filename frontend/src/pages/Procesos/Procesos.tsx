@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitBranch, Search } from "lucide-react";
+import { ArrowRight, Beaker, Factory, GitBranch, Search, Truck } from "lucide-react";
 
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import StatusBadge from "../../components/ui/StatusBadge";
@@ -58,12 +58,64 @@ export default function Procesos() {
             <select value={direccion} onChange={(e) => setDireccion(e.target.value as "atras" | "adelante")} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5"><option value="atras">Hacia atrás</option><option value="adelante">Hacia adelante</option></select>
             <button className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-700 px-5 py-2.5 font-semibold text-white"><Search className="h-4 w-4" />Buscar</button>
           </form>
+          {genealogia?.flujo && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Línea completa del lote
+              </h3>
+              <div className="mt-3 grid items-stretch gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-center gap-2 font-semibold text-slate-800">
+                    <Truck className="h-4 w-4 text-green-700" /> Recepción
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">
+                    {genealogia.flujo.recepciones.length} recepción(es) candidata(s)
+                  </p>
+                  <ul className="mt-2 space-y-1 text-xs text-slate-500">
+                    {genealogia.flujo.recepciones.slice(0, 4).map((item) => (
+                      <li key={`${item.id}-${item.silo_codigo}`}>
+                        {item.fecha} · guía {item.guia || "—"} · {item.silo_codigo}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs text-slate-400">{genealogia.flujo.nota_recepciones}</p>
+                </div>
+                <ArrowRight className="m-auto hidden h-5 w-5 text-slate-300 lg:block" />
+                <div className="rounded-xl border border-green-200 bg-green-50/50 p-4">
+                  <div className="flex items-center gap-2 font-semibold text-slate-800">
+                    <Beaker className="h-4 w-4 text-green-700" /> Estandarización
+                  </div>
+                  <p className="mt-2 text-sm font-medium">{genealogia.flujo.estandarizacion.vale_codigo}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {genealogia.flujo.estandarizacion.silos_origen.map((item) => item.codigo).join(" + ")}
+                    {" → "}{genealogia.flujo.estandarizacion.silo_destino}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Proceso {genealogia.flujo.estandarizacion.ejecucion_codigo || "sin ID"}
+                  </p>
+                </div>
+                <ArrowRight className="m-auto hidden h-5 w-5 text-slate-300 lg:block" />
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-center gap-2 font-semibold text-slate-800">
+                    <Factory className="h-4 w-4 text-green-700" /> Producción
+                  </div>
+                  <p className="mt-2 text-sm font-medium">{genealogia.flujo.produccion.lote_codigo}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {genealogia.flujo.produccion.producto} · {genealogia.flujo.produccion.linea || "sin línea"} · {genealogia.flujo.produccion.equipo || "sin máquina"}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Proceso {genealogia.flujo.produccion.ejecucion_codigo || "sin ID"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {genealogia && <div className="mt-5"><ArbolGenealogia genealogia={genealogia} direccion={direccion} /></div>}
         </section>
 
         <section>
           <h2 className="mb-4 text-xl font-semibold text-slate-800">Ejecuciones recientes</h2>
-          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Aún no hay ejecuciones" detalle="Crea procesos y etapas desde Administración para comenzar la trazabilidad." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-5 py-3">Código</th><th className="px-5 py-3">Etapa</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entradas</th><th className="px-5 py-3">Salidas</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4">{item.etapa_nombre}</td><td className="px-5 py-4">{item.equipo_nombre ?? "—"}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4">{item.entradas.length}</td><td className="px-5 py-4">{item.salidas.length}</td></tr>)}</tbody></table></div>}
+          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Aún no hay ejecuciones" detalle="Crea procesos y etapas desde Administración para comenzar la trazabilidad." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-5 py-3">ID del proceso</th><th className="px-5 py-3">Etapa / documento</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entrada</th><th className="px-5 py-3">Salida</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4"><span>{item.etapa_nombre}</span><span className="block text-xs text-slate-400">{item.vale_codigo || item.lote_codigo || "—"}</span></td><td className="px-5 py-4">{item.equipo_nombre ?? "—"}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4 text-xs">{item.entradas.map((entrada) => entrada.lote_codigo || entrada.silo_codigo).filter(Boolean).join(" + ") || "—"}</td><td className="px-5 py-4 text-xs">{item.salidas.map((salida) => salida.lote_codigo || salida.silo_codigo).filter(Boolean).join(" + ") || "—"}</td></tr>)}</tbody></table></div>}
         </section>
       </div>
     </main>

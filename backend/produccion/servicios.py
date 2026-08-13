@@ -46,7 +46,9 @@ def litros_ya_tomados(vale, excluyendo=None):
 
 
 @transaction.atomic
-def abrir_lote_desde_vale(*, vale, producto, codigo_lote, fecha, litros, **extra):
+def abrir_lote_desde_vale(
+    *, vale, producto, codigo_lote, fecha, litros, usuario=None, **extra
+):
     """
     Abre un lote con la leche que el vale dejó en su silo de destino.
 
@@ -73,6 +75,14 @@ def abrir_lote_desde_vale(*, vale, producto, codigo_lote, fecha, litros, **extra
     if not decision.permitido:
         raise ValidationError(list(decision.bloqueos))
 
+    if producto.pk != vale.producto_id:
+        raise ValidationError({
+            "producto": (
+                f"El vale {vale.codigo} fue estandarizado para "
+                f"{vale.producto.nombre}; no puede usarse para otro producto."
+            )
+        })
+
     lote = Lote.objects.create(
         sucursal=vale.silo_destino.sucursal,
         codigo_lote=codigo_lote,
@@ -96,27 +106,35 @@ def abrir_lote_desde_vale(*, vale, producto, codigo_lote, fecha, litros, **extra
         ),
     )
 
-    _encadenar_con_la_estandarizacion(vale, lote, litros)
+    _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=usuario)
 
     return lote
 
 
-def _encadenar_con_la_estandarizacion(vale, lote, litros):
+def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     """
-    Abre la ejecución de secado que toma la leche del vale y produce el lote.
+    Abre la ejecución de la máquina elegida que toma la leche del vale.
 
     Es lo que cierra la cadena: la estandarización entregó al silo, y esta
     corrida saca de ese silo y devuelve un lote. Con las dos, `genealogia_lote`
     puede recorrer de un saco hacia atrás hasta los silos de origen.
 
-    Si el maestro de procesos no declara una etapa de secado, no se registra
+    Si el maestro no declara la etapa que corresponde a la máquina, no se registra
     nada y la producción sigue: abrir un lote es una operación de planta y no
     puede quedarse detenida porque falte un maestro.
     """
-    from procesos.models import EjecucionProceso, EntradaProceso, EtapaProceso, SalidaProceso
+    from maestros.models import Equipo
+    from procesos.models import EjecucionProceso, EntradaProceso, EtapaProceso
+
+    tipo_etapa = {
+        Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
+        Equipo.Tipo.TORRE: EtapaProceso.Tipo.SECADO,
+        Equipo.Tipo.ENVASADORA: EtapaProceso.Tipo.ENVASADO,
+        Equipo.Tipo.LINEA: EtapaProceso.Tipo.ENVASADO,
+    }.get(lote.equipo.tipo if lote.equipo else None, EtapaProceso.Tipo.SECADO)
 
     etapa = (
-        EtapaProceso.objects.filter(tipo=EtapaProceso.Tipo.SECADO, activa=True)
+        EtapaProceso.objects.filter(tipo=tipo_etapa, activa=True)
         .order_by("proceso__version", "orden")
         .last()
     )
@@ -125,12 +143,19 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros):
         return None
 
     ejecucion = EjecucionProceso.objects.create(
-        codigo=f"EJ-{lote.codigo_lote}",
+        # El código de lote no es globalmente único. La identidad de la base
+        # evita colisiones entre productos, fechas y sucursales.
+        codigo=f"EJ-PROD-{lote.pk}",
         etapa=etapa,
         sucursal=lote.sucursal,
+        equipo=lote.equipo,
+        responsable=usuario,
         estado=EjecucionProceso.Estado.EJECUCION,
         inicio=timezone.now(),
     )
+
+    lote.ejecucion = ejecucion
+    lote.save(update_fields=["ejecucion"])
 
     EntradaProceso.objects.create(
         ejecucion=ejecucion,
@@ -150,7 +175,7 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros):
 @transaction.atomic
 def registrar_produccion(*, lote):
     """
-    Cierra la ejecución de secado con los kilos que salieron.
+    Cierra la ejecución productiva con los kilos que salieron.
 
     Se llama cuando el lote se declara producido: es el momento en que los
     kilos existen. Antes, la ejecución está abierta y sin salida — que es lo
@@ -167,7 +192,7 @@ def registrar_produccion(*, lote):
             "no terminó."
         )
 
-    ejecucion = EjecucionProceso.objects.filter(codigo=f"EJ-{lote.codigo_lote}").first()
+    ejecucion = lote.ejecucion
 
     if ejecucion is None:
         return None

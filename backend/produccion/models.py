@@ -93,6 +93,25 @@ class Lote(models.Model):
         ),
     )
 
+    equipo = models.ForeignKey(
+        "maestros.Equipo",
+        on_delete=models.PROTECT,
+        related_name="lotes_produccion",
+        null=True,
+        blank=True,
+        verbose_name="Máquina / equipo",
+        help_text="Equipo en el que se ejecuta esta corrida de producción.",
+    )
+    ejecucion = models.OneToOneField(
+        "procesos.EjecucionProceso",
+        on_delete=models.PROTECT,
+        related_name="lote_produccion",
+        null=True,
+        blank=True,
+        verbose_name="Ejecución del proceso",
+        help_text="Identidad única de la corrida dentro de la cadena industrial.",
+    )
+
     fecha = models.DateField("Fecha de producción")
     linea = models.CharField("Línea", max_length=5, choices=Linea.choices, blank=True)
     turno = models.CharField("Turno", max_length=5, choices=Turno.choices, blank=True)
@@ -148,6 +167,14 @@ class Lote(models.Model):
         ):
             raise ValidationError(
                 {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}
+            )
+        if (
+            self.sucursal_id
+            and self.equipo_id
+            and self.equipo.sucursal_id != self.sucursal_id
+        ):
+            raise ValidationError(
+                {"equipo": "La máquina debe pertenecer a la sucursal del lote."}
             )
         if (
             self.hora_inicio is not None

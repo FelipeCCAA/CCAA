@@ -9,11 +9,14 @@ export interface EjecucionProceso {
   estado_etiqueta: string;
   etapa_nombre: string;
   equipo_nombre: string | null;
+  vale_codigo: string | null;
+  lote_codigo: string | null;
+  producto_nombre: string | null;
   inicio: string | null;
   termino: string | null;
   acciones_permitidas: string[];
-  entradas: { id: number; lote: number; lote_codigo: string; cantidad: string; unidad: string }[];
-  salidas: { id: number; lote: number | null; lote_codigo: string | null; cantidad: string; unidad: string; naturaleza: string }[];
+  entradas: { id: number; lote: number | null; lote_codigo: string | null; silo: number | null; silo_codigo: string | null; cantidad: string; unidad: string }[];
+  salidas: { id: number; lote: number | null; lote_codigo: string | null; silo: number | null; silo_codigo: string | null; cantidad: string; unidad: string; naturaleza: string }[];
 }
 
 export interface NodoGenealogia {
@@ -37,6 +40,24 @@ export interface Genealogia {
   raiz: number;
   nodos: NodoGenealogia[];
   enlaces: { origen: number; destino: number }[];
+  flujo: {
+    recepciones: {
+      id: number; fecha: string; guia: string; litros: string;
+      vehiculo: string | null; silo_codigo: string;
+    }[];
+    nota_recepciones: string;
+    estandarizacion: {
+      vale_id: number; vale_codigo: string; ejecucion_id: number | null;
+      ejecucion_codigo: string | null;
+      silos_origen: { codigo: string; litros: string }[];
+      silo_destino: string; rc_objetivo: string; rc_real: number | null;
+    };
+    produccion: {
+      lote_id: number; lote_codigo: string; producto: string; linea: string;
+      equipo: string | null; ejecucion_id: number | null;
+      ejecucion_codigo: string | null; estado: string;
+    };
+  } | null;
 }
 
 export async function obtenerEjecuciones(): Promise<Pagina<EjecucionProceso>> {

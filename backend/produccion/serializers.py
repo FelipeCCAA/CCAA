@@ -76,6 +76,16 @@ class LoteSerializer(serializers.ModelSerializer):
         source="producto.mandante.nombre", read_only=True
     )
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    vale_codigo = serializers.CharField(source="vale.codigo", read_only=True)
+    silo_estandarizado_codigo = serializers.CharField(
+        source="vale.silo_destino.codigo", read_only=True
+    )
+    equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
+    ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
+    litros_estandarizados = serializers.DecimalField(
+        max_digits=12, decimal_places=2, write_only=True, required=False
+    )
+    litros_procesados = serializers.SerializerMethodField()
 
     # El resultado de calidad se calcula, nunca se lee de la base
     # (MODELO_DATOS.md §2.2).
@@ -91,6 +101,15 @@ class LoteSerializer(serializers.ModelSerializer):
             "producto",
             "producto_nombre",
             "mandante_nombre",
+            "vale",
+            "vale_codigo",
+            "silo_estandarizado_codigo",
+            "litros_estandarizados",
+            "litros_procesados",
+            "equipo",
+            "equipo_nombre",
+            "ejecucion",
+            "ejecucion_codigo",
             "fecha",
             "linea",
             "turno",
@@ -104,6 +123,7 @@ class LoteSerializer(serializers.ModelSerializer):
             "observacion",
             "calidad",
         ]
+        read_only_fields = ["ejecucion"]
         validators = []
         """validators = [
             # El mensaje por defecto de DRF viene en inglés y lo lee quien
@@ -137,6 +157,19 @@ class LoteSerializer(serializers.ModelSerializer):
                 sucursales = sucursales.filter(pk=scope.sucursal_id)
         self.fields["sucursal"].queryset = sucursales
         self.fields["producto"].queryset = productos
+        self.fields["equipo"].queryset = filtrar_por_scope(
+            Equipo.objects.filter(activo=True), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+
+        from estandarizacion.models import ValeEstandarizacion
+
+        self.fields["vale"].queryset = filtrar_por_scope(
+            ValeEstandarizacion.objects.select_related("silo_destino"),
+            request.user,
+            campo_sucursal="silo_destino__sucursal_id",
+            campo_empresa="silo_destino__sucursal__empresa_id",
+        )
 
     def validate_estado(self, estado):
         """
@@ -175,6 +208,7 @@ class LoteSerializer(serializers.ModelSerializer):
         "codigo_lote",
         "op",
         "producto",
+        "equipo",
         "fecha",
         "linea",
         "turno",
@@ -200,10 +234,42 @@ class LoteSerializer(serializers.ModelSerializer):
 
         sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
         producto = datos.get("producto", getattr(self.instance, "producto", None))
+        vale = datos.get("vale", getattr(self.instance, "vale", None))
+        equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
         if sucursal and producto and producto.mandante.empresa_id != sucursal.empresa_id:
             raise serializers.ValidationError(
                 {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}
             )
+
+        if self.instance is None and vale is not None:
+            if producto and vale.producto_id != producto.id:
+                raise serializers.ValidationError({
+                    "producto": (
+                        f"El vale {vale.codigo} fue estandarizado para "
+                        f"{vale.producto.nombre}."
+                    )
+                })
+            if "litros_estandarizados" not in datos:
+                raise serializers.ValidationError({
+                    "litros_estandarizados": (
+                        "Indica cuántos litros del vale entran a la corrida."
+                    )
+                })
+            if not datos.get("linea"):
+                raise serializers.ValidationError({
+                    "linea": "Selecciona la línea de producción."
+                })
+            if equipo is None:
+                raise serializers.ValidationError({
+                    "equipo": "Selecciona la máquina de la corrida."
+                })
+            datos["sucursal"] = vale.silo_destino.sucursal
+            sucursal = datos["sucursal"]
+
+        if equipo and vale and equipo.sucursal_id != vale.silo_destino.sucursal_id:
+            raise serializers.ValidationError({
+                "equipo": "La máquina debe pertenecer a la planta del vale."
+            })
 
         codigo = datos.get("codigo_lote", getattr(self.instance, "codigo_lote", None))
         fecha = datos.get("fecha", getattr(self.instance, "fecha", None))
@@ -236,6 +302,51 @@ class LoteSerializer(serializers.ModelSerializer):
         self._rechazar_si_esta_liberado(cambios)
 
         return datos
+
+    def create(self, datos):
+        litros = datos.pop("litros_estandarizados", None)
+        vale = datos.pop("vale", None)
+
+        # Los registros históricos pueden no tener vale. La operación normal
+        # de planta entra siempre por el servicio transaccional.
+        if vale is None:
+            return super().create(datos)
+
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from .servicios import abrir_lote_desde_vale
+
+        datos.pop("sucursal", None)
+        try:
+            return abrir_lote_desde_vale(
+                vale=vale,
+                producto=datos.pop("producto"),
+                codigo_lote=datos.pop("codigo_lote"),
+                fecha=datos.pop("fecha"),
+                litros=litros,
+                usuario=getattr(self.context.get("request"), "user", None),
+                **datos,
+            )
+        except DjangoValidationError as error:
+            detalle = (
+                error.message_dict
+                if hasattr(error, "message_dict")
+                else {"detail": error.messages}
+            )
+            raise serializers.ValidationError(detalle)
+
+    def get_litros_procesados(self, lote):
+        if not lote.vale_id:
+            return None
+
+        from recepcion.models import MovimientoSilo
+
+        movimiento = MovimientoSilo.objects.filter(
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=lote.pk,
+            silo=lote.vale.silo_destino,
+        ).first()
+        return float(movimiento.litros) if movimiento else None
 
     def _rechazar_si_no_puede_declararse_producido(self, datos):
         """

@@ -23,6 +23,7 @@ from usuarios.tenancy import (
 )
 
 from . import dominio
+from . import servicios as servicios_produccion
 from .models import (
     Analisis,
     ControlProceso,
@@ -45,7 +46,10 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     # consulta. Sin esto, calcular la calidad de un listado dispararía una
     # consulta por lote.
     queryset = (
-        Lote.objects.select_related("sucursal", "producto", "producto__mandante")
+        Lote.objects.select_related(
+            "sucursal", "producto", "producto__mandante", "vale",
+            "vale__silo_destino", "equipo", "ejecucion",
+        )
         .prefetch_related("analisis")
     )
     serializer_class = LoteSerializer
@@ -110,41 +114,67 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """
-        Abre un proceso: crea el lote y le asigna su leche de una vez.
+        Abre una corrida desde un vale liberado de Estandarización.
 
-        Van juntos a propósito. Si el lote se creara primero y la asignación
-        fuera un segundo paso, un fallo entre medio dejaría un lote abierto
-        sin materia prima — y nadie vuelve a completar lo que ya parece
-        creado. La asignación al inicio es justamente lo que da trazabilidad;
-        posponerla la convierte en documentación retroactiva.
-
-        `asignaciones` es opcional: un lote histórico se carga sin ella, y el
-        aviso al declararlo producido recuerda que quedó sin trazar.
+        Producción no elige silos. El vale ya fija de dónde vino la leche y en
+        qué silo quedó; aquí solo se declara cuánto entra a esta corrida, el
+        producto, la línea y la máquina.
         """
-        lineas = request.data.get("asignaciones") or []
-
-        if lineas and not isinstance(lineas, list):
+        if "asignaciones" in request.data:
             return Response(
-                {"detail": 'Formato: "asignaciones": [{"silo": 3, "litros": 60000}]'},
+                {"detail": (
+                    "Producción no selecciona silos. Selecciona un vale "
+                    "liberado de Estandarización e indica sus litros."
+                )},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        return super().create(request, *args, **kwargs)
 
-        with transaction.atomic():
-            respuesta = super().create(request, *args, **kwargs)
+    @action(detail=False, methods=["get"], url_path="vales-disponibles")
+    def vales_disponibles(self, request):
+        """Vales liberados con saldo, listos para que Producción los tome."""
+        from estandarizacion.models import ValeEstandarizacion
 
-            if lineas:
-                lote = self.get_queryset().get(pk=respuesta.data["id"])
-                creados = self._crear_asignaciones(lote, lineas)
+        vales = filtrar_por_scope(
+            ValeEstandarizacion.objects.filter(
+                estado=ValeEstandarizacion.Estado.LIBERADO
+            ).select_related(
+                "producto", "producto__mandante", "silo_entera",
+                "silo_descremada", "silo_destino",
+            ),
+            request.user,
+            campo_sucursal="silo_destino__sucursal_id",
+            campo_empresa="silo_destino__sucursal__empresa_id",
+        )
 
-                if isinstance(creados, Response):
-                    # Se sale por excepción y no por return: dentro de un
-                    # `atomic`, volver normalmente confirma la transacción y
-                    # dejaría el lote creado sin su leche.
-                    raise serializers.ValidationError(creados.data)
+        producto = request.query_params.get("producto")
+        if producto:
+            vales = vales.filter(producto_id=producto)
 
-                respuesta.data["asignacion"] = self._estado_asignacion(lote)
-
-        return respuesta
+        resultado = []
+        for vale in vales:
+            usados = servicios_produccion.litros_ya_tomados(vale)
+            disponibles = vale.volumen - usados
+            if disponibles <= 0:
+                continue
+            resultado.append({
+                "id": vale.id,
+                "codigo": vale.codigo,
+                "fecha": vale.fecha,
+                "producto": vale.producto_id,
+                "producto_nombre": vale.producto.nombre,
+                "rc_objetivo": vale.rc_objetivo,
+                "rc_real": vale.rc_real,
+                "litros_preparados": vale.volumen,
+                "litros_usados": usados,
+                "litros_disponibles": disponibles,
+                "silo_entera_codigo": vale.silo_entera.codigo,
+                "silo_descremada_codigo": (
+                    vale.silo_descremada.codigo if vale.silo_descremada else None
+                ),
+                "silo_destino_codigo": vale.silo_destino.codigo,
+            })
+        return Response(resultado)
 
     def update(self, request, *args, **kwargs):
         """
@@ -166,6 +196,10 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
         if lote.estado != Lote.Estado.PRODUCIDO:
             return respuesta
+
+        # El mismo cambio de estado completa la salida de la ejecución. Así
+        # Procesos ve la corrida cerrada con su lote, sin una carga manual.
+        servicios_produccion.registrar_produccion(lote=lote)
 
         aviso = self._descontar_de_bodega(lote)
 
@@ -509,6 +543,12 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         trazabilidad existe para impedir.
         """
         from calidad.models import Liberacion
+
+        if lote.vale_id:
+            return (
+                f"El origen lo fija el vale {lote.vale.codigo}: Producción no "
+                "puede cambiar su silo de estandarización."
+            )
 
         if not Lote.TRANSICIONES.get(lote.estado, []):
             return (

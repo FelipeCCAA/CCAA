@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { ArrowRight, Beaker, Factory, X } from "lucide-react";
 import axios from "axios";
 
 import {
   crearLote,
+  obtenerValesDisponibles,
   sugerirCodigoLote,
   type Producto,
+  type ValeDisponible,
 } from "../../services/produccion.service";
-
-import { obtenerSilos, type Silo } from "../../services/recepcion.service";
+import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
 
 
 /*
@@ -20,9 +21,8 @@ import { obtenerSilos, type Silo } from "../../services/recepcion.service";
   del día, y con él toda su trazabilidad — que entonces ya era documentación
   retroactiva.
 
-  La leche va en el mismo formulario y en la misma llamada. Si fuera un
-  segundo paso, un fallo entre medio dejaría un lote abierto sin materia
-  prima, y nadie vuelve a completar lo que ya parece creado.
+  La leche se selecciona por su vale liberado. El vale trae los silos y el RC
+  desde Estandarización; Producción no vuelve a escoger ese origen.
 
   El código se compone del año, el día juliano, el SKU del producto y el
   correlativo del día, y queda editable: el histórico de planta trae códigos
@@ -51,6 +51,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const [fecha, setFecha] = useState(hoy());
   const [op, setOp] = useState("");
   const [linea, setLinea] = useState("");
+  const [equipo, setEquipo] = useState("");
   const [turno, setTurno] = useState("");
   const [observacion, setObservacion] = useState("");
 
@@ -59,20 +60,26 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const [codigoEditado, setCodigoEditado] = useState(false);
   const [notaCodigo, setNotaCodigo] = useState("");
 
-  const [silos, setSilos] = useState<Silo[]>([]);
-  const [asignaciones, setAsignaciones] = useState<
-    { silo: string; litros: string }[]
-  >([]);
+  const [vales, setVales] = useState<ValeDisponible[]>([]);
+  const [vale, setVale] = useState("");
+  const [litros, setLitros] = useState("");
+  const [equipos, setEquipos] = useState<Equipo[]>([]);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    obtenerSilos()
-      .then(setSilos)
-      // Sin la lista no se puede asignar leche, pero el lote se abre igual.
-      .catch(() => setSilos([]));
+    obtenerEquipos().then(setEquipos).catch(() => setEquipos([]));
   }, []);
+
+  useEffect(() => {
+    if (!producto) {
+      return;
+    }
+    obtenerValesDisponibles(Number(producto))
+      .then(setVales)
+      .catch(() => setVales([]));
+  }, [producto]);
 
   const sugerir = useCallback(async () => {
     if (!producto || !fecha || codigoEditado) {
@@ -96,38 +103,25 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
     return () => clearTimeout(temporizador);
   }, [sugerir]);
 
-  const agregarSilo = () =>
-    setAsignaciones((a) => [...a, { silo: "", litros: "" }]);
-
-  const editarSilo = (i: number, campo: "silo" | "litros", valor: string) =>
-    setAsignaciones((a) =>
-      a.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)),
-    );
-
-  const quitarSilo = (i: number) =>
-    setAsignaciones((a) => a.filter((_, j) => j !== i));
-
   const enviar = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     setError("");
     setGuardando(true);
 
-    const leche = asignaciones
-      .filter((l) => l.silo && l.litros)
-      .map((l) => ({ silo: Number(l.silo), litros: Number(l.litros) }));
-
     try {
 
       await crearLote({
         codigo_lote: codigoLote,
         producto: Number(producto),
+        vale: Number(vale),
+        litros_estandarizados: Number(litros),
+        equipo: equipo ? Number(equipo) : undefined,
         fecha,
         op: op || undefined,
         linea: linea || undefined,
         turno: turno || undefined,
         observacion: observacion || undefined,
-        asignaciones: leche.length > 0 ? leche : undefined,
       });
 
       alGuardar();
@@ -166,6 +160,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const etiquetaCampo = "mb-1.5 block text-sm font-medium text-slate-700";
   const campo =
     "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-green-600";
+  const valeSeleccionado = vales.find((item) => item.id === Number(vale));
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
@@ -214,7 +209,12 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
               <select
                 className={campo}
                 value={producto}
-                onChange={(e) => setProducto(e.target.value)}
+                onChange={(e) => {
+                  setProducto(e.target.value);
+                  setVale("");
+                  setLitros("");
+                  setVales([]);
+                }}
                 required
               >
 
@@ -250,18 +250,39 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
             <div>
 
-              <label className={etiquetaCampo}>Línea</label>
+              <label className={etiquetaCampo}>Línea *</label>
 
               <select
                 className={campo}
                 value={linea}
                 onChange={(e) => setLinea(e.target.value)}
+                required
               >
 
                 <option value="">—</option>
                 <option value="E1">E1</option>
                 <option value="E2">E2</option>
 
+              </select>
+
+            </div>
+
+            <div className="sm:col-span-2">
+
+              <label className={etiquetaCampo}>Máquina / equipo *</label>
+
+              <select
+                className={campo}
+                value={equipo}
+                onChange={(e) => setEquipo(e.target.value)}
+                required
+              >
+                <option value="">Selecciona una máquina…</option>
+                {equipos.filter((item) => item.activo).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nombre} · {item.tipo_etiqueta}
+                  </option>
+                ))}
               </select>
 
             </div>
@@ -324,80 +345,93 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
           </div>
 
-          {/* Leche asignada */}
+          {/* Leche estandarizada */}
 
           <div className="mt-8 border-t border-slate-200 pt-6">
 
             <h3 className="text-sm font-semibold text-slate-800">
 
-              Leche asignada
+              Leche estandarizada
 
             </h3>
 
             <p className="mt-1 mb-5 text-sm text-slate-400">
 
-              De qué estanques sale la leche de este lote. Puede ser más de
-              uno. Es lo que da trazabilidad hacia las recepciones: sin esto
-              el lote queda sin origen.
+              Selecciona el vale liberado. Los silos y el RC vienen
+              precargados desde Estandarización y no se vuelven a digitar.
 
             </p>
 
-            {asignaciones.map((linea, i) => (
-
-              <div key={i} className="mb-3 flex items-center gap-3">
-
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={etiquetaCampo}>Vale liberado *</label>
                 <select
                   className={campo}
-                  value={linea.silo}
-                  onChange={(e) => editarSilo(i, "silo", e.target.value)}
+                  value={vale}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setVale(id);
+                    const elegido = vales.find((item) => item.id === Number(id));
+                    setLitros(elegido?.litros_disponibles ?? "");
+                  }}
+                  required
+                  disabled={!producto}
                 >
-
-                  <option value="">Silo…</option>
-
-                  {silos.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.codigo}
+                  <option value="">
+                    {producto ? "Selecciona un vale…" : "Primero selecciona el producto"}
+                  </option>
+                  {vales.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.codigo} · {Number(item.litros_disponibles).toLocaleString("es-CL")} L disponibles
                     </option>
                   ))}
-
                 </select>
-
-                <input
-                  type="number"
-                  min="1"
-                  inputMode="numeric"
-                  className={`${campo} w-40`}
-                  value={linea.litros}
-                  onChange={(e) => editarSilo(i, "litros", e.target.value)}
-                  placeholder="Litros"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => quitarSilo(i)}
-                  aria-label="Quitar este silo"
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
-                >
-
-                  <Trash2 className="h-5 w-5" />
-
-                </button>
-
+                {producto && vales.length === 0 && (
+                  <p className="mt-1.5 text-xs text-amber-700">
+                    No hay vales liberados con saldo para este producto.
+                  </p>
+                )}
               </div>
 
-            ))}
+              <div>
+                <label className={etiquetaCampo}>Litros para esta corrida *</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  max={valeSeleccionado?.litros_disponibles}
+                  className={campo}
+                  value={litros}
+                  onChange={(e) => setLitros(e.target.value)}
+                  required
+                  disabled={!valeSeleccionado}
+                />
+              </div>
+            </div>
 
-            <button
-              type="button"
-              onClick={agregarSilo}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-
-              <Plus className="h-4 w-4" />
-
-              Agregar silo
-
-            </button>
+            {valeSeleccionado && (
+              <div className="mt-5 rounded-2xl border border-green-200 bg-green-50/60 p-4">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                  <Beaker className="h-4 w-4 text-green-700" />
+                  <span>{valeSeleccionado.silo_entera_codigo}</span>
+                  {valeSeleccionado.silo_descremada_codigo && (
+                    <span>+ {valeSeleccionado.silo_descremada_codigo}</span>
+                  )}
+                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                  <strong>{valeSeleccionado.silo_destino_codigo}</strong>
+                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                  <Factory className="h-4 w-4 text-green-700" />
+                  <span>Producción</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Vale {valeSeleccionado.codigo} · RC objetivo {valeSeleccionado.rc_objetivo}
+                  {valeSeleccionado.rc_real != null
+                    ? ` · RC liberado ${valeSeleccionado.rc_real.toFixed(4)}`
+                    : ""}
+                  {` · ${Number(valeSeleccionado.litros_disponibles).toLocaleString("es-CL")} L disponibles`}
+                </p>
+              </div>
+            )}
 
           </div>
 

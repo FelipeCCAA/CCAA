@@ -119,6 +119,14 @@ export interface Lote {
   producto: number;
   producto_nombre: string;
   mandante_nombre: string;
+  vale: number | null;
+  vale_codigo: string | null;
+  silo_estandarizado_codigo: string | null;
+  litros_procesados: number | null;
+  equipo: number | null;
+  equipo_nombre: string | null;
+  ejecucion: number | null;
+  ejecucion_codigo: string | null;
   fecha: string;
   linea: string;
   turno: string;
@@ -216,15 +224,41 @@ export interface FiltrosLotes {
 export interface LoteNuevo {
   codigo_lote: string;
   producto: number;
+  vale: number;
+  litros_estandarizados: number;
+  equipo?: number;
   fecha: string;
   op?: string;
   linea?: string;
   turno?: string;
   bultos?: number;
   observacion?: string;
-  /* De qué silos sale la leche. Va en la misma llamada: si fallara, no queda
-     un lote abierto sin materia prima. */
-  asignaciones?: { silo: number; litros: number }[];
+}
+
+export interface ValeDisponible {
+  id: number;
+  codigo: string;
+  fecha: string;
+  producto: number;
+  producto_nombre: string;
+  rc_objetivo: string;
+  rc_real: number | null;
+  litros_preparados: string;
+  litros_usados: string;
+  litros_disponibles: string;
+  silo_entera_codigo: string;
+  silo_descremada_codigo: string | null;
+  silo_destino_codigo: string;
+}
+
+export async function obtenerValesDisponibles(
+  producto?: number,
+): Promise<ValeDisponible[]> {
+  const { data } = await api.get<ValeDisponible[]>(
+    "produccion/lotes/vales-disponibles/",
+    { params: { producto: producto || undefined } },
+  );
+  return data;
 }
 
 

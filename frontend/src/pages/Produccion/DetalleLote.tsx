@@ -358,8 +358,18 @@ function DetalleLote({
                     <Dato etiqueta="Bultos">{lote.bultos ?? "—"}</Dato>
                     <Dato etiqueta="Fecha">{lote.fecha}</Dato>
                     <Dato etiqueta="Línea">{lote.linea || "—"}</Dato>
+                    <Dato etiqueta="Máquina">{lote.equipo_nombre || "—"}</Dato>
                     <Dato etiqueta="Turno">{lote.turno || "—"}</Dato>
                     <Dato etiqueta="OP">{lote.op || "—"}</Dato>
+                    <Dato etiqueta="Vale de estandarización">
+                      {lote.vale_codigo || "Carga histórica sin vale"}
+                    </Dato>
+                    <Dato etiqueta="Silo estandarizado">
+                      {lote.silo_estandarizado_codigo || "—"}
+                    </Dato>
+                    <Dato etiqueta="ID del proceso">
+                      {lote.ejecucion_codigo || "—"}
+                    </Dato>
                     <Dato etiqueta="Inicio">{lote.hora_inicio || "—"}</Dato>
                     <Dato etiqueta="Término">{lote.hora_termino || "—"}</Dato>
                     <Dato etiqueta="Vencimiento">{lote.vencimiento || "—"}</Dato>

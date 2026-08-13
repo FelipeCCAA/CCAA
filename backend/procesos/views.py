@@ -41,9 +41,11 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = EjecucionProceso.objects.select_related(
-            "etapa__proceso", "equipo", "responsable", "sucursal"
+            "etapa__proceso", "equipo", "responsable", "sucursal", "vale",
+            "lote_produccion", "lote_produccion__producto",
         ).prefetch_related(
-            "entradas__lote__producto", "salidas__lote__producto", "eventos__usuario"
+            "entradas__lote__producto", "entradas__silo",
+            "salidas__lote__producto", "salidas__silo", "eventos__usuario"
         )
         estado = self.request.query_params.get("estado")
         etapa = self.request.query_params.get("etapa")
@@ -155,4 +157,84 @@ def trazabilidad(request, lote):
     except ValueError as error:
         return Response({"error": str(error)}, status=400)
 
-    return Response({**datos, "raiz": encontrado.pk})
+    return Response({
+        **datos,
+        "raiz": encontrado.pk,
+        "flujo": _flujo_completo(encontrado),
+    })
+
+
+def _flujo_completo(lote):
+    """Recepción → estandarización → producción para una corrida concreta."""
+    from recepcion.models import MovimientoSilo, Recepcion
+
+    vale = lote.vale
+    if vale is None:
+        return None
+
+    consumos_estandarizacion = list(
+        MovimientoSilo.objects.filter(
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.pk,
+        ).select_related("silo")
+    )
+
+    recepciones = []
+    vistos = set()
+    for consumo in consumos_estandarizacion:
+        ids = MovimientoSilo.objects.filter(
+            silo=consumo.silo,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+            fecha_hora__lte=consumo.fecha_hora,
+        ).values_list("origen_id", flat=True)
+        for recepcion in Recepcion.objects.filter(pk__in=ids).select_related("vehiculo"):
+            clave = (recepcion.pk, consumo.silo_id)
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            recepciones.append({
+                "id": recepcion.pk,
+                "fecha": recepcion.fecha,
+                "guia": recepcion.guia,
+                "litros": recepcion.litros,
+                "vehiculo": recepcion.vehiculo.placa if recepcion.vehiculo else None,
+                "silo_codigo": consumo.silo.codigo,
+            })
+
+    ejecucion_est = getattr(vale, "ejecucion", None)
+    ejecucion_prod = lote.ejecucion
+    return {
+        "recepciones": recepciones,
+        "nota_recepciones": (
+            "Son recepciones candidatas: dentro del silo la leche se mezcla "
+            "y no existe una relación uno a uno."
+        ),
+        "estandarizacion": {
+            "vale_id": vale.pk,
+            "vale_codigo": vale.codigo,
+            "ejecucion_id": ejecucion_est.pk if ejecucion_est else None,
+            "ejecucion_codigo": ejecucion_est.codigo if ejecucion_est else None,
+            "silos_origen": [
+                {
+                    "codigo": movimiento.silo.codigo,
+                    "litros": movimiento.litros,
+                }
+                for movimiento in consumos_estandarizacion
+            ],
+            "silo_destino": vale.silo_destino.codigo,
+            "rc_objetivo": vale.rc_objetivo,
+            "rc_real": vale.rc_real,
+        },
+        "produccion": {
+            "lote_id": lote.pk,
+            "lote_codigo": lote.codigo_lote,
+            "producto": lote.producto.nombre,
+            "linea": lote.linea,
+            "equipo": lote.equipo.nombre if lote.equipo else None,
+            "ejecucion_id": ejecucion_prod.pk if ejecucion_prod else None,
+            "ejecucion_codigo": ejecucion_prod.codigo if ejecucion_prod else None,
+            "estado": lote.get_estado_display(),
+        },
+    }
