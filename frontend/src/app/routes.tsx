@@ -45,6 +45,7 @@ const Registros = lazy(() => import("../pages/Registros/Registros"));
 const Administracion = lazy(() => import("../pages/Administracion/Administracion"));
 const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
 const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
+const Aseos = lazy(() => import("../pages/Inocuidad/Aseos"));
 
 /*
   Abastecimiento es una sección con pestañas, no una página. El orden de las
@@ -169,6 +170,8 @@ function RoutesApp(){
                     <Route path="/procesos" element={diferido(<Procesos />)} />
 
                     <Route path="/mantenimiento" element={diferido(<Mantenimiento />)} />
+
+                    <Route path="/inocuidad/aseos" element={diferido(<Aseos />)} />
 
                     <Route
                         path="/produccion"

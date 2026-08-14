@@ -101,7 +101,28 @@ class CicloCIP(models.Model):
         COMPLETADO = "completado", "Completado"
         OBSERVADO = "observado", "Observado"
 
+    class TipoAseo(models.TextChoices):
+        CIP = "cip", "CIP"
+        COP = "cop", "COP"
+        GENERAL = "general", "Aseo general"
+
+    class TipoObjetivo(models.TextChoices):
+        EQUIPO = "equipo", "Máquina / equipo"
+        SILO = "silo", "Silo / tanque"
+        SECCION = "seccion", "Área / sección"
+
+    class Verificacion(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        CONFORME = "conforme", "Conforme"
+        OBSERVADO = "observado", "Observado"
+
     area = models.CharField(max_length=30, choices=PerfilUsuario.Area.choices)
+    tipo_aseo = models.CharField(
+        max_length=20, choices=TipoAseo.choices, default=TipoAseo.CIP
+    )
+    tipo_objetivo = models.CharField(
+        max_length=20, choices=TipoObjetivo.choices, default=TipoObjetivo.EQUIPO
+    )
     # Referencia al maestro y no texto libre: un CIP es la limpieza de una
     # máquina concreta, y con el nombre escrito a mano no hay forma de saber
     # si la torre quedó aseada o si alguien escribió «Egron 1» donde el resto
@@ -113,14 +134,85 @@ class CicloCIP(models.Model):
         null=True,
         blank=True,
     )
+    silo = models.ForeignKey(
+        "maestros.Silo",
+        on_delete=models.PROTECT,
+        related_name="ciclos_cip",
+        null=True,
+        blank=True,
+    )
+    seccion = models.CharField(max_length=150, blank=True)
+    documento_codigo = models.CharField(
+        max_length=60,
+        blank=True,
+        help_text="Código del formulario o procedimiento de Calidad aplicable.",
+    )
     inicio = models.DateTimeField()
+    inicio_real = models.DateTimeField(null=True, blank=True)
     fin = models.DateTimeField(null=True, blank=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PROGRAMADO)
+    verificacion = models.CharField(
+        max_length=20,
+        choices=Verificacion.choices,
+        default=Verificacion.PENDIENTE,
+    )
+    ph_final = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
     responsable = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True)
+    ejecutado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="aseos_ejecutados",
+        null=True,
+        blank=True,
+    )
+    verificado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="aseos_verificados",
+        null=True,
+        blank=True,
+    )
     observaciones = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-inicio"]
+
+    @property
+    def objetivo_nombre(self):
+        if self.tipo_objetivo == self.TipoObjetivo.EQUIPO:
+            return self.equipo.nombre if self.equipo else ""
+        if self.tipo_objetivo == self.TipoObjetivo.SILO:
+            return self.silo.codigo if self.silo else ""
+        return self.seccion
+
+
+class EtapaCIP(models.Model):
+    """Parámetros medidos en cada fase del ciclo, sin fijar una receta única."""
+
+    class Tipo(models.TextChoices):
+        PRE_ENJUAGUE = "pre_enjuague", "Pre-enjuague"
+        SODA = "soda", "Soda cáustica"
+        ENJUAGUE = "enjuague", "Enjuague"
+        ACIDO = "acido", "Ácido nítrico"
+        SANITIZACION = "sanitizacion", "Sanitización"
+        OTRO = "otro", "Otra etapa"
+
+    ciclo = models.ForeignKey(CicloCIP, on_delete=models.CASCADE, related_name="etapas")
+    orden = models.PositiveSmallIntegerField(default=1)
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    duracion_min = models.PositiveIntegerField(null=True, blank=True)
+    temperatura_c = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    caudal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    conductividad = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    concentracion_pct = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    cumple = models.BooleanField(null=True, blank=True)
+    observaciones = models.CharField(max_length=250, blank=True)
+
+    class Meta:
+        ordering = ["orden", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["ciclo", "orden"], name="cip_etapa_orden_unico")
+        ]
 
 
 class Proveedor(models.Model):

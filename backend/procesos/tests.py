@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Mandante, Producto
 from produccion.models import Lote
-from usuarios.models import PerfilUsuario, Rol
+from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, SalidaProceso
 from .servicios import transicionar_ejecucion
 
@@ -386,24 +386,32 @@ class EquipoHabilitadoPorAseoTests(TestCase):
     def setUp(self):
         from maestros.models import Mandante, Producto
 
+        self.empresa = Empresa.objects.create(rut="76.333.444-5", nombre="Empresa aseo")
+        self.sucursal = Sucursal.objects.create(
+            empresa=self.empresa, codigo="ASEO", nombre="Planta aseo"
+        )
         self.usuario = User.objects.create_user("operador-aseo", password="x")
         PerfilUsuario.objects.create(
             usuario=self.usuario,
             area=PerfilUsuario.Area.SECADO,
             nivel=PerfilUsuario.Nivel.ADMIN,
+            empresa=self.empresa,
+            sucursal=self.sucursal,
         )
         self.cliente = APIClient()
         self.cliente.force_authenticate(self.usuario)
 
         self.equipo = Equipo.objects.create(
+            sucursal=self.sucursal,
             codigo="torre-aseo", nombre="Torre aseo", tipo=Equipo.Tipo.TORRE
         )
 
-        mandante = Mandante.objects.create(nombre="CCAA aseo")
+        mandante = Mandante.objects.create(empresa=self.empresa, nombre="CCAA aseo")
         producto = Producto.objects.create(
             nombre="Producto aseo", familia="polvo", mandante=mandante
         )
         lote = Lote.objects.create(
+            sucursal=self.sucursal,
             codigo_lote="ASEO-1", producto=producto, fecha=date(2026, 8, 1)
         )
 
@@ -413,6 +421,7 @@ class EquipoHabilitadoPorAseoTests(TestCase):
             tipo=EtapaProceso.Tipo.SECADO, orden=1,
         )
         self.ejecucion = EjecucionProceso.objects.create(
+            sucursal=self.sucursal,
             codigo="EJ-ASEO-1", etapa=etapa, equipo=self.equipo,
             responsable=self.usuario,
         )
@@ -428,6 +437,7 @@ class EquipoHabilitadoPorAseoTests(TestCase):
         from inventario.models import CicloCIP
 
         return CicloCIP.objects.create(
+            sucursal=self.sucursal,
             area=PerfilUsuario.Area.SECADO, equipo=self.equipo,
             inicio=timezone.now() - timedelta(hours=hace_horas), estado=estado,
         )

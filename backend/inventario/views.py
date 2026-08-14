@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
 from usuarios.models import PerfilUsuario
@@ -18,7 +20,7 @@ from usuarios.tenancy import (
 )
 
 from .models import (
-    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, DetalleEntregaProduccion, DetalleOrdenCompra,
+    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, DetalleEntregaProduccion, DetalleOrdenCompra, EtapaCIP,
     DetalleSolicitudCompra, DetalleSolicitudMaterial, EjecucionMRP, Existencia,
     DevolucionProduccion, InspeccionMaterial, Insumo, InsumoProveedor, LiberacionExcepcionalMaterial,
     LoteInventario, MovimientoInventario, NoConformidadMaterial, Notificacion,
@@ -65,6 +67,38 @@ class FiltroAreaAdminMixin:
         return qs.filter(area=perfil.area) if perfil else qs.none()
 
 
+def _areas_aseo_del_usuario(usuario):
+    """Áreas cuyos planes de aseo puede ver y ejecutar la persona."""
+    if usuario.is_superuser:
+        return None
+    perfil = getattr(usuario, "perfil", None)
+    if not perfil:
+        return set()
+    if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
+        return None
+    areas = {perfil.area} if perfil.area else set()
+    areas.update(perfil.areas_adicionales.values_list("area", flat=True))
+    # Compatibilidad con perfiles antiguos que aún dependen del rol.
+    from usuarios.models import AREAS_QUE_NOMBRA_EL_ROL
+    areas.update(AREAS_QUE_NOMBRA_EL_ROL.get(perfil.rol, ()))
+    return areas
+
+
+class AccesoAseos(BasePermission):
+    message = "Solo el equipo de Aseo o las personas del área pueden ver y gestionar este aseo."
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        return scope_de(request.user) is not None and (
+            request.user.is_superuser or bool(getattr(request.user, "perfil", None))
+        )
+
+    def has_object_permission(self, request, view, ciclo):
+        areas = _areas_aseo_del_usuario(request.user)
+        return areas is None or PerfilUsuario.Area.ASEO in areas or ciclo.area in areas
+
+
 class InsumoViewSet(FiltroAreaAdminMixin, EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_empresa = "empresa_id"
     queryset = Insumo.objects.prefetch_related("lotes__existencias", "proveedores__proveedor")
@@ -72,18 +106,49 @@ class InsumoViewSet(FiltroAreaAdminMixin, EmpresaTenantViewSetMixin, viewsets.Mo
     permission_classes = [EscribeBodega]
 
 
-class CicloCIPViewSet(FiltroAreaAdminMixin, SucursalTenantViewSetMixin, RelacionesTenantMixin, viewsets.ModelViewSet):
+class CicloCIPViewSet(SucursalTenantViewSetMixin, RelacionesTenantMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
-    tenant_relation_fields = {"equipo": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = CicloCIP.objects.select_related("responsable", "equipo")
+    tenant_relation_fields = {
+        "equipo": ("sucursal_id", "sucursal__empresa_id"),
+        "silo": ("sucursal_id", "sucursal__empresa_id"),
+    }
+    queryset = CicloCIP.objects.select_related(
+        "responsable", "ejecutado_por", "verificado_por", "equipo", "silo"
+    ).prefetch_related("etapas")
     serializer_class = CicloCIPSerializer
+    permission_classes = [AccesoAseos]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        areas = _areas_aseo_del_usuario(self.request.user)
+        if areas is None or PerfilUsuario.Area.ASEO in areas:
+            return qs
+        return qs.filter(area__in=areas).distinct()
 
     def perform_create(self, serializer):
+        areas = _areas_aseo_del_usuario(self.request.user)
+        area = serializer.validated_data["area"]
+        if areas is not None and PerfilUsuario.Area.ASEO not in areas and area not in areas:
+            raise PermissionDenied(AccesoAseos.message)
         serializer.save(
             responsable=self.request.user,
             sucursal=sucursal_para_escritura(self.request.user, serializer.validated_data),
         )
+
+    @action(detail=False, methods=["get"])
+    def catalogos(self, request):
+        def opciones(choices):
+            return [{"valor": valor, "etiqueta": etiqueta} for valor, etiqueta in choices]
+
+        return Response({
+            "areas": opciones(PerfilUsuario.Area.choices),
+            "tipos_aseo": opciones(CicloCIP.TipoAseo.choices),
+            "tipos_objetivo": opciones(CicloCIP.TipoObjetivo.choices),
+            "estados": opciones(CicloCIP.Estado.choices),
+            "verificaciones": opciones(CicloCIP.Verificacion.choices),
+            "etapas": opciones(EtapaCIP.Tipo.choices),
+        })
 
 
 class ProveedorViewSet(EmpresaTenantViewSetMixin, viewsets.ModelViewSet):

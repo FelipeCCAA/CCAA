@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  ShieldCheck,
   Truck,
   Users,
   Wrench,
@@ -53,6 +54,7 @@ const gruposBase: Grupo[] = [
       { etiqueta: "Procesos", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion"] },
       { etiqueta: "Liberación", ruta: "/liberacion", icono: ClipboardCheck },
       { etiqueta: "Registros de planta", ruta: "/registros", icono: ClipboardList },
+      { etiqueta: "Inocuidad · Aseos", ruta: "/inocuidad/aseos", icono: ShieldCheck },
     ],
   },
   {

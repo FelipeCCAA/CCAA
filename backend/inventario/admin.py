@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from .models import (
-    Adjunto, AjusteInventario, Alerta, Aprobacion, Bodega, CicloCIP, ConsumoLoteProduccion, DetalleOrdenCompra,
+    Adjunto, AjusteInventario, Alerta, Aprobacion, Bodega, CicloCIP, ConsumoLoteProduccion, DetalleOrdenCompra, EtapaCIP,
     DetalleRecepcionCompra, DetalleSolicitudMaterial, EjecucionMRP,
     DevolucionProduccion, EntregaProduccion, Existencia, InspeccionMaterial, Insumo,
     InsumoProveedor, LiberacionExcepcionalMaterial, LoteInventario,
@@ -23,8 +23,8 @@ class InsumoAdmin(admin.ModelAdmin):
 
 @admin.register(CicloCIP)
 class CicloCIPAdmin(admin.ModelAdmin):
-    list_display = ["equipo", "area", "inicio", "estado", "responsable"]
-    list_filter = ["area", "estado"]
+    list_display = ["objetivo_nombre", "tipo_aseo", "area", "inicio", "estado", "responsable"]
+    list_filter = ["tipo_aseo", "tipo_objetivo", "area", "estado"]
 
 
 @admin.register(LoteInventario)
@@ -63,4 +63,5 @@ admin.site.register([
     Aprobacion,
     PlantillaInspeccion, NoConformidadMaterial, LiberacionExcepcionalMaterial,
     Adjunto, Alerta, AjusteInventario, DevolucionProduccion, ConsumoLoteProduccion,
+    EtapaCIP,
 ])

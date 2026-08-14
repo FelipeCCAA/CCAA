@@ -1,8 +1,12 @@
+from copy import copy
+
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 from decimal import Decimal, ROUND_CEILING
 
 from .models import (
-    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP,
+    Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, EtapaCIP,
     DetalleOrdenCompra, DevolucionProduccion,
     DetalleSolicitudCompra, EjecucionMRP, DetalleSolicitudMaterial, Existencia,
     InspeccionMaterial, Insumo,
@@ -73,17 +77,93 @@ class InsumoSerializer(serializers.ModelSerializer):
         return self._eoq_ajuste(insumo)[1]
 
 
+class EtapaCIPSerializer(serializers.ModelSerializer):
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+
+    class Meta:
+        model = EtapaCIP
+        exclude = ["ciclo"]
+
+
 class CicloCIPSerializer(serializers.ModelSerializer):
     area_etiqueta = serializers.CharField(source="get_area_display", read_only=True)
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    tipo_aseo_etiqueta = serializers.CharField(source="get_tipo_aseo_display", read_only=True)
+    tipo_objetivo_etiqueta = serializers.CharField(source="get_tipo_objetivo_display", read_only=True)
+    verificacion_etiqueta = serializers.CharField(source="get_verificacion_display", read_only=True)
     equipo_nombre = serializers.CharField(
         source="equipo.nombre", read_only=True, allow_null=True
     )
+    silo_nombre = serializers.CharField(source="silo.codigo", read_only=True, allow_null=True)
+    objetivo_nombre = serializers.CharField(read_only=True)
+    responsable_nombre = serializers.SerializerMethodField()
+    ejecutado_por_nombre = serializers.SerializerMethodField()
+    verificado_por_nombre = serializers.SerializerMethodField()
+    etapas = EtapaCIPSerializer(many=True, required=False)
 
     class Meta:
         model = CicloCIP
         fields = "__all__"
-        read_only_fields = ["responsable"]
+        read_only_fields = [
+            "responsable", "ejecutado_por", "verificado_por", "inicio_real", "fin"
+        ]
+
+    def get_responsable_nombre(self, ciclo):
+        if not ciclo.responsable:
+            return ""
+        return ciclo.responsable.get_full_name() or ciclo.responsable.username
+
+    def get_ejecutado_por_nombre(self, ciclo):
+        if not ciclo.ejecutado_por:
+            return ""
+        return ciclo.ejecutado_por.get_full_name() or ciclo.ejecutado_por.username
+
+    def get_verificado_por_nombre(self, ciclo):
+        if not ciclo.verificado_por:
+            return ""
+        return ciclo.verificado_por.get_full_name() or ciclo.verificado_por.username
+
+    @staticmethod
+    def _guardar_etapas(ciclo, etapas):
+        if etapas is None:
+            return
+        ciclo.etapas.all().delete()
+        EtapaCIP.objects.bulk_create(
+            EtapaCIP(ciclo=ciclo, **etapa) for etapa in etapas
+        )
+
+    @transaction.atomic
+    def create(self, validated_data):
+        etapas = validated_data.pop("etapas", [])
+        usuario = getattr(self.context.get("request"), "user", None)
+        if validated_data.get("estado") == CicloCIP.Estado.EN_CURSO:
+            validated_data["inicio_real"] = timezone.now()
+            validated_data["ejecutado_por"] = usuario
+        if validated_data.get("estado") in (CicloCIP.Estado.COMPLETADO, CicloCIP.Estado.OBSERVADO):
+            validated_data["fin"] = timezone.now()
+            validated_data["verificado_por"] = usuario
+        ciclo = super().create(validated_data)
+        self._guardar_etapas(ciclo, etapas)
+        return ciclo
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        etapas = validated_data.pop("etapas", None)
+        estado_anterior = instance.estado
+        ciclo = super().update(instance, validated_data)
+        usuario = getattr(self.context.get("request"), "user", None)
+        if ciclo.estado == CicloCIP.Estado.EN_CURSO and not ciclo.inicio_real:
+            ciclo.inicio_real = timezone.now()
+            ciclo.ejecutado_por = usuario
+            ciclo.save(update_fields=["inicio_real", "ejecutado_por"])
+        if ciclo.estado in (CicloCIP.Estado.COMPLETADO, CicloCIP.Estado.OBSERVADO) and not ciclo.fin:
+            ciclo.fin = timezone.now()
+            ciclo.verificado_por = usuario
+            ciclo.save(update_fields=["fin", "verificado_por"])
+        if estado_anterior != CicloCIP.Estado.PROGRAMADO and ciclo.estado == CicloCIP.Estado.PROGRAMADO:
+            raise serializers.ValidationError("Un aseo iniciado no puede volver a Programado.")
+        self._guardar_etapas(ciclo, etapas)
+        return ciclo
 
     def validate(self, datos):
         """
@@ -96,10 +176,55 @@ class CicloCIPSerializer(serializers.ModelSerializer):
         """
         from .servicios import equipo_produciendo
 
-        instancia = self.instance or CicloCIP()
+        # Validar un PATCH no debe mutar la instancia antes de `update`: de lo
+        # contrario se pierde el estado anterior y las transiciones dejan de
+        # ser auditables incluso si la validación termina fallando.
+        instancia = copy(self.instance) if self.instance else CicloCIP()
 
         for campo, valor in datos.items():
-            setattr(instancia, campo, valor)
+            if campo != "etapas":
+                setattr(instancia, campo, valor)
+
+        errores = {}
+        if instancia.tipo_objetivo == CicloCIP.TipoObjetivo.EQUIPO:
+            if not instancia.equipo:
+                errores["equipo"] = "Selecciona la máquina o equipo que se aseará."
+            instancia.silo = None
+            instancia.seccion = ""
+            datos["silo"] = None
+            datos["seccion"] = ""
+        elif instancia.tipo_objetivo == CicloCIP.TipoObjetivo.SILO:
+            if not instancia.silo:
+                errores["silo"] = "Selecciona el silo o tanque que se aseará."
+            instancia.equipo = None
+            instancia.seccion = ""
+            datos["equipo"] = None
+            datos["seccion"] = ""
+        else:
+            if not instancia.seccion.strip():
+                errores["seccion"] = "Indica el área o sección donde se hará el aseo."
+            instancia.equipo = None
+            instancia.silo = None
+            datos["equipo"] = None
+            datos["silo"] = None
+
+        if instancia.estado == CicloCIP.Estado.COMPLETADO:
+            if instancia.verificacion != CicloCIP.Verificacion.CONFORME:
+                errores["verificacion"] = "Para completar el aseo, la verificación final debe quedar Conforme."
+            etapas = datos.get("etapas")
+            hay_etapa_no_conforme = (
+                any(etapa.get("cumple") is False for etapa in etapas)
+                if etapas is not None
+                else self.instance is not None and self.instance.etapas.filter(cumple=False).exists()
+            )
+            if hay_etapa_no_conforme:
+                errores["etapas"] = "Hay etapas que no cumplen; cierra el aseo como Observado."
+            if instancia.ph_final is not None and not (Decimal("5.5") <= instancia.ph_final <= Decimal("8.5")):
+                errores["ph_final"] = "El pH final conforme debe estar entre 5,5 y 8,5."
+        if instancia.estado == CicloCIP.Estado.OBSERVADO:
+            datos["verificacion"] = CicloCIP.Verificacion.OBSERVADO
+        if errores:
+            raise serializers.ValidationError(errores)
 
         if instancia.estado != CicloCIP.Estado.EN_CURSO:
             return datos

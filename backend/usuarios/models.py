@@ -125,6 +125,7 @@ class PerfilUsuario(models.Model):
         TRABAJADOR = "trabajador", "Trabajador"
 
     class Area(models.TextChoices):
+        ASEO = "aseo", "Aseo y saneamiento"
         RECEPCION = "recepcion", "Recepción"
         CONDENSACION = "condensacion", "Condensación"
         SECADO = "secado", "Secado"
