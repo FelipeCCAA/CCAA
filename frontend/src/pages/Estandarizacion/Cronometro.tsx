@@ -7,10 +7,10 @@ import { Timer } from "lucide-react";
   **Cuenta desde los minutos que informó el servidor, no desde
   `agitacion_desde` contra el reloj del navegador.** Los dos relojes no
   coinciden —el del PC de planta se ha visto corrido varios minutos— y el que
-  manda es el del servidor, que es el que acepta o rechaza la muestra. Con el
-  reloj local, la pantalla habilitaría el formulario antes de tiempo y el
-  operador tomaría una muestra que el servidor va a rechazar, o —peor— quedaría
-  esperando de más creyendo que el sistema falla.
+  manda es el del servidor, que es el que calcula si ya agitó lo suficiente.
+  Con el reloj local, la pantalla habilitaría el formulario antes de tiempo y
+  el operador tomaría una muestra que el servidor va a marcar con aviso, o
+  —peor— quedaría esperando de más creyendo que el sistema falla.
 
   Aquí solo se le suman los segundos transcurridos **desde que llegó la
   respuesta**, que sí es un intervalo local y no una hora absoluta.

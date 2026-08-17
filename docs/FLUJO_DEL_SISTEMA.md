@@ -77,12 +77,13 @@ flowchart TD
 ```
 
 **Las cinco compuertas** (en naranja) son las decisiones que el sistema **no
-delega en el cliente**: las calcula y las impone.
+delega en el cliente**: las calcula siempre, y las impone — salvo `muestrear`,
+que desde 2026-08-17 solo avisa y deja seguir.
 
 | Compuerta | Qué exige | Dónde vive |
 |---|---|---|
 | `decidir-calidad` | Los controles completos; el veredicto lo calcula el dominio | `recepcion/dominio.py` |
-| `muestrear` | 30 minutos de agitación, con **hora del servidor** | `estandarizacion/servicios.py` |
+| `muestrear` | Hora de agitación la fija el servidor; muestrear antes de los 30 minutos avisa, no bloquea (desde 2026-08-17) | `estandarizacion/servicios.py` |
 | `decidir` | El RC medido contra el objetivo — **no recibe la decisión** | `estandarizacion/servicios.py` |
 | abrir lote | Vale **liberado**, producto que coincide, y no más litros de los preparados | `produccion/dominio.py` |
 | firmar liberación | Checklist, análisis, PCC y PPRO — con bloqueo de fila | `calidad/dominio.py` |
