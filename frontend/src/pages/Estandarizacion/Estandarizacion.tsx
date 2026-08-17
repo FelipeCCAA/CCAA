@@ -268,7 +268,7 @@ function Estandarizacion() {
                   />
                 </div>
 
-                {vale.avisos.length > 0 && (
+                {vale.muestreado_en && vale.avisos.length > 0 && (
                   <ul className="mt-4 space-y-2">
                     {vale.avisos.map((aviso) => (
                       <li

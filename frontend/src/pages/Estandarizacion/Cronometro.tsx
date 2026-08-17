@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Timer } from "lucide-react";
 
 /*
-  Cuánto lleva agitando y cuánto falta para poder muestrear.
+  Cuánto lleva agitando y cuánto falta para cumplir el mínimo del
+  procedimiento.
 
   **Cuenta desde los minutos que informó el servidor, no desde
   `agitacion_desde` contra el reloj del navegador.** Los dos relojes no
@@ -47,8 +48,8 @@ function Cronometro({
   if (minutosExigidos === null) {
     return (
       <Marco tono="slate">
-        Agitando hace {minutos.toFixed(0)} min. No se pudo leer el mínimo
-        exigido; el servidor lo aplica igual.
+        Agitando hace {minutos.toFixed(0)} min. No se pudo leer el mínimo del
+        procedimiento; muestrear antes solo deja aviso.
       </Marco>
     );
   }
