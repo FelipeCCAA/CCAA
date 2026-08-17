@@ -269,17 +269,41 @@ En `models.py`, borrar `puede_muestrear` (líneas 168-180) y poner en su lugar:
         ]
 ```
 
-- [ ] **Paso 4: correr y ver que pasa**
+- [ ] **Paso 4: seguir la propiedad hasta el serializer**
 
-Comando: `manage.py test estandarizacion --noinput`
-Esperado: las tres nuevas en PASS. **`serializers.py` todavía referencia
-`puede_muestrear` y las pruebas de API van a fallar** — se arregla en la Tarea 4;
-si quieres el commit en verde, haz las Tareas 2, 3 y 4 antes de commitear.
+`serializers.py` referencia `puede_muestrear`, que acaba de desaparecer del
+modelo. Sin este paso el commit queda con la suite en rojo. En `serializers.py`,
+reemplazar la línea 29:
 
-- [ ] **Paso 5: commit**
+```python
+    # Motivos y no un booleano: un `False` no le dice al operador qué pasó.
+    avisos = serializers.ListField(
+        source="avisos_de_muestreo",
+        child=serializers.CharField(),
+        read_only=True,
+    )
+```
+
+Y en `Meta.fields` (línea 43), cambiar `"puede_muestrear"` por `"avisos"`:
+
+```python
+            "rc_real", "minutos_agitando", "avisos", "evaluacion",
+```
+
+Nada más del serializer: `muestreado_en` y `read_only_fields` los toca la
+Tarea 4, cuando la vista ya devuelva la tupla. Ninguna prueba afirma hoy
+`puede_muestrear` en la respuesta, así que este cambio no invierte ninguna.
+
+- [ ] **Paso 5: correr y ver que pasa**
+
+Comando: `manage.py test estandarizacion procesos --noinput`
+Esperado: OK, la suite entera en verde — incluida `ApiTests`, que sigue
+esperando el 409 porque el servicio todavía bloquea. Eso lo cambia la Tarea 3.
+
+- [ ] **Paso 6: commit**
 
 ```bash
-git add backend/estandarizacion/models.py backend/estandarizacion/tests_vale.py
+git add backend/estandarizacion/models.py backend/estandarizacion/serializers.py backend/estandarizacion/tests_vale.py
 git commit -m "Los minutos de agitación devuelven motivos, no un booleano"
 ```
 
@@ -467,8 +491,8 @@ git commit -m "Muestrear antes de los 30 minutos avisa en vez de fallar"
 ### Tarea 4: la API responde 200 con los avisos
 
 **Archivos:**
-- Modificar: `backend/estandarizacion/serializers.py` (líneas 27-29 y la lista
-  `fields` en 34-45)
+- Modificar: `backend/estandarizacion/serializers.py` (solo `Meta.fields` y
+  `Meta.read_only_fields`; el campo `avisos` ya lo puso la Tarea 2)
 - Modificar: `backend/estandarizacion/views.py` (acción `muestrear`, 123-137)
 - Modificar: `backend/estandarizacion/tests_vale.py` (clase `ApiTests`, la prueba
   de la línea 384)
@@ -540,32 +564,19 @@ Comando: `manage.py test estandarizacion.tests_vale.ApiTests --noinput`
 Esperado: FAIL — `KeyError: 'avisos'`, y además un error al serializar porque
 `puede_muestrear` ya no existe en el modelo.
 
-- [ ] **Paso 4: actualizar el serializer**
+- [ ] **Paso 4: exponer `muestreado_en`**
 
-En `serializers.py`, reemplazar las líneas 27-29:
-
-```python
-    rc_real = serializers.FloatField(read_only=True)
-    minutos_agitando = serializers.FloatField(read_only=True)
-    # Motivos y no un booleano: un `False` no le dice al operador qué pasó.
-    avisos = serializers.ListField(
-        source="avisos_de_muestreo",
-        child=serializers.CharField(),
-        read_only=True,
-    )
-    evaluacion = serializers.SerializerMethodField()
-```
-
-Y en `Meta.fields` (líneas 42-43), cambiar esas dos líneas por:
+El campo `avisos` ya lo puso la Tarea 2. Falta el sello. En `Meta.fields`,
+reemplazar la línea `"estado", "agitacion_desde", "grasa_real", "sng_real",`
+por:
 
 ```python
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",
-            "rc_real", "minutos_agitando", "avisos", "evaluacion",
 ```
 
-En `Meta.read_only_fields` (líneas 48-51), agregar `muestreado_en` — lo sella el
-servicio, no un PATCH:
+En `Meta.read_only_fields`, agregar `muestreado_en` — lo sella el servicio, no
+un PATCH:
 
 ```python
         read_only_fields = [
