@@ -33,6 +33,10 @@ from . import dominio
 #: advierte y deja constancia en `muestreado_en`, pero no detiene la operación.
 #: Antes rechazaba la muestra, y entonces no quedaba registro de nada; ahora no
 #: la impide pero sí queda escrito cuánto agitó cada vale.
+#:
+#: Constante con nombre y no un número suelto en medio del cálculo: quien lo
+#: cambie tiene que saber qué está cambiando, y no se toca ni se hace
+#: configurable.
 MINUTOS_DE_AGITACION = 30
 
 
@@ -213,7 +217,7 @@ class ValeEstandarizacion(models.Model):
             return []
 
         return [
-            f"Agitó {minutos:.0f} minutos de los {MINUTOS_DE_AGITACION} que "
+            f"Agitó {int(minutos)} minutos de los {MINUTOS_DE_AGITACION} que "
             "pide el procedimiento: antes de eso la mezcla no es homogénea y "
             "la muestra puede no medir el silo."
         ]
