@@ -15,7 +15,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from maestros.models import Especificacion, Mandante, Producto
-from usuarios.models import PerfilUsuario, Rol
+from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import Analisis, Lote
 
@@ -25,14 +25,25 @@ class BaseAPI(TestCase):
         # La API exige identificarse y tener el rol que corresponde. Quién
         # puede escribir qué se prueba en usuarios/tests_permisos.py; aquí se
         # prueba el camino autorizado, con el rol que registra lotes.
+        self.empresa = Empresa.objects.create(rut="API-PROD", nombre="API Producción")
+        self.sucursal = Sucursal.objects.create(
+            empresa=self.empresa, codigo="PLANTA", nombre="Planta pruebas"
+        )
         usuario = User.objects.create_user(username="pruebas", password="x")
-        PerfilUsuario.objects.create(usuario=usuario, rol=Rol.PRODUCCION)
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.SECADO,
+            empresa=self.empresa,
+            sucursal=self.sucursal,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+        )
         token = Token.objects.create(user=usuario)
 
         self.cliente = APIClient()
         self.cliente.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 
-        self.nestle = Mandante.objects.create(nombre="Nestlé")
+        self.nestle = Mandante.objects.create(empresa=self.empresa, nombre="Nestlé")
         self.producto = Producto.objects.create(
             nombre="Leche entera en polvo",
             familia=Producto.Familia.POLVO,
@@ -50,6 +61,7 @@ class BaseAPI(TestCase):
 
     def _lote(self, codigo="CCAA6140N", **extra):
         datos = {
+            "sucursal": self.sucursal,
             "codigo_lote": codigo,
             "producto": self.producto,
             "fecha": date(2026, 7, 20),
@@ -174,7 +186,14 @@ class EdicionDeLoteTests(BaseAPI):
         firmante = User.objects.create_user(
             username=f"calidad-{lote.id}", password="x", first_name="M.", last_name="Rivas"
         )
-        PerfilUsuario.objects.create(usuario=firmante, rol=Rol.CALIDAD)
+        PerfilUsuario.objects.create(
+            usuario=firmante,
+            rol=Rol.CALIDAD,
+            area=PerfilUsuario.Area.CALIDAD,
+            empresa=self.empresa,
+            sucursal=self.sucursal,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+        )
 
         return Liberacion.objects.create(
             lote=lote,
@@ -412,13 +431,33 @@ class LotesAPITests(BaseAPI):
 
         self.assertEqual(datos["count"], 1)
 
-    def test_se_puede_borrar_un_lote(self):
+    def test_no_se_puede_borrar_un_lote(self):
         lote = self._lote()
 
         respuesta = self.cliente.delete(f"/api/produccion/lotes/{lote.id}/")
 
-        self.assertEqual(respuesta.status_code, 204)
-        self.assertEqual(Lote.objects.count(), 0)
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertEqual(Lote.objects.count(), 1)
+        self.assertIn("anulado", respuesta.json()["detail"])
+
+    def test_anular_exige_motivo_y_conserva_el_lote(self):
+        lote = self._lote(estado=Lote.Estado.EN_PROCESO)
+
+        sin_motivo = self.cliente.patch(
+            f"/api/produccion/lotes/{lote.id}/", {"estado": "anulado"}, format="json"
+        )
+        self.assertEqual(sin_motivo.status_code, 400)
+
+        respuesta = self.cliente.patch(
+            f"/api/produccion/lotes/{lote.id}/",
+            {"estado": "anulado", "motivo_anulacion": "Orden cancelada por planificación."},
+            format="json",
+        )
+        lote.refresh_from_db()
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(lote.estado, Lote.Estado.ANULADO)
+        self.assertIn("Orden cancelada", lote.observacion)
 
     def test_el_listado_no_dispara_una_consulta_por_lote(self):
         """

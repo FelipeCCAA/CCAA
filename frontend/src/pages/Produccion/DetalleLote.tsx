@@ -159,6 +159,7 @@ function DetalleLote({
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [confirmando, setConfirmando] = useState<EstadoLote | null>(null);
+  const [motivoAnulacion, setMotivoAnulacion] = useState("");
 
   /* Cerrar la producción es declarar cuánto se produjo: los kilos se piden
      aquí, que es cuando se saben. El backend los exige igual. */
@@ -200,8 +201,14 @@ function DetalleLote({
 
     try {
 
-      setLote(await cambiarEstadoLote(loteId, estado, kgDeclarados));
+      setLote(await cambiarEstadoLote(
+        loteId,
+        estado,
+        kgDeclarados,
+        estado === "anulado" ? motivoAnulacion : undefined,
+      ));
       setConfirmando(null);
+      setMotivoAnulacion("");
       setDeclarando(false);
       setKgCierre("");
       alCambiar();
@@ -837,11 +844,24 @@ function DetalleLote({
                     {EXPLICACION_ESTADO[confirmando]}
                   </p>
 
+                  {confirmando === "anulado" && (
+                    <label className="mt-3 block text-sm font-medium text-amber-900">
+                      Motivo obligatorio
+                      <textarea
+                        value={motivoAnulacion}
+                        onChange={(e) => setMotivoAnulacion(e.target.value)}
+                        rows={3}
+                        placeholder="Explica por qué se anula este lote"
+                        className="mt-1.5 w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-600"
+                      />
+                    </label>
+                  )}
+
                   <div className="mt-3 flex gap-2">
 
                     <button
                       type="button"
-                      disabled={guardando}
+                      disabled={guardando || (confirmando === "anulado" && !motivoAnulacion.trim())}
                       onClick={() => void cambiar(confirmando)}
                       className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
                     >
@@ -850,7 +870,10 @@ function DetalleLote({
 
                     <button
                       type="button"
-                      onClick={() => setConfirmando(null)}
+                      onClick={() => {
+                        setConfirmando(null);
+                        setMotivoAnulacion("");
+                      }}
                       className="rounded-xl px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
                     >
                       Cancelar

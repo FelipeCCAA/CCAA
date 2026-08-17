@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Search, Trash2 } from "lucide-react";
-import axios from "axios";
+import { Plus, Search } from "lucide-react";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 
 import {
-  borrarLote,
   buscarLotes,
   kilos,
   obtenerParametros,
@@ -103,32 +101,6 @@ function Produccion() {
   const cambiarFiltro = (aplicar: () => void) => {
     aplicar();
     setPagina(1);
-  };
-
-  const eliminar = async (lote: Lote) => {
-
-    const confirmado = window.confirm(
-      `¿Eliminar el lote ${lote.codigo_lote}?\n\n` +
-        "Se borrarán también sus análisis de calidad. No se puede deshacer.",
-    );
-
-    if (!confirmado) return;
-
-    try {
-      await borrarLote(lote.id);
-      cargarLotes();
-    } catch (error) {
-      console.error("Error eliminando el lote:", error);
-
-      // Si el backend rechazó por permisos, explica el motivo: mostrar
-      // "no se pudo" deja al usuario sin saber qué hacer.
-      const detalle = axios.isAxiosError(error)
-        ? error.response?.data?.detail
-        : null;
-
-      setError(detalle || "No se pudo eliminar el lote.");
-    }
-
   };
 
   const ultimaPagina = Math.max(1, Math.ceil(total / POR_PAGINA));
@@ -300,7 +272,6 @@ function Produccion() {
                     <th className="px-6 py-3 font-medium">Turno</th>
                     <th className="px-6 py-3 font-medium">Estado</th>
                     <th className="px-6 py-3 font-medium">Calidad</th>
-                    <th className="px-6 py-3"></th>
 
                   </tr>
 
@@ -364,32 +335,6 @@ function Produccion() {
                       <td className="px-6 py-4">
 
                         <EtiquetaCalidad calidad={lote.calidad} />
-
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-
-                        {puedeEditar && (
-
-                          <button
-                            type="button"
-                            /* Sin `stopPropagation`, el clic llegaría también
-                               a la fila y abriría la ficha del lote que se
-                               acaba de borrar. */
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              eliminar(lote);
-                            }}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                            aria-label={`Eliminar el lote ${lote.codigo_lote}`}
-                            title="Eliminar"
-                          >
-
-                            <Trash2 className="h-4 w-4" />
-
-                          </button>
-
-                        )}
 
                       </td>
 

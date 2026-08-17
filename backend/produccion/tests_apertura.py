@@ -20,7 +20,7 @@ from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto, Silo
 from recepcion.models import MovimientoSilo
-from usuarios.models import PerfilUsuario, Rol
+from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from . import dominio
 from .models import Lote
@@ -28,7 +28,11 @@ from .models import Lote
 
 class BaseApertura(TestCase):
     def setUp(self):
-        self.mandante = Mandante.objects.create(nombre="Nestlé")
+        self.empresa = Empresa.objects.create(rut="APERTURA", nombre="Apertura")
+        self.sucursal = Sucursal.objects.create(
+            empresa=self.empresa, codigo="PLANTA", nombre="Planta apertura"
+        )
+        self.mandante = Mandante.objects.create(empresa=self.empresa, nombre="Nestlé")
 
         # El SKU es parte del código de lote: sin él no hay codificación
         # automática.
@@ -45,9 +49,11 @@ class BaseApertura(TestCase):
             mandante=self.mandante,
         )
         self.silo_a = Silo.objects.create(
+            sucursal=self.sucursal,
             codigo="SILO 1", tipo=Silo.Tipo.SILO, capacidad_l=200000
         )
         self.silo_b = Silo.objects.create(
+            sucursal=self.sucursal,
             codigo="SILO 2", tipo=Silo.Tipo.SILO, capacidad_l=200000
         )
 
@@ -55,7 +61,14 @@ class BaseApertura(TestCase):
 
     def _cliente(self, rol):
         usuario = User.objects.create_user(f"u-{rol}", password="x")
-        PerfilUsuario.objects.create(usuario=usuario, rol=rol)
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            rol=rol,
+            area=PerfilUsuario.Area.SECADO,
+            empresa=self.empresa,
+            sucursal=self.sucursal,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+        )
         cliente = APIClient()
         cliente.credentials(
             HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=usuario).key}"
@@ -138,6 +151,7 @@ class DeclararProducidoTests(BaseApertura):
 
     def _lote_abierto(self, **extra):
         return Lote.objects.create(
+            sucursal=self.sucursal,
             codigo_lote="CCAA6197",
             producto=self.polvo,
             fecha=date(2026, 7, 16),
@@ -191,12 +205,14 @@ class DeclararProducidoTests(BaseApertura):
 
         self.assertEqual(self._producir(lote).status_code, 200)
 
-    def test_anular_no_exige_kilos(self):
+    def test_anular_no_exige_kilos_pero_si_motivo(self):
         """Un lote que no llegó a producirse no tiene kilos que declarar."""
         lote = self._lote_abierto()
 
         respuesta = self.cliente.patch(
-            f"/api/produccion/lotes/{lote.id}/", {"estado": "anulado"}, format="json"
+            f"/api/produccion/lotes/{lote.id}/",
+            {"estado": "anulado", "motivo_anulacion": "La corrida no se inició."},
+            format="json",
         )
 
         self.assertEqual(respuesta.status_code, 200)
