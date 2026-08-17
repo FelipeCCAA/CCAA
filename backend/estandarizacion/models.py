@@ -110,6 +110,14 @@ class ValeEstandarizacion(models.Model):
     agitacion_desde = models.DateTimeField(
         "Inicio de la agitación", null=True, blank=True
     )
+    muestreado_en = models.DateTimeField(
+        "Hora del muestreo", null=True, blank=True,
+        help_text=(
+            "Cuándo se tomó la muestra. Congela «minutos agitando»: sin este "
+            "sello el contador sigue creciendo contra el reloj actual y "
+            "después no hay forma de saber si la muestra fue temprana."
+        ),
+    )
 
     # Lo que dio el análisis después de agitar. Nulos hasta que se muestrea.
     grasa_real = models.DecimalField(
@@ -159,11 +167,20 @@ class ValeEstandarizacion(models.Model):
 
     @property
     def minutos_agitando(self):
-        """Cuánto lleva agitando. `None` si todavía no empezó."""
+        """
+        Cuánto agitó. Mientras no se muestrea cuenta contra el reloj actual;
+        una vez muestreado se congela en la hora de la muestra.
+
+        Congelarlo es lo que hace auditable el aviso de muestreo temprano: sin
+        el sello, un vale mirado al día siguiente informa mil cuatrocientos
+        minutos y el aviso ya no se puede contrastar con nada.
+        """
         if self.agitacion_desde is None:
             return None
 
-        return (timezone.now() - self.agitacion_desde).total_seconds() / 60
+        hasta = self.muestreado_en or timezone.now()
+
+        return (hasta - self.agitacion_desde).total_seconds() / 60
 
     @property
     def puede_muestrear(self) -> bool:

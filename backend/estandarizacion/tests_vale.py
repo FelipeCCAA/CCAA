@@ -193,6 +193,27 @@ class AgitacionTests(BaseVale):
 
         self.assertGreaterEqual(vale.agitacion_desde, antes)
 
+    def test_muestreado_en_congela_los_minutos_de_agitacion(self):
+        """
+        Sin el sello, `minutos_agitando` cuenta contra el reloj actual: un vale
+        mirado más tarde informa el tiempo transcurrido y no el que agitó, y la
+        advertencia de muestreo temprano deja de ser auditable.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=40)
+
+        vale.muestreado_en = vale.agitacion_desde + timedelta(minutes=12)
+        vale.save(update_fields=["muestreado_en"])
+        vale.refresh_from_db()
+
+        # 12, no 40: cuenta hasta la muestra, no hasta ahora.
+        self.assertAlmostEqual(vale.minutos_agitando, 12, places=1)
+
+    def test_sin_muestrear_los_minutos_siguen_corriendo(self):
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=40)
+
+        self.assertIsNone(vale.muestreado_en)
+        self.assertAlmostEqual(vale.minutos_agitando, 40, places=1)
+
 
 class DecisionTests(BaseVale):
 
