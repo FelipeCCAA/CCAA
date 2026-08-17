@@ -36,7 +36,7 @@ flowchart TD
         E1["calcular<br/><i>no persiste</i>"]
         E2["transferir<br/><b>consume los silos</b>"]
         E3["agitar"]
-        E4["muestrear<br/><b>≥ 30 min</b>"]
+        E4["muestrear<br/><i>avisa si &lt; 30 min</i>"]
         E5["decidir<br/><i>calcula, no acepta</i>"]
         E1 --> E2 --> E3 --> E4 --> E5
     end
