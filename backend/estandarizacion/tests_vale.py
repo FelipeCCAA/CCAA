@@ -208,6 +208,31 @@ class AgitacionTests(BaseVale):
         # 12, no 40: cuenta hasta la muestra, no hasta ahora.
         self.assertAlmostEqual(vale.minutos_agitando, 12, places=1)
 
+    def test_avisa_cuando_se_muestrea_antes_de_los_treinta(self):
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=12)
+
+        avisos = vale.avisos_de_muestreo
+
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("12", avisos[0])
+        self.assertIn(str(MINUTOS_DE_AGITACION), avisos[0])
+
+    def test_cumplidos_los_treinta_no_avisa_nada(self):
+        vale = self.llevar_a_agitando(self.crear_vale())
+
+        self.assertEqual(vale.avisos_de_muestreo, [])
+
+    def test_sin_agitar_no_hay_nada_que_avisar(self):
+        """
+        Un vale que no arrancó el reloj no se puede muestrear igual: lo impide
+        la transición, no este aviso. Devolver un aviso aquí sería advertir de
+        algo que ya está prohibido por otra vía.
+        """
+        vale = self.crear_vale()
+
+        self.assertIsNone(vale.agitacion_desde)
+        self.assertEqual(vale.avisos_de_muestreo, [])
+
     def test_sin_muestrear_los_minutos_siguen_corriendo(self):
         vale = self.llevar_a_agitando(self.crear_vale(), minutos=40)
 

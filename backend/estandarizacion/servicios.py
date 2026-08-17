@@ -142,10 +142,14 @@ def registrar_muestra(*, vale_id, grasa, sng):
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     _exigir_transicion(vale, ValeEstandarizacion.Estado.MUESTREADO)
 
-    if not vale.puede_muestrear:
-        minutos = vale.minutos_agitando or 0
+    # `puede_muestrear` desapareció del modelo (avisa en vez de bloquear, Tarea
+    # 2); el bloqueo en sí sigue igual hasta la Tarea 3, apoyado ahora en
+    # `minutos_agitando` directamente. El estado ya quedó en AGITANDO por
+    # `_exigir_transicion` de arriba, así que no hace falta repetirlo aquí.
+    minutos = vale.minutos_agitando
+    if minutos is None or minutos < MINUTOS_DE_AGITACION:
         raise ValidationError(
-            f"Lleva {minutos:.0f} minutos agitando y hacen falta "
+            f"Lleva {minutos or 0:.0f} minutos agitando y hacen falta "
             f"{MINUTOS_DE_AGITACION}. Antes de eso la mezcla no es homogénea y "
             "la muestra no mide el silo."
         )

@@ -183,18 +183,37 @@ class ValeEstandarizacion(models.Model):
         return (hasta - self.agitacion_desde).total_seconds() / 60
 
     @property
-    def puede_muestrear(self) -> bool:
+    def avisos_de_muestreo(self) -> list[str]:
         """
-        Solo después de los 30 minutos. Antes, la mezcla no es homogénea y la
-        muestra mide otra cosa.
+        Qué advertir sobre la agitación. Lista vacía: nada que advertir.
+
+        **Avisa, no bloquea** (decisión de planta, 2026-08-17). Antes de los
+        treinta minutos la mezcla no es homogénea y el RC medido puede no ser
+        el del silo, pero detener la operación por eso lo decide la planta y no
+        el sistema. Mismo criterio que `codigo_lote_valido` y que la leche
+        asignada del lote, que avisan sin frenar.
+
+        Sirve en los dos momentos sin ramificar, porque se apoya en
+        `minutos_agitando`: **antes** de muestrear cuenta contra el reloj actual
+        y dice cuánto lleva; **después** cuenta contra `muestreado_en` y dice a
+        los cuántos minutos se muestreó. Es la misma frase leída en dos
+        instantes, no dos cálculos.
+
+        Devuelve motivos y no un booleano porque un `False` no le dice al
+        operador qué pasó, y es la convención del resto del proyecto.
         """
         minutos = self.minutos_agitando
 
-        return (
-            self.estado == self.Estado.AGITANDO
-            and minutos is not None
-            and minutos >= MINUTOS_DE_AGITACION
-        )
+        # Sin reloj arrancado no hay nada que advertir: muestrear sin agitar ya
+        # lo impide la transición de estado.
+        if minutos is None or minutos >= MINUTOS_DE_AGITACION:
+            return []
+
+        return [
+            f"Agitó {minutos:.0f} minutos de los {MINUTOS_DE_AGITACION} que "
+            "pide el procedimiento: antes de eso la mezcla no es homogénea y "
+            "la muestra puede no medir el silo."
+        ]
 
     def evaluacion(self):
         """Si el RC medido cumple, y qué agregar si no. Delega en el dominio."""
