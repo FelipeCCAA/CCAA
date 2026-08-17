@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Truck,
   Users,
+  Warehouse,
   Wrench,
   X,
   type LucideIcon,
@@ -44,17 +45,23 @@ const gruposBase: Grupo[] = [
     modulos: [{ etiqueta: "Panel general", ruta: "/dashboard", icono: LayoutDashboard }],
   },
   {
-    etiqueta: "Flujo de planta",
+    etiqueta: "Operación de planta",
     modulos: [
       { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
-      { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
-      { etiqueta: "Leche cruda", ruta: "/leche", icono: Truck },
+      { etiqueta: "Recepción de leche", ruta: "/leche", icono: Truck },
       { etiqueta: "Estandarización", ruta: "/estandarizacion", icono: FlaskConical },
       { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
-      { etiqueta: "Procesos", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion"] },
-      { etiqueta: "Liberación", ruta: "/liberacion", icono: ClipboardCheck },
+      { etiqueta: "Procesos y trazabilidad", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion", "calidad", "despacho"] },
+      { etiqueta: "Calidad y liberación", ruta: "/liberacion", icono: ClipboardCheck },
       { etiqueta: "Registros de planta", ruta: "/registros", icono: ClipboardList },
       { etiqueta: "Inocuidad · Aseos", ruta: "/inocuidad/aseos", icono: ShieldCheck },
+    ],
+  },
+  {
+    etiqueta: "Materiales e inventario",
+    modulos: [
+      { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
+      { etiqueta: "Inventario y bodegas", ruta: "/abastecimiento/stock", icono: Warehouse },
     ],
   },
   {

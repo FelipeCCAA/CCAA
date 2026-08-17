@@ -55,6 +55,18 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     serializer_class = LoteSerializer
     permission_classes = [EscribeProduccion]
 
+    def destroy(self, request, *args, **kwargs):
+        """Los lotes industriales se anulan; nunca se eliminan físicamente."""
+        return Response(
+            {
+                "detail": (
+                    "Un lote no se elimina porque forma parte de la trazabilidad. "
+                    "Cámbialo a estado anulado e indica el motivo."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     def get_serializer_class(self):
         # Todo lo que opera sobre UN lote devuelve el lote entero, con sus
         # análisis. Devolver menos en la respuesta de un PATCH obliga a quien

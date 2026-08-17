@@ -18,6 +18,16 @@ body{
     text-rendering:optimizeLegibility;
 }
 
+::selection{
+    color:#052e24;
+    background:#a7f3d0;
+}
+
+*{
+    scrollbar-width:thin;
+    scrollbar-color:#cbd5e1 transparent;
+}
+
 button,
 input,
 textarea,

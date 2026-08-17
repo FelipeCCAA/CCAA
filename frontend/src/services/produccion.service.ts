@@ -365,11 +365,6 @@ export async function crearAnalisis(
 }
 
 
-export async function borrarLote(id: number): Promise<void> {
-  await api.delete(`produccion/lotes/${id}/`);
-}
-
-
 export async function obtenerLote(id: number): Promise<LoteDetalle> {
   const { data } = await api.get<LoteDetalle>(`produccion/lotes/${id}/`);
 
@@ -423,6 +418,7 @@ export async function cambiarEstadoLote(
   id: number,
   estado: EstadoLote,
   kgProducidos?: string,
+  motivoAnulacion?: string,
 ): Promise<LoteDetalle> {
 
   // Los kilos viajan con el cambio de estado, no antes: declarar y cerrar la
@@ -431,6 +427,7 @@ export async function cambiarEstadoLote(
   const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, {
     estado,
     ...(kgProducidos ? { kg_producidos: kgProducidos } : {}),
+    ...(motivoAnulacion ? { motivo_anulacion: motivoAnulacion } : {}),
   });
 
   return data;

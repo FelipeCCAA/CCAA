@@ -71,6 +71,12 @@ class AnalisisSerializer(serializers.ModelSerializer):
 
 
 class LoteSerializer(serializers.ModelSerializer):
+    motivo_anulacion = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=False,
+        trim_whitespace=True,
+    )
     producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
     mandante_nombre = serializers.CharField(
         source="producto.mandante.nombre", read_only=True
@@ -121,6 +127,7 @@ class LoteSerializer(serializers.ModelSerializer):
             "estado",
             "estado_etiqueta",
             "observacion",
+            "motivo_anulacion",
             "calidad",
         ]
         read_only_fields = ["ejecucion"]
@@ -228,6 +235,19 @@ class LoteSerializer(serializers.ModelSerializer):
         esa firma sin que nadie se entere.
         """
         request = self.context.get("request")
+
+        # Una anulación sustituye al borrado físico: conserva el lote, sus
+        # análisis, movimientos y genealogía. Por eso exige un motivo nuevo
+        # para esta acción; una observación antigua no sirve como justificación.
+        if (
+            self.instance is not None
+            and datos.get("estado") == Lote.Estado.ANULADO
+            and self.instance.estado != Lote.Estado.ANULADO
+            and not datos.get("motivo_anulacion", "").strip()
+        ):
+            raise serializers.ValidationError(
+                {"motivo_anulacion": "Indica el motivo de la anulación. El historial no se elimina."}
+            )
         scope = scope_de(getattr(request, "user", None)) if request else None
         if self.instance is None and scope and scope.es_sucursal:
             datos["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
@@ -303,7 +323,18 @@ class LoteSerializer(serializers.ModelSerializer):
 
         return datos
 
+    def update(self, instancia, datos_validados):
+        motivo = datos_validados.pop("motivo_anulacion", "").strip()
+        if motivo:
+            marca = f"[ANULACIÓN] {motivo}"
+            anterior = datos_validados.get("observacion", instancia.observacion).strip()
+            datos_validados["observacion"] = "\n".join(
+                parte for parte in (anterior, marca) if parte
+            )
+        return super().update(instancia, datos_validados)
+
     def create(self, datos):
+        datos.pop("motivo_anulacion", None)
         litros = datos.pop("litros_estandarizados", None)
         vale = datos.pop("vale", None)
 
