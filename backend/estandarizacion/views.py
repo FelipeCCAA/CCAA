@@ -126,7 +126,7 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         entrada.is_valid(raise_exception=True)
 
         try:
-            vale = servicios.registrar_muestra(
+            vale, _ = servicios.registrar_muestra(
                 vale_id=self.get_object().pk,
                 grasa=entrada.validated_data["grasa"],
                 sng=entrada.validated_data["sng"],

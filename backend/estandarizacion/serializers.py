@@ -44,14 +44,16 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "silo_destino", "silo_destino_codigo",
             "entera_grasa", "entera_sng", "descremada_grasa", "descremada_sng",
             "litros_entera", "litros_descremada",
-            "estado", "agitacion_desde", "grasa_real", "sng_real",
+            "estado", "agitacion_desde", "muestreado_en",
+            "grasa_real", "sng_real",
             "rc_real", "minutos_agitando", "avisos", "evaluacion",
             "observaciones", "responsable", "responsable_nombre", "creado_en",
         ]
         # El estado lo mueven las acciones del ciclo, no un PATCH: liberar
         # exige que el RC cumpla, y con un campo escribible eso se salta.
         read_only_fields = [
-            "estado", "agitacion_desde", "grasa_real", "sng_real",
+            "estado", "agitacion_desde", "muestreado_en",
+            "grasa_real", "sng_real",
             "responsable", "creado_en",
         ]
 

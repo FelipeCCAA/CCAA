@@ -451,7 +451,10 @@ class ApiTests(BaseVale):
         self.assertEqual(vale.estado, ValeEstandarizacion.Estado.CALCULADO)
 
     def test_el_analisis_tampoco_se_escribe_por_patch(self):
-        """Muestrear exige los 30 minutos; un PATCH los esquivaría."""
+        """
+        El análisis entra por la acción, que es la que sella `muestreado_en` y
+        calcula los avisos. Un PATCH lo escribiría sin nada de eso.
+        """
         vale = self.crear_vale()
 
         self.cliente.patch(
@@ -463,7 +466,11 @@ class ApiTests(BaseVale):
         vale.refresh_from_db()
         self.assertIsNone(vale.grasa_real)
 
-    def test_muestrear_antes_de_tiempo_responde_409(self):
+    def test_muestrear_antes_de_tiempo_responde_200_con_aviso(self):
+        """
+        Era un 409. Desde 2026-08-17 la regla avisa y no bloquea, así que la
+        muestra entra y el aviso viaja en el cuerpo.
+        """
         vale = self.llevar_a_agitando(self.crear_vale(), minutos=5)
 
         respuesta = self.cliente.post(
@@ -472,8 +479,25 @@ class ApiTests(BaseVale):
             format="json",
         )
 
-        self.assertEqual(respuesta.status_code, 409)
-        self.assertIn("minutos agitando", respuesta.json()["detail"])
+        self.assertEqual(respuesta.status_code, 200)
+
+        cuerpo = respuesta.json()
+        self.assertEqual(cuerpo["estado"], "muestreado")
+        self.assertEqual(len(cuerpo["avisos"]), 1)
+        self.assertIn("5", cuerpo["avisos"][0])
+        self.assertIsNotNone(cuerpo["muestreado_en"])
+
+    def test_muestrear_a_tiempo_responde_sin_avisos(self):
+        vale = self.llevar_a_agitando(self.crear_vale())
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/muestrear/",
+            {"grasa": 1.79, "sng": 8.9},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["avisos"], [])
 
     def test_calcular_no_crea_nada(self):
         """
