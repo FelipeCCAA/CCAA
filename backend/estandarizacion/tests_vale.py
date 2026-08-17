@@ -142,23 +142,35 @@ class AgitacionTests(BaseVale):
             litros="10000.00",
         ).exists())
 
-    def test_no_se_muestrea_antes_de_los_treinta_minutos(self):
+    def test_muestrear_antes_de_los_treinta_avisa_pero_no_frena(self):
         """
-        La regla de planta (§10.3). Una muestra tomada antes mide una mezcla
-        que todavía no es homogénea: el RC que devuelve no es el del silo, y
-        liberar con él sería liberar contra un número que no describe lo que
-        hay.
+        Decisión de planta (2026-08-17): la regla de §10.3 dejó de bloquear.
+        Una muestra temprana mide una mezcla que todavía no es homogénea, así
+        que el vale queda con el aviso y con la hora del muestreo — que es lo
+        que permite auditar después cuánto agitó de verdad.
         """
         vale = self.llevar_a_agitando(self.crear_vale(), minutos=20)
 
-        with self.assertRaises(ValidationError) as fallo:
-            servicios.registrar_muestra(vale_id=vale.pk, grasa=1.79, sng=8.9)
+        actualizado, avisos = servicios.registrar_muestra(
+            vale_id=vale.pk, grasa=1.79, sng=8.9
+        )
 
-        self.assertIn("20 minutos", fallo.exception.messages[0])
+        self.assertEqual(actualizado.estado, ValeEstandarizacion.Estado.MUESTREADO)
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("20", avisos[0])
 
         vale.refresh_from_db()
-        self.assertEqual(vale.estado, ValeEstandarizacion.Estado.AGITANDO)
-        self.assertIsNone(vale.grasa_real)
+        self.assertIsNotNone(vale.muestreado_en)
+        self.assertAlmostEqual(vale.minutos_agitando, 20, places=0)
+
+    def test_muestrear_a_tiempo_no_devuelve_avisos(self):
+        vale = self.llevar_a_agitando(self.crear_vale())
+
+        _, avisos = servicios.registrar_muestra(
+            vale_id=vale.pk, grasa=1.79, sng=8.9
+        )
+
+        self.assertEqual(avisos, [])
 
     def test_cumplidos_los_treinta_se_muestrea(self):
         vale = self.llevar_a_agitando(self.crear_vale())
@@ -316,9 +328,33 @@ class CorreccionTests(BaseVale):
         self.assertIsNone(vale.grasa_real)
         self.assertLess(vale.minutos_agitando, 1)
 
-        # Y no se puede muestrear de inmediato: el reloj arrancó de nuevo.
-        with self.assertRaises(ValidationError):
-            servicios.registrar_muestra(vale_id=vale.pk, grasa=1.79, sng=8.9)
+        # Se puede muestrear de inmediato, pero avisa: el reloj arrancó de nuevo.
+        self.assertIsNone(vale.muestreado_en)
+
+        _, avisos = servicios.registrar_muestra(
+            vale_id=vale.pk, grasa=1.79, sng=8.9
+        )
+
+        self.assertEqual(len(avisos), 1)
+
+    def test_reagitar_limpia_el_sello_del_muestreo_anterior(self):
+        """
+        Si `muestreado_en` sobrevive al reagitado queda **antes** del nuevo
+        `agitacion_desde`, y `minutos_agitando` sale negativo: el vale diría
+        que agitó menos que nada y el aviso quedaría deformado.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale())
+        servicios.registrar_muestra(vale_id=vale.pk, grasa=2.20, sng=8.9)
+        servicios.decidir(vale_id=vale.pk, usuario=self.usuario)
+
+        vale.refresh_from_db()
+        self.assertIsNotNone(vale.muestreado_en)
+
+        servicios.reagitar(vale_id=vale.pk)
+        vale.refresh_from_db()
+
+        self.assertIsNone(vale.muestreado_en)
+        self.assertGreaterEqual(vale.minutos_agitando, 0)
 
     def test_el_ciclo_completo_termina_liberando(self):
         vale = self.llevar_a_agitando(self.crear_vale())

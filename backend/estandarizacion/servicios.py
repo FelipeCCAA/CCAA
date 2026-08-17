@@ -12,7 +12,7 @@ from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
+from .models import ValeEstandarizacion
 from maestros.models import Silo
 from procesos.servicios import cerrar_estandarizacion, registrar_estandarizacion
 from recepcion.models import MovimientoSilo
@@ -135,24 +135,18 @@ def registrar_muestra(*, vale_id, grasa, sng):
     """
     Guarda el análisis de la muestra y deja el vale listo para decidir.
 
-    **Exige los 30 minutos de agitación.** Una muestra tomada antes mide una
-    mezcla que todavía no es homogénea: el RC que devuelve no es el del silo, y
-    liberar con él sería liberar contra un número que no describe lo que hay.
+    **Los treinta minutos avisan, no bloquean** (decisión de planta,
+    2026-08-17). Una muestra tomada antes mide una mezcla que todavía no es
+    homogénea, así que el RC que devuelve puede no ser el del silo; el vale
+    queda con el aviso y con `muestreado_en`, que es lo que después permite
+    auditar cuánto agitó de verdad. Lo que sigue impidiendo muestrear sin haber
+    agitado nada es la transición de estado, no esta función.
+
+    Devuelve `(vale, avisos)`, como `decidir` devuelve `(vale, evaluacion)`: la
+    vista necesita el resultado del cálculo y no solo el objeto guardado.
     """
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     _exigir_transicion(vale, ValeEstandarizacion.Estado.MUESTREADO)
-
-    # `puede_muestrear` desapareció del modelo (avisa en vez de bloquear, Tarea
-    # 2); el bloqueo en sí sigue igual hasta la Tarea 3, apoyado ahora en
-    # `minutos_agitando` directamente. El estado ya quedó en AGITANDO por
-    # `_exigir_transicion` de arriba, así que no hace falta repetirlo aquí.
-    minutos = vale.minutos_agitando
-    if minutos is None or minutos < MINUTOS_DE_AGITACION:
-        raise ValidationError(
-            f"Lleva {minutos or 0:.0f} minutos agitando y hacen falta "
-            f"{MINUTOS_DE_AGITACION}. Antes de eso la mezcla no es homogénea y "
-            "la muestra no mide el silo."
-        )
 
     if sng is None or float(sng) <= 0:
         raise ValidationError(
@@ -161,10 +155,16 @@ def registrar_muestra(*, vale_id, grasa, sng):
 
     vale.grasa_real = grasa
     vale.sng_real = sng
+    vale.muestreado_en = timezone.now()
     vale.estado = ValeEstandarizacion.Estado.MUESTREADO
-    vale.save(update_fields=["grasa_real", "sng_real", "estado"])
+    vale.save(update_fields=[
+        "grasa_real", "sng_real", "muestreado_en", "estado",
+    ])
 
-    return vale
+    # Después de sellar, no antes: así el aviso que devuelve la acción es el
+    # mismo que la ficha del vale mostrará más tarde. Calculado antes contaría
+    # contra el reloj actual y los dos podrían no coincidir.
+    return vale, vale.avisos_de_muestreo
 
 
 @transaction.atomic
@@ -226,9 +226,12 @@ def reagitar(*, vale_id):
     # El análisis anterior ya no describe lo que hay en el silo.
     vale.grasa_real = None
     vale.sng_real = None
-    vale.save(
-        update_fields=["estado", "agitacion_desde", "grasa_real", "sng_real"]
-    )
+    # Y el sello del muestreo anterior tampoco: conservarlo lo dejaría *antes*
+    # del nuevo `agitacion_desde`, y `minutos_agitando` saldría negativo.
+    vale.muestreado_en = None
+    vale.save(update_fields=[
+        "estado", "agitacion_desde", "grasa_real", "sng_real", "muestreado_en",
+    ])
 
     return vale
 
