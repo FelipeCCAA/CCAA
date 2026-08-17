@@ -58,7 +58,8 @@ function Cronometro({
   if (faltan <= 0) {
     return (
       <Marco tono="emerald">
-        Agitando hace {minutos.toFixed(0)} min. Ya se puede muestrear.
+        Agitando hace {minutos.toFixed(0)} min — cumplidos los{" "}
+        {minutosExigidos} del procedimiento.
       </Marco>
     );
   }
@@ -70,8 +71,8 @@ function Cronometro({
       <span className="font-medium">
         Faltan {Math.ceil(faltan)} min de agitación
       </span>{" "}
-      — antes de los {minutosExigidos} la mezcla no es homogénea y la muestra no
-      mide el silo.
+      — antes de los {minutosExigidos} la mezcla no es homogénea y la muestra
+      puede no medir el silo. Se puede muestrear igual; queda registrado.
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/60">
         <div
           className="h-full rounded-full bg-indigo-500 transition-all"

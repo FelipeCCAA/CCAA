@@ -42,11 +42,12 @@ export interface ValeEstandarizacion {
   litros_descremada: string;
   estado: EstadoVale;
   agitacion_desde: string | null;
+  muestreado_en: string | null;
   grasa_real: string | null;
   sng_real: string | null;
   rc_real: number | null;
   minutos_agitando: number | null;
-  puede_muestrear: boolean;
+  avisos: string[];
   evaluacion: Evaluacion | null;
   observaciones: string;
   responsable_nombre: string | null;

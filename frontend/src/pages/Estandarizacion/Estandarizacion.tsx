@@ -268,6 +268,19 @@ function Estandarizacion() {
                   />
                 </div>
 
+                {vale.avisos.length > 0 && (
+                  <ul className="mt-4 space-y-2">
+                    {vale.avisos.map((aviso) => (
+                      <li
+                        key={aviso}
+                        className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+                      >
+                        {aviso}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
                 {vale.evaluacion && !vale.evaluacion.cumple && (
                   <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     {vale.evaluacion.motivo}
