@@ -24,6 +24,10 @@ db.sqlite3
 # Python cache
 .pytest_cache/
 .tmp/
+
+# Grafo de Graphify: salida derivada del propio código, se regenera con
+# `graphify extract .`. No se versiona.
+graphify-out/
 # Documentos de planta: la fuente de los formatos reales.
 #
 # 1.691 archivos y 1,8 GB, y no todo es de producción — hay salud
