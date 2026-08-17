@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Droplets, Lock, Plus } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, Copy, Droplets, Lock, Plus } from "lucide-react";
 import axios from "axios";
 
 import {
   borrarBloque,
+  cancelarSemana,
   cerrarSemana,
   crearSemana,
+  duplicarSemana,
   obtenerCodigos,
   obtenerPrograma,
   obtenerSemanas,
@@ -43,6 +45,7 @@ const ESTILO_ESTADO: Record<string, string> = {
   borrador: "bg-slate-100 text-slate-600",
   publicada: "bg-green-50 text-green-700",
   cerrada: "bg-blue-50 text-blue-700",
+  cancelada: "bg-rose-50 text-rose-700",
 };
 
 
@@ -179,6 +182,34 @@ function Planificacion() {
     }
   };
 
+  const duplicar = async () => {
+    if (!semana) return;
+    const inicio = new Date(`${semana.fecha_inicio}T12:00:00`);
+    inicio.setDate(inicio.getDate() + 7);
+    const fecha_inicio = inicio.toISOString().slice(0, 10);
+    const codigo = window.prompt("Código para la nueva semana", `${semana.codigo}-COPIA`);
+    if (!codigo) return;
+    setFirmando(true);
+    try {
+      const copia = await duplicarSemana(semana.id, {
+        codigo, anio: inicio.getFullYear(), fecha_inicio,
+      });
+      await cargarSemanas();
+      setSemanaId(copia.id);
+    } catch {
+      setError("No se pudo duplicar la semana. Revisa el código y la fecha.");
+    } finally {
+      setFirmando(false);
+    }
+  };
+
+  const cancelar = async () => {
+    if (!semana) return;
+    const motivo = window.prompt("Motivo obligatorio de la cancelación");
+    if (!motivo?.trim()) return;
+    await accion((id) => cancelarSemana(id, motivo.trim()));
+  };
+
   const semana = programa?.semana;
   const editable = puedeEditar && semana?.estado === "borrador";
 
@@ -267,6 +298,12 @@ function Planificacion() {
 
             <div className="ml-auto flex flex-wrap gap-2">
 
+              {puedeEditar && (
+                <button type="button" disabled={firmando} onClick={() => void duplicar()} className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  <Copy className="h-4 w-4" /> Duplicar
+                </button>
+              )}
+
               {puedeEditar && semana.estado === "borrador" && (
                 <button
                   type="button"
@@ -306,9 +343,21 @@ function Planificacion() {
                 </>
               )}
 
+              {puedeEditar && ["borrador", "publicada"].includes(semana.estado) && (
+                <button type="button" disabled={firmando} onClick={() => void cancelar()} className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">
+                  <Ban className="h-4 w-4" /> Cancelar semana
+                </button>
+              )}
+
             </div>
 
           </div>
+
+          {semana.estado === "cancelada" && semana.motivo_cancelacion && (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <strong>Motivo de cancelación:</strong> {semana.motivo_cancelacion}
+            </p>
+          )}
 
           {/* Lo que impide publicar */}
 

@@ -1,0 +1,94 @@
+from datetime import date
+from decimal import Decimal
+
+from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.test import TestCase
+
+from maestros.models import Equipo, Mandante, Producto
+from produccion.models import Lote, OrdenProduccion
+from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
+
+from .models import (
+    CorridaMantequilla, EjecucionProceso, EtapaProceso, Proceso,
+)
+from .servicios import cerrar_mantequilla, genealogia_lote, iniciar_mantequilla
+
+
+class MantequillaTests(TestCase):
+    def setUp(self):
+        empresa = Empresa.objects.create(rut="MANT-1", nombre="Empresa mantequilla")
+        planta = Sucursal.objects.create(empresa=empresa, codigo="MANT", nombre="Planta")
+        self.usuario = User.objects.create_user("operador-mantequilla")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=empresa, sucursal=planta,
+            rol=Rol.PRODUCCION, area=PerfilUsuario.Area.ENVASE,
+        )
+        mandante = Mandante.objects.create(
+            empresa=empresa, nombre="Mandante mantequilla", codigo_cliente="mant"
+        )
+        crema = Producto.objects.create(
+            mandante=mandante, nombre="Crema", familia=Producto.Familia.CREMA
+        )
+        mantequilla = Producto.objects.create(
+            mandante=mandante, nombre="Mantequilla",
+            categoria=Producto.Categoria.MANTEQUILLA,
+        )
+        suero = Producto.objects.create(mandante=mandante, nombre="Suero")
+        equipo = Equipo.objects.create(
+            sucursal=planta, codigo="mant-1", nombre="Línea mantequilla",
+            tipo=Equipo.Tipo.LINEA,
+        )
+        proceso = Proceso.objects.create(codigo="mantequilla", nombre="Mantequilla")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="batir", nombre="Batido",
+            tipo=EtapaProceso.Tipo.MANTEQUILLA, orden=1,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-MANT-1", etapa=etapa, sucursal=planta,
+            equipo=equipo, responsable=self.usuario,
+        )
+        orden = OrdenProduccion.objects.create(
+            sucursal=planta, codigo="OP-MANT-1", producto=mantequilla,
+            cantidad_planificada=400, unidad="kg", equipo=equipo,
+            estado=OrdenProduccion.Estado.PROGRAMADA,
+        )
+        self.lote_crema = Lote.objects.create(
+            sucursal=planta, codigo_lote="CREMA-1", producto=crema,
+            fecha=date(2026, 8, 17), estado=Lote.Estado.PRODUCIDO,
+            kg_producidos=Decimal("1000"),
+        )
+        lote_mantequilla = Lote.objects.create(
+            sucursal=planta, codigo_lote="MANT-1", producto=mantequilla,
+            orden=orden, fecha=date(2026, 8, 17),
+        )
+        lote_suero = Lote.objects.create(
+            sucursal=planta, codigo_lote="SUERO-1", producto=suero,
+            fecha=date(2026, 8, 17),
+        )
+        self.corrida = CorridaMantequilla.objects.create(
+            ejecucion=ejecucion, orden=orden, lote_crema=self.lote_crema,
+            lote_mantequilla=lote_mantequilla, lote_suero=lote_suero,
+            kg_crema=Decimal("1000"),
+        )
+
+    def test_crema_mantequilla_suero_y_merma_conservan_genealogia(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+        cerrar_mantequilla(
+            corrida_id=self.corrida.pk, usuario=self.usuario,
+            kg_mantequilla="420", kg_suero="570", kg_merma="10",
+            controles={"humedad": 16},
+        )
+
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaMantequilla.Estado.PENDIENTE_CALIDAD)
+        self.assertEqual(self.corrida.ejecucion.salidas.count(), 3)
+        genealogia = genealogia_lote(self.corrida.lote_mantequilla_id, "atras")
+        self.assertIn(self.lote_crema.pk, {n["id"] for n in genealogia["nodos"]})
+
+    def test_no_permite_consumir_mas_crema_que_la_disponible(self):
+        self.corrida.kg_crema = Decimal("1001")
+        self.corrida.save(update_fields=["kg_crema"])
+
+        with self.assertRaises(ValidationError):
+            iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)

@@ -142,6 +142,20 @@ class AgitacionTests(BaseVale):
             litros="10000.00",
         ).exists())
 
+    def test_no_transfiere_desde_silo_bloqueado_por_calidad(self):
+        vale = self.crear_vale()
+        self.abastecer_origenes()
+        self.silo_entera.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        self.silo_entera.save(update_fields=["estado"])
+
+        with self.assertRaises(ValidationError):
+            servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        self.assertFalse(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id,
+        ).exists())
+
     def test_no_se_muestrea_antes_de_los_treinta_minutos(self):
         """
         La regla de planta (§10.3). Una muestra tomada antes mide una mezcla

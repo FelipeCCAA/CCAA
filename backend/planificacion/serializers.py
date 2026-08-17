@@ -152,10 +152,16 @@ class SemanaPlanSerializer(serializers.ModelSerializer):
             "publicada_por_nombre",
             "publicada_en",
             "observacion",
+            "cancelada_por",
+            "cancelada_en",
+            "motivo_cancelacion",
         ]
         # Publicar es un acto: se firma por su endpoint, que comprueba que el
         # plan cuadre. Escribir `estado` a mano lo saltaría.
-        read_only_fields = ["estado", "publicada_por", "publicada_en"]
+        read_only_fields = [
+            "estado", "publicada_por", "publicada_en", "cancelada_por",
+            "cancelada_en", "motivo_cancelacion",
+        ]
 
     def validate(self, datos):
         prohibidos = {"estado", "publicada_por", "publicada_en"}

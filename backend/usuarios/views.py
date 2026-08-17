@@ -35,6 +35,7 @@ from .serializers import (
     UsuarioSerializer,
 )
 from .permisos import IsAdminDeArea
+from .permisos_industriales import permisos_asignables_por
 from .throttling import LoginIPThrottle, LoginUsuarioThrottle
 from .tenancy import scope_de
 
@@ -208,6 +209,14 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminDeArea]
     pagination_class = None
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    @action(detail=False, methods=["get"], url_path="permisos-disponibles")
+    def permisos_disponibles(self, request):
+        """Catálogo delegable para el actor; nunca incluye una escalada."""
+        return Response([
+            {"codigo": codigo, "nombre": codigo.replace("_", " ").capitalize()}
+            for codigo in sorted(permisos_asignables_por(request.user))
+        ])
 
     def get_queryset(self):
         usuarios = User.objects.select_related(

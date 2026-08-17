@@ -23,7 +23,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from . import dominio
-from .models import Lote
+from .models import Lote, PalletProducto, RegistroEnvase
 
 
 def litros_ya_tomados(vale, excluyendo=None):
@@ -216,3 +216,51 @@ def registrar_produccion(*, lote):
         ejecucion.save(update_fields=["estado", "termino"])
 
     return ejecucion
+
+
+@transaction.atomic
+def registrar_envasado(
+    *, lote_id, equipo, formato_kg, inicio, termino, pallets, usuario,
+    controles=None, observacion="", operacion_id=None,
+):
+    """Registra envase y pallets como un único cierre físico e idempotente."""
+    from django.core.exceptions import ValidationError
+    from inventario.servicios import motivo_equipo_no_habilitado
+
+    if operacion_id:
+        existente = RegistroEnvase.objects.filter(operacion_id=operacion_id).first()
+        if existente:
+            return existente
+    lote = Lote.objects.select_for_update().select_related("sucursal").get(pk=lote_id)
+    if lote.estado not in {Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO}:
+        raise ValidationError("El lote debe estar producido antes de envasarse.")
+    impedimento = motivo_equipo_no_habilitado(equipo)
+    if impedimento:
+        raise ValidationError(impedimento)
+    if not isinstance(pallets, list) or not pallets:
+        raise ValidationError({"pallets": "Registra al menos un pallet."})
+
+    unidades = sum(int(item.get("unidades", 0)) for item in pallets)
+    kg_total = sum(Decimal(str(item.get("kg_neto", 0))) for item in pallets)
+    registro = RegistroEnvase(
+        lote=lote, equipo=equipo, formato_kg=Decimal(str(formato_kg)),
+        unidades=unidades, kg_envasados=kg_total, controles=controles or {},
+        operador=usuario, inicio=inicio, termino=termino, observacion=observacion,
+        **({"operacion_id": operacion_id} if operacion_id else {}),
+    )
+    registro.full_clean()
+    registro.save()
+
+    creados = []
+    for item in pallets:
+        pallet = PalletProducto(
+            envase=registro, codigo=str(item.get("codigo", "")).strip(),
+            unidades=int(item.get("unidades", 0)),
+            kg_neto=Decimal(str(item.get("kg_neto", 0))),
+        )
+        if not pallet.codigo:
+            raise ValidationError({"pallets": "Cada pallet requiere código."})
+        pallet.full_clean()
+        creados.append(pallet)
+    PalletProducto.objects.bulk_create(creados)
+    return registro

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from usuarios.models import Sucursal
 
@@ -203,6 +205,16 @@ class MovimientoSiloSerializer(serializers.ModelSerializer):
             "origen_tipo",
             "origen_id",
             "motivo",
+            "operacion_id",
+            "silo_contraparte",
+            "lote",
+            "producto",
+            "equipo",
+            "usuario",
+        ]
+        read_only_fields = [
+            "tipo", "fecha_hora", "origen_tipo", "origen_id", "operacion_id",
+            "silo_contraparte", "lote", "producto", "equipo", "usuario",
         ]
 
     def validate(self, datos):
@@ -226,3 +238,28 @@ class MovimientoSiloSerializer(serializers.ModelSerializer):
             )
 
         return datos
+
+
+class AjusteSiloSerializer(serializers.Serializer):
+    silo = serializers.IntegerField(min_value=1)
+    litros = serializers.DecimalField(max_digits=12, decimal_places=2)
+    motivo = serializers.CharField(trim_whitespace=True)
+    operacion_id = serializers.UUIDField()
+
+    def validate_litros(self, valor):
+        if valor == 0:
+            raise serializers.ValidationError("El ajuste no puede ser cero.")
+        return valor
+
+
+class TransferenciaSiloSerializer(serializers.Serializer):
+    silo_origen = serializers.IntegerField(min_value=1)
+    silo_destino = serializers.IntegerField(min_value=1)
+    litros = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("0.01")
+    )
+    operacion_id = serializers.UUIDField()
+    motivo = serializers.CharField(required=False, allow_blank=True, default="")
+    lote = serializers.IntegerField(required=False, allow_null=True)
+    producto = serializers.IntegerField(required=False, allow_null=True)
+    equipo = serializers.IntegerField(required=False, allow_null=True)

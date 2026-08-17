@@ -17,9 +17,11 @@ from maestros.models import Especificacion, Producto, Receta, Silo
 from usuarios.permisos import EscribeProduccion
 from usuarios.tenancy import (
     QuerysetTenantMixin,
+    RelacionesTenantMixin,
     SucursalTenantViewSetMixin,
     filtrar_por_scope,
     scope_de,
+    sucursal_para_escritura,
 )
 
 from . import dominio
@@ -29,6 +31,9 @@ from .models import (
     ControlProceso,
     ControlProcesoLectura,
     Lote,
+    OrdenProduccion,
+    PalletProducto,
+    RegistroEnvase,
 )
 from .serializers import (
     AnalisisSerializer,
@@ -36,7 +41,61 @@ from .serializers import (
     ControlProcesoSerializer,
     LoteDetalleSerializer,
     LoteSerializer,
+    OrdenProduccionSerializer,
+    PalletProductoSerializer,
+    RegistroEnvaseSerializer,
 )
+
+
+class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "lote__sucursal_id"
+    tenant_lookup_empresa = "lote__sucursal__empresa_id"
+    queryset = RegistroEnvase.objects.select_related(
+        "lote__producto", "equipo", "operador"
+    ).prefetch_related("pallets")
+    serializer_class = RegistroEnvaseSerializer
+    permission_classes = [EscribeProduccion]
+    http_method_names = ["get", "post", "head", "options"]
+
+
+class PalletProductoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "envase__lote__sucursal_id"
+    tenant_lookup_empresa = "envase__lote__sucursal__empresa_id"
+    queryset = PalletProducto.objects.select_related(
+        "envase__lote__producto", "envase__equipo"
+    )
+    serializer_class = PalletProductoSerializer
+    permission_classes = [EscribeProduccion]
+
+
+class OrdenProduccionViewSet(
+    RelacionesTenantMixin, SucursalTenantViewSetMixin, viewsets.ModelViewSet
+):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
+    queryset = OrdenProduccion.objects.select_related(
+        "sucursal", "semana", "producto", "equipo", "responsable", "creada_por"
+    )
+    serializer_class = OrdenProduccionSerializer
+    permission_classes = [EscribeProduccion]
+    tenant_relation_fields = {
+        "semana": ("sucursal_id", "sucursal__empresa_id"),
+        "producto": (None, "mandante__empresa_id"),
+        "equipo": ("sucursal_id", "sucursal__empresa_id"),
+        "responsable": ("perfil__sucursal_id", "perfil__empresa_id"),
+    }
+
+    def perform_create(self, serializer):
+        sucursal = sucursal_para_escritura(
+            self.request.user, serializer.validated_data, "sucursal"
+        )
+        serializer.save(sucursal=sucursal, creada_por=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Una orden se cancela con motivo; no se elimina."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
 
 class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
@@ -48,7 +107,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     queryset = (
         Lote.objects.select_related(
             "sucursal", "producto", "producto__mandante", "vale",
-            "vale__silo_destino", "equipo", "ejecucion",
+            "vale__silo_destino", "equipo", "ejecucion", "orden",
         )
         .prefetch_related("analisis")
     )

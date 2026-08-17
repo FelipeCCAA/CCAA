@@ -103,7 +103,7 @@ class AbrirProcesoTests(BaseApertura):
         self.assertEqual(lote.estado, Lote.Estado.EN_PROCESO)
         self.assertIsNone(lote.kg_producidos)
 
-    def test_abrir_el_proceso_asigna_la_leche_en_la_misma_operacion(self):
+    def test_no_se_abre_el_proceso_eligiendo_silos_manualmente(self):
         respuesta = self._abrir(
             asignaciones=[
                 {"silo": self.silo_a.id, "litros": 40000},
@@ -111,9 +111,9 @@ class AbrirProcesoTests(BaseApertura):
             ]
         )
 
-        self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(respuesta.data["asignacion"]["asignado"], 60000)
-        self.assertEqual(MovimientoSilo.objects.count(), 2)
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("vale", respuesta.data["detail"])
+        self.assertEqual(MovimientoSilo.objects.count(), 0)
 
     def test_si_la_asignacion_falla_no_queda_un_lote_abierto_sin_leche(self):
         """
@@ -271,6 +271,7 @@ class CodigoSugeridoTests(BaseApertura):
         tiene, y equivocarse ahí repite un código de lote.
         """
         Lote.objects.create(
+            sucursal=self.sucursal,
             codigo_lote="CCAA6197LEP25-01",
             producto=self.polvo,
             fecha=date(2026, 7, 16),
@@ -288,6 +289,7 @@ class CodigoSugeridoTests(BaseApertura):
         del mismo SKU, no la actividad del día.
         """
         Lote.objects.create(
+            sucursal=self.sucursal,
             codigo_lote="CCAA6197CRE10-01",
             producto=self.crema,
             fecha=date(2026, 7, 16),
@@ -297,6 +299,7 @@ class CodigoSugeridoTests(BaseApertura):
 
     def test_un_lote_de_otra_fecha_no_corre_el_correlativo(self):
         Lote.objects.create(
+            sucursal=self.sucursal,
             codigo_lote="CCAA6196LEP25-01",
             producto=self.polvo,
             fecha=date(2026, 7, 15),
@@ -385,6 +388,7 @@ class ConsumoDeInventarioTests(BaseApertura):
 
     def _lote_abierto(self):
         return Lote.objects.create(
+            sucursal=self.sucursal,
             codigo_lote="CCAA6197", producto=self.polvo, fecha=date(2026, 7, 16),
         )
 
@@ -449,6 +453,7 @@ class ConsumoDeInventarioTests(BaseApertura):
 
     def test_un_lote_sin_receta_no_bloquea_pero_queda_pendiente(self):
         lote = Lote.objects.create(
+            sucursal=self.sucursal,
             codigo_lote="CCAA6198", producto=self.crema, fecha=date(2026, 7, 16),
         )
 

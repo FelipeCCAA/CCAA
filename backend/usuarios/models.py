@@ -192,6 +192,21 @@ class PerfilUsuario(models.Model):
     class Meta:
         verbose_name = "Perfil de usuario"
         verbose_name_plural = "Perfiles de usuario"
+        permissions = [
+            ("produccion_orden_crear", "Puede crear órdenes de producción"),
+            ("produccion_orden_editar", "Puede editar órdenes de producción"),
+            ("produccion_lote_cerrar", "Puede cerrar lotes de producción"),
+            ("produccion_lote_anular", "Puede anular lotes de producción"),
+            ("secado_proceso_iniciar", "Puede iniciar procesos de secado"),
+            ("secado_proceso_cerrar", "Puede cerrar procesos de secado"),
+            ("calidad_lote_liberar", "Puede liberar lotes por Calidad"),
+            ("calidad_lote_bloquear", "Puede bloquear lotes por Calidad"),
+            ("inventario_transferir", "Puede transferir inventario"),
+            ("inventario_ajustar", "Puede solicitar ajustes de inventario"),
+            ("despacho_crear", "Puede crear solicitudes de despacho"),
+            ("despacho_autorizar", "Puede autorizar despachos"),
+            ("auditoria_exportar", "Puede exportar registros de auditoría"),
+        ]
         constraints = [
             models.CheckConstraint(
                 condition=(

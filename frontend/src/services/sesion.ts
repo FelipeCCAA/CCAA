@@ -57,6 +57,7 @@ export interface Usuario {
   /* Rol efectivo. Un superusuario es "admin" aunque no tenga perfil, y un
      usuario sin perfil es null: no escribe en ninguna parte. */
   rol: Rol | null;
+  capacidades: string[];
   perfil: PerfilUsuario | null;
 }
 

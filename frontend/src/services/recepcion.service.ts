@@ -9,6 +9,11 @@ export interface Silo {
   tipo: string;
   tipo_etiqueta: string;
   capacidad_l: string;
+  estado: string;
+  estado_etiqueta: string;
+  producto_actual: number | null;
+  temperatura_actual: string | null;
+  ultima_limpieza: string | null;
   litros_disponibles?: string;
   capacidad_disponible?: string;
   activo: boolean;
@@ -28,6 +33,12 @@ export interface OcupacionSilo {
   codigo: string;
   litros: number;
   capacidad: number;
+  estado: string;
+  estado_etiqueta: string;
+  producto_actual: string | null;
+  temperatura_actual: number | null;
+  ultima_limpieza: string | null;
+  ultimo_movimiento: string | null;
   pct: number;
   /* Por encima de la capacidad. */
   excedido: boolean;

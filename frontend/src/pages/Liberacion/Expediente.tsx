@@ -13,6 +13,7 @@ import axios from "axios";
 
 import {
   conceder,
+  bloquearLote,
   liberar,
   obtenerExpediente,
   type EstadoDocumento,
@@ -140,6 +141,21 @@ function Expediente({ loteId, alVolver }: Props) {
         setError("No se pudo firmar la liberación.");
       }
 
+    } finally {
+      setFirmando(false);
+    }
+  };
+
+  const bloquear = async () => {
+    const causa = window.prompt("Motivo obligatorio del bloqueo de Calidad:")?.trim();
+    if (!causa) return;
+    setFirmando(true);
+    setError("");
+    try {
+      await bloquearLote(loteId, causa);
+      await cargar();
+    } catch {
+      setError("No se pudo bloquear el lote.");
     } finally {
       setFirmando(false);
     }
@@ -474,6 +490,16 @@ function Expediente({ loteId, alVolver }: Props) {
               </button>
 
             )}
+
+            <button
+              type="button"
+              disabled={firmando}
+              onClick={() => void bloquear()}
+              className="flex items-center gap-1.5 rounded-xl border border-red-300 bg-red-50 px-5 py-2.5 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-40"
+            >
+              <Lock className="h-4 w-4" />
+              Bloquear lote
+            </button>
 
           </div>
 

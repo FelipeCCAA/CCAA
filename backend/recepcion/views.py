@@ -2,7 +2,7 @@ import uuid
 
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, Max, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -21,7 +21,11 @@ from usuarios.tenancy import (
 
 from . import dominio
 from .models import CONTROLES_POR_CAMION, CONTROLES_POR_MODULO, MovimientoSilo, Recepcion
-from .serializers import MovimientoSiloSerializer, RecepcionSerializer
+from .serializers import (
+    AjusteSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
+    TransferenciaSiloSerializer,
+)
+from .servicios import ajustar_silo, transferir_silo
 
 
 def _usuarios_recepcion(usuario, sucursal_id):
@@ -624,7 +628,9 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
     tenant_lookup_sucursal = "silo__sucursal_id"
     tenant_lookup_empresa = "silo__sucursal__empresa_id"
     tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = MovimientoSilo.objects.select_related("silo")
+    queryset = MovimientoSilo.objects.select_related(
+        "silo", "silo_contraparte", "lote", "producto", "equipo", "usuario"
+    )
     serializer_class = MovimientoSiloSerializer
     permission_classes = [EscribeRecepcion]
 
@@ -636,6 +642,106 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
             consulta = consulta.filter(silo_id=silo)
 
         return consulta
+
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "El libro mayor es inmutable; registra un ajuste o reversa."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Los movimientos de silo no se eliminan."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def create(self, request, *args, **kwargs):
+        """Compatibilidad: POST directo solo registra ajustes auditables."""
+        if request.data.get("tipo") != MovimientoSilo.Tipo.AJUSTE:
+            return Response(
+                {"tipo": ["Ingresos y salidas solo se generan desde operaciones de dominio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        datos = request.data.copy()
+        datos.setdefault("operacion_id", str(uuid.uuid4()))
+        entrada = AjusteSiloSerializer(data=datos)
+        entrada.is_valid(raise_exception=True)
+        return self._ejecutar_ajuste(entrada.validated_data)
+
+    @action(detail=False, methods=["post"])
+    def ajustar(self, request):
+        entrada = AjusteSiloSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        return self._ejecutar_ajuste(entrada.validated_data)
+
+    def _ejecutar_ajuste(self, datos):
+        silos = filtrar_por_scope(
+            Silo.objects.all(), self.request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        if not silos.filter(pk=datos["silo"]).exists():
+            raise DRFValidationError({"silo": "Silo inexistente o fuera de tu planta."})
+        try:
+            movimiento = ajustar_silo(
+                silo_id=datos["silo"], litros=datos["litros"],
+                operacion_id=datos["operacion_id"], usuario=self.request.user,
+                motivo=datos["motivo"],
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(MovimientoSiloSerializer(movimiento).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"])
+    def transferir(self, request):
+        entrada = TransferenciaSiloSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        silos = filtrar_por_scope(
+            Silo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        if silos.filter(pk__in=[datos["silo_origen"], datos["silo_destino"]]).count() != 2:
+            raise DRFValidationError("Los silos deben pertenecer a tu planta.")
+
+        from maestros.models import Equipo, Producto
+        from produccion.models import Lote
+
+        scope = scope_de(request.user, requerido=True)
+        filtro_sucursal = {"sucursal_id": scope.sucursal_id} if scope.es_sucursal else {
+            "sucursal__empresa_id": scope.empresa_id
+        }
+        lote = Lote.objects.filter(pk=datos.get("lote"), **filtro_sucursal).first() if datos.get("lote") else None
+        producto = Producto.objects.filter(
+            pk=datos.get("producto"), mandante__empresa_id=scope.empresa_id
+        ).first() if datos.get("producto") else None
+        equipo = Equipo.objects.filter(pk=datos.get("equipo"), **filtro_sucursal).first() if datos.get("equipo") else None
+        if datos.get("lote") and lote is None:
+            raise DRFValidationError({"lote": "Lote inexistente o fuera de tu planta."})
+        if datos.get("producto") and producto is None:
+            raise DRFValidationError({"producto": "Producto inexistente o fuera de tu empresa."})
+        if datos.get("equipo") and equipo is None:
+            raise DRFValidationError({"equipo": "Equipo inexistente o fuera de tu planta."})
+        try:
+            movimientos = transferir_silo(
+                silo_origen_id=datos["silo_origen"],
+                silo_destino_id=datos["silo_destino"], litros=datos["litros"],
+                operacion_id=datos["operacion_id"], usuario=request.user,
+                motivo=datos["motivo"], lote=lote, producto=producto, equipo=equipo,
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(
+            MovimientoSiloSerializer(movimientos, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 @api_view(["GET"])
@@ -650,7 +756,7 @@ def ocupacion(request):
     descuadrado, y ocultarlo haría que el error nunca se descubriera.
     """
     silos = filtrar_por_scope(
-        Silo.objects.filter(activo=True), request.user,
+        Silo.objects.filter(activo=True).select_related("producto_actual"), request.user,
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     ).annotate(
         litros_ocupados=Coalesce(
@@ -661,7 +767,8 @@ def ocupacion(request):
             )),
             Value(0),
             output_field=DecimalField(max_digits=14, decimal_places=2),
-        )
+        ),
+        ultimo_movimiento=Max("movimientos__fecha_hora"),
     )
     ocupaciones = []
     for silo in silos:
@@ -675,6 +782,12 @@ def ocupacion(request):
             "codigo": silo.codigo,
             "litros": silo.litros_ocupados,
             "capacidad": silo.capacidad_l,
+            "estado": silo.estado,
+            "estado_etiqueta": silo.get_estado_display(),
+            "producto_actual": silo.producto_actual.nombre if silo.producto_actual else None,
+            "temperatura_actual": silo.temperatura_actual,
+            "ultima_limpieza": silo.ultima_limpieza,
+            "ultimo_movimiento": silo.ultimo_movimiento,
             "pct": round(porcentaje, 1),
             "excedido": silo.litros_ocupados > silo.capacidad_l,
             "negativo": silo.litros_ocupados < 0,

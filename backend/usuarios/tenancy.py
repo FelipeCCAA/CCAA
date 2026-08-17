@@ -1,6 +1,7 @@
 """Scope de empresa/sucursal, separado de los permisos por rol."""
 
 from dataclasses import dataclass
+import sys
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -13,7 +14,7 @@ CODIGO_SUCURSAL_PRUEBAS = "TEST"
 
 
 def _en_pruebas() -> bool:
-    return settings.DJANGO_ENV in {"test", "ci"}
+    return settings.DJANGO_ENV in {"test", "ci"} or "test" in sys.argv
 
 
 def empresa_predeterminada_pruebas():

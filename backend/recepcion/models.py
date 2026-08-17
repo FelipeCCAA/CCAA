@@ -276,6 +276,11 @@ class MovimientoSilo(models.Model):
         RECEPCION = "recepcion", "Recepción"
         ESTANDARIZACION = "estandarizacion", "Estandarización"
         LOTE = "lote", "Consumo de lote"
+        TRANSFERENCIA = "transferencia", "Transferencia"
+        PRODUCCION = "produccion", "Producción"
+        MERMA = "merma", "Merma"
+        DEVOLUCION = "devolucion", "Devolución"
+        REWORK = "rework", "Reproceso"
         AJUSTE = "ajuste", "Ajuste manual"
 
     silo = models.ForeignKey(
@@ -297,6 +302,30 @@ class MovimientoSilo(models.Model):
     motivo = models.TextField(
         "Motivo", blank=True, help_text="Obligatorio en los ajustes"
     )
+    operacion_id = models.UUIDField(
+        null=True, blank=True, db_index=True,
+        help_text="Clave idempotente compartida por los asientos de una operación.",
+    )
+    silo_contraparte = models.ForeignKey(
+        Silo, on_delete=models.PROTECT, related_name="movimientos_contraparte",
+        null=True, blank=True,
+    )
+    lote = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
+    producto = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
+    equipo = models.ForeignKey(
+        "maestros.Equipo", on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Movimiento de silo"
@@ -308,7 +337,12 @@ class MovimientoSilo(models.Model):
                 fields=["origen_tipo", "origen_id"],
                 condition=models.Q(origen_tipo="recepcion"),
                 name="una_descarga_por_recepcion",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["operacion_id", "silo", "tipo"],
+                condition=models.Q(operacion_id__isnull=False),
+                name="asiento_silo_unico_por_operacion",
+            ),
         ]
 
     def __str__(self):
@@ -324,3 +358,10 @@ class MovimientoSilo(models.Model):
             raise ValidationError(
                 {"motivo": "Un ajuste debe indicar el motivo: es lo que lo hace auditable."}
             )
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError(
+                "Los movimientos de silo son inmutables; corrige mediante un ajuste o reversa."
+            )
+        return super().save(*args, **kwargs)

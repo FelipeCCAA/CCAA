@@ -125,6 +125,7 @@ class SemanaPlan(models.Model):
         BORRADOR = "borrador", "Borrador"
         PUBLICADA = "publicada", "Publicada"
         CERRADA = "cerrada", "Cerrada"
+        CANCELADA = "cancelada", "Cancelada"
 
     sucursal = models.ForeignKey(
         "usuarios.Sucursal", on_delete=models.PROTECT,
@@ -133,11 +134,12 @@ class SemanaPlan(models.Model):
     )
 
     TRANSICIONES = {
-        Estado.BORRADOR: [Estado.PUBLICADA],
+        Estado.BORRADOR: [Estado.PUBLICADA, Estado.CANCELADA],
         # Volver a borrador existe porque el programa cambia: se rompe una
         # máquina y hay que reprogramar la semana en curso.
-        Estado.PUBLICADA: [Estado.BORRADOR, Estado.CERRADA],
+        Estado.PUBLICADA: [Estado.BORRADOR, Estado.CERRADA, Estado.CANCELADA],
         Estado.CERRADA: [],
+        Estado.CANCELADA: [],
     }
 
     codigo = models.CharField("Código", max_length=10, help_text="Ej. W7")
@@ -156,6 +158,12 @@ class SemanaPlan(models.Model):
     )
     publicada_en = models.DateTimeField("Publicada en", null=True, blank=True)
     observacion = models.TextField("Observación", blank=True)
+    cancelada_por = models.ForeignKey(
+        "auth.User", on_delete=models.PROTECT, related_name="semanas_canceladas",
+        null=True, blank=True,
+    )
+    cancelada_en = models.DateTimeField(null=True, blank=True)
+    motivo_cancelacion = models.TextField(blank=True)
 
     class Meta:
         verbose_name = "Semana de planificación"

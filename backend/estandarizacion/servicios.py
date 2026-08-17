@@ -6,6 +6,8 @@ importa en el paso que decide: **liberar exige que el RC medido cumpla**, y con
 un campo escribible eso se salta con una petición.
 """
 
+import uuid
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Case, DecimalField, F, Sum, Value, When
@@ -16,6 +18,7 @@ from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
 from maestros.models import Silo
 from procesos.servicios import cerrar_estandarizacion, registrar_estandarizacion
 from recepcion.models import MovimientoSilo
+from recepcion.servicios import ESTADOS_SIN_CONSUMO
 
 
 def _saldo(silo):
@@ -58,6 +61,20 @@ def transferir(*, vale_id, usuario):
     destino = bloqueados[vale.silo_destino_id]
     descremada = bloqueados.get(vale.silo_descremada_id)
 
+    for silo in filter(None, [entera, descremada]):
+        if not silo.activo or silo.estado in ESTADOS_SIN_CONSUMO:
+            raise ValidationError(
+                f"{silo.codigo} no está habilitado para consumo ({silo.get_estado_display()})."
+            )
+    if not destino.activo or destino.estado in {
+        Silo.Estado.BLOQUEADO_CALIDAD,
+        Silo.Estado.EN_CIP,
+        Silo.Estado.FUERA_SERVICIO,
+    }:
+        raise ValidationError(
+            f"{destino.codigo} no admite ingresos ({destino.get_estado_display()})."
+        )
+
     if _saldo(entera) < vale.litros_entera:
         raise ValidationError(
             f"{entera.codigo} no tiene {vale.litros_entera} L de leche entera disponibles."
@@ -76,18 +93,21 @@ def transferir(*, vale_id, usuario):
         )
 
     ahora = timezone.now()
+    operacion_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ccaa:estandarizacion:{vale.pk}")
     movimientos = [
         MovimientoSilo(
             silo=entera, tipo=MovimientoSilo.Tipo.SALIDA,
             litros=vale.litros_entera, fecha_hora=ahora,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id,
+            operacion_id=operacion_id, usuario=usuario,
         ),
         MovimientoSilo(
             silo=destino, tipo=MovimientoSilo.Tipo.INGRESO,
             litros=vale.volumen, fecha_hora=ahora,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id,
+            operacion_id=operacion_id, usuario=usuario,
         ),
     ]
     if descremada and vale.litros_descremada:
@@ -96,6 +116,7 @@ def transferir(*, vale_id, usuario):
             litros=vale.litros_descremada, fecha_hora=ahora,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id,
+            operacion_id=operacion_id, usuario=usuario,
         ))
     MovimientoSilo.objects.bulk_create(movimientos)
 

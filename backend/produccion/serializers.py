@@ -1,4 +1,5 @@
 from copy import copy
+from decimal import Decimal
 
 from rest_framework import serializers
 from maestros.catalogos import CLAVES_PARAMETROS
@@ -7,7 +8,111 @@ from usuarios.models import Sucursal
 from usuarios.tenancy import filtrar_por_scope, scope_de
 
 from . import dominio
-from .models import Analisis, ControlProceso, ControlProcesoLectura, Lote
+from .models import (
+    Analisis, ControlProceso, ControlProcesoLectura, Lote, OrdenProduccion,
+    PalletProducto, RegistroEnvase,
+)
+
+
+class PalletProductoSerializer(serializers.ModelSerializer):
+    estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+
+    class Meta:
+        model = PalletProducto
+        fields = ["id", "codigo", "unidades", "kg_neto", "estado", "estado_etiqueta"]
+        read_only_fields = ["estado"]
+
+
+class PalletEntradaSerializer(serializers.Serializer):
+    codigo = serializers.CharField(max_length=80, trim_whitespace=True)
+    unidades = serializers.IntegerField(min_value=1)
+    kg_neto = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
+
+
+class RegistroEnvaseSerializer(serializers.ModelSerializer):
+    pallets = PalletProductoSerializer(many=True, read_only=True)
+    pallets_datos = PalletEntradaSerializer(many=True, write_only=True)
+    lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
+    equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
+    operacion_id = serializers.UUIDField(required=False)
+
+    class Meta:
+        model = RegistroEnvase
+        fields = [
+            "id", "lote", "lote_codigo", "equipo", "equipo_nombre", "formato_kg",
+            "unidades", "kg_envasados", "controles", "operador", "inicio", "termino",
+            "observacion", "operacion_id", "creado_en", "pallets", "pallets_datos",
+        ]
+        read_only_fields = ["unidades", "kg_envasados", "operador", "creado_en"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if not request:
+            return
+        self.fields["lote"].queryset = filtrar_por_scope(
+            Lote.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        self.fields["equipo"].queryset = filtrar_por_scope(
+            Equipo.objects.filter(activo=True), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+
+    def create(self, datos):
+        from .servicios import registrar_envasado
+
+        pallets = datos.pop("pallets_datos")
+        lote = datos.pop("lote")
+        return registrar_envasado(
+            lote_id=lote.pk, pallets=pallets,
+            usuario=self.context["request"].user, **datos,
+        )
+
+
+class OrdenProduccionSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
+    responsable_nombre = serializers.CharField(
+        source="responsable.get_full_name", read_only=True
+    )
+
+    class Meta:
+        model = OrdenProduccion
+        fields = [
+            "id", "sucursal", "semana", "codigo", "producto", "producto_nombre",
+            "cantidad_planificada", "unidad", "linea", "equipo", "equipo_nombre",
+            "destino", "responsable", "responsable_nombre", "estado",
+            "estado_etiqueta", "observacion", "creada_por", "creada_en",
+        ]
+        read_only_fields = ["creada_por", "creada_en"]
+
+    def validate(self, datos):
+        request = self.context.get("request")
+        scope = scope_de(getattr(request, "user", None)) if request else None
+        if self.instance is None and scope and scope.es_sucursal:
+            datos["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
+        if self.instance and "estado" in datos and datos["estado"] != self.instance.estado:
+            if datos["estado"] not in OrdenProduccion.TRANSICIONES[self.instance.estado]:
+                raise serializers.ValidationError({"estado": "Transición de orden no permitida."})
+            if datos["estado"] == OrdenProduccion.Estado.CANCELADA:
+                motivo = datos.get("observacion", "").strip()
+                if not motivo or motivo == self.instance.observacion.strip():
+                    raise serializers.ValidationError({
+                        "observacion": "Indica el motivo de cancelación de la orden."
+                    })
+        candidato = OrdenProduccion(
+            **{
+                **{
+                    campo: getattr(self.instance, campo, None)
+                    for campo in ("sucursal", "semana", "producto", "equipo")
+                },
+                **datos,
+            }
+        )
+        candidato.clean()
+        return datos
 
 
 class AnalisisSerializer(serializers.ModelSerializer):
@@ -88,6 +193,7 @@ class LoteSerializer(serializers.ModelSerializer):
     )
     equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
     ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
+    orden_codigo = serializers.CharField(source="orden.codigo", read_only=True)
     litros_estandarizados = serializers.DecimalField(
         max_digits=12, decimal_places=2, write_only=True, required=False
     )
@@ -104,6 +210,8 @@ class LoteSerializer(serializers.ModelSerializer):
             "sucursal",
             "codigo_lote",
             "op",
+            "orden",
+            "orden_codigo",
             "producto",
             "producto_nombre",
             "mandante_nombre",
@@ -166,6 +274,10 @@ class LoteSerializer(serializers.ModelSerializer):
         self.fields["producto"].queryset = productos
         self.fields["equipo"].queryset = filtrar_por_scope(
             Equipo.objects.filter(activo=True), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        self.fields["orden"].queryset = filtrar_por_scope(
+            OrdenProduccion.objects.all(), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
 
@@ -256,6 +368,13 @@ class LoteSerializer(serializers.ModelSerializer):
         producto = datos.get("producto", getattr(self.instance, "producto", None))
         vale = datos.get("vale", getattr(self.instance, "vale", None))
         equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
+        orden = datos.get("orden", getattr(self.instance, "orden", None))
+        if self.instance is None and orden is not None:
+            datos["op"] = orden.codigo
+            if producto and orden.producto_id != producto.id:
+                raise serializers.ValidationError({"orden": "La orden corresponde a otro producto."})
+            if sucursal and orden.sucursal_id != sucursal.id:
+                raise serializers.ValidationError({"orden": "La orden pertenece a otra planta."})
         if sucursal and producto and producto.mandante.empresa_id != sucursal.empresa_id:
             raise serializers.ValidationError(
                 {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}

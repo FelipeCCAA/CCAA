@@ -245,13 +245,16 @@ class EquipoSerializer(serializers.ModelSerializer):
 
 class SiloSerializer(serializers.ModelSerializer):
     tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+    estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
 
     class Meta:
         # Sin campo de ocupación: es un saldo que se calcula desde el libro de
         # movimientos. Vive en /api/recepcion/ocupacion/.
         model = Silo
         fields = [
-            "id", "sucursal", "codigo", "tipo", "tipo_etiqueta", "capacidad_l", "activo"
+            "id", "sucursal", "codigo", "tipo", "tipo_etiqueta", "capacidad_l",
+            "estado", "estado_etiqueta", "producto_actual", "temperatura_actual",
+            "ultima_limpieza", "activo",
         ]
 
     def __init__(self, *args, **kwargs):

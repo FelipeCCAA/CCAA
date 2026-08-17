@@ -1,10 +1,11 @@
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 
 from .models import Empresa, PerfilUsuario, Sucursal, rol_de
+from .permisos_industriales import permisos_asignables_por
 from .tenancy import unica_sucursal_activa, scope_de
 
 
@@ -40,10 +41,14 @@ class UsuarioSerializer(serializers.ModelSerializer):
     # decidir qué acciones mostrar, así que tiene que coincidir con lo que
     # el backend va a permitir.
     rol = serializers.SerializerMethodField()
+    capacidades = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "nombre", "apellido", "email", "rol", "perfil"]
+        fields = [
+            "id", "username", "nombre", "apellido", "email", "rol",
+            "capacidades", "perfil",
+        ]
 
     def get_perfil(self, usuario):
         perfil = getattr(usuario, "perfil", None)
@@ -52,6 +57,11 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
     def get_rol(self, usuario):
         return rol_de(usuario)
+
+    def get_capacidades(self, usuario):
+        from .permisos_industriales import capacidades_de
+
+        return capacidades_de(usuario)
 
 
 class TrabajadorSerializer(UsuarioSerializer):
@@ -81,11 +91,16 @@ class TrabajadorSerializer(UsuarioSerializer):
         queryset=Sucursal.objects.filter(activa=True), write_only=True, required=False,
         allow_null=True,
     )
+    permisos = serializers.ListField(
+        child=serializers.CharField(), required=False, write_only=True
+    )
+    permisos_asignados = serializers.SerializerMethodField()
 
     class Meta(UsuarioSerializer.Meta):
         fields = UsuarioSerializer.Meta.fields + [
             "activo", "ultimo_acceso", "password", "area", "nivel", "cargo",
             "turno", "empresa", "sucursal", "alcance",
+            "permisos", "permisos_asignados",
         ]
         extra_kwargs = {"email": {"required": False, "allow_blank": True}}
 
@@ -230,18 +245,51 @@ class TrabajadorSerializer(UsuarioSerializer):
             if campo in validated_data
         }
 
+    def get_permisos_asignados(self, usuario):
+        return list(
+            usuario.user_permissions.filter(
+                content_type__app_label="usuarios",
+                content_type__model="perfilusuario",
+            ).values_list("codename", flat=True)
+        )
+
+    def _validar_permisos(self, codigos):
+        if codigos is None:
+            return None
+        actor = getattr(self.context.get("request"), "user", None)
+        desconocidos = sorted(set(codigos) - permisos_asignables_por(actor))
+        if desconocidos:
+            raise serializers.ValidationError({
+                "permisos": "No puedes asignar estos permisos: " + ", ".join(desconocidos)
+            })
+        return list(dict.fromkeys(codigos))
+
+    @staticmethod
+    def _guardar_permisos(usuario, codigos):
+        if codigos is None:
+            return
+        permisos = Permission.objects.filter(
+            content_type__app_label="usuarios",
+            content_type__model="perfilusuario",
+            codename__in=codigos,
+        )
+        usuario.user_permissions.set(permisos)
+
     @transaction.atomic
     def create(self, validated_data):
+        permisos = self._validar_permisos(validated_data.pop("permisos", None))
         datos_perfil = self._extraer_perfil(validated_data)
         password = validated_data.pop("password")
         usuario = User.objects.create_user(password=password, **validated_data)
         perfil = PerfilUsuario(usuario=usuario, **datos_perfil)
         perfil.full_clean()
         perfil.save()
+        self._guardar_permisos(usuario, permisos)
         return usuario
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        permisos = self._validar_permisos(validated_data.pop("permisos", None))
         datos_perfil = self._extraer_perfil(validated_data)
         password = validated_data.pop("password", None)
         for campo, valor in validated_data.items():
@@ -255,6 +303,7 @@ class TrabajadorSerializer(UsuarioSerializer):
             setattr(perfil, campo, valor)
         perfil.full_clean()
         perfil.save()
+        self._guardar_permisos(instance, permisos)
         return instance
 
 
