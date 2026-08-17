@@ -95,9 +95,15 @@ y `minutos_agitando` sale negativo. Lleva prueba propia.
 
 - `estandarizacion.service.ts`: el tipo cambia `puede_muestrear: boolean` por
   `avisos: string[]`, y suma `muestreado_en`.
-- `Estandarizacion.tsx`: el botón de muestrear deja de estar deshabilitado por
-  tiempo. Los avisos se muestran al capturar el análisis y en la ficha del vale,
-  con el mismo tratamiento visual que ya recibe `evaluacion.motivo`.
+- `Estandarizacion.tsx`: los avisos se muestran en la ficha del vale, con el
+  mismo tratamiento visual que ya recibe `evaluacion.motivo` — es la misma clase
+  de información, algo que el operador debe saber y que no le impide seguir.
+
+  **El formulario de muestreo ya estaba siempre habilitado**: el botón solo se
+  deshabilita por `ocupado`, nunca por tiempo, así que aquí no hay nada que
+  desbloquear. Quien enviaba temprano recibía un 409 del servidor. En el mismo
+  sentido, `puede_muestrear` figura en el tipo del servicio pero no lo consume
+  ninguna pantalla, así que retirarlo no rompe nada.
 - `Cronometro.tsx`: sigue contando —el operador quiere saber cuánto lleva— pero
   el texto pasa de permiso a información: deja de decir «Ya se puede muestrear».
 
