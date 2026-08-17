@@ -12,9 +12,11 @@ estandarización llama a `transferir`, `iniciar_agitacion`, `registrar_muestra` 
 regla cambia, este sembrado falla — que es exactamente lo que se quiere de él.
 
 La única concesión es el reloj: los treinta minutos de agitación se retrasan
-escribiendo `agitacion_desde` hacia atrás. La alternativa era esperar media hora
-o saltarse la regla, y saltársela dejaría un vale liberado contra una muestra
-que el sistema no habría aceptado.
+escribiendo `agitacion_desde` hacia atrás. La alternativa era esperar media
+hora o saltarse la regla, y saltársela dejaría un vale liberado contra una
+muestra que nunca agitó — desde 2026-08-17 el sistema la habría aceptado
+igual, pero dejando en el vale un aviso que este sembrado no tiene por qué
+sembrar.
 
 El producto es el que **tiene especificación vigente**, para que el análisis del
 lote se pueda contrastar contra algo. Sin eso el expediente diría «sin
@@ -287,9 +289,11 @@ class Command(BaseCommand):
         servicios.iniciar_agitacion(vale_id=vale.pk)
 
         # Los treinta minutos, hacia atrás. Es la única regla que este sembrado
-        # no puede cumplir esperando, y se retrasa el reloj en vez de saltarse
-        # la comprobación: así el vale queda liberado contra una muestra que el
-        # sistema sí habría aceptado.
+        # no puede cumplir esperando, y se retrasa el reloj para que el vale
+        # quede liberado con una muestra agitada de verdad: desde 2026-08-17
+        # muestrear antes de tiempo solo avisa y ya no rechaza, pero un vale de
+        # demostración agitado 35 minutos sigue siendo el caso normal que
+        # conviene sembrar.
         ValeEstandarizacion.objects.filter(pk=vale.pk).update(
             agitacion_desde=timezone.now() - timedelta(minutes=35)
         )

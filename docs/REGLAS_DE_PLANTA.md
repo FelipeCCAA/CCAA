@@ -205,10 +205,13 @@ calculado → transferido → agitando → muestreado ┬ conforme    → libera
 Cada paso es una acción del servicio y no un `PATCH estado=…`, y hay tres reglas
 que solo se sostienen así:
 
-- **No se muestrea antes de los 30 minutos** (`MINUTOS_DE_AGITACION`). Una
-  muestra tomada antes mide una mezcla que todavía no es homogénea. La hora de
-  inicio la pone el servidor: aceptarla del cliente permitiría declarar treinta
-  minutos que no ocurrieron.
+- **Muestrear antes de los 30 minutos avisa, no bloquea** (`MINUTOS_DE_AGITACION`,
+  decisión de planta del 2026-08-17). Una muestra tomada antes mide una mezcla
+  que todavía no es homogénea, así que el vale queda con el aviso y con la hora
+  del muestreo en `muestreado_en` — que es lo que después permite auditar cuánto
+  agitó de verdad. Antes la rechazaba, y entonces no quedaba constancia de nada.
+  La hora la sigue poniendo el servidor: aceptarla del cliente permitiría
+  declarar treinta minutos que no ocurrieron.
 - **Liberar no se pide, se calcula.** `decidir` no acepta el destino; lo deduce
   del RC medido.
 - **Corregir reinicia el reloj y borra el análisis.** Agregar leche deshace la

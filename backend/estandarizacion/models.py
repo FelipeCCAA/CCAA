@@ -24,12 +24,15 @@ from django.utils import timezone
 from . import dominio
 
 
-#: Minutos de agitación antes de poder muestrear (§10.3).
+#: Minutos de agitación que pide el procedimiento antes de muestrear (§10.3).
 #:
-#: Es un mínimo físico: una muestra tomada antes mide una mezcla que todavía
-#: no es homogénea, y el RC que devuelve no es el del silo. Va como constante
-#: con nombre y no como número suelto porque quien lo cambie tiene que saber
-#: qué está cambiando.
+#: Es un mínimo físico: una muestra tomada antes mide una mezcla que todavía no
+#: es homogénea, y el RC que devuelve no es el del silo.
+#:
+#: **Avisa, no bloquea** desde 2026-08-17, por decisión de planta: el sistema
+#: advierte y deja constancia en `muestreado_en`, pero no detiene la operación.
+#: Antes rechazaba la muestra, y entonces no quedaba registro de nada; ahora no
+#: la impide pero sí queda escrito cuánto agitó cada vale.
 MINUTOS_DE_AGITACION = 30
 
 
