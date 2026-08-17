@@ -176,9 +176,10 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         Los desplegables y las constantes del ciclo, desde el backend.
 
         Los minutos de agitación se sirven en vez de escribirse en la pantalla:
-        el frontend muestra la cuenta regresiva contra el mismo número que el
-        servidor usa para aceptar la muestra, y una copia terminaría ofreciendo
-        el botón antes de tiempo.
+        el frontend arma la cuenta regresiva del cronómetro contra el mismo
+        número que el servidor usa para armar el aviso de muestreo temprano, y
+        una copia terminaría mostrando una cuenta que no coincide con la que
+        dispara el aviso.
         """
         silos = filtrar_por_scope(
             Silo.objects.filter(activo=True), request.user,

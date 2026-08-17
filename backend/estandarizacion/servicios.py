@@ -117,8 +117,8 @@ def iniciar_agitacion(*, vale_id):
     Arranca el reloj de la agitación.
 
     La hora se toma del servidor y no se recibe del cliente: es lo que después
-    decide si una muestra es válida, y aceptarla de fuera permitiría declarar
-    treinta minutos que no ocurrieron.
+    decide si la muestra dispara el aviso de agitación corta, y aceptarla de
+    fuera permitiría declarar treinta minutos que no ocurrieron.
     """
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     _exigir_transicion(vale, ValeEstandarizacion.Estado.AGITANDO)
