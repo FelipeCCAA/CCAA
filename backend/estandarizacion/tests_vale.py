@@ -4,7 +4,9 @@ Pruebas del ciclo del vale de estandarización.
 Lo que se fija aquí no es que el vale guarde campos, sino las tres reglas que
 la planta pone sobre él:
 
-1. **No se muestrea antes de los 30 minutos de agitación.**
+1. **Muestrear antes de los 30 minutos de agitación avisa, no bloquea**
+   (decisión de planta, 2026-08-17) — y el vale sella `muestreado_en` para que
+   el aviso sea auditable.
 2. **Liberar no se pide: se calcula** desde el RC medido.
 3. **Corregir reinicia el reloj**, porque agregar leche deshace la mezcla.
 """
@@ -191,9 +193,9 @@ class AgitacionTests(BaseVale):
 
     def test_el_reloj_lo_pone_el_servidor(self):
         """
-        La hora de inicio no se recibe: es lo que decide si una muestra vale, y
-        aceptarla de fuera permitiría declarar treinta minutos que no
-        ocurrieron.
+        La hora de inicio no se recibe: es lo que decide si la muestra dispara
+        el aviso de agitación corta, y aceptarla de fuera permitiría declarar
+        treinta minutos que no ocurrieron.
         """
         vale = self.crear_vale()
         self.abastecer_origenes()
@@ -484,7 +486,7 @@ class ApiTests(BaseVale):
         cuerpo = respuesta.json()
         self.assertEqual(cuerpo["estado"], "muestreado")
         self.assertEqual(len(cuerpo["avisos"]), 1)
-        self.assertIn("5", cuerpo["avisos"][0])
+        self.assertIn("Agitó 5 minutos", cuerpo["avisos"][0])
         self.assertIsNotNone(cuerpo["muestreado_en"])
 
     def test_muestrear_a_tiempo_responde_sin_avisos(self):
@@ -497,7 +499,80 @@ class ApiTests(BaseVale):
         )
 
         self.assertEqual(respuesta.status_code, 200)
-        self.assertEqual(respuesta.json()["avisos"], [])
+        cuerpo = respuesta.json()
+        self.assertEqual(cuerpo["avisos"], [])
+        # El sello se escribe siempre, no solo en el camino con aviso: es lo
+        # que hace auditable el ciclo completo, con aviso o sin él.
+        self.assertIsNotNone(cuerpo["muestreado_en"])
+
+    def test_muestrear_sin_haber_agitado_responde_409(self):
+        """
+        Única prueba del módulo que ejercita `except DjangoValidationError →
+        _conflicto` en `views.py` para la acción `muestrear`. Un vale recién
+        transferido no puede muestrearse — lo impide `TRANSICIONES`, que esta
+        prueba ancla en la frontera de la API: si alguien quitara el
+        `try/except`, esto respondería 500 en vez de 409.
+        """
+        vale = self.crear_vale()
+        self.abastecer_origenes()
+        servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/muestrear/",
+            {"grasa": 1.79, "sng": 8.9},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 409)
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.estado, ValeEstandarizacion.Estado.TRANSFERIDO)
+
+    def test_muestreado_en_resiste_un_patch(self):
+        """
+        El serializer lo declara de solo lectura; esta prueba lo comprueba en
+        la frontera de la API, igual que ya existe para `estado` y para el
+        análisis.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale())
+        servicios.registrar_muestra(vale_id=vale.pk, grasa=1.79, sng=8.9)
+        vale.refresh_from_db()
+        sellado_original = vale.muestreado_en
+
+        self.cliente.patch(
+            f"/api/estandarizacion/vales/{vale.pk}/",
+            {"muestreado_en": "2020-01-01T00:00:00Z"},
+            format="json",
+        )
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.muestreado_en, sellado_original)
+
+    def test_el_aviso_sobrevive_a_decidir_y_liberado(self):
+        """
+        Es la afirmación central de auditabilidad: un vale muestreado temprano
+        y liberado después sigue mostrando el aviso, en vez de perderlo al
+        cambiar de estado. `muestreado_en` queda congelado y `avisos_de_muestreo`
+        se sigue calculando contra él, no contra el estado actual.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=5)
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/muestrear/",
+            {"grasa": 1.79, "sng": 8.9},
+            format="json",
+        )
+        self.assertEqual(len(respuesta.json()["avisos"]), 1)
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/decidir/", format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        cuerpo = respuesta.json()
+        self.assertEqual(cuerpo["estado"], "liberado")
+        self.assertEqual(len(cuerpo["avisos"]), 1)
+        self.assertIn("Agitó 5 minutos", cuerpo["avisos"][0])
 
     def test_calcular_no_crea_nada(self):
         """
