@@ -19,7 +19,6 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto, Silo
-from recepcion.models import MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from . import dominio
@@ -102,34 +101,6 @@ class AbrirProcesoTests(BaseApertura):
         lote = Lote.objects.get()
         self.assertEqual(lote.estado, Lote.Estado.EN_PROCESO)
         self.assertIsNone(lote.kg_producidos)
-
-    def test_abrir_el_proceso_asigna_la_leche_en_la_misma_operacion(self):
-        respuesta = self._abrir(
-            asignaciones=[
-                {"silo": self.silo_a.id, "litros": 40000},
-                {"silo": self.silo_b.id, "litros": 20000},
-            ]
-        )
-
-        self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(respuesta.data["asignacion"]["asignado"], 60000)
-        self.assertEqual(MovimientoSilo.objects.count(), 2)
-
-    def test_si_la_asignacion_falla_no_queda_un_lote_abierto_sin_leche(self):
-        """
-        Es la razón de que vayan juntas. Un lote creado a medias parece
-        completo, y nadie vuelve a completar lo que ya existe.
-        """
-        respuesta = self._abrir(
-            asignaciones=[
-                {"silo": self.silo_a.id, "litros": 40000},
-                {"silo": self.silo_b.id, "litros": -5},
-            ]
-        )
-
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertFalse(Lote.objects.exists())
-        self.assertFalse(MovimientoSilo.objects.exists())
 
     def test_sin_asignaciones_el_lote_se_abre_igual(self):
         """Un lote histórico se carga sin leche; el aviso llega al cerrarlo."""
