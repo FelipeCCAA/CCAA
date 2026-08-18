@@ -1,6 +1,4 @@
 from rest_framework import serializers
-from usuarios.models import Sucursal
-from usuarios.tenancy import scope_de
 
 from .models import (
     CorridaCondensacion, CorridaMantequilla, EjecucionProceso, EntradaProceso,
@@ -115,13 +113,9 @@ class RutaProductoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RutaProducto
-        fields = "__all__"
+        exclude = ["sucursal"]
 
     def validate(self, attrs):
-        request = self.context.get("request")
-        scope = scope_de(getattr(request, "user", None)) if request else None
-        if self.instance is None and scope and scope.es_sucursal:
-            attrs["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
         candidato = RutaProducto(
             **{
                 **{
@@ -190,7 +184,7 @@ class EjecucionProcesoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EjecucionProceso
-        fields = "__all__"
+        exclude = ["sucursal"]
         read_only_fields = ["estado", "version", "inicio", "termino", "responsable"]
 
     def get_acciones_permitidas(self, ejecucion):

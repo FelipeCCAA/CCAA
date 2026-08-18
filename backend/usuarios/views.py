@@ -253,7 +253,8 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
             area=perfil.area,
             nivel=PerfilUsuario.Nivel.TRABAJADOR,
             empresa=perfil.empresa,
-            sucursal=perfil.sucursal,
+            sucursal=None,
+            alcance=PerfilUsuario.Alcance.EMPRESA,
         )
 
     def perform_update(self, serializer):

@@ -311,7 +311,7 @@ function Planificacion() {
                   onClick={() => void accion(publicarSemana)}
                   title={
                     programa.publicable
-                      ? "Comprometer el programa con planta"
+                      ? "Comprometer el programa con producción"
                       : programa.bloqueos.join(" ")
                   }
                   className="flex items-center gap-1.5 rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-40"
@@ -425,7 +425,7 @@ function Planificacion() {
                       <span className="block text-2xl font-semibold text-slate-800">
                         {ocupacion.litros_totales.toLocaleString("es-CL")} L
                       </span>
-                      <span className="text-xs text-slate-500">disponibles en planta</span>
+                      <span className="text-xs text-slate-500">disponibles para producción</span>
                     </p>
                   </div>
 

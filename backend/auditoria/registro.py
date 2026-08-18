@@ -246,6 +246,7 @@ def _tenant_de(instancia):
         "ruta.vehiculo.sucursal", "parada.ruta.vehiculo.sucursal",
         "recoleccion.parada.ruta.vehiculo.sucursal",
         "control.lote.sucursal", "monitoreo.lote.sucursal",
+        "pallet.envase.lote.sucursal", "despacho.sucursal",
     ):
         sucursal = _resolver_ruta(instancia, ruta)
         if sucursal is not None and hasattr(sucursal, "empresa_id"):

@@ -62,6 +62,7 @@ const Abastecimiento = lazy(() => import("../pages/Abastecimiento/Abastecimiento
 const AbastecimientoPanel = lazy(() => import("../pages/Abastecimiento/Panel"));
 const AbastecimientoMateriales = lazy(() => import("../pages/Abastecimiento/Materiales"));
 const AbastecimientoStock = lazy(() => import("../pages/Abastecimiento/Stock"));
+const AbastecimientoProductoTerminado = lazy(() => import("../pages/Abastecimiento/ProductoTerminado"));
 const AbastecimientoDetalleLote = lazy(
   () => import("../pages/Abastecimiento/DetalleLoteInventario"),
 );
@@ -151,6 +152,7 @@ function RoutesApp(){
                         <Route index element={diferido(<AbastecimientoPanel />)} />
                         <Route path="materiales" element={diferido(<AbastecimientoMateriales />)} />
                         <Route path="stock" element={diferido(<AbastecimientoStock />)} />
+                        <Route path="producto-terminado" element={diferido(<AbastecimientoProductoTerminado />)} />
                         {/* La primera ruta de detalle del sistema. Hasta aquí
                             todo eran listas y ningún documento tenía URL: no
                             se podía enlazar, ni compartir, ni volver a él. */}

@@ -127,7 +127,7 @@ function Dashboard() {
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700"><CircleDot className="h-4 w-4 fill-emerald-100" /> Centro de control operacional</div>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">Buenos días, {sesion ? nombreParaMostrar(sesion.usuario).split(" ")[0] : "equipo"}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Una vista del flujo real de planta, desde lo planificado hasta la liberación del producto.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Una vista del flujo operacional, desde lo planificado hasta la liberación del producto.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {datos.semana && <Link to="/planificacion" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:border-emerald-300">{datos.semana.codigo} / {datos.semana.anio} · {datos.semana.estado_etiqueta}</Link>}
@@ -137,7 +137,7 @@ function Dashboard() {
 
         {fuentesConError > 0 && !cargando && <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>Hay {fuentesConError} fuente(s) sin respuesta. Los indicadores disponibles siguen mostrando datos reales; los demás aparecen sin valor.</p></div>}
 
-        <section aria-label="Flujo de planta" className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/30">
+        <section aria-label="Flujo operacional" className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/30">
           <div className="flex min-w-[900px] items-center">
             {etapas.map((etapa, indice) => { const Icono = etapa.icono; return <div key={etapa.ruta} className="contents"><Link to={etapa.ruta} className="group flex flex-1 items-center gap-3 rounded-xl px-3 py-3 transition hover:bg-emerald-50"><span className="rounded-lg bg-slate-100 p-2 text-slate-500 group-hover:bg-white group-hover:text-emerald-700"><Icono className="h-4 w-4" /></span><span className="text-xs font-semibold text-slate-600 group-hover:text-emerald-800">{etapa.nombre}</span></Link>{indice < etapas.length - 1 && <ArrowRight className="h-4 w-4 shrink-0 text-slate-300" />}</div>; })}
           </div>

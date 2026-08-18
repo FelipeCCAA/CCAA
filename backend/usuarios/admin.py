@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 
-from .models import AreaDePerfil, Empresa, IntentoAcceso, PerfilUsuario, Sucursal
+from .models import AreaDePerfil, Empresa, IntentoAcceso, PerfilUsuario
 from .throttling import (
     LoginUsuarioThrottle,
     clave_de_ip,
@@ -16,8 +16,8 @@ class PerfilUsuarioInline(admin.StackedInline):
     model = PerfilUsuario
     extra = 0
     can_delete = False
-    exclude = ("rol",)
-    autocomplete_fields = ("empresa", "sucursal")
+    autocomplete_fields = ("empresa",)
+    exclude = ("rol", "sucursal", "alcance")
 
 
 admin.site.unregister(User)
@@ -32,7 +32,7 @@ class UsuarioAdmin(UserAdmin):
     )
     list_filter = (
         "is_active", "is_superuser", "perfil__nivel", "perfil__area",
-        "perfil__empresa", "perfil__sucursal",
+        "perfil__empresa",
     )
     list_select_related = ("perfil",)
 
@@ -65,14 +65,14 @@ class AreaDePerfilInline(admin.TabularInline):
 @admin.register(PerfilUsuario)
 class PerfilUsuarioAdmin(admin.ModelAdmin):
     list_display = (
-        "usuario", "administrador_de_area", "nivel", "empresa", "sucursal",
+        "usuario", "administrador_de_area", "nivel", "empresa",
         "area", "otras_areas", "cargo", "turno",
     )
-    list_filter = ("nivel", "empresa", "sucursal", "area")
-    exclude = ("rol",)
+    list_filter = ("nivel", "empresa", "area")
+    exclude = ("rol", "sucursal", "alcance")
     search_fields = ("usuario__username", "usuario__first_name", "usuario__last_name", "cargo")
     autocomplete_fields = ("usuario",)
-    list_select_related = ("usuario", "empresa", "sucursal")
+    list_select_related = ("usuario", "empresa")
     inlines = [AreaDePerfilInline]
 
     def get_queryset(self, request):
@@ -95,14 +95,6 @@ class EmpresaAdmin(admin.ModelAdmin):
     list_filter = ("activa",)
     search_fields = ("nombre", "rut")
 
-
-@admin.register(Sucursal)
-class SucursalAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "codigo", "empresa", "activa")
-    list_filter = ("activa", "empresa")
-    search_fields = ("nombre", "codigo", "empresa__nombre")
-    autocomplete_fields = ("empresa",)
-    list_select_related = ("empresa",)
 
 admin.site.site_header = "Administración CCAA"
 admin.site.site_title = "CCAA"

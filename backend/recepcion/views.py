@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from maestros.models import Silo
 from usuarios.areas import perfiles_del_area, usuarios_del_area
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
-from usuarios.models import PerfilUsuario, Rol, Sucursal
+from usuarios.models import PerfilUsuario, Rol
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin,
     filtrar_por_scope, scope_de, sucursal_para_escritura,
@@ -28,18 +28,17 @@ from .serializers import (
 from .servicios import ajustar_silo, transferir_silo
 
 
-def _usuarios_recepcion(usuario, sucursal_id):
+def _usuarios_recepcion(usuario):
     """Quién puede figurar como responsable de una muestra."""
     return usuarios_del_area(
         PerfilUsuario.Area.RECEPCION,
         empresa_id=scope_de(usuario, requerido=True).empresa_id,
-        sucursal_id=sucursal_id or None,
     ).order_by("first_name", "last_name", "username")
 
 
 def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
     """
-    Crea avisos operativos solo para la misma empresa y planta.
+    Crea avisos operativos solo para la misma empresa.
 
     Pregunta **lo mismo** que `_usuarios_recepcion`. Cuando cada una lo
     preguntaba a su manera —una miraba `area` o `rol`, esta solo `area`— una
@@ -57,7 +56,6 @@ def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
             perfiles_del_area(
                 area,
                 empresa_id=recepcion.sucursal.empresa_id,
-                sucursal_id=recepcion.sucursal_id,
             ).values_list("usuario_id", flat=True)
         )
     Notificacion.objects.bulk_create([
@@ -77,7 +75,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
     tenant_relation_fields = {
-        "sucursal": ("pk", "empresa_id"),
         "vehiculo": ("sucursal_id", "sucursal__empresa_id"),
         "silo": ("sucursal_id", "sucursal__empresa_id"),
         "carga_recoleccion": (
@@ -258,18 +255,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         # Se le pasa la **instancia**, no el id que llega en el cuerpo: la
         # función comprueba el alcance sobre el objeto. Y un id inexistente se
         # responde con un 400, no con la `DoesNotExist` que antes salía como 500.
-        indicada = request.data.get("sucursal")
-        elegida = None
-
-        if indicada not in (None, ""):
-            elegida = Sucursal.objects.filter(pk=indicada).first()
-            if elegida is None:
-                return Response(
-                    {"sucursal": "La planta indicada no existe."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        sucursal = sucursal_para_escritura(request.user, {"sucursal": elegida})
+        sucursal = sucursal_para_escritura(request.user, {})
 
         generales = {
             clave: request.data.get(clave)
@@ -348,9 +334,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 )
 
             try:
-                responsable = _usuarios_recepcion(
-                    request.user, recepcion.sucursal_id
-                ).get(pk=responsable_id)
+                responsable = _usuarios_recepcion(request.user).get(pk=responsable_id)
             except (User.DoesNotExist, TypeError, ValueError):
                 return Response(
                     {"responsable": "Selecciona un usuario activo del area Recepcion."},
@@ -607,9 +591,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
     @action(detail=False, methods=["get"], url_path="catalogos-flujo")
     def catalogos_flujo(self, request):
-        scope = scope_de(request.user, requerido=True)
-        sucursal_id = scope.sucursal_id if scope.es_sucursal else None
-        usuarios = _usuarios_recepcion(request.user, sucursal_id)
+        usuarios = _usuarios_recepcion(request.user)
         return Response({
             "responsables_recepcion": [
                 {

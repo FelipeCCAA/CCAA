@@ -3,8 +3,7 @@
 from rest_framework import serializers
 
 from maestros.models import DocumentoLiberacion, Equipo
-from usuarios.models import Sucursal
-from usuarios.tenancy import filtrar_por_scope, scope_de
+from usuarios.tenancy import filtrar_por_scope, sucursal_para_escritura
 
 from .models import RegistroEquipo
 from . import dominio
@@ -29,7 +28,6 @@ class RegistroEquipoSerializer(serializers.ModelSerializer):
         model = RegistroEquipo
         fields = [
             "id",
-            "sucursal",
             "documento",
             "documento_nombre",
             "documento_codigo",
@@ -64,15 +62,6 @@ class RegistroEquipoSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request:
             return
-        scope = scope_de(request.user)
-        sucursales = Sucursal.objects.filter(activa=True)
-        if scope is None:
-            sucursales = sucursales.none()
-        elif not scope.es_global:
-            sucursales = sucursales.filter(empresa_id=scope.empresa_id)
-            if scope.es_sucursal:
-                sucursales = sucursales.filter(pk=scope.sucursal_id)
-        self.fields["sucursal"].queryset = sucursales
         self.fields["documento"].queryset = filtrar_por_scope(
             DocumentoLiberacion.objects.all(), request.user, campo_empresa="empresa_id"
         )
@@ -96,22 +85,29 @@ class RegistroEquipoSerializer(serializers.ModelSerializer):
         Mejor pedirlo aquí.
         """
         request = self.context.get("request")
-        scope = scope_de(getattr(request, "user", None)) if request else None
-        if self.instance is None and scope and scope.es_sucursal:
-            datos["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
-
-        sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
         documento = datos.get("documento") or getattr(self.instance, "documento", None)
         equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
         hasta = datos.get("vigente_hasta", getattr(self.instance, "vigente_hasta", None))
 
-        if sucursal and documento and sucursal.empresa_id != documento.empresa_id:
-            raise serializers.ValidationError(
-                {"documento": "El documento debe pertenecer a la empresa de la sucursal."}
+        if self.instance is None:
+            sucursal = sucursal_para_escritura(
+                getattr(request, "user", None), datos
             )
-        if sucursal and equipo and sucursal.pk != equipo.sucursal_id:
+            repetido = RegistroEquipo.objects.filter(
+                sucursal=sucursal,
+                documento=documento,
+                equipo=equipo,
+                fecha=datos.get("fecha"),
+                turno=datos.get("turno", ""),
+            )
+            if repetido.exists():
+                raise serializers.ValidationError(
+                    {"fecha": "Ya existe un registro para este período."}
+                )
+
+        if equipo and documento and equipo.sucursal.empresa_id != documento.empresa_id:
             raise serializers.ValidationError(
-                {"equipo": "El equipo debe pertenecer a la sucursal del registro."}
+                {"documento": "El documento y el equipo deben pertenecer a la misma organización."}
             )
 
         if documento and documento.frecuencia == "segun_programa" and hasta is None:

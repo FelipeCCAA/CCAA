@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
@@ -26,6 +26,7 @@ from .models import (
     LoteInventario, MovimientoInventario, NoConformidadMaterial, Notificacion,
     OrdenCompra, PlantillaInspeccion, Proveedor, RecepcionCompra,
     SolicitudCompra, SolicitudMaterial, Ubicacion,
+    ClienteDespacho, Despacho, ExistenciaProductoTerminado, MovimientoProductoTerminado,
 )
 from .serializers import (
     AdjuntoSerializer, AjusteInventarioSerializer, AlertaSerializer, BodegaSerializer, CicloCIPSerializer,
@@ -37,6 +38,8 @@ from .serializers import (
     NotificacionSerializer, OrdenCompraSerializer, PlantillaInspeccionSerializer, ProveedorSerializer,
     RecepcionCompraSerializer, SolicitudCompraSerializer,
     SolicitudMaterialSerializer, UbicacionSerializer,
+    ClienteDespachoSerializer, DespachoSerializer,
+    ExistenciaProductoTerminadoSerializer, MovimientoProductoTerminadoSerializer,
 )
 from .bloqueo import YaEnCurso, solo_uno
 from .servicios import (
@@ -46,7 +49,16 @@ from .servicios import (
     convertir_solicitud_en_ordenes, crear_solicitud_desde_mrp,
     ejecutar_mrp_semana, encolar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
+    ingresar_pallet, transferir_pallet, autorizar_despacho, ejecutar_despacho,
 )
+
+
+class PuedeCrearDespacho(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user.is_authenticated and (
+            request.user.is_superuser or request.user.has_perm("usuarios.despacho_crear")
+            or request.user.has_perm("usuarios.despacho_autorizar")
+        ))
 
 
 def _tenant_get(modelo, usuario, pk, *, sucursal, empresa):
@@ -183,6 +195,91 @@ class UbicacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     queryset = Ubicacion.objects.select_related("bodega")
     serializer_class = UbicacionSerializer
     permission_classes = [EscribeBodega]
+
+
+class ClienteDespachoViewSet(EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_empresa = "empresa_id"
+    queryset = ClienteDespacho.objects.all()
+    serializer_class = ClienteDespachoSerializer
+    permission_classes = [PuedeCrearDespacho]
+
+
+class ExistenciaProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "ubicacion__bodega__sucursal_id"
+    tenant_lookup_empresa = "ubicacion__bodega__sucursal__empresa_id"
+    queryset = ExistenciaProductoTerminado.objects.select_related(
+        "pallet__envase__lote__producto", "ubicacion__bodega"
+    ).filter(activo=True)
+    serializer_class = ExistenciaProductoTerminadoSerializer
+    permission_classes = [EscribeBodega]
+
+    @action(detail=False, methods=["post"], url_path="ingresar")
+    def ingresar(self, request):
+        from produccion.models import PalletProducto
+        try:
+            pallet = _tenant_get(PalletProducto, request.user, request.data.get("pallet"), sucursal="envase__lote__sucursal_id", empresa="envase__lote__sucursal__empresa_id")
+            ubicacion = _tenant_get(Ubicacion, request.user, request.data.get("ubicacion"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id")
+            existencia = ingresar_pallet(pallet, ubicacion, request.user)
+            return Response(self.get_serializer(existencia).data, status=status.HTTP_201_CREATED)
+        except (DjangoValidationError, ValueError, TypeError) as error:
+            return Response({"detail": getattr(error, "message", str(error))}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"], url_path="transferir")
+    def transferir(self, request, pk=None):
+        try:
+            destino = _tenant_get(Ubicacion, request.user, request.data.get("destino"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id")
+            existencia = transferir_pallet(self.get_object(), destino, request.user, motivo=request.data.get("motivo", ""))
+            return Response(self.get_serializer(existencia).data)
+        except (DjangoValidationError, ValueError, TypeError) as error:
+            return Response({"detail": getattr(error, "message", str(error))}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MovimientoProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "pallet__envase__lote__sucursal_id"
+    tenant_lookup_empresa = "pallet__envase__lote__sucursal__empresa_id"
+    queryset = MovimientoProductoTerminado.objects.select_related("pallet", "origen", "destino", "despacho")
+    serializer_class = MovimientoProductoTerminadoSerializer
+    permission_classes = [EscribeBodega]
+
+
+class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
+    queryset = Despacho.objects.select_related("cliente", "creado_por", "autorizado_por").prefetch_related("detalles__pallet__envase__lote")
+    serializer_class = DespachoSerializer
+    permission_classes = [PuedeCrearDespacho]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def perform_create(self, serializer):
+        sucursal = sucursal_para_escritura(self.request.user, serializer.validated_data, "sucursal")
+        cliente = serializer.validated_data["cliente"]
+        pallets = serializer.validated_data["pallets_solicitados"]
+        if cliente.empresa_id != sucursal.empresa_id:
+            raise ValidationError({"cliente": "El cliente pertenece a otra empresa."})
+        ajenos = [p.codigo for p in pallets if p.envase.lote.sucursal_id != sucursal.id]
+        if ajenos:
+            raise ValidationError({"pallet_ids": f"Hay pallets de otra planta: {', '.join(ajenos)}"})
+        serializer.save(creado_por=self.request.user, sucursal=sucursal)
+
+    @action(detail=True, methods=["post"])
+    def autorizar(self, request, pk=None):
+        if not (request.user.is_superuser or request.user.has_perm("usuarios.despacho_autorizar")):
+            raise PermissionDenied("No tienes permiso para autorizar despachos.")
+        try:
+            despacho = autorizar_despacho(self.get_object(), request.user)
+            return Response(self.get_serializer(despacho).data)
+        except DjangoValidationError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"])
+    def ejecutar(self, request, pk=None):
+        if not (request.user.is_superuser or request.user.has_perm("usuarios.despacho_autorizar")):
+            raise PermissionDenied("No tienes permiso para ejecutar despachos.")
+        try:
+            despacho = ejecutar_despacho(self.get_object(), request.user)
+            return Response(self.get_serializer(despacho).data)
+        except (DjangoValidationError, ExistenciaProductoTerminado.DoesNotExist) as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoteInventarioViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):

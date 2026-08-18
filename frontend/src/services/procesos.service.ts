@@ -98,6 +98,11 @@ export interface Genealogia {
       equipo: string | null; ejecucion_id: number | null;
       ejecucion_codigo: string | null; estado: string;
     };
+    calidad: { estado: string; autorizada_por: string | null; autorizada_en: string | null };
+    pallets: {
+      id: number; codigo: string; unidades: number; kg_neto: string; estado: string;
+      ubicacion: string | null; despacho: string | null; cliente: string | null;
+    }[];
   } | null;
 }
 

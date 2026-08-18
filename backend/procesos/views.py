@@ -45,7 +45,6 @@ class RutaProductoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
     tenant_relation_fields = {
-        "sucursal": ("pk", "empresa_id"),
         "producto": (None, "mandante__empresa_id"),
     }
     queryset = RutaProducto.objects.select_related(
@@ -157,7 +156,6 @@ class CorridaMantequillaViewSet(
 
 class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
     tenant_relation_fields = {
-        "sucursal": ("pk", "empresa_id"),
         "equipo": ("sucursal_id", "sucursal__empresa_id"),
     }
     serializer_class = EjecucionProcesoSerializer
@@ -253,7 +251,7 @@ def trazabilidad(request, lote):
     la mano un `CCAA6212010102010201-01`, no un 47. Pedirle el id volvía la
     pantalla inservible para quien la necesita.
     """
-    from produccion.models import Lote
+    from produccion.models import Lote, PalletProducto
 
     direccion = request.query_params.get("direccion", "atras")
 
@@ -265,6 +263,13 @@ def trazabilidad(request, lote):
         encontrado = lotes.filter(pk=int(lote)).first()
     else:
         encontrado = lotes.filter(codigo_lote=lote).first()
+        if encontrado is None:
+            pallet = filtrar_por_scope(
+                PalletProducto.objects.select_related("envase__lote"), request.user,
+                campo_sucursal="envase__lote__sucursal_id",
+                campo_empresa="envase__lote__sucursal__empresa_id",
+            ).filter(codigo=lote).first()
+            encontrado = pallet.envase.lote if pallet else None
 
     if encontrado is None:
         return Response(
@@ -330,6 +335,27 @@ def _flujo_completo(lote):
 
     ejecucion_est = getattr(vale, "ejecucion", None)
     ejecucion_prod = lote.ejecucion
+    pallets = []
+    for envase in lote.registros_envase.prefetch_related(
+        "pallets__existencia_producto__ubicacion",
+        "pallets__detalles_despacho__despacho__cliente",
+    ):
+        for pallet in envase.pallets.all():
+            existencia = getattr(pallet, "existencia_producto", None)
+            detalle = pallet.detalles_despacho.filter(
+                despacho__estado="despachado"
+            ).select_related("despacho__cliente").first()
+            pallets.append({
+                "id": pallet.pk,
+                "codigo": pallet.codigo,
+                "unidades": pallet.unidades,
+                "kg_neto": pallet.kg_neto,
+                "estado": pallet.get_estado_display(),
+                "ubicacion": existencia.ubicacion.codigo if existencia and existencia.activo else None,
+                "despacho": detalle.despacho.numero if detalle else None,
+                "cliente": detalle.despacho.cliente.nombre if detalle else None,
+            })
+    liberacion = getattr(lote, "liberacion", None)
     return {
         "recepciones": recepciones,
         "nota_recepciones": (
@@ -362,4 +388,13 @@ def _flujo_completo(lote):
             "ejecucion_codigo": ejecucion_prod.codigo if ejecucion_prod else None,
             "estado": lote.get_estado_display(),
         },
+        "calidad": {
+            "estado": liberacion.get_estado_display() if liberacion else "Pendiente",
+            "autorizada_por": (
+                liberacion.autorizada_por.get_full_name() or liberacion.autorizada_por.username
+                if liberacion and liberacion.autorizada_por else None
+            ),
+            "autorizada_en": liberacion.autorizada_en if liberacion else None,
+        },
+        "pallets": pallets,
     }

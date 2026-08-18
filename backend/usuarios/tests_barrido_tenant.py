@@ -368,13 +368,7 @@ class NingunaEscrituraPideLaPlantaTests(TestCase):
             + "\n".join(reproches),
         )
 
-    def test_con_dos_plantas_activas_alguna_si_la_pide(self):
-        """
-        La contraprueba, y no es una formalidad: si `_reproche_de_tenant` dejara
-        de detectar nada —porque el mensaje cambió, porque la excepción ya no es
-        `APIException`— la prueba de arriba pasaría igual y no protegería nada.
-        Con dos plantas la ambigüedad es real y **tiene** que salir a la luz.
-        """
+    def test_con_dos_registros_internos_tampoco_se_pide(self):
         Sucursal.objects.create(
             empresa=self.empresa, codigo="SEGUNDA", nombre="Segunda planta"
         )
@@ -385,6 +379,4 @@ class NingunaEscrituraPideLaPlantaTests(TestCase):
             if (reproche := self._reproche_de_tenant(clase)) is not None
         ]
 
-        self.assertNotEqual(
-            reproches, [], "Con dos plantas activas la elección tiene que pedirse"
-        )
+        self.assertEqual(reproches, [])

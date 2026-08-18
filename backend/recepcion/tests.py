@@ -240,7 +240,7 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
             format="json",
         )
 
-        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(len(respuesta.json()), 2)
         self.assertEqual(
             Recepcion.objects.values_list("llegada_id", flat=True).distinct().count(),
@@ -256,7 +256,7 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
     def test_se_registra_una_recepcion(self):
         respuesta = self._crear(modulo="Módulo 1")
 
-        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(respuesta.json()["estado"], "registrada")
         self.assertEqual(respuesta.json()["modulo"], "Módulo 1")
         self.assertIsNone(respuesta.json()["silo"])
@@ -276,7 +276,7 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
             format="json",
         )
 
-        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
         self.assertEqual(respuesta.json()["estado"], "muestreada")
         self.assertEqual(respuesta.json()["codigo_muestra"], "M-2026-001")
         self.assertIsNotNone(respuesta.json()["muestreado_en"])

@@ -15,6 +15,14 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+@shared_task(autoretry_for=(), acks_late=True)
+def refrescar_alertas_operacionales():
+    """Recalcula vencimientos, cuarentenas y mínimos sin esperar una escritura."""
+    from .servicios import actualizar_alertas_inventario
+
+    actualizar_alertas_inventario()
+
+
 @shared_task(
     # No se reintenta sola. El MRP escribe resultados y órdenes sugeridas: un
     # reintento automático sobre un fallo que dejó datos a medias los duplica,

@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 from rest_framework import serializers
-from usuarios.models import Sucursal
 
 from . import dominio
 from .models import (
@@ -42,7 +41,6 @@ class RecepcionSerializer(serializers.ModelSerializer):
         model = Recepcion
         fields = [
             "id",
-            "sucursal",
             "carga_recoleccion",
             "llegada_id",
             "fecha",
@@ -151,10 +149,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
         return controles
 
     def validate(self, datos):
-        sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
-        if sucursal is not None and not isinstance(sucursal, Sucursal):
-            sucursal = Sucursal.objects.get(pk=sucursal)
-            datos["sucursal"] = sucursal
+        sucursal = getattr(self.instance, "sucursal", None)
         carga = datos.get(
             "carga_recoleccion", getattr(self.instance, "carga_recoleccion", None)
         )
@@ -173,7 +168,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
         vehiculo = datos.get("vehiculo", getattr(self.instance, "vehiculo", None))
         if sucursal and vehiculo and sucursal.pk != vehiculo.sucursal_id:
             raise serializers.ValidationError(
-                {"vehiculo": "El vehículo debe pertenecer a la sucursal."}
+                {"vehiculo": "El vehículo debe pertenecer a la organización."}
             )
 
         estado = datos.get("estado", getattr(self.instance, "estado", None))

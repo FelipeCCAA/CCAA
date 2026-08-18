@@ -5,6 +5,7 @@ queda acompañada por un movimiento inmutable dentro de la misma transacción.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
+from uuid import uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -14,8 +15,117 @@ from django.utils import timezone
 from .models import (
     Aprobacion, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
     InspeccionMaterial, LoteInventario, MovimientoInventario, Notificacion,
-    ReservaInventario, Ubicacion,
+    ReservaInventario, Ubicacion, Despacho, DetalleDespacho,
+    ExistenciaProductoTerminado, MovimientoProductoTerminado,
 )
+
+
+def _validar_pallet_liberado(pallet):
+    from calidad.models import Liberacion
+    liberacion = getattr(pallet.envase.lote, "liberacion", None)
+    if not liberacion or liberacion.estado not in Liberacion.ESTADOS_LIBERADO:
+        raise ValidationError("El lote del pallet no tiene una liberación de Calidad vigente.")
+
+
+@transaction.atomic
+def ingresar_pallet(pallet, ubicacion, usuario, *, operacion=None):
+    from produccion.models import PalletProducto
+    pallet = PalletProducto.objects.select_for_update().select_related("envase__lote__sucursal").get(pk=pallet.pk)
+    ubicacion = Ubicacion.objects.select_for_update().select_related("bodega__sucursal").get(pk=ubicacion.pk)
+    _validar_pallet_liberado(pallet)
+    if pallet.envase.lote.sucursal_id != ubicacion.bodega.sucursal_id:
+        raise ValidationError("El pallet y la ubicación pertenecen a plantas distintas.")
+    if pallet.estado not in {PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO}:
+        raise ValidationError("El pallet no está disponible para ingresar a inventario.")
+    existencia, creada = ExistenciaProductoTerminado.objects.select_for_update().get_or_create(
+        pallet=pallet, defaults={"ubicacion": ubicacion, "activo": True}
+    )
+    if not creada and existencia.activo:
+        raise ValidationError("El pallet ya está en inventario.")
+    existencia.ubicacion = ubicacion
+    existencia.activo = True
+    existencia.save(update_fields=["ubicacion", "activo", "actualizado_en"])
+    MovimientoProductoTerminado.objects.create(
+        operacion=operacion or uuid4(), pallet=pallet, tipo=MovimientoProductoTerminado.Tipo.INGRESO,
+        destino=ubicacion, registrado_por=usuario,
+    )
+    pallet.estado = PalletProducto.Estado.EN_INVENTARIO
+    pallet.save(update_fields=["estado"])
+    return existencia
+
+
+@transaction.atomic
+def transferir_pallet(existencia, destino, usuario, *, motivo="", operacion=None):
+    existencia = ExistenciaProductoTerminado.objects.select_for_update().select_related(
+        "pallet__envase__lote__sucursal", "ubicacion__bodega__sucursal"
+    ).get(pk=existencia.pk)
+    destino = Ubicacion.objects.select_for_update().select_related("bodega__sucursal").get(pk=destino.pk)
+    if not existencia.activo:
+        raise ValidationError("El pallet ya no tiene existencia activa.")
+    if existencia.ubicacion.bodega.sucursal_id != destino.bodega.sucursal_id:
+        raise ValidationError("La transferencia no puede cruzar plantas.")
+    origen = existencia.ubicacion
+    existencia.ubicacion = destino
+    existencia.save(update_fields=["ubicacion", "actualizado_en"])
+    MovimientoProductoTerminado.objects.create(
+        operacion=operacion or uuid4(), pallet=existencia.pallet,
+        tipo=MovimientoProductoTerminado.Tipo.TRANSFERENCIA, origen=origen, destino=destino,
+        motivo=motivo, registrado_por=usuario,
+    )
+    return existencia
+
+
+@transaction.atomic
+def autorizar_despacho(despacho, usuario):
+    despacho = Despacho.objects.select_for_update().get(pk=despacho.pk)
+    if despacho.estado != Despacho.Estado.BORRADOR:
+        raise ValidationError("Solo un despacho en borrador puede autorizarse.")
+    detalles = list(despacho.detalles.select_related("pallet__envase__lote").select_for_update())
+    if not detalles:
+        raise ValidationError("El despacho debe contener al menos un pallet.")
+    for detalle in detalles:
+        _validar_pallet_liberado(detalle.pallet)
+        comprometido = DetalleDespacho.objects.filter(
+            pallet=detalle.pallet,
+            despacho__estado=Despacho.Estado.AUTORIZADO,
+        ).exclude(despacho=despacho).exists()
+        if comprometido:
+            raise ValidationError(f"El pallet {detalle.pallet.codigo} ya está comprometido en otro despacho.")
+        if not ExistenciaProductoTerminado.objects.filter(pallet=detalle.pallet, activo=True).exists():
+            raise ValidationError(f"El pallet {detalle.pallet.codigo} no está disponible en inventario.")
+    despacho.estado = Despacho.Estado.AUTORIZADO
+    despacho.autorizado_por = usuario
+    despacho.autorizado_en = timezone.now()
+    despacho.save(update_fields=["estado", "autorizado_por", "autorizado_en"])
+    return despacho
+
+
+@transaction.atomic
+def ejecutar_despacho(despacho, usuario):
+    from produccion.models import PalletProducto
+    despacho = Despacho.objects.select_for_update().get(pk=despacho.pk)
+    if despacho.estado == Despacho.Estado.DESPACHADO:
+        return despacho
+    if despacho.estado != Despacho.Estado.AUTORIZADO:
+        raise ValidationError("El despacho debe estar autorizado.")
+    detalles = list(despacho.detalles.select_related("pallet__envase__lote").select_for_update())
+    for detalle in detalles:
+        _validar_pallet_liberado(detalle.pallet)
+        existencia = ExistenciaProductoTerminado.objects.select_for_update().select_related("ubicacion").get(
+            pallet=detalle.pallet, activo=True
+        )
+        existencia.activo = False
+        existencia.save(update_fields=["activo", "actualizado_en"])
+        MovimientoProductoTerminado.objects.create(
+            operacion=uuid4(), pallet=detalle.pallet, tipo=MovimientoProductoTerminado.Tipo.DESPACHO,
+            origen=existencia.ubicacion, despacho=despacho, registrado_por=usuario,
+        )
+        detalle.pallet.estado = PalletProducto.Estado.DESPACHADO
+        detalle.pallet.save(update_fields=["estado"])
+    despacho.estado = Despacho.Estado.DESPACHADO
+    despacho.despachado_en = timezone.now()
+    despacho.save(update_fields=["estado", "despachado_en"])
+    return despacho
 
 
 def _notificar_area(area, *, tipo, titulo, mensaje, documento_tipo, documento_id):

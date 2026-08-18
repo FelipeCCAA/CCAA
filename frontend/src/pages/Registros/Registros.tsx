@@ -15,7 +15,7 @@ import FormularioRegistro from "./FormularioRegistro";
 
 
 /*
-  Registros de planta: aseos, inspecciones y controles de máquina.
+  Registros operacionales: aseos, inspecciones y controles de máquina.
 
   Se organiza **por equipo y fecha**, no por lote, porque es como se trabaja:
   quien asea una torre no piensa en qué lotes va a cubrir. El checklist de
@@ -110,7 +110,7 @@ function Registros() {
 
           <h1 className="flex items-center gap-3 text-3xl font-bold text-slate-800">
             <ClipboardList className="h-7 w-7 text-slate-400" />
-            Registros de planta
+            Registros operacionales
           </h1>
 
           <p className="mt-2 max-w-3xl text-slate-500">
@@ -201,7 +201,7 @@ function Registros() {
         {documentos.length === 0 && !cargando && (
           <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-500">
             Ningún documento está marcado con una frecuencia distinta de «por
-            lote», así que no hay registros de planta que llevar. La frecuencia
+            lote», así que no hay registros operacionales que llevar. La frecuencia
             se define en el catálogo de documentos.
           </div>
         )}

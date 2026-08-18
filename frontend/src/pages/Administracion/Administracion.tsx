@@ -62,7 +62,7 @@ function Administracion() {
   const [permisosSeleccionados, setPermisosSeleccionados] = useState<string[]>([]);
   const sesion = obtenerSesion();
   const areaPropia = sesion?.usuario.perfil?.area ?? "secado";
-  const administraTodaLaPlanta = !sesion?.usuario.perfil || areaPropia === "administracion";
+  const administraTodasLasAreas = !sesion?.usuario.perfil || areaPropia === "administracion";
   const [nuevo, setNuevo] = useState<{ username: string; email: string; nombre: string; apellido: string; area: string; nivel: "admin" | "trabajador"; cargo: string; password: string }>({ username: "", email: "", nombre: "", apellido: "", area: areaPropia, nivel: "trabajador", cargo: "", password: "" });
 
   useEffect(() => {
@@ -214,10 +214,10 @@ function Administracion() {
             <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input placeholder="Apellido" value={nuevo.apellido} onChange={(e) => setNuevo({ ...nuevo, apellido: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input required type="password" minLength={8} autoComplete="new-password" placeholder="Contraseña inicial" value={nuevo.password} onChange={(e) => setNuevo({ ...nuevo, password: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
-            <select disabled={!administraTodaLaPlanta} value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100">
+            <select disabled={!administraTodasLasAreas} value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100">
               {["recepcion", "condensacion", "secado", "envase", "calidad", "bodega", "compras", "despacho", "administracion"].map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
-            <select disabled={!administraTodaLaPlanta} value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
+            <select disabled={!administraTodasLasAreas} value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
             <input placeholder="Cargo" value={nuevo.cargo} onChange={(e) => setNuevo({ ...nuevo, cargo: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <button className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">Crear usuario</button>
           </form>

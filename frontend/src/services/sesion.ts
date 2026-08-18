@@ -36,7 +36,6 @@ export interface PerfilUsuario {
   nivel: "admin" | "trabajador";
   nivel_etiqueta: string;
   empresa: number | null;
-  sucursal: number | null;
 }
 
 

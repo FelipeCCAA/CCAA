@@ -4,8 +4,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from maestros.catalogos import CLAVES_PARAMETROS
 from maestros.models import Equipo, Especificacion, Producto
-from usuarios.models import Sucursal
-from usuarios.tenancy import filtrar_por_scope, scope_de
+from usuarios.tenancy import filtrar_por_scope, scope_de, sucursal_para_escritura
 
 from . import dominio
 from .models import (
@@ -81,7 +80,7 @@ class OrdenProduccionSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrdenProduccion
         fields = [
-            "id", "sucursal", "semana", "codigo", "producto", "producto_nombre",
+            "id", "semana", "codigo", "producto", "producto_nombre",
             "cantidad_planificada", "unidad", "linea", "equipo", "equipo_nombre",
             "destino", "responsable", "responsable_nombre", "estado",
             "estado_etiqueta", "observacion", "creada_por", "creada_en",
@@ -89,10 +88,11 @@ class OrdenProduccionSerializer(serializers.ModelSerializer):
         read_only_fields = ["creada_por", "creada_en"]
 
     def validate(self, datos):
-        request = self.context.get("request")
-        scope = scope_de(getattr(request, "user", None)) if request else None
-        if self.instance is None and scope and scope.es_sucursal:
-            datos["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
+        if self.instance is None:
+            request = self.context.get("request")
+            datos["sucursal"] = sucursal_para_escritura(
+                getattr(request, "user", None), datos
+            )
         if self.instance and "estado" in datos and datos["estado"] != self.instance.estado:
             if datos["estado"] not in OrdenProduccion.TRANSICIONES[self.instance.estado]:
                 raise serializers.ValidationError({"estado": "Transición de orden no permitida."})
@@ -207,7 +207,6 @@ class LoteSerializer(serializers.ModelSerializer):
         model = Lote
         fields = [
             "id",
-            "sucursal",
             "codigo_lote",
             "op",
             "orden",
@@ -260,17 +259,11 @@ class LoteSerializer(serializers.ModelSerializer):
         if not request:
             return
         scope = scope_de(request.user)
-        sucursales = Sucursal.objects.filter(activa=True)
         productos = Producto.objects.all()
         if scope is None:
-            sucursales = sucursales.none()
             productos = productos.none()
         elif not scope.es_global:
-            sucursales = sucursales.filter(empresa_id=scope.empresa_id)
             productos = productos.filter(mandante__empresa_id=scope.empresa_id)
-            if scope.es_sucursal:
-                sucursales = sucursales.filter(pk=scope.sucursal_id)
-        self.fields["sucursal"].queryset = sucursales
         self.fields["producto"].queryset = productos
         self.fields["equipo"].queryset = filtrar_por_scope(
             Equipo.objects.filter(activo=True), request.user,
@@ -348,6 +341,11 @@ class LoteSerializer(serializers.ModelSerializer):
         """
         request = self.context.get("request")
 
+        if self.instance is None:
+            datos["sucursal"] = sucursal_para_escritura(
+                getattr(request, "user", None), datos
+            )
+
         # Una anulación sustituye al borrado físico: conserva el lote, sus
         # análisis, movimientos y genealogía. Por eso exige un motivo nuevo
         # para esta acción; una observación antigua no sirve como justificación.
@@ -360,10 +358,6 @@ class LoteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"motivo_anulacion": "Indica el motivo de la anulación. El historial no se elimina."}
             )
-        scope = scope_de(getattr(request, "user", None)) if request else None
-        if self.instance is None and scope and scope.es_sucursal:
-            datos["sucursal"] = Sucursal.objects.get(pk=scope.sucursal_id)
-
         sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
         producto = datos.get("producto", getattr(self.instance, "producto", None))
         vale = datos.get("vale", getattr(self.instance, "vale", None))
@@ -374,10 +368,10 @@ class LoteSerializer(serializers.ModelSerializer):
             if producto and orden.producto_id != producto.id:
                 raise serializers.ValidationError({"orden": "La orden corresponde a otro producto."})
             if sucursal and orden.sucursal_id != sucursal.id:
-                raise serializers.ValidationError({"orden": "La orden pertenece a otra planta."})
+                raise serializers.ValidationError({"orden": "La orden pertenece a otra organización."})
         if sucursal and producto and producto.mandante.empresa_id != sucursal.empresa_id:
             raise serializers.ValidationError(
-                {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}
+                {"producto": "El producto y la orden deben pertenecer a la misma organización."}
             )
 
         if self.instance is None and vale is not None:
@@ -420,7 +414,7 @@ class LoteSerializer(serializers.ModelSerializer):
                 repetido = repetido.exclude(pk=self.instance.pk)
             if repetido.exists():
                 raise serializers.ValidationError(
-                    {"codigo_lote": "Ya existe ese lote para el producto, fecha y sucursal."}
+                    {"codigo_lote": "Ya existe ese lote para el producto y la fecha."}
                 )
 
         if self.instance is None:
@@ -746,7 +740,7 @@ class ControlProcesoSerializer(serializers.ModelSerializer):
         equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
         if lote and equipo and lote.sucursal_id != equipo.sucursal_id:
             raise serializers.ValidationError(
-                {"equipo": "El equipo debe pertenecer a la sucursal del lote."}
+                {"equipo": "El equipo debe pertenecer a la organización del lote."}
             )
         return datos
 

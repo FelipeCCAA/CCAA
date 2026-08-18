@@ -87,7 +87,7 @@ function AccesoRecuperacion({
           </div>
 
           <p className="relative text-xs text-emerald-100/50">
-            Gestión Productiva · Planta CCAA
+            Gestión Productiva · CCAA
           </p>
         </aside>
 

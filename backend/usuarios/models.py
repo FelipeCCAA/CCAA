@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 
-from .tenancy import empresa_predeterminada_pruebas, sucursal_predeterminada_pruebas
+from .tenancy import empresa_predeterminada_pruebas
 
 
 class IntentoAcceso(models.Model):
@@ -174,13 +174,13 @@ class PerfilUsuario(models.Model):
         related_name="perfiles",
         null=True,
         blank=True,
-        default=sucursal_predeterminada_pruebas,
+        default=None,
     )
 
     alcance = models.CharField(
         max_length=10,
         choices=Alcance.choices,
-        default=Alcance.SUCURSAL,
+        default=Alcance.EMPRESA,
     )
 
     nivel = models.CharField(
@@ -225,6 +225,11 @@ class PerfilUsuario(models.Model):
         return self.nivel == self.Nivel.ADMIN
 
     def save(self, *args, **kwargs):
+        # Compatibilidad con integraciones históricas que todavía construyen
+        # el modelo directamente con la clave técnica. La API y el admin no
+        # exponen este camino; los perfiles nuevos siempre son empresariales.
+        if self.sucursal_id and self.alcance == self.Alcance.EMPRESA:
+            self.alcance = self.Alcance.SUCURSAL
         self.clean()
         super().save(*args, **kwargs)
         es_staff = self.usuario.is_superuser or self.es_admin_de_area
@@ -244,12 +249,6 @@ class PerfilUsuario(models.Model):
             raise ValidationError({"sucursal": "El alcance de empresa no lleva una sucursal."})
         if self.sucursal_id and self.sucursal.empresa_id != self.empresa_id:
             raise ValidationError({"sucursal": "La sucursal no pertenece a la empresa seleccionada."})
-        if self.alcance == self.Alcance.EMPRESA and not (
-            self.area == self.Area.ADMINISTRACION and self.es_admin_de_area
-        ):
-            raise ValidationError(
-                {"alcance": "Solo Administración general puede abarcar toda la empresa."}
-            )
 
 
 class AreaDePerfil(models.Model):

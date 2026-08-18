@@ -132,6 +132,16 @@ export default function Procesos() {
                   </p>
                 </div>
               </div>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4">
+                  <p className="text-sm font-semibold text-sky-900">Calidad · {genealogia.flujo.calidad.estado}</p>
+                  <p className="mt-1 text-xs text-sky-700">{genealogia.flujo.calidad.autorizada_por ? `Firmado por ${genealogia.flujo.calidad.autorizada_por}` : "Sin firma de liberación"}</p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                  <p className="text-sm font-semibold text-amber-900">Envase, inventario y despacho</p>
+                  {genealogia.flujo.pallets.length === 0 ? <p className="mt-1 text-xs text-amber-700">Sin pallets registrados.</p> : <ul className="mt-2 space-y-1 text-xs text-amber-800">{genealogia.flujo.pallets.map((p) => <li key={p.id}>{p.codigo} · {p.kg_neto} kg · {p.ubicacion ? `ubicación ${p.ubicacion}` : p.estado}{p.cliente ? ` · cliente ${p.cliente} (${p.despacho})` : ""}</li>)}</ul>}
+                </div>
+              </div>
             </div>
           )}
           {genealogia && <div className="mt-5"><ArbolGenealogia genealogia={genealogia} direccion={direccion} /></div>}
