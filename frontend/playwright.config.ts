@@ -61,6 +61,13 @@ export default defineConfig({
       testMatch: /auth\.setup\.ts/,
     },
     {
+      /* Sin `storageState` ni dependencia de `sesion`: lo que se comprueba es
+         justamente cómo responde la aplicación cuando NO hay sesión válida. */
+      name: "login",
+      testMatch: /login\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "accesibilidad",
       testMatch: /accesibilidad\.spec\.ts/,
       dependencies: ["sesion"],
