@@ -237,7 +237,6 @@ def _contexto_del_lote(lote, bloquear=False):
         documentos,
         lote,
         RegistroEquipo.objects.filter(
-            sucursal_id=lote.sucursal_id,
             documento__in=documentos,
             estado=RegistroEquipo.Estado.COMPLETADO,
         ).select_related("equipo", "documento"),

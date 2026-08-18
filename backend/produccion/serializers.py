@@ -735,15 +735,6 @@ class ControlProcesoSerializer(serializers.ModelSerializer):
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
 
-    def validate(self, datos):
-        lote = datos.get("lote", getattr(self.instance, "lote", None))
-        equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
-        if lote and equipo and lote.sucursal_id != equipo.sucursal_id:
-            raise serializers.ValidationError(
-                {"equipo": "El equipo debe pertenecer a la organización del lote."}
-            )
-        return datos
-
     def get_pcc1(self, control):
         """
         Cómo quedó el punto crítico, con el detalle de cada incumplimiento.
