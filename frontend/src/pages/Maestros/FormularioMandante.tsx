@@ -98,7 +98,7 @@ function FormularioMandante({ mandante, catalogos, alCerrar, alGuardar }: Props)
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
@@ -144,7 +144,7 @@ function FormularioMandante({ mandante, catalogos, alCerrar, alGuardar }: Props)
                 ))}
               </select>
 
-              <span className="mt-1 block text-xs text-slate-400">
+              <span className="mt-1 block text-xs text-slate-600">
                 {codigoCliente
                   ? "Es el segmento del SKU que dice de quién es el producto."
                   : "Sin esto, los productos de este mandante no generan SKU."}

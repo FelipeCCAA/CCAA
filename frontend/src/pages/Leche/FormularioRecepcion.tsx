@@ -124,8 +124,8 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-[2px] sm:p-6">
       <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl bg-slate-50 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5 sm:px-8">
-          <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Etapa 1 · Recepción</p><h2 className="mt-1 text-xl font-semibold text-slate-950">Registrar llegada del camión</h2><p className="mt-1 text-xs text-slate-500">Los datos generales se ingresan una vez; abajo se separan sus módulos o estanques.</p></div>
-          <button type="button" onClick={alCerrar} className="rounded-xl border border-slate-200 p-2 text-slate-400 hover:bg-slate-50" aria-label="Cerrar"><X className="h-5 w-5" /></button>
+          <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Etapa 1 · Recepción</p><h2 className="mt-1 text-xl font-semibold text-slate-950">Registrar llegada del camión</h2><p className="mt-1 text-xs text-slate-600">Los datos generales se ingresan una vez; abajo se separan sus módulos o estanques.</p></div>
+          <button type="button" onClick={alCerrar} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" aria-label="Cerrar"><X className="h-5 w-5" /></button>
         </div>
 
         <form onSubmit={enviar}>
@@ -144,7 +144,7 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
             )}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-              <div className="mb-5 flex items-center gap-3"><span className="rounded-xl bg-emerald-50 p-2 text-emerald-700"><Truck className="h-5 w-5" /></span><div><h3 className="font-semibold text-slate-900">Datos generales del camión / estanque</h3><p className="text-xs text-slate-400">Se guardan una sola vez y aplican a todos los módulos declarados.</p></div></div>
+              <div className="mb-5 flex items-center gap-3"><span className="rounded-xl bg-emerald-50 p-2 text-emerald-700"><Truck className="h-5 w-5" /></span><div><h3 className="font-semibold text-slate-900">Datos generales del camión / estanque</h3><p className="text-xs text-slate-600">Se guardan una sola vez y aplican a todos los módulos declarados.</p></div></div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div><label className={etiqueta}>Fecha *</label><input type="date" className={campo} value={fecha} onChange={(e) => setFecha(e.target.value)} required /></div>
                 <div><label className={etiqueta}>Hora de llegada</label><input type="time" className={campo} value={hora} onChange={(e) => setHora(e.target.value)} /></div>
@@ -157,7 +157,7 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
             </section>
 
             <section className="rounded-2xl border border-violet-200 bg-white p-5 sm:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-xl bg-violet-50 p-2 text-violet-700"><Layers3 className="h-5 w-5" /></span><div><h3 className="font-semibold text-slate-900">Módulos o estanques del camión</h3><p className="text-xs text-slate-400">Cada uno tiene sus litros y luego su propia crioscopía.</p></div></div><div className="rounded-xl bg-violet-50 px-4 py-2 text-right"><p className="text-[10px] font-bold uppercase tracking-wider text-violet-500">Total camión</p><p className="font-semibold text-violet-900">{litrosTotales.toLocaleString("es-CL")} L</p></div></div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-xl bg-violet-50 p-2 text-violet-700"><Layers3 className="h-5 w-5" /></span><div><h3 className="font-semibold text-slate-900">Módulos o estanques del camión</h3><p className="text-xs text-slate-600">Cada uno tiene sus litros y luego su propia crioscopía.</p></div></div><div className="rounded-xl bg-violet-50 px-4 py-2 text-right"><p className="text-[10px] font-bold uppercase tracking-wider text-violet-500">Total camión</p><p className="font-semibold text-violet-900">{litrosTotales.toLocaleString("es-CL")} L</p></div></div>
               <div className="mt-5 space-y-3">
                 {modulos.map((item, indice) => (
                   <div key={item.clave} className="grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-[auto_1fr_1fr_auto] sm:items-end">
@@ -177,7 +177,7 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
           </div>
 
           {error && <div className="mx-5 mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-8">{error}</div>}
-          <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-5 sm:px-8"><p className="hidden text-xs text-slate-400 sm:block">Se crearán {modulos.length} módulos bajo una misma llegada.</p><div className="ml-auto flex gap-3"><button type="button" onClick={alCerrar} className="h-11 rounded-xl px-5 text-sm font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button><button type="submit" disabled={guardando} className="h-11 rounded-xl bg-emerald-700 px-6 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{guardando ? "Registrando…" : `Registrar camión y ${modulos.length} módulo${modulos.length === 1 ? "" : "s"}`}</button></div></div>
+          <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-5 sm:px-8"><p className="hidden text-xs text-slate-600 sm:block">Se crearán {modulos.length} módulos bajo una misma llegada.</p><div className="ml-auto flex gap-3"><button type="button" onClick={alCerrar} className="h-11 rounded-xl px-5 text-sm font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button><button type="submit" disabled={guardando} className="h-11 rounded-xl bg-emerald-700 px-6 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{guardando ? "Registrando…" : `Registrar camión y ${modulos.length} módulo${modulos.length === 1 ? "" : "s"}`}</button></div></div>
         </form>
       </div>
     </div>

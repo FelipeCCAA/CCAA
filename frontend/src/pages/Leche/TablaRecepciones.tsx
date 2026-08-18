@@ -35,7 +35,7 @@ const ESTILO_ESTADO: Record<string, string> = {
   liberada: "border-emerald-200 bg-emerald-50 text-emerald-700",
   retenida: "border-amber-200 bg-amber-50 text-amber-800",
   descargada: "border-blue-200 bg-blue-50 text-blue-700",
-  cerrada: "border-slate-200 bg-slate-100 text-slate-500",
+  cerrada: "border-slate-200 bg-slate-100 text-slate-600",
 };
 
 
@@ -151,9 +151,9 @@ function TablaRecepciones({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="font-semibold text-slate-900">{titulo}</h2>
-            <p className="mt-1 text-sm text-slate-500">{descripcion}</p>
+            <p className="mt-1 text-sm text-slate-600">{descripcion}</p>
           </div>
-          <span className="text-xs font-medium text-slate-400">
+          <span className="text-xs font-medium text-slate-600">
             {cargando ? "Actualizando…" : `${formato.format(total)} registros`}
           </span>
         </div>
@@ -162,7 +162,7 @@ function TablaRecepciones({
             encontrar un camión concreto, y la del historial es la que más se
             usa. */}
         <label className="relative mt-4 block max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-600" />
           <input
             className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-emerald-500"
             placeholder="Buscar guía, módulo, muestra, camión o silo"
@@ -181,17 +181,17 @@ function TablaRecepciones({
 
       {!cargando && filas.length === 0 ? (
         <div className="px-6 py-16 text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600">
             <Truck className="h-5 w-5" />
           </span>
           <p className="mt-4 text-sm font-medium text-slate-700">{vacio.titulo}</p>
-          <p className="mt-1 text-xs text-slate-400">{vacio.detalle}</p>
+          <p className="mt-1 text-xs text-slate-600">{vacio.detalle}</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-left text-sm">
 
-            <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
               <tr>
                 <th className="px-5 py-3">Ingreso</th>
                 <th className="px-5 py-3">Módulo y transporte</th>
@@ -211,11 +211,11 @@ function TablaRecepciones({
                   <td className="px-5 py-4">
                     <p className="font-semibold text-slate-800">
                       {formatearFecha(r.fecha)}{" "}
-                      <span className="font-normal text-slate-400">
+                      <span className="font-normal text-slate-600">
                         {r.hora?.slice(0, 5) || "—"}
                       </span>
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-slate-600">
                       Guía {r.guia || "sin informar"}
                     </p>
                   </td>
@@ -224,14 +224,14 @@ function TablaRecepciones({
                     <p className="font-semibold text-slate-800">
                       {r.modulo || "Módulo sin identificar"}
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-slate-600">
                       {r.vehiculo_placa || "Sin camión"} · Turno {r.turno || "—"}
                     </p>
                   </td>
 
                   <td className="px-5 py-4">
                     <p className="text-slate-700">{r.procedencia || "—"}</p>
-                    <p className="mt-1 text-xs text-slate-400">{r.tipo_leche}</p>
+                    <p className="mt-1 text-xs text-slate-600">{r.tipo_leche}</p>
                   </td>
 
                   <td className="px-5 py-4 font-semibold tabular-nums text-slate-800">
@@ -240,7 +240,7 @@ function TablaRecepciones({
 
                   <td className="px-5 py-4">
                     {r.estado === "registrada" ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
                         <Clock3 className="h-3.5 w-3.5" />Sin muestra
                       </span>
                     ) : r.estado === "muestreada" ? (
@@ -248,7 +248,7 @@ function TablaRecepciones({
                         <span className="block font-semibold text-sky-700">
                           {r.codigo_muestra}
                         </span>
-                        <span className="mt-1 block text-slate-400">
+                        <span className="mt-1 block text-slate-600">
                           Esperando decisión
                         </span>
                       </span>
@@ -270,7 +270,7 @@ function TablaRecepciones({
 
                   <td className="px-5 py-4">
                     <span className="inline-flex items-center gap-1.5 text-slate-700">
-                      <Warehouse className="h-3.5 w-3.5 text-slate-400" />
+                      <Warehouse className="h-3.5 w-3.5 text-slate-600" />
                       {r.silo_codigo || "Sin asignar"}
                     </span>
                   </td>
@@ -343,7 +343,7 @@ function TablaRecepciones({
           >
             <ChevronLeft className="h-4 w-4" />Anterior
           </button>
-          <span className="text-xs font-medium text-slate-500">
+          <span className="text-xs font-medium text-slate-600">
             Página {pagina} de {ultimaPagina}
           </span>
           <button

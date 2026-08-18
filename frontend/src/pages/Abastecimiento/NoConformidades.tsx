@@ -139,12 +139,12 @@ function NoConformidades() {
                     <p className="flex items-center gap-2 font-medium text-slate-800">
                       <FileWarning className="h-4 w-4 text-amber-600" />
                       {n.insumo_nombre}
-                      <span className="text-sm font-normal text-slate-400">
+                      <span className="text-sm font-normal text-slate-600">
                         lote {n.lote_codigo}
                       </span>
                       <Estado valor={n.destino} />
                     </p>
-                    <p className="mt-1 text-sm text-slate-500">{n.descripcion}</p>
+                    <p className="mt-1 text-sm text-slate-600">{n.descripcion}</p>
 
                     {n.destino === "excepcional" && (
                       <p
@@ -233,16 +233,16 @@ function NoConformidades() {
                         className={
                           Number(c.saldo) > 0
                             ? "font-medium text-green-700"
-                            : "text-slate-400"
+                            : "text-slate-600"
                         }
                       >
                         {numero(c.saldo)}
                       </span>
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {c.uso_especifico}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {c.calidad_nombre}
                       {c.jefatura_nombre ? ` · ${c.jefatura_nombre}` : (
                         <span className="text-amber-700"> · falta jefatura</span>
@@ -287,7 +287,7 @@ function NoConformidades() {
                   <tr key={n.id} className="border-t border-slate-100">
                     <td className={`${claseCelda} font-medium text-slate-800`}>
                       {n.insumo_nombre}
-                      <div className="text-xs font-normal text-slate-400">
+                      <div className="text-xs font-normal text-slate-600">
                         lote {n.lote_codigo}
                       </div>
                     </td>
@@ -297,7 +297,7 @@ function NoConformidades() {
                     <td className={`${claseCelda} text-slate-600`}>
                       {n.accion_tomada}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {n.cerrada_por_nombre}
                       <div className="text-xs">{n.cerrada_en?.slice(0, 10)}</div>
                     </td>

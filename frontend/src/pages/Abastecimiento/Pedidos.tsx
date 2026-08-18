@@ -193,7 +193,7 @@ function Pedidos() {
                       {m.fecha_requerida}
                     </td>
 
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {m.detalles.map((d) => (
                         <div key={d.id}>
                           {d.insumo_nombre} · {numero(d.cantidad_solicitada)}

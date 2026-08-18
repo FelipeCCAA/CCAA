@@ -163,7 +163,7 @@ function Materiales() {
 
             </form>
           ) : (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               Un material marcado «requiere Calidad» ingresa a cuarentena y no
               se puede consumir hasta que Calidad lo libere.
             </p>
@@ -213,7 +213,7 @@ function Materiales() {
 
                       <td className={`${claseCelda} font-medium text-slate-800`}>
                         {i.nombre}
-                        <div className="text-xs font-normal text-slate-400">
+                        <div className="text-xs font-normal text-slate-600">
                           {i.codigo}
                         </div>
                       </td>
@@ -232,15 +232,15 @@ function Materiales() {
                         </span>
                       </td>
 
-                      <td className={`${claseCelda} text-slate-500`}>
+                      <td className={`${claseCelda} text-slate-600`}>
                         {numero(i.stock_bloqueado)} {i.unidad}
                       </td>
 
-                      <td className={`${claseCelda} text-slate-500`}>
+                      <td className={`${claseCelda} text-slate-600`}>
                         {numero(i.punto_reposicion)} {i.unidad}
                       </td>
 
-                      <td className={`${claseCelda} text-slate-500`}>
+                      <td className={`${claseCelda} text-slate-600`}>
                         {numero(i.eoq)} {i.eoq ? i.unidad : ""}
                       </td>
 

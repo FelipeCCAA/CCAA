@@ -68,7 +68,7 @@ function Barra({ silo }: { silo: OcupacionSilo }) {
         <p className="text-sm font-semibold text-slate-800">
           {formato.format(silo.litros)} L
         </p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-600">
           de {formato.format(silo.capacidad)} L
         </p>
       </div>
@@ -102,7 +102,7 @@ function Silos() {
   }
 
   if (!ocupacion) {
-    return <p className="py-10 text-center text-sm text-slate-400">Cargando…</p>;
+    return <p className="py-10 text-center text-sm text-slate-600">Cargando…</p>;
   }
 
   const descuadrados = ocupacion.silos.filter((s) => s.negativo || s.excedido);
@@ -150,14 +150,14 @@ function Silos() {
       <section className="rounded-2xl border border-slate-200 bg-white px-6 py-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
               Volumen disponible
             </p>
             <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
               {formato.format(ocupacion.litros_totales)} L
             </p>
           </div>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-600">
             {pctTotal}% de {formato.format(capacidadTotal)} L ·{" "}
             {ocupacion.silos.length} unidades
           </p>

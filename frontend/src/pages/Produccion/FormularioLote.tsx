@@ -177,7 +177,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
             </h2>
 
-            <p className="mt-0.5 text-sm text-slate-500">
+            <p className="mt-0.5 text-sm text-slate-600">
 
               El lote queda en proceso. Los kilos se declaran al cerrarlo.
 
@@ -188,7 +188,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Cerrar"
           >
 
@@ -302,7 +302,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
                 required
               />
 
-              <p className="mt-1.5 text-xs text-slate-400">
+              <p className="mt-1.5 text-xs text-slate-600">
 
                 {notaCodigo ||
                   "Se propone con el año, el día juliano, el SKU del producto " +
@@ -355,7 +355,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
             </h3>
 
-            <p className="mt-1 mb-5 text-sm text-slate-400">
+            <p className="mt-1 mb-5 text-sm text-slate-600">
 
               Selecciona el vale liberado. Los silos y el RC vienen
               precargados desde Estandarización y no se vuelven a digitar.
@@ -417,13 +417,13 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
                   {valeSeleccionado.silo_descremada_codigo && (
                     <span>+ {valeSeleccionado.silo_descremada_codigo}</span>
                   )}
-                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                  <ArrowRight className="h-4 w-4 text-slate-600" />
                   <strong>{valeSeleccionado.silo_destino_codigo}</strong>
-                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                  <ArrowRight className="h-4 w-4 text-slate-600" />
                   <Factory className="h-4 w-4 text-green-700" />
                   <span>Producción</span>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-slate-600">
                   Vale {valeSeleccionado.codigo} · RC objetivo {valeSeleccionado.rc_objetivo}
                   {valeSeleccionado.rc_real != null
                     ? ` · RC liberado ${valeSeleccionado.rc_real.toFixed(4)}`

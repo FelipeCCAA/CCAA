@@ -35,8 +35,8 @@ const ESTILO_LIBERACION: Record<string, string> = {
 const ESTILO_CALIDAD: Record<string, string> = {
   conforme: "bg-green-50 text-green-700",
   no_conforme: "bg-red-50 text-red-700",
-  sin_analisis: "bg-slate-100 text-slate-500",
-  sin_especificacion: "bg-slate-100 text-slate-500",
+  sin_analisis: "bg-slate-100 text-slate-600",
+  sin_especificacion: "bg-slate-100 text-slate-600",
 };
 
 
@@ -121,7 +121,7 @@ function Liberacion() {
 
           {/* Se dice «de cuántos»: con solo el recuento de la página, la
               pantalla afirmaría que el trabajo pendiente es el que se ve. */}
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             {cargando
               ? "Cargando…"
               : `${filas.length} de ${total} lote(s) · ${porFirmar} esperando decisión en esta página`}
@@ -149,7 +149,7 @@ function Liberacion() {
       )}
 
       {!cargando && filas.length === 0 && !error && (
-        <p className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
+        <p className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-600">
           No hay lotes que liberar. Aparecen aquí en cuanto Producción cierra uno.
         </p>
       )}
@@ -160,7 +160,7 @@ function Liberacion() {
 
           <table className="w-full text-sm">
 
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
 
               <tr>
                 <th className="px-5 py-3 font-medium">Lote</th>
@@ -212,7 +212,7 @@ function Liberacion() {
 
                   <td className="px-5 py-3 text-slate-600">
                     {fila.lote.producto_nombre}
-                    <span className="block text-xs text-slate-400">
+                    <span className="block text-xs text-slate-600">
                       {fila.lote.mandante_nombre}
                     </span>
                   </td>
@@ -236,7 +236,7 @@ function Liberacion() {
                         />
                       </div>
 
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-slate-600">
                         {fila.avance.completados}/{fila.avance.total}
                       </span>
 
@@ -289,7 +289,7 @@ function Liberacion() {
               Anterior
             </button>
 
-            <span className="text-xs font-medium text-slate-500">
+            <span className="text-xs font-medium text-slate-600">
               Página {pagina}
             </span>
 

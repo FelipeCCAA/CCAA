@@ -129,7 +129,7 @@ function Login() {
             Bienvenido
           </h2>
 
-          <p className="mt-2 mb-10 text-slate-500">
+          <p className="mt-2 mb-10 text-slate-600">
             Inicia sesión para acceder al sistema.
           </p>
 
@@ -147,7 +147,7 @@ function Login() {
 
               <div className="flex items-center rounded-xl border border-slate-300 bg-white px-4">
 
-                <User className="h-5 w-5 text-slate-400" />
+                <User className="h-5 w-5 text-slate-600" />
 
                 <input
                   id="usuario"
@@ -176,7 +176,7 @@ function Login() {
 
               <div className="flex items-center rounded-xl border border-slate-300 bg-white px-4">
 
-                <Lock className="h-5 w-5 text-slate-400" />
+                <Lock className="h-5 w-5 text-slate-600" />
 
                 <input
                   id="password"
@@ -192,7 +192,7 @@ function Login() {
                 <button
                   type="button"
                   onClick={() => setMostrarPassword(!mostrarPassword)}
-                  className="text-slate-400"
+                  className="text-slate-600"
                   aria-label={
                     mostrarPassword
                       ? "Ocultar contraseña"
@@ -274,7 +274,7 @@ function Login() {
 
           </form>
 
-          <div className="mt-12 text-center text-sm text-slate-400">
+          <div className="mt-12 text-center text-sm text-slate-600">
 
             Gestión Productiva · CCAA
 

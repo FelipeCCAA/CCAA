@@ -169,7 +169,7 @@ function RestablecerContrasena() {
             </label>
             <div className="flex items-center rounded-xl border border-slate-300 bg-white px-4 shadow-sm transition focus-within:border-green-600 focus-within:ring-4 focus-within:ring-green-100">
               <LockKeyhole
-                className="h-5 w-5 text-slate-400"
+                className="h-5 w-5 text-slate-600"
                 aria-hidden="true"
               />
               <input
@@ -185,7 +185,7 @@ function RestablecerContrasena() {
               <button
                 type="button"
                 onClick={() => setMostrar((valor) => !valor)}
-                className="grid h-10 w-10 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-50 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
+                className="grid h-10 w-10 place-items-center rounded-lg text-slate-600 transition hover:bg-slate-50 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
                 aria-label={mostrar ? "Ocultar contraseñas" : "Mostrar contraseñas"}
               >
                 {mostrar ? (
@@ -235,7 +235,7 @@ function RestablecerContrasena() {
                 <li
                   key={criterio.texto}
                   className={`flex items-center gap-2 text-xs ${
-                    criterio.cumple ? "text-green-700" : "text-slate-500"
+                    criterio.cumple ? "text-green-700" : "text-slate-600"
                   }`}
                 >
                   <span

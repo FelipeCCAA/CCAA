@@ -119,7 +119,7 @@ function TablaSemanal({ ejecucion }: { ejecucion: EjecucionMRP }) {
                   <td className={claseCelda}>
                     <span
                       className={
-                        falta ? "font-semibold text-amber-700" : "text-slate-400"
+                        falta ? "font-semibold text-amber-700" : "text-slate-600"
                       }
                     >
                       {numero(r.necesidad_neta)}
@@ -129,7 +129,7 @@ function TablaSemanal({ ejecucion }: { ejecucion: EjecucionMRP }) {
                     {numero(r.compra_sugerida)}
                   </td>
                   <td className={claseCelda}>
-                    <span className={falta ? "text-slate-700" : "text-slate-400"}>
+                    <span className={falta ? "text-slate-700" : "text-slate-600"}>
                       {r.fecha_sugerida_orden}
                     </span>
                   </td>
@@ -345,8 +345,8 @@ function Mrp() {
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
 
-              <p className="flex items-center gap-2 text-sm text-slate-500">
-                <CalendarClock className="h-4 w-4 text-slate-400" />
+              <p className="flex items-center gap-2 text-sm text-slate-600">
+                <CalendarClock className="h-4 w-4 text-slate-600" />
                 Corte {aMostrar.fecha_corte} · horizonte hasta{" "}
                 {aMostrar.horizonte_hasta}
                 {reciente && (
@@ -410,7 +410,7 @@ function Mrp() {
                     <td className={`${claseCelda} text-slate-600`}>
                       {e.horizonte_hasta}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {e.resultados.length}
                     </td>
                   </tr>
@@ -503,7 +503,7 @@ function Mrp() {
                             className={
                               Number(m.faltante) > 0
                                 ? "font-semibold text-amber-700"
-                                : "text-slate-500"
+                                : "text-slate-600"
                             }
                           >
                             {numero(m.faltante)} {m.unidad}

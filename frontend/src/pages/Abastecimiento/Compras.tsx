@@ -168,11 +168,11 @@ function Compras() {
 
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 font-medium text-slate-800">
-                        <FileText className="h-4 w-4 text-slate-400" />
+                        <FileText className="h-4 w-4 text-slate-600" />
                         {s.numero}
                         <Estado valor={s.estado} />
                       </p>
-                      <p className="mt-1 text-sm text-slate-500">{s.motivo}</p>
+                      <p className="mt-1 text-sm text-slate-600">{s.motivo}</p>
                     </div>
 
                     <div className="flex shrink-0 flex-wrap gap-2">
@@ -221,7 +221,7 @@ function Compras() {
                       )}
 
                       {PUEDE_DECIDIRSE.includes(s.estado) && s.solicitante === yo && (
-                        <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs text-slate-500">
+                        <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs text-slate-600">
                           La aprueba otra persona
                         </span>
                       )}
@@ -261,7 +261,7 @@ function Compras() {
                             <td className={`${claseCelda} text-slate-600`}>
                               {d.fecha_requerida}
                             </td>
-                            <td className={`${claseCelda} text-slate-500`}>
+                            <td className={`${claseCelda} text-slate-600`}>
                               {d.origen_mrp ? "MRP" : "manual"}
                             </td>
                           </tr>
@@ -315,7 +315,7 @@ function Compras() {
                     <tr key={o.id} className="border-t border-slate-100">
                       <td className={`${claseCelda} font-medium text-slate-800`}>
                         <span className="inline-flex items-center gap-2">
-                          <ShoppingCart className="h-4 w-4 text-slate-400" />
+                          <ShoppingCart className="h-4 w-4 text-slate-600" />
                           {o.numero}
                         </span>
                       </td>
@@ -328,7 +328,7 @@ function Compras() {
                       <td className={claseCelda}>
                         <Estado valor={o.estado} />
                       </td>
-                      <td className={`${claseCelda} text-slate-500`}>
+                      <td className={`${claseCelda} text-slate-600`}>
                         {numero(recibido)} de {numero(pedido)}
                       </td>
                     </tr>
@@ -370,7 +370,7 @@ function Compras() {
       )}
 
       <Tarjeta titulo="Lo que falta en esta pestaña">
-        <ul className="space-y-2 text-sm text-slate-500">
+        <ul className="space-y-2 text-sm text-slate-600">
           <li>
             · <span className="font-medium text-slate-700">Recepción contra orden</span>,
             que es lo que crea el lote y lo manda a cuarentena. El servicio

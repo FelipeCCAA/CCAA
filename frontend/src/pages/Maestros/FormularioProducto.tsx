@@ -61,7 +61,7 @@ function Campo({
         {etiqueta}
       </span>
       {children}
-      {ayuda && <span className="mt-1 block text-xs text-slate-400">{ayuda}</span>}
+      {ayuda && <span className="mt-1 block text-xs text-slate-600">{ayuda}</span>}
     </label>
   );
 }
@@ -196,7 +196,7 @@ function FormularioProducto({
               {producto ? "Editar producto" : "Nuevo producto"}
             </h2>
 
-            <p className="mt-0.5 text-sm text-slate-500">
+            <p className="mt-0.5 text-sm text-slate-600">
               El SKU se genera con los atributos: no se escribe a mano.
             </p>
 
@@ -205,7 +205,7 @@ function FormularioProducto({
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
@@ -287,7 +287,7 @@ function FormularioProducto({
 
             <h3 className="text-sm font-semibold text-slate-800">SKU</h3>
 
-            <p className="mt-1 mb-5 text-sm text-slate-400">
+            <p className="mt-1 mb-5 text-sm text-slate-600">
               Cuatro atributos más el código de cliente del mandante. Se compone
               solo desde catálogos: no admite valores inventados.
             </p>
@@ -319,7 +319,7 @@ function FormularioProducto({
                       : "sin código de cliente"}
                 </div>
 
-                <span className="mt-1 block text-xs text-slate-400">
+                <span className="mt-1 block text-xs text-slate-600">
                   {mandante && !mandante.codigo_cliente
                     ? `Asígnale uno a «${mandante.nombre}» en la pestaña Mandantes.`
                     : "Lo define el mandante: no se elige aquí para que no haya dos copias que se contradigan."}
@@ -369,7 +369,7 @@ function FormularioProducto({
                   <p className="text-sm font-medium text-slate-700">
                     Todavía sin SKU
                   </p>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="mt-1 text-sm text-slate-600">
                     Falta: {faltantes.join(", ")}. El producto se guarda igual y
                     conserva el código que tenga.
                   </p>
@@ -378,13 +378,13 @@ function FormularioProducto({
               ) : (
 
                 <>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-600">
                     {producto?.codigo ? "SKU actual" : "SKU al guardar"}
                   </p>
                   <p className="mt-0.5 font-mono text-lg font-medium tabular-nums text-slate-800">
                     {producto?.codigo || "se genera al guardar"}
                   </p>
-                  <p className="mt-1 text-xs text-slate-400">
+                  <p className="mt-1 text-xs text-slate-600">
                     Lo compone el servidor con estos atributos. Si cambias uno,
                     el código se recalcula.
                   </p>

@@ -168,7 +168,7 @@ function FormularioVale({
           <button
             type="button"
             onClick={onCerrar}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
           >
             <X className="h-5 w-5" />
           </button>
@@ -399,7 +399,7 @@ function Numero({
         value={valor}
         readOnly={soloLectura}
         onChange={(e) => onChange(e.target.value)}
-        className={`control ${soloLectura ? "bg-slate-50 text-slate-500" : ""}`}
+        className={`control ${soloLectura ? "bg-slate-50 text-slate-600" : ""}`}
       />
     </Campo>
   );

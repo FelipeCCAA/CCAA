@@ -393,7 +393,7 @@ function Maestros() {
 
   const celda = "px-4 py-3 text-sm";
   const encabezado =
-    "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500";
+    "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600";
 
   return (
     <div className="px-8 py-10">
@@ -405,11 +405,11 @@ function Maestros() {
           <div>
 
             <h1 className="flex items-center gap-3 text-3xl font-bold text-slate-800">
-              <Database className="h-7 w-7 text-slate-400" />
+              <Database className="h-7 w-7 text-slate-600" />
               Maestros
             </h1>
 
-            <p className="mt-2 max-w-3xl text-slate-500">
+            <p className="mt-2 max-w-3xl text-slate-600">
               Productos, especificaciones, máquinas y estanques: la
               configuración del entorno productivo. El SKU del producto se
               genera desde sus atributos, no se escribe a mano.
@@ -418,7 +418,7 @@ function Maestros() {
           </div>
 
           {!puedeEditar && (
-            <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500">
+            <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
               Tu rol permite consultar, no modificar los maestros.
             </p>
           )}
@@ -438,7 +438,7 @@ function Maestros() {
               className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium ${
                 pestana === p.clave
                   ? "border-green-700 text-green-800"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
+                  : "border-transparent text-slate-600 hover:text-slate-700"
               }`}
             >
               {p.etiqueta}
@@ -456,7 +456,7 @@ function Maestros() {
 
         {cargando ? (
 
-          <p className="px-6 py-10 text-center text-sm text-slate-400">Cargando…</p>
+          <p className="px-6 py-10 text-center text-sm text-slate-600">Cargando…</p>
 
         ) : (
 
@@ -483,7 +483,7 @@ function Maestros() {
 
                 {productos.length === 0 ? (
 
-                  <p className="px-6 py-10 text-center text-sm text-slate-400">
+                  <p className="px-6 py-10 text-center text-sm text-slate-600">
                     Todavía no hay productos.
                   </p>
 
@@ -511,7 +511,7 @@ function Maestros() {
 
                             <td className={`${celda} font-mono tabular-nums`}>
                               {p.codigo || (
-                                <span className="font-sans text-slate-400">
+                                <span className="font-sans text-slate-600">
                                   sin SKU
                                 </span>
                               )}
@@ -520,7 +520,7 @@ function Maestros() {
                             <td className={`${celda} font-medium text-slate-800`}>
                               {p.nombre}
                               {!p.activo && (
-                                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                                   Inactivo
                                 </span>
                               )}
@@ -530,7 +530,7 @@ function Maestros() {
                               {p.mandante_nombre}
                             </td>
 
-                            <td className={`${celda} text-slate-500`}>
+                            <td className={`${celda} text-slate-600`}>
                               {p.sku_legible
                                 ? [
                                     p.sku_legible.categoria,
@@ -546,7 +546,7 @@ function Maestros() {
                                   type="button"
                                   onClick={() => setEditandoProducto(p)}
                                   title="Editar"
-                                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                  className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </button>
@@ -621,7 +621,7 @@ function Maestros() {
                           )}
                         </td>
 
-                        <td className={`${celda} text-slate-500`}>
+                        <td className={`${celda} text-slate-600`}>
                           {productos.filter((p) => p.mandante === m.id).length}
                         </td>
 
@@ -631,7 +631,7 @@ function Maestros() {
                               type="button"
                               onClick={() => setEditandoMandante(m)}
                               title="Editar"
-                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -696,7 +696,7 @@ function Maestros() {
 
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-3">
 
-                    <p className="max-w-3xl text-sm text-slate-500">
+                    <p className="max-w-3xl text-sm text-slate-600">
                       Los rangos que decide si un lote es conforme. Un lote se
                       audita contra la versión vigente en <strong>su</strong>{" "}
                       fecha, no contra la de hoy — por eso se versiona en vez
@@ -737,7 +737,7 @@ function Maestros() {
                           <tr>
                             <td
                               colSpan={6}
-                              className="px-6 py-10 text-center text-sm text-slate-400"
+                              className="px-6 py-10 text-center text-sm text-slate-600"
                             >
                               Todavía no hay especificaciones cargadas.
                             </td>
@@ -764,7 +764,7 @@ function Maestros() {
                             <td className={`${celda} text-slate-600`}>
                               {e.vigente_desde} →{" "}
                               {e.vigente_hasta ?? (
-                                <span className="text-slate-400">sin término</span>
+                                <span className="text-slate-600">sin término</span>
                               )}
                             </td>
 
@@ -782,7 +782,7 @@ function Maestros() {
                               ))}
                             </td>
 
-                            <td className={`${celda} text-slate-500`}>
+                            <td className={`${celda} text-slate-600`}>
                               {e.fuente || "—"}
                             </td>
 
@@ -804,7 +804,7 @@ function Maestros() {
                                       setSpec({ modo: "editar", inicial: e })
                                     }
                                     title="Editar esta versión"
-                                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                    className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </button>
@@ -823,7 +823,7 @@ function Maestros() {
                   </div>
 
                   {!puedeEditarCalidad && (
-                    <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                    <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-600">
                       Solo Calidad edita las especificaciones: son las que
                       deciden qué producto sale como conforme.
                     </p>
@@ -875,11 +875,11 @@ function Maestros() {
                         <td className={`${celda} font-medium text-slate-800`}>
                           {e.nombre}
                           {!e.activo && (
-                            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                               Inactiva
                             </span>
                           )}
-                          <div className="font-mono text-xs font-normal text-slate-400">
+                          <div className="font-mono text-xs font-normal text-slate-600">
                             {e.codigo}
                           </div>
                         </td>
@@ -892,11 +892,11 @@ function Maestros() {
                               Resta leche
                             </span>
                           ) : (
-                            <span className="text-slate-400">No resta</span>
+                            <span className="text-slate-600">No resta</span>
                           )}
                         </td>
 
-                        <td className={`${celda} text-slate-500`}>
+                        <td className={`${celda} text-slate-600`}>
                           orden {e.orden}
                         </td>
 
@@ -906,7 +906,7 @@ function Maestros() {
                               type="button"
                               onClick={() => setEditandoEquipo(e)}
                               title="Editar"
-                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -921,7 +921,7 @@ function Maestros() {
 
                 </table>
 
-                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-600">
                   «Resta leche» decide qué bloques consumen del balance
                   semanal. Solo los evaporadores: una línea recibe lo que el
                   evaporador ya produjo, y marcar ambos contaría la misma leche
@@ -938,7 +938,7 @@ function Maestros() {
 
               <section className="rounded-2xl border border-slate-200 bg-white">
 
-                <p className="border-b border-slate-100 px-6 py-3 text-sm text-slate-500">
+                <p className="border-b border-slate-100 px-6 py-3 text-sm text-slate-600">
                   El checklist de liberación. La <strong>frecuencia</strong> decide
                   dónde se lleva cada formulario: «por lote» va en el expediente
                   del lote; el resto pertenece al equipo y su período, y se
@@ -966,11 +966,11 @@ function Maestros() {
 
                         <tr key={d.id} className="border-t border-slate-100">
 
-                          <td className={`${celda} text-slate-400`}>{d.orden}</td>
+                          <td className={`${celda} text-slate-600`}>{d.orden}</td>
 
                           <td className={`${celda} font-medium text-slate-800`}>
                             {d.nombre}
-                            <div className="font-mono text-xs font-normal text-slate-400">
+                            <div className="font-mono text-xs font-normal text-slate-600">
                               {d.codigo || "sin código"}
                             </div>
                           </td>
@@ -1002,7 +1002,7 @@ function Maestros() {
                             )}
                           </td>
 
-                          <td className={`${celda} text-slate-500`}>
+                          <td className={`${celda} text-slate-600`}>
                             {d.campos > 0
                               ? `${d.campos} campos`
                               : "solo atestación"}
@@ -1019,12 +1019,12 @@ function Maestros() {
                 </div>
 
                 {!puedeEditarCalidad && (
-                  <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                  <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-600">
                     Solo Calidad cambia el checklist: es quien responde por él.
                   </p>
                 )}
 
-                <p className="border-t border-slate-100 px-6 py-3 text-xs text-slate-400">
+                <p className="border-t border-slate-100 px-6 py-3 text-xs text-slate-600">
                   La plantilla de cada formulario —qué campos pide— se edita en el
                   admin de Django. Se construye contra el formato operacional:
                   una plantilla inventada se completa igual y da el documento por
@@ -1084,7 +1084,7 @@ function Maestros() {
                         <td className={`${celda} tabular-nums text-slate-600`}>
                           {Number(s.capacidad_l).toLocaleString("es-CL")} L
                         </td>
-                        <td className={`${celda} text-slate-500`}>
+                        <td className={`${celda} text-slate-600`}>
                           {s.activo ? "Activo" : "Inactivo"}
                         </td>
                         <td className={`${celda} text-right`}>
@@ -1104,7 +1104,7 @@ function Maestros() {
                                 })
                               }
                               title="Editar"
-                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -1118,7 +1118,7 @@ function Maestros() {
 
                 </table>
 
-                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-600">
                   La capacidad se configura aquí; la <strong>ocupación</strong> no,
                   porque es el saldo del libro de movimientos y se ve en Recepción
                   y silos. Escribirla a mano la desalinearía de los movimientos que
@@ -1156,7 +1156,7 @@ function Maestros() {
 
                 {camiones.length === 0 ? (
 
-                  <p className="px-6 py-10 text-center text-sm text-slate-400">
+                  <p className="px-6 py-10 text-center text-sm text-slate-600">
                     Todavía no hay camiones.
                   </p>
 
@@ -1183,7 +1183,7 @@ function Maestros() {
                           <td className={`${celda} font-medium text-slate-800`}>
                             {v.placa}
                             {v.numero && (
-                              <span className="ml-2 text-xs text-slate-400">
+                              <span className="ml-2 text-xs text-slate-600">
                                 n.º {v.numero}
                               </span>
                             )}
@@ -1193,7 +1193,7 @@ function Maestros() {
                             {v.transportista || "—"}
                           </td>
 
-                          <td className={`${celda} text-slate-500`}>
+                          <td className={`${celda} text-slate-600`}>
                             {[v.chofer_am, v.chofer_pm].filter(Boolean).join(" · ") || "—"}
                           </td>
 
@@ -1224,7 +1224,7 @@ function Maestros() {
                                   })
                                 }
                                 title="Editar"
-                                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                               >
                                 <Pencil className="h-4 w-4" />
                               </button>
@@ -1291,7 +1291,7 @@ function Maestros() {
                         <td className={`${celda} font-medium text-slate-800`}>
                           {k.codigo}
                           {k.nombre && (
-                            <div className="text-xs font-normal text-slate-400">
+                            <div className="text-xs font-normal text-slate-600">
                               {k.nombre}
                             </div>
                           )}
@@ -1299,12 +1299,12 @@ function Maestros() {
 
                         <td className={`${celda} text-slate-600`}>
                           {k.producto_nombre || "—"}
-                          <div className="text-xs text-slate-400">
+                          <div className="text-xs text-slate-600">
                             {k.mandante_nombre || ""}
                           </div>
                         </td>
 
-                        <td className={`${celda} text-slate-500`}>
+                        <td className={`${celda} text-slate-600`}>
                           {k.categoria_etiqueta}
                         </td>
 
@@ -1333,7 +1333,7 @@ function Maestros() {
                                 })
                               }
                               title="Editar"
-                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -1348,7 +1348,7 @@ function Maestros() {
 
                 </table>
 
-                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">
+                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-600">
                   El <strong>rendimiento</strong> convierte horas de programa en
                   litros de leche: es lo que hace que el balance semanal cuadre o
                   no. Un código es una forma de programar un producto, no un
@@ -1363,7 +1363,7 @@ function Maestros() {
 
         )}
 
-        <p className="mt-6 text-xs text-slate-400">
+        <p className="mt-6 text-xs text-slate-600">
           Lo que decide sobre la calidad del producto —especificaciones y
           checklist— lo escribe Calidad, no Administración. Del admin de Django
           queda una cosa: la <strong>plantilla</strong> de cada documento de

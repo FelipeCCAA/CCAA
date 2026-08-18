@@ -164,7 +164,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
     "rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-green-500 focus:outline-none";
 
   if (cargando) {
-    return <p className="text-sm text-slate-400">Cargando la inocuidad del lote…</p>;
+    return <p className="text-sm text-slate-600">Cargando la inocuidad del lote…</p>;
   }
 
   const bloqueado =
@@ -179,11 +179,11 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
         <div>
 
           <h3 className="flex items-center gap-2 text-sm font-medium text-slate-700">
-            <ShieldCheck className="h-4 w-4 text-slate-400" />
+            <ShieldCheck className="h-4 w-4 text-slate-600" />
             Inocuidad
           </h3>
 
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-600">
             PCC 1 de uperización y monitoreos PPRO. Lo que se registra aquí
             decide si el lote se puede liberar.
           </p>
@@ -202,13 +202,13 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
 
       <div className="mt-4">
 
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
           Control de proceso · PCC 1
         </h4>
 
         {controles.length === 0 ? (
 
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-600">
             Sin controles registrados.
           </p>
 
@@ -222,7 +222,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
 
                 <span className="font-medium text-slate-800">{c.equipo_etiqueta}</span>
 
-                <span className="text-sm text-slate-500">{c.fecha}</span>
+                <span className="text-sm text-slate-600">{c.fecha}</span>
 
                 {c.pcc1.cumple ? (
                   <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
@@ -234,7 +234,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
                   </span>
                 )}
 
-                <span className="ml-auto text-xs text-slate-400">
+                <span className="ml-auto text-xs text-slate-600">
                   límite {c.pcc1_temp_min ?? "—"} °C · {c.pcc1_caudal_max ?? "—"} kg/h
                 </span>
 
@@ -271,7 +271,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
                 <ul className="mt-3 divide-y divide-slate-100">
                   {c.lecturas.map((l) => (
                     <li key={l.id} className="flex items-center gap-3 py-2 text-sm">
-                      <span className="w-14 tabular-nums text-slate-500">{l.hora}</span>
+                      <span className="w-14 tabular-nums text-slate-600">{l.hora}</span>
                       <span className="text-slate-700">
                         {Object.entries(l.valores)
                           .map(([k, v]) => `${k} ${v}`)
@@ -288,7 +288,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
                             )
                           }
                           title="Quitar esta lectura"
-                          className="ml-auto rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                          className="ml-auto rounded-lg p-1 text-slate-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -428,7 +428,7 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
               Cancelar
             </button>
 
-            <p className="w-full text-xs text-slate-400">
+            <p className="w-full text-xs text-slate-600">
               Los límites son los del formato de ese equipo: el VEB trabaja a
               80,0 °C y 14.175 kg/h; el Scheffers 2, a 81,2 °C y 17.100 kg/h.
               Se guardan en el control para poder auditarlo contra lo que regía
@@ -444,13 +444,13 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
 
       <div className="mt-6">
 
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
           Monitoreos PPRO
         </h4>
 
         {monitoreos.length === 0 ? (
 
-          <p className="mt-2 text-sm text-slate-500">Sin monitoreos registrados.</p>
+          <p className="mt-2 text-sm text-slate-600">Sin monitoreos registrados.</p>
 
         ) : (
 
@@ -466,10 +466,10 @@ function PanelInocuidad({ loteId, puedeEditar, alCambiar }: Props) {
                     monitoreo del mismo chequeo hecho en otra: sin ella, dos
                     filas de la lista se leen idénticas. */}
                 {m.equipo_etiqueta && (
-                  <span className="text-sm text-slate-500">{m.equipo_etiqueta}</span>
+                  <span className="text-sm text-slate-600">{m.equipo_etiqueta}</span>
                 )}
 
-                <span className="text-sm text-slate-500">{m.fecha}</span>
+                <span className="text-sm text-slate-600">{m.fecha}</span>
 
                 {!m.tiene_no_ok ? (
                   <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
