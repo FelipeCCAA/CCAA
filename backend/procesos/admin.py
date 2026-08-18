@@ -4,6 +4,7 @@ from .models import (
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, Proceso,
     SalidaProceso,
 )
+from usuarios.admin_helpers import OrganizacionInternaAdminMixin
 
 
 class EntradaInline(admin.TabularInline):
@@ -17,12 +18,13 @@ class SalidaInline(admin.TabularInline):
 
 
 @admin.register(EjecucionProceso)
-class EjecucionProcesoAdmin(admin.ModelAdmin):
+class EjecucionProcesoAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
+    exclude = ("sucursal",)
     list_display = ("codigo", "etapa", "estado", "equipo", "responsable", "inicio", "termino")
-    list_filter = ("estado", "etapa__tipo", "sucursal")
+    list_filter = ("estado", "etapa__tipo")
     search_fields = ("codigo", "etapa__nombre", "responsable__username")
     inlines = (EntradaInline, SalidaInline)
-    list_select_related = ("etapa", "equipo", "responsable", "sucursal")
+    list_select_related = ("etapa", "equipo", "responsable")
 
 
 admin.site.register([Proceso, EtapaProceso, EventoProceso])

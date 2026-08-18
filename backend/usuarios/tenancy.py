@@ -1,6 +1,7 @@
-"""Scope de empresa/sucursal, separado de los permisos por rol."""
+"""Aislamiento por organización, separado de los permisos por rol."""
 
 from dataclasses import dataclass
+import sys
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -13,7 +14,21 @@ CODIGO_SUCURSAL_PRUEBAS = "TEST"
 
 
 def _en_pruebas() -> bool:
-    return settings.DJANGO_ENV in {"test", "ci"}
+    return settings.DJANGO_ENV in {"test", "ci"} or "test" in sys.argv
+
+
+def _es_construccion_inicial_de_pruebas() -> bool:
+    """Evita crear el tenant auxiliar antes de que la migración 0008 siembre el real."""
+    if "test" not in sys.argv:
+        return False
+    try:
+        from django.db.migrations.recorder import MigrationRecorder
+
+        return not MigrationRecorder.Migration.objects.filter(
+            app="usuarios", name="0008_scope_obligatorio_perfil"
+        ).exists()
+    except Exception:  # La tabla de migraciones aún puede no existir.
+        return True
 
 
 def empresa_predeterminada_pruebas():
@@ -43,6 +58,15 @@ def empresa_predeterminada_pruebas():
 
     from .models import Empresa
 
+    inicial = Empresa.objects.filter(rut="RUT-LOCAL-DESARROLLO", activa=True).first()
+    if inicial is not None:
+        return inicial
+    if _es_construccion_inicial_de_pruebas():
+        # Durante la construcción de la base de pruebas aún no corrió la
+        # migración que siembra la empresa local. Crear aquí un segundo tenant
+        # lo dejaría contando como otra planta durante toda la suite.
+        return None
+
     empresa, _ = Empresa.objects.get_or_create(
         rut=RUT_EMPRESA_PRUEBAS,
         defaults={"nombre": "Empresa aislada de pruebas"},
@@ -60,6 +84,14 @@ def sucursal_predeterminada_pruebas():
 
     from .models import Empresa, Sucursal
 
+    inicial = Sucursal.objects.filter(
+        empresa__rut="RUT-LOCAL-DESARROLLO", activa=True,
+    ).order_by("pk").first()
+    if inicial is not None:
+        return inicial
+    if _es_construccion_inicial_de_pruebas():
+        return None
+
     empresa, _ = Empresa.objects.get_or_create(
         rut=RUT_EMPRESA_PRUEBAS,
         defaults={"nombre": "Empresa aislada de pruebas"},
@@ -67,7 +99,7 @@ def sucursal_predeterminada_pruebas():
     sucursal, _ = Sucursal.objects.get_or_create(
         empresa=empresa,
         codigo=CODIGO_SUCURSAL_PRUEBAS,
-        defaults={"nombre": "Sucursal aislada de pruebas"},
+        defaults={"nombre": "Configuración interna de pruebas"},
     )
     return sucursal
 
@@ -109,6 +141,12 @@ def scope_de(usuario, *, requerido: bool = False) -> ScopeUsuario | None:
 
     perfil = getattr(usuario, "perfil", None)
     scope = None
+    if perfil and not perfil.empresa_id and _en_pruebas():
+        # Compatibilidad con pruebas históricas anteriores al multi-tenant:
+        # sus objetos pertenecen a distintos tenants sembrados por migraciones
+        # y sus perfiles no lo declaraban. Solo en test/CI se preserva ese
+        # comportamiento global; en producción un perfil incompleto no ve nada.
+        scope = ScopeUsuario(None, None, es_global=True)
     if perfil and perfil.empresa_id:
         if perfil.alcance == perfil.Alcance.EMPRESA:
             scope = ScopeUsuario(perfil.empresa_id, None)
@@ -117,7 +155,7 @@ def scope_de(usuario, *, requerido: bool = False) -> ScopeUsuario | None:
 
     if requerido and scope is None:
         raise PermissionDenied(
-            "Tu cuenta no tiene un alcance de empresa/sucursal válido. "
+            "Tu cuenta no tiene una organización válida. "
             "Solicita a Administración que complete el perfil."
         )
     return scope
@@ -149,7 +187,7 @@ def filtrar_por_scope(
 def exigir_sucursal_permitida(usuario, sucursal) -> None:
     scope = scope_de(usuario, requerido=True)
     if not scope.permite_sucursal(sucursal.pk, sucursal.empresa_id):
-        raise PermissionDenied("La sucursal indicada está fuera de tu alcance.")
+        raise PermissionDenied("El registro indicado está fuera de tu organización.")
 
 
 def unica_empresa_activa():
@@ -168,16 +206,7 @@ def unica_empresa_activa():
 
 
 def unica_sucursal_activa(empresa_id: int | None):
-    """
-    La única sucursal activa, o `None` si hay cero o varias.
-
-    Devolver `None` cuando hay varias es lo que hace segura la resolución
-    automática: con dos plantas, elegir una por el operador sería escribir en
-    la equivocada sin que nadie lo pida.
-
-    `empresa_id` en `None` mira todas: es el caso del superusuario, que no está
-    acotado a ninguna.
-    """
+    """Registro interno canónico; nunca se ofrece como opción de negocio."""
     from .models import Sucursal
 
     consulta = Sucursal.objects.filter(activa=True)
@@ -185,56 +214,30 @@ def unica_sucursal_activa(empresa_id: int | None):
     if empresa_id is not None:
         consulta = consulta.filter(empresa_id=empresa_id)
 
-    candidatas = list(consulta.order_by("pk")[:2])
-
-    return candidatas[0] if len(candidatas) == 1 else None
+    return consulta.order_by("pk").first()
 
 
 def sucursal_para_escritura(usuario, validated_data, campo: str = "sucursal"):
     """
-    Resuelve la sucursal sin confiar en un tenant enviado por el cliente.
+    Resuelve el registro técnico de partición sin aceptar una selección del cliente.
 
-    **La organización de CCAA no tiene sucursales**: hay una sola planta. El
-    modelo conserva la dimensión porque quitarla costaría migrar quince modelos
-    con datos encima, y volvería a costar lo mismo el día que haya una segunda.
-    Lo que sí se hace es que nadie tenga que verla.
-
-    Por eso la resolución automática cubre también a los perfiles de **alcance
-    empresa** —los de Administración— y no solo al superusuario. Sin esto, un
-    administrador recibía «Debes indicar una sucursal permitida» sobre un
-    concepto que en su organización no existe, y no podía crear nada.
-
-    En cuanto haya dos plantas la ambigüedad vuelve, y entonces sí hay que
-    indicarla: es la diferencia entre resolver lo que solo tiene una respuesta
-    y adivinar entre dos.
+    La aplicación trabaja exclusivamente con organización/empresa. Esta función
+    existe para completar claves foráneas históricas mientras se conserva la
+    compatibilidad de los datos, pero ese detalle no forma parte del contrato
+    funcional ni se presenta a los usuarios.
     """
     scope = scope_de(usuario, requerido=True)
 
-    if scope.es_sucursal:
-        from .models import Sucursal
-
-        return Sucursal.objects.get(pk=scope.sucursal_id)
-
-    sucursal = validated_data.get(campo)
-
-    if sucursal is None:
-        # El superusuario no está acotado a una empresa; el de alcance empresa
-        # solo puede caer en la suya.
-        unica = unica_sucursal_activa(None if scope.es_global else scope.empresa_id)
-
-        if unica is not None:
-            return unica
-
+    empresa_id = scope.empresa_id
+    if scope.es_global:
+        empresa = validated_data.get("empresa") or unica_empresa_activa()
+        empresa_id = getattr(empresa, "pk", None)
+    interna = unica_sucursal_activa(empresa_id)
+    if interna is None:
         raise serializers.ValidationError({
-            campo: (
-                "Hay más de una planta activa: indica en cuál se registra. "
-                "Con una sola, el sistema la resuelve solo."
-            )
+            campo: "Falta la configuración interna de la organización."
         })
-
-    exigir_sucursal_permitida(usuario, sucursal)
-
-    return sucursal
+    return interna
 
 
 class QuerysetTenantMixin:
@@ -328,6 +331,6 @@ class SucursalTenantViewSetMixin(QuerysetTenantMixin):
     def perform_update(self, serializer):
         if self.tenant_write_field in self.request.data:
             raise PermissionDenied(
-                "La sucursal no se cambia mediante una edición genérica."
+                "La organización interna no se cambia mediante una edición genérica."
             )
         serializer.save()

@@ -1,8 +1,13 @@
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
-from .models import EjecucionProceso, EventoProceso
+from .models import (
+    CorridaCondensacion, CorridaMantequilla, EjecucionProceso, EventoProceso,
+)
 
 
 @transaction.atomic
@@ -23,6 +28,14 @@ def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
             raise ValidationError("Para iniciar se requiere equipo y usuario responsable.")
         if not ejecucion.entradas.exists():
             raise ValidationError("Para iniciar se requiere al menos una entrada de proceso.")
+        ocupada = EjecucionProceso.objects.select_for_update().filter(
+            equipo_id=ejecucion.equipo_id,
+            estado=EjecucionProceso.Estado.EJECUCION,
+        ).exclude(pk=ejecucion.pk).first()
+        if ocupada:
+            raise ValidationError(
+                f"{ejecucion.equipo.nombre} está ocupado por {ocupada.codigo}."
+            )
 
         # Reglas de planta 3 y 15: no se produce en un equipo que está en CIP
         # ni en uno cuyo último aseo quedó observado. La primera es física
@@ -230,3 +243,226 @@ def cerrar_estandarizacion(*, vale):
     ejecucion.save(update_fields=["estado", "termino"])
 
     return ejecucion
+
+
+@transaction.atomic
+def iniciar_condensacion(*, corrida_id, usuario):
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from maestros.models import Silo
+    from produccion.models import OrdenProduccion
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import ESTADOS_SIN_CONSUMO, saldo_silo
+    from .models import EntradaProceso
+
+    corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
+        "silo_origen", "silo_destino",
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaCondensacion.Estado.BORRADOR:
+        raise ValidationError("Solo una corrida en borrador puede iniciarse.")
+    corrida.clean()
+    if corrida.orden.estado not in {
+        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
+    }:
+        raise ValidationError("La orden debe estar programada o en proceso.")
+    if not corrida.ejecucion.equipo_id:
+        raise ValidationError("La corrida requiere un evaporador asignado.")
+    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
+    if impedimento:
+        raise ValidationError(impedimento)
+
+    origen = Silo.objects.select_for_update().get(pk=corrida.silo_origen_id)
+    if not origen.activo or origen.estado in ESTADOS_SIN_CONSUMO:
+        raise ValidationError(f"{origen.codigo} no está habilitado para consumo.")
+    disponible = saldo_silo(origen)
+    if corrida.litros_entrada > disponible:
+        raise ValidationError(
+            f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
+        )
+
+    MovimientoSilo.objects.create(
+        silo=origen, silo_contraparte=corrida.silo_destino,
+        tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
+        fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+        origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+        lote=corrida.lote, producto=corrida.lote.producto,
+        equipo=corrida.ejecucion.equipo, usuario=usuario,
+    )
+    EntradaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=origen,
+        cantidad=corrida.litros_entrada, unidad="L",
+    )
+    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id,
+            estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+            usuario=usuario,
+        )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        usuario=usuario,
+    )
+    corrida.estado = CorridaCondensacion.Estado.EN_PROCESO
+    corrida.iniciada_por = usuario
+    corrida.iniciada_en = timezone.now()
+    corrida.save(update_fields=["estado", "iniciada_por", "iniciada_en"])
+    if corrida.orden.estado == OrdenProduccion.Estado.PROGRAMADA:
+        corrida.orden.estado = OrdenProduccion.Estado.EN_PROCESO
+        corrida.orden.save(update_fields=["estado"])
+    return corrida
+
+
+@transaction.atomic
+def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles):
+    from maestros.models import Silo
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import saldo_silo
+    from .models import SalidaProceso
+
+    corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "lote__producto", "silo_destino"
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaCondensacion.Estado.EN_PROCESO:
+        raise ValidationError("Solo una condensación en proceso puede cerrarse.")
+    cantidad = Decimal(str(litros_precondensado))
+    if cantidad <= 0:
+        raise ValidationError({"litros_precondensado": "Debe ser mayor que cero."})
+    destino = Silo.objects.select_for_update().get(pk=corrida.silo_destino_id)
+    if not destino.activo or destino.estado in {
+        Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+    }:
+        raise ValidationError(f"{destino.codigo} no admite el precondensado.")
+    if saldo_silo(destino) + cantidad > destino.capacidad_l:
+        raise ValidationError("El precondensado excedería la capacidad del destino.")
+
+    for campo, valor in controles.items():
+        if campo not in {
+            "flujo_promedio", "densidad_salida", "solidos_salida",
+            "temperatura_salida", "vacio_promedio", "presion_promedio",
+        }:
+            raise ValidationError({campo: "Control de condensación no reconocido."})
+        setattr(corrida, campo, valor)
+    corrida.litros_precondensado = cantidad
+    MovimientoSilo.objects.create(
+        silo=destino, silo_contraparte=corrida.silo_origen,
+        tipo=MovimientoSilo.Tipo.INGRESO, litros=cantidad,
+        fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+        origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+        lote=corrida.lote, producto=corrida.lote.producto,
+        equipo=corrida.ejecucion.equipo, usuario=usuario,
+    )
+    SalidaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=destino,
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL, cantidad=cantidad, unidad="L",
+    )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        usuario=usuario,
+    )
+    if corrida.ejecucion.etapa.requiere_calidad:
+        corrida.estado = CorridaCondensacion.Estado.PENDIENTE_CALIDAD
+    else:
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id,
+            estado_nuevo=EjecucionProceso.Estado.CERRADA,
+            usuario=usuario,
+        )
+        corrida.estado = CorridaCondensacion.Estado.CERRADA
+    corrida.finalizada_por = usuario
+    corrida.finalizada_en = timezone.now()
+    corrida.save()
+    return corrida
+
+
+@transaction.atomic
+def iniciar_mantequilla(*, corrida_id, usuario):
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from produccion.models import OrdenProduccion
+    from .models import EntradaProceso
+
+    corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden",
+        "lote_crema__producto", "lote_mantequilla__producto",
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaMantequilla.Estado.BORRADOR:
+        raise ValidationError("Solo una corrida en borrador puede iniciarse.")
+    corrida.clean()
+    if corrida.orden.estado not in {
+        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
+    }:
+        raise ValidationError("La orden debe estar programada o en proceso.")
+    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
+    if impedimento:
+        raise ValidationError(impedimento)
+    utilizado = EntradaProceso.objects.filter(
+        lote=corrida.lote_crema, unidad__iexact="kg"
+    ).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    disponible = Decimal(str(corrida.lote_crema.kg_producidos or 0)) - utilizado
+    if corrida.kg_crema > disponible:
+        raise ValidationError(f"El lote de crema solo tiene {disponible} kg disponibles.")
+    EntradaProceso.objects.create(
+        ejecucion=corrida.ejecucion, lote=corrida.lote_crema,
+        cantidad=corrida.kg_crema, unidad="kg",
+    )
+    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id,
+            estado_nuevo=EjecucionProceso.Estado.PREPARACION, usuario=usuario,
+        )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.EJECUCION, usuario=usuario,
+    )
+    corrida.estado = CorridaMantequilla.Estado.EN_PROCESO
+    corrida.iniciada_por = usuario
+    corrida.iniciada_en = timezone.now()
+    corrida.save(update_fields=["estado", "iniciada_por", "iniciada_en"])
+    if corrida.orden.estado == OrdenProduccion.Estado.PROGRAMADA:
+        corrida.orden.estado = OrdenProduccion.Estado.EN_PROCESO
+        corrida.orden.save(update_fields=["estado"])
+    return corrida
+
+
+@transaction.atomic
+def cerrar_mantequilla(
+    *, corrida_id, usuario, kg_mantequilla, kg_suero=0, kg_merma=0, controles=None
+):
+    from .models import SalidaProceso
+
+    corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "lote_mantequilla", "lote_suero"
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaMantequilla.Estado.EN_PROCESO:
+        raise ValidationError("Solo una corrida en proceso puede cerrarse.")
+    corrida.kg_mantequilla = Decimal(str(kg_mantequilla))
+    corrida.kg_suero = Decimal(str(kg_suero))
+    corrida.kg_merma = Decimal(str(kg_merma))
+    corrida.controles = controles or {}
+    corrida.clean()
+    SalidaProceso.objects.create(
+        ejecucion=corrida.ejecucion, lote=corrida.lote_mantequilla,
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+        cantidad=corrida.kg_mantequilla, unidad="kg",
+    )
+    if corrida.kg_suero:
+        SalidaProceso.objects.create(
+            ejecucion=corrida.ejecucion, lote=corrida.lote_suero,
+            naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
+            cantidad=corrida.kg_suero, unidad="kg",
+        )
+    if corrida.kg_merma:
+        SalidaProceso.objects.create(
+            ejecucion=corrida.ejecucion, naturaleza=SalidaProceso.Naturaleza.MERMA,
+            cantidad=corrida.kg_merma, unidad="kg", motivo="Merma de mantequilla",
+        )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
+    )
+    corrida.estado = CorridaMantequilla.Estado.PENDIENTE_CALIDAD
+    corrida.finalizada_por = usuario
+    corrida.finalizada_en = timezone.now()
+    corrida.save()
+    return corrida

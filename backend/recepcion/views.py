@@ -2,7 +2,7 @@ import uuid
 
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, Max, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from maestros.models import Silo
 from usuarios.areas import perfiles_del_area, usuarios_del_area
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
-from usuarios.models import PerfilUsuario, Rol, Sucursal
+from usuarios.models import PerfilUsuario, Rol
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin,
     filtrar_por_scope, scope_de, sucursal_para_escritura,
@@ -21,21 +21,24 @@ from usuarios.tenancy import (
 
 from . import dominio
 from .models import CONTROLES_POR_CAMION, CONTROLES_POR_MODULO, MovimientoSilo, Recepcion
-from .serializers import MovimientoSiloSerializer, RecepcionSerializer
+from .serializers import (
+    AjusteSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
+    TransferenciaSiloSerializer,
+)
+from .servicios import ajustar_silo, transferir_silo
 
 
-def _usuarios_recepcion(usuario, sucursal_id):
+def _usuarios_recepcion(usuario):
     """Quién puede figurar como responsable de una muestra."""
     return usuarios_del_area(
         PerfilUsuario.Area.RECEPCION,
         empresa_id=scope_de(usuario, requerido=True).empresa_id,
-        sucursal_id=sucursal_id or None,
     ).order_by("first_name", "last_name", "username")
 
 
 def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
     """
-    Crea avisos operativos solo para la misma empresa y planta.
+    Crea avisos operativos solo para la misma empresa.
 
     Pregunta **lo mismo** que `_usuarios_recepcion`. Cuando cada una lo
     preguntaba a su manera —una miraba `area` o `rol`, esta solo `area`— una
@@ -53,7 +56,6 @@ def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
             perfiles_del_area(
                 area,
                 empresa_id=recepcion.sucursal.empresa_id,
-                sucursal_id=recepcion.sucursal_id,
             ).values_list("usuario_id", flat=True)
         )
     Notificacion.objects.bulk_create([
@@ -73,7 +75,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
     tenant_relation_fields = {
-        "sucursal": ("pk", "empresa_id"),
         "vehiculo": ("sucursal_id", "sucursal__empresa_id"),
         "silo": ("sucursal_id", "sucursal__empresa_id"),
         "carga_recoleccion": (
@@ -254,18 +255,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         # Se le pasa la **instancia**, no el id que llega en el cuerpo: la
         # función comprueba el alcance sobre el objeto. Y un id inexistente se
         # responde con un 400, no con la `DoesNotExist` que antes salía como 500.
-        indicada = request.data.get("sucursal")
-        elegida = None
-
-        if indicada not in (None, ""):
-            elegida = Sucursal.objects.filter(pk=indicada).first()
-            if elegida is None:
-                return Response(
-                    {"sucursal": "La planta indicada no existe."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        sucursal = sucursal_para_escritura(request.user, {"sucursal": elegida})
+        sucursal = sucursal_para_escritura(request.user, {})
 
         generales = {
             clave: request.data.get(clave)
@@ -344,9 +334,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 )
 
             try:
-                responsable = _usuarios_recepcion(
-                    request.user, recepcion.sucursal_id
-                ).get(pk=responsable_id)
+                responsable = _usuarios_recepcion(request.user).get(pk=responsable_id)
             except (User.DoesNotExist, TypeError, ValueError):
                 return Response(
                     {"responsable": "Selecciona un usuario activo del area Recepcion."},
@@ -603,9 +591,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
     @action(detail=False, methods=["get"], url_path="catalogos-flujo")
     def catalogos_flujo(self, request):
-        scope = scope_de(request.user, requerido=True)
-        sucursal_id = scope.sucursal_id if scope.es_sucursal else None
-        usuarios = _usuarios_recepcion(request.user, sucursal_id)
+        usuarios = _usuarios_recepcion(request.user)
         return Response({
             "responsables_recepcion": [
                 {
@@ -624,7 +610,9 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
     tenant_lookup_sucursal = "silo__sucursal_id"
     tenant_lookup_empresa = "silo__sucursal__empresa_id"
     tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = MovimientoSilo.objects.select_related("silo")
+    queryset = MovimientoSilo.objects.select_related(
+        "silo", "silo_contraparte", "lote", "producto", "equipo", "usuario"
+    )
     serializer_class = MovimientoSiloSerializer
     permission_classes = [EscribeRecepcion]
 
@@ -636,6 +624,106 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
             consulta = consulta.filter(silo_id=silo)
 
         return consulta
+
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "El libro mayor es inmutable; registra un ajuste o reversa."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Los movimientos de silo no se eliminan."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def create(self, request, *args, **kwargs):
+        """Compatibilidad: POST directo solo registra ajustes auditables."""
+        if request.data.get("tipo") != MovimientoSilo.Tipo.AJUSTE:
+            return Response(
+                {"tipo": ["Ingresos y salidas solo se generan desde operaciones de dominio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        datos = request.data.copy()
+        datos.setdefault("operacion_id", str(uuid.uuid4()))
+        entrada = AjusteSiloSerializer(data=datos)
+        entrada.is_valid(raise_exception=True)
+        return self._ejecutar_ajuste(entrada.validated_data)
+
+    @action(detail=False, methods=["post"])
+    def ajustar(self, request):
+        entrada = AjusteSiloSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        return self._ejecutar_ajuste(entrada.validated_data)
+
+    def _ejecutar_ajuste(self, datos):
+        silos = filtrar_por_scope(
+            Silo.objects.all(), self.request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        if not silos.filter(pk=datos["silo"]).exists():
+            raise DRFValidationError({"silo": "Silo inexistente o fuera de tu planta."})
+        try:
+            movimiento = ajustar_silo(
+                silo_id=datos["silo"], litros=datos["litros"],
+                operacion_id=datos["operacion_id"], usuario=self.request.user,
+                motivo=datos["motivo"],
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(MovimientoSiloSerializer(movimiento).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"])
+    def transferir(self, request):
+        entrada = TransferenciaSiloSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        silos = filtrar_por_scope(
+            Silo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        if silos.filter(pk__in=[datos["silo_origen"], datos["silo_destino"]]).count() != 2:
+            raise DRFValidationError("Los silos deben pertenecer a tu planta.")
+
+        from maestros.models import Equipo, Producto
+        from produccion.models import Lote
+
+        scope = scope_de(request.user, requerido=True)
+        filtro_sucursal = {"sucursal_id": scope.sucursal_id} if scope.es_sucursal else {
+            "sucursal__empresa_id": scope.empresa_id
+        }
+        lote = Lote.objects.filter(pk=datos.get("lote"), **filtro_sucursal).first() if datos.get("lote") else None
+        producto = Producto.objects.filter(
+            pk=datos.get("producto"), mandante__empresa_id=scope.empresa_id
+        ).first() if datos.get("producto") else None
+        equipo = Equipo.objects.filter(pk=datos.get("equipo"), **filtro_sucursal).first() if datos.get("equipo") else None
+        if datos.get("lote") and lote is None:
+            raise DRFValidationError({"lote": "Lote inexistente o fuera de tu planta."})
+        if datos.get("producto") and producto is None:
+            raise DRFValidationError({"producto": "Producto inexistente o fuera de tu empresa."})
+        if datos.get("equipo") and equipo is None:
+            raise DRFValidationError({"equipo": "Equipo inexistente o fuera de tu planta."})
+        try:
+            movimientos = transferir_silo(
+                silo_origen_id=datos["silo_origen"],
+                silo_destino_id=datos["silo_destino"], litros=datos["litros"],
+                operacion_id=datos["operacion_id"], usuario=request.user,
+                motivo=datos["motivo"], lote=lote, producto=producto, equipo=equipo,
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(
+            MovimientoSiloSerializer(movimientos, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 @api_view(["GET"])
@@ -650,7 +738,7 @@ def ocupacion(request):
     descuadrado, y ocultarlo haría que el error nunca se descubriera.
     """
     silos = filtrar_por_scope(
-        Silo.objects.filter(activo=True), request.user,
+        Silo.objects.filter(activo=True).select_related("producto_actual"), request.user,
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     ).annotate(
         litros_ocupados=Coalesce(
@@ -661,7 +749,8 @@ def ocupacion(request):
             )),
             Value(0),
             output_field=DecimalField(max_digits=14, decimal_places=2),
-        )
+        ),
+        ultimo_movimiento=Max("movimientos__fecha_hora"),
     )
     ocupaciones = []
     for silo in silos:
@@ -675,6 +764,12 @@ def ocupacion(request):
             "codigo": silo.codigo,
             "litros": silo.litros_ocupados,
             "capacidad": silo.capacidad_l,
+            "estado": silo.estado,
+            "estado_etiqueta": silo.get_estado_display(),
+            "producto_actual": silo.producto_actual.nombre if silo.producto_actual else None,
+            "temperatura_actual": silo.temperatura_actual,
+            "ultima_limpieza": silo.ultima_limpieza,
+            "ultimo_movimiento": silo.ultimo_movimiento,
             "pct": round(porcentaje, 1),
             "excedido": silo.litros_ocupados > silo.capacidad_l,
             "negativo": silo.litros_ocupados < 0,

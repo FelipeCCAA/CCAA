@@ -10,6 +10,7 @@ from .models import (
     ReservaInventario, ResultadoMRP,
     SolicitudCompra, SolicitudMaterial, Ubicacion,
 )
+from usuarios.admin_helpers import OrganizacionInternaAdminMixin
 
 
 @admin.register(Insumo)
@@ -22,7 +23,8 @@ class InsumoAdmin(admin.ModelAdmin):
 
 
 @admin.register(CicloCIP)
-class CicloCIPAdmin(admin.ModelAdmin):
+class CicloCIPAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
+    exclude = ["sucursal"]
     list_display = ["objetivo_nombre", "tipo_aseo", "area", "inicio", "estado", "responsable"]
     list_filter = ["tipo_aseo", "tipo_objetivo", "area", "estado"]
 

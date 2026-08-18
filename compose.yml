@@ -19,8 +19,6 @@ x-backend-environment: &backend-environment
   DJANGO_HEALTHCHECK_HOST: ${DJANGO_HEALTHCHECK_HOST:-localhost}
   CCAA_INITIAL_COMPANY_RUT: ${CCAA_INITIAL_COMPANY_RUT:?Defina CCAA_INITIAL_COMPANY_RUT}
   CCAA_INITIAL_COMPANY_NAME: ${CCAA_INITIAL_COMPANY_NAME:?Defina CCAA_INITIAL_COMPANY_NAME}
-  CCAA_INITIAL_BRANCH_CODE: ${CCAA_INITIAL_BRANCH_CODE:?Defina CCAA_INITIAL_BRANCH_CODE}
-  CCAA_INITIAL_BRANCH_NAME: ${CCAA_INITIAL_BRANCH_NAME:?Defina CCAA_INITIAL_BRANCH_NAME}
   # Defensas del acceso. Van enumeradas aquí porque compose no pasa el entorno
   # entero: una variable que solo esté en .env no llega al contenedor, y en una
   # opción de seguridad eso es el peor fallo posible —parece configurada y no
@@ -38,8 +36,8 @@ x-backend-environment: &backend-environment
   # Vacías por defecto: sin ellas la caché usa PostgreSQL y el MRP corre dentro
   # de la petición, que es el comportamiento actual. Se rellenan cuando llegue
   # la fase de Redis.
-  CACHE_URL: ${CACHE_URL:-}
-  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-}
+  CACHE_URL: ${CACHE_URL:-redis://redis:6379/1}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
   CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-1200}
 
 services:
@@ -63,6 +61,20 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [private]
+    logging: *rotated-logs
 
   migrate:
     build:
@@ -90,6 +102,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -104,6 +118,34 @@ services:
       start_period: 10s
     restart: unless-stopped
     networks: [private, egress]
+    logging: *rotated-logs
+
+  celery:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "config", "worker", "--loglevel=INFO", "--concurrency=2"]
+    environment: *backend-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [private, egress]
+    logging: *rotated-logs
+
+  celery-beat:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "config", "beat", "--loglevel=INFO"]
+    environment: *backend-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [private]
     logging: *rotated-logs
 
   nginx:
@@ -136,3 +178,4 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:

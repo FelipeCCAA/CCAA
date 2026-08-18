@@ -192,7 +192,7 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
           <span>
             Hay saldos negativos por origen: se programó más leche de la que se
             espera recibir de ese mandante. No se recorta a cero a propósito —
-            esconderlo haría que el error llegara a planta.
+            esconderlo haría que el error llegara a producción.
           </span>
 
         </p>

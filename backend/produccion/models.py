@@ -18,6 +18,8 @@ presentes al leer el código:
    natural `codigo_lote + producto + fecha`.
 """
 
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -25,6 +27,89 @@ from django.db import models
 from maestros.catalogos import CLAVES_PARAMETROS
 from maestros.models import Especificacion, Producto
 from usuarios.tenancy import sucursal_predeterminada_pruebas
+
+
+class OrdenProduccion(models.Model):
+    """Compromiso operacional que conecta la semana planificada con sus lotes."""
+
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        PROGRAMADA = "programada", "Programada"
+        EN_PROCESO = "en_proceso", "En proceso"
+        PENDIENTE_CALIDAD = "pendiente_calidad", "Pendiente de Calidad"
+        LIBERADA = "liberada", "Liberada"
+        CERRADA = "cerrada", "Cerrada"
+        CANCELADA = "cancelada", "Cancelada"
+
+    TRANSICIONES = {
+        Estado.BORRADOR: [Estado.PROGRAMADA, Estado.CANCELADA],
+        Estado.PROGRAMADA: [Estado.EN_PROCESO, Estado.CANCELADA],
+        Estado.EN_PROCESO: [Estado.PENDIENTE_CALIDAD, Estado.CANCELADA],
+        Estado.PENDIENTE_CALIDAD: [Estado.LIBERADA, Estado.CANCELADA],
+        Estado.LIBERADA: [Estado.CERRADA],
+        Estado.CERRADA: [],
+        Estado.CANCELADA: [],
+    }
+
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT,
+        related_name="ordenes_produccion", default=sucursal_predeterminada_pruebas,
+    )
+    semana = models.ForeignKey(
+        "planificacion.SemanaPlan", on_delete=models.PROTECT,
+        related_name="ordenes_produccion", null=True, blank=True,
+    )
+    codigo = models.CharField(max_length=60)
+    producto = models.ForeignKey(
+        Producto, on_delete=models.PROTECT, related_name="ordenes_produccion"
+    )
+    cantidad_planificada = models.DecimalField(max_digits=14, decimal_places=2)
+    unidad = models.CharField(
+        max_length=5, choices=[("l", "Litros"), ("kg", "Kilogramos")]
+    )
+    linea = models.CharField(max_length=60, blank=True)
+    equipo = models.ForeignKey(
+        "maestros.Equipo", on_delete=models.PROTECT,
+        related_name="ordenes_produccion", null=True, blank=True,
+    )
+    destino = models.CharField(max_length=120, blank=True)
+    responsable = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="ordenes_produccion_responsable", null=True, blank=True,
+    )
+    estado = models.CharField(
+        max_length=25, choices=Estado.choices, default=Estado.BORRADOR
+    )
+    observacion = models.TextField(blank=True)
+    creada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="ordenes_produccion_creadas", null=True, blank=True,
+    )
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sucursal", "codigo"], name="orden_codigo_unico_sucursal"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad_planificada__gt=0),
+                name="orden_cantidad_planificada_positiva",
+            ),
+        ]
+
+    def __str__(self):
+        return self.codigo
+
+    def clean(self):
+        if self.producto_id and self.sucursal_id:
+            if self.producto.mandante.empresa_id != self.sucursal.empresa_id:
+                raise ValidationError({"producto": "El producto pertenece a otra empresa."})
+        if self.semana_id and self.semana.sucursal_id != self.sucursal_id:
+            raise ValidationError({"semana": "La semana pertenece a otra planta."})
+        if self.equipo_id and self.equipo.sucursal_id != self.sucursal_id:
+            raise ValidationError({"equipo": "El equipo pertenece a otra planta."})
 
 
 class Lote(models.Model):
@@ -72,6 +157,14 @@ class Lote(models.Model):
         max_length=60,
         blank=True,
         help_text="Orden de producción, si existe",
+    )
+    orden = models.ForeignKey(
+        OrdenProduccion,
+        on_delete=models.PROTECT,
+        related_name="lotes",
+        null=True,
+        blank=True,
+        help_text="Orden estructurada. `op` se conserva para datos históricos.",
     )
     producto = models.ForeignKey(
         Producto,
@@ -168,6 +261,11 @@ class Lote(models.Model):
             raise ValidationError(
                 {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}
             )
+        if self.orden_id:
+            if self.orden.sucursal_id != self.sucursal_id:
+                raise ValidationError({"orden": "La orden pertenece a otra planta."})
+            if self.orden.producto_id != self.producto_id:
+                raise ValidationError({"orden": "La orden corresponde a otro producto."})
         if (
             self.sucursal_id
             and self.equipo_id
@@ -409,3 +507,100 @@ class ControlProcesoLectura(models.Model):
                 raise ValidationError(
                     {"valores": f"El valor de '{parametro}' debe ser numérico."}
                 )
+
+
+class RegistroEnvase(models.Model):
+    """Cierre de envase de un lote maestro; no crea un lote paralelo."""
+
+    lote = models.ForeignKey(
+        Lote, on_delete=models.PROTECT, related_name="registros_envase"
+    )
+    equipo = models.ForeignKey(
+        "maestros.Equipo", on_delete=models.PROTECT, related_name="registros_envase"
+    )
+    formato_kg = models.DecimalField(max_digits=10, decimal_places=3)
+    unidades = models.PositiveIntegerField()
+    kg_envasados = models.DecimalField(max_digits=14, decimal_places=3)
+    controles = models.JSONField(default=dict, blank=True)
+    operador = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="registros_envase",
+    )
+    inicio = models.DateTimeField()
+    termino = models.DateTimeField()
+    observacion = models.TextField(blank=True)
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(formato_kg__gt=0), name="envase_formato_positivo"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(unidades__gt=0), name="envase_unidades_positivas"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kg_envasados__gt=0), name="envase_kg_positivos"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(termino__gt=models.F("inicio")),
+                name="envase_termino_posterior_inicio",
+            ),
+        ]
+
+    def clean(self):
+        if self.lote_id and self.lote.estado == Lote.Estado.ANULADO:
+            raise ValidationError({"lote": "No se puede envasar un lote anulado."})
+        if self.equipo_id and self.lote_id:
+            if self.equipo.sucursal_id != self.lote.sucursal_id:
+                raise ValidationError({"equipo": "La envasadora pertenece a otra planta."})
+            if self.equipo.tipo not in {
+                self.equipo.Tipo.ENVASADORA, self.equipo.Tipo.LINEA, self.equipo.Tipo.TORRE,
+            }:
+                raise ValidationError({"equipo": "Selecciona una torre o envasadora."})
+        if self.lote_id and self.kg_envasados:
+            ya_envasado = self.lote.registros_envase.exclude(pk=self.pk).aggregate(
+                total=models.Sum("kg_envasados")
+            )["total"] or 0
+            if self.lote.kg_producidos is None or ya_envasado + self.kg_envasados > self.lote.kg_producidos:
+                raise ValidationError({"kg_envasados": "El total envasado supera los kg producidos."})
+        if self.termino and self.inicio and self.termino <= self.inicio:
+            raise ValidationError({"termino": "Debe ser posterior al inicio."})
+
+
+class PalletProducto(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE_CALIDAD = "pendiente_calidad", "Pendiente de Calidad"
+        BLOQUEADO = "bloqueado", "Bloqueado"
+        LIBERADO = "liberado", "Liberado"
+        EN_INVENTARIO = "en_inventario", "En inventario"
+        DESPACHADO = "despachado", "Despachado"
+        ANULADO = "anulado", "Anulado"
+
+    envase = models.ForeignKey(
+        RegistroEnvase, on_delete=models.PROTECT, related_name="pallets"
+    )
+    codigo = models.CharField(max_length=80, unique=True)
+    unidades = models.PositiveIntegerField()
+    kg_neto = models.DecimalField(max_digits=14, decimal_places=3)
+    estado = models.CharField(
+        max_length=25, choices=Estado.choices, default=Estado.PENDIENTE_CALIDAD,
+        db_index=True,
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["codigo"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(unidades__gt=0), name="pallet_unidades_positivas"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kg_neto__gt=0), name="pallet_kg_positivos"
+            ),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Un pallet físico no se elimina; se anula con motivo.")

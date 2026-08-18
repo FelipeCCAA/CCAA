@@ -18,22 +18,21 @@ def completar_scope(apps, schema_editor):
             datos = {
                 "rut": "TENANT-TEST",
                 "empresa": "Empresa aislada de pruebas",
-                "codigo": "TEST",
-                "sucursal": "Sucursal aislada de pruebas",
+                "codigo": "INTERNA",
+                "sucursal": "Configuración interna",
             }
         else:
             datos = {
                 "rut": os.getenv("CCAA_INITIAL_COMPANY_RUT", "").strip(),
                 "empresa": os.getenv("CCAA_INITIAL_COMPANY_NAME", "").strip(),
-                "codigo": os.getenv("CCAA_INITIAL_BRANCH_CODE", "").strip(),
-                "sucursal": os.getenv("CCAA_INITIAL_BRANCH_NAME", "").strip(),
+                "codigo": "INTERNA",
+                "sucursal": "Configuración interna",
             }
             faltantes = [clave for clave, valor in datos.items() if not valor]
             if faltantes:
                 raise RuntimeError(
-                    "No existe una sucursal inicial. Configure "
-                    "CCAA_INITIAL_COMPANY_RUT, CCAA_INITIAL_COMPANY_NAME, "
-                    "CCAA_INITIAL_BRANCH_CODE y CCAA_INITIAL_BRANCH_NAME "
+                    "No existe una organización inicial. Configure "
+                    "CCAA_INITIAL_COMPANY_RUT y CCAA_INITIAL_COMPANY_NAME "
                     "antes de aplicar usuarios.0008."
                 )
 
@@ -49,26 +48,20 @@ def completar_scope(apps, schema_editor):
     for perfil in Perfil.objects.select_related("sucursal").order_by("pk"):
         if perfil.sucursal_id:
             perfil.empresa_id = perfil.sucursal.empresa_id
-            perfil.alcance = "sucursal"
+            perfil.sucursal_id = None
+            perfil.alcance = "empresa"
         elif perfil.empresa_id:
             candidatas = [s for s in todas if s.empresa_id == perfil.empresa_id]
-            es_admin_empresa = (
-                perfil.area == "administracion" and perfil.nivel == "admin"
-            )
-            if es_admin_empresa:
-                perfil.alcance = "empresa"
-            elif len(candidatas) == 1:
-                perfil.sucursal_id = candidatas[0].pk
-                perfil.alcance = "sucursal"
-            else:
+            if not candidatas:
                 raise RuntimeError(
-                    f"PerfilUsuario {perfil.pk} no tiene una sucursal inequívoca. "
-                    "Asigne empresa/sucursal antes de aplicar usuarios.0008."
+                    f"PerfilUsuario {perfil.pk} no tiene una organización inequívoca."
                 )
+            perfil.sucursal_id = None
+            perfil.alcance = "empresa"
         elif len(todas) == 1:
             perfil.empresa_id = todas[0].empresa_id
-            perfil.sucursal_id = todas[0].pk
-            perfil.alcance = "sucursal"
+            perfil.sucursal_id = None
+            perfil.alcance = "empresa"
         else:
             raise RuntimeError(
                 f"PerfilUsuario {perfil.pk} no tiene tenant y existen "

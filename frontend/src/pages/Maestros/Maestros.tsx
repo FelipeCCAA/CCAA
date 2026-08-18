@@ -942,7 +942,7 @@ function Maestros() {
                   El checklist de liberación. La <strong>frecuencia</strong> decide
                   dónde se lleva cada formulario: «por lote» va en el expediente
                   del lote; el resto pertenece al equipo y su período, y se
-                  registra en Registros de planta. Cambiarla mueve el formulario
+                  registra en Registros operacionales. Cambiarla mueve el formulario
                   de una pantalla a la otra.
                 </p>
 
@@ -1026,7 +1026,7 @@ function Maestros() {
 
                 <p className="border-t border-slate-100 px-6 py-3 text-xs text-slate-400">
                   La plantilla de cada formulario —qué campos pide— se edita en el
-                  admin de Django. Se construye contra el formato real de planta:
+                  admin de Django. Se construye contra el formato operacional:
                   una plantilla inventada se completa igual y da el documento por
                   cumplido.
                 </p>
@@ -1367,7 +1367,7 @@ function Maestros() {
           Lo que decide sobre la calidad del producto —especificaciones y
           checklist— lo escribe Calidad, no Administración. Del admin de Django
           queda una cosa: la <strong>plantilla</strong> de cada documento de
-          liberación, que se construye contra el formato real de planta.
+          liberación, que se construye contra el formato operacional.
         </p>
 
       </div>

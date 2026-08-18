@@ -399,6 +399,16 @@ class Silo(models.Model):
         TK_LD = "tk_ld", "TK Leche descremada"
         TK_CREMA = "tk_crema", "TK Crema"
 
+    class Estado(models.TextChoices):
+        DISPONIBLE = "disponible", "Disponible"
+        RECIBIENDO = "recibiendo", "Recibiendo"
+        EN_USO = "en_uso", "En uso"
+        RESERVADO = "reservado", "Reservado"
+        BLOQUEADO_CALIDAD = "bloqueado_calidad", "Bloqueado por Calidad"
+        PENDIENTE_CIP = "pendiente_cip", "Pendiente de CIP"
+        EN_CIP = "en_cip", "En CIP"
+        FUERA_SERVICIO = "fuera_servicio", "Fuera de servicio"
+
     sucursal = models.ForeignKey(
         Sucursal,
         on_delete=models.PROTECT,
@@ -410,6 +420,20 @@ class Silo(models.Model):
     capacidad_l = models.DecimalField(
         "Capacidad", max_digits=12, decimal_places=2, help_text="En litros"
     )
+    estado = models.CharField(
+        "Estado operacional", max_length=30, choices=Estado.choices,
+        default=Estado.DISPONIBLE, db_index=True,
+    )
+    producto_actual = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT,
+        related_name="silos_actuales", null=True, blank=True,
+        help_text="Producto declarado; el volumen siempre se deriva de movimientos.",
+    )
+    temperatura_actual = models.DecimalField(
+        "Temperatura actual (°C)", max_digits=6, decimal_places=2,
+        null=True, blank=True,
+    )
+    ultima_limpieza = models.DateTimeField(null=True, blank=True)
     activo = models.BooleanField("Activo", default=True)
 
     class Meta:
@@ -418,8 +442,8 @@ class Silo(models.Model):
         ordering = ["codigo"]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(capacidad_l__gte=0),
-                name="silo_capacidad_no_negativa",
+                condition=models.Q(capacidad_l__gt=0),
+                name="silo_capacidad_positiva",
             ),
             models.UniqueConstraint(
                 fields=["sucursal", "codigo"], name="silo_codigo_unico_sucursal"

@@ -13,7 +13,7 @@ import api from "./api";
 */
 
 
-export type EstadoSemana = "borrador" | "publicada" | "cerrada";
+export type EstadoSemana = "borrador" | "publicada" | "cerrada" | "cancelada";
 
 
 export type CategoriaConsumo =
@@ -119,6 +119,8 @@ export interface Semana {
   publicada_por_nombre: string | null;
   publicada_en: string | null;
   observacion: string;
+  cancelada_en: string | null;
+  motivo_cancelacion: string;
 }
 
 export interface CodigoProduccion {
@@ -358,6 +360,23 @@ export async function reabrirSemana(id: number): Promise<Semana> {
 export async function cerrarSemana(id: number): Promise<Semana> {
   const { data } = await api.post<Semana>(`planificacion/semanas/${id}/cerrar/`);
 
+  return data;
+}
+
+export async function cancelarSemana(id: number, motivo: string): Promise<Semana> {
+  const { data } = await api.post<Semana>(
+    `planificacion/semanas/${id}/cancelar/`, { motivo },
+  );
+  return data;
+}
+
+export async function duplicarSemana(
+  id: number,
+  datos: { codigo: string; anio: number; fecha_inicio: string },
+): Promise<Semana> {
+  const { data } = await api.post<Semana>(
+    `planificacion/semanas/${id}/duplicar/`, datos,
+  );
   return data;
 }
 

@@ -8,12 +8,23 @@ from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope, scope_de,
     sucursal_para_escritura,
 )
-from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, SalidaProceso
+from .models import (
+    CorridaCondensacion, CorridaMantequilla, EjecucionProceso, EntradaProceso,
+    EtapaProceso, Proceso, RutaProducto,
+    SalidaProceso,
+)
 from .serializers import (
+    CierreCondensacionSerializer, CierreMantequillaSerializer,
+    CorridaCondensacionSerializer, CorridaMantequillaSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     ProcesoSerializer, SalidaProcesoSerializer,
+    RutaProductoSerializer,
 )
-from .servicios import genealogia_lote, transicionar_ejecucion
+from .servicios import (
+    cerrar_condensacion, cerrar_mantequilla, genealogia_lote,
+    iniciar_condensacion, iniciar_mantequilla,
+    transicionar_ejecucion,
+)
 
 
 class ProcesoViewSet(viewsets.ModelViewSet):
@@ -30,9 +41,121 @@ class EtapaProcesoViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
 
+class RutaProductoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "sucursal_id"
+    tenant_lookup_empresa = "sucursal__empresa_id"
+    tenant_relation_fields = {
+        "producto": (None, "mandante__empresa_id"),
+    }
+    queryset = RutaProducto.objects.select_related(
+        "sucursal", "producto", "proceso"
+    ).prefetch_related("proceso__etapas")
+    serializer_class = RutaProductoSerializer
+    permission_classes = [EscribeProduccion]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def perform_create(self, serializer):
+        serializer.save(sucursal=sucursal_para_escritura(
+            self.request.user, serializer.validated_data
+        ))
+
+
+class CorridaCondensacionViewSet(
+    RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
+):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
+        "orden": ("sucursal_id", "sucursal__empresa_id"),
+        "lote": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_origen": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_destino": ("sucursal_id", "sucursal__empresa_id"),
+    }
+    queryset = CorridaCondensacion.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
+        "silo_origen", "silo_destino", "iniciada_por", "finalizada_por",
+    )
+    serializer_class = CorridaCondensacionSerializer
+    permission_classes = [EscribeProduccion]
+    http_method_names = ["get", "post", "head", "options"]
+
+    @staticmethod
+    def _respuesta_error(error):
+        detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+        return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"])
+    def iniciar(self, request, pk=None):
+        try:
+            corrida = iniciar_condensacion(
+                corrida_id=self.get_object().pk, usuario=request.user
+            )
+        except DjangoValidationError as error:
+            return self._respuesta_error(error)
+        return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        entrada = CierreCondensacionSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data.copy()
+        litros = datos.pop("litros_precondensado")
+        try:
+            corrida = cerrar_condensacion(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                litros_precondensado=litros, controles=datos,
+            )
+        except DjangoValidationError as error:
+            return self._respuesta_error(error)
+        return Response(self.get_serializer(corrida).data)
+
+
+class CorridaMantequillaViewSet(
+    RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
+):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
+        "orden": ("sucursal_id", "sucursal__empresa_id"),
+        "lote_crema": ("sucursal_id", "sucursal__empresa_id"),
+        "lote_mantequilla": ("sucursal_id", "sucursal__empresa_id"),
+        "lote_suero": ("sucursal_id", "sucursal__empresa_id"),
+    }
+    queryset = CorridaMantequilla.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden",
+        "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
+    )
+    serializer_class = CorridaMantequillaSerializer
+    permission_classes = [EscribeProduccion]
+    http_method_names = ["get", "post", "head", "options"]
+
+    @action(detail=True, methods=["post"])
+    def iniciar(self, request, pk=None):
+        try:
+            corrida = iniciar_mantequilla(corrida_id=self.get_object().pk, usuario=request.user)
+        except DjangoValidationError as error:
+            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        entrada = CierreMantequillaSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        try:
+            corrida = cerrar_mantequilla(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                **entrada.validated_data,
+            )
+        except DjangoValidationError as error:
+            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(corrida).data)
+
 class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
     tenant_relation_fields = {
-        "sucursal": ("pk", "empresa_id"),
         "equipo": ("sucursal_id", "sucursal__empresa_id"),
     }
     serializer_class = EjecucionProcesoSerializer
@@ -128,7 +251,7 @@ def trazabilidad(request, lote):
     la mano un `CCAA6212010102010201-01`, no un 47. Pedirle el id volvía la
     pantalla inservible para quien la necesita.
     """
-    from produccion.models import Lote
+    from produccion.models import Lote, PalletProducto
 
     direccion = request.query_params.get("direccion", "atras")
 
@@ -140,6 +263,13 @@ def trazabilidad(request, lote):
         encontrado = lotes.filter(pk=int(lote)).first()
     else:
         encontrado = lotes.filter(codigo_lote=lote).first()
+        if encontrado is None:
+            pallet = filtrar_por_scope(
+                PalletProducto.objects.select_related("envase__lote"), request.user,
+                campo_sucursal="envase__lote__sucursal_id",
+                campo_empresa="envase__lote__sucursal__empresa_id",
+            ).filter(codigo=lote).first()
+            encontrado = pallet.envase.lote if pallet else None
 
     if encontrado is None:
         return Response(
@@ -205,6 +335,27 @@ def _flujo_completo(lote):
 
     ejecucion_est = getattr(vale, "ejecucion", None)
     ejecucion_prod = lote.ejecucion
+    pallets = []
+    for envase in lote.registros_envase.prefetch_related(
+        "pallets__existencia_producto__ubicacion",
+        "pallets__detalles_despacho__despacho__cliente",
+    ):
+        for pallet in envase.pallets.all():
+            existencia = getattr(pallet, "existencia_producto", None)
+            detalle = pallet.detalles_despacho.filter(
+                despacho__estado="despachado"
+            ).select_related("despacho__cliente").first()
+            pallets.append({
+                "id": pallet.pk,
+                "codigo": pallet.codigo,
+                "unidades": pallet.unidades,
+                "kg_neto": pallet.kg_neto,
+                "estado": pallet.get_estado_display(),
+                "ubicacion": existencia.ubicacion.codigo if existencia and existencia.activo else None,
+                "despacho": detalle.despacho.numero if detalle else None,
+                "cliente": detalle.despacho.cliente.nombre if detalle else None,
+            })
+    liberacion = getattr(lote, "liberacion", None)
     return {
         "recepciones": recepciones,
         "nota_recepciones": (
@@ -237,4 +388,13 @@ def _flujo_completo(lote):
             "ejecucion_codigo": ejecucion_prod.codigo if ejecucion_prod else None,
             "estado": lote.get_estado_display(),
         },
+        "calidad": {
+            "estado": liberacion.get_estado_display() if liberacion else "Pendiente",
+            "autorizada_por": (
+                liberacion.autorizada_por.get_full_name() or liberacion.autorizada_por.username
+                if liberacion and liberacion.autorizada_por else None
+            ),
+            "autorizada_en": liberacion.autorizada_en if liberacion else None,
+        },
+        "pallets": pallets,
     }

@@ -141,7 +141,7 @@ function Panel() {
               {descuadrados.length === 1 ? "silo descuadrado" : "silos descuadrados"}
             </strong>{" "}
             ({descuadrados.map((s) => s.codigo).join(", ")}). El volumen en
-            planta que se muestre está mal mientras no cuadre el libro de
+            operación que se muestre está mal mientras no cuadre el libro de
             movimientos.
           </span>
         </Link>
@@ -184,7 +184,7 @@ function Panel() {
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Paso
-          a="silos" etiqueta="Volumen en planta"
+          a="silos" etiqueta="Volumen disponible"
           valor={`${formato.format(ocupacion?.litros_totales ?? 0)} L`}
           detalle={`${ocupacion?.silos.length ?? 0} silos y estanques`}
           icono={Droplets} tono="emerald"

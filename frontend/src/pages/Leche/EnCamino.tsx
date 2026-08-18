@@ -51,7 +51,7 @@ function EnCamino() {
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-5 py-5">
         <div>
-          <h2 className="font-semibold text-slate-900">En camino a planta</h2>
+          <h2 className="font-semibold text-slate-900">En camino a recepción</h2>
           <p className="mt-1 text-sm text-slate-500">
             Cargas cerradas en el predio que todavía no se recepcionaron.
           </p>

@@ -27,6 +27,7 @@ const PESTANAS = [
   { a: "", texto: "Panel", exacta: true },
   { a: "materiales", texto: "Materiales" },
   { a: "stock", texto: "Stock" },
+  { a: "producto-terminado", texto: "Producto terminado" },
   { a: "bodegas", texto: "Bodegas" },
   { a: "compras", texto: "Compras" },
   { a: "proveedores", texto: "Proveedores" },

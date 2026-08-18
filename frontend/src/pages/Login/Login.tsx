@@ -221,7 +221,7 @@ function Login() {
             <div className="flex items-center justify-between">
 
               {/* Sin marcar, la sesión vive en sessionStorage y muere al
-                  cerrar la pestaña. En una planta con turnos A/B/C sobre los
+                  cerrar la pestaña. En una operación con turnos A/B/C sobre los
                   mismos terminales, eso evita que el turno siguiente herede la
                   sesión del anterior (ver services/sesion.ts). */}
               <label
@@ -276,7 +276,7 @@ function Login() {
 
           <div className="mt-12 text-center text-sm text-slate-400">
 
-            Gestión Productiva · Planta CCAA
+            Gestión Productiva · CCAA
 
             <br />
 

@@ -44,7 +44,7 @@ const QUE_ES: Record<string, string> = {
   disponible: "Material liberado, listo para consumir.",
   cuarentena: "Recién recibido, esperando a Calidad.",
   rechazado: "Lo que Calidad no aprobó.",
-  produccion: "Entregado a planta.",
+  produccion: "Entregado a producción.",
 };
 
 function Bodegas() {
@@ -128,7 +128,7 @@ function Bodegas() {
 
           <Tarjeta
             titulo="Nueva bodega"
-            descripcion="El lugar físico. Una planta puede tener varias: central, de envases, de químicos."
+            descripcion="El lugar físico de almacenamiento: central, de envases o de químicos."
           >
             <form onSubmit={guardarBodega} className="grid gap-3 sm:grid-cols-2">
 

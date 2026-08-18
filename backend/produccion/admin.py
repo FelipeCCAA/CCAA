@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import Analisis, ControlProceso, ControlProcesoLectura, Lote
+from usuarios.admin_helpers import OrganizacionInternaAdminMixin
 
 
 class AnalisisInline(admin.TabularInline):
@@ -13,7 +14,8 @@ class AnalisisInline(admin.TabularInline):
 
 
 @admin.register(Lote)
-class LoteAdmin(admin.ModelAdmin):
+class LoteAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
+    exclude = ["sucursal"]
     # Sin columna de resultado de calidad: es un valor derivado que se calcula
     # en la capa de dominio (fase siguiente), no un campo de la tabla.
     list_display = [

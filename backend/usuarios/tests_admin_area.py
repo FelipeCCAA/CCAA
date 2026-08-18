@@ -3,12 +3,16 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from .models import PerfilUsuario
+from .models import Empresa, PerfilUsuario, Sucursal
 
 
 class AdministracionPorAreaTests(TestCase):
     def setUp(self):
         self.cliente = APIClient()
+        self.empresa = Empresa.objects.create(rut="ADMIN-AREA", nombre="Admin Área")
+        self.sucursal = Sucursal.objects.create(
+            empresa=self.empresa, codigo="P1", nombre="Planta 1"
+        )
         self.admin_secado = self._usuario(
             "jefe-secado", PerfilUsuario.Area.SECADO, PerfilUsuario.Nivel.ADMIN
         )
@@ -19,14 +23,20 @@ class AdministracionPorAreaTests(TestCase):
             "analista-calidad", PerfilUsuario.Area.CALIDAD
         )
 
-    @staticmethod
-    def _usuario(username, area, nivel=PerfilUsuario.Nivel.TRABAJADOR, email=""):
+    def _usuario(self, username, area, nivel=PerfilUsuario.Nivel.TRABAJADOR, email=""):
         usuario = User.objects.create_user(
             username=username,
             password="Clave-segura-2026!",
             email=email,
         )
-        PerfilUsuario.objects.create(usuario=usuario, area=area, nivel=nivel)
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            area=area,
+            nivel=nivel,
+            empresa=self.empresa,
+            sucursal=self.sucursal,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+        )
         usuario.refresh_from_db()
         return usuario
 

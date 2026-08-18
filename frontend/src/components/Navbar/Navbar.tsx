@@ -45,7 +45,7 @@ const gruposBase: Grupo[] = [
     modulos: [{ etiqueta: "Panel general", ruta: "/dashboard", icono: LayoutDashboard }],
   },
   {
-    etiqueta: "Operación de planta",
+    etiqueta: "Operación",
     modulos: [
       { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
       { etiqueta: "Recepción de leche", ruta: "/leche", icono: Truck },
@@ -53,7 +53,7 @@ const gruposBase: Grupo[] = [
       { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
       { etiqueta: "Procesos y trazabilidad", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion", "calidad", "despacho"] },
       { etiqueta: "Calidad y liberación", ruta: "/liberacion", icono: ClipboardCheck },
-      { etiqueta: "Registros de planta", ruta: "/registros", icono: ClipboardList },
+      { etiqueta: "Registros operacionales", ruta: "/registros", icono: ClipboardList },
       { etiqueta: "Inocuidad · Aseos", ruta: "/inocuidad/aseos", icono: ShieldCheck },
     ],
   },

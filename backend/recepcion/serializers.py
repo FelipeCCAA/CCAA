@@ -1,5 +1,6 @@
+from decimal import Decimal
+
 from rest_framework import serializers
-from usuarios.models import Sucursal
 
 from . import dominio
 from .models import (
@@ -40,7 +41,6 @@ class RecepcionSerializer(serializers.ModelSerializer):
         model = Recepcion
         fields = [
             "id",
-            "sucursal",
             "carga_recoleccion",
             "llegada_id",
             "fecha",
@@ -149,10 +149,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
         return controles
 
     def validate(self, datos):
-        sucursal = datos.get("sucursal", getattr(self.instance, "sucursal", None))
-        if sucursal is not None and not isinstance(sucursal, Sucursal):
-            sucursal = Sucursal.objects.get(pk=sucursal)
-            datos["sucursal"] = sucursal
+        sucursal = getattr(self.instance, "sucursal", None)
         carga = datos.get(
             "carga_recoleccion", getattr(self.instance, "carga_recoleccion", None)
         )
@@ -171,7 +168,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
         vehiculo = datos.get("vehiculo", getattr(self.instance, "vehiculo", None))
         if sucursal and vehiculo and sucursal.pk != vehiculo.sucursal_id:
             raise serializers.ValidationError(
-                {"vehiculo": "El vehículo debe pertenecer a la sucursal."}
+                {"vehiculo": "El vehículo debe pertenecer a la organización."}
             )
 
         estado = datos.get("estado", getattr(self.instance, "estado", None))
@@ -203,6 +200,16 @@ class MovimientoSiloSerializer(serializers.ModelSerializer):
             "origen_tipo",
             "origen_id",
             "motivo",
+            "operacion_id",
+            "silo_contraparte",
+            "lote",
+            "producto",
+            "equipo",
+            "usuario",
+        ]
+        read_only_fields = [
+            "tipo", "fecha_hora", "origen_tipo", "origen_id", "operacion_id",
+            "silo_contraparte", "lote", "producto", "equipo", "usuario",
         ]
 
     def validate(self, datos):
@@ -226,3 +233,28 @@ class MovimientoSiloSerializer(serializers.ModelSerializer):
             )
 
         return datos
+
+
+class AjusteSiloSerializer(serializers.Serializer):
+    silo = serializers.IntegerField(min_value=1)
+    litros = serializers.DecimalField(max_digits=12, decimal_places=2)
+    motivo = serializers.CharField(trim_whitespace=True)
+    operacion_id = serializers.UUIDField()
+
+    def validate_litros(self, valor):
+        if valor == 0:
+            raise serializers.ValidationError("El ajuste no puede ser cero.")
+        return valor
+
+
+class TransferenciaSiloSerializer(serializers.Serializer):
+    silo_origen = serializers.IntegerField(min_value=1)
+    silo_destino = serializers.IntegerField(min_value=1)
+    litros = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("0.01")
+    )
+    operacion_id = serializers.UUIDField()
+    motivo = serializers.CharField(required=False, allow_blank=True, default="")
+    lote = serializers.IntegerField(required=False, allow_null=True)
+    producto = serializers.IntegerField(required=False, allow_null=True)
+    equipo = serializers.IntegerField(required=False, allow_null=True)

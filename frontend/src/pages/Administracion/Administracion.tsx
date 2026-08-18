@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   BriefcaseBusiness,
   KeyRound,
+  SlidersHorizontal,
   Search,
   ShieldCheck,
   Users,
@@ -12,9 +13,12 @@ import {
 import {
   cambiarEstadoTrabajador,
   crearTrabajador,
+  actualizarPermisosTrabajador,
+  obtenerPermisosDisponibles,
   obtenerTrabajadores,
   solicitarRestablecimientoTrabajador,
   type Trabajador,
+  type PermisoIndustrial,
 } from "../../services/usuario.service";
 import { nombreParaMostrar, obtenerSesion } from "../../services/sesion";
 
@@ -53,9 +57,12 @@ function Administracion() {
   const [aviso, setAviso] = useState("");
   const [procesandoId, setProcesandoId] = useState<number | null>(null);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [catalogoPermisos, setCatalogoPermisos] = useState<PermisoIndustrial[]>([]);
+  const [editandoPermisos, setEditandoPermisos] = useState<Trabajador | null>(null);
+  const [permisosSeleccionados, setPermisosSeleccionados] = useState<string[]>([]);
   const sesion = obtenerSesion();
   const areaPropia = sesion?.usuario.perfil?.area ?? "secado";
-  const administraTodaLaPlanta = !sesion?.usuario.perfil || areaPropia === "administracion";
+  const administraTodasLasAreas = !sesion?.usuario.perfil || areaPropia === "administracion";
   const [nuevo, setNuevo] = useState<{ username: string; email: string; nombre: string; apellido: string; area: string; nivel: "admin" | "trabajador"; cargo: string; password: string }>({ username: "", email: "", nombre: "", apellido: "", area: areaPropia, nivel: "trabajador", cargo: "", password: "" });
 
   useEffect(() => {
@@ -71,6 +78,10 @@ function Administracion() {
       .finally(() => {
         if (vigente) setCargando(false);
       });
+
+    obtenerPermisosDisponibles()
+      .then(setCatalogoPermisos)
+      .catch(() => setCatalogoPermisos([]));
 
     return () => {
       vigente = false;
@@ -146,6 +157,31 @@ function Administracion() {
       setProcesandoId(null);
     }
   };
+
+  const abrirPermisos = (trabajador: Trabajador) => {
+    setEditandoPermisos(trabajador);
+    setPermisosSeleccionados(trabajador.permisos_asignados ?? []);
+  };
+
+  const guardarPermisos = async () => {
+    if (!editandoPermisos) return;
+    setProcesandoId(editandoPermisos.id);
+    try {
+      const actualizado = await actualizarPermisosTrabajador(
+        editandoPermisos.id,
+        permisosSeleccionados,
+      );
+      setTrabajadores((actuales) =>
+        actuales.map((item) => item.id === actualizado.id ? actualizado : item),
+      );
+      setEditandoPermisos(null);
+      setAviso("Permisos actualizados correctamente.");
+    } catch {
+      setError("No se pudieron actualizar los permisos del trabajador.");
+    } finally {
+      setProcesandoId(null);
+    }
+  };
   return (
     <div className="px-8 py-10">
       <div className="mx-auto max-w-7xl">
@@ -178,10 +214,10 @@ function Administracion() {
             <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input placeholder="Apellido" value={nuevo.apellido} onChange={(e) => setNuevo({ ...nuevo, apellido: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input required type="password" minLength={8} autoComplete="new-password" placeholder="Contraseña inicial" value={nuevo.password} onChange={(e) => setNuevo({ ...nuevo, password: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
-            <select disabled={!administraTodaLaPlanta} value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100">
+            <select disabled={!administraTodasLasAreas} value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100">
               {["recepcion", "condensacion", "secado", "envase", "calidad", "bodega", "compras", "despacho", "administracion"].map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
-            <select disabled={!administraTodaLaPlanta} value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
+            <select disabled={!administraTodasLasAreas} value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
             <input placeholder="Cargo" value={nuevo.cargo} onChange={(e) => setNuevo({ ...nuevo, cargo: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <button className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">Crear usuario</button>
           </form>
@@ -258,6 +294,7 @@ function Administracion() {
                         </button>
                       </td>
                       <td className="px-6 py-4">
+                        <div className="flex flex-col items-start gap-2">
                         <button
                           type="button"
                           disabled={!trabajador.activo || !trabajador.email || procesandoId === trabajador.id}
@@ -267,6 +304,17 @@ function Administracion() {
                           <KeyRound className="h-4 w-4" />
                           {procesandoId === trabajador.id ? "Enviando…" : "Restablecer"}
                         </button>
+                        {catalogoPermisos.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => abrirPermisos(trabajador)}
+                            className="inline-flex items-center gap-2 text-slate-600 hover:text-green-700"
+                          >
+                            <SlidersHorizontal className="h-4 w-4" />
+                            Permisos ({trabajador.permisos_asignados?.length ?? 0})
+                          </button>
+                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -275,6 +323,39 @@ function Administracion() {
             </div>
           )}
         </section>
+        {editandoPermisos && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+            <section className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Permisos de {nombreParaMostrar(editandoPermisos)}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Solo aparecen capacidades que puedes delegar dentro de tu alcance.
+              </p>
+              <div className="mt-5 max-h-80 space-y-2 overflow-y-auto">
+                {catalogoPermisos.map((permiso) => (
+                  <label key={permiso.codigo} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={permisosSeleccionados.includes(permiso.codigo)}
+                      onChange={(e) => setPermisosSeleccionados((actuales) =>
+                        e.target.checked
+                          ? [...actuales, permiso.codigo]
+                          : actuales.filter((codigo) => codigo !== permiso.codigo),
+                      )}
+                      className="h-4 w-4 accent-emerald-700"
+                    />
+                    <span><strong className="block font-medium">{permiso.nombre}</strong><span className="text-xs text-slate-400">{permiso.codigo}</span></span>
+                  </label>
+                ))}
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" onClick={() => setEditandoPermisos(null)} className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Cancelar</button>
+                <button type="button" disabled={procesandoId === editandoPermisos.id} onClick={() => void guardarPermisos()} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Guardar permisos</button>
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );
