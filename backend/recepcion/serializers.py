@@ -7,9 +7,41 @@ from .models import (
     CONTROLES_DECLARADOS,
     CONTROLES_NUMERICOS,
     VALORES_ADMITIDOS,
+    BusquedaProveedor,
+    ControlInhibidores,
+    ModuloRecepcion,
     MovimientoSilo,
     Recepcion,
 )
+
+
+class ModuloRecepcionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ModuloRecepcion
+        fields = ["id", "numero", "crioscopia", "carga_recoleccion"]
+
+
+class BusquedaProveedorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusquedaProveedor
+        fields = [
+            "id", "proveedor", "charm_bet", "charm_tetra",
+            "delvo_sp", "hora_lectura", "resultado",
+        ]
+
+
+class ControlInhibidoresSerializer(serializers.ModelSerializer):
+    busquedas = BusquedaProveedorSerializer(many=True, read_only=True)
+    analista_nombre = serializers.CharField(
+        source="analista.get_full_name", read_only=True
+    )
+
+    class Meta:
+        model = ControlInhibidores
+        fields = [
+            "id", "recepcion", "metodo", "tiras_usadas", "hora_lectura",
+            "resultado", "analista", "analista_nombre", "busquedas",
+        ]
 
 
 class RecepcionSerializer(serializers.ModelSerializer):
@@ -33,6 +65,29 @@ class RecepcionSerializer(serializers.ModelSerializer):
     # límite, todas las recepciones quedan reevaluadas.
     evaluacion = serializers.SerializerMethodField()
 
+    # Los módulos se crean a mano en `registrar_llegada` (el bucle explícito
+    # sobre `ModuloRecepcion.objects.create`). De solo lectura acá: un solo
+    # camino para crearlos es mejor que dos, y evita que un `PATCH` a la
+    # recepción los reescriba sin pasar por esas validaciones.
+    modulos = ModuloRecepcionSerializer(many=True, read_only=True)
+    controles_inhibidores = ControlInhibidoresSerializer(many=True, read_only=True)
+
+    # Los diez derivados del formato: se calculan siempre, nunca se guardan.
+    kg_guia = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    diferencia_kg = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    solidos_totales = serializers.FloatField(read_only=True)
+    solidos_totales_kg = serializers.FloatField(read_only=True)
+    crioscopia_pool = serializers.FloatField(read_only=True)
+    permanencia_horas = serializers.FloatField(read_only=True)
+    horas_en_planta = serializers.FloatField(read_only=True)
+    horas_a_pagar = serializers.IntegerField(read_only=True)
+    tiempo_en_fabrica_horas = serializers.FloatField(read_only=True)
+    tiempo_de_descarga_horas = serializers.FloatField(read_only=True)
+
     class Meta:
         model = Recepcion
         fields = [
@@ -45,6 +100,22 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "procedencia",
             "tipo_leche",
             "litros",
+            "kg_romana",
+            "certificada",
+            "uso",
+            "uso_numero",
+            "hora_programa",
+            "hora_arribo_porteria",
+            "hora_ingreso",
+            "hora_inicio_descarga",
+            "hora_termino_descarga",
+            "hora_inicio_cip",
+            "hora_termino_cip",
+            "hora_salida",
+            "lavado_ruedas",
+            "relavado",
+            "recambio_dilucion",
+            "ph_camion",
             "silo",
             "silo_codigo",
             "operador",
@@ -66,7 +137,19 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "silo_asignado_por_nombre",
             "silo_asignado_en",
             "evaluacion",
+            "modulos",
+            "controles_inhibidores",
+            "kg_guia",
+            "diferencia_kg",
+            "solidos_totales",
+            "solidos_totales_kg",
+            "crioscopia_pool",
             "diferencia_recoleccion_litros",
+            "permanencia_horas",
+            "horas_en_planta",
+            "horas_a_pagar",
+            "tiempo_en_fabrica_horas",
+            "tiempo_de_descarga_horas",
         ]
         read_only_fields = [
             "silo",
@@ -85,7 +168,19 @@ class RecepcionSerializer(serializers.ModelSerializer):
         ]
 
     def get_evaluacion(self, recepcion):
-        evaluacion = dominio.evaluar_recepcion(recepcion.controles)
+        evaluacion = dominio.evaluar_recepcion(
+            recepcion.controles,
+            # Pares (numero, crioscopia): el número lo pone el módulo, no la
+            # posición en la lista. Los números registrados no tienen por
+            # qué ser contiguos, y con `enumerate` el módulo 3 saldría
+            # acusado como «M2» — el motivo es lo que le dice a Calidad qué
+            # compartimiento re-muestrear.
+            crioscopias=[
+                (modulo.numero, modulo.crioscopia)
+                for modulo in recepcion.modulos.all()
+            ],
+            ph_camion=recepcion.ph_camion,
+        )
 
         return {
             "conforme": evaluacion.conforme,

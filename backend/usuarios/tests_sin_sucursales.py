@@ -474,9 +474,10 @@ class RegistrarLlegadaTests(TestCase):
                 "guia": "G-9",
                 "vehiculo": self.camion.id,
                 "tipo_leche": "Entera",
+                "litros": "40000.00",
                 "modulos": [
-                    {"modulo": "M1", "litros": "20000.00"},
-                    {"modulo": "M2", "litros": "20000.00"},
+                    {"numero": 1},
+                    {"numero": 2},
                 ],
                 **extra,
             },
@@ -487,8 +488,8 @@ class RegistrarLlegadaTests(TestCase):
         respuesta = self._registrar()
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
-        creadas = respuesta.json()
-        self.assertEqual(len(creadas), 2)
+        creada = respuesta.json()
+        self.assertEqual(len(creada["modulos"]), 2)
 
     def test_un_segundo_registro_interno_no_se_pide(self):
         Sucursal.objects.create(empresa=self.empresa, codigo="U2", nombre="Segunda")

@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.db import transaction
@@ -20,7 +21,10 @@ from usuarios.tenancy import (
 )
 
 from . import dominio
-from .models import BusquedaProveedor, MovimientoSilo, Recepcion
+from .models import (
+    CONTROLES_DECLARADOS, BusquedaProveedor, ModuloRecepcion, MovimientoSilo,
+    Recepcion,
+)
 from .serializers import (
     AjusteSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
     TransferenciaSiloSerializer,
@@ -85,6 +89,12 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         "muestreado_por",
         "calidad_por",
         "silo_asignado_por",
+    ).prefetch_related(
+        "modulos",
+        # `crioscopia_pool`, `diferencia_recoleccion_litros` y `get_evaluacion`
+        # recorren `modulos` por fila; sin este prefetch, exponerlas en el
+        # serializer dispara una consulta por recepción (N+1) al listar.
+        "controles_inhibidores__busquedas",
     )
     serializer_class = RecepcionSerializer
     permission_classes = [EscribeRecepcion]
@@ -214,65 +224,77 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     @action(detail=False, methods=["post"], url_path="registrar-llegada")
     def registrar_llegada(self, request):
         """
-        Registra los camiones de una llegada.
+        Registra un camión: **un** registro, con sus módulos.
 
-        Versión mínima: cada elemento de `modulos` crea su propia `Recepcion`,
-        sin identificador compartido — ya no existe `llegada_id`. La Task 7
-        rediseña este contrato para que un camión sea un único registro con
-        sus `ModuloRecepcion` (crioscopía por compartimiento).
+        Los litros, el silo y el destino son del camión. Lo único que baja al
+        módulo es la crioscopía, que es lo único que el formato mide por
+        compartimiento.
         """
         modulos = request.data.get("modulos")
+
         if not isinstance(modulos, list) or not modulos:
             return Response(
-                {"modulos": "Agrega al menos un modulo o compartimiento."},
+                {"modulos": "Declara al menos un compartimiento del camión."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # La misma resolución que el resto de las escrituras. Resolverla aquí a
-        # mano volvía a exigirle la planta a quien administra —el formulario no
-        # tiene ese campo— y respondía el mismo 400 que se corrigió en 92513e8.
+        numeros = [item.get("numero") for item in modulos if isinstance(item, dict)]
+
+        if len(numeros) != len(modulos) or any(
+            not isinstance(numero, int) or numero < 1 for numero in numeros
+        ):
+            return Response(
+                {"modulos": "Cada módulo necesita su número (1 a 4)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(set(numeros)) != len(numeros):
+            return Response(
+                {"modulos": "No repitas el mismo número de módulo en el camión."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         sucursal = sucursal_para_escritura(request.user, {})
 
-        generales = {
-            clave: request.data.get(clave)
-            for clave in (
-                "fecha", "hora", "guia", "vehiculo", "procedencia",
-                "tipo_leche", "turno", "observacion",
-            )
-            if request.data.get(clave) not in (None, "")
+        datos = {
+            clave: valor
+            for clave, valor in request.data.items()
+            if clave != "modulos" and valor not in (None, "")
         }
-        serializers = []
-        for item in modulos:
-            datos = {**generales, "sucursal": sucursal.id, "litros": item.get("litros")}
-            serializer = self.get_serializer(data=datos)
-            serializer.is_valid(raise_exception=True)
-            serializers.append(serializer)
+        datos["sucursal"] = sucursal.id
+
+        serializer = self.get_serializer(data=datos)
+        serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            recepciones = [
-                serializer.save(
-                    sucursal=sucursal,
-                    operador=request.user,
-                    estado=Recepcion.Estado.REGISTRADA,
+            recepcion = serializer.save(
+                sucursal=sucursal,
+                operador=request.user,
+                estado=Recepcion.Estado.REGISTRADA,
+            )
+
+            for item in modulos:
+                ModuloRecepcion.objects.create(
+                    recepcion=recepcion,
+                    numero=item["numero"],
+                    crioscopia=item.get("crioscopia") or None,
+                    carga_recoleccion_id=item.get("carga_recoleccion") or None,
                 )
-                for serializer in serializers
-            ]
-            total = sum((recepcion.litros for recepcion in recepciones), 0)
-            primera = recepciones[0]
+
             _notificar_recepcion(
-                primera,
+                recepcion,
                 tipo="leche_recepcionada",
                 titulo="Camion de leche recepcionado",
                 mensaje=(
-                    f"Se recibieron {total} L en {len(recepciones)} registro(s) del "
-                    f"camion {primera.vehiculo.placa if primera.vehiculo else 'sin patente'}."
+                    f"Se recibieron {recepcion.litros} L del camión "
+                    f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'} "
+                    f"en {len(modulos)} compartimiento(s)."
                 ),
                 areas=[PerfilUsuario.Area.RECEPCION],
             )
 
         return Response(
-            self.get_serializer(recepciones, many=True).data,
-            status=status.HTTP_201_CREATED,
+            self.get_serializer(recepcion).data, status=status.HTTP_201_CREATED
         )
 
     @action(detail=True, methods=["post"], url_path="tomar-muestra")
@@ -570,6 +592,10 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     @action(detail=False, methods=["get"], url_path="catalogos-flujo")
     def catalogos_flujo(self, request):
         usuarios = _usuarios_recepcion(request.user)
+
+        def opciones(choices):
+            return [{"valor": valor, "etiqueta": etiqueta} for valor, etiqueta in choices]
+
         return Response({
             "responsables_recepcion": [
                 {
@@ -579,6 +605,93 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 }
                 for usuario in usuarios.select_related("perfil")
             ],
+            # Los catálogos se sirven desde aquí y no se escriben en el
+            # frontend: una copia ofrece tarde o temprano un valor que el
+            # backend rechaza.
+            "usos": opciones(Recepcion.Uso.choices),
+            "usos_numerados": list(Recepcion.USOS_NUMERADOS),
+            "procedencias": opciones(Recepcion.Procedencia.choices),
+            "recambios_dilucion": opciones(Recepcion.RecambioDilucion.choices),
+            "controles": sorted(CONTROLES_DECLARADOS),
+        })
+
+    @action(detail=False, methods=["get"], url_path="resumen-diario")
+    def resumen_diario(self, request):
+        """
+        Los totales que la planilla pone al pie: litros y kilos del día,
+        reparto por silo y por procedencia, promedios de grasa y SNG, y las
+        horas de sobreestadía.
+
+        Las horas se suman en Python y no en SQL porque `permanencia` devuelve
+        `None` cuando falta una marca horaria, y esa distinción —no medido
+        contra cero— es justamente la que la planilla perdía.
+        """
+        fecha = request.query_params.get("fecha")
+
+        if not fecha:
+            return Response(
+                {"fecha": "Indica la fecha del resumen (YYYY-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        base = filtrar_por_scope(
+            Recepcion.objects.filter(fecha=fecha).prefetch_related("modulos"),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+
+        recepciones = list(base)
+
+        litros = sum((r.litros or Decimal("0") for r in recepciones), Decimal("0"))
+        kg_guia = sum(
+            (r.kg_guia or Decimal("0") for r in recepciones), Decimal("0")
+        )
+        kg_romana = sum(
+            (r.kg_romana or Decimal("0") for r in recepciones), Decimal("0")
+        )
+
+        por_silo = {}
+        por_procedencia = {}
+        for recepcion in recepciones:
+            if recepcion.silo_id:
+                clave = recepcion.silo.codigo
+                por_silo[clave] = por_silo.get(clave, Decimal("0")) + recepcion.litros
+            if recepcion.procedencia:
+                por_procedencia[recepcion.procedencia] = (
+                    por_procedencia.get(recepcion.procedencia, Decimal("0"))
+                    + recepcion.litros
+                )
+
+        grasas = [
+            r.controles.get("grasa") for r in recepciones
+            if (r.controles or {}).get("grasa") is not None
+        ]
+        sngs = [
+            r.controles.get("sng") for r in recepciones
+            if (r.controles or {}).get("sng") is not None
+        ]
+
+        horas = [r.horas_a_pagar for r in recepciones]
+        medidas = [h for h in horas if h is not None]
+
+        return Response({
+            "fecha": fecha,
+            "camiones": len(recepciones),
+            "litros": str(litros),
+            "kg_guia": str(kg_guia),
+            "kg_romana": str(kg_romana),
+            "diferencia_kg": str(kg_romana - kg_guia),
+            "por_silo": {clave: str(valor) for clave, valor in por_silo.items()},
+            "por_procedencia": {
+                clave: str(valor) for clave, valor in por_procedencia.items()
+            },
+            "grasa_promedio": round(sum(grasas) / len(grasas), 2) if grasas else None,
+            "sng_promedio": round(sum(sngs) / len(sngs), 2) if sngs else None,
+            "horas_a_pagar": sum(medidas),
+            # Cuántos camiones no se pudieron calcular. Sin esto el total
+            # parecería completo aunque le falte la mitad de las marcas.
+            "camiones_sin_marcas_horarias": len(horas) - len(medidas),
         })
 
 

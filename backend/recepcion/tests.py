@@ -221,12 +221,11 @@ class BaseAPIRecepcion(TestCase):
 
 
 class FlujoRecepcionTests(BaseAPIRecepcion):
-    def test_registra_un_camion_con_varios_modulos(self):
+    def test_registra_un_camion_con_sus_modulos(self):
         """
-        Versión mínima de `registrar-llegada`: cada entrada de `modulos` crea
-        su propia `Recepcion`, sin identificador compartido. La Task 7
-        rediseña el contrato para que un camión sea un único registro con sus
-        `ModuloRecepcion`.
+        Contrato de la Task 7: un camión es **un** registro, con sus módulos
+        (crioscopía por compartimiento). Ver `tests_api_instructivo.py` para
+        las pruebas dedicadas de `registrar-llegada`.
         """
         respuesta = self.cliente.post(
             "/api/recepcion/recepciones/registrar-llegada/",
@@ -235,20 +234,18 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
                 "guia": "GUIA-CAMION-1",
                 "vehiculo": self.camion.id,
                 "tipo_leche": "Entera",
+                "litros": "25000.00",
                 "modulos": [
-                    {"litros": "12000.00"},
-                    {"litros": "13000.00"},
+                    {"numero": 1},
+                    {"numero": 2},
                 ],
             },
             format="json",
         )
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
-        self.assertEqual(len(respuesta.json()), 2)
-        self.assertEqual(
-            sorted(Decimal(r["litros"]) for r in respuesta.json()),
-            [Decimal("12000.00"), Decimal("13000.00")],
-        )
+        self.assertEqual(Recepcion.objects.count(), 1)
+        self.assertEqual(Recepcion.objects.get().modulos.count(), 2)
 
     """Llegada → muestra → Calidad → silo → descarga."""
 
