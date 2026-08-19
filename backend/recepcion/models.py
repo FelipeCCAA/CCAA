@@ -20,6 +20,8 @@ from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 from maestros.models import Silo, Vehiculo
 
+from . import dominio
+
 
 CONTROLES_DECLARADOS = {
     "temperatura",
@@ -67,8 +69,37 @@ class Recepcion(models.Model):
     )
 
     class Procedencia(models.TextChoices):
+        CCAA = "CCAA", "CCAA"
         NESTLE = "Nestlé", "Nestlé"
+        COLUN = "Colun", "Colun"
         P_UNION = "P. Unión", "P. Unión"
+
+    class Uso(models.TextChoices):
+        """
+        A qué va la leche del camión. El comentario de la celda O15 del
+        formato lo explica: «a qué n° de precondensado va ir esta leche, sirve
+        para llevar trazabilidad y desviación de uso».
+
+        Se guarda la familia aparte del número (`uso_numero`) porque la
+        pregunta que motiva el campo —qué entró al Semi n°2— no se puede
+        hacer contra un texto libre que además viene con variantes de tipeo.
+        """
+
+        DESPACHO = "despacho", "Despacho"
+        STOCK = "stock", "Stock"
+        SEMI = "semi", "Precondensado semidescremado"
+        ENTERO = "entero", "Precondensado entero"
+        LE = "le", "Leche entera"
+        SUERO = "suero", "Suero"
+        ANTIBIOTICO = "antibiotico", "Antibiótico"
+
+    class RecambioDilucion(models.TextChoices):
+        RECAMBIO = "recambio", "Recambio"
+        OK = "ok", "OK"
+
+    # Familias que numeran su destino. `Despacho` o `Stock` con un número
+    # detrás no significaría nada.
+    USOS_NUMERADOS = ("semi", "entero")
 
     class TipoLeche(models.TextChoices):
         ENTERA = "Entera", "Entera"
@@ -118,6 +149,55 @@ class Recepcion(models.Model):
         "Tipo de leche", max_length=20, choices=TipoLeche.choices
     )
     litros = models.DecimalField("Litros", max_digits=12, decimal_places=2)
+    kg_romana = models.DecimalField(
+        "Kilos (romana)",
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="El pesaje real. Los kilos de guía se derivan de los litros.",
+    )
+    certificada = models.BooleanField(
+        "Leche certificada",
+        null=True,
+        blank=True,
+        help_text="Nulo = no se registró, que no es lo mismo que no certificada",
+    )
+    uso = models.CharField("Uso", max_length=20, choices=Uso.choices, blank=True)
+    uso_numero = models.PositiveSmallIntegerField(
+        "N° de destino", null=True, blank=True
+    )
+
+    # Las ocho marcas horarias del formato. Son fijas y una sola vez por
+    # camión, así que van aquí y no en un modelo hijo.
+    hora_programa = models.TimeField("Hora programa", null=True, blank=True)
+    hora_arribo_porteria = models.TimeField("Arribo a portería", null=True, blank=True)
+    hora_ingreso = models.TimeField("Hora de ingreso", null=True, blank=True)
+    hora_inicio_descarga = models.TimeField("Inicio de descarga", null=True, blank=True)
+    hora_termino_descarga = models.TimeField("Término de descarga", null=True, blank=True)
+    hora_inicio_cip = models.TimeField("Inicio del lavado CIP", null=True, blank=True)
+    hora_termino_cip = models.TimeField("Término del lavado CIP", null=True, blank=True)
+    hora_salida = models.TimeField("Hora de salida", null=True, blank=True)
+
+    # Higiene del camión.
+    lavado_ruedas = models.BooleanField("Lavado de ruedas", null=True, blank=True)
+    relavado = models.BooleanField(
+        "Vuelve a lavarse e ingresa", null=True, blank=True
+    )
+    recambio_dilucion = models.CharField(
+        "Cambio de dilución", max_length=20, choices=RecambioDilucion.choices, blank=True
+    )
+    ph_camion = models.DecimalField(
+        "pH del camión",
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Del enjuague del camión (5,5 a 8,5), NO de la leche. Mezclarlo con "
+            "el pH de la leche haría que el agua retuviera un camión conforme."
+        ),
+    )
     silo = models.ForeignKey(
         Silo,
         on_delete=models.PROTECT,
@@ -216,6 +296,55 @@ class Recepcion(models.Model):
 
         return self.litros - sum(carga.litros for carga in cargas)
 
+    @property
+    def kg_guia(self):
+        return dominio.kilos_desde_litros(self.litros)
+
+    @property
+    def diferencia_kg(self):
+        return dominio.diferencia_pesaje(self.kg_guia, self.kg_romana)
+
+    @property
+    def solidos_totales(self):
+        controles = self.controles or {}
+        return dominio.solidos_totales(controles.get("grasa"), controles.get("sng"))
+
+    @property
+    def solidos_totales_kg(self):
+        return dominio.solidos_totales_kg(self.kg_romana, self.solidos_totales)
+
+    @property
+    def crioscopia_pool(self):
+        return dominio.crioscopia_pool(
+            [modulo.crioscopia for modulo in self.modulos.all()]
+        )
+
+    @property
+    def _permanencia(self):
+        return dominio.permanencia(self.hora_arribo_porteria, self.hora_termino_cip)
+
+    @property
+    def permanencia_horas(self):
+        return self._permanencia.horas
+
+    @property
+    def horas_en_planta(self):
+        return self._permanencia.horas_en_planta
+
+    @property
+    def horas_a_pagar(self):
+        return dominio.horas_a_pagar(self.permanencia_horas)
+
+    @property
+    def tiempo_en_fabrica_horas(self):
+        return dominio.horas_entre(self.hora_ingreso, self.hora_termino_cip)
+
+    @property
+    def tiempo_de_descarga_horas(self):
+        return dominio.horas_entre(
+            self.hora_inicio_descarga, self.hora_termino_descarga
+        )
+
     def clean(self):
         if not isinstance(self.controles, dict):
             raise ValidationError({"controles": "Debe ser un objeto de controles."})
@@ -250,6 +379,18 @@ class Recepcion(models.Model):
         if self.estado == self.Estado.RETENIDA and not self.motivo.strip():
             raise ValidationError(
                 {"motivo": "Una recepción retenida debe indicar el motivo."}
+            )
+
+        # Un número de destino sin familia no dice de qué es, y una familia sin
+        # número que la admita convierte el número en ruido.
+        if self.uso_numero is not None and self.uso not in self.USOS_NUMERADOS:
+            raise ValidationError(
+                {
+                    "uso_numero": (
+                        "Solo los precondensados llevan número de destino. "
+                        f"«{self.get_uso_display() or 'sin uso'}» no."
+                    )
+                }
             )
 
     def puede_pasar_a(self, estado) -> bool:
