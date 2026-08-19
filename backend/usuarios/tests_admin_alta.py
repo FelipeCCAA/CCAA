@@ -91,7 +91,7 @@ class SinTenantInventadoTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.assertFalse(PerfilUsuario.objects.filter(usuario=self.jefe).exists())
 
-    def test_indicando_el_tenant_si_se_guarda(self):
+    def test_el_admin_guarda_el_perfil_a_nivel_empresa(self):
         empresa = Empresa.objects.create(rut="76.999.999-9", nombre="CCAA")
         planta = Sucursal.objects.create(
             empresa=empresa, codigo="P1", nombre="Planta"
@@ -119,4 +119,6 @@ class SinTenantInventadoTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 302, respuesta.status_code)
         perfil = PerfilUsuario.objects.get(usuario=self.jefe)
-        self.assertEqual(perfil.sucursal_id, planta.pk)
+        self.assertEqual(perfil.empresa_id, empresa.pk)
+        self.assertIsNone(perfil.sucursal_id)
+        self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.EMPRESA)

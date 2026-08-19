@@ -54,6 +54,12 @@ function Barra({ silo }: { silo: OcupacionSilo }) {
         </span>
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        <span className={`rounded-full px-2.5 py-1 font-medium ${silo.estado === "bloqueado_calidad" || silo.estado === "en_cip" || silo.estado === "fuera_servicio" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>{silo.estado_etiqueta}</span>
+        {silo.producto_actual && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{silo.producto_actual}</span>}
+        {silo.temperatura_actual != null && <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">{silo.temperatura_actual} °C</span>}
+      </div>
+
       <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full transition-[width] ${color}`} style={{ width: `${ancho}%` }} />
       </div>
@@ -62,7 +68,7 @@ function Barra({ silo }: { silo: OcupacionSilo }) {
         <p className="text-sm font-semibold text-slate-800">
           {formato.format(silo.litros)} L
         </p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-600">
           de {formato.format(silo.capacidad)} L
         </p>
       </div>
@@ -96,7 +102,7 @@ function Silos() {
   }
 
   if (!ocupacion) {
-    return <p className="py-10 text-center text-sm text-slate-400">Cargando…</p>;
+    return <p className="py-10 text-center text-sm text-slate-600">Cargando…</p>;
   }
 
   const descuadrados = ocupacion.silos.filter((s) => s.negativo || s.excedido);
@@ -126,7 +132,7 @@ function Silos() {
             Un saldo negativo significa que salió más leche de la que entró; uno
             por encima de la capacidad, que el silo no daba para lo que se
             descargó. En los dos casos el libro de movimientos no cuadra y el
-            volumen en planta que se muestre está mal.
+            volumen disponible que se muestre está mal.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {descuadrados.map((s) => (
@@ -144,14 +150,14 @@ function Silos() {
       <section className="rounded-2xl border border-slate-200 bg-white px-6 py-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Volumen en planta
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Volumen disponible
             </p>
             <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
               {formato.format(ocupacion.litros_totales)} L
             </p>
           </div>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-600">
             {pctTotal}% de {formato.format(capacidadTotal)} L ·{" "}
             {ocupacion.silos.length} unidades
           </p>

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from usuarios.models import Empresa, Sucursal
+from usuarios.models import Empresa
 from usuarios.tenancy import scope_de, unica_empresa_activa
 
 from .catalogos import PARAMETROS
@@ -49,18 +49,6 @@ def _empresa_del_actor(scope):
     # El superusuario no está acotado a ninguna: se resuelve si hay una sola
     # activa, y si hay varias se deja vacía para que el viewset lo diga.
     return unica_empresa_activa()
-
-
-def _restringir_sucursal(serializer, campo="sucursal"):
-    scope = _scope_del_contexto(serializer)
-    queryset = Sucursal.objects.filter(activa=True)
-    if scope is None:
-        queryset = queryset.none()
-    elif not scope.es_global:
-        queryset = queryset.filter(empresa_id=scope.empresa_id)
-        if scope.es_sucursal:
-            queryset = queryset.filter(pk=scope.sucursal_id)
-    serializer.fields[campo].queryset = queryset
 
 
 def _restringir_relacion_empresa(serializer, campo, queryset, lookup):
@@ -228,7 +216,6 @@ class EquipoSerializer(serializers.ModelSerializer):
         model = Equipo
         fields = [
             "id",
-            "sucursal",
             "codigo",
             "nombre",
             "tipo",
@@ -238,33 +225,25 @@ class EquipoSerializer(serializers.ModelSerializer):
             "activo",
         ]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        _restringir_sucursal(self)
-
-
 class SiloSerializer(serializers.ModelSerializer):
     tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+    estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
 
     class Meta:
         # Sin campo de ocupación: es un saldo que se calcula desde el libro de
         # movimientos. Vive en /api/recepcion/ocupacion/.
         model = Silo
         fields = [
-            "id", "sucursal", "codigo", "tipo", "tipo_etiqueta", "capacidad_l", "activo"
+            "id", "codigo", "tipo", "tipo_etiqueta", "capacidad_l",
+            "estado", "estado_etiqueta", "producto_actual", "temperatura_actual",
+            "ultima_limpieza", "activo",
         ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        _restringir_sucursal(self)
-
 
 class VehiculoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehiculo
         fields = [
             "id",
-            "sucursal",
             "numero",
             "placa",
             "tipo",
@@ -274,11 +253,6 @@ class VehiculoSerializer(serializers.ModelSerializer):
             "chofer_pm",
             "activo",
         ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        _restringir_sucursal(self)
-
 
 class EspecificacionSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)

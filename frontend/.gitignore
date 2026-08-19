@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Auditoría de accesibilidad (Playwright).
+#
+# `.auth/` guarda un token de sesión real: versionarlo publicaría una
+# credencial válida. El resto es salida derivada, se regenera al correr.
+e2e/.auth/
+e2e/.artefactos/
+e2e/.registro/
+e2e/.informe-html/
+playwright-report/
+test-results/

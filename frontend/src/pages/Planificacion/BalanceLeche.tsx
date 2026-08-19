@@ -70,14 +70,14 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
         <thead>
           <tr className="border-b border-slate-200 text-left">
 
-            <th className="px-3 py-2 text-xs font-medium text-slate-400">
+            <th className="px-3 py-2 text-xs font-medium text-slate-600">
               Litros
             </th>
 
             {filas.map((fila) => (
               <th key={fila.dia} className="px-3 py-2 text-right">
                 <span className="block text-slate-700">{DIAS[fila.dia]}</span>
-                <span className="block text-[10px] font-normal text-slate-400">
+                <span className="block text-[10px] font-normal text-slate-600">
                   {fechas[fila.dia]}
                 </span>
               </th>
@@ -89,7 +89,7 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
         <tbody>
 
           <tr className="border-b border-slate-100">
-            <td className="px-3 py-2 text-slate-500">Stock 8 AM</td>
+            <td className="px-3 py-2 text-slate-600">Stock 8 AM</td>
             {filas.map((f) => (
               <Celda key={f.dia} valor={f.stock_inicial} />
             ))}
@@ -97,7 +97,7 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
 
           {ORIGENES.map((origen) => (
             <tr key={origen.valor} className="border-b border-slate-100">
-              <td className="px-3 py-2 text-slate-500">
+              <td className="px-3 py-2 text-slate-600">
                 Recepción {origen.etiqueta}
               </td>
               {filas.map((f) => (
@@ -119,9 +119,9 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
 
           {CATEGORIAS.map((categoria) => (
             <tr key={categoria.valor} className="border-b border-slate-100">
-              <td className="px-3 py-2 text-slate-500">
+              <td className="px-3 py-2 text-slate-600">
                 {categoria.etiqueta}
-                <span className="ml-1 text-[10px] text-slate-400">
+                <span className="ml-1 text-[10px] text-slate-600">
                   del programa
                 </span>
               </td>
@@ -135,9 +135,9 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
           ))}
 
           <tr className="border-b border-slate-100">
-            <td className="px-3 py-2 text-slate-500">
+            <td className="px-3 py-2 text-slate-600">
               Trasvasije
-              <span className="ml-1 text-[10px] text-slate-400">manual</span>
+              <span className="ml-1 text-[10px] text-slate-600">manual</span>
             </td>
             {filas.map((f) => (
               <Celda key={f.dia} valor={f.consumo.trasvasije} />
@@ -166,7 +166,7 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
 
           {ORIGENES.map((origen) => (
             <tr key={origen.valor} className="border-b border-slate-100">
-              <td className="px-3 py-2 text-slate-500">
+              <td className="px-3 py-2 text-slate-600">
                 Saldo {origen.etiqueta}
               </td>
               {filas.map((f) => (
@@ -192,7 +192,7 @@ function BalanceLeche({ balance, fechas, dias = 6 }: Props) {
           <span>
             Hay saldos negativos por origen: se programó más leche de la que se
             espera recibir de ese mandante. No se recorta a cero a propósito —
-            esconderlo haría que el error llegara a planta.
+            esconderlo haría que el error llegara a producción.
           </span>
 
         </p>

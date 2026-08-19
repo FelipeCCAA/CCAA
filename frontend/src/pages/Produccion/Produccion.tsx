@@ -7,10 +7,12 @@ import {
   buscarLotes,
   kilos,
   obtenerParametros,
+  obtenerPallets,
   obtenerProductos,
   RESULTADOS,
   type Lote,
   type Parametro,
+  type PalletProducto,
   type Producto,
 } from "../../services/produccion.service";
 
@@ -33,6 +35,7 @@ function Produccion() {
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [parametros, setParametros] = useState<Parametro[]>([]);
+  const [pallets, setPallets] = useState<PalletProducto[]>([]);
 
   const [buscar, setBuscar] = useState("");
   const [filtroProducto, setFiltroProducto] = useState("");
@@ -79,10 +82,11 @@ function Produccion() {
   // Los maestros no cambian al filtrar: se cargan una sola vez.
   useEffect(() => {
 
-    Promise.all([obtenerProductos(), obtenerParametros()])
-      .then(([listaProductos, listaParametros]) => {
+    Promise.all([obtenerProductos(), obtenerParametros(), obtenerPallets()])
+      .then(([listaProductos, listaParametros, paginaPallets]) => {
         setProductos(listaProductos);
         setParametros(listaParametros);
+        setPallets(paginaPallets.results);
       })
       .catch((error) => console.error("Error cargando los maestros:", error));
 
@@ -125,7 +129,7 @@ function Produccion() {
 
             </h1>
 
-            <p className="mt-2 text-slate-500">
+            <p className="mt-2 text-slate-600">
 
               Lotes de polvo y crema. El resultado de calidad se evalúa contra
               la especificación vigente a la fecha de cada lote.
@@ -150,7 +154,7 @@ function Produccion() {
 
           ) : (
 
-            <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500">
+            <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
 
               Tu rol permite consultar, no registrar lotes.
 
@@ -166,7 +170,7 @@ function Produccion() {
 
           <div className="relative">
 
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
 
             <input
               className={`${control} w-56 pl-9`}
@@ -221,7 +225,7 @@ function Produccion() {
 
           </select>
 
-          <span className="ml-auto text-sm text-slate-400">
+          <span className="ml-auto text-sm text-slate-600">
 
             {cargando ? "Cargando…" : `${formato.format(total)} lote${total === 1 ? "" : "s"}`}
 
@@ -245,7 +249,7 @@ function Produccion() {
 
           {!cargando && lotes.length === 0 ? (
 
-            <p className="px-6 py-10 text-center text-sm text-slate-400">
+            <p className="px-6 py-10 text-center text-sm text-slate-600">
 
               {total === 0 && !buscar && !filtroProducto && !filtroCalidad
                 ? "Todavía no hay lotes registrados."
@@ -259,7 +263,7 @@ function Produccion() {
 
               <table className="w-full text-left text-sm">
 
-                <thead className="text-slate-500">
+                <thead className="text-slate-600">
 
                   <tr>
 
@@ -352,6 +356,12 @@ function Produccion() {
 
         </section>
 
+        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-slate-800">Envase y pallets recientes</h2>
+          <p className="mt-1 text-sm text-slate-600">Unidades físicas vinculadas al lote maestro y pendientes de su puerta de Calidad.</p>
+          {pallets.length === 0 ? <p className="py-8 text-center text-sm text-slate-600">Todavía no hay pallets registrados.</p> : <div className="mt-5 overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-slate-600"><tr><th className="px-4 py-3">Pallet</th><th className="px-4 py-3">Unidades</th><th className="px-4 py-3">Peso neto</th><th className="px-4 py-3">Estado</th></tr></thead><tbody>{pallets.slice(0, 10).map((pallet) => <tr key={pallet.id} className="border-t border-slate-100"><td className="px-4 py-3 font-semibold text-slate-800">{pallet.codigo}</td><td className="px-4 py-3 text-slate-600">{formato.format(pallet.unidades)}</td><td className="px-4 py-3 text-slate-600">{kilos(pallet.kg_neto)}</td><td className="px-4 py-3 text-slate-600">{pallet.estado_etiqueta}</td></tr>)}</tbody></table></div>}
+        </section>
+
         {/* Paginación */}
 
         {ultimaPagina > 1 && (
@@ -369,7 +379,7 @@ function Produccion() {
 
             </button>
 
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-slate-600">
 
               Página {pagina} de {ultimaPagina}
 

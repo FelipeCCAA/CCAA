@@ -56,7 +56,7 @@ const ESTILO_ESTADO: Record<EstadoLote, string> = {
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs text-slate-400">{etiqueta}</dt>
+      <dt className="text-xs text-slate-600">{etiqueta}</dt>
       <dd className="mt-0.5 text-sm text-slate-800">{children}</dd>
     </div>
   );
@@ -304,7 +304,7 @@ function DetalleLote({
             </h2>
 
             {lote && (
-              <p className="mt-0.5 text-sm text-slate-500">
+              <p className="mt-0.5 text-sm text-slate-600">
                 {lote.producto_nombre} · {lote.mandante_nombre} · {lote.fecha}
               </p>
             )}
@@ -314,7 +314,7 @@ function DetalleLote({
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-600"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
@@ -339,7 +339,7 @@ function DetalleLote({
               <EtiquetaCalidad calidad={lote.calidad} />
 
               {lote.calidad.evaluados > 0 && (
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-600">
                   {lote.calidad.evaluados} análisis
                 </span>
               )}
@@ -435,7 +435,7 @@ function DetalleLote({
                 )}
 
                 {esFinal && puedeEditar && (
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-slate-600">
                     Un lote {lote.estado_etiqueta.toLowerCase()} ya no se edita:
                     es un registro histórico.
                   </p>
@@ -570,7 +570,7 @@ function DetalleLote({
                     en otro producto y su calidad se reevalúa contra otra
                     especificación. Si se tecleó mal, es más honesto anular el
                     lote y registrarlo de nuevo. */}
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-600">
                   El producto no se edita: un lote de otro producto es otro lote.
                   Si se registró mal, anúlalo y créalo de nuevo.
                 </p>
@@ -651,7 +651,7 @@ function DetalleLote({
 
               {(lote.analisis ?? []).length === 0 ? (
 
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-slate-600">
                   Todavía no hay análisis. Sin ellos el lote no puede liberarse.
                 </p>
 
@@ -660,9 +660,9 @@ function DetalleLote({
                 <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
                   {(lote.analisis ?? []).map((a) => (
                     <li key={a.id} className="px-4 py-2.5 text-sm">
-                      <span className="text-slate-500">{a.fecha}</span>
+                      <span className="text-slate-600">{a.fecha}</span>
                       {a.muestra && (
-                        <span className="text-slate-400"> · {a.muestra}</span>
+                        <span className="text-slate-600"> · {a.muestra}</span>
                       )}
                       <span className="ml-2 text-slate-700">
                         {Object.entries(a.valores)
@@ -680,7 +680,7 @@ function DetalleLote({
 
               {lote.estado === "en_proceso" ? (
 
-                <p className="mt-3 text-xs text-slate-400">
+                <p className="mt-3 text-xs text-slate-600">
                   Los análisis se cargan al cerrar la producción: se miden
                   sobre el producto terminado.
                 </p>
@@ -716,13 +716,13 @@ function DetalleLote({
               </h3>
 
               {esFinal && (
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-2 text-sm text-slate-600">
                   {lote.estado_etiqueta} es un estado final: el lote ya no cambia.
                 </p>
               )}
 
               {!puedeEditar && !esFinal && (
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-2 text-sm text-slate-600">
                   Tu rol no permite cambiar el estado de un lote.
                 </p>
               )}
@@ -886,7 +886,7 @@ function DetalleLote({
               )}
 
               {puedeEditar && lote.estado === "en_proceso" && (
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="mt-3 text-xs text-slate-600">
                   Mientras el lote esté en proceso no aparece en Liberación de
                   producto: Calidad solo ve lo que ya terminó de producirse.
                 </p>

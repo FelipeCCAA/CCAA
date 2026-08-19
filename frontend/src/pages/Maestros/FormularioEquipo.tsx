@@ -144,7 +144,7 @@ function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
@@ -179,7 +179,7 @@ function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
               </span>
 
               <input
-                className={`${campo} ${equipo ? "bg-slate-50 text-slate-500" : ""}`}
+                className={`${campo} ${equipo ? "bg-slate-50 text-slate-600" : ""}`}
                 value={codigo}
                 onChange={(e) => {
                   setCodigo(e.target.value);
@@ -189,7 +189,7 @@ function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
                 required
               />
 
-              <span className="mt-1 block text-xs text-slate-400">
+              <span className="mt-1 block text-xs text-slate-600">
                 {equipo
                   ? "No se cambia: la planificación referencia este código."
                   : "Se propone desde el nombre. Se puede editar antes de crear."}

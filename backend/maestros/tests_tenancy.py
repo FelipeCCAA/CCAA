@@ -82,7 +82,7 @@ class TenancyMaestrosTests(TestCase):
         self.assertEqual(respuesta.status_code, 400)
         self.assertFalse(Producto.objects.filter(nombre="Producto cruzado").exists())
 
-    def test_post_de_sucursal_ajena_se_rechaza(self):
+    def test_la_particion_enviada_por_el_cliente_se_ignora(self):
         cliente = self.admin("admin-a1", self.empresa_a, self.a1)
         respuesta = cliente.post(
             "/api/maestros/equipos/",
@@ -94,9 +94,10 @@ class TenancyMaestrosTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a1.id)
 
-    def test_admin_empresa_puede_elegir_sucursal_de_su_empresa(self):
+    def test_admin_empresa_usa_la_configuracion_canonica(self):
         cliente = self.admin(
             "admin-empresa", self.empresa_a, None, PerfilUsuario.Alcance.EMPRESA
         )
@@ -111,9 +112,9 @@ class TenancyMaestrosTests(TestCase):
             format="json",
         )
         self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a2.id)
+        self.assertEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a1.id)
 
-    def test_admin_empresa_no_puede_elegir_sucursal_de_otra_empresa(self):
+    def test_admin_empresa_ignora_una_particion_ajena(self):
         cliente = self.admin(
             "admin-empresa", self.empresa_a, None, PerfilUsuario.Alcance.EMPRESA
         )
@@ -127,4 +128,5 @@ class TenancyMaestrosTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(Equipo.objects.get(codigo="CRUZADO").sucursal_id, self.a1.id)

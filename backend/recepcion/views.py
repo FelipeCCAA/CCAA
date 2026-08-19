@@ -1,10 +1,12 @@
 import uuid
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, Max, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -13,29 +15,35 @@ from rest_framework.response import Response
 from maestros.models import Silo
 from usuarios.areas import perfiles_del_area, usuarios_del_area
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
-from usuarios.models import PerfilUsuario, Rol, Sucursal
+from usuarios.models import PerfilUsuario, Rol
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin,
     filtrar_por_scope, scope_de, sucursal_para_escritura,
 )
 
 from . import dominio
-from .models import CONTROLES_POR_CAMION, CONTROLES_POR_MODULO, MovimientoSilo, Recepcion
-from .serializers import MovimientoSiloSerializer, RecepcionSerializer
+from .models import (
+    CONTROLES_DECLARADOS, BusquedaProveedor, ModuloRecepcion, MovimientoSilo,
+    Recepcion,
+)
+from .serializers import (
+    AjusteSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
+    TransferenciaSiloSerializer,
+)
+from .servicios import ajustar_silo, transferir_silo
 
 
-def _usuarios_recepcion(usuario, sucursal_id):
+def _usuarios_recepcion(usuario):
     """Quién puede figurar como responsable de una muestra."""
     return usuarios_del_area(
         PerfilUsuario.Area.RECEPCION,
         empresa_id=scope_de(usuario, requerido=True).empresa_id,
-        sucursal_id=sucursal_id or None,
     ).order_by("first_name", "last_name", "username")
 
 
 def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
     """
-    Crea avisos operativos solo para la misma empresa y planta.
+    Crea avisos operativos solo para la misma empresa.
 
     Pregunta **lo mismo** que `_usuarios_recepcion`. Cuando cada una lo
     preguntaba a su manera —una miraba `area` o `rol`, esta solo `area`— una
@@ -53,7 +61,6 @@ def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
             perfiles_del_area(
                 area,
                 empresa_id=recepcion.sucursal.empresa_id,
-                sucursal_id=recepcion.sucursal_id,
             ).values_list("usuario_id", flat=True)
         )
     Notificacion.objects.bulk_create([
@@ -73,22 +80,22 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
     tenant_relation_fields = {
-        "sucursal": ("pk", "empresa_id"),
         "vehiculo": ("sucursal_id", "sucursal__empresa_id"),
         "silo": ("sucursal_id", "sucursal__empresa_id"),
-        "carga_recoleccion": (
-            "recoleccion__parada__ruta__vehiculo__sucursal_id",
-            "recoleccion__parada__ruta__vehiculo__sucursal__empresa_id",
-        ),
     }
     queryset = Recepcion.objects.select_related(
         "vehiculo",
-        "carga_recoleccion__recoleccion__parada__ruta__vehiculo",
         "silo",
         "operador",
         "muestreado_por",
         "calidad_por",
         "silo_asignado_por",
+    ).prefetch_related(
+        "modulos",
+        # `crioscopia_pool`, `diferencia_recoleccion_litros` y `get_evaluacion`
+        # recorren `modulos` por fila; sin este prefetch, exponerlas en el
+        # serializer dispara una consulta por recepción (N+1) al listar.
+        "controles_inhibidores__busquedas",
     )
     serializer_class = RecepcionSerializer
     permission_classes = [EscribeRecepcion]
@@ -140,7 +147,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         if termino:
             consulta = consulta.filter(
                 Q(guia__icontains=termino)
-                | Q(modulo__icontains=termino)
                 | Q(codigo_muestra__icontains=termino)
                 | Q(procedencia__icontains=termino)
                 | Q(vehiculo__placa__icontains=termino)
@@ -196,11 +202,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         extra = {}
         sucursal = sucursal_para_escritura(self.request.user, serializer.validated_data)
 
-        carga = serializer.validated_data.get("carga_recoleccion")
-        if carga:
-            extra["vehiculo"] = carga.recoleccion.parada.ruta.vehiculo
-            extra["modulo"] = carga.modulo
-
         if serializer.validated_data.get("operador") is None:
             extra["operador"] = self.request.user
 
@@ -213,8 +214,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             titulo="Leche recepcionada",
             mensaje=(
                 f"Se recibieron {recepcion.litros} L del camion "
-                f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'}, "
-                f"modulo {recepcion.modulo or 'sin identificar'}."
+                f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'}."
             ),
             areas=[PerfilUsuario.Area.RECEPCION],
         )
@@ -224,98 +224,78 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
     @action(detail=False, methods=["post"], url_path="registrar-llegada")
     def registrar_llegada(self, request):
-        """Registra un camion una sola vez y crea sus modulos atomicamente."""
+        """
+        Registra un camión: **un** registro, con sus módulos.
+
+        Los litros, el silo y el destino son del camión. Lo único que baja al
+        módulo es la crioscopía, que es lo único que el formato mide por
+        compartimiento.
+        """
         modulos = request.data.get("modulos")
+
         if not isinstance(modulos, list) or not modulos:
             return Response(
-                {"modulos": "Agrega al menos un modulo o compartimiento."},
+                {"modulos": "Declara al menos un compartimiento del camión."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        identificadores = [
-            str(item.get("modulo", "")).strip()
-            for item in modulos if isinstance(item, dict)
-        ]
-        if len(identificadores) != len(modulos) or any(not valor for valor in identificadores):
+        numeros = [item.get("numero") for item in modulos if isinstance(item, dict)]
+
+        if len(numeros) != len(modulos) or any(
+            not isinstance(numero, int) or numero < 1 or numero > 4
+            for numero in numeros
+        ):
             return Response(
-                {"modulos": "Cada modulo debe tener un identificador."},
+                {"modulos": "Cada módulo necesita su número (1 a 4)."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if len({valor.casefold() for valor in identificadores}) != len(identificadores):
+
+        if len(set(numeros)) != len(numeros):
             return Response(
-                {"modulos": "No repitas el mismo modulo dentro del camion."},
+                {"modulos": "No repitas el mismo número de módulo en el camión."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # La misma resolución que el resto de las escrituras. Resolverla aquí a
-        # mano volvía a exigirle la planta a quien administra —el formulario no
-        # tiene ese campo— y respondía el mismo 400 que se corrigió en 92513e8.
-        #
-        # Se le pasa la **instancia**, no el id que llega en el cuerpo: la
-        # función comprueba el alcance sobre el objeto. Y un id inexistente se
-        # responde con un 400, no con la `DoesNotExist` que antes salía como 500.
-        indicada = request.data.get("sucursal")
-        elegida = None
+        sucursal = sucursal_para_escritura(request.user, {})
 
-        if indicada not in (None, ""):
-            elegida = Sucursal.objects.filter(pk=indicada).first()
-            if elegida is None:
-                return Response(
-                    {"sucursal": "La planta indicada no existe."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        sucursal = sucursal_para_escritura(request.user, {"sucursal": elegida})
-
-        generales = {
-            clave: request.data.get(clave)
-            for clave in (
-                "fecha", "hora", "guia", "vehiculo", "procedencia",
-                "tipo_leche", "turno", "observacion",
-            )
-            if request.data.get(clave) not in (None, "")
+        datos = {
+            clave: valor
+            for clave, valor in request.data.items()
+            if clave != "modulos" and valor not in (None, "")
         }
-        serializers = []
-        for item in modulos:
-            datos = {
-                **generales,
-                "sucursal": sucursal.id,
-                "modulo": str(item.get("modulo", "")).strip(),
-                "litros": item.get("litros"),
-            }
-            if item.get("carga_recoleccion"):
-                datos["carga_recoleccion"] = item["carga_recoleccion"]
-            serializer = self.get_serializer(data=datos)
-            serializer.is_valid(raise_exception=True)
-            serializers.append(serializer)
+
+        serializer = self.get_serializer(data=datos)
+        serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            llegada_id = uuid.uuid4()
-            recepciones = [
-                serializer.save(
-                    sucursal=sucursal,
-                    operador=request.user,
-                    estado=Recepcion.Estado.REGISTRADA,
-                    llegada_id=llegada_id,
+            recepcion = serializer.save(
+                sucursal=sucursal,
+                operador=request.user,
+                estado=Recepcion.Estado.REGISTRADA,
+            )
+
+            for item in modulos:
+                ModuloRecepcion.objects.create(
+                    recepcion=recepcion,
+                    numero=item["numero"],
+                    crioscopia=item.get("crioscopia") or None,
+                    carga_recoleccion_id=item.get("carga_recoleccion") or None,
                 )
-                for serializer in serializers
-            ]
-            total = sum((recepcion.litros for recepcion in recepciones), 0)
-            primera = recepciones[0]
+
             _notificar_recepcion(
-                primera,
+                recepcion,
                 tipo="leche_recepcionada",
                 titulo="Camion de leche recepcionado",
                 mensaje=(
-                    f"Se recibieron {total} L en {len(recepciones)} modulo(s) del "
-                    f"camion {primera.vehiculo.placa if primera.vehiculo else 'sin patente'}."
+                    f"Se recibieron {recepcion.litros} L del camión "
+                    f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'} "
+                    f"en {len(modulos)} compartimiento(s)."
                 ),
                 areas=[PerfilUsuario.Area.RECEPCION],
             )
 
         return Response(
-            self.get_serializer(recepciones, many=True).data,
-            status=status.HTTP_201_CREATED,
+            self.get_serializer(recepcion).data, status=status.HTTP_201_CREATED
         )
 
     @action(detail=True, methods=["post"], url_path="tomar-muestra")
@@ -344,9 +324,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 )
 
             try:
-                responsable = _usuarios_recepcion(
-                    request.user, recepcion.sucursal_id
-                ).get(pk=responsable_id)
+                responsable = _usuarios_recepcion(request.user).get(pk=responsable_id)
             except (User.DoesNotExist, TypeError, ValueError):
                 return Response(
                     {"responsable": "Selecciona un usuario activo del area Recepcion."},
@@ -394,49 +372,18 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            # Solo crioscopia pertenece al modulo. El resto describe el camion
-            # completo y se reutiliza en todos sus compartimientos.
-            hermanos = Recepcion.objects.select_for_update().filter(
-                llegada_id=recepcion.llegada_id,
-            )
-            compartidos = {}
-            for hermano in hermanos:
-                for clave in CONTROLES_POR_CAMION:
-                    valor = (hermano.controles or {}).get(clave)
-                    if valor not in (None, ""):
-                        compartidos.setdefault(clave, valor)
-            compartidos.update({
-                clave: valor for clave, valor in controles.items()
-                if clave in CONTROLES_POR_CAMION and valor not in (None, "")
-            })
-            controles = {
-                **compartidos,
-                **{
-                    clave: valor for clave, valor in controles.items()
-                    if clave in CONTROLES_POR_MODULO
-                },
-            }
-            evaluacion = dominio.evaluar_recepcion(controles)
+            # `Recepcion.evaluar()` arma también la crioscopía de los módulos
+            # y el pH del camión — llamar a `dominio.evaluar_recepcion`
+            # directo aquí, sin esos dos argumentos, es la regresión que
+            # dejó salir leche aguada o con el pH del camión fuera de rango:
+            # la ficha mostraba el motivo (el serializer sí los pasa) pero el
+            # estado que se guardaba no lo consideraba.
+            evaluacion = recepcion.evaluar(controles)
             if decision_manual != "retener" and not evaluacion.analizada:
                 return Response(
                     {"controles": f"Falta completar: {', '.join(evaluacion.faltantes)}."},
                     status=status.HTTP_409_CONFLICT,
                 )
-
-            # Se **lee** de todos los hermanos y se **escribe** solo en los que
-            # siguen sin decidir. Un hermano ya liberado o descargado tiene su
-            # veredicto tomado, y el veredicto se deriva de los controles en vez
-            # de guardarse: reescribirselos se lo cambia despues de que la leche
-            # entro al silo, y el registro queda diciendo «Aprobada por Calidad»
-            # mientras su propio analisis dice antibiotico positivo. Un retenido
-            # tampoco: su retencion se justifico con los valores que tiene.
-            pendientes = hermanos.exclude(pk=recepcion.pk).filter(
-                estado__in=(Recepcion.Estado.REGISTRADA, Recepcion.Estado.MUESTREADA)
-            )
-
-            for hermano in pendientes:
-                hermano.controles = {**(hermano.controles or {}), **compartidos}
-                hermano.save(update_fields=["controles"])
 
             retenida = decision_manual == "retener" or not evaluacion.liberable
             recepcion.controles = controles
@@ -601,11 +548,61 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
         return Response(self.get_serializer(recepcion).data)
 
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        """
+        Cierra la recepción.
+
+        Un positivo de inhibidores no basta con retener: antes de cerrar tiene
+        que estar registrada la búsqueda al proveedor. Es el primer eslabón de
+        la cadena de `REGLAS_DE_PLANTA.md` §1.2, que hasta ahora no existía.
+        """
+        with transaction.atomic():
+            # Se relee con bloqueo de fila (mismo `of=("self",)` que
+            # `descargar`, más abajo): la decisión de cerrar se toma sobre
+            # los controles y el estado que se leen aquí, y sin el bloqueo
+            # `decidir-calidad` podría cambiarlos en el medio — el cierre
+            # quedaría resuelto contra un estado que ya no es el vigente.
+            recepcion = Recepcion.objects.select_for_update(of=("self",)).get(
+                pk=self.get_object().pk
+            )
+
+            busquedas = BusquedaProveedor.objects.filter(
+                control__recepcion=recepcion
+            ).count()
+
+            bloqueos = dominio.bloqueos_de_cierre(
+                recepcion.controles, busquedas_a_proveedor=busquedas
+            )
+
+            if bloqueos:
+                return Response(
+                    {"bloqueos": bloqueos}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not recepcion.puede_pasar_a(Recepcion.Estado.CERRADA):
+                return Response(
+                    {
+                        "estado": (
+                            f"Una recepción {recepcion.get_estado_display()} no puede "
+                            "cerrarse."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            recepcion.estado = Recepcion.Estado.CERRADA
+            recepcion.save(update_fields=["estado"])
+
+        return Response(self.get_serializer(recepcion).data)
+
     @action(detail=False, methods=["get"], url_path="catalogos-flujo")
     def catalogos_flujo(self, request):
-        scope = scope_de(request.user, requerido=True)
-        sucursal_id = scope.sucursal_id if scope.es_sucursal else None
-        usuarios = _usuarios_recepcion(request.user, sucursal_id)
+        usuarios = _usuarios_recepcion(request.user)
+
+        def opciones(choices):
+            return [{"valor": valor, "etiqueta": etiqueta} for valor, etiqueta in choices]
+
         return Response({
             "responsables_recepcion": [
                 {
@@ -615,8 +612,128 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 }
                 for usuario in usuarios.select_related("perfil")
             ],
-            "controles_camion": sorted(CONTROLES_POR_CAMION),
-            "controles_modulo": sorted(CONTROLES_POR_MODULO),
+            # Los catálogos se sirven desde aquí y no se escriben en el
+            # frontend: una copia ofrece tarde o temprano un valor que el
+            # backend rechaza.
+            "usos": opciones(Recepcion.Uso.choices),
+            "usos_numerados": list(Recepcion.USOS_NUMERADOS),
+            "procedencias": opciones(Recepcion.Procedencia.choices),
+            "recambios_dilucion": opciones(Recepcion.RecambioDilucion.choices),
+            "controles": sorted(CONTROLES_DECLARADOS),
+        })
+
+    @action(detail=False, methods=["get"], url_path="resumen-diario")
+    def resumen_diario(self, request):
+        """
+        Los totales que la planilla pone al pie: litros y kilos del día,
+        reparto por silo y por procedencia, promedios de grasa y SNG, y las
+        horas de sobreestadía.
+
+        Las horas se suman en Python y no en SQL porque `permanencia` devuelve
+        `None` cuando falta una marca horaria, y esa distinción —no medido
+        contra cero— es justamente la que la planilla perdía.
+        """
+        fecha_texto = request.query_params.get("fecha")
+
+        if not fecha_texto:
+            return Response(
+                {"fecha": "Indica la fecha del resumen (YYYY-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # `parse_date` devuelve None si el texto no tiene forma de fecha
+            # (p. ej. "abc"), pero levanta ValueError si la forma es correcta
+            # y el valor no existe (p. ej. "2026-13-45", mes 13). Las dos
+            # cosas son la misma pregunta del usuario: "esto no es una
+            # fecha", y las dos se responden 400, no 500.
+            fecha = parse_date(fecha_texto)
+        except ValueError:
+            fecha = None
+
+        if fecha is None:
+            return Response(
+                {"fecha": f"Fecha no reconocida: {fecha_texto!r} (usa AAAA-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        base = filtrar_por_scope(
+            Recepcion.objects.filter(fecha=fecha).prefetch_related("modulos"),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+
+        recepciones = list(base)
+
+        litros = sum((r.litros or Decimal("0") for r in recepciones), Decimal("0"))
+        kg_guia = sum(
+            (r.kg_guia or Decimal("0") for r in recepciones), Decimal("0")
+        )
+
+        # `kg_romana` es nulable: un camión sin pesar no aporta 0 kg de
+        # romana, aporta NADA de romana. Sumarlo con `or Decimal("0")` — como
+        # hacía esto antes — mezclaba ese cero con los kilos completos de su
+        # guía en `diferencia_kg` y producía una diferencia que nadie midió
+        # (el mismo defecto que las 254 horas fantasma, trasladado a la hoja
+        # `Diferencia`). El total y la diferencia se calculan solo sobre los
+        # camiones que sí tienen romana, y `camiones_sin_romana` informa
+        # aparte cuántos quedaron fuera.
+        con_romana = [r for r in recepciones if r.kg_romana is not None]
+        kg_romana = sum((r.kg_romana for r in con_romana), Decimal("0"))
+        diferencia_kg = (
+            kg_romana - sum((r.kg_guia for r in con_romana), Decimal("0"))
+            if con_romana
+            else None
+        )
+        camiones_sin_romana = len(recepciones) - len(con_romana)
+
+        por_silo = {}
+        por_procedencia = {}
+        for recepcion in recepciones:
+            if recepcion.silo_id:
+                clave = recepcion.silo.codigo
+                por_silo[clave] = por_silo.get(clave, Decimal("0")) + recepcion.litros
+            if recepcion.procedencia:
+                por_procedencia[recepcion.procedencia] = (
+                    por_procedencia.get(recepcion.procedencia, Decimal("0"))
+                    + recepcion.litros
+                )
+
+        grasas = [
+            r.controles.get("grasa") for r in recepciones
+            if (r.controles or {}).get("grasa") is not None
+        ]
+        sngs = [
+            r.controles.get("sng") for r in recepciones
+            if (r.controles or {}).get("sng") is not None
+        ]
+
+        horas = [r.horas_a_pagar for r in recepciones]
+        medidas = [h for h in horas if h is not None]
+
+        return Response({
+            "fecha": fecha_texto,
+            "camiones": len(recepciones),
+            "litros": str(litros),
+            "kg_guia": str(kg_guia),
+            "kg_romana": str(kg_romana),
+            "diferencia_kg": str(diferencia_kg) if diferencia_kg is not None else None,
+            "por_silo": {clave: str(valor) for clave, valor in por_silo.items()},
+            "por_procedencia": {
+                clave: str(valor) for clave, valor in por_procedencia.items()
+            },
+            "grasa_promedio": round(sum(grasas) / len(grasas), 2) if grasas else None,
+            "sng_promedio": round(sum(sngs) / len(sngs), 2) if sngs else None,
+            "horas_a_pagar": sum(medidas),
+            # Cuántos camiones no se pudieron calcular. Sin esto el total
+            # parecería completo aunque le falte la mitad de las marcas.
+            "camiones_sin_marcas_horarias": len(horas) - len(medidas),
+            # Mismo criterio que `camiones_sin_marcas_horarias`, para la
+            # romana: sin este contador, un `kg_romana`/`diferencia_kg` bajo
+            # parecería completo aunque la mitad de los camiones no se
+            # pesaron.
+            "camiones_sin_romana": camiones_sin_romana,
         })
 
 
@@ -624,7 +741,9 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
     tenant_lookup_sucursal = "silo__sucursal_id"
     tenant_lookup_empresa = "silo__sucursal__empresa_id"
     tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = MovimientoSilo.objects.select_related("silo")
+    queryset = MovimientoSilo.objects.select_related(
+        "silo", "silo_contraparte", "lote", "producto", "equipo", "usuario"
+    )
     serializer_class = MovimientoSiloSerializer
     permission_classes = [EscribeRecepcion]
 
@@ -636,6 +755,106 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
             consulta = consulta.filter(silo_id=silo)
 
         return consulta
+
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "El libro mayor es inmutable; registra un ajuste o reversa."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Los movimientos de silo no se eliminan."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def create(self, request, *args, **kwargs):
+        """Compatibilidad: POST directo solo registra ajustes auditables."""
+        if request.data.get("tipo") != MovimientoSilo.Tipo.AJUSTE:
+            return Response(
+                {"tipo": ["Ingresos y salidas solo se generan desde operaciones de dominio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        datos = request.data.copy()
+        datos.setdefault("operacion_id", str(uuid.uuid4()))
+        entrada = AjusteSiloSerializer(data=datos)
+        entrada.is_valid(raise_exception=True)
+        return self._ejecutar_ajuste(entrada.validated_data)
+
+    @action(detail=False, methods=["post"])
+    def ajustar(self, request):
+        entrada = AjusteSiloSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        return self._ejecutar_ajuste(entrada.validated_data)
+
+    def _ejecutar_ajuste(self, datos):
+        silos = filtrar_por_scope(
+            Silo.objects.all(), self.request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        if not silos.filter(pk=datos["silo"]).exists():
+            raise DRFValidationError({"silo": "Silo inexistente o fuera de tu planta."})
+        try:
+            movimiento = ajustar_silo(
+                silo_id=datos["silo"], litros=datos["litros"],
+                operacion_id=datos["operacion_id"], usuario=self.request.user,
+                motivo=datos["motivo"],
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(MovimientoSiloSerializer(movimiento).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"])
+    def transferir(self, request):
+        entrada = TransferenciaSiloSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        silos = filtrar_por_scope(
+            Silo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        if silos.filter(pk__in=[datos["silo_origen"], datos["silo_destino"]]).count() != 2:
+            raise DRFValidationError("Los silos deben pertenecer a tu planta.")
+
+        from maestros.models import Equipo, Producto
+        from produccion.models import Lote
+
+        scope = scope_de(request.user, requerido=True)
+        filtro_sucursal = {"sucursal_id": scope.sucursal_id} if scope.es_sucursal else {
+            "sucursal__empresa_id": scope.empresa_id
+        }
+        lote = Lote.objects.filter(pk=datos.get("lote"), **filtro_sucursal).first() if datos.get("lote") else None
+        producto = Producto.objects.filter(
+            pk=datos.get("producto"), mandante__empresa_id=scope.empresa_id
+        ).first() if datos.get("producto") else None
+        equipo = Equipo.objects.filter(pk=datos.get("equipo"), **filtro_sucursal).first() if datos.get("equipo") else None
+        if datos.get("lote") and lote is None:
+            raise DRFValidationError({"lote": "Lote inexistente o fuera de tu planta."})
+        if datos.get("producto") and producto is None:
+            raise DRFValidationError({"producto": "Producto inexistente o fuera de tu empresa."})
+        if datos.get("equipo") and equipo is None:
+            raise DRFValidationError({"equipo": "Equipo inexistente o fuera de tu planta."})
+        try:
+            movimientos = transferir_silo(
+                silo_origen_id=datos["silo_origen"],
+                silo_destino_id=datos["silo_destino"], litros=datos["litros"],
+                operacion_id=datos["operacion_id"], usuario=request.user,
+                motivo=datos["motivo"], lote=lote, producto=producto, equipo=equipo,
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(
+            MovimientoSiloSerializer(movimientos, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 @api_view(["GET"])
@@ -650,7 +869,7 @@ def ocupacion(request):
     descuadrado, y ocultarlo haría que el error nunca se descubriera.
     """
     silos = filtrar_por_scope(
-        Silo.objects.filter(activo=True), request.user,
+        Silo.objects.filter(activo=True).select_related("producto_actual"), request.user,
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     ).annotate(
         litros_ocupados=Coalesce(
@@ -661,7 +880,8 @@ def ocupacion(request):
             )),
             Value(0),
             output_field=DecimalField(max_digits=14, decimal_places=2),
-        )
+        ),
+        ultimo_movimiento=Max("movimientos__fecha_hora"),
     )
     ocupaciones = []
     for silo in silos:
@@ -675,6 +895,12 @@ def ocupacion(request):
             "codigo": silo.codigo,
             "litros": silo.litros_ocupados,
             "capacidad": silo.capacidad_l,
+            "estado": silo.estado,
+            "estado_etiqueta": silo.get_estado_display(),
+            "producto_actual": silo.producto_actual.nombre if silo.producto_actual else None,
+            "temperatura_actual": silo.temperatura_actual,
+            "ultima_limpieza": silo.ultima_limpieza,
+            "ultimo_movimiento": silo.ultimo_movimiento,
             "pct": round(porcentaje, 1),
             "excedido": silo.litros_ocupados > silo.capacidad_l,
             "negativo": silo.litros_ocupados < 0,

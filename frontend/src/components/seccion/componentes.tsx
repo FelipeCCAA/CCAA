@@ -37,7 +37,7 @@ export function Tarjeta({
           <div>
             <h2 className="font-semibold text-slate-800">{titulo}</h2>
             {descripcion && (
-              <p className="mt-1 max-w-2xl text-sm text-slate-500">{descripcion}</p>
+              <p className="mt-1 max-w-2xl text-sm text-slate-600">{descripcion}</p>
             )}
           </div>
           {acciones}
@@ -68,7 +68,7 @@ export function Indicador({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5">
       <Icono className={`h-5 w-5 ${color}`} />
-      <p className="mt-4 text-sm text-slate-500">{etiqueta}</p>
+      <p className="mt-4 text-sm text-slate-600">{etiqueta}</p>
       <p className="mt-1 text-2xl font-bold text-slate-900">{valor}</p>
     </div>
   );
@@ -136,5 +136,5 @@ export function Aviso({ children }: { children: ReactNode }) {
 
 /** Lo que se muestra cuando no hay nada que mostrar. */
 export function Vacio({ children }: { children: ReactNode }) {
-  return <p className="py-8 text-center text-sm text-slate-400">{children}</p>;
+  return <p className="py-8 text-center text-sm text-slate-600">{children}</p>;
 }

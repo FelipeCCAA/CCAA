@@ -13,6 +13,7 @@ es la pregunta que hace un auditor.
 """
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -82,6 +83,14 @@ class RegistroAuditoria(models.Model):
     def __str__(self):
         quien = self.usuario_nombre or "sistema"
         return f"{quien} · {self.get_accion_display()} · {self.objeto_desc or self.modelo}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("El registro de auditoría es inmutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("El registro de auditoría no se elimina.")
 
     @property
     def campos_cambiados(self) -> list[str]:

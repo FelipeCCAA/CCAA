@@ -72,7 +72,9 @@ function Leche() {
             <ArrowRight className="hidden h-4 w-4 text-emerald-300 md:block" />
             <Link to="/estandarizacion" className="group flex items-center gap-3 rounded-2xl border border-white/25 bg-white px-4 py-3 text-emerald-950 transition hover:bg-emerald-50">
               <FlaskConical className="h-5 w-5 text-emerald-700" />
-              <span className="min-w-0 flex-1"><span className="block text-xs font-bold uppercase tracking-wide text-emerald-700">4 · Estandarización</span><span className="block truncate text-xs text-emerald-900/70">Seleccionar silo disponible</span></span>
+              <span className="min-w-0 flex-1"><span className="block text-xs font-bold uppercase tracking-wide text-emerald-700">4 · Estandarización</span>{/* Sin el `/70`: la opacidad dejaba este texto en 4,36:1 sobre blanco,
+                    por debajo del 4,5:1 exigido. El tono ya era correcto. */}
+              <span className="block truncate text-xs text-emerald-900">Seleccionar silo disponible</span></span>
               <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
             </Link>
           </div>
@@ -90,7 +92,7 @@ function Leche() {
                 `whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                   isActive
                     ? "border-emerald-700 text-emerald-800"
-                    : "border-transparent text-slate-500 hover:text-slate-800"
+                    : "border-transparent text-slate-600 hover:text-slate-800"
                 }`
               }
             >

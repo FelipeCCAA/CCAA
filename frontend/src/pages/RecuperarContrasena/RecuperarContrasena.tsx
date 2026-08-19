@@ -94,7 +94,7 @@ function RecuperarContrasena() {
             </label>
 
             <div className="flex items-center rounded-xl border border-slate-300 bg-white px-4 shadow-sm transition focus-within:border-green-600 focus-within:ring-4 focus-within:ring-green-100">
-              <Mail className="h-5 w-5 text-slate-400" aria-hidden="true" />
+              <Mail className="h-5 w-5 text-slate-600" aria-hidden="true" />
               <input
                 id="email-recuperacion"
                 type="email"
@@ -107,7 +107,7 @@ function RecuperarContrasena() {
                 autoFocus
               />
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-400">
+            <p className="mt-2 text-xs leading-5 text-slate-600">
               Usa el mismo correo registrado por el administrador.
             </p>
           </div>

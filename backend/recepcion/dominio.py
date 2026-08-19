@@ -24,7 +24,64 @@ LIMITES = {
     # La crioscopía detecta aguado: un valor MENOS negativo que este es
     # sospechoso, porque el agua sube el punto de congelación.
     "crioscopia_max": -0.510,
+    # pH del enjuague del CAMIÓN, no de la leche. El formato declara el rango
+    # en el propio encabezado de la columna AO.
+    "ph_camion_min": 5.5,
+    "ph_camion_max": 8.5,
 }
+
+
+# Factor de conversión de litros a kilos del formato CCAA.REC.FORM.002.02
+# (columna I = H × 1,03).
+#
+# La hoja `Litros-kilos` (0082.MAN.FORM.000112) del mismo libro usa `/0,97`,
+# que es 1,030928: no es el mismo número. Manda el de la hoja operativa,
+# porque es el que produjo las cifras que la planta reportó. Si Calidad
+# resuelve la discrepancia, se cambia aquí y en ningún otro lugar.
+FACTOR_LITROS_A_KILOS = Decimal("1.03")
+
+
+def kilos_desde_litros(litros) -> Decimal | None:
+    """Kilos de la guía. Sin litros devuelve None, que no es cero."""
+    if litros in (None, ""):
+        return None
+
+    return (Decimal(str(litros)) * FACTOR_LITROS_A_KILOS).quantize(Decimal("0.01"))
+
+
+def diferencia_pesaje(kg_guia, kg_romana) -> Decimal | None:
+    """
+    Romana menos guía, con su signo (columna M del formato).
+
+    Falta cualquiera de los dos y devuelve None: un cero diría que
+    coincidieron, y nadie las comparó.
+    """
+    if kg_guia in (None, "") or kg_romana in (None, ""):
+        return None
+
+    return Decimal(str(kg_romana)) - Decimal(str(kg_guia))
+
+
+def solidos_totales(grasa, sng) -> float | None:
+    """Sólidos totales = grasa + SNG (columna S)."""
+    valor_grasa = _numero(grasa)
+    valor_sng = _numero(sng)
+
+    if valor_grasa is None or valor_sng is None:
+        return None
+
+    return round(valor_grasa + valor_sng, 2)
+
+
+def solidos_totales_kg(kilos, ts) -> float | None:
+    """Kilos de sólidos totales sobre el pesaje real (columna BF)."""
+    valor_kilos = _numero(kilos)
+    valor_ts = _numero(ts)
+
+    if valor_kilos is None or valor_ts is None:
+        return None
+
+    return round(valor_kilos * valor_ts / 100, 3)
 
 
 # Controles sin los cuales no se puede liberar.
@@ -90,7 +147,29 @@ def _numero(valor: Any) -> float | None:
     return None if numero != numero else numero
 
 
-def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) -> EvaluacionRecepcion:
+def crioscopia_pool(valores) -> float | None:
+    """
+    Promedio de las crioscopías de los módulos que sí se midieron.
+
+    Es lo que la hoja `Pool Crioscopia` calcula. Sirve para informar, no para
+    decidir: el veredicto lo da cada módulo por separado, porque un promedio
+    esconde el compartimiento aguado entre los que no lo están.
+    """
+    medidos = [numero for numero in (_numero(v) for v in valores or []) if numero is not None]
+
+    if not medidos:
+        return None
+
+    return round(sum(medidos) / len(medidos), 3)
+
+
+def evaluar_recepcion(
+    controles: dict[str, Any],
+    *,
+    crioscopias: Iterable[tuple[Any, Any]] = (),
+    ph_camion: Any = None,
+    limites: dict | None = None,
+) -> EvaluacionRecepcion:
     """
     ¿La leche del camión puede liberarse al silo?
 
@@ -104,6 +183,14 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
     `sin_analisis`. Antes, una recepción con los controles vacíos salía
     conforme —no había motivos que informar— y la pantalla decía "Sin
     alertas" sobre leche que nadie había medido.
+
+    `crioscopias` recibe pares `(numero, crioscopia)`, uno por
+    `ModuloRecepcion` medido — no una lista posicional. El número lo pone el
+    módulo (`ModuloRecepcion.numero`, 1 a 4, único por recepción pero sin
+    garantía de ser contiguo: un camión puede traer registrados los módulos 1
+    y 3, sin el 2). Enumerar la lista por posición etiquetaría el motivo con
+    el índice equivocado — "M2" sobre lo que en realidad es el módulo 3—, y
+    ese motivo es lo que le dice a Calidad qué compartimiento re-muestrear.
     """
     c = controles or {}
     lim = {**LIMITES, **(limites or {})}
@@ -124,6 +211,16 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
     if c.get("organoleptico") == "No conforme":
         motivos.append("Evaluación organoléptica no conforme.")
 
+    etiquetas = {
+        "sangre": "sangre",
+        "pus": "pus",
+        "materias_extranas": "materias extrañas",
+        "aroma": "aroma",
+    }
+    for clave, etiqueta in etiquetas.items():
+        if c.get(clave) == "No conforme":
+            motivos.append(f"Inspección visual no conforme: {etiqueta}.")
+
     acidez = _numero(c.get("acidez"))
     if acidez is not None and acidez > lim["acidez_max"]:
         motivos.append(
@@ -141,9 +238,21 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
             f"({lim['temperatura_max']} °C)."
         )
 
-    crioscopia = _numero(c.get("crioscopia"))
-    if crioscopia is not None and crioscopia > lim["crioscopia_max"]:
-        motivos.append(f"Crioscopía {crioscopia} indica posible aguado.")
+    for numero, valor in crioscopias or []:
+        medida = _numero(valor)
+        if medida is not None and medida > lim["crioscopia_max"]:
+            motivos.append(
+                f"Crioscopía del módulo M{numero} ({medida}) indica posible aguado."
+            )
+
+    ph_del_camion = _numero(ph_camion)
+    if ph_del_camion is not None and not (
+        lim["ph_camion_min"] <= ph_del_camion <= lim["ph_camion_max"]
+    ):
+        motivos.append(
+            f"pH del camión {ph_del_camion} fuera del rango "
+            f"{lim['ph_camion_min']}–{lim['ph_camion_max']}."
+        )
 
     # Un motivo manda sobre la falta de datos: si el Delvo salió positivo, la
     # leche se retiene aunque falten los demás controles.
@@ -246,3 +355,98 @@ def trazabilidad_lote(lote_id: int, movimientos: Iterable[Any]) -> list[dict]:
         )
 
     return resultado
+
+
+# Horas de permanencia libres antes de que empiece a contar la sobreestadía.
+# Es el valor de la celda AI14 del formato (0,0833 de día = 2 h).
+LIMITE_PERMANENCIA_HORAS = 2.0
+
+
+@dataclass(frozen=True)
+class Permanencia:
+    # Horas por sobre el límite libre. None cuando falta una marca horaria:
+    # nunca cero, porque un cero se suma y una ausencia no.
+    horas: float | None
+    horas_en_planta: float | None
+    motivo: str = ""
+
+
+def horas_entre(inicio, fin) -> float | None:
+    """
+    Horas entre dos marcas del reloj.
+
+    Si el fin es anterior al inicio, cruzó la medianoche y se suman 24 h: el
+    turno C existe, y un camión que arriba 23:30 y termina 01:00 estuvo hora y
+    media, no menos veintidós.
+    """
+    if inicio is None or fin is None:
+        return None
+
+    minutos = (fin.hour * 60 + fin.minute) - (inicio.hour * 60 + inicio.minute)
+
+    if minutos < 0:
+        minutos += 24 * 60
+
+    return minutos / 60
+
+
+def permanencia(
+    arribo, termino_cip, limite_horas: float = LIMITE_PERMANENCIA_HORAS
+) -> Permanencia:
+    """
+    Horas de permanencia por sobre el límite libre.
+
+    Se cuenta desde el **arribo a portería** hasta el término del lavado CIP.
+    El formato la cuenta desde la «hora programa», que en los 26 libros de
+    julio está llena en 1 de 603 filas: restaba contra cero y devolvía la hora
+    del reloj menos dos. Por eso aquí un dato ausente devuelve None con su
+    motivo, y no un número que alguien va a sumar.
+    """
+    if arribo is None:
+        return Permanencia(None, None, "Falta la hora de arribo a portería.")
+
+    if termino_cip is None:
+        return Permanencia(None, None, "Falta la hora de término del lavado CIP.")
+
+    en_planta = horas_entre(arribo, termino_cip)
+
+    return Permanencia(
+        horas=round(max(0.0, en_planta - limite_horas), 2),
+        horas_en_planta=round(en_planta, 2),
+    )
+
+
+def bloqueos_de_cierre(
+    controles: dict[str, Any], *, busquedas_a_proveedor: int = 0
+) -> list[str]:
+    """
+    Qué impide cerrar la recepción.
+
+    Devuelve motivos y no un booleano, igual que el resto de las decisiones
+    del sistema: la pantalla tiene que poder decir por qué no se pudo.
+    """
+    c = controles or {}
+    bloqueos: list[str] = []
+
+    positivo = c.get("delvo") == "Positivo" or c.get("inhibidores") == "Positivo"
+
+    if positivo and busquedas_a_proveedor == 0:
+        bloqueos.append(
+            "Inhibidores positivos: falta registrar la búsqueda a proveedores "
+            "antes de cerrar la recepción."
+        )
+
+    return bloqueos
+
+
+def horas_a_pagar(horas) -> int | None:
+    """
+    Redondeo comercial del formato (columna AT): sube solo si la fracción
+    **supera** la media hora. Exactamente 0,5 no sube.
+    """
+    if horas is None:
+        return None
+
+    entero = int(horas)
+
+    return entero + (1 if horas - entero > 0.5 else 0)

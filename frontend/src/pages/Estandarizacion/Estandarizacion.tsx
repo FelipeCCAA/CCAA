@@ -135,7 +135,7 @@ function Estandarizacion() {
           <h1 className="mt-1 text-2xl font-semibold text-slate-900">
             Estandarización
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
             La mezcla de leche entera y descremada hasta el RC que pide el
             producto. RC = materia grasa ÷ sólidos no grasos.
           </p>
@@ -186,7 +186,7 @@ function Estandarizacion() {
             className="rounded-2xl border border-slate-200 bg-white p-5"
           >
             <Icono className="h-5 w-5 text-emerald-700" />
-            <p className="mt-4 text-sm text-slate-500">{texto}</p>
+            <p className="mt-4 text-sm text-slate-600">{texto}</p>
             <p className="mt-1 text-2xl font-semibold">{valor}</p>
           </article>
         ))}
@@ -218,7 +218,7 @@ function Estandarizacion() {
                     {item.estado}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-600">
                   {item.fecha} · RC {rc(item.rc_objetivo)} ·{" "}
                   {numero(item.volumen)} L → {item.silo_destino_codigo}
                 </p>
@@ -267,6 +267,19 @@ function Estandarizacion() {
                     }
                   />
                 </div>
+
+                {vale.muestreado_en && vale.avisos.length > 0 && (
+                  <ul className="mt-4 space-y-2">
+                    {vale.avisos.map((aviso) => (
+                      <li
+                        key={aviso}
+                        className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+                      >
+                        {aviso}
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
                 {vale.evaluacion && !vale.evaluacion.cumple && (
                   <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -445,9 +458,9 @@ function Dato({
 }: { etiqueta: string; valor: string; pie?: string }) {
   return (
     <div className="rounded-xl bg-slate-50 px-4 py-3">
-      <p className="text-xs text-slate-500">{etiqueta}</p>
+      <p className="text-xs text-slate-600">{etiqueta}</p>
       <p className="mt-1 text-lg font-semibold text-slate-900">{valor}</p>
-      {pie && <p className="mt-0.5 text-xs text-slate-400">{pie}</p>}
+      {pie && <p className="mt-0.5 text-xs text-slate-600">{pie}</p>}
     </div>
   );
 }

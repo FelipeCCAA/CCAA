@@ -108,13 +108,13 @@ class CargaModuloViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "recoleccion__parada__ruta__vehiculo__sucursal_id"
     tenant_lookup_empresa = "recoleccion__parada__ruta__vehiculo__sucursal__empresa_id"
     queryset = CargaModulo.objects.select_related(
-        "recoleccion__parada__ruta__vehiculo", "recepcion_planta"
-    )
+        "recoleccion__parada__ruta__vehiculo"
+    ).prefetch_related("modulos_recepcion")
     serializer_class = CargaModuloSerializer
     permission_classes = [EscribeRecepcion]
 
     def get_queryset(self):
         consulta = super().get_queryset()
         if self.request.query_params.get("pendientes") in {"1", "true"}:
-            consulta = consulta.filter(recepcion_planta__isnull=True)
+            consulta = consulta.filter(modulos_recepcion__isnull=True)
         return consulta

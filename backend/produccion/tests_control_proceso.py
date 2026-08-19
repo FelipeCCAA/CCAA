@@ -29,13 +29,16 @@ class BaseControlProceso(TestCase):
         self.sch2 = Equipo.objects.get(codigo="scheffers2")
         self.e1 = Equipo.objects.get(codigo="e1")
 
-        self.mandante = Mandante.objects.create(nombre="Nestlé")
+        self.mandante = Mandante.objects.create(
+            nombre="Nestlé", empresa=self.veb.sucursal.empresa
+        )
         self.producto = Producto.objects.create(
             nombre="Leche entera en polvo",
             familia=Producto.Familia.POLVO,
             mandante=self.mandante,
         )
         self.lote = Lote.objects.create(
+            sucursal=self.veb.sucursal,
             codigo_lote="CCAA6197",
             producto=self.producto,
             fecha=date(2026, 7, 16),

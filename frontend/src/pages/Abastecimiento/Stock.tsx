@@ -413,7 +413,7 @@ function Stock() {
                       <p className="text-sm font-medium text-slate-800">
                         {a.tipo} · {numero(a.cantidad)}
                       </p>
-                      <p className="mt-0.5 text-sm text-slate-500">{a.motivo}</p>
+                      <p className="mt-0.5 text-sm text-slate-600">{a.motivo}</p>
                     </div>
 
                     <div className="flex shrink-0 gap-2">
@@ -510,7 +510,7 @@ function Stock() {
                     <td className={`${claseCelda} text-slate-600`}>
                       {numero(m.cantidad)}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {m.motivo || "—"}
                     </td>
                   </tr>

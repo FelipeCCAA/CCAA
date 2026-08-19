@@ -6,16 +6,19 @@ importa en el paso que decide: **liberar exige que el RC medido cumpla**, y con
 un campo escribible eso se salta con una petición.
 """
 
+import uuid
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
+from .models import ValeEstandarizacion
 from maestros.models import Silo
 from procesos.servicios import cerrar_estandarizacion, registrar_estandarizacion
 from recepcion.models import MovimientoSilo
+from recepcion.servicios import ESTADOS_SIN_CONSUMO
 
 
 def _saldo(silo):
@@ -58,6 +61,20 @@ def transferir(*, vale_id, usuario):
     destino = bloqueados[vale.silo_destino_id]
     descremada = bloqueados.get(vale.silo_descremada_id)
 
+    for silo in filter(None, [entera, descremada]):
+        if not silo.activo or silo.estado in ESTADOS_SIN_CONSUMO:
+            raise ValidationError(
+                f"{silo.codigo} no está habilitado para consumo ({silo.get_estado_display()})."
+            )
+    if not destino.activo or destino.estado in {
+        Silo.Estado.BLOQUEADO_CALIDAD,
+        Silo.Estado.EN_CIP,
+        Silo.Estado.FUERA_SERVICIO,
+    }:
+        raise ValidationError(
+            f"{destino.codigo} no admite ingresos ({destino.get_estado_display()})."
+        )
+
     if _saldo(entera) < vale.litros_entera:
         raise ValidationError(
             f"{entera.codigo} no tiene {vale.litros_entera} L de leche entera disponibles."
@@ -76,18 +93,21 @@ def transferir(*, vale_id, usuario):
         )
 
     ahora = timezone.now()
+    operacion_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ccaa:estandarizacion:{vale.pk}")
     movimientos = [
         MovimientoSilo(
             silo=entera, tipo=MovimientoSilo.Tipo.SALIDA,
             litros=vale.litros_entera, fecha_hora=ahora,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id,
+            operacion_id=operacion_id, usuario=usuario,
         ),
         MovimientoSilo(
             silo=destino, tipo=MovimientoSilo.Tipo.INGRESO,
             litros=vale.volumen, fecha_hora=ahora,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id,
+            operacion_id=operacion_id, usuario=usuario,
         ),
     ]
     if descremada and vale.litros_descremada:
@@ -96,6 +116,7 @@ def transferir(*, vale_id, usuario):
             litros=vale.litros_descremada, fecha_hora=ahora,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id,
+            operacion_id=operacion_id, usuario=usuario,
         ))
     MovimientoSilo.objects.bulk_create(movimientos)
 
@@ -117,8 +138,8 @@ def iniciar_agitacion(*, vale_id):
     Arranca el reloj de la agitación.
 
     La hora se toma del servidor y no se recibe del cliente: es lo que después
-    decide si una muestra es válida, y aceptarla de fuera permitiría declarar
-    treinta minutos que no ocurrieron.
+    decide si la muestra dispara el aviso de agitación corta, y aceptarla de
+    fuera permitiría declarar treinta minutos que no ocurrieron.
     """
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     _exigir_transicion(vale, ValeEstandarizacion.Estado.AGITANDO)
@@ -135,20 +156,18 @@ def registrar_muestra(*, vale_id, grasa, sng):
     """
     Guarda el análisis de la muestra y deja el vale listo para decidir.
 
-    **Exige los 30 minutos de agitación.** Una muestra tomada antes mide una
-    mezcla que todavía no es homogénea: el RC que devuelve no es el del silo, y
-    liberar con él sería liberar contra un número que no describe lo que hay.
+    **Los treinta minutos avisan, no bloquean** (decisión de planta,
+    2026-08-17). Una muestra tomada antes mide una mezcla que todavía no es
+    homogénea, así que el RC que devuelve puede no ser el del silo; el vale
+    queda con el aviso y con `muestreado_en`, que es lo que después permite
+    auditar cuánto agitó de verdad. Lo que sigue impidiendo muestrear sin haber
+    agitado nada es la transición de estado, no esta función.
+
+    Devuelve `(vale, avisos)`, como `decidir` devuelve `(vale, evaluacion)`: la
+    vista necesita el resultado del cálculo y no solo el objeto guardado.
     """
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     _exigir_transicion(vale, ValeEstandarizacion.Estado.MUESTREADO)
-
-    if not vale.puede_muestrear:
-        minutos = vale.minutos_agitando or 0
-        raise ValidationError(
-            f"Lleva {minutos:.0f} minutos agitando y hacen falta "
-            f"{MINUTOS_DE_AGITACION}. Antes de eso la mezcla no es homogénea y "
-            "la muestra no mide el silo."
-        )
 
     if sng is None or float(sng) <= 0:
         raise ValidationError(
@@ -157,10 +176,16 @@ def registrar_muestra(*, vale_id, grasa, sng):
 
     vale.grasa_real = grasa
     vale.sng_real = sng
+    vale.muestreado_en = timezone.now()
     vale.estado = ValeEstandarizacion.Estado.MUESTREADO
-    vale.save(update_fields=["grasa_real", "sng_real", "estado"])
+    vale.save(update_fields=[
+        "grasa_real", "sng_real", "muestreado_en", "estado",
+    ])
 
-    return vale
+    # Después de sellar, no antes: así el aviso que devuelve la acción es el
+    # mismo que la ficha del vale mostrará más tarde. Calculado antes contaría
+    # contra el reloj actual y los dos podrían no coincidir.
+    return vale, vale.avisos_de_muestreo
 
 
 @transaction.atomic
@@ -222,9 +247,12 @@ def reagitar(*, vale_id):
     # El análisis anterior ya no describe lo que hay en el silo.
     vale.grasa_real = None
     vale.sng_real = None
-    vale.save(
-        update_fields=["estado", "agitacion_desde", "grasa_real", "sng_real"]
-    )
+    # Y el sello del muestreo anterior tampoco: conservarlo lo dejaría *antes*
+    # del nuevo `agitacion_desde`, y `minutos_agitando` saldría negativo.
+    vale.muestreado_en = None
+    vale.save(update_fields=[
+        "estado", "agitacion_desde", "grasa_real", "sng_real", "muestreado_en",
+    ])
 
     return vale
 

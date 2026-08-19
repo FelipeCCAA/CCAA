@@ -11,6 +11,7 @@ from .models import (
     Silo,
     Vehiculo,
 )
+from usuarios.admin_helpers import OrganizacionInternaAdminMixin
 
 
 @admin.register(Mandante)
@@ -97,7 +98,8 @@ class ProductoAdmin(admin.ModelAdmin):
 
 
 @admin.register(Equipo)
-class EquipoAdmin(admin.ModelAdmin):
+class EquipoAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
+    exclude = ["sucursal"]
     """
     Máquinas de la planta.
 
@@ -113,7 +115,8 @@ class EquipoAdmin(admin.ModelAdmin):
 
 
 @admin.register(Silo)
-class SiloAdmin(admin.ModelAdmin):
+class SiloAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
+    exclude = ["sucursal"]
     # Sin columna de ocupación: es un saldo del libro de movimientos.
     list_display = ["codigo", "tipo", "capacidad_l", "activo"]
     list_filter = ["tipo", "activo"]
@@ -121,7 +124,8 @@ class SiloAdmin(admin.ModelAdmin):
 
 
 @admin.register(Vehiculo)
-class VehiculoAdmin(admin.ModelAdmin):
+class VehiculoAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
+    exclude = ["sucursal"]
     list_display = ["placa", "numero", "transportista", "capacidad_l", "chofer_am", "chofer_pm", "activo"]
     list_filter = ["activo", "transportista"]
     search_fields = ["placa", "numero", "transportista", "chofer_am", "chofer_pm"]

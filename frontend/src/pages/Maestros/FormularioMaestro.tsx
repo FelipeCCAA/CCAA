@@ -124,7 +124,7 @@ function FormularioMaestro({
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
@@ -190,7 +190,7 @@ function FormularioMaestro({
                     <input
                       type={campo.tipo === "numero" ? "number" : "text"}
                       step={campo.tipo === "numero" ? "any" : undefined}
-                      className={`${clase} ${bloqueado ? "bg-slate-50 text-slate-500" : ""}`}
+                      className={`${clase} ${bloqueado ? "bg-slate-50 text-slate-600" : ""}`}
                       value={String(valor ?? "")}
                       onChange={(e) => escribir(campo.clave, e.target.value)}
                       required={campo.requerido}
@@ -200,7 +200,7 @@ function FormularioMaestro({
                   )}
 
                   {(campo.ayuda || bloqueado) && (
-                    <span className="mt-1 block text-xs text-slate-400">
+                    <span className="mt-1 block text-xs text-slate-600">
                       {bloqueado
                         ? "No se cambia: otros registros lo referencian."
                         : campo.ayuda}

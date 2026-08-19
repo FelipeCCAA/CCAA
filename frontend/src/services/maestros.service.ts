@@ -113,6 +113,11 @@ export interface Silo {
   tipo: string;
   tipo_etiqueta: string;
   capacidad_l: string;
+  estado: string;
+  estado_etiqueta: string;
+  producto_actual: number | null;
+  temperatura_actual: string | null;
+  ultima_limpieza: string | null;
   activo: boolean;
 }
 

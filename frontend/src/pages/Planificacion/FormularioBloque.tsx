@@ -116,14 +116,14 @@ function FormularioBloque({
             <h2 className="text-lg font-semibold text-slate-800">
               Programar bloque
             </h2>
-            <p className="mt-0.5 text-sm text-slate-500">{nombreEquipo}</p>
+            <p className="mt-0.5 text-sm text-slate-600">{nombreEquipo}</p>
           </div>
 
           <button
             type="button"
             onClick={alCerrar}
             aria-label="Cerrar"
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-600"
           >
             <X className="h-5 w-5" />
           </button>
@@ -212,7 +212,7 @@ function FormularioBloque({
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
                   Kilos objetivo
-                  <span className="ml-1 font-normal text-slate-400">opcional</span>
+                  <span className="ml-1 font-normal text-slate-600">opcional</span>
                 </label>
                 <input
                   type="number"
@@ -255,7 +255,7 @@ function FormularioBloque({
           </div>
 
           {tipo === "produccion" && (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600">
               Solo los evaporadores restan del balance de leche. Un bloque en
               una línea se programa igual, pero su leche ya la contó el
               evaporador que la alimenta.

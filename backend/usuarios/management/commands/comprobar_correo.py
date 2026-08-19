@@ -20,10 +20,10 @@ class Command(BaseCommand):
 
         try:
             enviados = send_mail(
-                subject="Prueba de correo · Planta CCAA",
+                subject="Prueba de correo · CCAA",
                 message=(
                     "Microsoft Graph quedó configurado correctamente para "
-                    "Gestión Productiva · Planta CCAA."
+                    "Gestión Productiva · CCAA."
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[destinatario],

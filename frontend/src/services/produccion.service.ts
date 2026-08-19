@@ -143,6 +143,20 @@ export interface Lote {
   calidad: CalidadLote;
 }
 
+export interface PalletProducto {
+  id: number;
+  codigo: string;
+  unidades: number;
+  kg_neto: string;
+  estado: string;
+  estado_etiqueta: string;
+}
+
+export async function obtenerPallets(): Promise<Pagina<PalletProducto>> {
+  const { data } = await api.get<Pagina<PalletProducto>>("produccion/pallets/");
+  return data;
+}
+
 
 /* El lote con sus análisis: lo que devuelve el detalle. */
 export interface LoteDetalle extends Lote {

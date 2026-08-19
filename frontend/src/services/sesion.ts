@@ -36,7 +36,6 @@ export interface PerfilUsuario {
   nivel: "admin" | "trabajador";
   nivel_etiqueta: string;
   empresa: number | null;
-  sucursal: number | null;
 }
 
 
@@ -57,6 +56,7 @@ export interface Usuario {
   /* Rol efectivo. Un superusuario es "admin" aunque no tenga perfil, y un
      usuario sin perfil es null: no escribe en ninguna parte. */
   rol: Rol | null;
+  capacidades: string[];
   perfil: PerfilUsuario | null;
 }
 

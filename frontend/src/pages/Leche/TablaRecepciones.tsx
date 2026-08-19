@@ -7,6 +7,7 @@ import {
 
 import {
   buscarRecepciones, descargarRecepcion, obtenerCatalogosFlujo, obtenerSilos,
+  type CatalogosFlujoRecepcion,
   type Recepcion as RecepcionTipo, type ResponsableRecepcion, type Silo,
 } from "../../services/recepcion.service";
 import { puedeEscribir } from "../../services/sesion";
@@ -26,7 +27,19 @@ import AccionRecepcion, { type AccionFlujo } from "./AccionRecepcion";
 */
 
 const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
+const formatoDecimal = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 });
 const POR_PAGINA = 50;
+
+/* Un dato ausente se muestra como «—», nunca como 0: confundir "no medido"
+   con "cero" es justo lo que producía horas facturables fantasma en el
+   formato de origen. */
+function celda(valor: string | number | null | undefined, sufijo = ""): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const numero = Number(valor);
+  return Number.isNaN(numero)
+    ? String(valor)
+    : `${formatoDecimal.format(numero)}${sufijo}`;
+}
 
 const ESTILO_ESTADO: Record<string, string> = {
   registrada: "border-slate-200 bg-slate-50 text-slate-700",
@@ -35,7 +48,7 @@ const ESTILO_ESTADO: Record<string, string> = {
   liberada: "border-emerald-200 bg-emerald-50 text-emerald-700",
   retenida: "border-amber-200 bg-amber-50 text-amber-800",
   descargada: "border-blue-200 bg-blue-50 text-blue-700",
-  cerrada: "border-slate-200 bg-slate-100 text-slate-500",
+  cerrada: "border-slate-200 bg-slate-100 text-slate-600",
 };
 
 
@@ -73,6 +86,7 @@ function TablaRecepciones({
   const [termino, setTermino] = useState("");
   const [silos, setSilos] = useState<Silo[]>([]);
   const [responsables, setResponsables] = useState<ResponsableRecepcion[]>([]);
+  const [catalogos, setCatalogos] = useState<CatalogosFlujoRecepcion | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [accion, setAccion] = useState<{
@@ -109,9 +123,22 @@ function TablaRecepciones({
     // fallo suyo no vacíe la tabla.
     void obtenerSilos().then(setSilos).catch(() => setSilos([]));
     void obtenerCatalogosFlujo()
-      .then((datos) => setResponsables(datos.responsables_recepcion))
-      .catch(() => setResponsables([]));
+      .then((datos) => {
+        setResponsables(datos.responsables_recepcion);
+        setCatalogos(datos);
+      })
+      .catch(() => {
+        setResponsables([]);
+        setCatalogos(null);
+      });
   }, []);
+
+  const etiquetaUso = (r: RecepcionTipo): string => {
+    if (!r.uso) return "—";
+    const opcion = catalogos?.usos.find((op) => op.valor === r.uso);
+    const base = opcion?.etiqueta ?? r.uso;
+    return r.uso_numero ? `${base} N°${r.uso_numero}` : base;
+  };
 
   // La búsqueda espera a que el usuario deje de teclear: cada pulsación es una
   // consulta a la base, no un filtro sobre lo que ya está en memoria.
@@ -151,9 +178,9 @@ function TablaRecepciones({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="font-semibold text-slate-900">{titulo}</h2>
-            <p className="mt-1 text-sm text-slate-500">{descripcion}</p>
+            <p className="mt-1 text-sm text-slate-600">{descripcion}</p>
           </div>
-          <span className="text-xs font-medium text-slate-400">
+          <span className="text-xs font-medium text-slate-600">
             {cargando ? "Actualizando…" : `${formato.format(total)} registros`}
           </span>
         </div>
@@ -162,10 +189,10 @@ function TablaRecepciones({
             encontrar un camión concreto, y la del historial es la que más se
             usa. */}
         <label className="relative mt-4 block max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-600" />
           <input
             className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-emerald-500"
-            placeholder="Buscar guía, módulo, muestra, camión o silo"
+            placeholder="Buscar guía, muestra, camión o silo"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
           />
@@ -181,22 +208,27 @@ function TablaRecepciones({
 
       {!cargando && filas.length === 0 ? (
         <div className="px-6 py-16 text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600">
             <Truck className="h-5 w-5" />
           </span>
           <p className="mt-4 text-sm font-medium text-slate-700">{vacio.titulo}</p>
-          <p className="mt-1 text-xs text-slate-400">{vacio.detalle}</p>
+          <p className="mt-1 text-xs text-slate-600">{vacio.detalle}</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1400px] text-left text-sm">
 
-            <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
               <tr>
                 <th className="px-5 py-3">Ingreso</th>
-                <th className="px-5 py-3">Módulo y transporte</th>
+                <th className="px-5 py-3">Camión</th>
                 <th className="px-5 py-3">Origen</th>
                 <th className="px-5 py-3">Volumen</th>
+                <th className="px-5 py-3">Kg romana</th>
+                <th className="px-5 py-3">Diferencia</th>
+                <th className="px-5 py-3">TS</th>
+                <th className="px-5 py-3">Uso</th>
+                <th className="px-5 py-3">Horas a pagar</th>
                 <th className="px-5 py-3">Muestra / calidad</th>
                 <th className="px-5 py-3">Destino</th>
                 <th className="px-5 py-3">Estado</th>
@@ -211,36 +243,60 @@ function TablaRecepciones({
                   <td className="px-5 py-4">
                     <p className="font-semibold text-slate-800">
                       {formatearFecha(r.fecha)}{" "}
-                      <span className="font-normal text-slate-400">
+                      <span className="font-normal text-slate-600">
                         {r.hora?.slice(0, 5) || "—"}
                       </span>
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-slate-600">
                       Guía {r.guia || "sin informar"}
                     </p>
                   </td>
 
                   <td className="px-5 py-4">
                     <p className="font-semibold text-slate-800">
-                      {r.modulo || "Módulo sin identificar"}
+                      {r.vehiculo_placa || "Sin camión"}
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {r.vehiculo_placa || "Sin camión"} · Turno {r.turno || "—"}
+                    <p className="mt-1 text-xs text-slate-600">
+                      Turno {r.turno || "—"} · {r.modulos.length}{" "}
+                      {r.modulos.length === 1 ? "módulo" : "módulos"}
                     </p>
                   </td>
 
                   <td className="px-5 py-4">
                     <p className="text-slate-700">{r.procedencia || "—"}</p>
-                    <p className="mt-1 text-xs text-slate-400">{r.tipo_leche}</p>
+                    <p className="mt-1 text-xs text-slate-600">{r.tipo_leche}</p>
                   </td>
 
                   <td className="px-5 py-4 font-semibold tabular-nums text-slate-800">
                     {formato.format(Number(r.litros))} L
                   </td>
 
+                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                    {celda(r.kg_romana, " kg")}
+                  </td>
+
+                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                    {celda(r.diferencia_kg, " kg")}
+                  </td>
+
+                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                    {celda(r.solidos_totales, "%")}
+                  </td>
+
+                  <td className="px-5 py-4 text-slate-700">
+                    {etiquetaUso(r)}
+                  </td>
+
+                  <td
+                    className="px-5 py-4 tabular-nums text-slate-700"
+                    title={r.horas_a_pagar === null ? r.permanencia_motivo || undefined : undefined}
+                  >
+                    {celda(r.horas_a_pagar, " h")}
+                  </td>
+
                   <td className="px-5 py-4">
                     {r.estado === "registrada" ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
                         <Clock3 className="h-3.5 w-3.5" />Sin muestra
                       </span>
                     ) : r.estado === "muestreada" ? (
@@ -248,7 +304,7 @@ function TablaRecepciones({
                         <span className="block font-semibold text-sky-700">
                           {r.codigo_muestra}
                         </span>
-                        <span className="mt-1 block text-slate-400">
+                        <span className="mt-1 block text-slate-600">
                           Esperando decisión
                         </span>
                       </span>
@@ -270,7 +326,7 @@ function TablaRecepciones({
 
                   <td className="px-5 py-4">
                     <span className="inline-flex items-center gap-1.5 text-slate-700">
-                      <Warehouse className="h-3.5 w-3.5 text-slate-400" />
+                      <Warehouse className="h-3.5 w-3.5 text-slate-600" />
                       {r.silo_codigo || "Sin asignar"}
                     </span>
                   </td>
@@ -343,7 +399,7 @@ function TablaRecepciones({
           >
             <ChevronLeft className="h-4 w-4" />Anterior
           </button>
-          <span className="text-xs font-medium text-slate-500">
+          <span className="text-xs font-medium text-slate-600">
             Página {pagina} de {ultimaPagina}
           </span>
           <button

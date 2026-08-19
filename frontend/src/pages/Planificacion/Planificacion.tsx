@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Droplets, Lock, Plus } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, Copy, Droplets, Lock, Plus } from "lucide-react";
 import axios from "axios";
 
 import {
   borrarBloque,
+  cancelarSemana,
   cerrarSemana,
   crearSemana,
+  duplicarSemana,
   obtenerCodigos,
   obtenerPrograma,
   obtenerSemanas,
@@ -43,6 +45,7 @@ const ESTILO_ESTADO: Record<string, string> = {
   borrador: "bg-slate-100 text-slate-600",
   publicada: "bg-green-50 text-green-700",
   cerrada: "bg-blue-50 text-blue-700",
+  cancelada: "bg-rose-50 text-rose-700",
 };
 
 
@@ -179,6 +182,34 @@ function Planificacion() {
     }
   };
 
+  const duplicar = async () => {
+    if (!semana) return;
+    const inicio = new Date(`${semana.fecha_inicio}T12:00:00`);
+    inicio.setDate(inicio.getDate() + 7);
+    const fecha_inicio = inicio.toISOString().slice(0, 10);
+    const codigo = window.prompt("Código para la nueva semana", `${semana.codigo}-COPIA`);
+    if (!codigo) return;
+    setFirmando(true);
+    try {
+      const copia = await duplicarSemana(semana.id, {
+        codigo, anio: inicio.getFullYear(), fecha_inicio,
+      });
+      await cargarSemanas();
+      setSemanaId(copia.id);
+    } catch {
+      setError("No se pudo duplicar la semana. Revisa el código y la fecha.");
+    } finally {
+      setFirmando(false);
+    }
+  };
+
+  const cancelar = async () => {
+    if (!semana) return;
+    const motivo = window.prompt("Motivo obligatorio de la cancelación");
+    if (!motivo?.trim()) return;
+    await accion((id) => cancelarSemana(id, motivo.trim()));
+  };
+
   const semana = programa?.semana;
   const editable = puedeEditar && semana?.estado === "borrador";
 
@@ -195,7 +226,7 @@ function Planificacion() {
             Planificación semanal
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             El programa horario genera el consumo del balance de leche.
           </p>
 
@@ -236,10 +267,10 @@ function Planificacion() {
         <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
 
-      {cargando && <p className="text-sm text-slate-500">Cargando…</p>}
+      {cargando && <p className="text-sm text-slate-600">Cargando…</p>}
 
       {!cargando && !semana && !error && (
-        <p className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
+        <p className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-600">
           Todavía no hay ninguna semana planificada.
         </p>
       )}
@@ -260,12 +291,18 @@ function Planificacion() {
             </span>
 
             {semana.publicada_por_nombre && (
-              <span className="text-sm text-slate-500">
+              <span className="text-sm text-slate-600">
                 por {semana.publicada_por_nombre}
               </span>
             )}
 
             <div className="ml-auto flex flex-wrap gap-2">
+
+              {puedeEditar && (
+                <button type="button" disabled={firmando} onClick={() => void duplicar()} className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  <Copy className="h-4 w-4" /> Duplicar
+                </button>
+              )}
 
               {puedeEditar && semana.estado === "borrador" && (
                 <button
@@ -274,7 +311,7 @@ function Planificacion() {
                   onClick={() => void accion(publicarSemana)}
                   title={
                     programa.publicable
-                      ? "Comprometer el programa con planta"
+                      ? "Comprometer el programa con producción"
                       : programa.bloqueos.join(" ")
                   }
                   className="flex items-center gap-1.5 rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-40"
@@ -306,9 +343,21 @@ function Planificacion() {
                 </>
               )}
 
+              {puedeEditar && ["borrador", "publicada"].includes(semana.estado) && (
+                <button type="button" disabled={firmando} onClick={() => void cancelar()} className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">
+                  <Ban className="h-4 w-4" /> Cancelar semana
+                </button>
+              )}
+
             </div>
 
           </div>
+
+          {semana.estado === "cancelada" && semana.motivo_cancelacion && (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <strong>Motivo de cancelación:</strong> {semana.motivo_cancelacion}
+            </p>
+          )}
 
           {/* Lo que impide publicar */}
 
@@ -323,7 +372,7 @@ function Planificacion() {
               <ul className="mt-2 space-y-1.5">
                 {programa.bloqueos.map((bloqueo, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-600" />
                     {bloqueo}
                   </li>
                 ))}
@@ -345,7 +394,7 @@ function Planificacion() {
                 className={`px-4 py-2 text-sm font-medium ${
                   vista === v
                     ? "border-b-2 border-green-600 text-green-700"
-                    : "text-slate-500 hover:text-slate-800"
+                    : "text-slate-600 hover:text-slate-800"
                 }`}
               >
                 {v === "programa" ? "Programa y balance" : "Plan contra real"}
@@ -367,7 +416,7 @@ function Planificacion() {
                         <Droplets className="h-4 w-4 text-sky-600" />
                         Leche disponible en silos
                       </h2>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-slate-600">
                         Saldo real: solo incluye recepciones aprobadas y descargadas,
                         menos los consumos registrados por Producción.
                       </p>
@@ -376,7 +425,7 @@ function Planificacion() {
                       <span className="block text-2xl font-semibold text-slate-800">
                         {ocupacion.litros_totales.toLocaleString("es-CL")} L
                       </span>
-                      <span className="text-xs text-slate-500">disponibles en planta</span>
+                      <span className="text-xs text-slate-600">disponibles para producción</span>
                     </p>
                   </div>
 
@@ -395,7 +444,7 @@ function Planificacion() {
                               className={
                                 silo.excedido || silo.negativo
                                   ? "font-medium text-red-600"
-                                  : "text-slate-500"
+                                  : "text-slate-600"
                               }
                             >
                               {silo.pct.toLocaleString("es-CL")}%
@@ -411,7 +460,7 @@ function Planificacion() {
                               style={{ width: `${porcentaje}%` }}
                             />
                           </div>
-                          <p className="mt-2 text-xs text-slate-500">
+                          <p className="mt-2 text-xs text-slate-600">
                             <strong className="font-medium text-slate-700">
                               {silo.litros.toLocaleString("es-CL")} L
                             </strong>{" "}
@@ -451,7 +500,7 @@ function Planificacion() {
                 />
 
                 {!editable && puedeEditar && (
-                  <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
+                  <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-600">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Una semana {semana.estado_etiqueta.toLowerCase()} no se edita.
                     Vuelve a borrador para reprogramar.
@@ -466,7 +515,7 @@ function Planificacion() {
 
                 <h2 className="mb-1 font-medium text-slate-800">Balance de leche</h2>
 
-                <p className="mb-4 text-xs text-slate-500">
+                <p className="mb-4 text-xs text-slate-600">
                   El consumo sale del programa: horas de bloque en evaporador por
                   el rendimiento del código. No se teclea.
                 </p>

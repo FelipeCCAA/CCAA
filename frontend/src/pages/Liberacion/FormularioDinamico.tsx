@@ -173,7 +173,7 @@ function FormularioDinamico({
             </h2>
 
             {documento.codigo && (
-              <p className="mt-0.5 text-xs text-slate-400">{documento.codigo}</p>
+              <p className="mt-0.5 text-xs text-slate-600">{documento.codigo}</p>
             )}
 
             {documento.instruccion && (
@@ -185,7 +185,7 @@ function FormularioDinamico({
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-600"
           >
             <X className="h-5 w-5" />
           </button>
@@ -213,12 +213,12 @@ function FormularioDinamico({
                 {campo.req && <span className="text-red-500"> *</span>}
 
                 {campo.unidad && (
-                  <span className="font-normal text-slate-400"> ({campo.unidad})</span>
+                  <span className="font-normal text-slate-600"> ({campo.unidad})</span>
                 )}
 
                 {campo.origen && (
                   <span
-                    className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-500"
+                    className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-600"
                     title="Lo rellena el sistema con un dato que ya tiene"
                   >
                     del sistema
@@ -246,7 +246,7 @@ function FormularioDinamico({
 
             <label className="mb-1.5 block text-sm font-medium text-slate-700">
               Referencia
-              <span className="font-normal text-slate-400"> (documento físico, si lo hay)</span>
+              <span className="font-normal text-slate-600"> (documento físico, si lo hay)</span>
             </label>
 
             <input
@@ -299,7 +299,7 @@ function FormularioDinamico({
 
           {sinLlenar.length > 0 && (
 
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-600">
               Faltan por llenar: {sinLlenar.map((c) => c.etiqueta).join(", ")}.
             </p>
 

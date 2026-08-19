@@ -29,6 +29,7 @@ from produccion.models import (
     ControlProceso,
     ControlProcesoLectura,
     Lote,
+    PalletProducto,
 )
 from recepcion.models import MovimientoSilo
 from usuarios.models import rol_de
@@ -236,7 +237,6 @@ def _contexto_del_lote(lote, bloquear=False):
         documentos,
         lote,
         RegistroEquipo.objects.filter(
-            sucursal_id=lote.sucursal_id,
             documento__in=documentos,
             estado=RegistroEquipo.Estado.COMPLETADO,
         ).select_related("equipo", "documento"),
@@ -578,6 +578,9 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         liberacion.autorizada_por = request.user
         liberacion.autorizada_en = ahora()
         liberacion.save()
+        PalletProducto.objects.filter(envase__lote=lote).exclude(
+            estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
+        ).update(estado=PalletProducto.Estado.LIBERADO)
 
     return Response(LiberacionSerializer(liberacion).data)
 
@@ -634,6 +637,9 @@ def revisar(request, lote_id):
         liberacion.autorizada_por = None
         liberacion.autorizada_en = None
         liberacion.save()
+        PalletProducto.objects.filter(envase__lote=lote).exclude(
+            estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
+        ).update(estado=PalletProducto.Estado.BLOQUEADO)
 
     return Response(LiberacionSerializer(liberacion).data)
 
@@ -659,6 +665,47 @@ def conceder(request, lote_id):
         motivo=datos.validated_data["motivo"],
         observacion=datos.validated_data["observacion"],
     )
+
+
+@api_view(["POST"])
+@permission_classes([EscribeCalidad])
+def bloquear(request, lote_id):
+    """Bloqueo transversal: lote, pallets y silos que contienen su producto."""
+    motivo = str(request.data.get("motivo", "")).strip()
+    if not motivo:
+        return Response(
+            {"motivo": ["El bloqueo requiere un motivo."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    lote = get_object_or_404(_lotes_permitidos(request), pk=lote_id)
+    from maestros.models import Silo
+
+    with transaction.atomic():
+        liberacion, _ = Liberacion.objects.select_for_update().get_or_create(lote=lote)
+        if liberacion.estado in Liberacion.ESTADOS_LIBERADO:
+            liberacion.estado = Liberacion.Estado.EN_REVISION
+        if liberacion.estado != Liberacion.Estado.RECHAZADO:
+            if not liberacion.puede_pasar_a(Liberacion.Estado.RECHAZADO):
+                return Response(
+                    {"detail": "El expediente no admite bloqueo desde su estado actual."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            liberacion.estado = Liberacion.Estado.RECHAZADO
+        liberacion.observacion = motivo
+        liberacion.autorizada_por = request.user
+        liberacion.autorizada_en = ahora()
+        liberacion.concesion = False
+        liberacion.motivo_concesion = ""
+        liberacion.save()
+        PalletProducto.objects.filter(envase__lote=lote).exclude(
+            estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
+        ).update(estado=PalletProducto.Estado.BLOQUEADO)
+        silos_ids = MovimientoSilo.objects.filter(
+            lote=lote, tipo=MovimientoSilo.Tipo.INGRESO
+        ).values_list("silo_id", flat=True)
+        Silo.objects.filter(pk__in=silos_ids).update(estado=Silo.Estado.BLOQUEADO_CALIDAD)
+
+    return Response(LiberacionSerializer(liberacion).data)
 
 
 class RegistroEquipoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):

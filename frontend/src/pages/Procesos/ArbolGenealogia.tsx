@@ -78,7 +78,7 @@ function Nodo({ nodo, esRaiz }: { nodo: NodoGenealogia; esRaiz: boolean }) {
         {esRaiz && <CircleDot className="h-4 w-4 shrink-0 text-green-700" />}
         {nodo.codigo}
       </p>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-slate-600">
         {nodo.producto} · {nodo.fecha}
       </p>
     </div>
@@ -98,7 +98,7 @@ export default function ArbolGenealogia({
 
   if (niveles.length <= 1) {
     return (
-      <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+      <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
         Este lote no tiene lotes {direccion === "atras" ? "de origen" : "derivados"}{" "}
         registrados. Aparece cuando entra o sale de una ejecución de proceso.
       </p>
@@ -111,7 +111,7 @@ export default function ArbolGenealogia({
         <div key={indice}>
 
           {indice > 0 && (
-            <div className="flex items-center gap-2 py-2 pl-4 text-xs text-slate-400">
+            <div className="flex items-center gap-2 py-2 pl-4 text-xs text-slate-600">
               <ArrowDown className="h-3.5 w-3.5" />
               {direccion === "atras" ? "salió de" : "dio origen a"}
             </div>

@@ -292,6 +292,66 @@ export const obtenerAjustes = () => lista<AjusteInventario>("inventario/ajustes/
 export const obtenerUbicaciones = () => lista<UbicacionInventario>("inventario/ubicaciones/");
 export const obtenerAlertas = () => lista<Alerta>("inventario/alertas/");
 
+export interface ExistenciaProductoTerminado {
+  id: number; pallet: number; pallet_codigo: string; lote_codigo: string;
+  producto_nombre: string; ubicacion: number; ubicacion_codigo: string;
+  kg_neto: string; activo: boolean; actualizado_en: string;
+}
+
+export interface ClienteDespacho {
+  id: number; codigo: string; nombre: string; rut: string; direccion: string; activo: boolean;
+}
+
+export interface DetalleDespacho {
+  id: number; pallet: number; pallet_codigo: string; lote_codigo: string; kg_neto: string;
+}
+
+export interface Despacho {
+  id: number; numero: string; cliente: number; cliente_nombre: string;
+  estado: "borrador" | "autorizado" | "despachado" | "cancelado";
+  guia_despacho: string; transportista: string; patente: string;
+  creado_en: string; autorizado_en: string | null; despachado_en: string | null;
+  detalles: DetalleDespacho[];
+}
+
+export const obtenerProductoTerminado = () =>
+  lista<ExistenciaProductoTerminado>("inventario/producto-terminado/");
+export const obtenerClientesDespacho = () =>
+  lista<ClienteDespacho>("inventario/clientes-despacho/");
+export const obtenerDespachos = () => lista<Despacho>("inventario/despachos/");
+
+export async function ingresarPallet(pallet: number, ubicacion: number) {
+  const { data } = await api.post<ExistenciaProductoTerminado>(
+    "inventario/producto-terminado/ingresar/", { pallet, ubicacion },
+  );
+  return data;
+}
+
+export async function transferirPallet(id: number, destino: number, motivo: string) {
+  const { data } = await api.post<ExistenciaProductoTerminado>(
+    `inventario/producto-terminado/${id}/transferir/`, { destino, motivo },
+  );
+  return data;
+}
+
+export async function crearDespacho(datos: {
+  numero: string; cliente: number; pallet_ids: number[]; guia_despacho?: string;
+  transportista?: string; patente?: string; observacion?: string;
+}) {
+  const { data } = await api.post<Despacho>("inventario/despachos/", datos);
+  return data;
+}
+
+export async function autorizarDespacho(id: number) {
+  const { data } = await api.post<Despacho>(`inventario/despachos/${id}/autorizar/`);
+  return data;
+}
+
+export async function ejecutarDespacho(id: number) {
+  const { data } = await api.post<Despacho>(`inventario/despachos/${id}/ejecutar/`);
+  return data;
+}
+
 
 /*
   Un lote de proveedor: la unidad de trazabilidad de bodega.

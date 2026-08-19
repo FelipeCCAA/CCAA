@@ -938,3 +938,100 @@ class Alerta(models.Model):
 
     class Meta:
         ordering = ["-creada_en"]
+
+
+class ClienteDespacho(models.Model):
+    empresa = models.ForeignKey(
+        "usuarios.Empresa", on_delete=models.PROTECT, related_name="clientes_despacho",
+        default=empresa_predeterminada_pruebas,
+    )
+    codigo = models.CharField(max_length=40)
+    nombre = models.CharField(max_length=180)
+    rut = models.CharField(max_length=20, blank=True)
+    direccion = models.CharField(max_length=250, blank=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nombre"]
+        constraints = [models.UniqueConstraint(fields=["empresa", "codigo"], name="cliente_despacho_codigo_empresa")]
+
+    def __str__(self):
+        return f"{self.codigo} · {self.nombre}"
+
+
+class ExistenciaProductoTerminado(models.Model):
+    """Ubicación vigente de un pallet; el historial vive en sus movimientos."""
+    pallet = models.OneToOneField(
+        "produccion.PalletProducto", on_delete=models.PROTECT, related_name="existencia_producto"
+    )
+    ubicacion = models.ForeignKey(Ubicacion, on_delete=models.PROTECT, related_name="productos_terminados")
+    activo = models.BooleanField(default=True, db_index=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["pallet__codigo"]
+
+
+class Despacho(models.Model):
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        AUTORIZADO = "autorizado", "Autorizado"
+        DESPACHADO = "despachado", "Despachado"
+        CANCELADO = "cancelado", "Cancelado"
+
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT, related_name="despachos",
+        default=sucursal_predeterminada_pruebas,
+    )
+    numero = models.CharField(max_length=50)
+    cliente = models.ForeignKey(ClienteDespacho, on_delete=models.PROTECT, related_name="despachos")
+    estado = models.CharField(max_length=15, choices=Estado.choices, default=Estado.BORRADOR, db_index=True)
+    guia_despacho = models.CharField(max_length=60, blank=True)
+    transportista = models.CharField(max_length=150, blank=True)
+    patente = models.CharField(max_length=20, blank=True)
+    observacion = models.TextField(blank=True)
+    creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="despachos_creados")
+    autorizado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="despachos_autorizados")
+    creado_en = models.DateTimeField(auto_now_add=True)
+    autorizado_en = models.DateTimeField(null=True, blank=True)
+    despachado_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["sucursal", "estado", "-creado_en"], name="desp_suc_est_fecha_idx")]
+        constraints = [models.UniqueConstraint(fields=["sucursal", "numero"], name="despacho_numero_sucursal")]
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Un despacho no se elimina; se cancela conservando su auditoría.")
+
+
+class DetalleDespacho(models.Model):
+    despacho = models.ForeignKey(Despacho, on_delete=models.PROTECT, related_name="detalles")
+    pallet = models.ForeignKey("produccion.PalletProducto", on_delete=models.PROTECT, related_name="detalles_despacho")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["despacho", "pallet"], name="despacho_pallet_unico")]
+
+
+class MovimientoProductoTerminado(models.Model):
+    class Tipo(models.TextChoices):
+        INGRESO = "ingreso", "Ingreso"
+        TRANSFERENCIA = "transferencia", "Transferencia"
+        DESPACHO = "despacho", "Despacho"
+
+    operacion = models.UUIDField(unique=True, db_index=True)
+    pallet = models.ForeignKey("produccion.PalletProducto", on_delete=models.PROTECT, related_name="movimientos_inventario")
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    origen = models.ForeignKey(Ubicacion, on_delete=models.PROTECT, null=True, blank=True, related_name="salidas_producto")
+    destino = models.ForeignKey(Ubicacion, on_delete=models.PROTECT, null=True, blank=True, related_name="entradas_producto")
+    despacho = models.ForeignKey(Despacho, on_delete=models.PROTECT, null=True, blank=True, related_name="movimientos")
+    motivo = models.CharField(max_length=250, blank=True)
+    registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    registrado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-registrado_en"]
+        indexes = [models.Index(fields=["pallet", "-registrado_en"], name="mov_pt_pallet_fecha_idx")]
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Los movimientos de producto terminado son inmutables.")

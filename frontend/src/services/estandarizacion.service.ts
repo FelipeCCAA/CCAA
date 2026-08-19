@@ -42,11 +42,12 @@ export interface ValeEstandarizacion {
   litros_descremada: string;
   estado: EstadoVale;
   agitacion_desde: string | null;
+  muestreado_en: string | null;
   grasa_real: string | null;
   sng_real: string | null;
   rc_real: number | null;
   minutos_agitando: number | null;
-  puede_muestrear: boolean;
+  avisos: string[];
   evaluacion: Evaluacion | null;
   observaciones: string;
   responsable_nombre: string | null;
@@ -68,8 +69,9 @@ export interface CatalogosEstandarizacion {
   /*
     Los minutos vienen del backend y no se escriben aquí: la cuenta regresiva
     de la pantalla tiene que medir contra el mismo número con el que el
-    servidor acepta la muestra. Una copia terminaría ofreciendo el botón antes
-    de tiempo — y el operador tomando una muestra que el servidor rechaza.
+    servidor evalúa el aviso. Una copia terminaría ofreciendo el botón antes
+    de tiempo — y el operador tomando una muestra que el servidor marca con
+    aviso sin que la pantalla lo haya anticipado.
   */
   minutos_agitacion: number;
   transiciones: Record<string, string[]>;

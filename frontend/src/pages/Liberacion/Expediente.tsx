@@ -13,6 +13,7 @@ import axios from "axios";
 
 import {
   conceder,
+  bloquearLote,
   liberar,
   obtenerExpediente,
   type EstadoDocumento,
@@ -145,8 +146,23 @@ function Expediente({ loteId, alVolver }: Props) {
     }
   };
 
+  const bloquear = async () => {
+    const causa = window.prompt("Motivo obligatorio del bloqueo de Calidad:")?.trim();
+    if (!causa) return;
+    setFirmando(true);
+    setError("");
+    try {
+      await bloquearLote(loteId, causa);
+      await cargar();
+    } catch {
+      setError("No se pudo bloquear el lote.");
+    } finally {
+      setFirmando(false);
+    }
+  };
+
   if (cargando) {
-    return <p className="text-sm text-slate-500">Cargando expediente…</p>;
+    return <p className="text-sm text-slate-600">Cargando expediente…</p>;
   }
 
   if (!expediente) {
@@ -173,7 +189,7 @@ function Expediente({ loteId, alVolver }: Props) {
 
         <button
           onClick={alVolver}
-          className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
+          className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-800"
         >
           <ArrowLeft className="h-4 w-4" />
           Volver al listado
@@ -187,7 +203,7 @@ function Expediente({ loteId, alVolver }: Props) {
               {lote.codigo_lote}
             </h1>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               {lote.producto_nombre} · {lote.mandante_nombre} · {lote.fecha} ·{" "}
               {kilos(lote.kg_producidos)}
             </p>
@@ -203,7 +219,7 @@ function Expediente({ loteId, alVolver }: Props) {
                 {liberacion.estado_etiqueta}
               </p>
 
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="mt-0.5 text-xs text-slate-600">
                 {liberacion.autorizada_por_nombre || "—"}
               </p>
 
@@ -227,7 +243,7 @@ function Expediente({ loteId, alVolver }: Props) {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
 
-          <p className="text-sm text-slate-500">Calidad del lote</p>
+          <p className="text-sm text-slate-600">Calidad del lote</p>
 
           <div className="mt-2 flex items-center gap-2">
 
@@ -240,7 +256,7 @@ function Expediente({ loteId, alVolver }: Props) {
             </span>
 
             {calidad && calidad.evaluados > 0 && (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-600">
                 {calidad.evaluados} análisis
               </span>
             )}
@@ -264,8 +280,8 @@ function Expediente({ loteId, alVolver }: Props) {
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
 
           <div className="flex items-baseline justify-between">
-            <p className="text-sm text-slate-500">Avance documental</p>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-600">Avance documental</p>
+            <p className="text-sm text-slate-600">
               {avance?.completados ?? 0} de {avance?.total ?? 0}
             </p>
           </div>
@@ -291,13 +307,13 @@ function Expediente({ loteId, alVolver }: Props) {
 
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-medium text-slate-800">Checklist de liberación</h2>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-600">
             Los exige la familia «{lote.familia}» del producto
           </p>
         </div>
 
         {(!avance || avance.detalle.length === 0) && (
-          <p className="px-5 py-6 text-sm text-slate-500">
+          <p className="px-5 py-6 text-sm text-slate-600">
             No hay documentos configurados para esta familia de producto.
           </p>
         )}
@@ -326,7 +342,7 @@ function Expediente({ loteId, alVolver }: Props) {
                       {estado.documento.nombre}
                     </p>
 
-                    <p className="mt-0.5 text-xs text-slate-500">
+                    <p className="mt-0.5 text-xs text-slate-600">
 
                       {estado.observado
                         ? "Observado: bloquea la liberación"
@@ -375,7 +391,7 @@ function Expediente({ loteId, alVolver }: Props) {
           <ul className="mt-3 space-y-1.5">
             {decision.bloqueos.map((bloqueo, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-600" />
                 {bloqueo}
               </li>
             ))}
@@ -475,12 +491,22 @@ function Expediente({ loteId, alVolver }: Props) {
 
             )}
 
+            <button
+              type="button"
+              disabled={firmando}
+              onClick={() => void bloquear()}
+              className="flex items-center gap-1.5 rounded-xl border border-red-300 bg-red-50 px-5 py-2.5 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-40"
+            >
+              <Lock className="h-4 w-4" />
+              Bloquear lote
+            </button>
+
           </div>
 
         )}
 
         {!puedeFirmar && (
-          <p className="mt-4 text-sm text-slate-500">
+          <p className="mt-4 text-sm text-slate-600">
             Tu rol no autoriza liberaciones. Puedes consultar el expediente.
           </p>
         )}

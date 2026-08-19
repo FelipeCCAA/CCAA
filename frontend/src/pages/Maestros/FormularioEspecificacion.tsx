@@ -199,7 +199,7 @@ function FormularioEspecificacion({
           <button
             type="button"
             onClick={onCerrar}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
           >
             <X className="h-5 w-5" />
           </button>
@@ -280,7 +280,7 @@ function FormularioEspecificacion({
               onChange={(e) => setHasta(e.target.value)}
               className={`mt-1 ${campo}`}
             />
-            <span className="mt-1 block text-xs text-slate-400">
+            <span className="mt-1 block text-xs text-slate-600">
               Vacío = sin fecha de término
             </span>
           </label>
@@ -296,7 +296,7 @@ function FormularioEspecificacion({
           <table className="w-full">
 
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-slate-500">
+              <tr className="text-xs uppercase tracking-wide text-slate-600">
                 <th className="px-4 py-2 text-left font-semibold">Parámetro</th>
                 <th className="px-4 py-2 text-left font-semibold">Mínimo</th>
                 <th className="px-4 py-2 text-left font-semibold">Máximo</th>
@@ -319,10 +319,10 @@ function FormularioEspecificacion({
                           checked={activo}
                           onChange={(e) => alternar(p.clave, e.target.checked)}
                         />
-                        <span className={activo ? "text-slate-800" : "text-slate-400"}>
+                        <span className={activo ? "text-slate-800" : "text-slate-600"}>
                           {p.etiqueta}
                           {p.unidad && (
-                            <span className="ml-1 text-xs text-slate-400">
+                            <span className="ml-1 text-xs text-slate-600">
                               {p.unidad}
                             </span>
                           )}
@@ -368,7 +368,7 @@ function FormularioEspecificacion({
 
         </fieldset>
 
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-slate-600">
           Un parámetro <strong>obligatorio</strong> que el análisis no traiga
           deja el lote sin veredicto conforme: no es que falle, es que no hay
           con qué afirmarlo. Uno no obligatorio que no se mida no penaliza.

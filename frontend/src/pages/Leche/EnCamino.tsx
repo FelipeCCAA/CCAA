@@ -51,8 +51,8 @@ function EnCamino() {
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-5 py-5">
         <div>
-          <h2 className="font-semibold text-slate-900">En camino a planta</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="font-semibold text-slate-900">En camino a recepción</h2>
+          <p className="mt-1 text-sm text-slate-600">
             Cargas cerradas en el predio que todavía no se recepcionaron.
           </p>
         </div>
@@ -65,16 +65,16 @@ function EnCamino() {
       </div>
 
       {cargas === null ? (
-        <p className="py-10 text-center text-sm text-slate-400">Cargando…</p>
+        <p className="py-10 text-center text-sm text-slate-600">Cargando…</p>
       ) : cargas.length === 0 ? (
         <div className="px-6 py-16 text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600">
             <Truck className="h-5 w-5" />
           </span>
           <p className="mt-4 text-sm font-medium text-slate-700">
             No hay cargas pendientes de llegar
           </p>
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-slate-600">
             Aparecen aquí en cuanto se registra una carga en{" "}
             <Link to="../rutas" className="underline">Rutas</Link>.
           </p>
@@ -83,7 +83,7 @@ function EnCamino() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-left text-sm">
 
-            <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
               <tr>
                 <th className="px-5 py-3">Carga</th>
                 <th className="px-5 py-3">Origen</th>
@@ -99,12 +99,12 @@ function EnCamino() {
                   <td className="px-5 py-4 font-semibold text-slate-800">{c.codigo}</td>
                   <td className="px-5 py-4">
                     <p className="text-slate-700">{c.predio || "—"}</p>
-                    <p className="mt-1 text-xs text-slate-400">{c.proveedor || "—"}</p>
+                    <p className="mt-1 text-xs text-slate-600">{c.proveedor || "—"}</p>
                   </td>
                   <td className="px-5 py-4 text-slate-700">
                     {c.modulo}
                     {c.estanque_origen && (
-                      <span className="ml-1 text-xs text-slate-400">
+                      <span className="ml-1 text-xs text-slate-600">
                         · {c.estanque_origen}
                       </span>
                     )}
@@ -123,7 +123,7 @@ function EnCamino() {
         </div>
       )}
 
-      <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
+      <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-600">
         Una carga sale de esta lista cuando se registra su llegada en{" "}
         <Link to="../muestreo" className="underline">Muestreo</Link>, eligiéndola
         en el formulario de nueva recepción.

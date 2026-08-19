@@ -24,12 +24,19 @@ from django.utils import timezone
 from . import dominio
 
 
-#: Minutos de agitación antes de poder muestrear (§10.3).
+#: Minutos de agitación que pide el procedimiento antes de muestrear (§10.3).
 #:
-#: Es un mínimo físico: una muestra tomada antes mide una mezcla que todavía
-#: no es homogénea, y el RC que devuelve no es el del silo. Va como constante
-#: con nombre y no como número suelto porque quien lo cambie tiene que saber
-#: qué está cambiando.
+#: Es un mínimo físico: una muestra tomada antes mide una mezcla que todavía no
+#: es homogénea, y el RC que devuelve no es el del silo.
+#:
+#: **Avisa, no bloquea** desde 2026-08-17, por decisión de planta: el sistema
+#: advierte y deja constancia en `muestreado_en`, pero no detiene la operación.
+#: Antes rechazaba la muestra, y entonces no quedaba registro de nada; ahora no
+#: la impide pero sí queda escrito cuánto agitó cada vale.
+#:
+#: Constante con nombre y no un número suelto en medio del cálculo: quien lo
+#: cambie tiene que saber qué está cambiando, y no se toca ni se hace
+#: configurable.
 MINUTOS_DE_AGITACION = 30
 
 
@@ -110,6 +117,14 @@ class ValeEstandarizacion(models.Model):
     agitacion_desde = models.DateTimeField(
         "Inicio de la agitación", null=True, blank=True
     )
+    muestreado_en = models.DateTimeField(
+        "Hora del muestreo", null=True, blank=True,
+        help_text=(
+            "Cuándo se tomó la muestra. Congela «minutos agitando»: sin este "
+            "sello el contador sigue creciendo contra el reloj actual y "
+            "después no hay forma de saber si la muestra fue temprana."
+        ),
+    )
 
     # Lo que dio el análisis después de agitar. Nulos hasta que se muestrea.
     grasa_real = models.DecimalField(
@@ -159,25 +174,53 @@ class ValeEstandarizacion(models.Model):
 
     @property
     def minutos_agitando(self):
-        """Cuánto lleva agitando. `None` si todavía no empezó."""
+        """
+        Cuánto agitó. Mientras no se muestrea cuenta contra el reloj actual;
+        una vez muestreado se congela en la hora de la muestra.
+
+        Congelarlo es lo que hace auditable el aviso de muestreo temprano: sin
+        el sello, un vale mirado al día siguiente informa mil cuatrocientos
+        minutos y el aviso ya no se puede contrastar con nada.
+        """
         if self.agitacion_desde is None:
             return None
 
-        return (timezone.now() - self.agitacion_desde).total_seconds() / 60
+        hasta = self.muestreado_en or timezone.now()
+
+        return (hasta - self.agitacion_desde).total_seconds() / 60
 
     @property
-    def puede_muestrear(self) -> bool:
+    def avisos_de_muestreo(self) -> list[str]:
         """
-        Solo después de los 30 minutos. Antes, la mezcla no es homogénea y la
-        muestra mide otra cosa.
+        Qué advertir sobre la agitación. Lista vacía: nada que advertir.
+
+        **Avisa, no bloquea** (decisión de planta, 2026-08-17). Antes de los
+        treinta minutos la mezcla no es homogénea y el RC medido puede no ser
+        el del silo, pero detener la operación por eso lo decide la planta y no
+        el sistema. Mismo criterio que `codigo_lote_valido` y que la leche
+        asignada del lote, que avisan sin frenar.
+
+        Sirve en los dos momentos sin ramificar, porque se apoya en
+        `minutos_agitando`: **antes** de muestrear cuenta contra el reloj actual
+        y dice cuánto lleva; **después** cuenta contra `muestreado_en` y dice a
+        los cuántos minutos se muestreó. Es la misma frase leída en dos
+        instantes, no dos cálculos.
+
+        Devuelve motivos y no un booleano porque un `False` no le dice al
+        operador qué pasó, y es la convención del resto del proyecto.
         """
         minutos = self.minutos_agitando
 
-        return (
-            self.estado == self.Estado.AGITANDO
-            and minutos is not None
-            and minutos >= MINUTOS_DE_AGITACION
-        )
+        # Sin reloj arrancado no hay nada que advertir: muestrear sin agitar ya
+        # lo impide la transición de estado.
+        if minutos is None or minutos >= MINUTOS_DE_AGITACION:
+            return []
+
+        return [
+            f"Agitó {int(minutos)} minutos de los {MINUTOS_DE_AGITACION} que "
+            "pide el procedimiento: antes de eso la mezcla no es homogénea y "
+            "la muestra puede no medir el silo."
+        ]
 
     def evaluacion(self):
         """Si el RC medido cumple, y qué agregar si no. Delega en el dominio."""

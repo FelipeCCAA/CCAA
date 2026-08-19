@@ -63,13 +63,13 @@ function Paso({
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
             {etiqueta}
           </p>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
             {valor}
           </p>
-          <p className="mt-1 text-xs text-slate-500">{detalle}</p>
+          <p className="mt-1 text-xs text-slate-600">{detalle}</p>
         </div>
         <span className={`rounded-xl p-2.5 ${tonos[tono]}`}>
           <Icono className="h-5 w-5" strokeWidth={1.8} />
@@ -141,7 +141,7 @@ function Panel() {
               {descuadrados.length === 1 ? "silo descuadrado" : "silos descuadrados"}
             </strong>{" "}
             ({descuadrados.map((s) => s.codigo).join(", ")}). El volumen en
-            planta que se muestre está mal mientras no cuadre el libro de
+            operación que se muestre está mal mientras no cuadre el libro de
             movimientos.
           </span>
         </Link>
@@ -152,7 +152,7 @@ function Panel() {
           <div className="flex items-center gap-2 text-sm font-semibold text-sky-900"><Bell className="h-4 w-4" />Últimos avisos del flujo</div>
           <div className="mt-3 grid gap-2 lg:grid-cols-2">
             {notificaciones.slice(0, 4).map((aviso) => (
-              <div key={aviso.id} className="rounded-xl bg-white px-4 py-3 ring-1 ring-sky-100"><p className="text-sm font-semibold text-slate-800">{aviso.titulo}</p><p className="mt-1 text-xs leading-5 text-slate-500">{aviso.mensaje}</p></div>
+              <div key={aviso.id} className="rounded-xl bg-white px-4 py-3 ring-1 ring-sky-100"><p className="text-sm font-semibold text-slate-800">{aviso.titulo}</p><p className="mt-1 text-xs leading-5 text-slate-600">{aviso.mensaje}</p></div>
             ))}
           </div>
         </section>
@@ -184,7 +184,7 @@ function Panel() {
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Paso
-          a="silos" etiqueta="Volumen en planta"
+          a="silos" etiqueta="Volumen disponible"
           valor={`${formato.format(ocupacion?.litros_totales ?? 0)} L`}
           detalle={`${ocupacion?.silos.length ?? 0} silos y estanques`}
           icono={Droplets} tono="emerald"

@@ -26,7 +26,12 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     # sería un número que contradice a los dos que lo componen.
     rc_real = serializers.FloatField(read_only=True)
     minutos_agitando = serializers.FloatField(read_only=True)
-    puede_muestrear = serializers.BooleanField(read_only=True)
+    # Motivos y no un booleano: un `False` no le dice al operador qué pasó.
+    avisos = serializers.ListField(
+        source="avisos_de_muestreo",
+        child=serializers.CharField(),
+        read_only=True,
+    )
     evaluacion = serializers.SerializerMethodField()
 
     class Meta:
@@ -39,14 +44,16 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "silo_destino", "silo_destino_codigo",
             "entera_grasa", "entera_sng", "descremada_grasa", "descremada_sng",
             "litros_entera", "litros_descremada",
-            "estado", "agitacion_desde", "grasa_real", "sng_real",
-            "rc_real", "minutos_agitando", "puede_muestrear", "evaluacion",
+            "estado", "agitacion_desde", "muestreado_en",
+            "grasa_real", "sng_real",
+            "rc_real", "minutos_agitando", "avisos", "evaluacion",
             "observaciones", "responsable", "responsable_nombre", "creado_en",
         ]
         # El estado lo mueven las acciones del ciclo, no un PATCH: liberar
         # exige que el RC cumpla, y con un campo escribible eso se salta.
         read_only_fields = [
-            "estado", "agitacion_desde", "grasa_real", "sng_real",
+            "estado", "agitacion_desde", "muestreado_en",
+            "grasa_real", "sng_real",
             "responsable", "creado_en",
         ]
 

@@ -1,19 +1,8 @@
 """
-Pruebas de que la planta única no se nota.
+Pruebas de que la partición histórica no forma parte del modelo funcional.
 
-La organización de CCAA no tiene sucursales: hay una sola planta. El modelo
-conserva la dimensión —quitarla costaría migrar quince modelos con datos
-encima, y volvería a costar lo mismo el día que haya una segunda— pero nadie
-debería tener que verla.
-
-Lo que se fija aquí son las dos mitades de esa promesa:
-
-1. Con **una** planta, ningún perfil necesita indicarla.
-2. Con **dos**, el sistema deja de adivinar y la pide.
-
-La segunda importa tanto como la primera: resolver lo que solo tiene una
-respuesta es servicial; elegir entre dos es escribir en la planta equivocada
-sin que nadie lo pida.
+La aplicación trabaja por empresa. Los registros internos que aún conservan
+las tablas se resuelven en el servidor y nunca se seleccionan desde la API.
 """
 
 from django.contrib.auth.models import User
@@ -114,20 +103,21 @@ class DosPlantasTests(BaseSinSucursales):
             empresa=self.empresa, codigo="PLANTA2", nombre="Segunda planta"
         )
 
-    def test_con_dos_hay_que_indicarla(self):
-        with self.assertRaises(ValidationError) as fallo:
-            sucursal_para_escritura(self._usuario(PerfilUsuario.Alcance.EMPRESA), {})
+    def test_con_dos_se_usa_la_configuracion_canonica(self):
+        elegida = sucursal_para_escritura(
+            self._usuario(PerfilUsuario.Alcance.EMPRESA), {}
+        )
 
-        self.assertIn("más de una planta", str(fallo.exception))
+        self.assertEqual(elegida, self.planta)
 
-    def test_indicada_explicitamente_se_acepta(self):
+    def test_una_seleccion_del_cliente_se_ignora(self):
         administrador = self._usuario(PerfilUsuario.Alcance.EMPRESA)
 
         elegida = sucursal_para_escritura(
             administrador, {"sucursal": self.segunda}
         )
 
-        self.assertEqual(elegida, self.segunda)
+        self.assertEqual(elegida, self.planta)
 
     def test_el_perfil_de_planta_sigue_sin_elegir(self):
         """Su alcance ya la fija: no hay ambigüedad que resolver."""
@@ -164,16 +154,14 @@ class AislamientoEntreEmpresasTests(BaseSinSucursales):
         with self.assertRaises(ValidationError):
             sucursal_para_escritura(usuario, {})
 
-    def test_no_se_acepta_la_planta_de_otra_empresa_aunque_se_indique(self):
-        from rest_framework.exceptions import PermissionDenied
-
+    def test_una_seleccion_ajena_del_cliente_se_ignora(self):
         otra = Empresa.objects.create(rut="77.333.333-3", nombre="Tercera")
         ajena = Sucursal.objects.create(empresa=otra, codigo="X", nombre="Ajena")
 
-        with self.assertRaises(PermissionDenied):
-            sucursal_para_escritura(
-                self._usuario(PerfilUsuario.Alcance.EMPRESA), {"sucursal": ajena}
-            )
+        elegida = sucursal_para_escritura(
+            self._usuario(PerfilUsuario.Alcance.EMPRESA), {"sucursal": ajena}
+        )
+        self.assertEqual(elegida, self.planta)
 
 
 class AltaDePersonalTests(BaseSinSucursales):
@@ -221,7 +209,7 @@ class AltaDePersonalTests(BaseSinSucursales):
         self.assertIsNone(perfil.sucursal_id)
         self.assertEqual(perfil.empresa_id, self.empresa.pk)
 
-    def test_el_resto_cae_en_la_unica_planta(self):
+    def test_el_resto_nace_con_alcance_de_empresa(self):
         respuesta = self._crear(
             self.administrador,
             username="operario",
@@ -231,14 +219,10 @@ class AltaDePersonalTests(BaseSinSucursales):
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         perfil = PerfilUsuario.objects.get(usuario__username="operario")
-        self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.SUCURSAL)
-        self.assertEqual(perfil.sucursal_id, self.planta.pk)
+        self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.EMPRESA)
+        self.assertIsNone(perfil.sucursal_id)
 
-    def test_con_dos_plantas_el_operario_se_pide(self):
-        """
-        Elegir por quien da de alta es crear al operario en la planta
-        equivocada — y ahí trabajará hasta que alguien lo note.
-        """
+    def test_un_segundo_registro_interno_no_cambia_el_alta(self):
         Sucursal.objects.create(
             empresa=self.empresa, codigo="PLANTA2", nombre="Segunda"
         )
@@ -250,8 +234,10 @@ class AltaDePersonalTests(BaseSinSucursales):
             nivel=PerfilUsuario.Nivel.TRABAJADOR,
         )
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("sucursal", respuesta.data)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        perfil = PerfilUsuario.objects.get(usuario__username="operario2")
+        self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.EMPRESA)
+        self.assertIsNone(perfil.sucursal_id)
 
     def test_con_dos_plantas_administracion_sigue_sin_elegir(self):
         """Su alcance no es una planta: la segunda no le añade ambigüedad."""
@@ -448,13 +434,12 @@ class RegistrarRecepcionTests(TestCase):
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(respuesta.json()["estado"], "registrada")
 
-    def test_con_dos_plantas_vuelve_a_pedirse(self):
+    def test_un_segundo_registro_interno_no_se_pide(self):
         Sucursal.objects.create(empresa=self.empresa, codigo="P2", nombre="Segunda")
 
         respuesta = self._registrar()
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("sucursal", respuesta.data)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
 
 
 @override_settings(DJANGO_ENV="development")
@@ -489,9 +474,10 @@ class RegistrarLlegadaTests(TestCase):
                 "guia": "G-9",
                 "vehiculo": self.camion.id,
                 "tipo_leche": "Entera",
+                "litros": "40000.00",
                 "modulos": [
-                    {"modulo": "M1", "litros": "20000.00"},
-                    {"modulo": "M2", "litros": "20000.00"},
+                    {"numero": 1},
+                    {"numero": 2},
                 ],
                 **extra,
             },
@@ -502,21 +488,17 @@ class RegistrarLlegadaTests(TestCase):
         respuesta = self._registrar()
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
-        creadas = respuesta.json()
-        self.assertEqual(len(creadas), 2)
-        self.assertEqual(creadas[0]["llegada_id"], creadas[1]["llegada_id"])
+        creada = respuesta.json()
+        self.assertEqual(len(creada["modulos"]), 2)
 
-    def test_con_dos_plantas_vuelve_a_pedirse(self):
+    def test_un_segundo_registro_interno_no_se_pide(self):
         Sucursal.objects.create(empresa=self.empresa, codigo="U2", nombre="Segunda")
 
         respuesta = self._registrar()
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("sucursal", respuesta.data)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
 
-    def test_una_planta_inexistente_se_responde_con_400(self):
-        """Antes salía como `DoesNotExist`, o sea un 500 sin mensaje."""
+    def test_una_seleccion_inexistente_del_cliente_se_ignora(self):
         respuesta = self._registrar(sucursal=999999)
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("sucursal", respuesta.data)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)

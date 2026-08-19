@@ -364,6 +364,12 @@ CELERY_TIMEZONE = TIME_ZONE
 # Una tarea que no termina en veinte minutos es una tarea rota. Sin techo, un
 # calculo colgado retiene un worker para siempre.
 CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "1200"))
+CELERY_BEAT_SCHEDULE = {
+    "alertas-operacionales-cada-hora": {
+        "task": "inventario.tareas.refrescar_alertas_operacionales",
+        "schedule": 3600.0,
+    },
+}
 
 
 # Caché

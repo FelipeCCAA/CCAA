@@ -13,8 +13,6 @@ movimiento, y un saldo negativo dejaría de ser lo que hoy es, la señal
 automática de que el registro está descuadrado.
 """
 
-import uuid
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -22,28 +20,36 @@ from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 from maestros.models import Silo, Vehiculo
 
+from . import dominio
+
 
 CONTROLES_DECLARADOS = {
     "temperatura",
     "acidez",
     "ph",
-    "crioscopia",
     "delvo",
     "inhibidores",
+    "grasa",
+    "sng",
+    # Los cuatro ítems que el formato pide por separado (columnas AC-AF).
+    "sangre",
+    "pus",
+    "materias_extranas",
+    "aroma",
+    # Clave histórica: dejó de escribirse pero se sigue leyendo, porque las
+    # filas anteriores al formato ampliado la tienen y siguen valiendo.
     "organoleptico",
 }
 
-CONTROLES_NUMERICOS = {"temperatura", "acidez", "ph", "crioscopia"}
+CONTROLES_NUMERICOS = {"temperatura", "acidez", "ph", "grasa", "sng"}
 
-# La crioscopia se mide por cada modulo. Los demas resultados describen la
-# carga comun del camion y se comparten entre todos sus compartimientos.
-CONTROLES_POR_MODULO = {"crioscopia"}
-CONTROLES_POR_CAMION = CONTROLES_DECLARADOS - CONTROLES_POR_MODULO
+ITEMS_ORGANOLEPTICOS = ("sangre", "pus", "materias_extranas", "aroma")
 
 VALORES_ADMITIDOS = {
     "delvo": {"Negativo", "Positivo"},
     "inhibidores": {"Negativo", "Positivo"},
     "organoleptico": {"Conforme", "No conforme"},
+    **{item: {"Conforme", "No conforme"} for item in ITEMS_ORGANOLEPTICOS},
 }
 
 
@@ -63,8 +69,37 @@ class Recepcion(models.Model):
     )
 
     class Procedencia(models.TextChoices):
+        CCAA = "CCAA", "CCAA"
         NESTLE = "Nestlé", "Nestlé"
+        COLUN = "Colun", "Colun"
         P_UNION = "P. Unión", "P. Unión"
+
+    class Uso(models.TextChoices):
+        """
+        A qué va la leche del camión. El comentario de la celda O15 del
+        formato lo explica: «a qué n° de precondensado va ir esta leche, sirve
+        para llevar trazabilidad y desviación de uso».
+
+        Se guarda la familia aparte del número (`uso_numero`) porque la
+        pregunta que motiva el campo —qué entró al Semi n°2— no se puede
+        hacer contra un texto libre que además viene con variantes de tipeo.
+        """
+
+        DESPACHO = "despacho", "Despacho"
+        STOCK = "stock", "Stock"
+        SEMI = "semi", "Precondensado semidescremado"
+        ENTERO = "entero", "Precondensado entero"
+        LE = "le", "Leche entera"
+        SUERO = "suero", "Suero"
+        ANTIBIOTICO = "antibiotico", "Antibiótico"
+
+    class RecambioDilucion(models.TextChoices):
+        RECAMBIO = "recambio", "Recambio"
+        OK = "ok", "OK"
+
+    # Familias que numeran su destino. `Despacho` o `Stock` con un número
+    # detrás no significaría nada.
+    USOS_NUMERADOS = ("semi", "entero")
 
     class TipoLeche(models.TextChoices):
         ENTERA = "Entera", "Entera"
@@ -97,22 +132,6 @@ class Recepcion(models.Model):
     }
 
     fecha = models.DateField("Fecha")
-    llegada_id = models.UUIDField(
-        "Identificador de llegada",
-        default=uuid.uuid4,
-        editable=False,
-        db_index=True,
-        help_text="Agrupa todos los modulos que llegaron en el mismo camion.",
-    )
-    carga_recoleccion = models.OneToOneField(
-        "recoleccion.CargaModulo",
-        on_delete=models.PROTECT,
-        related_name="recepcion_planta",
-        null=True,
-        blank=True,
-        verbose_name="Carga esperada de Recolección",
-        help_text="Vínculo opcional para conservar recepciones manuales autorizadas.",
-    )
     hora = models.TimeField("Hora", null=True, blank=True)
     guia = models.CharField("Guía", max_length=60, blank=True)
     vehiculo = models.ForeignKey(
@@ -123,12 +142,6 @@ class Recepcion(models.Model):
         blank=True,
         verbose_name="Camión",
     )
-    modulo = models.CharField(
-        "Módulo / compartimiento",
-        max_length=40,
-        blank=True,
-        help_text="Identificador del módulo transportado dentro del camión",
-    )
     procedencia = models.CharField(
         "Procedencia", max_length=20, choices=Procedencia.choices, blank=True
     )
@@ -136,6 +149,55 @@ class Recepcion(models.Model):
         "Tipo de leche", max_length=20, choices=TipoLeche.choices
     )
     litros = models.DecimalField("Litros", max_digits=12, decimal_places=2)
+    kg_romana = models.DecimalField(
+        "Kilos (romana)",
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="El pesaje real. Los kilos de guía se derivan de los litros.",
+    )
+    certificada = models.BooleanField(
+        "Leche certificada",
+        null=True,
+        blank=True,
+        help_text="Nulo = no se registró, que no es lo mismo que no certificada",
+    )
+    uso = models.CharField("Uso", max_length=20, choices=Uso.choices, blank=True)
+    uso_numero = models.PositiveSmallIntegerField(
+        "N° de destino", null=True, blank=True
+    )
+
+    # Las ocho marcas horarias del formato. Son fijas y una sola vez por
+    # camión, así que van aquí y no en un modelo hijo.
+    hora_programa = models.TimeField("Hora programa", null=True, blank=True)
+    hora_arribo_porteria = models.TimeField("Arribo a portería", null=True, blank=True)
+    hora_ingreso = models.TimeField("Hora de ingreso", null=True, blank=True)
+    hora_inicio_descarga = models.TimeField("Inicio de descarga", null=True, blank=True)
+    hora_termino_descarga = models.TimeField("Término de descarga", null=True, blank=True)
+    hora_inicio_cip = models.TimeField("Inicio del lavado CIP", null=True, blank=True)
+    hora_termino_cip = models.TimeField("Término del lavado CIP", null=True, blank=True)
+    hora_salida = models.TimeField("Hora de salida", null=True, blank=True)
+
+    # Higiene del camión.
+    lavado_ruedas = models.BooleanField("Lavado de ruedas", null=True, blank=True)
+    relavado = models.BooleanField(
+        "Vuelve a lavarse e ingresa", null=True, blank=True
+    )
+    recambio_dilucion = models.CharField(
+        "Cambio de dilución", max_length=20, choices=RecambioDilucion.choices, blank=True
+    )
+    ph_camion = models.DecimalField(
+        "pH del camión",
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Del enjuague del camión (5,5 a 8,5), NO de la leche. Mezclarlo con "
+            "el pH de la leche haría que el agua retuviera un camión conforme."
+        ),
+    )
     silo = models.ForeignKey(
         Silo,
         on_delete=models.PROTECT,
@@ -215,9 +277,106 @@ class Recepcion(models.Model):
 
     @property
     def diferencia_recoleccion_litros(self):
-        if not self.carga_recoleccion_id:
+        """
+        Litros del camión contra lo que Recolección esperaba.
+
+        Compara contra la **suma** de las cargas de los módulos: la carga de
+        recolección es por módulo y los litros son del camión. Sin ninguna
+        carga vinculada devuelve None, que no es lo mismo que una diferencia
+        de cero.
+        """
+        cargas = [
+            modulo.carga_recoleccion
+            for modulo in self.modulos.all()
+            if modulo.carga_recoleccion_id
+        ]
+
+        if not cargas:
             return None
-        return self.litros - self.carga_recoleccion.litros
+
+        return self.litros - sum(carga.litros for carga in cargas)
+
+    @property
+    def kg_guia(self):
+        return dominio.kilos_desde_litros(self.litros)
+
+    @property
+    def diferencia_kg(self):
+        return dominio.diferencia_pesaje(self.kg_guia, self.kg_romana)
+
+    @property
+    def solidos_totales(self):
+        controles = self.controles or {}
+        return dominio.solidos_totales(controles.get("grasa"), controles.get("sng"))
+
+    @property
+    def solidos_totales_kg(self):
+        return dominio.solidos_totales_kg(self.kg_romana, self.solidos_totales)
+
+    @property
+    def crioscopia_pool(self):
+        return dominio.crioscopia_pool(
+            [modulo.crioscopia for modulo in self.modulos.all()]
+        )
+
+    def evaluar(self, controles=None):
+        """
+        Evalúa los controles del camión contra `dominio.evaluar_recepcion`,
+        con la crioscopía de cada módulo y el pH del camión — el único lugar
+        que arma esos dos argumentos, para que el serializer (que muestra la
+        evaluación) y `decidir-calidad` (que decide con ella) no puedan
+        divergir. `controles` por defecto usa los ya guardados; `decidir-
+        calidad` la llama con los que está a punto de guardar, todavía sin
+        persistir.
+        """
+        return dominio.evaluar_recepcion(
+            controles if controles is not None else self.controles,
+            # Pares (numero, crioscopia): el número lo pone el módulo, no la
+            # posición en la lista. Los números registrados no tienen por qué
+            # ser contiguos, y con `enumerate` el módulo 3 saldría acusado
+            # como «M2» — el motivo es lo que le dice a Calidad qué
+            # compartimiento re-muestrear.
+            crioscopias=[
+                (modulo.numero, modulo.crioscopia)
+                for modulo in self.modulos.all()
+            ],
+            ph_camion=self.ph_camion,
+        )
+
+    @property
+    def _permanencia(self):
+        return dominio.permanencia(self.hora_arribo_porteria, self.hora_termino_cip)
+
+    @property
+    def permanencia_horas(self):
+        return self._permanencia.horas
+
+    @property
+    def permanencia_motivo(self):
+        """
+        Por qué `permanencia_horas` salió `None` (qué marca horaria falta).
+        Vacío cuando sí se pudo calcular: la decisión devuelve motivo, no
+        solo un booleano, igual que el resto del sistema.
+        """
+        return self._permanencia.motivo
+
+    @property
+    def horas_en_planta(self):
+        return self._permanencia.horas_en_planta
+
+    @property
+    def horas_a_pagar(self):
+        return dominio.horas_a_pagar(self.permanencia_horas)
+
+    @property
+    def tiempo_en_fabrica_horas(self):
+        return dominio.horas_entre(self.hora_ingreso, self.hora_termino_cip)
+
+    @property
+    def tiempo_de_descarga_horas(self):
+        return dominio.horas_entre(
+            self.hora_inicio_descarga, self.hora_termino_descarga
+        )
 
     def clean(self):
         if not isinstance(self.controles, dict):
@@ -255,8 +414,87 @@ class Recepcion(models.Model):
                 {"motivo": "Una recepción retenida debe indicar el motivo."}
             )
 
+        # Un número de destino sin familia no dice de qué es, y una familia sin
+        # número que la admita convierte el número en ruido.
+        if self.uso_numero is not None and self.uso not in self.USOS_NUMERADOS:
+            raise ValidationError(
+                {
+                    "uso_numero": (
+                        "Solo los precondensados llevan número de destino. "
+                        f"«{self.get_uso_display() or 'sin uso'}» no."
+                    )
+                }
+            )
+
     def puede_pasar_a(self, estado) -> bool:
         return estado in self.TRANSICIONES.get(self.estado, [])
+
+
+class ModuloRecepcion(models.Model):
+    """
+    Un compartimiento del camión.
+
+    Lo único que se mide por módulo es la crioscopía: el formato la anota en
+    las columnas M1 a M4 de la misma fila. Los litros, el silo y el destino
+    son del camión, así que no están aquí — ponerlos abriría la puerta a que
+    dos módulos del mismo camión declararan silos distintos.
+    """
+
+    recepcion = models.ForeignKey(
+        Recepcion,
+        on_delete=models.CASCADE,
+        related_name="modulos",
+        verbose_name="Recepción",
+    )
+    numero = models.PositiveSmallIntegerField(
+        "Módulo",
+        help_text="1 a 4, como las columnas M1-M4 del formato",
+    )
+    crioscopia = models.DecimalField(
+        "Crioscopía",
+        max_digits=6,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="Un valor MENOS negativo que el límite sugiere agua añadida",
+    )
+    carga_recoleccion = models.ForeignKey(
+        "recoleccion.CargaModulo",
+        on_delete=models.PROTECT,
+        related_name="modulos_recepcion",
+        null=True,
+        blank=True,
+        verbose_name="Carga esperada de Recolección",
+    )
+
+    class Meta:
+        verbose_name = "Módulo de la recepción"
+        verbose_name_plural = "Módulos de la recepción"
+        ordering = ["recepcion", "numero"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recepcion", "numero"], name="modulo_unico_por_recepcion"
+            ),
+            # El formato solo tiene cuatro columnas (M1-M4): un número fuera
+            # de 1-4 no representa ningún compartimiento real.
+            models.CheckConstraint(
+                condition=models.Q(numero__gte=1) & models.Q(numero__lte=4),
+                name="modulo_numero_en_rango",
+            ),
+            # Una carga de Recolección se recibe una sola vez. Lo garantizaba
+            # el OneToOneField de `Recepcion`; al bajar el vínculo al módulo
+            # como FK, sin esto dos módulos podrían apuntar a la misma carga y
+            # sus litros se contarían dos veces. Parcial porque los módulos sin
+            # carga vinculada son la mayoría y todos son NULL.
+            models.UniqueConstraint(
+                fields=["carga_recoleccion"],
+                condition=models.Q(carga_recoleccion__isnull=False),
+                name="una_recepcion_por_carga_recoleccion",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.recepcion_id} · M{self.numero}"
 
 
 class MovimientoSilo(models.Model):
@@ -276,6 +514,11 @@ class MovimientoSilo(models.Model):
         RECEPCION = "recepcion", "Recepción"
         ESTANDARIZACION = "estandarizacion", "Estandarización"
         LOTE = "lote", "Consumo de lote"
+        TRANSFERENCIA = "transferencia", "Transferencia"
+        PRODUCCION = "produccion", "Producción"
+        MERMA = "merma", "Merma"
+        DEVOLUCION = "devolucion", "Devolución"
+        REWORK = "rework", "Reproceso"
         AJUSTE = "ajuste", "Ajuste manual"
 
     silo = models.ForeignKey(
@@ -297,6 +540,30 @@ class MovimientoSilo(models.Model):
     motivo = models.TextField(
         "Motivo", blank=True, help_text="Obligatorio en los ajustes"
     )
+    operacion_id = models.UUIDField(
+        null=True, blank=True, db_index=True,
+        help_text="Clave idempotente compartida por los asientos de una operación.",
+    )
+    silo_contraparte = models.ForeignKey(
+        Silo, on_delete=models.PROTECT, related_name="movimientos_contraparte",
+        null=True, blank=True,
+    )
+    lote = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
+    producto = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
+    equipo = models.ForeignKey(
+        "maestros.Equipo", on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="movimientos_silo", null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Movimiento de silo"
@@ -308,7 +575,12 @@ class MovimientoSilo(models.Model):
                 fields=["origen_tipo", "origen_id"],
                 condition=models.Q(origen_tipo="recepcion"),
                 name="una_descarga_por_recepcion",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["operacion_id", "silo", "tipo"],
+                condition=models.Q(operacion_id__isnull=False),
+                name="asiento_silo_unico_por_operacion",
+            ),
         ]
 
     def __str__(self):
@@ -324,3 +596,113 @@ class MovimientoSilo(models.Model):
             raise ValidationError(
                 {"motivo": "Un ajuste debe indicar el motivo: es lo que lo hace auditable."}
             )
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError(
+                "Los movimientos de silo son inmutables; corrige mediante un ajuste o reversa."
+            )
+        return super().save(*args, **kwargs)
+
+
+class ControlInhibidores(models.Model):
+    """
+    PPRO N°1 — control de inhibidores en leche fresca.
+
+    Origen: hoja `Inhibidores` del Instructivo (`CCAA.REC.FORM.002.01`), que
+    la rotula «PPRO N°1» en su encabezado.
+
+    No usa `inocuidad.MonitoreoPPRO` porque ese modelo exige un lote, y esto
+    cuelga de un camión y una fecha: la leche todavía no es un lote.
+    """
+
+    class Metodo(models.TextChoices):
+        TRI_SENSOR = "tri_sensor", "Tri Sensor"
+        CHARM = "charm", "Charm"
+        DELVO_SP = "delvo_sp", "Delvo SP"
+
+    class Resultado(models.TextChoices):
+        NEGATIVO = "negativo", "Negativo"
+        POSITIVO = "positivo", "Positivo"
+
+    recepcion = models.ForeignKey(
+        Recepcion,
+        on_delete=models.CASCADE,
+        related_name="controles_inhibidores",
+        verbose_name="Recepción",
+    )
+    metodo = models.CharField(
+        "Método", max_length=20, choices=Metodo.choices, default=Metodo.TRI_SENSOR
+    )
+    tiras_usadas = models.PositiveSmallIntegerField(
+        "Tiras usadas",
+        default=0,
+        help_text="El formato las totaliza al pie: es control de consumo",
+    )
+    hora_lectura = models.TimeField("Hora de lectura", null=True, blank=True)
+    resultado = models.CharField(
+        "Resultado", max_length=20, choices=Resultado.choices
+    )
+    analista = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="controles_inhibidores",
+        null=True,
+        blank=True,
+        verbose_name="Analista",
+    )
+
+    class Meta:
+        verbose_name = "Control de inhibidores (PPRO N°1)"
+        verbose_name_plural = "Controles de inhibidores (PPRO N°1)"
+        ordering = ["recepcion", "hora_lectura"]
+
+    def __str__(self):
+        return f"{self.recepcion_id} · {self.get_metodo_display()} · {self.resultado}"
+
+
+class BusquedaProveedor(models.Model):
+    """
+    Búsqueda del proveedor responsable tras un positivo.
+
+    Es el paso siguiente al positivo, que hasta ahora no existía: la recepción
+    quedaba retenida y el registro no decía de quién venía la leche.
+    """
+
+    control = models.ForeignKey(
+        ControlInhibidores,
+        on_delete=models.CASCADE,
+        related_name="busquedas",
+        verbose_name="Control de inhibidores",
+    )
+    proveedor = models.CharField("Proveedor", max_length=160)
+    charm_bet = models.CharField(
+        "Charm rosa Bet",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    charm_tetra = models.CharField(
+        "Charm rosa Tetra",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    delvo_sp = models.CharField(
+        "Delvo SP",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    hora_lectura = models.TimeField("Hora de lectura", null=True, blank=True)
+    resultado = models.CharField(
+        "Resultado", max_length=20, choices=ControlInhibidores.Resultado.choices
+    )
+
+    class Meta:
+        verbose_name = "Búsqueda a proveedor"
+        verbose_name_plural = "Búsquedas a proveedores"
+        ordering = ["control", "proveedor"]
+
+    def __str__(self):
+        return f"{self.proveedor} · {self.resultado}"

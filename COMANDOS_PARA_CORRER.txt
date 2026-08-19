@@ -1,0 +1,60 @@
+COMANDOS PARA CORRER CCAA EN WINDOWS
+=====================================
+
+Carpeta del proyecto:
+C:\Users\EQUIPO\Documents\GitHub\CCAA
+
+
+ARRANQUE NORMAL (usar 2 terminales de PowerShell)
+-------------------------------------------------
+
+TERMINAL 1 - Backend:
+
+cd C:\Users\EQUIPO\Documents\GitHub\CCAA\backend
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+
+
+TERMINAL 2 - Frontend:
+
+cd C:\Users\EQUIPO\Documents\GitHub\CCAA\frontend
+npm.cmd run dev -- --host 127.0.0.1
+
+
+ABRIR EL SISTEMA
+----------------
+
+http://127.0.0.1:5173/
+
+El backend queda en:
+http://127.0.0.1:8000/api/
+
+
+PARA DETENERLO
+--------------
+
+Presionar Ctrl+C en cada una de las dos terminales.
+
+
+SOLO SI FALTAN LAS DEPENDENCIAS
+-------------------------------
+
+Backend:
+
+cd C:\Users\EQUIPO\Documents\GitHub\CCAA\backend
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+Frontend:
+
+cd C:\Users\EQUIPO\Documents\GitHub\CCAA\frontend
+npm.cmd install
+
+
+IMPORTANTE
+----------
+
+El servicio PostgreSQL debe estar iniciado. Para comprobarlo:
+
+Get-Service postgresql-x64-17
+
+Debe mostrar el estado Running.

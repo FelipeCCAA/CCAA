@@ -87,7 +87,7 @@ function AccesoRecuperacion({
           </div>
 
           <p className="relative text-xs text-emerald-100/50">
-            Gestión Productiva · Planta CCAA
+            Gestión Productiva · CCAA
           </p>
         </aside>
 
@@ -95,7 +95,7 @@ function AccesoRecuperacion({
           <div className="flex items-center justify-between">
             <Link
               to="/login"
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg text-sm font-medium text-slate-500 transition hover:text-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-4"
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg text-sm font-medium text-slate-600 transition hover:text-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-4"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               Volver
@@ -121,14 +121,14 @@ function AccesoRecuperacion({
             <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
               {titulo}
             </h1>
-            <p className="mt-4 max-w-xl text-[15px] leading-7 text-slate-500">
+            <p className="mt-4 max-w-xl text-[15px] leading-7 text-slate-600">
               {descripcion}
             </p>
 
             <div className="mt-9">{children}</div>
           </div>
 
-          <p className="text-center text-xs text-slate-400 lg:text-left">
+          <p className="text-center text-xs text-slate-600 lg:text-left">
             ¿Necesitas ayuda? Contacta al administrador del sistema.
           </p>
         </div>

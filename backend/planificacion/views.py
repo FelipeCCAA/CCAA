@@ -16,7 +16,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
 from produccion.models import Lote
@@ -67,6 +67,87 @@ class SemanaPlanViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     queryset = SemanaPlan.objects.select_related("publicada_por")
     serializer_class = SemanaPlanSerializer
     permission_classes = [EscribeProduccion]
+
+    def destroy(self, request, *args, **kwargs):
+        semana = self.get_object()
+        if semana.estado != SemanaPlan.Estado.BORRADOR:
+            return Response(
+                {"detail": "Una semana publicada, cerrada o cancelada conserva su historial."},
+                status=status.HTTP_405_METHOD_NOT_ALLOWED,
+            )
+        if semana.bloques.exists() or semana.balances.exists():
+            return Response(
+                {"detail": "La semana ya tiene planificación. Cancélala en lugar de borrarla."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"])
+    def cancelar(self, request, pk=None):
+        motivo = str(request.data.get("motivo", "")).strip()
+        if not motivo:
+            return Response(
+                {"motivo": "Indica el motivo de la cancelación."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        with transaction.atomic():
+            semana = SemanaPlan.objects.select_for_update().get(pk=self.get_object().pk)
+            if not semana.puede_pasar_a(SemanaPlan.Estado.CANCELADA):
+                return Response(
+                    {"detail": f"Una semana {semana.get_estado_display().lower()} no se puede cancelar."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            semana.estado = SemanaPlan.Estado.CANCELADA
+            semana.cancelada_por = request.user
+            semana.cancelada_en = timezone.now()
+            semana.motivo_cancelacion = motivo
+            semana.save(update_fields=[
+                "estado", "cancelada_por", "cancelada_en", "motivo_cancelacion"
+            ])
+        return Response(self.get_serializer(semana).data)
+
+    @action(detail=True, methods=["post"])
+    def duplicar(self, request, pk=None):
+        origen = self.get_object()
+        codigo = str(request.data.get("codigo", "")).strip()
+        fecha_inicio = request.data.get("fecha_inicio")
+        anio = request.data.get("anio")
+        if not codigo or not fecha_inicio or not anio:
+            return Response(
+                {"detail": "Indica código, año y fecha de inicio para la copia."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = self.get_serializer(data={
+            "sucursal": origen.sucursal_id,
+            "codigo": codigo,
+            "anio": anio,
+            "fecha_inicio": fecha_inicio,
+            "observacion": f"Copia de {origen.codigo}/{origen.anio}",
+        })
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            copia = serializer.save()
+            BalanceDia.objects.bulk_create([
+                BalanceDia(
+                    semana=copia, dia=item.dia, stock_inicial=item.stock_inicial,
+                    recepcion_ccaa=item.recepcion_ccaa,
+                    recepcion_nestle=item.recepcion_nestle,
+                    recepcion_punion=item.recepcion_punion,
+                    trasvasije=item.trasvasije,
+                    crema_disponible_ton=item.crema_disponible_ton,
+                    ajustes=item.ajustes, observacion=item.observacion,
+                ) for item in origen.balances.all()
+            ])
+            BloquePlan.objects.bulk_create([
+                BloquePlan(
+                    semana=copia, equipo=item.equipo, dia=item.dia,
+                    hora_inicio=item.hora_inicio, hora_fin=item.hora_fin,
+                    tipo=item.tipo, codigo=item.codigo,
+                    estado_equipo=item.estado_equipo, cantidad_kg=item.cantidad_kg,
+                    observacion=item.observacion,
+                ) for item in origen.bloques.all()
+            ])
+        return Response(self.get_serializer(copia).data, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
         consulta = super().get_queryset()

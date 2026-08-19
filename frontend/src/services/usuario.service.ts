@@ -45,6 +45,12 @@ export async function obtenerUsuarioActual(): Promise<Usuario> {
 export interface Trabajador extends Usuario {
   activo: boolean;
   ultimo_acceso: string | null;
+  permisos_asignados: string[];
+}
+
+export interface PermisoIndustrial {
+  codigo: string;
+  nombre: string;
 }
 
 
@@ -68,6 +74,23 @@ export async function crearTrabajador(datos: NuevoTrabajador): Promise<Trabajado
 
 export async function cambiarEstadoTrabajador(id: number, activo: boolean): Promise<Trabajador> {
   const { data } = await api.patch<Trabajador>(`usuarios/trabajadores/${id}/`, { activo });
+  return data;
+}
+
+export async function obtenerPermisosDisponibles(): Promise<PermisoIndustrial[]> {
+  const { data } = await api.get<PermisoIndustrial[]>(
+    "usuarios/trabajadores/permisos-disponibles/",
+  );
+  return data;
+}
+
+export async function actualizarPermisosTrabajador(
+  id: number,
+  permisos: string[],
+): Promise<Trabajador> {
+  const { data } = await api.patch<Trabajador>(`usuarios/trabajadores/${id}/`, {
+    permisos,
+  });
   return data;
 }
 

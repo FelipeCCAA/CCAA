@@ -12,6 +12,8 @@ from .views import (
     LiberacionExcepcionalViewSet, NoConformidadViewSet, OrdenCompraViewSet,
     PlantillaInspeccionViewSet, ProveedorViewSet, RecepcionCompraViewSet,
     SolicitudCompraViewSet, SolicitudMaterialViewSet, UbicacionViewSet,
+    ClienteDespachoViewSet, DespachoViewSet, ExistenciaProductoTerminadoViewSet,
+    MovimientoProductoTerminadoViewSet,
     calcular_mrp,
 )
 
@@ -42,6 +44,10 @@ router.register("no-conformidades", NoConformidadViewSet)
 router.register("liberaciones-excepcionales", LiberacionExcepcionalViewSet)
 router.register("adjuntos", AdjuntoViewSet)
 router.register("alertas", AlertaViewSet)
+router.register("clientes-despacho", ClienteDespachoViewSet)
+router.register("producto-terminado", ExistenciaProductoTerminadoViewSet, basename="producto-terminado")
+router.register("movimientos-producto-terminado", MovimientoProductoTerminadoViewSet, basename="movimientos-producto-terminado")
+router.register("despachos", DespachoViewSet)
 
 urlpatterns = [
     path("mrp/", calcular_mrp),

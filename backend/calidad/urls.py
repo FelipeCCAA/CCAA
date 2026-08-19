@@ -6,6 +6,7 @@ from .views import (
     RegistroCalidadViewSet,
     RegistroEquipoViewSet,
     conceder,
+    bloquear,
     documentos_periodicos,
     expediente,
     expedientes,
@@ -28,6 +29,7 @@ urlpatterns = [
     path("expedientes/<int:lote_id>/", expediente, name="expediente"),
     path("expedientes/<int:lote_id>/liberar/", liberar, name="liberar"),
     path("expedientes/<int:lote_id>/conceder/", conceder, name="conceder"),
+    path("expedientes/<int:lote_id>/bloquear/", bloquear, name="bloquear"),
     path("expedientes/<int:lote_id>/revisar/", revisar, name="revisar"),
     path("", include(router.urls)),
 ]

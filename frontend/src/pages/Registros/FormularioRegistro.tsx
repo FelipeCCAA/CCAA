@@ -118,7 +118,7 @@ function FormularioRegistro({
               {documento.nombre}
             </h2>
 
-            <p className="mt-0.5 text-sm text-slate-500">
+            <p className="mt-0.5 text-sm text-slate-600">
               {documento.codigo} · {documento.frecuencia_etiqueta ?? documento.frecuencia}
             </p>
 
@@ -127,7 +127,7 @@ function FormularioRegistro({
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
@@ -212,7 +212,7 @@ function FormularioRegistro({
                   required
                 />
 
-                <span className="mt-1 block text-xs text-slate-400">
+                <span className="mt-1 block text-xs text-slate-600">
                   Este formulario es «según programa»: su período no se puede
                   deducir, así que sin esta fecha no cubriría ningún lote.
                 </span>
@@ -228,7 +228,7 @@ function FormularioRegistro({
 
             {documento.plantilla.length === 0 ? (
 
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-600">
                 Este documento todavía no tiene plantilla: se registra como
                 atestación. La plantilla se define contra su formato real.
               </p>
@@ -245,7 +245,7 @@ function FormularioRegistro({
                       {campo.etiqueta}
                       {campo.req && <span className="ml-1 text-red-600">*</span>}
                       {campo.unidad && (
-                        <span className="ml-1 font-normal text-slate-400">
+                        <span className="ml-1 font-normal text-slate-600">
                           ({campo.unidad})
                         </span>
                       )}

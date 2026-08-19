@@ -5,6 +5,8 @@ from django.utils import timezone
 from rest_framework import serializers
 from decimal import Decimal, ROUND_CEILING
 
+from produccion.models import PalletProducto
+
 from .models import (
     Adjunto, AjusteInventario, Alerta, Bodega, CicloCIP, EtapaCIP,
     DetalleOrdenCompra, DevolucionProduccion,
@@ -14,6 +16,8 @@ from .models import (
     LiberacionExcepcionalMaterial, NoConformidadMaterial, OrdenCompra,
     PlantillaInspeccion, Proveedor, RecepcionCompra, ResultadoMRP,
     SolicitudCompra, SolicitudMaterial, Ubicacion,
+    ClienteDespacho, Despacho, DetalleDespacho, ExistenciaProductoTerminado,
+    MovimientoProductoTerminado,
 )
 
 
@@ -103,7 +107,7 @@ class CicloCIPSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CicloCIP
-        fields = "__all__"
+        exclude = ["sucursal"]
         read_only_fields = [
             "responsable", "ejecutado_por", "verificado_por", "inicio_real", "fin"
         ]
@@ -290,7 +294,7 @@ class InsumoProveedorSerializer(serializers.ModelSerializer):
 class BodegaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bodega
-        fields = "__all__"
+        fields = ["id", "codigo", "nombre", "area", "activo"]
 
 
 class UbicacionSerializer(serializers.ModelSerializer):
@@ -645,3 +649,70 @@ class DevolucionProduccionSerializer(serializers.ModelSerializer):
         model = DevolucionProduccion
         fields = "__all__"
         read_only_fields = ["registrada_por", "fecha"]
+
+
+class ClienteDespachoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClienteDespacho
+        fields = "__all__"
+        read_only_fields = ["empresa"]
+
+
+class ExistenciaProductoTerminadoSerializer(serializers.ModelSerializer):
+    pallet_codigo = serializers.CharField(source="pallet.codigo", read_only=True)
+    lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo", read_only=True)
+    producto_nombre = serializers.CharField(source="pallet.envase.lote.producto.nombre", read_only=True)
+    ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
+    kg_neto = serializers.DecimalField(source="pallet.kg_neto", max_digits=14, decimal_places=3, read_only=True)
+
+    class Meta:
+        model = ExistenciaProductoTerminado
+        fields = "__all__"
+        read_only_fields = ["pallet", "ubicacion", "activo", "actualizado_en"]
+
+
+class MovimientoProductoTerminadoSerializer(serializers.ModelSerializer):
+    pallet_codigo = serializers.CharField(source="pallet.codigo", read_only=True)
+
+    class Meta:
+        model = MovimientoProductoTerminado
+        fields = "__all__"
+
+
+class DetalleDespachoSerializer(serializers.ModelSerializer):
+    pallet_codigo = serializers.CharField(source="pallet.codigo", read_only=True)
+    lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo", read_only=True)
+    kg_neto = serializers.DecimalField(source="pallet.kg_neto", max_digits=14, decimal_places=3, read_only=True)
+
+    class Meta:
+        model = DetalleDespacho
+        fields = "__all__"
+        read_only_fields = ["despacho"]
+
+
+class DespachoSerializer(serializers.ModelSerializer):
+    detalles = DetalleDespachoSerializer(many=True, read_only=True)
+    pallet_ids = serializers.PrimaryKeyRelatedField(
+        source="pallets_solicitados", queryset=PalletProducto.objects.all(),
+        many=True, write_only=True,
+    )
+    cliente_nombre = serializers.CharField(source="cliente.nombre", read_only=True)
+
+    class Meta:
+        model = Despacho
+        exclude = ["sucursal"]
+        read_only_fields = ["sucursal", "creado_por", "autorizado_por", "estado", "creado_en", "autorizado_en", "despachado_en"]
+
+    def validate_pallet_ids(self, pallets):
+        ids = [p.pk for p in pallets]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError("Un pallet no puede repetirse en el mismo despacho.")
+        if not ids:
+            raise serializers.ValidationError("Selecciona al menos un pallet.")
+        return pallets
+
+    def create(self, validated_data):
+        pallets = validated_data.pop("pallets_solicitados")
+        despacho = super().create(validated_data)
+        DetalleDespacho.objects.bulk_create([DetalleDespacho(despacho=despacho, pallet=p) for p in pallets])
+        return despacho

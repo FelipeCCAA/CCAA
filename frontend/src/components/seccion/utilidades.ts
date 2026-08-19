@@ -103,6 +103,6 @@ export const claseBoton =
   "rounded-xl bg-green-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-40";
 
 export const claseEncabezado =
-  "px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500";
+  "px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600";
 
 export const claseCelda = "px-5 py-3 text-sm";

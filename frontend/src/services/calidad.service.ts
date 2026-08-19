@@ -289,3 +289,10 @@ export async function conceder(
 
   return data;
 }
+
+export async function bloquearLote(loteId: number, motivo: string): Promise<Liberacion> {
+  const { data } = await api.post<Liberacion>(
+    `calidad/expedientes/${loteId}/bloquear/`, { motivo },
+  );
+  return data;
+}

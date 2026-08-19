@@ -15,7 +15,7 @@ import FormularioRegistro from "./FormularioRegistro";
 
 
 /*
-  Registros de planta: aseos, inspecciones y controles de máquina.
+  Registros operacionales: aseos, inspecciones y controles de máquina.
 
   Se organiza **por equipo y fecha**, no por lote, porque es como se trabaja:
   quien asea una torre no piensa en qué lotes va a cubrir. El checklist de
@@ -97,7 +97,7 @@ function Registros() {
     "rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-green-600";
 
   const encabezado =
-    "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500";
+    "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600";
 
   const celda = "px-4 py-3 text-sm";
 
@@ -109,11 +109,11 @@ function Registros() {
         <header className="mb-8">
 
           <h1 className="flex items-center gap-3 text-3xl font-bold text-slate-800">
-            <ClipboardList className="h-7 w-7 text-slate-400" />
-            Registros de planta
+            <ClipboardList className="h-7 w-7 text-slate-600" />
+            Registros operacionales
           </h1>
 
-          <p className="mt-2 max-w-3xl text-slate-500">
+          <p className="mt-2 max-w-3xl text-slate-600">
             Aseos, inspecciones y controles de máquina. Se registran por equipo
             y fecha; el checklist de los lotes de ese período los toma solo.
             Un aseo semanal se llena una vez y cubre toda su semana.
@@ -159,7 +159,7 @@ function Registros() {
             title="Desde"
           />
 
-          <span className="ml-auto text-sm text-slate-400">
+          <span className="ml-auto text-sm text-slate-600">
             {cargando ? "Cargando…" : `${registros.length} registro(s)`}
           </span>
 
@@ -186,7 +186,7 @@ function Registros() {
                 >
                   <Plus className="h-4 w-4" />
                   {d.nombre}
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-600">
                     · {d.frecuencia_etiqueta ?? d.frecuencia}
                   </span>
                 </button>
@@ -199,9 +199,9 @@ function Registros() {
         )}
 
         {documentos.length === 0 && !cargando && (
-          <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-500">
+          <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-600">
             Ningún documento está marcado con una frecuencia distinta de «por
-            lote», así que no hay registros de planta que llevar. La frecuencia
+            lote», así que no hay registros operacionales que llevar. La frecuencia
             se define en el catálogo de documentos.
           </div>
         )}
@@ -216,7 +216,7 @@ function Registros() {
 
           {!cargando && registros.length === 0 ? (
 
-            <p className="px-6 py-10 text-center text-sm text-slate-400">
+            <p className="px-6 py-10 text-center text-sm text-slate-600">
               Sin registros en el período.
             </p>
 
@@ -246,7 +246,7 @@ function Registros() {
                       <td className={`${celda} whitespace-nowrap text-slate-600`}>
                         {r.fecha}
                         {r.turno && (
-                          <span className="ml-2 text-xs text-slate-400">
+                          <span className="ml-2 text-xs text-slate-600">
                             turno {r.turno}
                           </span>
                         )}
@@ -254,7 +254,7 @@ function Registros() {
 
                       <td className={`${celda} font-medium text-slate-800`}>
                         {r.documento_nombre}
-                        <div className="text-xs font-normal text-slate-400">
+                        <div className="text-xs font-normal text-slate-600">
                           {r.documento_codigo}
                         </div>
                       </td>
@@ -283,7 +283,7 @@ function Registros() {
                         )}
                       </td>
 
-                      <td className={`${celda} text-slate-500`}>
+                      <td className={`${celda} text-slate-600`}>
                         {/* Qué período cubre: es lo que decide a qué lotes
                             alcanza, y por eso se muestra. */}
                         {r.frecuencia_etiqueta}
@@ -318,7 +318,7 @@ function Registros() {
 
         </section>
 
-        <p className="mt-6 flex items-start gap-2 text-xs text-slate-400">
+        <p className="mt-6 flex items-start gap-2 text-xs text-slate-600">
           <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           Un registro completado cubre a los lotes de su período sin que nadie
           lo vuelva a llenar. Un borrador o uno observado no cubre: el primero

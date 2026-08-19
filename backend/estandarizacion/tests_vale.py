@@ -4,7 +4,9 @@ Pruebas del ciclo del vale de estandarización.
 Lo que se fija aquí no es que el vale guarde campos, sino las tres reglas que
 la planta pone sobre él:
 
-1. **No se muestrea antes de los 30 minutos de agitación.**
+1. **Muestrear antes de los 30 minutos de agitación avisa, no bloquea**
+   (decisión de planta, 2026-08-17) — y el vale sella `muestreado_en` para que
+   el aviso sea auditable.
 2. **Liberar no se pide: se calcula** desde el RC medido.
 3. **Corregir reinicia el reloj**, porque agregar leche deshace la mezcla.
 """
@@ -142,23 +144,49 @@ class AgitacionTests(BaseVale):
             litros="10000.00",
         ).exists())
 
-    def test_no_se_muestrea_antes_de_los_treinta_minutos(self):
+    def test_no_transfiere_desde_silo_bloqueado_por_calidad(self):
+        vale = self.crear_vale()
+        self.abastecer_origenes()
+        self.silo_entera.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        self.silo_entera.save(update_fields=["estado"])
+
+        with self.assertRaises(ValidationError):
+            servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        self.assertFalse(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id,
+        ).exists())
+
+    def test_muestrear_antes_de_los_treinta_avisa_pero_no_frena(self):
         """
-        La regla de planta (§10.3). Una muestra tomada antes mide una mezcla
-        que todavía no es homogénea: el RC que devuelve no es el del silo, y
-        liberar con él sería liberar contra un número que no describe lo que
-        hay.
+        Decisión de planta (2026-08-17): la regla de §10.3 dejó de bloquear.
+        Una muestra temprana mide una mezcla que todavía no es homogénea, así
+        que el vale queda con el aviso y con la hora del muestreo — que es lo
+        que permite auditar después cuánto agitó de verdad.
         """
         vale = self.llevar_a_agitando(self.crear_vale(), minutos=20)
 
-        with self.assertRaises(ValidationError) as fallo:
-            servicios.registrar_muestra(vale_id=vale.pk, grasa=1.79, sng=8.9)
+        actualizado, avisos = servicios.registrar_muestra(
+            vale_id=vale.pk, grasa=1.79, sng=8.9
+        )
 
-        self.assertIn("20 minutos", fallo.exception.messages[0])
+        self.assertEqual(actualizado.estado, ValeEstandarizacion.Estado.MUESTREADO)
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("20", avisos[0])
 
         vale.refresh_from_db()
-        self.assertEqual(vale.estado, ValeEstandarizacion.Estado.AGITANDO)
-        self.assertIsNone(vale.grasa_real)
+        self.assertIsNotNone(vale.muestreado_en)
+        self.assertAlmostEqual(vale.minutos_agitando, 20, places=0)
+
+    def test_muestrear_a_tiempo_no_devuelve_avisos(self):
+        vale = self.llevar_a_agitando(self.crear_vale())
+
+        _, avisos = servicios.registrar_muestra(
+            vale_id=vale.pk, grasa=1.79, sng=8.9
+        )
+
+        self.assertEqual(avisos, [])
 
     def test_cumplidos_los_treinta_se_muestrea(self):
         vale = self.llevar_a_agitando(self.crear_vale())
@@ -179,9 +207,9 @@ class AgitacionTests(BaseVale):
 
     def test_el_reloj_lo_pone_el_servidor(self):
         """
-        La hora de inicio no se recibe: es lo que decide si una muestra vale, y
-        aceptarla de fuera permitiría declarar treinta minutos que no
-        ocurrieron.
+        La hora de inicio no se recibe: es lo que decide si la muestra dispara
+        el aviso de agitación corta, y aceptarla de fuera permitiría declarar
+        treinta minutos que no ocurrieron.
         """
         vale = self.crear_vale()
         self.abastecer_origenes()
@@ -192,6 +220,52 @@ class AgitacionTests(BaseVale):
         vale.refresh_from_db()
 
         self.assertGreaterEqual(vale.agitacion_desde, antes)
+
+    def test_muestreado_en_congela_los_minutos_de_agitacion(self):
+        """
+        Sin el sello, `minutos_agitando` cuenta contra el reloj actual: un vale
+        mirado más tarde informa el tiempo transcurrido y no el que agitó, y la
+        advertencia de muestreo temprano deja de ser auditable.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=40)
+
+        vale.muestreado_en = vale.agitacion_desde + timedelta(minutes=12)
+        vale.save(update_fields=["muestreado_en"])
+        vale.refresh_from_db()
+
+        # 12, no 40: cuenta hasta la muestra, no hasta ahora.
+        self.assertAlmostEqual(vale.minutos_agitando, 12, places=1)
+
+    def test_avisa_cuando_se_muestrea_antes_de_los_treinta(self):
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=12)
+
+        avisos = vale.avisos_de_muestreo
+
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("12", avisos[0])
+        self.assertIn(str(MINUTOS_DE_AGITACION), avisos[0])
+
+    def test_cumplidos_los_treinta_no_avisa_nada(self):
+        vale = self.llevar_a_agitando(self.crear_vale())
+
+        self.assertEqual(vale.avisos_de_muestreo, [])
+
+    def test_sin_agitar_no_hay_nada_que_avisar(self):
+        """
+        Un vale que no arrancó el reloj no se puede muestrear igual: lo impide
+        la transición, no este aviso. Devolver un aviso aquí sería advertir de
+        algo que ya está prohibido por otra vía.
+        """
+        vale = self.crear_vale()
+
+        self.assertIsNone(vale.agitacion_desde)
+        self.assertEqual(vale.avisos_de_muestreo, [])
+
+    def test_sin_muestrear_los_minutos_siguen_corriendo(self):
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=40)
+
+        self.assertIsNone(vale.muestreado_en)
+        self.assertAlmostEqual(vale.minutos_agitando, 40, places=1)
 
 
 class DecisionTests(BaseVale):
@@ -270,9 +344,33 @@ class CorreccionTests(BaseVale):
         self.assertIsNone(vale.grasa_real)
         self.assertLess(vale.minutos_agitando, 1)
 
-        # Y no se puede muestrear de inmediato: el reloj arrancó de nuevo.
-        with self.assertRaises(ValidationError):
-            servicios.registrar_muestra(vale_id=vale.pk, grasa=1.79, sng=8.9)
+        # Se puede muestrear de inmediato, pero avisa: el reloj arrancó de nuevo.
+        self.assertIsNone(vale.muestreado_en)
+
+        _, avisos = servicios.registrar_muestra(
+            vale_id=vale.pk, grasa=1.79, sng=8.9
+        )
+
+        self.assertEqual(len(avisos), 1)
+
+    def test_reagitar_limpia_el_sello_del_muestreo_anterior(self):
+        """
+        Si `muestreado_en` sobrevive al reagitado queda **antes** del nuevo
+        `agitacion_desde`, y `minutos_agitando` sale negativo: el vale diría
+        que agitó menos que nada y el aviso quedaría deformado.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale())
+        servicios.registrar_muestra(vale_id=vale.pk, grasa=2.20, sng=8.9)
+        servicios.decidir(vale_id=vale.pk, usuario=self.usuario)
+
+        vale.refresh_from_db()
+        self.assertIsNotNone(vale.muestreado_en)
+
+        servicios.reagitar(vale_id=vale.pk)
+        vale.refresh_from_db()
+
+        self.assertIsNone(vale.muestreado_en)
+        self.assertGreaterEqual(vale.minutos_agitando, 0)
 
     def test_el_ciclo_completo_termina_liberando(self):
         vale = self.llevar_a_agitando(self.crear_vale())
@@ -369,7 +467,10 @@ class ApiTests(BaseVale):
         self.assertEqual(vale.estado, ValeEstandarizacion.Estado.CALCULADO)
 
     def test_el_analisis_tampoco_se_escribe_por_patch(self):
-        """Muestrear exige los 30 minutos; un PATCH los esquivaría."""
+        """
+        El análisis entra por la acción, que es la que sella `muestreado_en` y
+        calcula los avisos. Un PATCH lo escribiría sin nada de eso.
+        """
         vale = self.crear_vale()
 
         self.cliente.patch(
@@ -381,7 +482,11 @@ class ApiTests(BaseVale):
         vale.refresh_from_db()
         self.assertIsNone(vale.grasa_real)
 
-    def test_muestrear_antes_de_tiempo_responde_409(self):
+    def test_muestrear_antes_de_tiempo_responde_200_con_aviso(self):
+        """
+        Era un 409. Desde 2026-08-17 la regla avisa y no bloquea, así que la
+        muestra entra y el aviso viaja en el cuerpo.
+        """
         vale = self.llevar_a_agitando(self.crear_vale(), minutos=5)
 
         respuesta = self.cliente.post(
@@ -390,8 +495,98 @@ class ApiTests(BaseVale):
             format="json",
         )
 
+        self.assertEqual(respuesta.status_code, 200)
+
+        cuerpo = respuesta.json()
+        self.assertEqual(cuerpo["estado"], "muestreado")
+        self.assertEqual(len(cuerpo["avisos"]), 1)
+        self.assertIn("Agitó 5 minutos", cuerpo["avisos"][0])
+        self.assertIsNotNone(cuerpo["muestreado_en"])
+
+    def test_muestrear_a_tiempo_responde_sin_avisos(self):
+        vale = self.llevar_a_agitando(self.crear_vale())
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/muestrear/",
+            {"grasa": 1.79, "sng": 8.9},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        cuerpo = respuesta.json()
+        self.assertEqual(cuerpo["avisos"], [])
+        # El sello se escribe siempre, no solo en el camino con aviso: es lo
+        # que hace auditable el ciclo completo, con aviso o sin él.
+        self.assertIsNotNone(cuerpo["muestreado_en"])
+
+    def test_muestrear_sin_haber_agitado_responde_409(self):
+        """
+        Única prueba del módulo que ejercita `except DjangoValidationError →
+        _conflicto` en `views.py` para la acción `muestrear`. Un vale recién
+        transferido no puede muestrearse — lo impide `TRANSICIONES`, que esta
+        prueba ancla en la frontera de la API: si alguien quitara el
+        `try/except`, esto respondería 500 en vez de 409.
+        """
+        vale = self.crear_vale()
+        self.abastecer_origenes()
+        servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/muestrear/",
+            {"grasa": 1.79, "sng": 8.9},
+            format="json",
+        )
+
         self.assertEqual(respuesta.status_code, 409)
-        self.assertIn("minutos agitando", respuesta.json()["detail"])
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.estado, ValeEstandarizacion.Estado.TRANSFERIDO)
+
+    def test_muestreado_en_resiste_un_patch(self):
+        """
+        El serializer lo declara de solo lectura; esta prueba lo comprueba en
+        la frontera de la API, igual que ya existe para `estado` y para el
+        análisis.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale())
+        servicios.registrar_muestra(vale_id=vale.pk, grasa=1.79, sng=8.9)
+        vale.refresh_from_db()
+        sellado_original = vale.muestreado_en
+
+        self.cliente.patch(
+            f"/api/estandarizacion/vales/{vale.pk}/",
+            {"muestreado_en": "2020-01-01T00:00:00Z"},
+            format="json",
+        )
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.muestreado_en, sellado_original)
+
+    def test_el_aviso_sobrevive_a_decidir_y_liberado(self):
+        """
+        Es la afirmación central de auditabilidad: un vale muestreado temprano
+        y liberado después sigue mostrando el aviso, en vez de perderlo al
+        cambiar de estado. `muestreado_en` queda congelado y `avisos_de_muestreo`
+        se sigue calculando contra él, no contra el estado actual.
+        """
+        vale = self.llevar_a_agitando(self.crear_vale(), minutos=5)
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/muestrear/",
+            {"grasa": 1.79, "sng": 8.9},
+            format="json",
+        )
+        self.assertEqual(len(respuesta.json()["avisos"]), 1)
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{vale.pk}/decidir/", format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        cuerpo = respuesta.json()
+        self.assertEqual(cuerpo["estado"], "liberado")
+        self.assertEqual(len(cuerpo["avisos"]), 1)
+        self.assertIn("Agitó 5 minutos", cuerpo["avisos"][0])
 
     def test_calcular_no_crea_nada(self):
         """

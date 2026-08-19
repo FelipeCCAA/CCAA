@@ -1,4 +1,5 @@
 from decimal import Decimal
+import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -34,6 +35,7 @@ class EtapaProceso(models.Model):
         CONDENSACION = "condensacion", "Condensación"
         SECADO = "secado", "Secado"
         ENVASADO = "envasado", "Envasado"
+        MANTEQUILLA = "mantequilla", "Mantequilla"
         TRANSFERENCIA = "transferencia", "Transferencia"
         OTRO = "otro", "Otro"
 
@@ -59,6 +61,212 @@ class EtapaProceso(models.Model):
 
     def __str__(self):
         return f"{self.proceso.nombre} · {self.nombre}"
+
+
+class RutaProducto(models.Model):
+    """Proceso configurable permitido para un producto en una planta."""
+
+    sucursal = models.ForeignKey(
+        "usuarios.Sucursal", on_delete=models.PROTECT,
+        related_name="rutas_producto", default=sucursal_predeterminada_pruebas,
+    )
+    producto = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT, related_name="rutas_proceso"
+    )
+    proceso = models.ForeignKey(
+        Proceso, on_delete=models.PROTECT, related_name="rutas_producto"
+    )
+    prioridad = models.PositiveSmallIntegerField(default=1)
+    destino = models.CharField(max_length=120, blank=True)
+    observaciones = models.TextField(blank=True)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["producto__nombre", "prioridad", "proceso__nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sucursal", "producto", "proceso"],
+                name="ruta_producto_proceso_unica_planta",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(prioridad__gt=0), name="ruta_prioridad_positiva"
+            ),
+        ]
+        indexes = [models.Index(fields=["sucursal", "producto", "activa"])]
+
+    def clean(self):
+        if (
+            self.sucursal_id and self.producto_id
+            and self.producto.mandante.empresa_id != self.sucursal.empresa_id
+        ):
+            raise ValidationError(
+                {"producto": "El producto y la ruta deben pertenecer a la misma empresa."}
+            )
+
+    def __str__(self):
+        return f"{self.producto.nombre} → {self.proceso.nombre}"
+
+
+class CorridaCondensacion(models.Model):
+    """Ejecución especializada; conserva el lote maestro y su balance físico."""
+
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        EN_PROCESO = "en_proceso", "En proceso"
+        PENDIENTE_CALIDAD = "pendiente_calidad", "Pendiente de Calidad"
+        CERRADA = "cerrada", "Cerrada"
+        CANCELADA = "cancelada", "Cancelada"
+
+    ejecucion = models.OneToOneField(
+        "procesos.EjecucionProceso", on_delete=models.PROTECT,
+        related_name="corrida_condensacion",
+    )
+    orden = models.ForeignKey(
+        "produccion.OrdenProduccion", on_delete=models.PROTECT,
+        related_name="corridas_condensacion",
+    )
+    lote = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="corridas_condensacion",
+    )
+    silo_origen = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT,
+        related_name="condensaciones_origen",
+    )
+    silo_destino = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT,
+        related_name="condensaciones_destino",
+    )
+    litros_entrada = models.DecimalField(max_digits=14, decimal_places=2)
+    litros_precondensado = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    flujo_promedio = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    densidad_salida = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    solidos_salida = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    temperatura_salida = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    vacio_promedio = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    presion_promedio = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    estado = models.CharField(
+        max_length=25, choices=Estado.choices, default=Estado.BORRADOR, db_index=True
+    )
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    iniciada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="condensaciones_iniciadas", null=True, blank=True,
+    )
+    iniciada_en = models.DateTimeField(null=True, blank=True)
+    finalizada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="condensaciones_finalizadas", null=True, blank=True,
+    )
+    finalizada_en = models.DateTimeField(null=True, blank=True)
+    motivo_cancelacion = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(litros_entrada__gt=0),
+                name="condensacion_entrada_positiva",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(litros_precondensado__isnull=True)
+                | models.Q(litros_precondensado__gt=0),
+                name="condensacion_salida_positiva",
+            ),
+        ]
+
+    def clean(self):
+        if self.silo_origen_id == self.silo_destino_id:
+            raise ValidationError("Condensación requiere silos de origen y destino distintos.")
+        if self.ejecucion_id and self.ejecucion.etapa.tipo not in {
+            EtapaProceso.Tipo.EVAPORACION, EtapaProceso.Tipo.CONDENSACION,
+        }:
+            raise ValidationError({"ejecucion": "La ejecución no es de condensación/evaporación."})
+        if self.orden_id and self.lote_id and self.lote.orden_id != self.orden_id:
+            raise ValidationError({"lote": "El lote no pertenece a la orden seleccionada."})
+        if self.ejecucion_id:
+            sucursal_id = self.ejecucion.sucursal_id
+            for campo in ("silo_origen", "silo_destino"):
+                silo = getattr(self, campo, None)
+                if silo and silo.sucursal_id != sucursal_id:
+                    raise ValidationError({campo: "El silo pertenece a otra planta."})
+
+    def __str__(self):
+        return f"Condensación {self.ejecucion.codigo}"
+
+
+class CorridaMantequilla(models.Model):
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        EN_PROCESO = "en_proceso", "En proceso"
+        PENDIENTE_CALIDAD = "pendiente_calidad", "Pendiente de Calidad"
+        CERRADA = "cerrada", "Cerrada"
+
+    ejecucion = models.OneToOneField(
+        "procesos.EjecucionProceso", on_delete=models.PROTECT,
+        related_name="corrida_mantequilla"
+    )
+    orden = models.ForeignKey(
+        "produccion.OrdenProduccion", on_delete=models.PROTECT,
+        related_name="corridas_mantequilla",
+    )
+    lote_crema = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="usos_en_mantequilla",
+    )
+    lote_mantequilla = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="corridas_mantequilla",
+    )
+    lote_suero = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="corridas_como_suero_mantequilla", null=True, blank=True,
+    )
+    kg_crema = models.DecimalField(max_digits=14, decimal_places=3)
+    kg_mantequilla = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    kg_suero = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    kg_merma = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    controles = models.JSONField(default=dict, blank=True)
+    estado = models.CharField(
+        max_length=25, choices=Estado.choices, default=Estado.BORRADOR, db_index=True
+    )
+    iniciada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="mantequillas_iniciadas", null=True, blank=True,
+    )
+    iniciada_en = models.DateTimeField(null=True, blank=True)
+    finalizada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="mantequillas_finalizadas", null=True, blank=True,
+    )
+    finalizada_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-id"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(kg_crema__gt=0), name="mantequilla_crema_positiva"),
+            models.CheckConstraint(condition=models.Q(kg_suero__gte=0), name="mantequilla_suero_no_negativo"),
+            models.CheckConstraint(condition=models.Q(kg_merma__gte=0), name="mantequilla_merma_no_negativa"),
+        ]
+
+    def clean(self):
+        if self.ejecucion_id and self.ejecucion.etapa.tipo != EtapaProceso.Tipo.MANTEQUILLA:
+            raise ValidationError({"ejecucion": "La ejecución no corresponde a Mantequilla."})
+        if self.lote_crema_id and self.lote_crema.producto.familia != "crema":
+            raise ValidationError({"lote_crema": "La materia prima debe ser un lote de crema."})
+        if self.lote_mantequilla_id and self.lote_mantequilla.producto.categoria != "mantequilla":
+            raise ValidationError({"lote_mantequilla": "El lote de salida debe ser mantequilla."})
+        if self.lote_crema_id and self.lote_mantequilla_id:
+            if self.lote_crema.sucursal_id != self.lote_mantequilla.sucursal_id:
+                raise ValidationError("Los lotes deben pertenecer a la misma planta.")
+        if self.kg_suero and not self.lote_suero_id:
+            raise ValidationError({"lote_suero": "Identifica el lote del suero generado."})
+        if self.kg_mantequilla is not None:
+            total = self.kg_mantequilla + self.kg_suero + self.kg_merma
+            if total > self.kg_crema:
+                raise ValidationError("Mantequilla, suero y merma superan la crema utilizada.")
 
 
 class EjecucionProceso(models.Model):
