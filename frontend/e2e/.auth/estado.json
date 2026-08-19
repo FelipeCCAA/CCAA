@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        {
+          "name": "ccaa.sesion",
+          "value": "{\"token\":\"02b67acb792dce25359e3f9585456b81bdcd4a68\",\"usuario\":{\"id\":12,\"username\":\"e2e_auditoria\",\"nombre\":\"Auditoría\",\"apellido\":\"Accesibilidad\",\"email\":\"\",\"rol\":\"admin\",\"capacidades\":[],\"perfil\":{\"cargo\":\"Auditoría automática\",\"area\":\"administracion\",\"area_etiqueta\":\"Administración general\",\"turno\":\"\",\"rol\":\"admin\",\"rol_etiqueta\":\"Administrador\",\"nivel\":\"admin\",\"nivel_etiqueta\":\"Administrador de área\",\"empresa\":2}}}"
+        }
+      ]
+    }
+  ]
+}
