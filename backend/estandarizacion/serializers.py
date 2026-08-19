@@ -43,6 +43,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "silo_descremada", "silo_descremada_codigo",
             "silo_destino", "silo_destino_codigo",
             "entera_grasa", "entera_sng", "descremada_grasa", "descremada_sng",
+            "analisis_entera", "analisis_descremada",
             "litros_entera", "litros_descremada",
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",

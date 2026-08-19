@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from usuarios.permisos import EscribeEstandarizacion
 from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope
 from maestros.models import Silo
+from recepcion.models import AnalisisSilo
 
 from . import servicios
 from .dominio import Leche, calcular_mezcla
@@ -97,6 +98,70 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             "sng_esperado": mezcla.sng_esperado,
             "avisos": mezcla.avisos,
         })
+
+    @action(detail=False, methods=["get"], url_path="composicion-silos")
+    def composicion_silos(self, request):
+        """
+        La composición de cada silo según su **último** análisis.
+
+        Es lo que el operador copiaba a mano del vale de trazabilidad. No
+        crea nada ni decide nada: devuelve el dato con su vigencia y con lo
+        que falte, y quien compone el vale sigue siendo quien decide.
+
+        Un silo sin análisis o con uno vencido **no es un error**: devuelve
+        el motivo. Rechazar con 400 dejaría a la pantalla sin poder mostrar
+        por qué no hay número que ofrecer.
+        """
+        respuesta = {}
+
+        for rol in ("entera", "descremada"):
+            silo_id = request.query_params.get(rol)
+
+            if not silo_id:
+                respuesta[rol] = self._sin_analisis("No se indicó el silo.")
+                continue
+
+            analisis = (
+                AnalisisSilo.objects.filter(silo_id=silo_id)
+                .select_related("silo")
+                .order_by("-tomado_en")
+                .first()
+            )
+
+            if analisis is None:
+                respuesta[rol] = self._sin_analisis(
+                    "El silo está sin análisis registrado."
+                )
+                continue
+
+            vigencia = analisis.vigencia
+            respuesta[rol] = {
+                "analisis": analisis.id,
+                "silo": analisis.silo_id,
+                "silo_codigo": analisis.silo.codigo,
+                "tomado_en": analisis.tomado_en,
+                "grasa": str(analisis.grasa) if analisis.grasa is not None else None,
+                "sng": str(analisis.sng) if analisis.sng is not None else None,
+                "vigente": vigencia.vigente,
+                "motivo": vigencia.motivo,
+                "faltantes": analisis.faltantes_para_vale,
+            }
+
+        return Response(respuesta)
+
+    @staticmethod
+    def _sin_analisis(motivo):
+        return {
+            "analisis": None,
+            "silo": None,
+            "silo_codigo": "",
+            "tomado_en": None,
+            "grasa": None,
+            "sng": None,
+            "vigente": False,
+            "motivo": motivo,
+            "faltantes": ["grasa", "sng"],
+        }
 
     # -------------------------------------------------------------- ciclo
 

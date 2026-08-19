@@ -103,6 +103,27 @@ class ValeEstandarizacion(models.Model):
         "SNG de la descremada", max_digits=5, decimal_places=2
     )
 
+    # De dónde salieron los cuatro números de arriba. Es **procedencia**, no
+    # fuente de verdad: la composición sigue congelada en las columnas del
+    # vale, porque el análisis se puede corregir y un vale de mayo tiene que
+    # seguir auditándose contra lo que se usó en mayo. Sin estas dos claves,
+    # «4,35» era un número tecleado sin origen.
+    #
+    # Los `related_name` **no** son `vales_como_entera` / `vales_como_descremada`:
+    # esos ya los usan `silo_entera` y `silo_descremada` sobre `maestros.Silo`.
+    # Django lo permitiría —el modelo de destino es otro— pero dos accesores
+    # con el mismo nombre devolviendo cosas distintas no hay forma de leerlos.
+    analisis_entera = models.ForeignKey(
+        "recepcion.AnalisisSilo", on_delete=models.PROTECT,
+        related_name="vales_con_esta_entera", null=True, blank=True,
+        verbose_name="Análisis de la entera",
+    )
+    analisis_descremada = models.ForeignKey(
+        "recepcion.AnalisisSilo", on_delete=models.PROTECT,
+        related_name="vales_con_esta_descremada", null=True, blank=True,
+        verbose_name="Análisis de la descremada",
+    )
+
     litros_entera = models.DecimalField(
         "Litros de entera", max_digits=12, decimal_places=2
     )
