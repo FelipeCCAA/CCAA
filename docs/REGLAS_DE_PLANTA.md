@@ -56,6 +56,8 @@ hizo con los equipos.
 | Crioscopía | ≥ **−0,512 °C** sugiere agua añadida | Repetir análisis · revisar pool · identificar origen · informar Calidad | **Implementado con otro valor** — ver §1.3 |
 | Acidez | ≤ 18,0 | Retiene | Implementado. **No viene de este documento**, viene de `MODELO_DATOS.md` §8.5 |
 | pH | 6,5 – 6,9 | Retiene | Implementado. Mismo origen que la acidez |
+| pH del camión | 5,5 – 8,5 | Retiene | **Implementado** — `recepcion.dominio.LIMITES["ph_camion_min"/"ph_camion_max"]`, columna AO del formato |
+| Permanencia libre | 2 h desde el arribo a portería | Sobre eso, sobreestadía | **Implementado** — `recepcion.dominio.LIMITE_PERMANENCIA_HORAS` |
 
 ### 1.2 Antibióticos
 
@@ -78,13 +80,13 @@ recepción automáticamente**, y `delvo` es control decisivo — sin su resultad
 no se puede liberar, porque su ausencia no es «conforme», es que nadie lo
 midió (`recepcion/dominio.py`).
 
-**Lo que falta:** todo lo que viene después del positivo. Hoy la recepción
-queda retenida y ahí termina. No hay repetición del análisis, ni confirmación,
-ni bloqueo del camión, ni bloqueo de los módulos de ese proveedor, ni apertura
-de no conformidad, ni aviso a las dos áreas.
+**Lo que ya existe además** (desde 2026-08-19): `ControlInhibidores` registra el PPRO N°1
+—método, tiras usadas, hora de lectura, resultado, analista— y `BusquedaProveedor` el
+primer eslabón del escalamiento. Una recepción con inhibidores positivos **no se puede
+cerrar** sin al menos una búsqueda registrada (`dominio.bloqueos_de_cierre`).
 
-Falta también el concepto de **módulo** y el de **proveedor de leche**, sin los
-cuales «bloquear los módulos asociados» no se puede expresar.
+**Lo que sigue faltando:** la repetición del análisis y su confirmación, el bloqueo del
+camión, la apertura de la no conformidad y los avisos a Operaciones y a Calidad.
 
 ### 1.3 Discrepancia de crioscopía — pendiente de resolver
 
@@ -117,6 +119,9 @@ en `APROBADO PARA DESCARGA`.
 
 El sistema ya impide descargar una recepción retenida, pero con una máquina de
 estados más corta que ésta.
+
+La transición a `CERRADA` pasa ahora por la acción `cerrar/`, que consulta
+`dominio.bloqueos_de_cierre`. Antes ningún camino del API llevaba a ese estado.
 
 ---
 

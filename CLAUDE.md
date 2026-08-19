@@ -51,6 +51,26 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - Atrapar el error del consumo **es seguro solo porque `consumir_receta_produccion` es `@transaction.atomic`**: el servicio alcanza a crear la cabecera y a sacar lo que sí había antes de detectar que falta, y sin esa reversión el lote quedaría con un consumo «registrado» que descontó una fracción. Quitar ese decorador rompe `test_sin_stock_el_lote_igual_se_declara_y_avisa` —verificado por mutación—, no la vista.
 
 - **Estandarización** (`estandarizacion`, desde 2026-08-06): el RC —grasa ÷ SNG— es el cálculo que decide qué producto sale. La matemática vive en `dominio.py` sin ORM, y `ValeEstandarizacion` es el documento con su ciclo. Tres reglas justifican que cada paso sea una acción del servicio y no un `PATCH estado=…`: **muestrear antes de 30 minutos avisa pero no frena** (desde 2026-08-17: antes la mezcla no es homogénea, pero detener la operación lo decide la planta; el vale sella `muestreado_en` y el aviso queda auditable — la hora la pone el servidor), **liberar no se pide sino que se calcula** desde el RC medido, y **corregir reinicia el reloj y borra el análisis** porque agregar leche deshace la mezcla. La composición de las dos leches se congela **en el vale** —el silo cambia con cada ingreso—, y `rc_real` se deriva. `calcular/` responde sin crear: es el paso que el operador repite variando el volumen. Detalle en `docs/REGLAS_DE_PLANTA.md` §3.
+- **Una recepción es un camión, no un módulo** (desde 2026-08-19,
+  `docs/superpowers/specs/2026-08-19-recepcion-instructivo-design.md`). El formato
+  `CCAA.REC.FORM.002.02` pone una fila por camión con las crioscopías M1 a M4, porque un
+  camión trae hasta cuatro compartimientos pero **un** silo, **unos** litros y **un**
+  destino. `ModuloRecepcion` guarda lo único que se mide por compartimiento —la
+  crioscopía— y nada más: darle litros abriría la puerta a que dos módulos del mismo
+  camión declararan silos distintos. La migración `0012` **no colapsó** las filas
+  hermanas existentes: sumar litros de filas con silo, estado o veredicto distintos
+  habría producido un registro que nadie hizo.
+- **Una marca horaria que falta no vale cero.** `recepcion.dominio.permanencia` devuelve
+  `None` con su motivo si falta el arribo a portería o el término del CIP. En los 26
+  libros de julio de 2026 la hora programa estaba llena en **1 de 603 filas** y la
+  planilla calculaba igual: restaba contra cero, así que cada camión «pagaba» la hora del
+  reloj a la que terminó el CIP menos dos. El 31-07 el total del día fue de 254 horas que
+  no eran sobreestadía. Por eso la permanencia se cuenta desde el **arribo a portería**, y
+  `resumen-diario/` informa `camiones_sin_marcas_horarias` en vez de dejar que el total
+  parezca completo.
+- **El pH del camión no es el pH de la leche.** `ph_camion` (5,5–8,5) es del enjuague y
+  vive en su propia columna; `controles["ph"]` (6,5–6,9) es de la leche. Con una sola
+  clave, el pH del agua retendría un camión conforme.
 
 ## Trampas conocidas
 
@@ -63,6 +83,9 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - **No reescribas archivos con acentos usando `Get-Content | … | Set-Content`**: PowerShell 5.1 lee en ANSI y escribe en UTF-8, así que un reemplazo masivo convierte cada `ó` en `Ã³` en todo el archivo. Usa Edit, o restaura con `git checkout --` y reaplica a mano.
 - Un **`default` de campo que lanza una excepción rompe la página «Añadir» del admin**, no solo el guardado: Django pide el `default` de cada campo al construir el modelo vacío del formulario. Los defaults de tenant (`empresa_predeterminada_pruebas`, `sucursal_predeterminada_pruebas`, en dos docenas de campos) lanzaban `ImproperlyConfigured` fuera de pruebas y dejaban **22 de 72 modelos** con «Añadir» en error 500. Ahora devuelven `None` fuera de pruebas: no se inventa tenant y el campo obligatorio lo exige el formulario. `usuarios.tests_admin_alta` recorre el registro entero del admin —no una lista de 22— y corre con `@override_settings(DJANGO_ENV="development")`, porque **bajo `test` el defecto no existe** y la prueba pasaría sin comprobar nada.
 - Dentro de `transaction.atomic()`, **salir con `return` confirma la transacción**: solo una excepción revierte. Un `return Response(...)` de validación a mitad de un lote de escrituras deja media operación guardada.
+- Los archivos del Instructivo (`Fabricación/2026/Instructivo/`) están **abiertos por
+  OneDrive**: leerlos con `ZipFile::OpenRead` falla con «está siendo utilizado en otro
+  proceso». Hay que copiarlos a un directorio temporal primero.
 
 ## Tarea de integración en curso
 
