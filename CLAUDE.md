@@ -98,6 +98,30 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
   mismo es una decisión de Calidad todavía sin tomar, no un descuido del código. Detalle
   en `docs/REGLAS_DE_PLANTA.md` §1.2.
 
+- **La organización inicial se busca por el código de su sucursal, no por su RUT** (desde
+  2026-08-19). `usuarios.0008` siembra la organización con un RUT distinto en cada rama
+  —`TENANT-TEST` bajo `DJANGO_ENV=test`, `TENANT-CI` en CI, y el de
+  `CCAA_INITIAL_COMPANY_RUT` en cualquier otro caso—, así que ninguna constante de RUT
+  puede acertarle a las tres; `CODIGO_SUCURSAL_INICIAL = "INTERNA"` sí, porque es literal
+  en la migración. Antes se buscaba por `rut="RUT-LOCAL-DESARROLLO"`, **un valor que
+  ningún camino del código escribe**: la búsqueda no acertaba nunca y los `default` de
+  tenant creaban una **segunda** organización.
+
+  El síntoma no se parecía en nada a la causa. Los maestros sembrados quedaban en una
+  organización y los perfiles de prueba en la otra, así que todo queryset acotado por
+  tenant devolvía vacío: `manage.py test` **sin** `DJANGO_ENV=test` dejaba 20 pruebas en
+  rojo repartidas entre `calidad`, `auditoria` y `usuarios`, acusando que «el equipo no
+  existe» — y no había nada malo en inocuidad ni en el PCC 1. Con la variable puesta pasaba
+  entero, porque el `get_or_create(rut="TENANT-TEST")` de respaldo acertaba por casualidad;
+  o sea que la base local y la de CI **no se construían igual**. `usuarios.tests_tenant_sembrado`
+  lo fija comprobando la consecuencia y no el RUT: un perfil por defecto tiene que ver los
+  equipos que sembró la migración, con y sin la variable.
+
+  Quedan **dos definiciones de «estamos en pruebas»** —`_en_pruebas()` mira `sys.argv` y
+  además `settings.DJANGO_ENV`; la migración solo `os.getenv("DJANGO_ENV")`—. Ya no importa,
+  porque ambos caminos convergen en la misma organización, pero si alguien vuelve a apoyar
+  una decisión en esa detección, que sepa que discrepan.
+
 ## Tarea de integración en curso
 
 Integrar el delta del levantamiento (`LEVANTAMIENTO_PLANTA.md` §2–§5) siguiendo el backlog
