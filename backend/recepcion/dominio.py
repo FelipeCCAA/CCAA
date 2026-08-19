@@ -416,6 +416,29 @@ def permanencia(
     )
 
 
+def bloqueos_de_cierre(
+    controles: dict[str, Any], *, busquedas_a_proveedor: int = 0
+) -> list[str]:
+    """
+    Qué impide cerrar la recepción.
+
+    Devuelve motivos y no un booleano, igual que el resto de las decisiones
+    del sistema: la pantalla tiene que poder decir por qué no se pudo.
+    """
+    c = controles or {}
+    bloqueos: list[str] = []
+
+    positivo = c.get("delvo") == "Positivo" or c.get("inhibidores") == "Positivo"
+
+    if positivo and busquedas_a_proveedor == 0:
+        bloqueos.append(
+            "Inhibidores positivos: falta registrar la búsqueda a proveedores "
+            "antes de cerrar la recepción."
+        )
+
+    return bloqueos
+
+
 def horas_a_pagar(horas) -> int | None:
     """
     Redondeo comercial del formato (columna AT): sube solo si la fracción

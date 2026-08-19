@@ -567,3 +567,106 @@ class MovimientoSilo(models.Model):
                 "Los movimientos de silo son inmutables; corrige mediante un ajuste o reversa."
             )
         return super().save(*args, **kwargs)
+
+
+class ControlInhibidores(models.Model):
+    """
+    PPRO N°1 — control de inhibidores en leche fresca.
+
+    Origen: hoja `Inhibidores` del Instructivo (`CCAA.REC.FORM.002.01`), que
+    la rotula «PPRO N°1» en su encabezado.
+
+    No usa `inocuidad.MonitoreoPPRO` porque ese modelo exige un lote, y esto
+    cuelga de un camión y una fecha: la leche todavía no es un lote.
+    """
+
+    class Metodo(models.TextChoices):
+        TRI_SENSOR = "tri_sensor", "Tri Sensor"
+        CHARM = "charm", "Charm"
+        DELVO_SP = "delvo_sp", "Delvo SP"
+
+    class Resultado(models.TextChoices):
+        NEGATIVO = "negativo", "Negativo"
+        POSITIVO = "positivo", "Positivo"
+
+    recepcion = models.ForeignKey(
+        Recepcion,
+        on_delete=models.CASCADE,
+        related_name="controles_inhibidores",
+        verbose_name="Recepción",
+    )
+    metodo = models.CharField(
+        "Método", max_length=20, choices=Metodo.choices, default=Metodo.TRI_SENSOR
+    )
+    tiras_usadas = models.PositiveSmallIntegerField(
+        "Tiras usadas",
+        default=0,
+        help_text="El formato las totaliza al pie: es control de consumo",
+    )
+    hora_lectura = models.TimeField("Hora de lectura", null=True, blank=True)
+    resultado = models.CharField(
+        "Resultado", max_length=20, choices=Resultado.choices
+    )
+    analista = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="controles_inhibidores",
+        null=True,
+        blank=True,
+        verbose_name="Analista",
+    )
+
+    class Meta:
+        verbose_name = "Control de inhibidores (PPRO N°1)"
+        verbose_name_plural = "Controles de inhibidores (PPRO N°1)"
+        ordering = ["recepcion", "hora_lectura"]
+
+    def __str__(self):
+        return f"{self.recepcion_id} · {self.get_metodo_display()} · {self.resultado}"
+
+
+class BusquedaProveedor(models.Model):
+    """
+    Búsqueda del proveedor responsable tras un positivo.
+
+    Es el paso siguiente al positivo, que hasta ahora no existía: la recepción
+    quedaba retenida y el registro no decía de quién venía la leche.
+    """
+
+    control = models.ForeignKey(
+        ControlInhibidores,
+        on_delete=models.CASCADE,
+        related_name="busquedas",
+        verbose_name="Control de inhibidores",
+    )
+    proveedor = models.CharField("Proveedor", max_length=160)
+    charm_bet = models.CharField(
+        "Charm rosa Bet",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    charm_tetra = models.CharField(
+        "Charm rosa Tetra",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    delvo_sp = models.CharField(
+        "Delvo SP",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    hora_lectura = models.TimeField("Hora de lectura", null=True, blank=True)
+    resultado = models.CharField(
+        "Resultado", max_length=20, choices=ControlInhibidores.Resultado.choices
+    )
+
+    class Meta:
+        verbose_name = "Búsqueda a proveedor"
+        verbose_name_plural = "Búsquedas a proveedores"
+        ordering = ["control", "proveedor"]
+
+    def __str__(self):
+        return f"{self.proveedor} · {self.resultado}"

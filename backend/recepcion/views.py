@@ -20,7 +20,7 @@ from usuarios.tenancy import (
 )
 
 from . import dominio
-from .models import MovimientoSilo, Recepcion
+from .models import BusquedaProveedor, MovimientoSilo, Recepcion
 from .serializers import (
     AjusteSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
     TransferenciaSiloSerializer,
@@ -516,6 +516,44 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 ),
                 areas=[PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CONDENSACION],
             )
+
+        return Response(self.get_serializer(recepcion).data)
+
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        """
+        Cierra la recepción.
+
+        Un positivo de inhibidores no basta con retener: antes de cerrar tiene
+        que estar registrada la búsqueda al proveedor. Es el primer eslabón de
+        la cadena de `REGLAS_DE_PLANTA.md` §1.2, que hasta ahora no existía.
+        """
+        recepcion = self.get_object()
+
+        busquedas = BusquedaProveedor.objects.filter(
+            control__recepcion=recepcion
+        ).count()
+
+        bloqueos = dominio.bloqueos_de_cierre(
+            recepcion.controles, busquedas_a_proveedor=busquedas
+        )
+
+        if bloqueos:
+            return Response({"bloqueos": bloqueos}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not recepcion.puede_pasar_a(Recepcion.Estado.CERRADA):
+            return Response(
+                {
+                    "estado": (
+                        f"Una recepción {recepcion.get_estado_display()} no puede "
+                        "cerrarse."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        recepcion.estado = Recepcion.Estado.CERRADA
+        recepcion.save(update_fields=["estado"])
 
         return Response(self.get_serializer(recepcion).data)
 

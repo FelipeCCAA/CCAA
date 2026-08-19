@@ -194,3 +194,32 @@ class EvaluacionAmpliadaTests(TestCase):
         )
 
         self.assertEqual(evaluacion.estado, "liberada")
+
+
+class BloqueosDeCierreTests(TestCase):
+    def test_positivo_sin_busqueda_no_cierra(self):
+        """
+        Un positivo retiene, y ahí terminaba todo. El primer eslabón de la
+        cadena de REGLAS_DE_PLANTA §1.2 es buscar al proveedor: sin eso, el
+        registro dice que hubo antibióticos y no dice de quién.
+        """
+        bloqueos = dominio.bloqueos_de_cierre({"delvo": "Positivo"})
+
+        self.assertEqual(len(bloqueos), 1)
+        self.assertIn("proveedor", bloqueos[0].lower())
+
+    def test_positivo_con_busqueda_cierra(self):
+        self.assertEqual(
+            dominio.bloqueos_de_cierre(
+                {"delvo": "Positivo"}, busquedas_a_proveedor=1
+            ),
+            [],
+        )
+
+    def test_inhibidores_positivos_valen_igual_que_el_delvo(self):
+        self.assertEqual(
+            len(dominio.bloqueos_de_cierre({"inhibidores": "Positivo"})), 1
+        )
+
+    def test_sin_positivos_no_hay_bloqueo(self):
+        self.assertEqual(dominio.bloqueos_de_cierre({"delvo": "Negativo"}), [])

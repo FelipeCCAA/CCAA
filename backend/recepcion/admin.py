@@ -1,11 +1,26 @@
 from django.contrib import admin
 
-from .models import ModuloRecepcion, MovimientoSilo, Recepcion
+from .models import (
+    BusquedaProveedor, ControlInhibidores, ModuloRecepcion, MovimientoSilo,
+    Recepcion,
+)
 
 
 class ModuloRecepcionInline(admin.TabularInline):
     model = ModuloRecepcion
     extra = 1
+
+
+class BusquedaProveedorInline(admin.TabularInline):
+    model = BusquedaProveedor
+    extra = 0
+
+
+@admin.register(ControlInhibidores)
+class ControlInhibidoresAdmin(admin.ModelAdmin):
+    list_display = ("recepcion", "metodo", "resultado", "tiras_usadas", "hora_lectura")
+    list_filter = ("metodo", "resultado")
+    inlines = [BusquedaProveedorInline]
 
 
 @admin.register(Recepcion)
