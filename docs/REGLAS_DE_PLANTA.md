@@ -34,7 +34,10 @@ fases de implementación. Eso se decide, no se hereda.
 
 La app `recoleccion` modela **ruta → parada → recolección → carga de módulo**,
 con `idempotencia` UUID para la captura sin señal en el predio. Está enlazada a
-recepción por `Recepcion.carga_recoleccion` y `Recepcion.modulo`.
+recepción por `ModuloRecepcion.carga_recoleccion`: la migración `0013` bajó el
+vínculo desde `Recepcion` (que tenía `carga_recoleccion` y `modulo`, ambos
+borrados) al hijo, porque la carga es por compartimiento y `Recepcion` pasó a
+ser una fila por camión.
 
 **Lo que falta, y es lo que impide la regla de antibióticos:** `proveedor`,
 `predio`, `sala` y `modulo` son `CharField` de texto libre, y `conductor`
@@ -128,8 +131,11 @@ alterna:  EN ANÁLISIS → RETENIDO → REANÁLISIS → RECHAZADO → BLOQUEADO
 **Regla dura (§7.3):** no se puede registrar una descarga si el módulo no está
 en `APROBADO PARA DESCARGA`.
 
-El sistema ya impide descargar una recepción retenida, pero con una máquina de
-estados más corta que ésta.
+El documento razona por módulo porque el formato mide la crioscopía ahí; en el
+código el estado es del **camión**, no del módulo — `ModuloRecepcion` no
+guarda estado propio, solo la crioscopía y la carga de recolección vinculada
+(§0). El sistema ya impide descargar una `Recepcion` retenida, pero con una
+máquina de estados más corta que ésta.
 
 La transición a `CERRADA` pasa ahora por la acción `cerrar/`, que consulta
 `dominio.bloqueos_de_cierre`. Antes ningún camino del API llevaba a ese estado.
@@ -352,9 +358,12 @@ las entradas y salidas de proceso. Cubre desde el precondensado hacia adelante.
 **El otro extremo ya existe:** `recoleccion` cubre proveedor → predio → carga →
 módulo → camión (§0).
 
-**Dónde se corta:** en el medio. Faltan el **vale de estandarización** —que no
-existe— y el **enlace entre recolección y recepción**: hoy las dos puntas de la
-cadena están construidas y no se conocen entre sí.
+**Dónde se corta:** en el medio. Falta el **vale de estandarización** —que no
+existe—. El **enlace entre recolección y recepción** ya no falta: desde la
+migración `0013`, `ModuloRecepcion.carga_recoleccion` conecta cada
+compartimiento del camión con la `CargaModulo` que Recolección dejó cerrada en
+el predio (§0), y `Recepcion.diferencia_recoleccion_litros` compara los litros
+del camión contra lo que esas cargas esperaban.
 
 ---
 

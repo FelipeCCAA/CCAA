@@ -55,9 +55,11 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
   `docs/superpowers/specs/2026-08-19-recepcion-instructivo-design.md`). El formato
   `CCAA.REC.FORM.002.02` pone una fila por camión con las crioscopías M1 a M4, porque un
   camión trae hasta cuatro compartimientos pero **un** silo, **unos** litros y **un**
-  destino. `ModuloRecepcion` guarda lo único que se mide por compartimiento —la
-  crioscopía— y nada más: darle litros abriría la puerta a que dos módulos del mismo
-  camión declararan silos distintos. La migración `0012` **no colapsó** las filas
+  destino. `ModuloRecepcion` guarda lo que es propio del compartimiento: la
+  crioscopía, y desde la migración `0013` también `carga_recoleccion` —el vínculo con
+  la carga que Recolección dejó cerrada en el predio para ese módulo—. No lleva litros,
+  silo ni destino: darle litros abriría la puerta a que dos módulos del mismo camión
+  declararan silos distintos. La migración `0012` **no colapsó** las filas
   hermanas existentes: sumar litros de filas con silo, estado o veredicto distintos
   habría producido un registro que nadie hizo.
 - **Una marca horaria que falta no vale cero.** `recepcion.dominio.permanencia` devuelve
