@@ -27,6 +27,59 @@ LIMITES = {
 }
 
 
+# Factor de conversión de litros a kilos del formato CCAA.REC.FORM.002.02
+# (columna I = H × 1,03).
+#
+# La hoja `Litros-kilos` (0082.MAN.FORM.000112) del mismo libro usa `/0,97`,
+# que es 1,030928: no es el mismo número. Manda el de la hoja operativa,
+# porque es el que produjo las cifras que la planta reportó. Si Calidad
+# resuelve la discrepancia, se cambia aquí y en ningún otro lugar.
+FACTOR_LITROS_A_KILOS = Decimal("1.03")
+
+
+def kilos_desde_litros(litros) -> Decimal | None:
+    """Kilos de la guía. Sin litros devuelve None, que no es cero."""
+    if litros in (None, ""):
+        return None
+
+    return (Decimal(str(litros)) * FACTOR_LITROS_A_KILOS).quantize(Decimal("0.01"))
+
+
+def diferencia_pesaje(kg_guia, kg_romana) -> Decimal | None:
+    """
+    Romana menos guía, con su signo (columna M del formato).
+
+    Falta cualquiera de los dos y devuelve None: un cero diría que
+    coincidieron, y nadie las comparó.
+    """
+    if kg_guia in (None, "") or kg_romana in (None, ""):
+        return None
+
+    return Decimal(str(kg_romana)) - Decimal(str(kg_guia))
+
+
+def solidos_totales(grasa, sng) -> float | None:
+    """Sólidos totales = grasa + SNG (columna S)."""
+    valor_grasa = _numero(grasa)
+    valor_sng = _numero(sng)
+
+    if valor_grasa is None or valor_sng is None:
+        return None
+
+    return round(valor_grasa + valor_sng, 2)
+
+
+def solidos_totales_kg(kilos, ts) -> float | None:
+    """Kilos de sólidos totales sobre el pesaje real (columna BF)."""
+    valor_kilos = _numero(kilos)
+    valor_ts = _numero(ts)
+
+    if valor_kilos is None or valor_ts is None:
+        return None
+
+    return round(valor_kilos * valor_ts / 100, 3)
+
+
 # Controles sin los cuales no se puede liberar.
 #
 # El Delvo detecta antibióticos, y esa leche no entra a la planta bajo ningún
