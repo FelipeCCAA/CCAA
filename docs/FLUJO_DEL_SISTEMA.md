@@ -26,7 +26,7 @@ flowchart TD
     subgraph REC["🚚 recepcion"]
         R1["registrar-llegada<br/><i>camión + crioscopía por módulo</i>"]
         R2["tomar-muestra"]
-        R3["decidir-calidad<br/><b>Delvo · pH del camión</b>"]
+        R3["decidir-calidad<br/><b>Delvo · crioscopía · pH del camión</b>"]
         R4["asignar-silo"]
         R5["descargar"]
         R1 --> R2 --> R3 --> R4 --> R5
