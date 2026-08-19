@@ -681,8 +681,11 @@ class NoSeReescribeLoDecididoTests(BaseAPIRecepcion):
         )
 
         recepcion.refresh_from_db()
-        self.assertEqual(recepcion.controles["delvo"], "Negativo")
-        self.assertIn(respuesta.status_code, (200, 400))
+        self.assertEqual(
+            recepcion.controles["delvo"],
+            "Negativo",
+            "los controles de una recepción liberada no se reescriben",
+        )
 ```
 
 > Nota para quien ejecuta: `BaseAPIRecepcion` está en `recepcion/tests.py`. Si no expone `self.sucursal`, léelo y usa el atributo que sí crea la sucursal de pruebas; no inventes uno.
