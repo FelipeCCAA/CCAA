@@ -372,7 +372,13 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            evaluacion = dominio.evaluar_recepcion(controles)
+            # `Recepcion.evaluar()` arma también la crioscopía de los módulos
+            # y el pH del camión — llamar a `dominio.evaluar_recepcion`
+            # directo aquí, sin esos dos argumentos, es la regresión que
+            # dejó salir leche aguada o con el pH del camión fuera de rango:
+            # la ficha mostraba el motivo (el serializer sí los pasa) pero el
+            # estado que se guardaba no lo consideraba.
+            evaluacion = recepcion.evaluar(controles)
             if decision_manual != "retener" and not evaluacion.analizada:
                 return Response(
                     {"controles": f"Falta completar: {', '.join(evaluacion.faltantes)}."},
@@ -664,9 +670,23 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         kg_guia = sum(
             (r.kg_guia or Decimal("0") for r in recepciones), Decimal("0")
         )
-        kg_romana = sum(
-            (r.kg_romana or Decimal("0") for r in recepciones), Decimal("0")
+
+        # `kg_romana` es nulable: un camión sin pesar no aporta 0 kg de
+        # romana, aporta NADA de romana. Sumarlo con `or Decimal("0")` — como
+        # hacía esto antes — mezclaba ese cero con los kilos completos de su
+        # guía en `diferencia_kg` y producía una diferencia que nadie midió
+        # (el mismo defecto que las 254 horas fantasma, trasladado a la hoja
+        # `Diferencia`). El total y la diferencia se calculan solo sobre los
+        # camiones que sí tienen romana, y `camiones_sin_romana` informa
+        # aparte cuántos quedaron fuera.
+        con_romana = [r for r in recepciones if r.kg_romana is not None]
+        kg_romana = sum((r.kg_romana for r in con_romana), Decimal("0"))
+        diferencia_kg = (
+            kg_romana - sum((r.kg_guia for r in con_romana), Decimal("0"))
+            if con_romana
+            else None
         )
+        camiones_sin_romana = len(recepciones) - len(con_romana)
 
         por_silo = {}
         por_procedencia = {}
@@ -698,7 +718,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             "litros": str(litros),
             "kg_guia": str(kg_guia),
             "kg_romana": str(kg_romana),
-            "diferencia_kg": str(kg_romana - kg_guia),
+            "diferencia_kg": str(diferencia_kg) if diferencia_kg is not None else None,
             "por_silo": {clave: str(valor) for clave, valor in por_silo.items()},
             "por_procedencia": {
                 clave: str(valor) for clave, valor in por_procedencia.items()
@@ -709,6 +729,11 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             # Cuántos camiones no se pudieron calcular. Sin esto el total
             # parecería completo aunque le falte la mitad de las marcas.
             "camiones_sin_marcas_horarias": len(horas) - len(medidas),
+            # Mismo criterio que `camiones_sin_marcas_horarias`, para la
+            # romana: sin este contador, un `kg_romana`/`diferencia_kg` bajo
+            # parecería completo aunque la mitad de los camiones no se
+            # pesaron.
+            "camiones_sin_romana": camiones_sin_romana,
         })
 
 

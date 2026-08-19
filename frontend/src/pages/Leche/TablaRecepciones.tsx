@@ -287,7 +287,10 @@ function TablaRecepciones({
                     {etiquetaUso(r)}
                   </td>
 
-                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                  <td
+                    className="px-5 py-4 tabular-nums text-slate-700"
+                    title={r.horas_a_pagar === null ? r.permanencia_motivo || undefined : undefined}
+                  >
                     {celda(r.horas_a_pagar, " h")}
                   </td>
 

@@ -82,7 +82,14 @@ class RecepcionSerializer(serializers.ModelSerializer):
     solidos_totales = serializers.FloatField(read_only=True)
     solidos_totales_kg = serializers.FloatField(read_only=True)
     crioscopia_pool = serializers.FloatField(read_only=True)
+    # Misma forma que `litros` (`max_digits=12, decimal_places=2`): sin
+    # declararlo explícito, DRF lo resuelve como `ReadOnlyField` y sale como
+    # número JSON en vez de string, distinto de sus hermanas derivadas.
+    diferencia_recoleccion_litros = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
     permanencia_horas = serializers.FloatField(read_only=True)
+    permanencia_motivo = serializers.CharField(read_only=True)
     horas_en_planta = serializers.FloatField(read_only=True)
     horas_a_pagar = serializers.IntegerField(read_only=True)
     tiempo_en_fabrica_horas = serializers.FloatField(read_only=True)
@@ -146,6 +153,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "crioscopia_pool",
             "diferencia_recoleccion_litros",
             "permanencia_horas",
+            "permanencia_motivo",
             "horas_en_planta",
             "horas_a_pagar",
             "tiempo_en_fabrica_horas",
@@ -168,19 +176,11 @@ class RecepcionSerializer(serializers.ModelSerializer):
         ]
 
     def get_evaluacion(self, recepcion):
-        evaluacion = dominio.evaluar_recepcion(
-            recepcion.controles,
-            # Pares (numero, crioscopia): el número lo pone el módulo, no la
-            # posición en la lista. Los números registrados no tienen por
-            # qué ser contiguos, y con `enumerate` el módulo 3 saldría
-            # acusado como «M2» — el motivo es lo que le dice a Calidad qué
-            # compartimiento re-muestrear.
-            crioscopias=[
-                (modulo.numero, modulo.crioscopia)
-                for modulo in recepcion.modulos.all()
-            ],
-            ph_camion=recepcion.ph_camion,
-        )
+        # `Recepcion.evaluar()` es el único lugar que arma crioscopías y pH
+        # del camión para `dominio.evaluar_recepcion`: así esta vista previa
+        # y `decidir-calidad` (que decide con el mismo cálculo) no pueden
+        # divergir.
+        evaluacion = recepcion.evaluar()
 
         return {
             "conforme": evaluacion.conforme,
@@ -234,6 +234,22 @@ class RecepcionSerializer(serializers.ModelSerializer):
         if estado == Recepcion.Estado.RETENIDA and not motivo.strip():
             raise serializers.ValidationError(
                 {"motivo": "Una recepción retenida debe indicar el motivo."}
+            )
+
+        # Misma regla que `Recepcion.clean()` (que DRF no llama: no hace
+        # `full_clean()`), y la misma constante — duplicar el criterio sin
+        # compartir la lista de usos numerados es la forma en que las dos
+        # copias terminan diciendo cosas distintas.
+        uso = datos.get("uso", getattr(self.instance, "uso", "") or "")
+        uso_numero = datos.get("uso_numero", getattr(self.instance, "uso_numero", None))
+        if uso_numero is not None and uso not in Recepcion.USOS_NUMERADOS:
+            raise serializers.ValidationError(
+                {
+                    "uso_numero": (
+                        "Solo los precondensados llevan número de destino. "
+                        f"«{uso or 'sin uso'}» no."
+                    )
+                }
             )
 
         return datos

@@ -120,6 +120,7 @@ export interface Recepcion {
   uso_numero: number | null;
   silo: number | null;
   silo_codigo: string | null;
+  operador: number | null;
   operador_nombre: string;
   turno: string;
   controles: Record<string, number | string>;
@@ -153,6 +154,9 @@ export interface Recepcion {
      diferencia de cero. */
   diferencia_recoleccion_litros: string | null;
   permanencia_horas: number | null;
+  /* Por qué `permanencia_horas` salió null (qué marca horaria falta). Vacío
+     cuando sí se pudo calcular. */
+  permanencia_motivo: string;
   horas_en_planta: number | null;
   horas_a_pagar: number | null;
   tiempo_en_fabrica_horas: number | null;
@@ -252,13 +256,19 @@ export interface ResumenDiarioRecepcion {
   litros: string;
   kg_guia: string;
   kg_romana: string;
-  diferencia_kg: string;
+  /* Solo se calcula si al menos un camión tiene romana; null si ninguno la
+     tiene (ver `camiones_sin_romana`). */
+  diferencia_kg: string | null;
   por_silo: Record<string, string>;
   por_procedencia: Record<string, string>;
   grasa_promedio: number | null;
   sng_promedio: number | null;
   horas_a_pagar: number;
   camiones_sin_marcas_horarias: number;
+  /* Camiones sin `kg_romana`: `kg_romana` y `diferencia_kg` se calculan solo
+     sobre los que sí se pesaron, así que este contador dice cuántos quedaron
+     fuera de esos dos totales. */
+  camiones_sin_romana: number;
 }
 
 

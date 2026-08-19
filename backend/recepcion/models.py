@@ -319,6 +319,30 @@ class Recepcion(models.Model):
             [modulo.crioscopia for modulo in self.modulos.all()]
         )
 
+    def evaluar(self, controles=None):
+        """
+        Evalúa los controles del camión contra `dominio.evaluar_recepcion`,
+        con la crioscopía de cada módulo y el pH del camión — el único lugar
+        que arma esos dos argumentos, para que el serializer (que muestra la
+        evaluación) y `decidir-calidad` (que decide con ella) no puedan
+        divergir. `controles` por defecto usa los ya guardados; `decidir-
+        calidad` la llama con los que está a punto de guardar, todavía sin
+        persistir.
+        """
+        return dominio.evaluar_recepcion(
+            controles if controles is not None else self.controles,
+            # Pares (numero, crioscopia): el número lo pone el módulo, no la
+            # posición en la lista. Los números registrados no tienen por qué
+            # ser contiguos, y con `enumerate` el módulo 3 saldría acusado
+            # como «M2» — el motivo es lo que le dice a Calidad qué
+            # compartimiento re-muestrear.
+            crioscopias=[
+                (modulo.numero, modulo.crioscopia)
+                for modulo in self.modulos.all()
+            ],
+            ph_camion=self.ph_camion,
+        )
+
     @property
     def _permanencia(self):
         return dominio.permanencia(self.hora_arribo_porteria, self.hora_termino_cip)
@@ -326,6 +350,15 @@ class Recepcion(models.Model):
     @property
     def permanencia_horas(self):
         return self._permanencia.horas
+
+    @property
+    def permanencia_motivo(self):
+        """
+        Por qué `permanencia_horas` salió `None` (qué marca horaria falta).
+        Vacío cuando sí se pudo calcular: la decisión devuelve motivo, no
+        solo un booleano, igual que el resto del sistema.
+        """
+        return self._permanencia.motivo
 
     @property
     def horas_en_planta(self):
