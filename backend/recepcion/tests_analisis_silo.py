@@ -13,7 +13,7 @@ from django.db.utils import IntegrityError
 from django.test import TestCase
 
 from maestros.models import Silo
-from recepcion.models import AnalisisSilo
+from recepcion.models import AnalisisSilo, MovimientoSilo
 
 
 class AnalisisSiloModeloTests(TestCase):
@@ -63,3 +63,69 @@ class AnalisisSiloModeloTests(TestCase):
         )
 
         self.assertIsNone(analisis.certificada)
+
+
+class VigenciaContraElLibroTests(TestCase):
+    def setUp(self):
+        self.silo = Silo.objects.create(
+            codigo="SILO 4", tipo=Silo.Tipo.SILO, capacidad_l=Decimal("100000")
+        )
+        self.analisis = AnalisisSilo.objects.create(
+            silo=self.silo,
+            tomado_en=datetime(2026, 7, 15, 9, 40, tzinfo=tz.utc),
+            grasa=Decimal("4.24"),
+            sng=Decimal("8.69"),
+        )
+
+    def test_recien_tomado_esta_vigente(self):
+        self.assertTrue(self.analisis.vigente)
+        self.assertEqual(self.analisis.motivo_vigencia, "")
+
+    def test_un_ingreso_posterior_lo_deja_fuera_de_vigencia(self):
+        MovimientoSilo.objects.create(
+            silo=self.silo,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("74834"),
+            fecha_hora=datetime(2026, 7, 15, 14, 0, tzinfo=tz.utc),
+        )
+
+        self.assertFalse(self.analisis.vigente)
+        self.assertIn("74834", self.analisis.motivo_vigencia)
+
+    def test_una_salida_posterior_no_lo_invalida(self):
+        """
+        Sacar leche no cambia la composición de la que queda: el análisis
+        sigue describiéndola. Invalidarlo obligaría a re-muestrear cada vez
+        que una línea consume, que es todo el día.
+        """
+        MovimientoSilo.objects.create(
+            silo=self.silo,
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=Decimal("20000"),
+            fecha_hora=datetime(2026, 7, 15, 14, 0, tzinfo=tz.utc),
+        )
+
+        self.assertTrue(self.analisis.vigente)
+
+    def test_un_ingreso_a_otro_silo_no_lo_invalida(self):
+        otro = Silo.objects.create(
+            codigo="SILO 5", tipo=Silo.Tipo.SILO, capacidad_l=Decimal("100000")
+        )
+        MovimientoSilo.objects.create(
+            silo=otro,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("9337"),
+            fecha_hora=datetime(2026, 7, 15, 14, 0, tzinfo=tz.utc),
+        )
+
+        self.assertTrue(self.analisis.vigente)
+
+    def test_dice_que_falta_para_componer_un_vale(self):
+        sin_sng = AnalisisSilo.objects.create(
+            silo=self.silo,
+            tomado_en=datetime(2026, 7, 15, 18, 0, tzinfo=tz.utc),
+            grasa=Decimal("4.24"),
+        )
+
+        self.assertEqual(sin_sng.faltantes_para_vale, ["sng"])
+        self.assertEqual(self.analisis.faltantes_para_vale, [])

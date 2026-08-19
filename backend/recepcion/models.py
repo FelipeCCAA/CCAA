@@ -791,3 +791,39 @@ class AnalisisSilo(models.Model):
 
     def __str__(self):
         return f"{self.silo} · {self.tomado_en:%Y-%m-%d %H:%M}"
+
+    #: Lo mínimo que un vale de estandarización necesita del silo.
+    REQUERIDOS_PARA_VALE = ("grasa", "sng")
+
+    @property
+    def vigencia(self):
+        """
+        Si el análisis todavía describe lo que hay en el silo.
+
+        Solo los **ingresos** cuentan: una salida no cambia la composición de
+        la leche que queda, e invalidar por salida obligaría a re-muestrear
+        cada vez que una línea consume.
+        """
+        ingresos = MovimientoSilo.objects.filter(
+            silo_id=self.silo_id,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            fecha_hora__gt=self.tomado_en,
+        ).values_list("fecha_hora", "litros")
+
+        return dominio.analisis_vigente(self.tomado_en, ingresos)
+
+    @property
+    def vigente(self):
+        return self.vigencia.vigente
+
+    @property
+    def motivo_vigencia(self):
+        return self.vigencia.motivo
+
+    @property
+    def faltantes_para_vale(self):
+        valores = {
+            nombre: getattr(self, nombre)
+            for nombre in dominio.PARAMETROS_ANALISIS_SILO
+        }
+        return dominio.parametros_faltantes(valores, self.REQUERIDOS_PARA_VALE)
