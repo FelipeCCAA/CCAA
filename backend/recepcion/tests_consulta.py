@@ -99,12 +99,12 @@ class BusquedaTests(BaseConsulta):
         self.assertEqual(respuesta.data["results"][0]["guia"], "G-059")
 
     def test_busca_por_varios_campos(self):
-        self._recepcion(guia="G-1", modulo="MOD-77")
+        self._recepcion(guia="G-1", procedencia="Nestlé")
         self._recepcion(guia="G-2", codigo_muestra="M-2026-88")
         self._recepcion(guia="G-3", silo=self.silo)
 
         for termino, esperado in (
-            ("MOD-77", "G-1"),
+            ("Nestlé", "G-1"),
             ("2026-88", "G-2"),
             ("SILO-CONSULTA", "G-3"),
         ):

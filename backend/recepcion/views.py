@@ -20,7 +20,7 @@ from usuarios.tenancy import (
 )
 
 from . import dominio
-from .models import CONTROLES_POR_CAMION, CONTROLES_POR_MODULO, MovimientoSilo, Recepcion
+from .models import MovimientoSilo, Recepcion
 from .serializers import (
     AjusteSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
     TransferenciaSiloSerializer,
@@ -77,14 +77,9 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     tenant_relation_fields = {
         "vehiculo": ("sucursal_id", "sucursal__empresa_id"),
         "silo": ("sucursal_id", "sucursal__empresa_id"),
-        "carga_recoleccion": (
-            "recoleccion__parada__ruta__vehiculo__sucursal_id",
-            "recoleccion__parada__ruta__vehiculo__sucursal__empresa_id",
-        ),
     }
     queryset = Recepcion.objects.select_related(
         "vehiculo",
-        "carga_recoleccion__recoleccion__parada__ruta__vehiculo",
         "silo",
         "operador",
         "muestreado_por",
@@ -141,7 +136,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         if termino:
             consulta = consulta.filter(
                 Q(guia__icontains=termino)
-                | Q(modulo__icontains=termino)
                 | Q(codigo_muestra__icontains=termino)
                 | Q(procedencia__icontains=termino)
                 | Q(vehiculo__placa__icontains=termino)
@@ -197,11 +191,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         extra = {}
         sucursal = sucursal_para_escritura(self.request.user, serializer.validated_data)
 
-        carga = serializer.validated_data.get("carga_recoleccion")
-        if carga:
-            extra["vehiculo"] = carga.recoleccion.parada.ruta.vehiculo
-            extra["modulo"] = carga.modulo
-
         if serializer.validated_data.get("operador") is None:
             extra["operador"] = self.request.user
 
@@ -214,8 +203,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             titulo="Leche recepcionada",
             mensaje=(
                 f"Se recibieron {recepcion.litros} L del camion "
-                f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'}, "
-                f"modulo {recepcion.modulo or 'sin identificar'}."
+                f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'}."
             ),
             areas=[PerfilUsuario.Area.RECEPCION],
         )
@@ -225,7 +213,14 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
     @action(detail=False, methods=["post"], url_path="registrar-llegada")
     def registrar_llegada(self, request):
-        """Registra un camion una sola vez y crea sus modulos atomicamente."""
+        """
+        Registra los camiones de una llegada.
+
+        Versión mínima: cada elemento de `modulos` crea su propia `Recepcion`,
+        sin identificador compartido — ya no existe `llegada_id`. La Task 7
+        rediseña este contrato para que un camión sea un único registro con
+        sus `ModuloRecepcion` (crioscopía por compartimiento).
+        """
         modulos = request.data.get("modulos")
         if not isinstance(modulos, list) or not modulos:
             return Response(
@@ -233,28 +228,9 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        identificadores = [
-            str(item.get("modulo", "")).strip()
-            for item in modulos if isinstance(item, dict)
-        ]
-        if len(identificadores) != len(modulos) or any(not valor for valor in identificadores):
-            return Response(
-                {"modulos": "Cada modulo debe tener un identificador."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if len({valor.casefold() for valor in identificadores}) != len(identificadores):
-            return Response(
-                {"modulos": "No repitas el mismo modulo dentro del camion."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         # La misma resolución que el resto de las escrituras. Resolverla aquí a
         # mano volvía a exigirle la planta a quien administra —el formulario no
         # tiene ese campo— y respondía el mismo 400 que se corrigió en 92513e8.
-        #
-        # Se le pasa la **instancia**, no el id que llega en el cuerpo: la
-        # función comprueba el alcance sobre el objeto. Y un id inexistente se
-        # responde con un 400, no con la `DoesNotExist` que antes salía como 500.
         sucursal = sucursal_para_escritura(request.user, {})
 
         generales = {
@@ -267,26 +243,17 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         }
         serializers = []
         for item in modulos:
-            datos = {
-                **generales,
-                "sucursal": sucursal.id,
-                "modulo": str(item.get("modulo", "")).strip(),
-                "litros": item.get("litros"),
-            }
-            if item.get("carga_recoleccion"):
-                datos["carga_recoleccion"] = item["carga_recoleccion"]
+            datos = {**generales, "sucursal": sucursal.id, "litros": item.get("litros")}
             serializer = self.get_serializer(data=datos)
             serializer.is_valid(raise_exception=True)
             serializers.append(serializer)
 
         with transaction.atomic():
-            llegada_id = uuid.uuid4()
             recepciones = [
                 serializer.save(
                     sucursal=sucursal,
                     operador=request.user,
                     estado=Recepcion.Estado.REGISTRADA,
-                    llegada_id=llegada_id,
                 )
                 for serializer in serializers
             ]
@@ -297,7 +264,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 tipo="leche_recepcionada",
                 titulo="Camion de leche recepcionado",
                 mensaje=(
-                    f"Se recibieron {total} L en {len(recepciones)} modulo(s) del "
+                    f"Se recibieron {total} L en {len(recepciones)} registro(s) del "
                     f"camion {primera.vehiculo.placa if primera.vehiculo else 'sin patente'}."
                 ),
                 areas=[PerfilUsuario.Area.RECEPCION],
@@ -382,49 +349,12 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            # Solo crioscopia pertenece al modulo. El resto describe el camion
-            # completo y se reutiliza en todos sus compartimientos.
-            hermanos = Recepcion.objects.select_for_update().filter(
-                llegada_id=recepcion.llegada_id,
-            )
-            compartidos = {}
-            for hermano in hermanos:
-                for clave in CONTROLES_POR_CAMION:
-                    valor = (hermano.controles or {}).get(clave)
-                    if valor not in (None, ""):
-                        compartidos.setdefault(clave, valor)
-            compartidos.update({
-                clave: valor for clave, valor in controles.items()
-                if clave in CONTROLES_POR_CAMION and valor not in (None, "")
-            })
-            controles = {
-                **compartidos,
-                **{
-                    clave: valor for clave, valor in controles.items()
-                    if clave in CONTROLES_POR_MODULO
-                },
-            }
             evaluacion = dominio.evaluar_recepcion(controles)
             if decision_manual != "retener" and not evaluacion.analizada:
                 return Response(
                     {"controles": f"Falta completar: {', '.join(evaluacion.faltantes)}."},
                     status=status.HTTP_409_CONFLICT,
                 )
-
-            # Se **lee** de todos los hermanos y se **escribe** solo en los que
-            # siguen sin decidir. Un hermano ya liberado o descargado tiene su
-            # veredicto tomado, y el veredicto se deriva de los controles en vez
-            # de guardarse: reescribirselos se lo cambia despues de que la leche
-            # entro al silo, y el registro queda diciendo «Aprobada por Calidad»
-            # mientras su propio analisis dice antibiotico positivo. Un retenido
-            # tampoco: su retencion se justifico con los valores que tiene.
-            pendientes = hermanos.exclude(pk=recepcion.pk).filter(
-                estado__in=(Recepcion.Estado.REGISTRADA, Recepcion.Estado.MUESTREADA)
-            )
-
-            for hermano in pendientes:
-                hermano.controles = {**(hermano.controles or {}), **compartidos}
-                hermano.save(update_fields=["controles"])
 
             retenida = decision_manual == "retener" or not evaluacion.liberable
             recepcion.controles = controles
@@ -601,8 +531,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 }
                 for usuario in usuarios.select_related("perfil")
             ],
-            "controles_camion": sorted(CONTROLES_POR_CAMION),
-            "controles_modulo": sorted(CONTROLES_POR_MODULO),
         })
 
 

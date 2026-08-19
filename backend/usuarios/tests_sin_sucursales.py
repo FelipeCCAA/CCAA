@@ -489,7 +489,6 @@ class RegistrarLlegadaTests(TestCase):
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         creadas = respuesta.json()
         self.assertEqual(len(creadas), 2)
-        self.assertEqual(creadas[0]["llegada_id"], creadas[1]["llegada_id"])
 
     def test_un_segundo_registro_interno_no_se_pide(self):
         Sucursal.objects.create(empresa=self.empresa, codigo="U2", nombre="Segunda")

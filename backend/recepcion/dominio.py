@@ -194,9 +194,9 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
             f"({lim['temperatura_max']} °C)."
         )
 
-    crioscopia = _numero(c.get("crioscopia"))
-    if crioscopia is not None and crioscopia > lim["crioscopia_max"]:
-        motivos.append(f"Crioscopía {crioscopia} indica posible aguado.")
+    # La crioscopía se evalúa por módulo (ModuloRecepcion), no desde este
+    # diccionario de controles del camión — vuelve en la Task 4 leyendo los
+    # módulos.
 
     # Un motivo manda sobre la falta de datos: si el Delvo salió positivo, la
     # leche se retiene aunque falten los demás controles.

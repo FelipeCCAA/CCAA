@@ -13,8 +13,6 @@ movimiento, y un saldo negativo dejaría de ser lo que hoy es, la señal
 automática de que el registro está descuadrado.
 """
 
-import uuid
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -27,18 +25,12 @@ CONTROLES_DECLARADOS = {
     "temperatura",
     "acidez",
     "ph",
-    "crioscopia",
     "delvo",
     "inhibidores",
     "organoleptico",
 }
 
-CONTROLES_NUMERICOS = {"temperatura", "acidez", "ph", "crioscopia"}
-
-# La crioscopia se mide por cada modulo. Los demas resultados describen la
-# carga comun del camion y se comparten entre todos sus compartimientos.
-CONTROLES_POR_MODULO = {"crioscopia"}
-CONTROLES_POR_CAMION = CONTROLES_DECLARADOS - CONTROLES_POR_MODULO
+CONTROLES_NUMERICOS = {"temperatura", "acidez", "ph"}
 
 VALORES_ADMITIDOS = {
     "delvo": {"Negativo", "Positivo"},
@@ -97,22 +89,6 @@ class Recepcion(models.Model):
     }
 
     fecha = models.DateField("Fecha")
-    llegada_id = models.UUIDField(
-        "Identificador de llegada",
-        default=uuid.uuid4,
-        editable=False,
-        db_index=True,
-        help_text="Agrupa todos los modulos que llegaron en el mismo camion.",
-    )
-    carga_recoleccion = models.OneToOneField(
-        "recoleccion.CargaModulo",
-        on_delete=models.PROTECT,
-        related_name="recepcion_planta",
-        null=True,
-        blank=True,
-        verbose_name="Carga esperada de Recolección",
-        help_text="Vínculo opcional para conservar recepciones manuales autorizadas.",
-    )
     hora = models.TimeField("Hora", null=True, blank=True)
     guia = models.CharField("Guía", max_length=60, blank=True)
     vehiculo = models.ForeignKey(
@@ -122,12 +98,6 @@ class Recepcion(models.Model):
         null=True,
         blank=True,
         verbose_name="Camión",
-    )
-    modulo = models.CharField(
-        "Módulo / compartimiento",
-        max_length=40,
-        blank=True,
-        help_text="Identificador del módulo transportado dentro del camión",
     )
     procedencia = models.CharField(
         "Procedencia", max_length=20, choices=Procedencia.choices, blank=True
@@ -215,9 +185,24 @@ class Recepcion(models.Model):
 
     @property
     def diferencia_recoleccion_litros(self):
-        if not self.carga_recoleccion_id:
+        """
+        Litros del camión contra lo que Recolección esperaba.
+
+        Compara contra la **suma** de las cargas de los módulos: la carga de
+        recolección es por módulo y los litros son del camión. Sin ninguna
+        carga vinculada devuelve None, que no es lo mismo que una diferencia
+        de cero.
+        """
+        cargas = [
+            modulo.carga_recoleccion
+            for modulo in self.modulos.all()
+            if modulo.carga_recoleccion_id
+        ]
+
+        if not cargas:
             return None
-        return self.litros - self.carga_recoleccion.litros
+
+        return self.litros - sum(carga.litros for carga in cargas)
 
     def clean(self):
         if not isinstance(self.controles, dict):
@@ -257,6 +242,60 @@ class Recepcion(models.Model):
 
     def puede_pasar_a(self, estado) -> bool:
         return estado in self.TRANSICIONES.get(self.estado, [])
+
+
+class ModuloRecepcion(models.Model):
+    """
+    Un compartimiento del camión.
+
+    Lo único que se mide por módulo es la crioscopía: el formato la anota en
+    las columnas M1 a M4 de la misma fila. Los litros, el silo y el destino
+    son del camión, así que no están aquí — ponerlos abriría la puerta a que
+    dos módulos del mismo camión declararan silos distintos.
+    """
+
+    recepcion = models.ForeignKey(
+        Recepcion,
+        on_delete=models.CASCADE,
+        related_name="modulos",
+        verbose_name="Recepción",
+    )
+    numero = models.PositiveSmallIntegerField(
+        "Módulo",
+        help_text="1 a 4, como las columnas M1-M4 del formato",
+    )
+    crioscopia = models.DecimalField(
+        "Crioscopía",
+        max_digits=6,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="Un valor MENOS negativo que el límite sugiere agua añadida",
+    )
+    carga_recoleccion = models.ForeignKey(
+        "recoleccion.CargaModulo",
+        on_delete=models.PROTECT,
+        related_name="modulos_recepcion",
+        null=True,
+        blank=True,
+        verbose_name="Carga esperada de Recolección",
+    )
+
+    class Meta:
+        verbose_name = "Módulo de la recepción"
+        verbose_name_plural = "Módulos de la recepción"
+        ordering = ["recepcion", "numero"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recepcion", "numero"], name="modulo_unico_por_recepcion"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(numero__gte=1), name="modulo_numero_positivo"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.recepcion_id} · M{self.numero}"
 
 
 class MovimientoSilo(models.Model):

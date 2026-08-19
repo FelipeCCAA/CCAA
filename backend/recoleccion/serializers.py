@@ -29,7 +29,7 @@ class CargaModuloSerializer(serializers.ModelSerializer):
         read_only_fields = ["cargada_en"]
 
     def get_recepcionada(self, carga):
-        return hasattr(carga, "recepcion_planta")
+        return carga.modulos_recepcion.exists()
 
 
 class RecoleccionSerializer(serializers.ModelSerializer):

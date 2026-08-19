@@ -25,7 +25,6 @@ especificación» y el sembrado no mostraría lo que se quiere mostrar.
 
 from datetime import date, time, timedelta
 from decimal import Decimal
-import uuid
 
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
@@ -40,17 +39,18 @@ from produccion.dominio import generar_codigo_lote
 from produccion import servicios as servicios_produccion
 from produccion.models import Analisis, Lote
 from recepcion import dominio as dominio_recepcion
-from recepcion.models import MovimientoSilo, Recepcion
+from recepcion.models import ModuloRecepcion, MovimientoSilo, Recepcion
 from usuarios.models import Sucursal
 
 
 # Controles de una leche que entra conforme. Son los que el dominio exige para
 # dar la recepción por analizada; con uno menos queda pendiente y no se libera.
+# La crioscopía no va aquí: se mide por módulo (ModuloRecepcion), no en los
+# controles del camión.
 CONTROLES_CONFORMES = {
     "temperatura": 4.0,
     "acidez": 0.15,
     "ph": 6.7,
-    "crioscopia": -0.520,
     "delvo": "Negativo",
     "inhibidores": "Negativo",
     "organoleptico": "Conforme",
@@ -112,7 +112,8 @@ class Command(BaseCommand):
         recepciones = self._recepcionar(contexto)
         for recepcion in recepciones:
             lineas.append(
-                f"  modulo {recepcion.modulo}: {recepcion.litros} L -> "
+                f"  guia {recepcion.guia}: {recepcion.litros} L en "
+                f"{recepcion.modulos.count()} modulo(s) -> "
                 f"{recepcion.silo.codigo} ({recepcion.get_estado_display()})"
             )
 
@@ -184,61 +185,62 @@ class Command(BaseCommand):
         }
 
     def _recepcionar(self, contexto):
-        """Un camión de dos módulos, hasta dejar la leche en el silo."""
-        llegada = uuid.uuid4()
+        """Un camión con dos módulos, hasta dejar la leche en el silo."""
         creadas = []
 
-        for numero, litros in ((1, Decimal("14000.00")), (2, Decimal("13000.00"))):
-            recepcion = Recepcion.objects.create(
-                sucursal=contexto["sucursal"],
-                llegada_id=llegada,
-                fecha=self.fecha,
-                hora=time(6, 30),
-                guia=f"G-{self.fecha:%Y%m%d}-01",
-                vehiculo=contexto["vehiculo"],
-                modulo=f"M{numero}",
-                procedencia="Nestlé",
-                tipo_leche="Entera",
-                litros=litros,
-                operador=contexto["operador"],
-                turno="A",
-                estado=Recepcion.Estado.REGISTRADA,
+        recepcion = Recepcion.objects.create(
+            sucursal=contexto["sucursal"],
+            fecha=self.fecha,
+            hora=time(6, 30),
+            guia=f"G-{self.fecha:%Y%m%d}-01",
+            vehiculo=contexto["vehiculo"],
+            procedencia="Nestlé",
+            tipo_leche="Entera",
+            litros=Decimal("27000.00"),
+            operador=contexto["operador"],
+            turno="A",
+            estado=Recepcion.Estado.REGISTRADA,
+        )
+
+        for numero, crioscopia in ((1, Decimal("-0.520")), (2, Decimal("-0.521"))):
+            ModuloRecepcion.objects.create(
+                recepcion=recepcion, numero=numero, crioscopia=crioscopia
             )
 
-            # Muestra, y decisión de Calidad calculada por el dominio: el estado
-            # no se escribe a mano, se deduce de lo medido.
-            recepcion.codigo_muestra = f"M-{self.fecha:%Y%m%d}-{numero:02d}"
-            recepcion.muestreado_por = contexto["operador"]
-            recepcion.muestreado_en = timezone.now()
-            recepcion.controles = dict(CONTROLES_CONFORMES)
+        # Muestra, y decisión de Calidad calculada por el dominio: el estado
+        # no se escribe a mano, se deduce de lo medido.
+        recepcion.codigo_muestra = f"M-{self.fecha:%Y%m%d}-01"
+        recepcion.muestreado_por = contexto["operador"]
+        recepcion.muestreado_en = timezone.now()
+        recepcion.controles = dict(CONTROLES_CONFORMES)
 
-            evaluacion = dominio_recepcion.evaluar_recepcion(recepcion.controles)
+        evaluacion = dominio_recepcion.evaluar_recepcion(recepcion.controles)
 
-            if not evaluacion.liberable:
-                raise CommandError(
-                    f"Los controles del sembrado no liberan: {evaluacion.motivos}"
-                )
-
-            recepcion.estado = Recepcion.Estado.LIBERADA
-            recepcion.calidad_por = contexto["operador"]
-            recepcion.calidad_en = timezone.now()
-            recepcion.silo = contexto["silo_recepcion"]
-            recepcion.silo_asignado_por = contexto["operador"]
-            recepcion.silo_asignado_en = timezone.now()
-            recepcion.save()
-
-            MovimientoSilo.objects.create(
-                silo=recepcion.silo,
-                tipo=MovimientoSilo.Tipo.INGRESO,
-                litros=recepcion.litros,
-                fecha_hora=timezone.now(),
-                origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
-                origen_id=recepcion.id,
+        if not evaluacion.liberable:
+            raise CommandError(
+                f"Los controles del sembrado no liberan: {evaluacion.motivos}"
             )
 
-            recepcion.estado = Recepcion.Estado.DESCARGADA
-            recepcion.save(update_fields=["estado"])
-            creadas.append(recepcion)
+        recepcion.estado = Recepcion.Estado.LIBERADA
+        recepcion.calidad_por = contexto["operador"]
+        recepcion.calidad_en = timezone.now()
+        recepcion.silo = contexto["silo_recepcion"]
+        recepcion.silo_asignado_por = contexto["operador"]
+        recepcion.silo_asignado_en = timezone.now()
+        recepcion.save()
+
+        MovimientoSilo.objects.create(
+            silo=recepcion.silo,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=recepcion.litros,
+            fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+            origen_id=recepcion.id,
+        )
+
+        recepcion.estado = Recepcion.Estado.DESCARGADA
+        recepcion.save(update_fields=["estado"])
+        creadas.append(recepcion)
 
         # El TK de descremada se carga como ajuste: el descremado todavía no
         # está modelado, y fingir una recepción de leche descremada sería

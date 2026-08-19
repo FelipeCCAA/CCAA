@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import MovimientoSilo, Recepcion
+from .models import ModuloRecepcion, MovimientoSilo, Recepcion
+
+
+class ModuloRecepcionInline(admin.TabularInline):
+    model = ModuloRecepcion
+    extra = 1
 
 
 @admin.register(Recepcion)
@@ -10,7 +15,6 @@ class RecepcionAdmin(admin.ModelAdmin):
         "fecha",
         "hora",
         "guia",
-        "modulo",
         "codigo_muestra",
         "tipo_leche",
         "litros",
@@ -18,7 +22,7 @@ class RecepcionAdmin(admin.ModelAdmin):
         "estado",
     ]
     list_filter = ["estado", "procedencia", "tipo_leche", "turno", "silo"]
-    search_fields = ["guia", "modulo", "codigo_muestra", "vehiculo__placa", "observacion"]
+    search_fields = ["guia", "codigo_muestra", "vehiculo__placa", "observacion"]
     date_hierarchy = "fecha"
     autocomplete_fields = [
         "vehiculo",
@@ -36,6 +40,7 @@ class RecepcionAdmin(admin.ModelAdmin):
         "silo_asignado_por",
         "silo_asignado_en",
     ]
+    inlines = [ModuloRecepcionInline]
 
 
 @admin.register(MovimientoSilo)

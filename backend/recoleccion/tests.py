@@ -6,7 +6,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from maestros.models import Vehiculo
-from recepcion.models import Recepcion
+from recepcion.models import ModuloRecepcion, Recepcion
 from usuarios.models import PerfilUsuario, Rol
 
 from .models import CargaModulo, ParadaRuta, Recoleccion, RutaRecoleccion
@@ -115,7 +115,15 @@ class FlujoRecoleccionTests(APITestCase):
         )
         self.assertEqual(carga.status_code, 409, carga.data)
 
-    def test_recepcion_se_vincula_una_sola_vez_con_la_carga(self):
+    def test_el_modulo_se_vincula_con_la_carga_de_recoleccion(self):
+        """
+        La Task 3 movió `carga_recoleccion` de `Recepcion` a `ModuloRecepcion`:
+        los litros y el vehículo son del camión, pero la carga esperada es por
+        compartimiento. El POST de la recepción ya no acepta `carga_recoleccion`
+        —lo arma el módulo—, y la validación de que una carga no se vincule dos
+        veces la restaura la Task 7, junto con el contrato nuevo de
+        `registrar-llegada`.
+        """
         registro = self.registrar()
         carga = self.client.post(
             f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/",
@@ -123,16 +131,18 @@ class FlujoRecoleccionTests(APITestCase):
         )
         datos = {
             "fecha": date.today().isoformat(),
-            "carga_recoleccion": carga.data["id"],
             "tipo_leche": "Entera",
             "litros": "890.00",
+            "vehiculo": self.vehiculo.pk,
         }
-        primera = self.client.post("/api/recepcion/recepciones/", datos)
-        segunda = self.client.post("/api/recepcion/recepciones/", datos)
-        self.assertEqual(primera.status_code, 201, primera.data)
-        self.assertEqual(segunda.status_code, 400, segunda.data)
-        recepcion = Recepcion.objects.get(pk=primera.data["id"])
-        self.assertEqual(recepcion.modulo, "M1")
+        respuesta = self.client.post("/api/recepcion/recepciones/", datos)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+
+        recepcion = Recepcion.objects.get(pk=respuesta.data["id"])
+        ModuloRecepcion.objects.create(
+            recepcion=recepcion, numero=1, carga_recoleccion_id=carga.data["id"]
+        )
+
         self.assertEqual(recepcion.vehiculo, self.vehiculo)
         self.assertEqual(recepcion.diferencia_recoleccion_litros, -10)
 

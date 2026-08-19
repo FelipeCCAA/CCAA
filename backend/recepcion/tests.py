@@ -47,7 +47,7 @@ class EvaluarRecepcionTests(TestCase):
 
     def test_medir_todo_menos_el_delvo_no_alcanza(self):
         evaluacion = dominio.evaluar_recepcion(
-            {"acidez": 16.0, "ph": 6.7, "temperatura": 4.0, "crioscopia": -0.52}
+            {"acidez": 16.0, "ph": 6.7, "temperatura": 4.0}
         )
 
         self.assertTrue(evaluacion.conforme, "nada de lo medido se salió de rango")
@@ -94,13 +94,10 @@ class EvaluarRecepcionTests(TestCase):
     def test_temperatura_alta_retiene(self):
         self.assertFalse(dominio.evaluar_recepcion({"temperatura": 12.0}).conforme)
 
-    def test_crioscopia_menos_negativa_sugiere_aguado(self):
-        """
-        El agua sube el punto de congelación: un valor MENOS negativo que el
-        límite es la señal. Es fácil equivocarse de signo al implementarlo.
-        """
-        self.assertFalse(dominio.evaluar_recepcion({"crioscopia": -0.480}).conforme)
-        self.assertTrue(dominio.evaluar_recepcion({"crioscopia": -0.530}).conforme)
+    # La crioscopía se evalúa por módulo (`ModuloRecepcion`), no desde este
+    # diccionario de controles del camión: vuelve en la Task 4, leyendo los
+    # módulos. Este test vivía aquí cuando `crioscopia` era una clave más de
+    # `controles`; ver `recepcion.tests_modulos` por lo que la reemplaza.
 
     def test_acumula_todos_los_motivos(self):
         evaluacion = dominio.evaluar_recepcion(
@@ -225,6 +222,12 @@ class BaseAPIRecepcion(TestCase):
 
 class FlujoRecepcionTests(BaseAPIRecepcion):
     def test_registra_un_camion_con_varios_modulos(self):
+        """
+        Versión mínima de `registrar-llegada`: cada entrada de `modulos` crea
+        su propia `Recepcion`, sin identificador compartido. La Task 7
+        rediseña el contrato para que un camión sea un único registro con sus
+        `ModuloRecepcion`.
+        """
         respuesta = self.cliente.post(
             "/api/recepcion/recepciones/registrar-llegada/",
             {
@@ -233,8 +236,8 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
                 "vehiculo": self.camion.id,
                 "tipo_leche": "Entera",
                 "modulos": [
-                    {"modulo": "M1", "litros": "12000.00"},
-                    {"modulo": "M2", "litros": "13000.00"},
+                    {"litros": "12000.00"},
+                    {"litros": "13000.00"},
                 ],
             },
             format="json",
@@ -243,22 +246,17 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(len(respuesta.json()), 2)
         self.assertEqual(
-            Recepcion.objects.values_list("llegada_id", flat=True).distinct().count(),
-            1,
-        )
-        self.assertEqual(
-            list(Recepcion.objects.order_by("modulo").values_list("modulo", "litros")),
-            [("M1", Decimal("12000.00")), ("M2", Decimal("13000.00"))],
+            sorted(Decimal(r["litros"]) for r in respuesta.json()),
+            [Decimal("12000.00"), Decimal("13000.00")],
         )
 
     """Llegada → muestra → Calidad → silo → descarga."""
 
     def test_se_registra_una_recepcion(self):
-        respuesta = self._crear(modulo="Módulo 1")
+        respuesta = self._crear()
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(respuesta.json()["estado"], "registrada")
-        self.assertEqual(respuesta.json()["modulo"], "Módulo 1")
         self.assertIsNone(respuesta.json()["silo"])
         self.assertEqual(respuesta.json()["controles"], {})
 
@@ -269,7 +267,7 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
         self.assertEqual(Recepcion.objects.first().operador.username, "op")
 
     def test_tomar_muestra_identifica_modulo_y_responsable(self):
-        creada = self._crear(modulo="M1").json()
+        creada = self._crear().json()
         respuesta = self.cliente.post(
             f"/api/recepcion/recepciones/{creada['id']}/tomar-muestra/",
             {"codigo_muestra": "M-2026-001"},
@@ -282,8 +280,8 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
         self.assertIsNotNone(respuesta.json()["muestreado_en"])
 
     def test_no_repite_codigo_de_muestra(self):
-        primera = self._crear(modulo="M1").json()
-        segunda = self._crear(modulo="M2").json()
+        primera = self._crear().json()
+        segunda = self._crear().json()
         ruta = f"/api/recepcion/recepciones/{primera['id']}/tomar-muestra/"
         self.cliente.post(ruta, {"codigo_muestra": "M-001"}, format="json")
 
@@ -329,7 +327,7 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
         self.assertEqual(respuesta.json()["calidad_por"], usuario.id)
 
     def test_flujo_completo_actualiza_el_saldo_del_silo(self):
-        creada = self._crear(modulo="M1").json()
+        creada = self._crear().json()
         base = f"/api/recepcion/recepciones/{creada['id']}"
         self.cliente.post(
             f"{base}/tomar-muestra/", {"codigo_muestra": "M-001"}, format="json"
