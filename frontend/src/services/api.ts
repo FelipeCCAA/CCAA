@@ -1,6 +1,7 @@
 import axios from "axios";
 
-import { cerrarSesion, obtenerToken } from "./sesion";
+import { cerrarSesion, guardarMotivoCierre, obtenerToken } from "./sesion";
+import { debeCerrarSesion, mensajeDeCierre } from "./auth-errors";
 
 
 const api = axios.create({
@@ -38,17 +39,23 @@ api.interceptors.request.use((config) => {
   ubicación del navegador y no useNavigate porque esto vive fuera de React,
   donde no hay acceso al router.
 */
+let redireccionandoAlLogin = false;
+
 api.interceptors.response.use(
 
     (respuesta) => respuesta,
 
     (error) => {
 
-        const esNoAutorizado = error.response?.status === 401;
-        const enLogin = window.location.pathname === "/login";
-
-        if (esNoAutorizado && !enLogin) {
+        if (debeCerrarSesion(
+            error.response?.status,
+            window.location.pathname,
+            redireccionandoAlLogin,
+        )) {
+            redireccionandoAlLogin = true;
+            const codigo = error.response?.data?.code;
             cerrarSesion();
+            guardarMotivoCierre(mensajeDeCierre(codigo));
             window.location.assign("/login");
         }
 

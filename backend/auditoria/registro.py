@@ -43,7 +43,7 @@ APPS_AUDITADAS = {
 }
 
 #: Campos que nunca se registran, aunque cambien.
-CAMPOS_EXCLUIDOS = {"password", "last_login"}
+CAMPOS_EXCLUIDOS = {"password", "last_login", "token_hash"}
 
 #: Guarda la instantánea previa hasta que `post_save`/`post_delete` la use.
 #: Se indexa por `id(instancia)` porque el objeto todavía puede no tener pk.
@@ -55,7 +55,7 @@ def se_audita(modelo) -> bool:
         return False
 
     # Un modelo puede excluirse declarando `auditar = False` en su Meta.
-    return getattr(modelo._meta, "auditar", True)
+    return getattr(modelo, "auditar", True)
 
 
 def _valor(instancia, campo):

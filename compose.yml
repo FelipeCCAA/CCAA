@@ -31,7 +31,9 @@ x-backend-environment: &backend-environment
   PROXIES_DE_CONFIANZA: ${PROXIES_DE_CONFIANZA:?Defina PROXIES_DE_CONFIANZA (1 detras de Nginx)}
   THROTTLE_LOGIN_IP: ${THROTTLE_LOGIN_IP:-60/hour}
   THROTTLE_LOGIN_USUARIO: ${THROTTLE_LOGIN_USUARIO:-15/hour}
-  TOKEN_TTL_HORAS: ${TOKEN_TTL_HORAS:-12}
+  SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-60}
+  SESSION_ABSOLUTE_TIMEOUT_HOURS: ${SESSION_ABSOLUTE_TIMEOUT_HOURS:-12}
+  SESSION_ACTIVITY_UPDATE_SECONDS: ${SESSION_ACTIVITY_UPDATE_SECONDS:-120}
   RESUMEN_DIAS: ${RESUMEN_DIAS:-90}
   # Vacías por defecto: sin ellas la caché usa PostgreSQL y el MRP corre dentro
   # de la petición, que es el comportamiento actual. Se rellenan cuando llegue

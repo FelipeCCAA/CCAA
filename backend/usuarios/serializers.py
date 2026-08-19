@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import Empresa, PerfilUsuario, rol_de
+from .models import Empresa, PerfilUsuario, SesionUsuario, rol_de
 from .permisos_industriales import permisos_asignables_por
 from .tenancy import unica_empresa_activa, scope_de
 
@@ -18,7 +18,7 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
         model = PerfilUsuario
         fields = [
             "cargo", "area", "area_etiqueta", "turno", "rol", "rol_etiqueta",
-            "nivel", "nivel_etiqueta", "empresa",
+            "nivel", "nivel_etiqueta", "empresa", "debe_cambiar_password",
         ]
 
 
@@ -127,6 +127,10 @@ class TrabajadorSerializer(UsuarioSerializer):
             raise serializers.ValidationError(
                 {"password": "La contraseña inicial es obligatoria."}
             )
+        if self.instance is not None and password:
+            raise serializers.ValidationError({
+                "password": "Usa la acción de restablecimiento; la contraseña actual nunca se expone."
+            })
         if password:
             candidato = self.instance or User(username=attrs.get("username", ""))
             try:
@@ -249,3 +253,29 @@ class ConfirmacionRecuperacionSerializer(serializers.Serializer):
             )
 
         return datos
+
+
+class CambioPasswordSerializer(serializers.Serializer):
+    password_actual = serializers.CharField(trim_whitespace=False, write_only=True)
+    nueva_contrasena = serializers.CharField(trim_whitespace=False, write_only=True)
+    confirmar_contrasena = serializers.CharField(trim_whitespace=False, write_only=True)
+
+    def validate(self, datos):
+        if datos["nueva_contrasena"] != datos["confirmar_contrasena"]:
+            raise serializers.ValidationError(
+                {"confirmar_contrasena": "Las contraseñas no coinciden."}
+            )
+        return datos
+
+
+class SesionUsuarioSerializer(serializers.ModelSerializer):
+    usuario = UsuarioSerializer(read_only=True)
+    activa = serializers.BooleanField(read_only=True)
+    equipo = serializers.CharField(source="user_agent", read_only=True)
+
+    class Meta:
+        model = SesionUsuario
+        fields = [
+            "identificador", "usuario", "fecha_inicio", "ultima_actividad",
+            "fecha_cierre", "motivo_cierre", "ip", "equipo", "activa",
+        ]

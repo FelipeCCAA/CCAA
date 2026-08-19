@@ -328,11 +328,11 @@ REST_FRAMEWORK = {
 }
 
 
-# Cuanto vive un token sin volver a iniciar sesion. Doce horas es un turno:
-# quien trabaja entra una vez y no lo nota, y una clave olvidada en un equipo
-# compartido deja de servir al dia siguiente. Cero lo desactiva, como salida de
-# emergencia. Ver `usuarios/authentication.py`.
-TOKEN_TTL_HORAS = int(os.environ.get("TOKEN_TTL_HORAS", "12"))
+# La actividad se persiste por intervalos, no en cada request, para evitar
+# escrituras innecesarias en PostgreSQL.
+SESSION_IDLE_TIMEOUT_MINUTES = int(os.environ.get("SESSION_IDLE_TIMEOUT_MINUTES", "60"))
+SESSION_ABSOLUTE_TIMEOUT_HOURS = int(os.environ.get("SESSION_ABSOLUTE_TIMEOUT_HOURS", "12"))
+SESSION_ACTIVITY_UPDATE_SECONDS = int(os.environ.get("SESSION_ACTIVITY_UPDATE_SECONDS", "120"))
 
 
 # Celery

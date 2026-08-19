@@ -5,7 +5,7 @@ import { User, Lock, Eye, EyeOff } from "lucide-react";
 import axios from "axios";
 
 import { iniciarSesion } from "../../services/usuario.service";
-import { guardarSesion } from "../../services/sesion";
+import { consumirMotivoCierre, guardarSesion } from "../../services/sesion";
 
 import fondo from "../../assets/images/CCAA.jpg";
 import logo from "../../assets/logos/logo-campos-australes-normal.png";
@@ -15,7 +15,7 @@ function Login() {
   const [password, setPassword] = useState("");
   const [mostrarPassword, setMostrarPassword] = useState(false);
   const [recordar, setRecordar] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => consumirMotivoCierre());
   const [cargando, setCargando] = useState(false);
 
   const navegar = useNavigate();
@@ -35,6 +35,11 @@ function Login() {
       const sesion = await iniciarSesion(username, password);
 
       guardarSesion(sesion, recordar);
+
+      if (sesion.usuario.perfil?.debe_cambiar_password) {
+        navegar("/cambiar-password", { replace: true });
+        return;
+      }
 
       // Administración tiene una portada propia. Los demás roles conservan
       // el destino solicitado o entran al panel operativo general.

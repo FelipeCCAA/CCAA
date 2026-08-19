@@ -9,12 +9,11 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import get_connection
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import status, viewsets
-from rest_framework.authtoken.models import Token
 from rest_framework.decorators import (
     action,
     api_view,
@@ -27,17 +26,27 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
-from .models import IntentoAcceso, PerfilUsuario
+from .models import IntentoAcceso, PerfilUsuario, SesionUsuario
 from .serializers import (
     ConfirmacionRecuperacionSerializer,
+    CambioPasswordSerializer,
+    SesionUsuarioSerializer,
     SolicitudRecuperacionSerializer,
     TrabajadorSerializer,
     UsuarioSerializer,
 )
-from .permisos import IsAdminDeArea
+from .permisos import IsAdminDeArea, PuedeGestionarSesiones
 from .permisos_industriales import permisos_asignables_por
 from .throttling import LoginIPThrottle, LoginUsuarioThrottle
 from .tenancy import scope_de
+from .sesiones import (
+    cerrar_sesion,
+    datos_cliente,
+    motivo_expiracion,
+    nueva_credencial,
+    registrar_evento,
+    revocar_sesiones,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -144,6 +153,7 @@ def login(request):
 
     if usuario is None:
         _anotar_intento(request, username, exito=False, motivo="credenciales")
+        registrar_evento("LOGIN_FALLIDO", request=request, motivo="credenciales")
 
         # El mensaje es el mismo exista o no la cuenta: distinguirlos
         # convertiría el login en un comprobador de nombres de usuario.
@@ -159,23 +169,56 @@ def login(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    token, creado = Token.objects.get_or_create(user=usuario)
+    try:
+        with transaction.atomic():
+            # La fila User serializa logins del mismo usuario entre workers.
+            usuario = User.objects.select_for_update().get(pk=usuario.pk)
+            activa = SesionUsuario.objects.select_for_update().filter(
+                usuario=usuario, fecha_cierre__isnull=True
+            ).first()
+            if activa:
+                expirada = motivo_expiracion(activa)
+                if expirada:
+                    cerrar_sesion(activa, expirada)
+                    registrar_evento(
+                        "SESION_EXPIRADA", request=request, usuario=usuario, motivo=expirada
+                    )
+                else:
+                    _anotar_intento(request, username, exito=False, motivo="sesion_activa")
+                    registrar_evento(
+                        "LOGIN_RECHAZADO_SESION_ACTIVA", request=request, usuario=usuario
+                    )
+                    return Response(
+                        {
+                            "code": "SESSION_ALREADY_ACTIVE",
+                            "error": "Este usuario ya tiene una sesión activa en otro equipo.",
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
 
-    # Se renueva el reloj, no la clave. `Token` es `OneToOne` con el usuario:
-    # todas sus sesiones comparten clave, así que cambiarla aquí echaría del
-    # sistema al terminal de planta cada vez que alguien entra desde el
-    # teléfono. Renovando la fecha, el token caduca por olvido y no por
-    # trabajar — sin esto la caducidad sería inservible, porque conservaría la
-    # fecha del primer login de su vida.
-    if not creado:
-        token.created = timezone.now()
-        token.save(update_fields=["created"])
+            token, digest = nueva_credencial()
+            ip, agente = datos_cliente(request)
+            SesionUsuario.objects.create(
+                usuario=usuario, token_hash=digest, ip=ip, user_agent=agente
+            )
+            User.objects.filter(pk=usuario.pk).update(last_login=timezone.now())
+    except IntegrityError:
+        # Segunda barrera: el constraint parcial decide incluso si la base no
+        # ofrece el mismo comportamiento de bloqueo que PostgreSQL.
+        return Response(
+            {
+                "code": "SESSION_ALREADY_ACTIVE",
+                "error": "Este usuario ya tiene una sesión activa en otro equipo.",
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
 
     _anotar_intento(request, username, exito=True)
+    registrar_evento("LOGIN_EXITOSO", request=request, usuario=usuario, actor=usuario)
 
     return Response({
         "mensaje": "Login correcto",
-        "token": token.key,
+        "token": token,
         "usuario": UsuarioSerializer(usuario).data,
     })
 
@@ -188,7 +231,9 @@ def logout(request):
     Sin esto, un token robado serviría para siempre: borrarlo en el navegador
     no lo desactiva en el servidor.
     """
-    Token.objects.filter(user=request.user).delete()
+    sesion = request.auth if isinstance(request.auth, SesionUsuario) else None
+    if sesion and cerrar_sesion(sesion, SesionUsuario.MotivoCierre.LOGOUT):
+        registrar_evento("LOGOUT", request=request, usuario=request.user, actor=request.user)
 
     return Response({"mensaje": "Sesión cerrada"})
 
@@ -259,6 +304,7 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         objetivo = self.get_object()
+        estaba_activo = objetivo.is_active
         perfil_actor = getattr(self.request.user, "perfil", None)
         es_general = self.request.user.is_superuser or (
             perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
@@ -272,7 +318,21 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(
                     "No puedes modificar el área ni los permisos del trabajador."
                 )
-        serializer.save()
+        if (
+            not self.request.user.is_superuser
+            and {"area", "nivel", "rol"}.intersection(self.request.data)
+            and not self.request.user.has_perm("usuarios.change_roles")
+        ):
+            raise PermissionDenied("No tienes permiso para cambiar roles o permisos.")
+        actualizado = serializer.save()
+        if estaba_activo and not actualizado.is_active:
+            revocar_sesiones(
+                actualizado, SesionUsuario.MotivoCierre.DESACTIVACION, actor=self.request.user
+            )
+            registrar_evento(
+                "USUARIO_DESACTIVADO", request=self.request, usuario=actualizado,
+                actor=self.request.user,
+            )
 
     def perform_destroy(self, instance):
         if instance == self.request.user:
@@ -283,7 +343,9 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
             )
         instance.is_active = False
         instance.save(update_fields=["is_active"])
-        Token.objects.filter(user=instance).delete()
+        revocar_sesiones(
+            instance, SesionUsuario.MotivoCierre.DESACTIVACION, actor=self.request.user
+        )
 
     @action(
         detail=True,
@@ -303,6 +365,10 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
                 {"error": "El trabajador debe estar activo y tener un correo registrado."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not (
+            request.user.is_superuser or request.user.has_perm("usuarios.reset_password")
+        ):
+            raise PermissionDenied("No tienes permiso para restablecer contraseñas.")
 
         formulario = PasswordResetForm(data={"email": usuario.email})
         formulario.is_valid()
@@ -329,6 +395,13 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
                 {"error": "No se pudo procesar la solicitud."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        revocar_sesiones(
+            usuario, SesionUsuario.MotivoCierre.RESET_PASSWORD, actor=request.user
+        )
+        registrar_evento(
+            "PASSWORD_RESTABLECIDA", request=request, usuario=usuario, actor=request.user,
+            motivo="Restablecimiento administrativo solicitado",
+        )
         return Response(
             {"mensaje": "Se enviaron las instrucciones de restablecimiento."},
             status=status.HTTP_202_ACCEPTED,
@@ -440,7 +513,8 @@ def confirmar_recuperacion(request):
 
             usuario.set_password(datos["nueva_contrasena"])
             usuario.save(update_fields=["password"])
-            Token.objects.filter(user=usuario).delete()
+            revocar_sesiones(usuario, SesionUsuario.MotivoCierre.RESET_PASSWORD)
+            registrar_evento("PASSWORD_RESTABLECIDA", request=request, usuario=usuario)
     except (User.DoesNotExist, ValueError, OverflowError):
         return Response(
             {"error": MENSAJE_TOKEN_INVALIDO},
@@ -454,3 +528,60 @@ def confirmar_recuperacion(request):
         )
 
     return Response({"mensaje": "Contraseña restablecida correctamente."})
+
+
+@api_view(["POST"])
+def cambiar_password(request):
+    serializer = CambioPasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    datos = serializer.validated_data
+    with transaction.atomic():
+        usuario = User.objects.select_for_update().get(pk=request.user.pk)
+        if not usuario.check_password(datos["password_actual"]):
+            return Response(
+                {"password_actual": ["La contraseña actual no es correcta."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_password(datos["nueva_contrasena"], user=usuario)
+        except DjangoValidationError as error:
+            return Response(
+                {"nueva_contrasena": error.messages}, status=status.HTTP_400_BAD_REQUEST
+            )
+        usuario.set_password(datos["nueva_contrasena"])
+        usuario.save(update_fields=["password"])
+        PerfilUsuario.objects.filter(usuario=usuario).update(debe_cambiar_password=False)
+        revocar_sesiones(usuario, SesionUsuario.MotivoCierre.PASSWORD)
+        registrar_evento(
+            "PASSWORD_CAMBIADA", request=request, usuario=usuario, actor=usuario
+        )
+    return Response(
+        {"code": "PASSWORD_CHANGED", "mensaje": "Contraseña cambiada. Inicia sesión nuevamente."}
+    )
+
+
+class SesionUsuarioViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = SesionUsuarioSerializer
+    permission_classes = [PuedeGestionarSesiones]
+    lookup_field = "identificador"
+    pagination_class = None
+
+    def get_queryset(self):
+        return SesionUsuario.objects.filter(fecha_cierre__isnull=True).select_related(
+            "usuario", "usuario__perfil"
+        )
+
+    @action(detail=True, methods=["post"], url_path="cerrar")
+    def cerrar(self, request, identificador=None):
+        if not (request.user.is_superuser or request.user.has_perm("usuarios.force_logout")):
+            raise PermissionDenied("No tienes permiso para cerrar sesiones ajenas.")
+        with transaction.atomic():
+            sesion = SesionUsuario.objects.select_for_update().select_related("usuario").get(
+                identificador=identificador, fecha_cierre__isnull=True
+            )
+            cerrar_sesion(sesion, SesionUsuario.MotivoCierre.ADMIN, actor=request.user)
+            registrar_evento(
+                "SESION_CERRADA_ADMIN", request=request, usuario=sesion.usuario,
+                actor=request.user, motivo=str(request.data.get("motivo", "")),
+            )
+        return Response({"mensaje": "Sesión cerrada correctamente."})

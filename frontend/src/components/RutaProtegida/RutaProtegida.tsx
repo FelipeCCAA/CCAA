@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
-import { haySesion } from "../../services/sesion";
+import { haySesion, obtenerSesion } from "../../services/sesion";
 
 
 /*
@@ -24,6 +24,13 @@ function RutaProtegida() {
       />
     );
 
+  }
+
+  if (
+    obtenerSesion()?.usuario.perfil?.debe_cambiar_password
+    && ubicacion.pathname !== "/cambiar-password"
+  ) {
+    return <Navigate to="/cambiar-password" replace />;
   }
 
   return <Outlet />;

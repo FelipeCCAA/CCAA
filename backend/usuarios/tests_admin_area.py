@@ -1,4 +1,4 @@
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -15,6 +15,9 @@ class AdministracionPorAreaTests(TestCase):
         )
         self.admin_secado = self._usuario(
             "jefe-secado", PerfilUsuario.Area.SECADO, PerfilUsuario.Nivel.ADMIN
+        )
+        self.admin_secado.user_permissions.add(
+            Permission.objects.get(codename="reset_password", content_type__app_label="usuarios")
         )
         self.trabajador_secado = self._usuario(
             "operador-secado", PerfilUsuario.Area.SECADO

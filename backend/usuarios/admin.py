@@ -2,7 +2,10 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 
-from .models import AreaDePerfil, Empresa, IntentoAcceso, PerfilUsuario
+from .models import (
+    AreaDePerfil, Empresa, EventoSeguridad, IntentoAcceso, PerfilUsuario,
+    SesionUsuario,
+)
 from .throttling import (
     LoginUsuarioThrottle,
     clave_de_ip,
@@ -180,3 +183,33 @@ class IntentoAccesoAdmin(admin.ModelAdmin):
                 f"Si esa {singular} no puede entrar, el motivo es otro.",
                 messages.INFO,
             )
+
+
+class SoloLecturaAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SesionUsuario)
+class SesionUsuarioAdmin(SoloLecturaAdmin):
+    exclude = ("token_hash",)
+    list_display = (
+        "usuario", "fecha_inicio", "ultima_actividad", "fecha_cierre", "motivo_cierre", "ip"
+    )
+    list_filter = ("motivo_cierre", "fecha_cierre")
+    search_fields = ("usuario__username", "identificador", "ip")
+    list_select_related = ("usuario", "cerrada_por")
+
+
+@admin.register(EventoSeguridad)
+class EventoSeguridadAdmin(SoloLecturaAdmin):
+    list_display = ("fecha", "accion", "usuario", "actor", "ip", "motivo")
+    list_filter = ("accion", "fecha")
+    search_fields = ("usuario__username", "actor__username", "ip", "motivo")
+    list_select_related = ("usuario", "actor")

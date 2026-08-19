@@ -8,10 +8,10 @@ API queda CERRADA: que sin token no se lee ni se escribe nada.
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import get_resolver
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
-from .models import PerfilUsuario, Rol
+from .models import PerfilUsuario, Rol, SesionUsuario
+from .sesiones import nueva_credencial
 
 
 class LoginTests(TestCase):
@@ -113,10 +113,11 @@ class SesionTests(TestCase):
         self.usuario = User.objects.create_user(
             username="operador", password="clave-de-prueba"
         )
-        self.token = Token.objects.create(user=self.usuario)
+        self.token, digest = nueva_credencial()
+        self.sesion = SesionUsuario.objects.create(usuario=self.usuario, token_hash=digest)
 
     def _autenticar(self):
-        self.cliente.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.cliente.credentials(HTTP_AUTHORIZATION=f"Token {self.token}")
 
     def test_yo_devuelve_el_usuario_del_token(self):
         self._autenticar()
@@ -137,7 +138,8 @@ class SesionTests(TestCase):
         self._autenticar()
 
         self.assertEqual(self.cliente.post("/api/usuarios/logout/").status_code, 200)
-        self.assertEqual(Token.objects.count(), 0)
+        self.sesion.refresh_from_db()
+        self.assertIsNotNone(self.sesion.fecha_cierre)
         self.assertEqual(self.cliente.get("/api/usuarios/yo/").status_code, 401)
 
     def test_un_token_inventado_no_sirve(self):
