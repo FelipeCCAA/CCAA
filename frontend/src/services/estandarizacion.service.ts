@@ -168,3 +168,36 @@ export const muestrearVale = (id: number, grasa: number, sng: number) =>
 
 export const anularVale = (id: number, motivo: string) =>
   accion(id, "anular", { motivo });
+
+
+/*
+  La composición de cada silo según su último análisis, para prellenar el
+  vale. Un silo sin análisis o con uno vencido no es un error: viene con su
+  motivo, y quien compone el vale sigue decidiendo.
+*/
+export interface ComposicionDeSilo {
+  analisis: number | null;
+  silo: number | null;
+  silo_codigo: string;
+  tomado_en: string | null;
+  grasa: string | null;
+  sng: string | null;
+  vigente: boolean;
+  motivo: string;
+  faltantes: string[];
+}
+
+export interface ComposicionSilos {
+  entera: ComposicionDeSilo;
+  descremada: ComposicionDeSilo;
+}
+
+export async function composicionSilos(
+  enteraId?: number,
+  descremadaId?: number,
+): Promise<ComposicionSilos> {
+  const { data } = await api.get("/estandarizacion/vales/composicion-silos/", {
+    params: { entera: enteraId, descremada: descremadaId },
+  });
+  return data;
+}
