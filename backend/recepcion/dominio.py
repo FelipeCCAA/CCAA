@@ -450,3 +450,56 @@ def horas_a_pagar(horas) -> int | None:
     entero = int(horas)
 
     return entero + (1 if horas - entero > 0.5 else 0)
+
+
+#: Los siete parámetros que el vale de trazabilidad pide por silo.
+PARAMETROS_ANALISIS_SILO = (
+    "ph", "acidez", "grasa", "sng", "proteina", "temperatura", "densidad",
+)
+
+
+@dataclass(frozen=True)
+class Vigencia:
+    """Si un análisis todavía describe lo que hay en el silo, y por qué no."""
+
+    vigente: bool
+    motivo: str
+
+
+def analisis_vigente(tomado_en, ingresos) -> Vigencia:
+    """
+    Un análisis vale mientras nadie haya agregado leche después de la muestra.
+
+    `ingresos` son pares `(fecha_hora, litros)` de los ingresos del silo, ya
+    filtrados por quien llama: esta función no consulta la base.
+
+    Devuelve motivo y no solo un booleano porque quien lo lee necesita saber
+    qué hacer —y lo que hay que hacer es volver a muestrear.
+    """
+    if tomado_en is None:
+        return Vigencia(False, "El análisis no tiene hora de muestreo.")
+
+    posteriores = [
+        (cuando, litros) for cuando, litros in ingresos if cuando > tomado_en
+    ]
+
+    if not posteriores:
+        return Vigencia(True, "")
+
+    total = sum(litros for _, litros in posteriores)
+    palabra = "ingreso" if len(posteriores) == 1 else "ingresos"
+
+    return Vigencia(
+        False,
+        f"Entraron {total:g} L al silo después de la muestra "
+        f"({len(posteriores)} {palabra}); vuelve a muestrear.",
+    )
+
+
+def parametros_faltantes(valores, requeridos) -> list[str]:
+    """
+    Cuáles de `requeridos` no están cargados en `valores`.
+
+    Un parámetro ausente y uno en `None` son lo mismo: no se midió.
+    """
+    return [nombre for nombre in requeridos if valores.get(nombre) is None]

@@ -6,7 +6,7 @@ Los números de referencia salen de una fila real del formato
 de romana, grasa 4,5 y SNG 9,06.
 """
 
-from datetime import time
+from datetime import datetime, time, timezone as tz
 from decimal import Decimal
 
 from django.test import TestCase
@@ -223,3 +223,79 @@ class BloqueosDeCierreTests(TestCase):
 
     def test_sin_positivos_no_hay_bloqueo(self):
         self.assertEqual(dominio.bloqueos_de_cierre({"delvo": "Negativo"}), [])
+
+
+class VigenciaDelAnalisisDeSiloTests(TestCase):
+    """
+    Un análisis describe la leche que había cuando se tomó la muestra. Si
+    después entró un camión, el silo ya no es el que se midió.
+    """
+
+    MOMENTO = datetime(2026, 7, 15, 9, 40, tzinfo=tz.utc)
+
+    def test_sin_ingresos_posteriores_esta_vigente(self):
+        resultado = dominio.analisis_vigente(self.MOMENTO, [])
+
+        self.assertTrue(resultado.vigente)
+        self.assertEqual(resultado.motivo, "")
+
+    def test_un_ingreso_anterior_no_lo_invalida(self):
+        antes = datetime(2026, 7, 15, 8, 0, tzinfo=tz.utc)
+
+        resultado = dominio.analisis_vigente(self.MOMENTO, [(antes, Decimal("21140"))])
+
+        self.assertTrue(resultado.vigente)
+
+    def test_un_ingreso_posterior_lo_invalida_y_dice_cuanto_entro(self):
+        despues = datetime(2026, 7, 15, 11, 0, tzinfo=tz.utc)
+
+        resultado = dominio.analisis_vigente(self.MOMENTO, [(despues, Decimal("21140"))])
+
+        self.assertFalse(resultado.vigente)
+        self.assertIn("21140", resultado.motivo)
+        self.assertIn("1 ingreso", resultado.motivo)
+
+    def test_varios_ingresos_posteriores_se_suman(self):
+        resultado = dominio.analisis_vigente(
+            self.MOMENTO,
+            [
+                (datetime(2026, 7, 15, 11, 0, tzinfo=tz.utc), Decimal("10000")),
+                (datetime(2026, 7, 15, 13, 0, tzinfo=tz.utc), Decimal("5000")),
+                (datetime(2026, 7, 15, 8, 0, tzinfo=tz.utc), Decimal("9999")),
+            ],
+        )
+
+        self.assertFalse(resultado.vigente)
+        self.assertIn("15000", resultado.motivo)
+        self.assertIn("2 ingresos", resultado.motivo)
+
+    def test_sin_hora_de_muestreo_no_esta_vigente_y_lo_dice(self):
+        """
+        Sin la hora no hay contra qué comparar. Devolver `True` aquí haría
+        pasar por vigente a un análisis del que no se sabe cuándo se tomó.
+        """
+        resultado = dominio.analisis_vigente(None, [])
+
+        self.assertFalse(resultado.vigente)
+        self.assertIn("hora", resultado.motivo.lower())
+
+
+class ParametrosFaltantesTests(TestCase):
+    def test_devuelve_los_que_faltan_en_el_orden_pedido(self):
+        faltan = dominio.parametros_faltantes(
+            {"grasa": Decimal("4.35"), "sng": None}, ("grasa", "sng")
+        )
+
+        self.assertEqual(faltan, ["sng"])
+
+    def test_sin_faltantes_devuelve_lista_vacia(self):
+        faltan = dominio.parametros_faltantes(
+            {"grasa": Decimal("4.35"), "sng": Decimal("8.90")}, ("grasa", "sng")
+        )
+
+        self.assertEqual(faltan, [])
+
+    def test_una_clave_ausente_cuenta_como_faltante(self):
+        faltan = dominio.parametros_faltantes({}, ("grasa",))
+
+        self.assertEqual(faltan, ["grasa"])
