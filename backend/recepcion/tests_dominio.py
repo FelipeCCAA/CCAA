@@ -110,3 +110,70 @@ class HorasEntreTests(TestCase):
 
     def test_falta_un_extremo(self):
         self.assertIsNone(dominio.horas_entre(time(8, 30), None))
+
+
+class CrioscopiaPoolTests(TestCase):
+    def test_promedio_de_los_modulos_medidos(self):
+        self.assertEqual(dominio.crioscopia_pool([-0.521, -0.532, -0.53]), -0.528)
+
+    def test_ignora_los_modulos_sin_lectura(self):
+        self.assertEqual(dominio.crioscopia_pool([-0.52, None, None]), -0.52)
+
+    def test_sin_ninguna_lectura_no_hay_pool(self):
+        self.assertIsNone(dominio.crioscopia_pool([None, None]))
+        self.assertIsNone(dominio.crioscopia_pool([]))
+
+
+class EvaluacionAmpliadaTests(TestCase):
+    def test_una_crioscopia_de_modulo_fuera_de_rango_retiene(self):
+        """
+        Basta con que UN compartimiento venga aguado: la leche del camión se
+        mezcla en el silo, así que el promedio escondería el módulo malo.
+        """
+        evaluacion = dominio.evaluar_recepcion(
+            {"delvo": "Negativo"}, crioscopias=[-0.52, -0.505]
+        )
+
+        self.assertEqual(evaluacion.estado, "retenida")
+        self.assertTrue(any("M2" in motivo for motivo in evaluacion.motivos))
+
+    def test_todas_las_crioscopias_en_rango_liberan(self):
+        evaluacion = dominio.evaluar_recepcion(
+            {"delvo": "Negativo"}, crioscopias=[-0.52, -0.53]
+        )
+
+        self.assertEqual(evaluacion.estado, "liberada")
+
+    def test_un_item_organoleptico_no_conforme_retiene(self):
+        evaluacion = dominio.evaluar_recepcion(
+            {"delvo": "Negativo", "sangre": "No conforme"}
+        )
+
+        self.assertEqual(evaluacion.estado, "retenida")
+        self.assertTrue(any("sangre" in motivo.lower() for motivo in evaluacion.motivos))
+
+    def test_el_organoleptico_viejo_se_sigue_entendiendo(self):
+        """Las filas históricas traen una sola clave; no se las deja de leer."""
+        evaluacion = dominio.evaluar_recepcion(
+            {"delvo": "Negativo", "organoleptico": "No conforme"}
+        )
+
+        self.assertEqual(evaluacion.estado, "retenida")
+
+    def test_el_ph_del_camion_fuera_de_rango_retiene(self):
+        evaluacion = dominio.evaluar_recepcion({"delvo": "Negativo"}, ph_camion=9.2)
+
+        self.assertEqual(evaluacion.estado, "retenida")
+        self.assertTrue(any("camión" in motivo for motivo in evaluacion.motivos))
+
+    def test_el_ph_del_camion_no_es_el_de_la_leche(self):
+        """
+        7,0 es válido para el enjuague del camión (5,5-8,5) y estaría fuera del
+        rango de la leche (6,5-6,9 lo admite, pero 8,0 no). Confundirlos haría
+        que el agua retuviera leche conforme.
+        """
+        evaluacion = dominio.evaluar_recepcion(
+            {"delvo": "Negativo", "ph": 6.7}, ph_camion=8.0
+        )
+
+        self.assertEqual(evaluacion.estado, "liberada")

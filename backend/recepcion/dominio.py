@@ -24,6 +24,10 @@ LIMITES = {
     # La crioscopía detecta aguado: un valor MENOS negativo que este es
     # sospechoso, porque el agua sube el punto de congelación.
     "crioscopia_max": -0.510,
+    # pH del enjuague del CAMIÓN, no de la leche. El formato declara el rango
+    # en el propio encabezado de la columna AO.
+    "ph_camion_min": 5.5,
+    "ph_camion_max": 8.5,
 }
 
 
@@ -143,7 +147,29 @@ def _numero(valor: Any) -> float | None:
     return None if numero != numero else numero
 
 
-def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) -> EvaluacionRecepcion:
+def crioscopia_pool(valores) -> float | None:
+    """
+    Promedio de las crioscopías de los módulos que sí se midieron.
+
+    Es lo que la hoja `Pool Crioscopia` calcula. Sirve para informar, no para
+    decidir: el veredicto lo da cada módulo por separado, porque un promedio
+    esconde el compartimiento aguado entre los que no lo están.
+    """
+    medidos = [numero for numero in (_numero(v) for v in valores or []) if numero is not None]
+
+    if not medidos:
+        return None
+
+    return round(sum(medidos) / len(medidos), 3)
+
+
+def evaluar_recepcion(
+    controles: dict[str, Any],
+    *,
+    crioscopias: Iterable[Any] = (),
+    ph_camion: Any = None,
+    limites: dict | None = None,
+) -> EvaluacionRecepcion:
     """
     ¿La leche del camión puede liberarse al silo?
 
@@ -177,6 +203,16 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
     if c.get("organoleptico") == "No conforme":
         motivos.append("Evaluación organoléptica no conforme.")
 
+    etiquetas = {
+        "sangre": "sangre",
+        "pus": "pus",
+        "materias_extranas": "materias extrañas",
+        "aroma": "aroma",
+    }
+    for clave, etiqueta in etiquetas.items():
+        if c.get(clave) == "No conforme":
+            motivos.append(f"Inspección visual no conforme: {etiqueta}.")
+
     acidez = _numero(c.get("acidez"))
     if acidez is not None and acidez > lim["acidez_max"]:
         motivos.append(
@@ -194,9 +230,21 @@ def evaluar_recepcion(controles: dict[str, Any], limites: dict | None = None) ->
             f"({lim['temperatura_max']} °C)."
         )
 
-    # La crioscopía se evalúa por módulo (ModuloRecepcion), no desde este
-    # diccionario de controles del camión — vuelve en la Task 4 leyendo los
-    # módulos.
+    for indice, valor in enumerate(crioscopias or [], start=1):
+        medida = _numero(valor)
+        if medida is not None and medida > lim["crioscopia_max"]:
+            motivos.append(
+                f"Crioscopía del módulo M{indice} ({medida}) indica posible aguado."
+            )
+
+    ph_del_camion = _numero(ph_camion)
+    if ph_del_camion is not None and not (
+        lim["ph_camion_min"] <= ph_del_camion <= lim["ph_camion_max"]
+    ):
+        motivos.append(
+            f"pH del camión {ph_del_camion} fuera del rango "
+            f"{lim['ph_camion_min']}–{lim['ph_camion_max']}."
+        )
 
     # Un motivo manda sobre la falta de datos: si el Delvo salió positivo, la
     # leche se retiene aunque falten los demás controles.

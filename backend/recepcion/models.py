@@ -27,15 +27,27 @@ CONTROLES_DECLARADOS = {
     "ph",
     "delvo",
     "inhibidores",
+    "grasa",
+    "sng",
+    # Los cuatro ítems que el formato pide por separado (columnas AC-AF).
+    "sangre",
+    "pus",
+    "materias_extranas",
+    "aroma",
+    # Clave histórica: dejó de escribirse pero se sigue leyendo, porque las
+    # filas anteriores al formato ampliado la tienen y siguen valiendo.
     "organoleptico",
 }
 
-CONTROLES_NUMERICOS = {"temperatura", "acidez", "ph"}
+CONTROLES_NUMERICOS = {"temperatura", "acidez", "ph", "grasa", "sng"}
+
+ITEMS_ORGANOLEPTICOS = ("sangre", "pus", "materias_extranas", "aroma")
 
 VALORES_ADMITIDOS = {
     "delvo": {"Negativo", "Positivo"},
     "inhibidores": {"Negativo", "Positivo"},
     "organoleptico": {"Conforme", "No conforme"},
+    **{item: {"Conforme", "No conforme"} for item in ITEMS_ORGANOLEPTICOS},
 }
 
 
