@@ -131,15 +131,32 @@ class EvaluacionAmpliadaTests(TestCase):
         mezcla en el silo, así que el promedio escondería el módulo malo.
         """
         evaluacion = dominio.evaluar_recepcion(
-            {"delvo": "Negativo"}, crioscopias=[-0.52, -0.505]
+            {"delvo": "Negativo"}, crioscopias=[(1, -0.52), (2, -0.505)]
         )
 
         self.assertEqual(evaluacion.estado, "retenida")
         self.assertTrue(any("M2" in motivo for motivo in evaluacion.motivos))
 
+    def test_el_motivo_usa_el_numero_del_modulo_no_su_posicion_en_la_lista(self):
+        """
+        Los módulos registrados no tienen por qué ser contiguos: un camión
+        puede traer M1 y M3, sin M2. Si el motivo se armara enumerando la
+        lista por posición, el segundo par (numero=3) se etiquetaría "M2" —
+        el motivo es lo que le dice a Calidad qué compartimiento
+        re-muestrear, y culpar al módulo equivocado manda a revisar leche
+        sana y deja pasar la aguada.
+        """
+        evaluacion = dominio.evaluar_recepcion(
+            {"delvo": "Negativo"}, crioscopias=[(1, -0.52), (3, -0.505)]
+        )
+
+        self.assertEqual(evaluacion.estado, "retenida")
+        self.assertTrue(any("M3" in motivo for motivo in evaluacion.motivos))
+        self.assertFalse(any("M2" in motivo for motivo in evaluacion.motivos))
+
     def test_todas_las_crioscopias_en_rango_liberan(self):
         evaluacion = dominio.evaluar_recepcion(
-            {"delvo": "Negativo"}, crioscopias=[-0.52, -0.53]
+            {"delvo": "Negativo"}, crioscopias=[(1, -0.52), (2, -0.53)]
         )
 
         self.assertEqual(evaluacion.estado, "liberada")

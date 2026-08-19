@@ -166,7 +166,7 @@ def crioscopia_pool(valores) -> float | None:
 def evaluar_recepcion(
     controles: dict[str, Any],
     *,
-    crioscopias: Iterable[Any] = (),
+    crioscopias: Iterable[tuple[Any, Any]] = (),
     ph_camion: Any = None,
     limites: dict | None = None,
 ) -> EvaluacionRecepcion:
@@ -183,6 +183,14 @@ def evaluar_recepcion(
     `sin_analisis`. Antes, una recepción con los controles vacíos salía
     conforme —no había motivos que informar— y la pantalla decía "Sin
     alertas" sobre leche que nadie había medido.
+
+    `crioscopias` recibe pares `(numero, crioscopia)`, uno por
+    `ModuloRecepcion` medido — no una lista posicional. El número lo pone el
+    módulo (`ModuloRecepcion.numero`, 1 a 4, único por recepción pero sin
+    garantía de ser contiguo: un camión puede traer registrados los módulos 1
+    y 3, sin el 2). Enumerar la lista por posición etiquetaría el motivo con
+    el índice equivocado — "M2" sobre lo que en realidad es el módulo 3—, y
+    ese motivo es lo que le dice a Calidad qué compartimiento re-muestrear.
     """
     c = controles or {}
     lim = {**LIMITES, **(limites or {})}
@@ -230,11 +238,11 @@ def evaluar_recepcion(
             f"({lim['temperatura_max']} °C)."
         )
 
-    for indice, valor in enumerate(crioscopias or [], start=1):
+    for numero, valor in crioscopias or []:
         medida = _numero(valor)
         if medida is not None and medida > lim["crioscopia_max"]:
             motivos.append(
-                f"Crioscopía del módulo M{indice} ({medida}) indica posible aguado."
+                f"Crioscopía del módulo M{numero} ({medida}) indica posible aguado."
             )
 
     ph_del_camion = _numero(ph_camion)
