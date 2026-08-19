@@ -48,6 +48,39 @@ export interface Trabajador extends Usuario {
   permisos_asignados: string[];
 }
 
+export interface SesionActiva {
+  identificador: string;
+  usuario: Usuario;
+  fecha_inicio: string;
+  ultima_actividad: string;
+  fecha_cierre: string | null;
+  motivo_cierre: string;
+  ip: string | null;
+  equipo: string;
+  activa: boolean;
+}
+
+export async function obtenerSesionesActivas(): Promise<SesionActiva[]> {
+  const { data } = await api.get<SesionActiva[]>("usuarios/sesiones/");
+  return data;
+}
+
+export async function cerrarSesionAdministrativamente(
+  identificador: string,
+  motivo = "Cierre solicitado desde administración",
+): Promise<void> {
+  await api.post(`usuarios/sesiones/${identificador}/cerrar/`, { motivo });
+}
+
+export async function cambiarPassword(datos: {
+  password_actual: string;
+  nueva_contrasena: string;
+  confirmar_contrasena: string;
+}): Promise<{ code: string; mensaje: string }> {
+  const { data } = await api.post("usuarios/cambiar-password/", datos);
+  return data;
+}
+
 export interface PermisoIndustrial {
   codigo: string;
   nombre: string;

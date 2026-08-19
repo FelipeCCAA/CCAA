@@ -24,6 +24,7 @@
 */
 
 const CLAVE = "ccaa.sesion";
+const CLAVE_MOTIVO_CIERRE = "ccaa.motivo-cierre";
 
 
 export interface PerfilUsuario {
@@ -36,6 +37,7 @@ export interface PerfilUsuario {
   nivel: "admin" | "trabajador";
   nivel_etiqueta: string;
   empresa: number | null;
+  debe_cambiar_password: boolean;
 }
 
 
@@ -139,6 +141,19 @@ export function cerrarSesion(): void {
   // no cerrarla, porque el usuario cree que salió.
   sessionStorage.removeItem(CLAVE);
   localStorage.removeItem(CLAVE);
+  window.dispatchEvent(new CustomEvent("ccaa:sesion-cerrada"));
+}
+
+
+export function guardarMotivoCierre(mensaje: string): void {
+  sessionStorage.setItem(CLAVE_MOTIVO_CIERRE, mensaje);
+}
+
+
+export function consumirMotivoCierre(): string {
+  const mensaje = sessionStorage.getItem(CLAVE_MOTIVO_CIERRE) || "";
+  sessionStorage.removeItem(CLAVE_MOTIVO_CIERRE);
+  return mensaje;
 }
 
 

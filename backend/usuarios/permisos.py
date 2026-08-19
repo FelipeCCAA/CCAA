@@ -41,6 +41,18 @@ class IsAdminDeArea(BasePermission):
 EsAdministrador = IsAdminDeArea
 
 
+class PuedeGestionarSesiones(BasePermission):
+    message = "No tienes permiso para consultar sesiones activas."
+
+    def has_permission(self, request, view):
+        usuario = request.user
+        return bool(
+            usuario
+            and usuario.is_authenticated
+            and (usuario.is_superuser or usuario.has_perm("usuarios.manage_sessions"))
+        )
+
+
 class PermisoPorRol(BasePermission):
     """
     Base: lectura para cualquiera autenticado, escritura solo para los roles

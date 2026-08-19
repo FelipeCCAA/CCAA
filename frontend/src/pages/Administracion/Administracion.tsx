@@ -16,9 +16,12 @@ import {
   actualizarPermisosTrabajador,
   obtenerPermisosDisponibles,
   obtenerTrabajadores,
+  obtenerSesionesActivas,
+  cerrarSesionAdministrativamente,
   solicitarRestablecimientoTrabajador,
   type Trabajador,
   type PermisoIndustrial,
+  type SesionActiva,
 } from "../../services/usuario.service";
 import { nombreParaMostrar, obtenerSesion } from "../../services/sesion";
 
@@ -60,6 +63,8 @@ function Administracion() {
   const [catalogoPermisos, setCatalogoPermisos] = useState<PermisoIndustrial[]>([]);
   const [editandoPermisos, setEditandoPermisos] = useState<Trabajador | null>(null);
   const [permisosSeleccionados, setPermisosSeleccionados] = useState<string[]>([]);
+  const [sesionesActivas, setSesionesActivas] = useState<SesionActiva[]>([]);
+  const [cerrandoSesion, setCerrandoSesion] = useState<string | null>(null);
   const sesion = obtenerSesion();
   const areaPropia = sesion?.usuario.perfil?.area ?? "secado";
   const administraTodasLasAreas = !sesion?.usuario.perfil || areaPropia === "administracion";
@@ -82,6 +87,11 @@ function Administracion() {
     obtenerPermisosDisponibles()
       .then(setCatalogoPermisos)
       .catch(() => setCatalogoPermisos([]));
+
+    obtenerSesionesActivas()
+      .then((datos) => { if (vigente) setSesionesActivas(datos); })
+      // Un administrador de área sin el permiso explícito no ve esta sección.
+      .catch(() => { if (vigente) setSesionesActivas([]); });
 
     return () => {
       vigente = false;
@@ -180,6 +190,23 @@ function Administracion() {
       setError("No se pudieron actualizar los permisos del trabajador.");
     } finally {
       setProcesandoId(null);
+    }
+  };
+
+  const forzarCierre = async (sesionActiva: SesionActiva) => {
+    if (!window.confirm(`¿Cerrar la sesión de ${nombreParaMostrar(sesionActiva.usuario)}?`)) return;
+    setCerrandoSesion(sesionActiva.identificador);
+    setError("");
+    try {
+      await cerrarSesionAdministrativamente(sesionActiva.identificador);
+      setSesionesActivas((actuales) =>
+        actuales.filter((item) => item.identificador !== sesionActiva.identificador),
+      );
+      setAviso("Sesión cerrada correctamente.");
+    } catch {
+      setError("No se pudo cerrar la sesión. Verifica tu permiso de cierre forzado.");
+    } finally {
+      setCerrandoSesion(null);
     }
   };
   return (
@@ -323,6 +350,34 @@ function Administracion() {
             </div>
           )}
         </section>
+        {sesionesActivas.length > 0 && (
+          <section className="mt-10 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-6 py-5">
+              <h2 className="text-lg font-semibold text-slate-800">Sesiones activas</h2>
+              <p className="mt-1 text-sm text-slate-400">Una sesión abierta como máximo por usuario.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500"><tr>
+                  <th className="px-6 py-3 font-medium">Usuario</th>
+                  <th className="px-6 py-3 font-medium">Inicio</th>
+                  <th className="px-6 py-3 font-medium">Última actividad</th>
+                  <th className="px-6 py-3 font-medium">Equipo / IP</th>
+                  <th className="px-6 py-3 font-medium">Acción</th>
+                </tr></thead>
+                <tbody>{sesionesActivas.map((item) => (
+                  <tr key={item.identificador} className="border-t border-slate-100">
+                    <td className="px-6 py-4"><span className="font-medium text-slate-800">{nombreParaMostrar(item.usuario)}</span><span className="block text-xs text-slate-400">{item.usuario.perfil?.area_etiqueta || "Sin área"}</span></td>
+                    <td className="px-6 py-4 text-slate-600">{new Date(item.fecha_inicio).toLocaleString("es-CL")}</td>
+                    <td className="px-6 py-4 text-slate-600">{new Date(item.ultima_actividad).toLocaleString("es-CL")}</td>
+                    <td className="max-w-xs px-6 py-4 text-slate-600"><span className="block truncate" title={item.equipo}>{item.equipo || "No informado"}</span><span className="text-xs text-slate-400">{item.ip || "IP no informada"}</span></td>
+                    <td className="px-6 py-4"><button type="button" disabled={cerrandoSesion === item.identificador} onClick={() => void forzarCierre(item)} className="text-red-700 hover:underline disabled:text-slate-300">{cerrandoSesion === item.identificador ? "Cerrando…" : "Cerrar sesión"}</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </section>
+        )}
         {editandoPermisos && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
             <section className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">

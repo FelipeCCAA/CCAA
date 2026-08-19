@@ -11,9 +11,10 @@ from django.db import DatabaseError
 from django.test import TestCase, override_settings
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
+from .models import SesionUsuario
+from .sesiones import nueva_credencial
 from .views import MENSAJE_SOLICITUD_RECUPERACION
 
 
@@ -133,7 +134,8 @@ class ConfirmacionRecuperacionTests(TestCase):
             email="operador@example.com",
             password="Clave-anterior-2026!",
         )
-        self.token_api = Token.objects.create(user=self.usuario)
+        _, digest = nueva_credencial()
+        self.sesion_api = SesionUsuario.objects.create(usuario=self.usuario, token_hash=digest)
         self.uid = urlsafe_base64_encode(force_bytes(self.usuario.pk))
         self.token = default_token_generator.make_token(self.usuario)
 
@@ -157,7 +159,8 @@ class ConfirmacionRecuperacionTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.usuario.refresh_from_db()
         self.assertTrue(self.usuario.check_password(self.NUEVA_CLAVE))
-        self.assertFalse(Token.objects.filter(pk=self.token_api.pk).exists())
+        self.sesion_api.refresh_from_db()
+        self.assertIsNotNone(self.sesion_api.fecha_cierre)
 
         reutilizacion = self.cliente.post(
             "/api/usuarios/restablecer-contrasena/",

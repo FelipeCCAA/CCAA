@@ -12,13 +12,19 @@ from datetime import date
 
 from django.contrib.auth.models import User
 from django.test import TestCase
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto
 from produccion.models import Lote
 
-from .models import PerfilUsuario, Rol
+from .models import PerfilUsuario, Rol, SesionUsuario
+from .sesiones import nueva_credencial
+
+
+def autenticar(cliente, usuario):
+    token, digest = nueva_credencial()
+    SesionUsuario.objects.create(usuario=usuario, token_hash=digest)
+    cliente.credentials(HTTP_AUTHORIZATION=f"Token {token}")
 
 
 class BasePermisos(TestCase):
@@ -41,9 +47,7 @@ class BasePermisos(TestCase):
         PerfilUsuario.objects.create(usuario=usuario, rol=rol)
 
         cliente = APIClient()
-        cliente.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=usuario).key}"
-        )
+        autenticar(cliente, usuario)
         return cliente
 
     def _lote_nuevo(self, codigo):
@@ -188,9 +192,7 @@ class RolEfectivoTests(BasePermisos):
         """
         usuario = User.objects.create_superuser(username="root", password="x")
         cliente = APIClient()
-        cliente.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=usuario).key}"
-        )
+        autenticar(cliente, usuario)
 
         self.assertEqual(cliente.get("/api/usuarios/yo/").json()["rol"], "admin")
         self.assertEqual(
@@ -203,9 +205,7 @@ class RolEfectivoTests(BasePermisos):
     def test_un_usuario_normal_sin_perfil_no_escribe(self):
         usuario = User.objects.create_user(username="huerfano", password="x")
         cliente = APIClient()
-        cliente.credentials(
-            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=usuario).key}"
-        )
+        autenticar(cliente, usuario)
 
         self.assertIsNone(cliente.get("/api/usuarios/yo/").json()["rol"])
         self.assertEqual(

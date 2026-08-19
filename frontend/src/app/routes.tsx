@@ -43,6 +43,7 @@ const Maestros = lazy(() => import("../pages/Maestros/Maestros"));
 const Auditoria = lazy(() => import("../pages/Auditoria/Auditoria"));
 const Registros = lazy(() => import("../pages/Registros/Registros"));
 const Administracion = lazy(() => import("../pages/Administracion/Administracion"));
+const CambiarPassword = lazy(() => import("../pages/CambiarPassword/CambiarPassword"));
 const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
 const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
 const Aseos = lazy(() => import("../pages/Inocuidad/Aseos"));
@@ -130,6 +131,11 @@ function RoutesApp(){
             {/* Pantallas internas: exigen sesión y llevan menú lateral */}
 
             <Route element={<RutaProtegida />}>
+
+                <Route
+                    path="/cambiar-password"
+                    element={diferido(<CambiarPassword />)}
+                />
 
                 <Route element={<MainLayout />}>
 

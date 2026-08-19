@@ -1,6 +1,7 @@
 import axios from "axios";
 
-import { cerrarSesion, obtenerToken } from "./sesion";
+import { cerrarSesion, guardarMotivoCierre, obtenerToken } from "./sesion";
+import { debeCerrarSesion, mensajeDeCierre } from "./auth-errors";
 
 
 const api = axios.create({
@@ -38,29 +39,24 @@ api.interceptors.request.use((config) => {
   ubicación del navegador y no useNavigate porque esto vive fuera de React,
   donde no hay acceso al router.
 */
+let redireccionandoAlLogin = false;
+
 api.interceptors.response.use(
 
     (respuesta) => respuesta,
 
     (error) => {
 
-        const esNoAutorizado = error.response?.status === 401;
-
-        /*
-          Se mira el hash y no `pathname` porque la aplicación monta un
-          `HashRouter` (`app/App.tsx`): en la pantalla de login el `pathname`
-          es "/" y la ruta vive en "#/login". Comparando el `pathname` la
-          guarda no se cumplía nunca, así que el 401 esperable de una
-          contraseña equivocada se trataba como sesión caducada: recargaba la
-          página y se llevaba por delante el mensaje de error que el
-          formulario acababa de escribir. La pantalla parpadeaba y no decía
-          nada.
-        */
-        const enLogin = window.location.hash.startsWith("#/login");
-
-        if (esNoAutorizado && !enLogin) {
+        if (debeCerrarSesion(
+            error.response?.status,
+            window.location.hash || window.location.pathname,
+            redireccionandoAlLogin,
+        )) {
+            redireccionandoAlLogin = true;
+            const codigo = error.response?.data?.code;
             cerrarSesion();
-            window.location.assign("/login");
+            guardarMotivoCierre(mensajeDeCierre(codigo));
+            window.location.assign("/#/login");
         }
 
         return Promise.reject(error);

@@ -27,8 +27,15 @@ PERMISOS_POR_AREA: dict[str, set[str]] = {
 
 TODOS_LOS_PERMISOS = set().union(
     *PERMISOS_POR_AREA.values(),
-    {"despacho_autorizar", "auditoria_exportar"},
+    {
+        "despacho_autorizar", "auditoria_exportar", "reset_password",
+        "manage_sessions", "force_logout", "change_roles",
+    },
 )
+
+PERMISOS_SENSIBLES = {
+    "reset_password", "manage_sessions", "force_logout", "change_roles",
+}
 
 
 def permisos_asignables_por(usuario) -> set[str]:
@@ -40,9 +47,13 @@ def permisos_asignables_por(usuario) -> set[str]:
     perfil = getattr(usuario, "perfil", None)
     if not perfil or not perfil.es_admin_de_area:
         return set()
+    propios_sensibles = {
+        codigo for codigo in PERMISOS_SENSIBLES
+        if usuario.has_perm(f"usuarios.{codigo}")
+    }
     if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
-        return TODOS_LOS_PERMISOS
-    return PERMISOS_POR_AREA.get(perfil.area, set())
+        return (TODOS_LOS_PERMISOS - PERMISOS_SENSIBLES) | propios_sensibles
+    return PERMISOS_POR_AREA.get(perfil.area, set()) | propios_sensibles
 
 
 def capacidades_de(usuario) -> list[str]:

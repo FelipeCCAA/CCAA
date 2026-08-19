@@ -1,4 +1,8 @@
+import uuid
+
+from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import User
 
 from .tenancy import empresa_predeterminada_pruebas
@@ -33,6 +37,10 @@ class IntentoAcceso(models.Model):
     exito = models.BooleanField("Correcto", default=False)
     motivo = models.CharField("Motivo del rechazo", max_length=60, blank=True)
     fecha_hora = models.DateTimeField("Fecha y hora", auto_now_add=True)
+
+    # Tiene su bitácora específica; duplicarlo en la auditoría genérica
+    # agrega ruido y complica los intentos concurrentes.
+    auditar = False
 
     class Meta:
         verbose_name = "Intento de acceso"
@@ -189,6 +197,11 @@ class PerfilUsuario(models.Model):
         default=Nivel.TRABAJADOR,
     )
 
+    debe_cambiar_password = models.BooleanField(
+        "Debe cambiar la contraseña",
+        default=False,
+    )
+
     class Meta:
         verbose_name = "Perfil de usuario"
         verbose_name_plural = "Perfiles de usuario"
@@ -206,6 +219,10 @@ class PerfilUsuario(models.Model):
             ("despacho_crear", "Puede crear solicitudes de despacho"),
             ("despacho_autorizar", "Puede autorizar despachos"),
             ("auditoria_exportar", "Puede exportar registros de auditoría"),
+            ("reset_password", "Puede restablecer contraseñas"),
+            ("manage_sessions", "Puede consultar sesiones activas"),
+            ("force_logout", "Puede cerrar sesiones ajenas"),
+            ("change_roles", "Puede cambiar roles y permisos"),
         ]
         constraints = [
             models.CheckConstraint(
@@ -334,3 +351,95 @@ def rol_de(usuario) -> str | None:
     if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
         return Rol.ADMIN
     return por_area.get(perfil.area, perfil.rol)
+
+
+class SesionUsuario(models.Model):
+    """Sesión API auditable; la credencial se conserva solamente como hash."""
+
+    class MotivoCierre(models.TextChoices):
+        LOGOUT = "logout", "Cierre del usuario"
+        INACTIVIDAD = "inactividad", "Expirada por inactividad"
+        ABSOLUTA = "absoluta", "Expirada por antigüedad"
+        ADMIN = "admin", "Cerrada por administrador"
+        PASSWORD = "password", "Cambio de contraseña"
+        RESET_PASSWORD = "reset_password", "Restablecimiento de contraseña"
+        DESACTIVACION = "desactivacion", "Usuario desactivado"
+        BLOQUEO = "bloqueo", "Cuenta bloqueada"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sesiones_api"
+    )
+    identificador = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    token_hash = models.CharField(max_length=64, unique=True, editable=False)
+    fecha_inicio = models.DateTimeField(auto_now_add=True)
+    ultima_actividad = models.DateTimeField(auto_now_add=True)
+    fecha_cierre = models.DateTimeField(null=True, blank=True)
+    motivo_cierre = models.CharField(max_length=30, choices=MotivoCierre.choices, blank=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    cerrada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sesiones_cerradas_por_mi",
+    )
+
+    # La auditoría genérica no debe copiar el hash de la credencial.
+    auditar = False
+
+    class Meta:
+        ordering = ["-fecha_inicio"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario"],
+                condition=Q(fecha_cierre__isnull=True),
+                name="una_sesion_abierta_por_usuario",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["fecha_cierre", "-ultima_actividad"]),
+            models.Index(fields=["usuario", "-fecha_inicio"]),
+        ]
+
+    @property
+    def activa(self):
+        return self.fecha_cierre is None
+
+    def __str__(self):
+        return f"{self.usuario.username} · {self.identificador}"
+
+
+class EventoSeguridad(models.Model):
+    """Bitácora inmutable de autenticación y administración de acceso."""
+
+    accion = models.CharField(max_length=50, db_index=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="eventos_seguridad",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="eventos_seguridad_realizados",
+    )
+    fecha = models.DateTimeField(auto_now_add=True, db_index=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    motivo = models.CharField(max_length=250, blank=True)
+
+    auditar = False
+
+    class Meta:
+        ordering = ["-fecha", "-id"]
+        indexes = [models.Index(fields=["usuario", "-fecha"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError("Los eventos de seguridad son inmutables.")
+        return super().save(*args, **kwargs)
