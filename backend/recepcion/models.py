@@ -442,8 +442,11 @@ class ModuloRecepcion(models.Model):
             models.UniqueConstraint(
                 fields=["recepcion", "numero"], name="modulo_unico_por_recepcion"
             ),
+            # El formato solo tiene cuatro columnas (M1-M4): un número fuera
+            # de 1-4 no representa ningún compartimiento real.
             models.CheckConstraint(
-                condition=models.Q(numero__gte=1), name="modulo_numero_positivo"
+                condition=models.Q(numero__gte=1) & models.Q(numero__lte=4),
+                name="modulo_numero_en_rango",
             ),
             # Una carga de Recolección se recibe una sola vez. Lo garantizaba
             # el OneToOneField de `Recepcion`; al bajar el vínculo al módulo

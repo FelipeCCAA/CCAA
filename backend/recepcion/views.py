@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Max, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -241,7 +242,8 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         numeros = [item.get("numero") for item in modulos if isinstance(item, dict)]
 
         if len(numeros) != len(modulos) or any(
-            not isinstance(numero, int) or numero < 1 for numero in numeros
+            not isinstance(numero, int) or numero < 1 or numero > 4
+            for numero in numeros
         ):
             return Response(
                 {"modulos": "Cada módulo necesita su número (1 a 4)."},
@@ -261,7 +263,6 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             for clave, valor in request.data.items()
             if clave != "modulos" and valor not in (None, "")
         }
-        datos["sucursal"] = sucursal.id
 
         serializer = self.get_serializer(data=datos)
         serializer.is_valid(raise_exception=True)
@@ -626,11 +627,27 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         `None` cuando falta una marca horaria, y esa distinción —no medido
         contra cero— es justamente la que la planilla perdía.
         """
-        fecha = request.query_params.get("fecha")
+        fecha_texto = request.query_params.get("fecha")
 
-        if not fecha:
+        if not fecha_texto:
             return Response(
                 {"fecha": "Indica la fecha del resumen (YYYY-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # `parse_date` devuelve None si el texto no tiene forma de fecha
+            # (p. ej. "abc"), pero levanta ValueError si la forma es correcta
+            # y el valor no existe (p. ej. "2026-13-45", mes 13). Las dos
+            # cosas son la misma pregunta del usuario: "esto no es una
+            # fecha", y las dos se responden 400, no 500.
+            fecha = parse_date(fecha_texto)
+        except ValueError:
+            fecha = None
+
+        if fecha is None:
+            return Response(
+                {"fecha": f"Fecha no reconocida: {fecha_texto!r} (usa AAAA-MM-DD)."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -676,7 +693,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         medidas = [h for h in horas if h is not None]
 
         return Response({
-            "fecha": fecha,
+            "fecha": fecha_texto,
             "camiones": len(recepciones),
             "litros": str(litros),
             "kg_guia": str(kg_guia),

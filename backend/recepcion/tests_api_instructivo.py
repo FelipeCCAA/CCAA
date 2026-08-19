@@ -68,6 +68,21 @@ class RegistrarLlegadaTests(BaseAPIRecepcion):
 
         self.assertEqual(respuesta.status_code, 400)
 
+    def test_el_numero_de_modulo_no_supera_las_columnas_del_formato(self):
+        """El formato solo tiene cuatro columnas (M1-M4): un 99 no es ninguna."""
+        respuesta = self.cliente.post(
+            "/api/recepcion/recepciones/registrar-llegada/",
+            {
+                "fecha": "2026-07-31",
+                "tipo_leche": "Entera",
+                "litros": "5321",
+                "modulos": [{"numero": 99}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+
 
 class DerivadosEnLaApiTests(BaseAPIRecepcion):
     def test_la_ficha_trae_los_calculos_del_formato(self):
@@ -116,3 +131,11 @@ class ResumenDiarioTests(BaseAPIRecepcion):
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(respuesta.data["litros"], "13881.00")
         self.assertEqual(respuesta.data["por_procedencia"]["CCAA"], "13881.00")
+
+    def test_una_fecha_invalida_responde_400_y_no_revienta(self):
+        respuesta = self.cliente.get(
+            "/api/recepcion/recepciones/resumen-diario/?fecha=2026-13-45"
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("fecha", respuesta.data)
