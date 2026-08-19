@@ -16,5 +16,6 @@ export function debeCerrarSesion(
   ruta: string,
   redireccionando: boolean,
 ): boolean {
-  return estado === 401 && ruta !== "/login" && !redireccionando;
+  const rutaNormalizada = ruta.startsWith("#") ? ruta.slice(1) : ruta;
+  return estado === 401 && !rutaNormalizada.startsWith("/login") && !redireccionando;
 }

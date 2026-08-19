@@ -7,6 +7,8 @@ test("una sesión revocada limpia y redirige una sola vez", () => {
   assert.equal(debeCerrarSesion(401, "/dashboard", false), true);
   assert.equal(debeCerrarSesion(401, "/dashboard", true), false);
   assert.equal(debeCerrarSesion(401, "/login", false), false);
+  assert.equal(debeCerrarSesion(401, "#/login", false), false);
+  assert.equal(debeCerrarSesion(401, "#/login?desde=dashboard", false), false);
   assert.match(mensajeDeCierre("SESSION_REVOKED"), /sesión fue cerrada/i);
 });
 
