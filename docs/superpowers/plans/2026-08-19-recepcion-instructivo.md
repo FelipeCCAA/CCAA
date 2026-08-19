@@ -1828,7 +1828,10 @@ class ControlInhibidoresSerializer(serializers.ModelSerializer):
     def get_evaluacion(self, recepcion):
         evaluacion = dominio.evaluar_recepcion(
             recepcion.controles,
-            crioscopias=[modulo.crioscopia for modulo in recepcion.modulos.all()],
+            crioscopias=[
+                (modulo.numero, modulo.crioscopia)
+                for modulo in recepcion.modulos.all()
+            ],
             ph_camion=recepcion.ph_camion,
         )
 ```
