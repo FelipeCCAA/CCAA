@@ -299,3 +299,75 @@ def trazabilidad_lote(lote_id: int, movimientos: Iterable[Any]) -> list[dict]:
         )
 
     return resultado
+
+
+# Horas de permanencia libres antes de que empiece a contar la sobreestadía.
+# Es el valor de la celda AI14 del formato (0,0833 de día = 2 h).
+LIMITE_PERMANENCIA_HORAS = 2.0
+
+
+@dataclass(frozen=True)
+class Permanencia:
+    # Horas por sobre el límite libre. None cuando falta una marca horaria:
+    # nunca cero, porque un cero se suma y una ausencia no.
+    horas: float | None
+    horas_en_planta: float | None
+    motivo: str = ""
+
+
+def horas_entre(inicio, fin) -> float | None:
+    """
+    Horas entre dos marcas del reloj.
+
+    Si el fin es anterior al inicio, cruzó la medianoche y se suman 24 h: el
+    turno C existe, y un camión que arriba 23:30 y termina 01:00 estuvo hora y
+    media, no menos veintidós.
+    """
+    if inicio is None or fin is None:
+        return None
+
+    minutos = (fin.hour * 60 + fin.minute) - (inicio.hour * 60 + inicio.minute)
+
+    if minutos < 0:
+        minutos += 24 * 60
+
+    return minutos / 60
+
+
+def permanencia(
+    arribo, termino_cip, limite_horas: float = LIMITE_PERMANENCIA_HORAS
+) -> Permanencia:
+    """
+    Horas de permanencia por sobre el límite libre.
+
+    Se cuenta desde el **arribo a portería** hasta el término del lavado CIP.
+    El formato la cuenta desde la «hora programa», que en los 26 libros de
+    julio está llena en 1 de 603 filas: restaba contra cero y devolvía la hora
+    del reloj menos dos. Por eso aquí un dato ausente devuelve None con su
+    motivo, y no un número que alguien va a sumar.
+    """
+    if arribo is None:
+        return Permanencia(None, None, "Falta la hora de arribo a portería.")
+
+    if termino_cip is None:
+        return Permanencia(None, None, "Falta la hora de término del lavado CIP.")
+
+    en_planta = horas_entre(arribo, termino_cip)
+
+    return Permanencia(
+        horas=round(max(0.0, en_planta - limite_horas), 2),
+        horas_en_planta=round(en_planta, 2),
+    )
+
+
+def horas_a_pagar(horas) -> int | None:
+    """
+    Redondeo comercial del formato (columna AT): sube solo si la fracción
+    **supera** la media hora. Exactamente 0,5 no sube.
+    """
+    if horas is None:
+        return None
+
+    entero = int(horas)
+
+    return entero + (1 if horas - entero > 0.5 else 0)
