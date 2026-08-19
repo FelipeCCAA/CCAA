@@ -5,6 +5,7 @@ from rest_framework import serializers
 from . import dominio
 from .models import (
     CONTROLES_DECLARADOS,
+    AnalisisSilo,
     CONTROLES_NUMERICOS,
     VALORES_ADMITIDOS,
     BusquedaProveedor,
@@ -331,3 +332,29 @@ class TransferenciaSiloSerializer(serializers.Serializer):
     lote = serializers.IntegerField(required=False, allow_null=True)
     producto = serializers.IntegerField(required=False, allow_null=True)
     equipo = serializers.IntegerField(required=False, allow_null=True)
+
+
+class AnalisisSiloSerializer(serializers.ModelSerializer):
+    silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
+    # Método y no `source="analista.username"`: el analista es nulable, y una
+    # travesía sobre `None` en DRF revienta en vez de devolver el vacío.
+    analista_nombre = serializers.SerializerMethodField()
+    vigente = serializers.BooleanField(read_only=True)
+    motivo_vigencia = serializers.CharField(read_only=True)
+    faltantes_para_vale = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+
+    class Meta:
+        model = AnalisisSilo
+        fields = [
+            "id", "silo", "silo_codigo", "tomado_en", "hora_inicio_llenado",
+            "ph", "acidez", "grasa", "sng", "proteina", "temperatura", "densidad",
+            "certificada", "procedencia", "analista", "analista_nombre",
+            "observacion", "creado_en",
+            "vigente", "motivo_vigencia", "faltantes_para_vale",
+        ]
+        read_only_fields = ["analista", "creado_en"]
+
+    def get_analista_nombre(self, obj):
+        return obj.analista.username if obj.analista_id else ""

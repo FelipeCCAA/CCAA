@@ -14,6 +14,7 @@ from django.test import TestCase
 
 from maestros.models import Silo
 from recepcion.models import AnalisisSilo, MovimientoSilo
+from recepcion.tests import BaseAPIRecepcion
 
 
 class AnalisisSiloModeloTests(TestCase):
@@ -129,3 +130,81 @@ class VigenciaContraElLibroTests(TestCase):
 
         self.assertEqual(sin_sng.faltantes_para_vale, ["sng"])
         self.assertEqual(self.analisis.faltantes_para_vale, [])
+
+
+class AnalisisSiloAPITests(BaseAPIRecepcion):
+    def _resultados(self, respuesta):
+        datos = respuesta.data
+        return datos["results"] if "results" in datos else datos
+
+    def test_registra_un_analisis_y_devuelve_su_vigencia(self):
+        respuesta = self.cliente.post(
+            "/api/recepcion/analisis-silo/",
+            {
+                "silo": self.silo.id,
+                "tomado_en": "2026-07-15T09:40:00Z",
+                "ph": "6.77",
+                "acidez": "15.60",
+                "grasa": "4.35",
+                "sng": "8.90",
+                "proteina": "3.44",
+                "temperatura": "6.00",
+                "densidad": "1032.00",
+                "certificada": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertIs(respuesta.data["vigente"], True)
+        self.assertEqual(respuesta.data["faltantes_para_vale"], [])
+        self.assertEqual(respuesta.data["silo_codigo"], "SILO 1")
+
+    def test_el_analista_es_quien_lo_registra(self):
+        respuesta = self.cliente.post(
+            "/api/recepcion/analisis-silo/",
+            {"silo": self.silo.id, "tomado_en": "2026-07-15T09:40:00Z"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.data["analista_nombre"], "op")
+
+    def test_filtra_por_silo(self):
+        otro = Silo.objects.create(
+            codigo="SILO 9", tipo=Silo.Tipo.SILO, capacidad_l=Decimal("50000")
+        )
+        AnalisisSilo.objects.create(
+            silo=self.silo, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc)
+        )
+        AnalisisSilo.objects.create(
+            silo=otro, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc)
+        )
+
+        respuesta = self.cliente.get(f"/api/recepcion/analisis-silo/?silo={otro.id}")
+
+        self.assertEqual(respuesta.status_code, 200)
+        resultados = self._resultados(respuesta)
+        self.assertEqual(len(resultados), 1)
+        self.assertEqual(resultados[0]["silo_codigo"], "SILO 9")
+
+    def test_vigentes_deja_fuera_al_que_recibio_leche_despues(self):
+        viejo = AnalisisSilo.objects.create(
+            silo=self.silo, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc)
+        )
+        MovimientoSilo.objects.create(
+            silo=self.silo,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("10000"),
+            fecha_hora=datetime(2026, 7, 15, 12, 0, tzinfo=tz.utc),
+        )
+        nuevo = AnalisisSilo.objects.create(
+            silo=self.silo, tomado_en=datetime(2026, 7, 15, 13, 0, tzinfo=tz.utc)
+        )
+
+        respuesta = self.cliente.get("/api/recepcion/analisis-silo/?vigentes=1")
+
+        self.assertEqual(respuesta.status_code, 200)
+        devueltos = {fila["id"] for fila in self._resultados(respuesta)}
+        self.assertIn(nuevo.id, devueltos)
+        self.assertNotIn(viejo.id, devueltos)
