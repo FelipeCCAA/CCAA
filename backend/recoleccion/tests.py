@@ -1,6 +1,8 @@
 from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -120,9 +122,11 @@ class FlujoRecoleccionTests(APITestCase):
         La Task 3 movió `carga_recoleccion` de `Recepcion` a `ModuloRecepcion`:
         los litros y el vehículo son del camión, pero la carga esperada es por
         compartimiento. El POST de la recepción ya no acepta `carga_recoleccion`
-        —lo arma el módulo—, y la validación de que una carga no se vincule dos
-        veces la restaura la Task 7, junto con el contrato nuevo de
-        `registrar-llegada`.
+        —lo arma el módulo—. La API para vincular un módulo con su carga desde
+        la pantalla la define la Task 7, junto con el contrato nuevo de
+        `registrar-llegada`; el invariante de que una carga no se vincule dos
+        veces ya está cubierto de nuevo, ver
+        `test_una_carga_de_recoleccion_no_se_vincula_dos_veces`.
         """
         registro = self.registrar()
         carga = self.client.post(
@@ -145,4 +149,39 @@ class FlujoRecoleccionTests(APITestCase):
 
         self.assertEqual(recepcion.vehiculo, self.vehiculo)
         self.assertEqual(recepcion.diferencia_recoleccion_litros, -10)
+
+    def test_una_carga_de_recoleccion_no_se_vincula_dos_veces(self):
+        """
+        Antes lo garantizaba el `OneToOneField` de `Recepcion.carga_recoleccion`.
+        Al bajar el vínculo a `ModuloRecepcion` como FK simple (Task 3), esa
+        garantía desapareció: sin una restricción explícita, dos módulos
+        —del mismo camión o de camiones distintos, como aquí— podrían apuntar
+        a la misma carga y sus litros se contarían dos veces sin que nada
+        avise. `una_recepcion_por_carga_recoleccion` (recepcion.models) es esa
+        restricción.
+        """
+        registro = self.registrar()
+        carga = self.client.post(
+            f"/api/recoleccion/recolecciones/{registro.data['id']}/cargas/",
+            {"codigo": "UNICA", "modulo": "M1", "litros": "900.00"},
+        )
+        self.assertEqual(carga.status_code, 201, carga.data)
+
+        primera = Recepcion.objects.create(
+            fecha=date.today(), tipo_leche="Entera", litros=Decimal("890.00"),
+            vehiculo=self.vehiculo,
+        )
+        ModuloRecepcion.objects.create(
+            recepcion=primera, numero=1, carga_recoleccion_id=carga.data["id"]
+        )
+
+        segunda = Recepcion.objects.create(
+            fecha=date.today(), tipo_leche="Entera", litros=Decimal("890.00"),
+            vehiculo=self.vehiculo,
+        )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ModuloRecepcion.objects.create(
+                    recepcion=segunda, numero=1, carga_recoleccion_id=carga.data["id"]
+                )
 

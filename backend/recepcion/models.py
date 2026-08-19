@@ -292,6 +292,16 @@ class ModuloRecepcion(models.Model):
             models.CheckConstraint(
                 condition=models.Q(numero__gte=1), name="modulo_numero_positivo"
             ),
+            # Una carga de Recolección se recibe una sola vez. Lo garantizaba
+            # el OneToOneField de `Recepcion`; al bajar el vínculo al módulo
+            # como FK, sin esto dos módulos podrían apuntar a la misma carga y
+            # sus litros se contarían dos veces. Parcial porque los módulos sin
+            # carga vinculada son la mayoría y todos son NULL.
+            models.UniqueConstraint(
+                fields=["carga_recoleccion"],
+                condition=models.Q(carga_recoleccion__isnull=False),
+                name="una_recepcion_por_carga_recoleccion",
+            ),
         ]
 
     def __str__(self):
