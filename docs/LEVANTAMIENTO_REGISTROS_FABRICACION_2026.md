@@ -281,7 +281,7 @@ su propio plan en `docs/superpowers/plans/`.
 
 | Fase | Qué | Brechas | Espera a Calidad | Por qué en este orden |
 |---|---|---|---|---|
-| 1 | **Análisis de silo** | G | No | Es la pieza que ya usan tres documentos y hoy viaja por transcripción. Desbloquea 2, 3 y 6 |
+| 1 | ~~**Análisis de silo**~~ — hecho (2026-08-19) | G | No | Es la pieza que ya usan tres documentos y hoy viaja por transcripción. Desbloquea 2, 3 y 6 |
 | 2 | **Crema y descremación** | A, B | **Sí** — destinos de crema (§6.2) | El único hueco que rompe un balance físico. Necesita el análisis de silo para la leche de entrada |
 | 3 | **Registros de silo del Instructivo** | C | No — se construye avisando | Delvo por silo y permanencia > 48 h. Cuelgan del análisis de silo |
 | 4 | **Desviaciones + maestro de predios** | D | No | El maestro es prerrequisito y hoy no existe |
@@ -294,7 +294,12 @@ el modelo de la crema.
 
 **Planes escritos:**
 
-- Fase 1 — `docs/superpowers/plans/2026-08-19-analisis-de-silo.md`
+- Fase 1 — `docs/superpowers/plans/2026-08-19-analisis-de-silo.md` — **aplicado**.
+  `recepcion.AnalisisSilo` con los siete parámetros del formato, la vigencia derivada
+  del libro de movimientos, su API, la captura en la pantalla de silos, y las dos claves
+  de procedencia en el vale. **La siguiente es la fase 2**, que espera la decisión de
+  Calidad sobre los destinos de crema (§6.2); si demora, el orden alternativo es
+  1 → 3 → 4 → 5 → 2 → 6.
 
 Las fases 2 a 6 se planifican cuando la anterior esté en verde: el modelo de la fase 1
 decide la forma de las siguientes, y planificarlas antes sería escribir contra un contrato

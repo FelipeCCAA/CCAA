@@ -98,6 +98,25 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
   mismo es una decisión de Calidad todavía sin tomar, no un descuido del código. Detalle
   en `docs/REGLAS_DE_PLANTA.md` §1.2.
 
+- **El análisis del silo es un registro propio** (desde 2026-08-19, `recepcion.AnalisisSilo`,
+  formato `CCAA.REC.FORM.005.01`). No se confunde con `Recepcion.controles`, que son los del
+  **camión**: el silo mezcla varios camiones, y es la mezcla —no cada camión— la que alimenta el
+  cálculo del RC. Trae los siete parámetros del vale de trazabilidad, incluidas **proteína y
+  densidad**, que no existían en ninguna parte del sistema.
+
+  **La vigencia no se guarda: se decide contra el libro de movimientos.** Un análisis deja de
+  servir para componer un vale cuando entró un camión después de la muestra —una salida no, porque
+  sacar leche no cambia la composición de la que queda, e invalidar por salida obligaría a
+  re-muestrear cada vez que una línea consume—. Un campo `vigente` almacenado se desincronizaría al
+  corregir la hora de un movimiento, y un vale quedaría compuesto contra leche que ya no está.
+
+  El vale de estandarización **sigue congelando** la composición en sus columnas y solo gana dos
+  claves foráneas de **procedencia** (`analisis_entera`, `analisis_descremada`): el análisis se
+  puede corregir, y un vale de mayo tiene que auditarse contra lo que se usó en mayo. La captura
+  vive en la pantalla de **silos**, no en la del vale: quien mide el silo es Recepción, al
+  llenarlo. Que un análisis vencido **impida** crear el vale es decisión de Calidad todavía sin
+  tomar; hoy avisa.
+
 - **La organización inicial se busca por el código de su sucursal, no por su RUT** (desde
   2026-08-19). `usuarios.0008` siembra la organización con un RUT distinto en cada rama
   —`TENANT-TEST` bajo `DJANGO_ENV=test`, `TENANT-CI` en CI, y el de
