@@ -7,6 +7,7 @@ import {
 
 import {
   buscarRecepciones, descargarRecepcion, obtenerCatalogosFlujo, obtenerSilos,
+  type CatalogosFlujoRecepcion,
   type Recepcion as RecepcionTipo, type ResponsableRecepcion, type Silo,
 } from "../../services/recepcion.service";
 import { puedeEscribir } from "../../services/sesion";
@@ -26,7 +27,19 @@ import AccionRecepcion, { type AccionFlujo } from "./AccionRecepcion";
 */
 
 const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
+const formatoDecimal = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 });
 const POR_PAGINA = 50;
+
+/* Un dato ausente se muestra como «—», nunca como 0: confundir "no medido"
+   con "cero" es justo lo que producía horas facturables fantasma en el
+   formato de origen. */
+function celda(valor: string | number | null | undefined, sufijo = ""): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const numero = Number(valor);
+  return Number.isNaN(numero)
+    ? String(valor)
+    : `${formatoDecimal.format(numero)}${sufijo}`;
+}
 
 const ESTILO_ESTADO: Record<string, string> = {
   registrada: "border-slate-200 bg-slate-50 text-slate-700",
@@ -73,6 +86,7 @@ function TablaRecepciones({
   const [termino, setTermino] = useState("");
   const [silos, setSilos] = useState<Silo[]>([]);
   const [responsables, setResponsables] = useState<ResponsableRecepcion[]>([]);
+  const [catalogos, setCatalogos] = useState<CatalogosFlujoRecepcion | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [accion, setAccion] = useState<{
@@ -109,9 +123,22 @@ function TablaRecepciones({
     // fallo suyo no vacíe la tabla.
     void obtenerSilos().then(setSilos).catch(() => setSilos([]));
     void obtenerCatalogosFlujo()
-      .then((datos) => setResponsables(datos.responsables_recepcion))
-      .catch(() => setResponsables([]));
+      .then((datos) => {
+        setResponsables(datos.responsables_recepcion);
+        setCatalogos(datos);
+      })
+      .catch(() => {
+        setResponsables([]);
+        setCatalogos(null);
+      });
   }, []);
+
+  const etiquetaUso = (r: RecepcionTipo): string => {
+    if (!r.uso) return "—";
+    const opcion = catalogos?.usos.find((op) => op.valor === r.uso);
+    const base = opcion?.etiqueta ?? r.uso;
+    return r.uso_numero ? `${base} N°${r.uso_numero}` : base;
+  };
 
   // La búsqueda espera a que el usuario deje de teclear: cada pulsación es una
   // consulta a la base, no un filtro sobre lo que ya está en memoria.
@@ -165,7 +192,7 @@ function TablaRecepciones({
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-600" />
           <input
             className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-emerald-500"
-            placeholder="Buscar guía, módulo, muestra, camión o silo"
+            placeholder="Buscar guía, muestra, camión o silo"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
           />
@@ -189,14 +216,19 @@ function TablaRecepciones({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1400px] text-left text-sm">
 
             <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
               <tr>
                 <th className="px-5 py-3">Ingreso</th>
-                <th className="px-5 py-3">Módulo y transporte</th>
+                <th className="px-5 py-3">Camión</th>
                 <th className="px-5 py-3">Origen</th>
                 <th className="px-5 py-3">Volumen</th>
+                <th className="px-5 py-3">Kg romana</th>
+                <th className="px-5 py-3">Diferencia</th>
+                <th className="px-5 py-3">TS</th>
+                <th className="px-5 py-3">Uso</th>
+                <th className="px-5 py-3">Horas a pagar</th>
                 <th className="px-5 py-3">Muestra / calidad</th>
                 <th className="px-5 py-3">Destino</th>
                 <th className="px-5 py-3">Estado</th>
@@ -222,10 +254,11 @@ function TablaRecepciones({
 
                   <td className="px-5 py-4">
                     <p className="font-semibold text-slate-800">
-                      {r.modulo || "Módulo sin identificar"}
+                      {r.vehiculo_placa || "Sin camión"}
                     </p>
                     <p className="mt-1 text-xs text-slate-600">
-                      {r.vehiculo_placa || "Sin camión"} · Turno {r.turno || "—"}
+                      Turno {r.turno || "—"} · {r.modulos.length}{" "}
+                      {r.modulos.length === 1 ? "módulo" : "módulos"}
                     </p>
                   </td>
 
@@ -236,6 +269,26 @@ function TablaRecepciones({
 
                   <td className="px-5 py-4 font-semibold tabular-nums text-slate-800">
                     {formato.format(Number(r.litros))} L
+                  </td>
+
+                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                    {celda(r.kg_romana, " kg")}
+                  </td>
+
+                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                    {celda(r.diferencia_kg, " kg")}
+                  </td>
+
+                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                    {celda(r.solidos_totales, "%")}
+                  </td>
+
+                  <td className="px-5 py-4 text-slate-700">
+                    {etiquetaUso(r)}
+                  </td>
+
+                  <td className="px-5 py-4 tabular-nums text-slate-700">
+                    {celda(r.horas_a_pagar, " h")}
                   </td>
 
                   <td className="px-5 py-4">
