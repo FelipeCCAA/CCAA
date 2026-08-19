@@ -86,6 +86,15 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - Los archivos del Instructivo (`Fabricación/2026/Instructivo/`) están **abiertos por
   OneDrive**: leerlos con `ZipFile::OpenRead` falla con «está siendo utilizado en otro
   proceso». Hay que copiarlos a un directorio temporal primero.
+- **`ControlInhibidores.resultado` no dispara nada.** El gatillo del bloqueo de cierre
+  (`recepcion.dominio.bloqueos_de_cierre`) sigue siendo
+  `Recepcion.controles["delvo"]`/`["inhibidores"]` más el conteo de `BusquedaProveedor`;
+  la función nunca lee `ControlInhibidores`. Y `ControlInhibidores` no tiene ViewSet ni
+  URL propia —se carga por admin o por ORM—, así que hoy se puede registrar un PPRO N°1
+  positivo sin que el cierre se entere: lo único que bloquea es que
+  `controles["inhibidores"]` diga `"Positivo"`. Que el control dispare el bloqueo por sí
+  mismo es una decisión de Calidad todavía sin tomar, no un descuido del código. Detalle
+  en `docs/REGLAS_DE_PLANTA.md` §1.2.
 
 ## Tarea de integración en curso
 

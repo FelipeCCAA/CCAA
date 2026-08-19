@@ -80,13 +80,24 @@ recepción automáticamente**, y `delvo` es control decisivo — sin su resultad
 no se puede liberar, porque su ausencia no es «conforme», es que nadie lo
 midió (`recepcion/dominio.py`).
 
-**Lo que ya existe además** (desde 2026-08-19): `ControlInhibidores` registra el PPRO N°1
-—método, tiras usadas, hora de lectura, resultado, analista— y `BusquedaProveedor` el
-primer eslabón del escalamiento. Una recepción con inhibidores positivos **no se puede
-cerrar** sin al menos una búsqueda registrada (`dominio.bloqueos_de_cierre`).
+**Lo que ya existe además** (desde 2026-08-19): `ControlInhibidores` documenta el PPRO
+N°1 —método, tiras usadas, hora de lectura, resultado, analista— y `BusquedaProveedor` el
+primer eslabón del escalamiento. Pero el gatillo del bloqueo sigue sin ser el resultado
+del control: `dominio.bloqueos_de_cierre` solo mira
+`Recepcion.controles["delvo"]`/`["inhibidores"]` y el conteo de `BusquedaProveedor`, y
+**nunca lee `ControlInhibidores.resultado`**. `ControlInhibidores` tampoco tiene ViewSet
+ni URL propia —se carga por admin o por ORM—, así que hoy se puede registrar un PPRO N°1
+positivo sin que el cierre lo sepa: una recepción **no se puede cerrar** solo si
+`controles["inhibidores"]` (o `["delvo"]`) dice `"Positivo"` y no hay ninguna
+`BusquedaProveedor` registrada. Que el control dispare el bloqueo por sí mismo —cerrando
+del todo ese primer tramo de la cadena de arriba— es una decisión de Calidad, no del
+código.
 
 **Lo que sigue faltando:** la repetición del análisis y su confirmación, el bloqueo del
-camión, la apertura de la no conformidad y los avisos a Operaciones y a Calidad.
+camión, la apertura de la no conformidad, los avisos a Operaciones y a Calidad, y el
+concepto de **proveedor como entidad** — `BusquedaProveedor.proveedor` sigue siendo un
+`CharField` de texto libre, igual que en `recoleccion` (§0), así que «bloquear los
+módulos asociados al proveedor» sigue sin poder expresarse.
 
 ### 1.3 Discrepancia de crioscopía — pendiente de resolver
 
