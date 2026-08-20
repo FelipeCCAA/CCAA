@@ -85,6 +85,7 @@ INSTALLED_APPS = [
     'inventario',
     'planificacion',
     'auditoria',
+    'observabilidad',
     'procesos',
     'mantenimiento',
     "corsheaders",
