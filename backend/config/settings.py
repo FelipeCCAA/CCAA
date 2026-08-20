@@ -109,6 +109,47 @@ MIDDLEWARE = [
     'auditoria.middleware.AuditoriaMiddleware',
 ]
 
+# --------------------------------------------------------------- medición
+#
+# Apagada por omisión: se enciende para medir y se apaga después. Con
+# `METRICAS_ACTIVAS` en falso el middleware ni siquiera entra en la cadena
+# —lanza `MiddlewareNotUsed`—, así que apagado no cuesta una llamada por
+# request: cuesta cero.
+#
+# Va **después** de AuditoriaMiddleware para medir el request completo,
+# incluido lo que la auditoría escribe. Medir por dentro daría un número más
+# bonito y menos cierto.
+METRICAS_ACTIVAS = os.getenv("METRICAS_ACTIVAS", "").strip().lower() in {"1", "true"}
+METRICAS_ARCHIVO = os.getenv("METRICAS_ARCHIVO", "metricas.jsonl")
+
+if METRICAS_ACTIVAS:
+    MIDDLEWARE = MIDDLEWARE + ["observabilidad.middleware.MetricasMiddleware"]
+
+    # `disable_existing_loggers` en falso: apagar los demás loggers por
+    # encender la medición dejaría al servidor mudo justo mientras se mide.
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {"crudo": {"format": "%(message)s"}},
+        "handlers": {
+            "metricas": {
+                "class": "logging.FileHandler",
+                "filename": METRICAS_ARCHIVO,
+                "encoding": "utf-8",
+                "formatter": "crudo",
+            }
+        },
+        "loggers": {
+            "metricas": {
+                "handlers": ["metricas"],
+                "level": "INFO",
+                # Sin propagar: si no, cada medición sale también por la
+                # consola y el registro del servidor se vuelve ilegible.
+                "propagate": False,
+            }
+        },
+    }
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
