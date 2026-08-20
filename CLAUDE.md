@@ -98,6 +98,23 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
   mismo es una decisión de Calidad todavía sin tomar, no un descuido del código. Detalle
   en `docs/REGLAS_DE_PLANTA.md` §1.2.
 
+- **El sistema parte en blanco** (desde 2026-08-20). Los libros de `Fabricación/2026` y los
+  formatos de `Documentos Planta/` son **referencia de arquitectura, no datos a migrar**: al
+  desplegar no se importa nada, y Calidad configura los productos, especificaciones, recetas y
+  formularios vigentes. Por eso las plantillas viven en JSONField y los catálogos se sirven desde
+  el backend: un formato de planta se carga **configurando, no programando**.
+
+  Lo que se lee en los archivos históricos dice **qué forma tiene el proceso**, no qué filas
+  sembrar. Las variantes que solo existen en libros viejos —crema Svelty, crema Champiñones— **no
+  se modelan ni se siembran**: son hojas de un formato anterior, y quien las necesite creará la
+  suya con el mecanismo de plantillas. Copiarlas al maestro dejaría productos que nadie pidió y
+  que alguien tendría que mantener.
+
+  Esto **baja el costo de equivocarse en el modelado**: sin códigos de lote emitidos, una decisión
+  que resulte mal se corrige antes del despliegue, sin migración ni reimpresión. No habilita a
+  posponer el esquema —igual hay que escribirlo—, pero sí a elegir el camino general y afinarlo
+  cuando haya datos reales, en vez de detener el desarrollo esperando una respuesta.
+
 - **El análisis del silo es un registro propio** (desde 2026-08-19, `recepcion.AnalisisSilo`,
   formato `CCAA.REC.FORM.005.01`). No se confunde con `Recepcion.controles`, que son los del
   **camión**: el silo mezcla varios camiones, y es la mezcla —no cada camión— la que alimenta el

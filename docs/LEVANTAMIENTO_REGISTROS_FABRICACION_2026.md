@@ -11,6 +11,14 @@ Este documento **complementa** a `docs/levantamiento-2026-07/LEVANTAMIENTO_PLANT
 que levantó el catálogo de formatos del sistema de calidad. Aquel dice qué formatos
 existen; este dice **cuáles se llenan todos los días** y qué pasa con ellos.
 
+> **Premisa (2026-08-20): estos archivos son referencia de arquitectura, no datos a
+> migrar.** El sistema parte en blanco y Calidad configura los productos, especificaciones,
+> recetas y formularios vigentes. Lo que sigue sirve para decidir **qué forma tiene el
+> proceso**, no qué filas sembrar. Las variantes que solo viven en libros viejos —crema
+> Svelty, crema Champiñones— quedan **fuera**: quien las necesite creará su hoja con el
+> mecanismo de plantillas. Esto cambia el peso de varias brechas de §4, y está anotado
+> donde corresponde.
+
 ---
 
 ## 1. Qué hay en la ruta
@@ -76,10 +84,13 @@ Ordenadas por consecuencia, no por esfuerzo.
 ### A. La crema no existe en el sistema
 
 111 archivos al año, formato propio `CCAA.REC.FORM.004.01`, con su ciclo
-(estandarización → análisis finales → liberación → **reestandarización**), sus
-especificaciones declaradas en el propio formato —MG 22,5–23,5 % (máx. 18 % en Svelty),
-acidez 10,5–14,5 °Th, T ≤ 8 °C, pH 6,5–6,8, crioscopía 512–540—, su acción correctiva por
-parámetro y cinco destinos (Svelty, Champiñones, Despacho, Mantequilla, Stock).
+(estandarización → análisis finales → liberación → **reestandarización**), su acción
+correctiva declarada por parámetro, y límites en el propio formato —MG 22,5–23,5 %, acidez
+10,5–14,5 °Th, T ≤ 8 °C, pH 6,5–6,8, crioscopía 512–540—.
+
+Los **límites y las variantes concretas no se portan**: son referencia. Lo que hay que
+construir es el mecanismo —vale con su ciclo, especificación versionada, destino— para que
+Calidad configure las cremas vigentes al desplegar.
 
 Hay `Silo.Tipo.TK_CREMA` y `procesos.CorridaMantequilla`, pero **nada entre la
 descremadora y esos destinos**.
@@ -236,7 +247,7 @@ renombre de tablas — el mismo argumento por el que la separación `produccion`
 
 | Decisión | Quién | ¿Se difiere? | Qué implica |
 |---|---|---|---|
-| ¿Qué destinos de crema son productos del maestro y cuáles son estados de un TK? | Calidad + negocio | **No. Bloquea la fase 2** | Decide si «Crema Svelty» lleva SKU, especificación y receta, o es un valor de un campo de destino. Es modelado: hay que responderla antes de escribir el modelo |
+| ¿Una operación de crema puede repartirse en varios destinos, o siempre va a uno? | Calidad + planta | **Sí**, con reserva | Decide si el destino es un campo del vale o una tabla hija. Con arranque en blanco no hay migración que temer, así que se construye el caso general —varios destinos— y se simplifica si resulta que sobra |
 | ¿La permanencia > 48 h **bloquea** el uso del silo o solo avisa? | Calidad | **Sí**, sin costo | Mismo patrón que la agitación de 30 min y que `codigo_lote_valido`: la regla nace como motivo, y que ese motivo entre o no en `bloqueos` es una línea. Se construye avisando |
 | ¿Un análisis de silo caduca? ¿Cada cuánto se re-muestrea un silo en reposo? | Calidad | **Sí** | Un umbral en horas, misma forma que `LIMITE_PERMANENCIA_HORAS`. La fase 1 ya lo deja fuera explícitamente |
 | ¿El maestro de predios/proveedores lo alimenta Recolección o viene de un sistema externo? | TI + planta | **Sí** el origen, **no** que exista | Que sea maestro y no texto libre es modelado, y ya lo decide la brecha D. De dónde se alimenta se cambia después sin tocar el esquema |
@@ -282,15 +293,19 @@ su propio plan en `docs/superpowers/plans/`.
 | Fase | Qué | Brechas | Espera a Calidad | Por qué en este orden |
 |---|---|---|---|---|
 | 1 | ~~**Análisis de silo**~~ — hecho (2026-08-19) | G | No | Es la pieza que ya usan tres documentos y hoy viaja por transcripción. Desbloquea 2, 3 y 6 |
-| 2 | **Crema y descremación** | A, B | **Sí** — destinos de crema (§6.2) | El único hueco que rompe un balance físico. Necesita el análisis de silo para la leche de entrada |
+| 2 | **Crema y descremación** | A, B | No — ver §6.2 | El único hueco que rompe un balance físico. Necesita el análisis de silo para la leche de entrada. Se construye el mecanismo; los productos y sus límites son configuración del despliegue |
 | 3 | **Registros de silo del Instructivo** | C | No — se construye avisando | Delvo por silo y permanencia > 48 h. Cuelgan del análisis de silo |
 | 4 | **Desviaciones + maestro de predios** | D | No | El maestro es prerrequisito y hoy no existe |
 | 5 | **Calibración de instrumentos** | E | No — el catálogo es configurable | Independiente. Mejora la defensa ante auditoría sin bloquear operación |
 | 6 | **Completar el vale RC** | F, H | No | Reemplazo de sólidos, confirmaciones, línea destino. Lo más invasivo sobre código que ya funciona |
 
-**Una sola fase espera a Calidad.** Si la respuesta sobre los destinos de crema demora,
-el orden alternativo es 1 → 3 → 4 → 5 → 2 → 6, sin retrabajo: ninguna de esas cuatro toca
-el modelo de la crema.
+**Ninguna fase espera a Calidad para empezar** (revisado el 2026-08-20). Con arranque
+en blanco, lo que Calidad decide es **configuración**, no esquema: qué cremas existen, con
+qué límites y a qué destinos. Lo que sí conviene confirmar antes de escribir el modelo de
+la fase 2 es la **forma del proceso** —si una operación se reparte en varios destinos, si
+la reestandarización es el mismo vale o uno nuevo, y de quién son los paros—, que es lo
+que pregunta `docs/CONSULTA_CALIDAD_CREMA_2026-08-19.md`. Si esa respuesta demora, el
+orden alternativo sigue siendo 1 → 3 → 4 → 5 → 2 → 6.
 
 **Planes escritos:**
 
