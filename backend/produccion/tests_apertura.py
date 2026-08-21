@@ -18,7 +18,7 @@ from django.test import TestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
-from maestros.models import Mandante, Producto, Silo
+from maestros.models import Equipo, Mandante, Producto, Silo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from . import dominio
@@ -30,6 +30,14 @@ class BaseApertura(TestCase):
         self.empresa = Empresa.objects.create(rut="APERTURA", nombre="Apertura")
         self.sucursal = Sucursal.objects.create(
             empresa=self.empresa, codigo="PLANTA", nombre="Planta apertura"
+        )
+        self.equipo = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="e1", nombre="Egron 1",
+            tipo=Equipo.Tipo.TORRE, sigla="E1",
+        )
+        self.otro_equipo = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="e2", nombre="Egron 2",
+            tipo=Equipo.Tipo.TORRE, sigla="E2",
         )
         self.mandante = Mandante.objects.create(empresa=self.empresa, nombre="Nestlé")
 
@@ -227,14 +235,14 @@ class ReglaDeCierreTests(TestCase):
 class CodigoSugeridoTests(BaseApertura):
 
     def _sugerir(self, **params):
-        params.setdefault("producto", self.polvo.id)
+        params.setdefault("equipo", self.equipo.id)
         params.setdefault("fecha", "2026-07-16")
 
         return self.cliente.get("/api/produccion/lotes/codigo-sugerido/", params)
 
-    def test_mezcla_anio_dia_juliano_y_sku(self):
+    def test_mezcla_anio_dia_juliano_y_sigla(self):
         # 2026 → '6'; el 16 de julio de 2026 es el día juliano 197.
-        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197LEP25-01")
+        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197E1-01")
 
     def test_el_correlativo_se_deduce_de_los_lotes_que_ya_existen(self):
         """
@@ -243,64 +251,58 @@ class CodigoSugeridoTests(BaseApertura):
         """
         Lote.objects.create(
             sucursal=self.sucursal,
-            codigo_lote="CCAA6197LEP25-01",
+            codigo_lote="CCAA6197E1-01", equipo=self.equipo,
             producto=self.polvo,
             fecha=date(2026, 7, 16),
         )
 
         datos = self._sugerir().json()
 
-        self.assertEqual(datos["codigo"], "CCAA6197LEP25-02")
+        self.assertEqual(datos["codigo"], "CCAA6197E1-02")
         self.assertEqual(datos["correlativo"], 2)
-        self.assertIn("n.º 2", datos["motivo"])
 
-    def test_un_lote_de_otro_producto_no_corre_el_correlativo(self):
+    def test_un_lote_de_otra_maquina_no_corre_el_correlativo(self):
         """
         El correlativo cuenta por producto: es lo que distingue dos corridas
         del mismo SKU, no la actividad del día.
         """
         Lote.objects.create(
             sucursal=self.sucursal,
-            codigo_lote="CCAA6197CRE10-01",
-            producto=self.crema,
+            codigo_lote="CCAA6197E2-01", producto=self.crema, equipo=self.otro_equipo,
             fecha=date(2026, 7, 16),
         )
 
-        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197LEP25-01")
+        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197E1-01")
 
     def test_un_lote_de_otra_fecha_no_corre_el_correlativo(self):
         Lote.objects.create(
             sucursal=self.sucursal,
-            codigo_lote="CCAA6196LEP25-01",
+            codigo_lote="CCAA6196E1-01", equipo=self.equipo,
             producto=self.polvo,
             fecha=date(2026, 7, 15),
         )
 
-        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197LEP25-01")
+        self.assertEqual(self._sugerir().json()["codigo"], "CCAA6197E1-01")
 
-    def test_dos_productos_del_mismo_dia_se_distinguen_por_el_sku(self):
+    def test_dos_maquinas_del_mismo_dia_se_distinguen_por_la_sigla(self):
         self.assertNotEqual(
             self._sugerir().json()["codigo"],
-            self._sugerir(producto=self.crema.id).json()["codigo"],
+            self._sugerir(equipo=self.otro_equipo.id).json()["codigo"],
         )
 
-    def test_un_producto_sin_sku_no_frena_el_lote(self):
+    def test_un_equipo_sin_sigla_no_frena_el_lote(self):
         """
         Devuelve 200 con `codigo: null` y un motivo que dice qué falta y
         dónde. Un 400 se leería como que el lote no se puede crear, y sí se
         puede: el código se escribe a mano.
         """
-        sin_sku = Producto.objects.create(
-            nombre="Suero en polvo",
-            familia=Producto.Familia.POLVO,
-            mandante=self.mandante,
-        )
-
-        respuesta = self._sugerir(producto=sin_sku.id)
+        self.equipo.sigla = ""
+        self.equipo.save()
+        respuesta = self._sugerir()
 
         self.assertEqual(respuesta.status_code, 200)
         self.assertIsNone(respuesta.json()["codigo"])
-        self.assertIn("SKU", respuesta.json()["motivo"])
+        self.assertIn("sigla", respuesta.json()["motivo"])
         self.assertIn("Maestros", respuesta.json()["motivo"])
 
     def test_sin_producto_o_fecha_no_se_inventa_un_codigo(self):
