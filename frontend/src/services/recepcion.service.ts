@@ -475,3 +475,49 @@ export async function obtenerVehiculos(): Promise<Vehiculo[]> {
 
   return data.results;
 }
+
+
+/*
+  El análisis del silo — `CCAA.REC.FORM.005.01`.
+
+  No se confunde con los controles del camión: el silo mezcla varios camiones
+  y es esa mezcla la que alimenta el cálculo del RC. `vigente` y
+  `motivo_vigencia` los decide el backend contra el libro de movimientos; el
+  cliente no los recalcula, porque dos implementaciones de la misma regla
+  terminan discrepando justo en el número que se usa para estandarizar.
+*/
+export interface AnalisisSilo {
+  id: number;
+  silo: number;
+  silo_codigo: string;
+  tomado_en: string;
+  hora_inicio_llenado: string | null;
+  ph: string | null;
+  acidez: string | null;
+  grasa: string | null;
+  sng: string | null;
+  proteina: string | null;
+  temperatura: string | null;
+  densidad: string | null;
+  certificada: boolean | null;
+  procedencia: string;
+  analista_nombre: string;
+  observacion: string;
+  vigente: boolean;
+  motivo_vigencia: string;
+  faltantes_para_vale: string[];
+}
+
+
+export async function listarAnalisisSilo(siloId: number): Promise<AnalisisSilo[]> {
+  const { data } = await api.get("/recepcion/analisis-silo/", { params: { silo: siloId } });
+  return Array.isArray(data) ? data : data.results;
+}
+
+
+export async function crearAnalisisSilo(
+  datos: Record<string, unknown>,
+): Promise<AnalisisSilo> {
+  const { data } = await api.post("/recepcion/analisis-silo/", datos);
+  return data;
+}

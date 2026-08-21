@@ -23,11 +23,11 @@ from usuarios.tenancy import (
 
 from . import dominio
 from .models import (
-    CONTROLES_DECLARADOS, BusquedaProveedor, ModuloRecepcion, MovimientoSilo,
+    CONTROLES_DECLARADOS, AnalisisSilo, BusquedaProveedor, ModuloRecepcion, MovimientoSilo,
     Recepcion,
 )
 from .serializers import (
-    AjusteSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
+    AjusteSiloSerializer, AnalisisSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
     TransferenciaSiloSerializer,
 )
 from .servicios import ajustar_silo, transferir_silo
@@ -916,3 +916,37 @@ def ocupacion(request):
             },
         }
     )
+
+
+class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    """
+    El análisis del silo — `CCAA.REC.FORM.005.01`.
+
+    `?vigentes=1` filtra en Python y no en la base: la vigencia se decide
+    contra el libro de movimientos, y expresarla como consulta duplicaría en
+    SQL una regla que ya está en el dominio. Con ocho silos el costo es nulo
+    y la regla sigue teniendo una sola implementación.
+    """
+
+    tenant_lookup_sucursal = "silo__sucursal_id"
+    tenant_lookup_empresa = "silo__sucursal__empresa_id"
+    tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
+    queryset = AnalisisSilo.objects.select_related("silo", "analista")
+    serializer_class = AnalisisSiloSerializer
+    permission_classes = [EscribeRecepcion]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+
+        silo = self.request.query_params.get("silo")
+        if silo:
+            consulta = consulta.filter(silo_id=silo)
+
+        if self.request.query_params.get("vigentes") in {"1", "true"}:
+            vigentes = [fila.id for fila in consulta if fila.vigente]
+            consulta = consulta.filter(id__in=vigentes)
+
+        return consulta
+
+    def perform_create(self, serializer):
+        serializer.save(analista=self.request.user)

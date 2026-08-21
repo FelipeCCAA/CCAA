@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    BusquedaProveedor, ControlInhibidores, ModuloRecepcion, MovimientoSilo,
-    Recepcion,
+    AnalisisSilo, BusquedaProveedor, ControlInhibidores, ModuloRecepcion,
+    MovimientoSilo, Recepcion,
 )
 
 
@@ -64,3 +64,12 @@ class MovimientoSiloAdmin(admin.ModelAdmin):
     list_filter = ["tipo", "silo", "origen_tipo"]
     date_hierarchy = "fecha_hora"
     autocomplete_fields = ["silo"]
+
+
+@admin.register(AnalisisSilo)
+class AnalisisSiloAdmin(admin.ModelAdmin):
+    list_display = ("silo", "tomado_en", "grasa", "sng", "ph", "acidez", "analista")
+    list_filter = ("silo", "certificada", "procedencia")
+    date_hierarchy = "tomado_en"
+    search_fields = ("silo__codigo", "observacion")
+    autocomplete_fields = ("silo",)

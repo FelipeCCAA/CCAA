@@ -202,6 +202,16 @@ Tres decisiones del cálculo:
 - **La tolerancia del RC es un parámetro.** La define Calidad; el valor por
   omisión (0,005) es referencial.
 
+**De dónde salen la grasa y el SNG** (desde 2026-08-19): del último `AnalisisSilo`
+del silo, no de un número tecleado.
+`GET /api/estandarizacion/vales/composicion-silos/?entera=&descremada=` los
+ofrece con su vigencia y con lo que falte; el operador sigue decidiendo. Un
+silo sin análisis, o con uno invalidado por un ingreso posterior, **no es un
+error**: devuelve el motivo, porque una pantalla que solo dice «no» no le dice
+a nadie qué hacer. El vale guarda además de qué análisis salió cada número
+(`analisis_entera`, `analisis_descremada`), sin dejar de congelar la
+composición en sus propias columnas.
+
 ### 3.1 Un límite físico que el cálculo destapó
 
 **RC 0,422 exige leche entera de al menos ~3,63 % de grasa** (con 8,6 % de SNG).

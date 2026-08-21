@@ -223,7 +223,19 @@ class Producto(models.Model):
             models.UniqueConstraint(
                 fields=["nombre", "mandante"],
                 name="producto_unico_por_mandante",
-            )
+            ),
+            # El SKU identifica un producto y se imprime. Dos filas que lo
+            # comparten son dos cosas distintas saliendo al mundo con la misma
+            # identidad: la especificación que se audita, la receta que
+            # descuenta material y el certificado que se emite dejan de tener
+            # dueño único. El vacío se excluye a propósito: un producto a
+            # medio configurar todavía no genera SKU, y si el vacío contara
+            # como repetido no se podrían tener dos a la vez.
+            models.UniqueConstraint(
+                fields=["codigo"],
+                condition=~models.Q(codigo=""),
+                name="producto_sku_unico",
+            ),
         ]
 
     def __str__(self):
@@ -276,9 +288,32 @@ class Producto(models.Model):
         super().clean()
 
         try:
-            self.sku_derivado()
+            derivado = self.sku_derivado()
         except SkuInvalido as e:
             raise ValidationError({"naturaleza_comercial": str(e)}) from e
+
+        # Quien choca es el SKU **derivado**, no el guardado: `save()` lo
+        # recalcula, así que el conflicto hay que anticiparlo con el que va a
+        # quedar. La restricción de la base es el respaldo; esto es lo que le
+        # dice al operador qué hacer, porque un IntegrityError crudo no lo
+        # dice.
+        if derivado:
+            choque = (
+                Producto.objects.filter(codigo=derivado)
+                .exclude(pk=self.pk)
+                .first()
+            )
+            if choque is not None:
+                raise ValidationError(
+                    {
+                        "variante": (
+                            f"El SKU {derivado} ya es de «{choque.nombre}». Dos "
+                            "productos no pueden compartirlo: si son distintos, "
+                            "dale a este una variante para desempatarlos; si son "
+                            "el mismo, corrige el maestro en vez de duplicarlo."
+                        )
+                    }
+                )
 
     def save(self, *args, **kwargs):
         """
@@ -346,6 +381,16 @@ class Equipo(models.Model):
         help_text="Identificador estable. No se cambia: la planificación lo referencia.",
     )
     nombre = models.CharField("Nombre", max_length=120)
+    sigla = models.CharField(
+        "Sigla",
+        max_length=3,
+        blank=True,
+        help_text=(
+            "Dos o tres caracteres que identifican la máquina dentro del código "
+            "de lote (E1, S2, R4). Solo la necesitan los equipos que encabezan "
+            "una corrida."
+        ),
+    )
     tipo = models.CharField("Tipo", max_length=20, choices=Tipo.choices)
     consume_leche = models.BooleanField(
         "Consume leche del balance",
@@ -378,7 +423,12 @@ class Equipo(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["sucursal", "codigo"], name="equipo_codigo_unico_sucursal"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["sucursal", "sigla"],
+                condition=~models.Q(sigla=""),
+                name="equipo_sigla_unica_sucursal",
+            ),
         ]
 
     def __str__(self):

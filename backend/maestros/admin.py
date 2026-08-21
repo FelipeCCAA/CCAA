@@ -108,7 +108,7 @@ class EquipoAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
     dos veces.
     """
 
-    list_display = ["nombre", "codigo", "tipo", "consume_leche", "orden", "activo"]
+    list_display = ["nombre", "codigo", "sigla", "tipo", "consume_leche", "orden", "activo"]
     list_filter = ["tipo", "consume_leche", "activo"]
     list_editable = ["orden", "activo"]
     search_fields = ["nombre", "codigo"]

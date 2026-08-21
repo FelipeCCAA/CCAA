@@ -13,7 +13,7 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from maestros import recetas
-from maestros.models import Especificacion, Producto, Receta, Silo
+from maestros.models import Equipo, Especificacion, Producto, Receta, Silo
 from usuarios.permisos import EscribeProduccion
 from usuarios.tenancy import (
     QuerysetTenantMixin,
@@ -96,6 +96,24 @@ class OrdenProduccionViewSet(
             {"detail": "Una orden se cancela con motivo; no se elimina."},
             status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
+
+    @action(detail=True, methods=["post"])
+    def partir(self, request, pk=None):
+        lote = self.get_object()
+        motivo = (request.data.get("motivo") or "").strip()
+        if not motivo:
+            return Response({"motivo": "Indica por qué se parte la corrida."}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            correlativo = self.get_queryset().filter(equipo=lote.equipo, fecha=lote.fecha).count() + 1
+            codigo = dominio.generar_codigo_lote(
+                lote.fecha, lote.equipo.sigla if lote.equipo_id else "", correlativo
+            )
+            nuevo = Lote.objects.create(
+                sucursal=lote.sucursal, codigo_lote=codigo or "", producto=lote.producto,
+                equipo=lote.equipo, fecha=lote.fecha, turno=lote.turno,
+                estado=Lote.Estado.EN_PROCESO, lote_anterior=lote, motivo_corte=motivo,
+            )
+        return Response(self.get_serializer(nuevo).data, status=status.HTTP_201_CREATED)
 
 
 class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
@@ -337,12 +355,12 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         de ese producto y esa fecha. Preguntarlo sería pedirle al operador un
         dato que el sistema ya tiene, y equivocarse ahí repite un código.
         """
-        producto_id = request.query_params.get("producto")
+        equipo_id = request.query_params.get("equipo")
         fecha_texto = request.query_params.get("fecha")
 
-        if not producto_id or not fecha_texto:
+        if not equipo_id or not fecha_texto:
             return Response(
-                {"detail": "Indica el producto y la fecha."},
+                {"detail": "Indica la máquina y la fecha."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -354,21 +372,21 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        producto = get_object_or_404(
+        equipo = get_object_or_404(
             filtrar_por_scope(
-                Producto.objects.all(), request.user,
-                campo_empresa="mandante__empresa_id",
+                Equipo.objects.all(), request.user,
+                campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
             ),
-            pk=producto_id,
+            pk=equipo_id,
         )
 
         # El correlativo distingue dos lotes del mismo producto el mismo día.
         # Se cuenta lo que ya existe en vez de preguntarlo: pedirle al
         # operador un dato que el sistema tiene es como se repite un código.
-        anteriores = self.get_queryset().filter(producto=producto, fecha=fecha).count()
+        anteriores = self.get_queryset().filter(equipo=equipo, fecha=fecha).count()
         correlativo = anteriores + 1
 
-        codigo = dominio.generar_codigo_lote(fecha, producto.codigo, correlativo)
+        codigo = dominio.generar_codigo_lote(fecha, equipo.sigla, correlativo)
 
         if codigo is None:
             # 200 con `codigo: null`: el formulario sigue abierto y el
@@ -379,9 +397,9 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                     "codigo": None,
                     "correlativo": correlativo,
                     "motivo": (
-                        f"«{producto.nombre}» no tiene código de producto (SKU) "
-                        "cargado en Maestros, y el SKU es parte del código de "
-                        "lote. Escríbelo a mano o completa el maestro."
+                        f"«{equipo.nombre}» no tiene sigla cargada en Maestros, y la "
+                        "sigla es parte del código de lote. Escríbelo a mano o "
+                        "completa el maestro de equipos."
                     ),
                 }
             )

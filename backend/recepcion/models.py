@@ -706,3 +706,124 @@ class BusquedaProveedor(models.Model):
 
     def __str__(self):
         return f"{self.proveedor} · {self.resultado}"
+
+
+class AnalisisSilo(models.Model):
+    """
+    El análisis de la leche que hay en un silo.
+
+    Origen: el vale `CCAA.REC.FORM.005.01` («Trazabilidad de leche en silos»),
+    que trae pH, acidez, grasa, SNG, proteína, temperatura y densidad por silo.
+
+    No se confunde con `Recepcion.controles`, que son los del **camión**: el
+    silo mezcla varios camiones, y es esta mezcla —no cada camión— la que
+    alimenta el cálculo del RC. Con un solo registro para los dos, un vale
+    compuesto desde el análisis de un camión describiría una leche que no
+    está en ninguna parte.
+
+    Los siete parámetros son nulables porque el formato se llena por partes:
+    la temperatura y el pH se miden al llenar, la grasa y el SNG cuando el
+    laboratorio devuelve la muestra. Qué falta para componer un vale lo
+    responde `dominio.parametros_faltantes`, no el esquema.
+    """
+
+    silo = models.ForeignKey(
+        Silo, on_delete=models.PROTECT, related_name="analisis", verbose_name="Silo"
+    )
+    tomado_en = models.DateTimeField(
+        "Hora de toma de muestra",
+        help_text="Fecha y hora en que se muestreó el silo. Fija la vigencia del análisis.",
+    )
+    hora_inicio_llenado = models.TimeField(
+        "Hora de inicio de llenado", null=True, blank=True
+    )
+
+    ph = models.DecimalField("pH", max_digits=4, decimal_places=2, null=True, blank=True)
+    acidez = models.DecimalField(
+        "Acidez (°Th)", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    grasa = models.DecimalField(
+        "Grasa (%)", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    sng = models.DecimalField(
+        "SNG (%)", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    proteina = models.DecimalField(
+        "Proteína (%)", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    temperatura = models.DecimalField(
+        "Temperatura (°C)", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    densidad = models.DecimalField(
+        "Densidad (kg/m³)", max_digits=7, decimal_places=2, null=True, blank=True
+    )
+
+    certificada = models.BooleanField(
+        "Leche certificada",
+        null=True,
+        blank=True,
+        help_text="Nulo = no se registró, que no es lo mismo que no certificada",
+    )
+    procedencia = models.CharField(
+        "Procedencia", max_length=20, choices=Recepcion.Procedencia.choices, blank=True
+    )
+    analista = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="analisis_silo",
+        null=True,
+        blank=True,
+        verbose_name="Analista",
+    )
+    observacion = models.TextField("Observación", blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Análisis de silo"
+        verbose_name_plural = "Análisis de silo"
+        ordering = ["-tomado_en"]
+        indexes = [models.Index(fields=["silo", "-tomado_en"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["silo", "tomado_en"], name="analisis_silo_unico_por_momento"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.silo} · {self.tomado_en:%Y-%m-%d %H:%M}"
+
+    #: Lo mínimo que un vale de estandarización necesita del silo.
+    REQUERIDOS_PARA_VALE = ("grasa", "sng")
+
+    @property
+    def vigencia(self):
+        """
+        Si el análisis todavía describe lo que hay en el silo.
+
+        Solo los **ingresos** cuentan: una salida no cambia la composición de
+        la leche que queda, e invalidar por salida obligaría a re-muestrear
+        cada vez que una línea consume.
+        """
+        ingresos = MovimientoSilo.objects.filter(
+            silo_id=self.silo_id,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            fecha_hora__gt=self.tomado_en,
+        ).values_list("fecha_hora", "litros")
+
+        return dominio.analisis_vigente(self.tomado_en, ingresos)
+
+    @property
+    def vigente(self):
+        return self.vigencia.vigente
+
+    @property
+    def motivo_vigencia(self):
+        return self.vigencia.motivo
+
+    @property
+    def faltantes_para_vale(self):
+        valores = {
+            nombre: getattr(self, nombre)
+            for nombre in dominio.PARAMETROS_ANALISIS_SILO
+        }
+        return dominio.parametros_faltantes(valores, self.REQUERIDOS_PARA_VALE)
