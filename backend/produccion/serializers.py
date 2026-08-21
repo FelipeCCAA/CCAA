@@ -234,10 +234,12 @@ class LoteSerializer(serializers.ModelSerializer):
             "estado",
             "estado_etiqueta",
             "observacion",
+            "lote_anterior",
+            "motivo_corte",
             "motivo_anulacion",
             "calidad",
         ]
-        read_only_fields = ["ejecucion"]
+        read_only_fields = ["ejecucion", "lote_anterior", "motivo_corte"]
         validators = []
         """validators = [
             # El mensaje por defecto de DRF viene en inglés y lo lee quien

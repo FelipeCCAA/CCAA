@@ -97,6 +97,24 @@ class OrdenProduccionViewSet(
             status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
+    @action(detail=True, methods=["post"])
+    def partir(self, request, pk=None):
+        lote = self.get_object()
+        motivo = (request.data.get("motivo") or "").strip()
+        if not motivo:
+            return Response({"motivo": "Indica por qué se parte la corrida."}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            correlativo = self.get_queryset().filter(equipo=lote.equipo, fecha=lote.fecha).count() + 1
+            codigo = dominio.generar_codigo_lote(
+                lote.fecha, lote.equipo.sigla if lote.equipo_id else "", correlativo
+            )
+            nuevo = Lote.objects.create(
+                sucursal=lote.sucursal, codigo_lote=codigo or "", producto=lote.producto,
+                equipo=lote.equipo, fecha=lote.fecha, turno=lote.turno,
+                estado=Lote.Estado.EN_PROCESO, lote_anterior=lote, motivo_corte=motivo,
+            )
+        return Response(self.get_serializer(nuevo).data, status=status.HTTP_201_CREATED)
+
 
 class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "sucursal_id"
