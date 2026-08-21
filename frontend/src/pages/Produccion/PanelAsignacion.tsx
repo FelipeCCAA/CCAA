@@ -65,9 +65,9 @@ function Cifra({
 }) {
   return (
     <div>
-      <p className="text-xs text-slate-400">{etiqueta}</p>
+      <p className="text-xs text-slate-600">{etiqueta}</p>
       <p className={`mt-0.5 text-lg font-medium tabular-nums ${tono}`}>{valor}</p>
-      {nota && <p className="text-xs text-slate-400">{nota}</p>}
+      {nota && <p className="text-xs text-slate-600">{nota}</p>}
     </div>
   );
 }
@@ -174,7 +174,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
 
   if (cargando) {
     return (
-      <p className="text-sm text-slate-400">Cargando la asignación de leche…</p>
+      <p className="text-sm text-slate-600">Cargando la asignación de leche…</p>
     );
   }
 
@@ -199,7 +199,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
             Leche asignada
           </h3>
 
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-600">
             De qué estanques salió la leche de este lote. Puede ser más de uno.
           </p>
 
@@ -266,7 +266,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
 
       {datos.lineas.length === 0 ? (
 
-        <p className="mt-4 text-sm text-slate-500">
+        <p className="mt-4 text-sm text-slate-600">
           Sin asignar. Mientras no se declare de qué silos salió la leche, este
           lote no tiene trazabilidad hacia las recepciones.
         </p>
@@ -279,7 +279,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
 
             <li key={l.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
 
-              <Beaker className="h-4 w-4 shrink-0 text-slate-400" />
+              <Beaker className="h-4 w-4 shrink-0 text-slate-600" />
 
               <span className="font-medium text-slate-700">{l.silo_codigo}</span>
 
@@ -287,7 +287,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
                 {litros.format(l.litros)} L
               </span>
 
-              <span className="ml-auto text-xs text-slate-400">
+              <span className="ml-auto text-xs text-slate-600">
                 {new Date(l.fecha_hora).toLocaleString("es-CL", {
                   dateStyle: "short",
                   timeStyle: "short",
@@ -300,7 +300,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
                   disabled={guardando}
                   onClick={() => void quitar(l.id)}
                   title="Quitar esta línea"
-                  className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                  className="rounded-lg p-1 text-slate-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -318,7 +318,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
 
       {datos.motivo_bloqueo && (
         <p className="mt-3 flex items-start gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
           {datos.motivo_bloqueo}
         </p>
       )}
@@ -360,7 +360,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
                 type="button"
                 onClick={() => quitarLinea(i)}
                 title="Descartar esta línea"
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+                className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -393,7 +393,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
 
           </div>
 
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-slate-600">
             Los litros son los que realmente se tomaron del estanque, no los que
             dice la receta: es lo que se descuenta del saldo del silo.
           </p>
@@ -418,11 +418,11 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
             Recepciones candidatas
           </h4>
 
-          <p className="mt-0.5 text-xs text-slate-500">{traza.nota}</p>
+          <p className="mt-0.5 text-xs text-slate-600">{traza.nota}</p>
 
           {traza.tramos.length === 0 ? (
 
-            <p className="mt-3 text-sm text-slate-500">
+            <p className="mt-3 text-sm text-slate-600">
               No hay recepciones registradas en esos silos antes de la
               asignación.
             </p>
@@ -439,7 +439,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
 
                 {tramo.recepciones.length === 0 ? (
 
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="mt-1 text-sm text-slate-600">
                     Sin recepciones previas en este estanque.
                   </p>
 
@@ -448,7 +448,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
                   <ul className="mt-1 space-y-1">
                     {tramo.recepciones.map((r) => (
                       <li key={r.id} className="text-sm text-slate-700">
-                        <span className="text-slate-400">{r.fecha}</span>
+                        <span className="text-slate-600">{r.fecha}</span>
                         {" · "}
                         guía {r.guia || "—"}
                         {" · "}
@@ -456,10 +456,10 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
                           {litros.format(Number(r.litros))} L
                         </span>
                         {r.procedencia && (
-                          <span className="text-slate-500"> · {r.procedencia}</span>
+                          <span className="text-slate-600"> · {r.procedencia}</span>
                         )}
                         {r.vehiculo && (
-                          <span className="text-slate-400"> · {r.vehiculo}</span>
+                          <span className="text-slate-600"> · {r.vehiculo}</span>
                         )}
                       </li>
                     ))}

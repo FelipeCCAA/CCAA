@@ -76,7 +76,7 @@ const AbastecimientoPedidos = lazy(() => import("../pages/Abastecimiento/Pedidos
 const AbastecimientoMrp = lazy(() => import("../pages/Abastecimiento/Mrp"));
 
 const diferido = (componente: React.ReactNode) => (
-  <Suspense fallback={<div className="p-10 text-sm text-slate-500">Cargando módulo…</div>}>
+  <Suspense fallback={<div className="p-10 text-sm text-slate-600">Cargando módulo…</div>}>
     {componente}
   </Suspense>
 );

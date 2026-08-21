@@ -145,7 +145,7 @@ function FormularioAnalisis({ loteId, fechaLote, parametros, alGuardar }: Props)
               {parametro.etiqueta}
 
               {parametro.unidad && (
-                <span className="ml-1 font-normal text-slate-400">
+                <span className="ml-1 font-normal text-slate-600">
                   ({parametro.unidad})
                 </span>
               )}

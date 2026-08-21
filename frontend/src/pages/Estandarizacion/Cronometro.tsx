@@ -2,15 +2,16 @@ import { useEffect, useState } from "react";
 import { Timer } from "lucide-react";
 
 /*
-  Cuánto lleva agitando y cuánto falta para poder muestrear.
+  Cuánto lleva agitando y cuánto falta para cumplir el mínimo del
+  procedimiento.
 
   **Cuenta desde los minutos que informó el servidor, no desde
   `agitacion_desde` contra el reloj del navegador.** Los dos relojes no
   coinciden —el del PC de planta se ha visto corrido varios minutos— y el que
-  manda es el del servidor, que es el que acepta o rechaza la muestra. Con el
-  reloj local, la pantalla habilitaría el formulario antes de tiempo y el
-  operador tomaría una muestra que el servidor va a rechazar, o —peor— quedaría
-  esperando de más creyendo que el sistema falla.
+  manda es el del servidor, que es el que calcula si ya agitó lo suficiente.
+  Con el reloj local, la pantalla habilitaría el formulario antes de tiempo y
+  el operador tomaría una muestra que el servidor va a marcar con aviso, o
+  —peor— quedaría esperando de más creyendo que el sistema falla.
 
   Aquí solo se le suman los segundos transcurridos **desde que llegó la
   respuesta**, que sí es un intervalo local y no una hora absoluta.
@@ -47,8 +48,8 @@ function Cronometro({
   if (minutosExigidos === null) {
     return (
       <Marco tono="slate">
-        Agitando hace {minutos.toFixed(0)} min. No se pudo leer el mínimo
-        exigido; el servidor lo aplica igual.
+        Agitando hace {minutos.toFixed(0)} min. No se pudo leer el mínimo del
+        procedimiento; muestrear antes solo deja aviso.
       </Marco>
     );
   }
@@ -58,7 +59,8 @@ function Cronometro({
   if (faltan <= 0) {
     return (
       <Marco tono="emerald">
-        Agitando hace {minutos.toFixed(0)} min. Ya se puede muestrear.
+        Agitando hace {minutos.toFixed(0)} min — cumplidos los{" "}
+        {minutosExigidos} del procedimiento.
       </Marco>
     );
   }
@@ -70,8 +72,8 @@ function Cronometro({
       <span className="font-medium">
         Faltan {Math.ceil(faltan)} min de agitación
       </span>{" "}
-      — antes de los {minutosExigidos} la mezcla no es homogénea y la muestra no
-      mide el silo.
+      — antes de los {minutosExigidos} la mezcla no es homogénea y la muestra
+      puede no medir el silo. Se puede muestrear igual; queda registrado.
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/60">
         <div
           className="h-full rounded-full bg-indigo-500 transition-all"

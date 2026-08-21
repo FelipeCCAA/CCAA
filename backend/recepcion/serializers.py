@@ -5,13 +5,44 @@ from rest_framework import serializers
 from . import dominio
 from .models import (
     CONTROLES_DECLARADOS,
+    AnalisisSilo,
     CONTROLES_NUMERICOS,
-    CONTROLES_POR_CAMION,
-    CONTROLES_POR_MODULO,
     VALORES_ADMITIDOS,
+    BusquedaProveedor,
+    ControlInhibidores,
+    ModuloRecepcion,
     MovimientoSilo,
     Recepcion,
 )
+
+
+class ModuloRecepcionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ModuloRecepcion
+        fields = ["id", "numero", "crioscopia", "carga_recoleccion"]
+
+
+class BusquedaProveedorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusquedaProveedor
+        fields = [
+            "id", "proveedor", "charm_bet", "charm_tetra",
+            "delvo_sp", "hora_lectura", "resultado",
+        ]
+
+
+class ControlInhibidoresSerializer(serializers.ModelSerializer):
+    busquedas = BusquedaProveedorSerializer(many=True, read_only=True)
+    analista_nombre = serializers.CharField(
+        source="analista.get_full_name", read_only=True
+    )
+
+    class Meta:
+        model = ControlInhibidores
+        fields = [
+            "id", "recepcion", "metodo", "tiras_usadas", "hora_lectura",
+            "resultado", "analista", "analista_nombre", "busquedas",
+        ]
 
 
 class RecepcionSerializer(serializers.ModelSerializer):
@@ -34,32 +65,71 @@ class RecepcionSerializer(serializers.ModelSerializer):
     # El veredicto de los controles se calcula, no se guarda: al corregir un
     # límite, todas las recepciones quedan reevaluadas.
     evaluacion = serializers.SerializerMethodField()
-    controles_camion = serializers.SerializerMethodField()
-    controles_modulo = serializers.SerializerMethodField()
+
+    # Los módulos se crean a mano en `registrar_llegada` (el bucle explícito
+    # sobre `ModuloRecepcion.objects.create`). De solo lectura acá: un solo
+    # camino para crearlos es mejor que dos, y evita que un `PATCH` a la
+    # recepción los reescriba sin pasar por esas validaciones.
+    modulos = ModuloRecepcionSerializer(many=True, read_only=True)
+    controles_inhibidores = ControlInhibidoresSerializer(many=True, read_only=True)
+
+    # Los diez derivados del formato: se calculan siempre, nunca se guardan.
+    kg_guia = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    diferencia_kg = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    solidos_totales = serializers.FloatField(read_only=True)
+    solidos_totales_kg = serializers.FloatField(read_only=True)
+    crioscopia_pool = serializers.FloatField(read_only=True)
+    # Misma forma que `litros` (`max_digits=12, decimal_places=2`): sin
+    # declararlo explícito, DRF lo resuelve como `ReadOnlyField` y sale como
+    # número JSON en vez de string, distinto de sus hermanas derivadas.
+    diferencia_recoleccion_litros = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    permanencia_horas = serializers.FloatField(read_only=True)
+    permanencia_motivo = serializers.CharField(read_only=True)
+    horas_en_planta = serializers.FloatField(read_only=True)
+    horas_a_pagar = serializers.IntegerField(read_only=True)
+    tiempo_en_fabrica_horas = serializers.FloatField(read_only=True)
+    tiempo_de_descarga_horas = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Recepcion
         fields = [
             "id",
-            "carga_recoleccion",
-            "llegada_id",
             "fecha",
             "hora",
             "guia",
             "vehiculo",
             "vehiculo_placa",
-            "modulo",
             "procedencia",
             "tipo_leche",
             "litros",
+            "kg_romana",
+            "certificada",
+            "uso",
+            "uso_numero",
+            "hora_programa",
+            "hora_arribo_porteria",
+            "hora_ingreso",
+            "hora_inicio_descarga",
+            "hora_termino_descarga",
+            "hora_inicio_cip",
+            "hora_termino_cip",
+            "hora_salida",
+            "lavado_ruedas",
+            "relavado",
+            "recambio_dilucion",
+            "ph_camion",
             "silo",
             "silo_codigo",
             "operador",
             "operador_nombre",
             "turno",
             "controles",
-            "controles_camion",
-            "controles_modulo",
             "estado",
             "estado_etiqueta",
             "motivo",
@@ -75,15 +145,25 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "silo_asignado_por_nombre",
             "silo_asignado_en",
             "evaluacion",
+            "modulos",
+            "controles_inhibidores",
+            "kg_guia",
+            "diferencia_kg",
+            "solidos_totales",
+            "solidos_totales_kg",
+            "crioscopia_pool",
             "diferencia_recoleccion_litros",
+            "permanencia_horas",
+            "permanencia_motivo",
+            "horas_en_planta",
+            "horas_a_pagar",
+            "tiempo_en_fabrica_horas",
+            "tiempo_de_descarga_horas",
         ]
         read_only_fields = [
             "silo",
-            "llegada_id",
             "operador",
             "controles",
-            "controles_camion",
-            "controles_modulo",
             "estado",
             "motivo",
             "codigo_muestra",
@@ -97,7 +177,11 @@ class RecepcionSerializer(serializers.ModelSerializer):
         ]
 
     def get_evaluacion(self, recepcion):
-        evaluacion = dominio.evaluar_recepcion(recepcion.controles)
+        # `Recepcion.evaluar()` es el único lugar que arma crioscopías y pH
+        # del camión para `dominio.evaluar_recepcion`: así esta vista previa
+        # y `decidir-calidad` (que decide con el mismo cálculo) no pueden
+        # divergir.
+        evaluacion = recepcion.evaluar()
 
         return {
             "conforme": evaluacion.conforme,
@@ -107,18 +191,6 @@ class RecepcionSerializer(serializers.ModelSerializer):
             # puede liberar: no es que esté conforme, es que nadie lo midió.
             "faltantes": evaluacion.faltantes,
             "analizada": evaluacion.analizada,
-        }
-
-    def get_controles_camion(self, recepcion):
-        return {
-            clave: valor for clave, valor in (recepcion.controles or {}).items()
-            if clave in CONTROLES_POR_CAMION
-        }
-
-    def get_controles_modulo(self, recepcion):
-        return {
-            clave: valor for clave, valor in (recepcion.controles or {}).items()
-            if clave in CONTROLES_POR_MODULO
         }
 
     def validate_controles(self, controles):
@@ -150,20 +222,6 @@ class RecepcionSerializer(serializers.ModelSerializer):
 
     def validate(self, datos):
         sucursal = getattr(self.instance, "sucursal", None)
-        carga = datos.get(
-            "carga_recoleccion", getattr(self.instance, "carga_recoleccion", None)
-        )
-        if carga:
-            vehiculo = datos.get("vehiculo", getattr(self.instance, "vehiculo", None))
-            modulo = datos.get("modulo", getattr(self.instance, "modulo", ""))
-            if vehiculo and vehiculo.pk != carga.recoleccion.parada.ruta.vehiculo_id:
-                raise serializers.ValidationError(
-                    {"vehiculo": "El camión no coincide con la carga de Recolección."}
-                )
-            if modulo and modulo.strip() != carga.modulo:
-                raise serializers.ValidationError(
-                    {"modulo": "El módulo no coincide con la carga de Recolección."}
-                )
 
         vehiculo = datos.get("vehiculo", getattr(self.instance, "vehiculo", None))
         if sucursal and vehiculo and sucursal.pk != vehiculo.sucursal_id:
@@ -177,6 +235,22 @@ class RecepcionSerializer(serializers.ModelSerializer):
         if estado == Recepcion.Estado.RETENIDA and not motivo.strip():
             raise serializers.ValidationError(
                 {"motivo": "Una recepción retenida debe indicar el motivo."}
+            )
+
+        # Misma regla que `Recepcion.clean()` (que DRF no llama: no hace
+        # `full_clean()`), y la misma constante — duplicar el criterio sin
+        # compartir la lista de usos numerados es la forma en que las dos
+        # copias terminan diciendo cosas distintas.
+        uso = datos.get("uso", getattr(self.instance, "uso", "") or "")
+        uso_numero = datos.get("uso_numero", getattr(self.instance, "uso_numero", None))
+        if uso_numero is not None and uso not in Recepcion.USOS_NUMERADOS:
+            raise serializers.ValidationError(
+                {
+                    "uso_numero": (
+                        "Solo los precondensados llevan número de destino. "
+                        f"«{uso or 'sin uso'}» no."
+                    )
+                }
             )
 
         return datos
@@ -258,3 +332,29 @@ class TransferenciaSiloSerializer(serializers.Serializer):
     lote = serializers.IntegerField(required=False, allow_null=True)
     producto = serializers.IntegerField(required=False, allow_null=True)
     equipo = serializers.IntegerField(required=False, allow_null=True)
+
+
+class AnalisisSiloSerializer(serializers.ModelSerializer):
+    silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
+    # Método y no `source="analista.username"`: el analista es nulable, y una
+    # travesía sobre `None` en DRF revienta en vez de devolver el vacío.
+    analista_nombre = serializers.SerializerMethodField()
+    vigente = serializers.BooleanField(read_only=True)
+    motivo_vigencia = serializers.CharField(read_only=True)
+    faltantes_para_vale = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+
+    class Meta:
+        model = AnalisisSilo
+        fields = [
+            "id", "silo", "silo_codigo", "tomado_en", "hora_inicio_llenado",
+            "ph", "acidez", "grasa", "sng", "proteina", "temperatura", "densidad",
+            "certificada", "procedencia", "analista", "analista_nombre",
+            "observacion", "creado_en",
+            "vigente", "motivo_vigencia", "faltantes_para_vale",
+        ]
+        read_only_fields = ["analista", "creado_en"]
+
+    def get_analista_nombre(self, obj):
+        return obj.analista.username if obj.analista_id else ""

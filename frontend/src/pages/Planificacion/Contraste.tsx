@@ -32,7 +32,7 @@ function Delta({ desviacion }: { desviacion: Desviacion }) {
   const { diferencia, pct } = desviacion;
 
   if (!diferencia) {
-    return <span className="text-slate-400">—</span>;
+    return <span className="text-slate-600">—</span>;
   }
 
   // El signo importa más que el color: por debajo de lo planificado no es
@@ -45,7 +45,7 @@ function Delta({ desviacion }: { desviacion: Desviacion }) {
       {signo}
       {miles.format(Math.abs(Math.round(diferencia)))}
       {pct !== null && (
-        <span className="ml-1 text-[11px] text-slate-400">
+        <span className="ml-1 text-[11px] text-slate-600">
           ({signo}
           {Math.abs(pct)}%)
         </span>
@@ -67,14 +67,14 @@ function Tarjeta({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5">
 
-      <p className="text-sm text-slate-500">{titulo}</p>
+      <p className="text-sm text-slate-600">{titulo}</p>
 
       <p className="mt-2 text-2xl font-semibold text-slate-800">
         {numero(desviacion.real)}
-        <span className="ml-1 text-sm font-normal text-slate-400">{unidad}</span>
+        <span className="ml-1 text-sm font-normal text-slate-600">{unidad}</span>
       </p>
 
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-slate-600">
         planificado {numero(desviacion.plan)} ·{" "}
         <Delta desviacion={desviacion} />
       </p>
@@ -114,7 +114,7 @@ function Contraste({ semanaId }: Props) {
   }, [cargar]);
 
   if (cargando) {
-    return <p className="text-sm text-slate-500">Cargando contraste…</p>;
+    return <p className="text-sm text-slate-600">Cargando contraste…</p>;
   }
 
   if (error || !datos) {
@@ -146,7 +146,7 @@ function Contraste({ semanaId }: Props) {
 
           <table className="w-full min-w-[760px] text-sm">
 
-            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
               <tr>
                 <th className="px-5 py-3 font-medium">Día</th>
                 <th className="px-5 py-3 text-right font-medium">Leche recibida</th>
@@ -161,12 +161,12 @@ function Contraste({ semanaId }: Props) {
               {dias.map((fila) => (
                 <tr
                   key={fila.dia}
-                  className={fila.hubo_actividad ? "" : "text-slate-400"}
+                  className={fila.hubo_actividad ? "" : "text-slate-600"}
                 >
 
                   <td className="px-5 py-3">
                     <span className="text-slate-700">{DIAS[fila.dia]}</span>
-                    <span className="block text-[11px] text-slate-400">
+                    <span className="block text-[11px] text-slate-600">
                       {fila.fecha}
                     </span>
                   </td>
@@ -192,7 +192,7 @@ function Contraste({ semanaId }: Props) {
                     </span>
                   </td>
 
-                  <td className="px-5 py-3 text-right text-slate-500">
+                  <td className="px-5 py-3 text-right text-slate-600">
                     {fila.lotes.length || "—"}
                   </td>
 
@@ -207,7 +207,7 @@ function Contraste({ semanaId }: Props) {
 
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-slate-600">
         La leche recibida cuenta solo las recepciones <strong>descargadas</strong> al
         silo: una registrada todavía no entró. La consumida sale de las salidas
         del libro mayor de cada lote, que es un dato distinto del plan — si se

@@ -84,13 +84,13 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
           arrastrando es peor que pedirlo. No cambia de vista — mueve la que
           hay, así que el contexto de los días vecinos no se pierde. */}
       <div className="mb-3 flex flex-wrap items-center gap-1">
-        <span className="mr-1 text-xs text-slate-400">Ir a</span>
+        <span className="mr-1 text-xs text-slate-600">Ir a</span>
         {DIAS.map((nombre, i) => (
           <button
             key={nombre}
             type="button"
             onClick={() => irAlDia(i)}
-            className="rounded-lg px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            className="rounded-lg px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-800"
           >
             {nombre.slice(0, 3)}
           </button>
@@ -105,7 +105,7 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
 
           <div className="flex border-b border-slate-200">
 
-            <div className="sticky left-0 z-20 w-40 shrink-0 bg-white px-3 py-2 text-xs font-medium text-slate-400">
+            <div className="sticky left-0 z-20 w-40 shrink-0 bg-white px-3 py-2 text-xs font-medium text-slate-600">
               Equipo
             </div>
 
@@ -133,7 +133,7 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
                       style={{ width: PX_HORA }}
                       className={`py-1 text-center text-[10px] ${
                         hora === 0 ? "border-l-2 border-slate-300" : "border-l border-slate-100"
-                      } ${esNoche(hora) ? "text-slate-400" : "text-slate-500"}`}
+                      } ${esNoche(hora) ? "text-slate-600" : "text-slate-600"}`}
                     >
                       {hora}
                     </div>
@@ -165,7 +165,7 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
                       aparece también en la línea que lo recibe, y sumar ambos
                       contaría la leche dos veces. */}
                   {equipo.consume_leche && (
-                    <p className="text-[10px] text-slate-400">consume leche</p>
+                    <p className="text-[10px] text-slate-600">consume leche</p>
                   )}
 
                 </div>
@@ -255,7 +255,7 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
                               alBorrar(bloque);
                             }}
                             aria-label={`Quitar ${etiqueta}`}
-                            className="absolute -top-2 -right-2 rounded-full bg-white p-0.5 text-slate-500 shadow hover:text-red-600"
+                            className="absolute -top-2 -right-2 rounded-full bg-white p-0.5 text-slate-600 shadow hover:text-red-600"
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
@@ -280,7 +280,7 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
 
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3">
 
-        <span className="text-xs font-medium text-slate-500">Producción</span>
+        <span className="text-xs font-medium text-slate-600">Producción</span>
 
         {Object.entries(COLOR_FAMILIA).map(([familia, meta]) => (
           <span key={familia} className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -292,7 +292,7 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
           </span>
         ))}
 
-        <span className="ml-2 text-xs font-medium text-slate-500">Equipo</span>
+        <span className="ml-2 text-xs font-medium text-slate-600">Equipo</span>
 
         {Object.entries(ESTADO_EQUIPO).map(([clave, meta]) => (
           <span key={clave} className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -317,7 +317,7 @@ function Gantt({ bloques, equipos, puedeEditar, alCrear, alBorrar }: Props) {
       </div>
 
       {bloques.length === 0 && (
-        <p className="mt-4 text-sm text-slate-500">
+        <p className="mt-4 text-sm text-slate-600">
           {puedeEditar
             ? "Sin programar. Haz clic en una hora para agregar un bloque."
             : "Sin programar."}

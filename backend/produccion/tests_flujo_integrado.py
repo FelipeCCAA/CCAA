@@ -119,6 +119,11 @@ class FlujoIntegradoApiTests(TestCase):
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("no selecciona silos", str(respuesta.data))
 
+        # Y rechaza **sin dejar el lote creado**: la guarda corre antes de
+        # `super().create()`. Un lote a medias parece completo, y nadie vuelve
+        # a completar lo que ya existe.
+        self.assertFalse(Lote.objects.filter(codigo_lote="ANTIGUO").exists())
+
     def test_cerrar_produccion_completa_la_salida_del_proceso(self):
         lote_id = self._abrir().data["id"]
 

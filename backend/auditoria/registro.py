@@ -40,6 +40,7 @@ APPS_AUDITADAS = {
     "inventario",
     "procesos",
     "mantenimiento",
+    "estandarizacion",
 }
 
 #: Campos que nunca se registran, aunque cambien.

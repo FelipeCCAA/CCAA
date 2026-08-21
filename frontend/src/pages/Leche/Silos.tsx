@@ -4,6 +4,7 @@ import { AlertTriangle, Warehouse } from "lucide-react";
 import {
   obtenerOcupacion, type Ocupacion, type OcupacionSilo,
 } from "../../services/recepcion.service";
+import AnalisisSiloPanel from "./AnalisisSilo";
 
 /*
   Los silos como herramienta, no como decoración.
@@ -27,7 +28,13 @@ import {
 const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
 
-function Barra({ silo }: { silo: OcupacionSilo }) {
+function Barra({
+  silo, activo, onSelect,
+}: {
+  silo: OcupacionSilo;
+  activo: boolean;
+  onSelect: (silo: OcupacionSilo) => void;
+}) {
   const ancho = Math.min(100, Math.max(0, silo.pct));
   const color = silo.negativo
     ? "bg-rose-500"
@@ -36,7 +43,14 @@ function Barra({ silo }: { silo: OcupacionSilo }) {
       : "bg-emerald-600";
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5">
+    <button
+      type="button"
+      onClick={() => onSelect(silo)}
+      aria-pressed={activo}
+      className={`w-full rounded-2xl border bg-white p-5 text-left ${
+        activo ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200"
+      }`}
+    >
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -68,12 +82,12 @@ function Barra({ silo }: { silo: OcupacionSilo }) {
         <p className="text-sm font-semibold text-slate-800">
           {formato.format(silo.litros)} L
         </p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-600">
           de {formato.format(silo.capacidad)} L
         </p>
       </div>
 
-    </article>
+    </button>
   );
 }
 
@@ -82,6 +96,10 @@ function Silos() {
   const [ocupacion, setOcupacion] = useState<Ocupacion | null>(null);
   const [error, setError] = useState("");
   const [verVacios, setVerVacios] = useState(false);
+  // El análisis se pide aparte de la ocupación, y no en el mismo
+  // `Promise.all`: si su endpoint cae, la pantalla de silos sigue
+  // sirviendo para lo que sirve hoy.
+  const [seleccionado, setSeleccionado] = useState<OcupacionSilo | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -102,7 +120,7 @@ function Silos() {
   }
 
   if (!ocupacion) {
-    return <p className="py-10 text-center text-sm text-slate-400">Cargando…</p>;
+    return <p className="py-10 text-center text-sm text-slate-600">Cargando…</p>;
   }
 
   const descuadrados = ocupacion.silos.filter((s) => s.negativo || s.excedido);
@@ -150,25 +168,43 @@ function Silos() {
       <section className="rounded-2xl border border-slate-200 bg-white px-6 py-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
               Volumen disponible
             </p>
             <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
               {formato.format(ocupacion.litros_totales)} L
             </p>
           </div>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-600">
             {pctTotal}% de {formato.format(capacidadTotal)} L ·{" "}
             {ocupacion.silos.length} unidades
           </p>
         </div>
       </section>
 
+      {seleccionado && (
+        <AnalisisSiloPanel
+          siloId={seleccionado.silo_id}
+          siloCodigo={seleccionado.codigo}
+        />
+      )}
+
       {conLeche.length > 0 && (
         <section>
           <h2 className="mb-3 font-semibold text-slate-900">Con leche</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {conLeche.map((s) => <Barra key={s.silo_id} silo={s} />)}
+            {conLeche.map((s) => (
+              <Barra
+                key={s.silo_id}
+                silo={s}
+                activo={seleccionado?.silo_id === s.silo_id}
+                onSelect={(elegido) =>
+                  setSeleccionado((actual) =>
+                    actual?.silo_id === elegido.silo_id ? null : elegido,
+                  )
+                }
+              />
+            ))}
           </div>
         </section>
       )}
@@ -184,7 +220,18 @@ function Silos() {
 
         {verVacios && (
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {vacios.map((s) => <Barra key={s.silo_id} silo={s} />)}
+            {vacios.map((s) => (
+              <Barra
+                key={s.silo_id}
+                silo={s}
+                activo={seleccionado?.silo_id === s.silo_id}
+                onSelect={(elegido) =>
+                  setSeleccionado((actual) =>
+                    actual?.silo_id === elegido.silo_id ? null : elegido,
+                  )
+                }
+              />
+            ))}
           </div>
         )}
       </section>

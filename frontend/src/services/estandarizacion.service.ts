@@ -42,11 +42,12 @@ export interface ValeEstandarizacion {
   litros_descremada: string;
   estado: EstadoVale;
   agitacion_desde: string | null;
+  muestreado_en: string | null;
   grasa_real: string | null;
   sng_real: string | null;
   rc_real: number | null;
   minutos_agitando: number | null;
-  puede_muestrear: boolean;
+  avisos: string[];
   evaluacion: Evaluacion | null;
   observaciones: string;
   responsable_nombre: string | null;
@@ -68,8 +69,9 @@ export interface CatalogosEstandarizacion {
   /*
     Los minutos vienen del backend y no se escriben aquí: la cuenta regresiva
     de la pantalla tiene que medir contra el mismo número con el que el
-    servidor acepta la muestra. Una copia terminaría ofreciendo el botón antes
-    de tiempo — y el operador tomando una muestra que el servidor rechaza.
+    servidor evalúa el aviso. Una copia terminaría ofreciendo el botón antes
+    de tiempo — y el operador tomando una muestra que el servidor marca con
+    aviso sin que la pantalla lo haya anticipado.
   */
   minutos_agitacion: number;
   transiciones: Record<string, string[]>;
@@ -166,3 +168,36 @@ export const muestrearVale = (id: number, grasa: number, sng: number) =>
 
 export const anularVale = (id: number, motivo: string) =>
   accion(id, "anular", { motivo });
+
+
+/*
+  La composición de cada silo según su último análisis, para prellenar el
+  vale. Un silo sin análisis o con uno vencido no es un error: viene con su
+  motivo, y quien compone el vale sigue decidiendo.
+*/
+export interface ComposicionDeSilo {
+  analisis: number | null;
+  silo: number | null;
+  silo_codigo: string;
+  tomado_en: string | null;
+  grasa: string | null;
+  sng: string | null;
+  vigente: boolean;
+  motivo: string;
+  faltantes: string[];
+}
+
+export interface ComposicionSilos {
+  entera: ComposicionDeSilo;
+  descremada: ComposicionDeSilo;
+}
+
+export async function composicionSilos(
+  enteraId?: number,
+  descremadaId?: number,
+): Promise<ComposicionSilos> {
+  const { data } = await api.get("/estandarizacion/vales/composicion-silos/", {
+    params: { entera: enteraId, descremada: descremadaId },
+  });
+  return data;
+}

@@ -34,7 +34,7 @@ import {
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs uppercase tracking-wide text-slate-400">{etiqueta}</p>
+      <p className="text-xs uppercase tracking-wide text-slate-600">{etiqueta}</p>
       <p className="mt-1 text-sm font-medium text-slate-800">{children}</p>
     </div>
   );
@@ -53,7 +53,7 @@ function DetalleLoteInventario() {
   const volver = (
     <Link
       to="/abastecimiento/stock"
-      className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-800"
+      className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-800"
     >
       <ArrowLeft className="h-4 w-4" />
       Volver a stock
@@ -100,11 +100,11 @@ function DetalleLoteInventario() {
         <div className="flex flex-wrap items-start justify-between gap-4">
 
           <div>
-            <p className="text-sm text-slate-400">{l.insumo_codigo}</p>
+            <p className="text-sm text-slate-600">{l.insumo_codigo}</p>
             <h2 className="mt-1 text-2xl font-bold text-slate-800">
               {l.insumo_nombre}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               Lote del proveedor <strong>{l.codigo}</strong>
             </p>
           </div>
@@ -252,14 +252,14 @@ function DetalleLoteInventario() {
                     <td className={`${claseCelda} text-slate-600`}>
                       {numero(m.cantidad)}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {numero(m.saldo_anterior)} → {numero(m.saldo_posterior)}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {m.documento_tipo}
                       {m.documento_id ? ` #${m.documento_id}` : ""}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {m.motivo || "—"}
                     </td>
                   </tr>

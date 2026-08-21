@@ -41,19 +41,15 @@ class LoteTests(TestCase):
         datos.update(extra)
         return Lote(**datos)
 
-    def test_el_codigo_de_lote_se_repite_entre_productos(self):
-        """
-        En planta, CCAA6140N es el mismo día dos productos distintos. El código
-        es un correlativo diario, no la identidad del lote.
-        """
+    def test_el_codigo_de_lote_no_se_repite_entre_productos(self):
         self._lote(producto=self.entera).save()
-        self._lote(producto=self.semi).save()
+        self._lote(codigo_lote="CCAA6140N-02", producto=self.semi).save()
 
-        self.assertEqual(Lote.objects.filter(codigo_lote="CCAA6140N").count(), 2)
+        self.assertEqual(Lote.objects.count(), 2)
 
     def test_el_codigo_de_lote_se_repite_entre_dias(self):
         self._lote(fecha=date(2026, 7, 20)).save()
-        self._lote(fecha=date(2026, 7, 21)).save()
+        self._lote(codigo_lote="CCAA6141N-01", fecha=date(2026, 7, 21)).save()
 
         self.assertEqual(Lote.objects.count(), 2)
 

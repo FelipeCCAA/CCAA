@@ -218,6 +218,7 @@ class EquipoSerializer(serializers.ModelSerializer):
             "id",
             "codigo",
             "nombre",
+            "sigla",
             "tipo",
             "tipo_etiqueta",
             "consume_leche",

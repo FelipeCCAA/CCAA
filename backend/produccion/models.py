@@ -233,6 +233,11 @@ class Lote(models.Model):
         default=Estado.EN_PROCESO,
     )
     observacion = models.TextField("Observación", blank=True)
+    lote_anterior = models.ForeignKey(
+        "self", on_delete=models.PROTECT, related_name="continuaciones",
+        null=True, blank=True, verbose_name="Continúa a",
+    )
+    motivo_corte = models.TextField("Motivo del corte", blank=True)
 
     class Meta:
         verbose_name = "Lote de producción"
@@ -240,8 +245,8 @@ class Lote(models.Model):
         ordering = ["-fecha", "codigo_lote"]
         constraints = [
             models.UniqueConstraint(
-                fields=["sucursal", "codigo_lote", "producto", "fecha"],
-                name="lote_clave_natural_unica",
+                fields=["sucursal", "codigo_lote"],
+                name="lote_codigo_unico_sucursal",
             ),
             models.CheckConstraint(
                 condition=models.Q(kg_producidos__gte=0),
@@ -253,6 +258,8 @@ class Lote(models.Model):
         return f"{self.codigo_lote} · {self.producto} · {self.fecha}"
 
     def clean(self):
+        if self.lote_anterior_id and not self.motivo_corte.strip():
+            raise ValidationError({"motivo_corte": "Un corte sin motivo no se puede auditar."})
         if (
             self.sucursal_id
             and self.producto_id

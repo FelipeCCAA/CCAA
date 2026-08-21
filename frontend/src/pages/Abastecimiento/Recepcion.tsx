@@ -67,7 +67,7 @@ function Exigencias({ linea }: { linea: DetalleOrdenCompra }) {
   ].filter(Boolean) as string[];
 
   if (cosas.length === 0 && !linea.requiere_calidad) {
-    return <span className="text-xs text-slate-400">sin exigencias</span>;
+    return <span className="text-xs text-slate-600">sin exigencias</span>;
   }
 
   return (
@@ -222,7 +222,7 @@ function Recepcion() {
               >
                 <p className="font-medium text-slate-800">
                   {o.numero}
-                  <span className="ml-2 text-sm font-normal text-slate-500">
+                  <span className="ml-2 text-sm font-normal text-slate-600">
                     {o.proveedor_nombre} · {o.detalles.length} línea(s)
                   </span>
                 </p>
@@ -262,10 +262,10 @@ function Recepcion() {
               <div key={o.id} className="p-5">
 
                 <p className="flex flex-wrap items-center gap-2 font-medium text-slate-800">
-                  <PackageCheck className="h-4 w-4 text-slate-400" />
+                  <PackageCheck className="h-4 w-4 text-slate-600" />
                   {o.numero}
                   <Estado valor={o.estado} />
-                  <span className="text-sm font-normal text-slate-500">
+                  <span className="text-sm font-normal text-slate-600">
                     {o.proveedor_nombre}
                     {o.fecha_comprometida
                       ? ` · comprometida ${o.fecha_comprometida}`
@@ -305,7 +305,7 @@ function Recepcion() {
                               className={
                                 pendiente > 0
                                   ? "font-semibold text-amber-700"
-                                  : "text-slate-400"
+                                  : "text-slate-600"
                               }
                             >
                               {numero(pendiente)}
@@ -454,7 +454,7 @@ function Recepcion() {
 
             {recibiendo.linea.requiere_temperatura && (
               <div className="relative">
-                <Thermometer className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-400" />
+                <Thermometer className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-600" />
                 <input
                   required
                   type="number"

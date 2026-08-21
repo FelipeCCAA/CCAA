@@ -63,13 +63,13 @@ function Paso({
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
             {etiqueta}
           </p>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
             {valor}
           </p>
-          <p className="mt-1 text-xs text-slate-500">{detalle}</p>
+          <p className="mt-1 text-xs text-slate-600">{detalle}</p>
         </div>
         <span className={`rounded-xl p-2.5 ${tonos[tono]}`}>
           <Icono className="h-5 w-5" strokeWidth={1.8} />
@@ -152,7 +152,7 @@ function Panel() {
           <div className="flex items-center gap-2 text-sm font-semibold text-sky-900"><Bell className="h-4 w-4" />Últimos avisos del flujo</div>
           <div className="mt-3 grid gap-2 lg:grid-cols-2">
             {notificaciones.slice(0, 4).map((aviso) => (
-              <div key={aviso.id} className="rounded-xl bg-white px-4 py-3 ring-1 ring-sky-100"><p className="text-sm font-semibold text-slate-800">{aviso.titulo}</p><p className="mt-1 text-xs leading-5 text-slate-500">{aviso.mensaje}</p></div>
+              <div key={aviso.id} className="rounded-xl bg-white px-4 py-3 ring-1 ring-sky-100"><p className="text-sm font-semibold text-slate-800">{aviso.titulo}</p><p className="mt-1 text-xs leading-5 text-slate-600">{aviso.mensaje}</p></div>
             ))}
           </div>
         </section>

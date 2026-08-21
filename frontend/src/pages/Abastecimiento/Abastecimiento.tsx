@@ -55,7 +55,7 @@ function Abastecimiento() {
             Abastecimiento y Bodega
           </h1>
 
-          <p className="mt-2 max-w-3xl text-slate-500">
+          <p className="mt-2 max-w-3xl text-slate-600">
             Del pedido al consumo: compras, recepción, liberación de Calidad,
             stock por lote y ubicación, y el material que baja a producción.
           </p>
@@ -73,7 +73,7 @@ function Abastecimiento() {
                 `whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                   isActive
                     ? "border-green-700 text-green-800"
-                    : "border-transparent text-slate-500 hover:text-slate-800"
+                    : "border-transparent text-slate-600 hover:text-slate-800"
                 }`
               }
             >

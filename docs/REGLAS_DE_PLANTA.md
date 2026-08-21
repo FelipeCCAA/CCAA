@@ -34,7 +34,10 @@ fases de implementación. Eso se decide, no se hereda.
 
 La app `recoleccion` modela **ruta → parada → recolección → carga de módulo**,
 con `idempotencia` UUID para la captura sin señal en el predio. Está enlazada a
-recepción por `Recepcion.carga_recoleccion` y `Recepcion.modulo`.
+recepción por `ModuloRecepcion.carga_recoleccion`: la migración `0013` bajó el
+vínculo desde `Recepcion` (que tenía `carga_recoleccion` y `modulo`, ambos
+borrados) al hijo, porque la carga es por compartimiento y `Recepcion` pasó a
+ser una fila por camión.
 
 **Lo que falta, y es lo que impide la regla de antibióticos:** `proveedor`,
 `predio`, `sala` y `modulo` son `CharField` de texto libre, y `conductor`
@@ -56,6 +59,8 @@ hizo con los equipos.
 | Crioscopía | ≥ **−0,512 °C** sugiere agua añadida | Repetir análisis · revisar pool · identificar origen · informar Calidad | **Implementado con otro valor** — ver §1.3 |
 | Acidez | ≤ 18,0 | Retiene | Implementado. **No viene de este documento**, viene de `MODELO_DATOS.md` §8.5 |
 | pH | 6,5 – 6,9 | Retiene | Implementado. Mismo origen que la acidez |
+| pH del camión | 5,5 – 8,5 | Retiene | **Implementado** — `recepcion.dominio.LIMITES["ph_camion_min"/"ph_camion_max"]`, columna AO del formato |
+| Permanencia libre | 2 h desde el arribo a portería | Sobre eso, sobreestadía | **Implementado** — `recepcion.dominio.LIMITE_PERMANENCIA_HORAS` |
 
 ### 1.2 Antibióticos
 
@@ -78,13 +83,24 @@ recepción automáticamente**, y `delvo` es control decisivo — sin su resultad
 no se puede liberar, porque su ausencia no es «conforme», es que nadie lo
 midió (`recepcion/dominio.py`).
 
-**Lo que falta:** todo lo que viene después del positivo. Hoy la recepción
-queda retenida y ahí termina. No hay repetición del análisis, ni confirmación,
-ni bloqueo del camión, ni bloqueo de los módulos de ese proveedor, ni apertura
-de no conformidad, ni aviso a las dos áreas.
+**Lo que ya existe además** (desde 2026-08-19): `ControlInhibidores` documenta el PPRO
+N°1 —método, tiras usadas, hora de lectura, resultado, analista— y `BusquedaProveedor` el
+primer eslabón del escalamiento. Pero el gatillo del bloqueo sigue sin ser el resultado
+del control: `dominio.bloqueos_de_cierre` solo mira
+`Recepcion.controles["delvo"]`/`["inhibidores"]` y el conteo de `BusquedaProveedor`, y
+**nunca lee `ControlInhibidores.resultado`**. `ControlInhibidores` tampoco tiene ViewSet
+ni URL propia —se carga por admin o por ORM—, así que hoy se puede registrar un PPRO N°1
+positivo sin que el cierre lo sepa: una recepción **no se puede cerrar** solo si
+`controles["inhibidores"]` (o `["delvo"]`) dice `"Positivo"` y no hay ninguna
+`BusquedaProveedor` registrada. Que el control dispare el bloqueo por sí mismo —cerrando
+del todo ese primer tramo de la cadena de arriba— es una decisión de Calidad, no del
+código.
 
-Falta también el concepto de **módulo** y el de **proveedor de leche**, sin los
-cuales «bloquear los módulos asociados» no se puede expresar.
+**Lo que sigue faltando:** la repetición del análisis y su confirmación, el bloqueo del
+camión, la apertura de la no conformidad, los avisos a Operaciones y a Calidad, y el
+concepto de **proveedor como entidad** — `BusquedaProveedor.proveedor` sigue siendo un
+`CharField` de texto libre, igual que en `recoleccion` (§0), así que «bloquear los
+módulos asociados al proveedor» sigue sin poder expresarse.
 
 ### 1.3 Discrepancia de crioscopía — pendiente de resolver
 
@@ -115,8 +131,14 @@ alterna:  EN ANÁLISIS → RETENIDO → REANÁLISIS → RECHAZADO → BLOQUEADO
 **Regla dura (§7.3):** no se puede registrar una descarga si el módulo no está
 en `APROBADO PARA DESCARGA`.
 
-El sistema ya impide descargar una recepción retenida, pero con una máquina de
-estados más corta que ésta.
+El documento razona por módulo porque el formato mide la crioscopía ahí; en el
+código el estado es del **camión**, no del módulo — `ModuloRecepcion` no
+guarda estado propio, solo la crioscopía y la carga de recolección vinculada
+(§0). El sistema ya impide descargar una `Recepcion` retenida, pero con una
+máquina de estados más corta que ésta.
+
+La transición a `CERRADA` pasa ahora por la acción `cerrar/`, que consulta
+`dominio.bloqueos_de_cierre`. Antes ningún camino del API llevaba a ese estado.
 
 ---
 
@@ -180,6 +202,16 @@ Tres decisiones del cálculo:
 - **La tolerancia del RC es un parámetro.** La define Calidad; el valor por
   omisión (0,005) es referencial.
 
+**De dónde salen la grasa y el SNG** (desde 2026-08-19): del último `AnalisisSilo`
+del silo, no de un número tecleado.
+`GET /api/estandarizacion/vales/composicion-silos/?entera=&descremada=` los
+ofrece con su vigencia y con lo que falte; el operador sigue decidiendo. Un
+silo sin análisis, o con uno invalidado por un ingreso posterior, **no es un
+error**: devuelve el motivo, porque una pantalla que solo dice «no» no le dice
+a nadie qué hacer. El vale guarda además de qué análisis salió cada número
+(`analisis_entera`, `analisis_descremada`), sin dejar de congelar la
+composición en sus propias columnas.
+
 ### 3.1 Un límite físico que el cálculo destapó
 
 **RC 0,422 exige leche entera de al menos ~3,63 % de grasa** (con 8,6 % de SNG).
@@ -205,10 +237,13 @@ calculado → transferido → agitando → muestreado ┬ conforme    → libera
 Cada paso es una acción del servicio y no un `PATCH estado=…`, y hay tres reglas
 que solo se sostienen así:
 
-- **No se muestrea antes de los 30 minutos** (`MINUTOS_DE_AGITACION`). Una
-  muestra tomada antes mide una mezcla que todavía no es homogénea. La hora de
-  inicio la pone el servidor: aceptarla del cliente permitiría declarar treinta
-  minutos que no ocurrieron.
+- **Muestrear antes de los 30 minutos avisa, no bloquea** (`MINUTOS_DE_AGITACION`,
+  decisión de planta del 2026-08-17). Una muestra tomada antes mide una mezcla
+  que todavía no es homogénea, así que el vale queda con el aviso y con la hora
+  del muestreo en `muestreado_en` — que es lo que después permite auditar cuánto
+  agitó de verdad. Antes la rechazaba, y entonces no quedaba constancia de nada.
+  La hora la sigue poniendo el servidor: aceptarla del cliente permitiría
+  declarar treinta minutos que no ocurrieron.
 - **Liberar no se pide, se calcula.** `decidir` no acepta el destino; lo deduce
   del RC medido.
 - **Corregir reinicia el reloj y borra el análisis.** Agregar leche deshace la
@@ -333,9 +368,12 @@ las entradas y salidas de proceso. Cubre desde el precondensado hacia adelante.
 **El otro extremo ya existe:** `recoleccion` cubre proveedor → predio → carga →
 módulo → camión (§0).
 
-**Dónde se corta:** en el medio. Faltan el **vale de estandarización** —que no
-existe— y el **enlace entre recolección y recepción**: hoy las dos puntas de la
-cadena están construidas y no se conocen entre sí.
+**Dónde se corta:** en el medio. Falta el **vale de estandarización** —que no
+existe—. El **enlace entre recolección y recepción** ya no falta: desde la
+migración `0013`, `ModuloRecepcion.carga_recoleccion` conecta cada
+compartimiento del camión con la `CargaModulo` que Recolección dejó cerrada en
+el predio (§0), y `Recepcion.diferencia_recoleccion_litros` compara los litros
+del camión contra lo que esas cargas esperaban.
 
 ---
 

@@ -334,7 +334,7 @@ function Proveedores() {
 
                     <td className={`${claseCelda} text-slate-600`}>
                       <span className="inline-flex items-center gap-2">
-                        <Truck className="h-4 w-4 text-slate-400" />
+                        <Truck className="h-4 w-4 text-slate-600" />
                         {c.proveedor_nombre}
                       </span>
                     </td>
@@ -369,7 +369,7 @@ function Proveedores() {
                           Hacer principal
                         </button>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-slate-600">—</span>
                       )}
                     </td>
 
@@ -403,10 +403,10 @@ function Proveedores() {
                       {p.nombre}
                     </td>
                     <td className={`${claseCelda} text-slate-600`}>{p.rut}</td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {p.email || p.telefono || "—"}
                     </td>
-                    <td className={`${claseCelda} text-slate-500`}>
+                    <td className={`${claseCelda} text-slate-600`}>
                       {lista.filter((c) => c.proveedor === p.id).length}
                     </td>
                   </tr>

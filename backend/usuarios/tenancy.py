@@ -12,6 +12,21 @@ from rest_framework import serializers
 RUT_EMPRESA_PRUEBAS = "TENANT-TEST"
 CODIGO_SUCURSAL_PRUEBAS = "TEST"
 
+#: El código de la sucursal que siembra `usuarios.0008`, en sus dos ramas.
+#:
+#: La organización inicial se busca **por este código y no por su RUT**: el RUT
+#: cambia con el entorno —`TENANT-TEST` bajo `DJANGO_ENV=test`, `TENANT-CI` en
+#: el flujo de CI, y el de `CCAA_INITIAL_COMPANY_RUT` en cualquier otro caso—,
+#: así que ninguna constante puede acertarle a los tres. El código de la
+#: sucursal, en cambio, es literal en la migración y vale en las tres ramas.
+#:
+#: Antes se buscaba por `rut="RUT-LOCAL-DESARROLLO"`, un valor que **ningún
+#: camino del código escribe**. La búsqueda no acertaba nunca, así que los
+#: `default` creaban una segunda organización y los maestros sembrados
+#: quedaban fuera del alcance de todo perfil de pruebas. Ver
+#: `tests_tenant_sembrado.py`.
+CODIGO_SUCURSAL_INICIAL = "INTERNA"
+
 
 def _en_pruebas() -> bool:
     return settings.DJANGO_ENV in {"test", "ci"} or "test" in sys.argv
@@ -58,7 +73,13 @@ def empresa_predeterminada_pruebas():
 
     from .models import Empresa
 
-    inicial = Empresa.objects.filter(rut="RUT-LOCAL-DESARROLLO", activa=True).first()
+    inicial = (
+        Empresa.objects.filter(
+            sucursales__codigo=CODIGO_SUCURSAL_INICIAL, activa=True
+        )
+        .order_by("pk")
+        .first()
+    )
     if inicial is not None:
         return inicial
     if _es_construccion_inicial_de_pruebas():
@@ -85,7 +106,7 @@ def sucursal_predeterminada_pruebas():
     from .models import Empresa, Sucursal
 
     inicial = Sucursal.objects.filter(
-        empresa__rut="RUT-LOCAL-DESARROLLO", activa=True,
+        codigo=CODIGO_SUCURSAL_INICIAL, activa=True,
     ).order_by("pk").first()
     if inicial is not None:
         return inicial

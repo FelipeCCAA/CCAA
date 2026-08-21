@@ -38,7 +38,7 @@ Por eso:
 
 - La identidad del lote la asigna el sistema (`id`).
 - `codigoLote` es un atributo descriptivo más.
-- La clave natural que se controla como única es **`codigoLote + productoId + fecha`**.
+- La clave natural que se controla como única es **`codigoLote`** dentro de la sucursal: identifica una corrida por máquina y día.
 
 > Esto corrige el supuesto de `CONTEXTO_ARCHIVOS_FUENTE.md` §2.1 ("una fila por lote
 > producido"). La fila del Excel es un **despacho**; un lote tiene N despachos.

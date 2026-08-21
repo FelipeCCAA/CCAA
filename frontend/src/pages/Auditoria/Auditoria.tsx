@@ -73,7 +73,7 @@ function Diff({ registro }: { registro: RegistroAuditoria }) {
   const campos = Object.entries(registro.cambios ?? {});
 
   if (campos.length === 0) {
-    return <span className="text-slate-400">—</span>;
+    return <span className="text-slate-600">—</span>;
   }
 
   return (
@@ -87,13 +87,13 @@ function Diff({ registro }: { registro: RegistroAuditoria }) {
         return (
           <li key={campo} className="text-sm">
 
-            <span className="text-slate-500">{campo}</span>
+            <span className="text-slate-600">{campo}</span>
 
             {soloDespues ? (
               <span className="ml-2 text-slate-800">{comoTexto(despues)}</span>
             ) : (
               <>
-                <span className="ml-2 text-slate-400 line-through">
+                <span className="ml-2 text-slate-600 line-through">
                   {comoTexto(antes)}
                 </span>
                 <span className="mx-1.5 text-slate-300">→</span>
@@ -161,7 +161,7 @@ function Auditoria() {
     "rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-green-600";
 
   const encabezado =
-    "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500";
+    "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600";
 
   const ultimaPagina = Math.max(1, Math.ceil(total / POR_PAGINA));
 
@@ -173,11 +173,11 @@ function Auditoria() {
         <header className="mb-8">
 
           <h1 className="flex items-center gap-3 text-3xl font-bold text-slate-800">
-            <History className="h-7 w-7 text-slate-400" />
+            <History className="h-7 w-7 text-slate-600" />
             Auditoría
           </h1>
 
-          <p className="mt-2 max-w-3xl text-slate-500">
+          <p className="mt-2 max-w-3xl text-slate-600">
             Quién cambió qué, cuándo, y qué decía antes. Se registra todo lo que
             escribe en la base: la aplicación, el admin y los procesos internos.
             Nadie puede modificar este registro, tampoco Administración.
@@ -191,7 +191,7 @@ function Auditoria() {
 
           <div className="relative">
 
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
 
             <input
               className={`${control} w-64 pl-9`}
@@ -257,7 +257,7 @@ function Auditoria() {
             title="Hasta"
           />
 
-          <span className="ml-auto text-sm text-slate-400">
+          <span className="ml-auto text-sm text-slate-600">
             {cargando
               ? "Cargando…"
               : `${total.toLocaleString("es-CL")} cambio${total === 1 ? "" : "s"}`}
@@ -275,7 +275,7 @@ function Auditoria() {
 
           {!cargando && registros.length === 0 ? (
 
-            <p className="px-6 py-10 text-center text-sm text-slate-400">
+            <p className="px-6 py-10 text-center text-sm text-slate-600">
               {total === 0 && Object.keys(consulta).length === 0
                 ? "Todavía no hay cambios registrados."
                 : "Ningún cambio coincide con los filtros."}
@@ -302,7 +302,7 @@ function Auditoria() {
 
                     <tr key={r.id} className="border-t border-slate-100 align-top">
 
-                      <td className="px-4 py-3 text-sm whitespace-nowrap text-slate-500">
+                      <td className="px-4 py-3 text-sm whitespace-nowrap text-slate-600">
                         {new Date(r.fecha_hora).toLocaleString("es-CL", {
                           dateStyle: "short",
                           timeStyle: "short",
@@ -313,7 +313,7 @@ function Auditoria() {
                         <span className="text-slate-800">
                           {r.usuario_nombre || "sistema"}
                         </span>
-                        <span className="ml-2 text-xs text-slate-400">
+                        <span className="ml-2 text-xs text-slate-600">
                           {r.origen}
                         </span>
                       </td>
@@ -330,7 +330,7 @@ function Auditoria() {
 
                         <div className="mt-1 text-slate-800">{r.objeto_desc}</div>
 
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-600">
                           {r.etiqueta_modelo}
                         </div>
 
@@ -367,7 +367,7 @@ function Auditoria() {
               Anterior
             </button>
 
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-slate-600">
               Página {pagina} de {ultimaPagina}
             </span>
 

@@ -226,7 +226,7 @@ function Planificacion() {
             Planificación semanal
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             El programa horario genera el consumo del balance de leche.
           </p>
 
@@ -267,10 +267,10 @@ function Planificacion() {
         <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       )}
 
-      {cargando && <p className="text-sm text-slate-500">Cargando…</p>}
+      {cargando && <p className="text-sm text-slate-600">Cargando…</p>}
 
       {!cargando && !semana && !error && (
-        <p className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
+        <p className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-600">
           Todavía no hay ninguna semana planificada.
         </p>
       )}
@@ -291,7 +291,7 @@ function Planificacion() {
             </span>
 
             {semana.publicada_por_nombre && (
-              <span className="text-sm text-slate-500">
+              <span className="text-sm text-slate-600">
                 por {semana.publicada_por_nombre}
               </span>
             )}
@@ -372,7 +372,7 @@ function Planificacion() {
               <ul className="mt-2 space-y-1.5">
                 {programa.bloqueos.map((bloqueo, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-600" />
                     {bloqueo}
                   </li>
                 ))}
@@ -394,7 +394,7 @@ function Planificacion() {
                 className={`px-4 py-2 text-sm font-medium ${
                   vista === v
                     ? "border-b-2 border-green-600 text-green-700"
-                    : "text-slate-500 hover:text-slate-800"
+                    : "text-slate-600 hover:text-slate-800"
                 }`}
               >
                 {v === "programa" ? "Programa y balance" : "Plan contra real"}
@@ -416,7 +416,7 @@ function Planificacion() {
                         <Droplets className="h-4 w-4 text-sky-600" />
                         Leche disponible en silos
                       </h2>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-slate-600">
                         Saldo real: solo incluye recepciones aprobadas y descargadas,
                         menos los consumos registrados por Producción.
                       </p>
@@ -425,7 +425,7 @@ function Planificacion() {
                       <span className="block text-2xl font-semibold text-slate-800">
                         {ocupacion.litros_totales.toLocaleString("es-CL")} L
                       </span>
-                      <span className="text-xs text-slate-500">disponibles para producción</span>
+                      <span className="text-xs text-slate-600">disponibles para producción</span>
                     </p>
                   </div>
 
@@ -444,7 +444,7 @@ function Planificacion() {
                               className={
                                 silo.excedido || silo.negativo
                                   ? "font-medium text-red-600"
-                                  : "text-slate-500"
+                                  : "text-slate-600"
                               }
                             >
                               {silo.pct.toLocaleString("es-CL")}%
@@ -460,7 +460,7 @@ function Planificacion() {
                               style={{ width: `${porcentaje}%` }}
                             />
                           </div>
-                          <p className="mt-2 text-xs text-slate-500">
+                          <p className="mt-2 text-xs text-slate-600">
                             <strong className="font-medium text-slate-700">
                               {silo.litros.toLocaleString("es-CL")} L
                             </strong>{" "}
@@ -500,7 +500,7 @@ function Planificacion() {
                 />
 
                 {!editable && puedeEditar && (
-                  <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
+                  <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-600">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Una semana {semana.estado_etiqueta.toLowerCase()} no se edita.
                     Vuelve a borrador para reprogramar.
@@ -515,7 +515,7 @@ function Planificacion() {
 
                 <h2 className="mb-1 font-medium text-slate-800">Balance de leche</h2>
 
-                <p className="mb-4 text-xs text-slate-500">
+                <p className="mb-4 text-xs text-slate-600">
                   El consumo sale del programa: horas de bloque en evaporador por
                   el rendimiento del código. No se teclea.
                 </p>

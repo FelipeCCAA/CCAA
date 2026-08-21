@@ -47,9 +47,12 @@ api.interceptors.response.use(
 
     (error) => {
 
+        // Con HashRouter la ruta vive en el hash (por ejemplo, `#/login`).
+        const rutaActual = window.location.hash.slice(1) || window.location.pathname;
+
         if (debeCerrarSesion(
             error.response?.status,
-            window.location.pathname,
+            rutaActual,
             redireccionandoAlLogin,
         )) {
             redireccionandoAlLogin = true;

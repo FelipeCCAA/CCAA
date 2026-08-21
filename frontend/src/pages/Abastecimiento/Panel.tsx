@@ -219,10 +219,10 @@ function Panel() {
                 {(notificaciones.datos ?? []).slice(0, 6).map((n) => (
                   <div key={n.id} className="rounded-xl bg-slate-50 px-4 py-3">
                     <p className="flex items-center gap-2 text-sm font-medium text-slate-800">
-                      <Bell className="h-3.5 w-3.5 text-slate-400" />
+                      <Bell className="h-3.5 w-3.5 text-slate-600" />
                       {n.titulo}
                     </p>
-                    <p className="mt-1 text-sm text-slate-500">{n.mensaje}</p>
+                    <p className="mt-1 text-sm text-slate-600">{n.mensaje}</p>
                   </div>
                 ))}
               </div>

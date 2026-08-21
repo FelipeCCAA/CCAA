@@ -221,7 +221,7 @@ function Bodegas() {
                 </select>
               </div>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-600">
                 {QUE_ES[nuevaUbicacion.tipo]}
               </p>
 
@@ -262,9 +262,9 @@ function Bodegas() {
 
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="flex items-center gap-2 font-medium text-slate-800">
-                      <Warehouse className="h-4 w-4 text-slate-400" />
+                      <Warehouse className="h-4 w-4 text-slate-600" />
                       {b.nombre}
-                      <span className="text-sm font-normal text-slate-400">
+                      <span className="text-sm font-normal text-slate-600">
                         {b.codigo}
                       </span>
                     </p>
@@ -281,7 +281,7 @@ function Bodegas() {
                   </div>
 
                   {suyas.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-400">
+                    <p className="mt-3 text-sm text-slate-600">
                       Sin ubicaciones.
                     </p>
                   ) : (
@@ -303,10 +303,10 @@ function Bodegas() {
                             <td className={claseCelda}>
                               <Estado valor={u.tipo} />
                             </td>
-                            <td className={`${claseCelda} text-slate-500`}>
+                            <td className={`${claseCelda} text-slate-600`}>
                               {u.descripcion || "—"}
                             </td>
-                            <td className={`${claseCelda} text-slate-500`}>
+                            <td className={`${claseCelda} text-slate-600`}>
                               {u.activo ? "activa" : "inactiva"}
                             </td>
                           </tr>

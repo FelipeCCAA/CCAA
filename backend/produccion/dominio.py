@@ -276,32 +276,24 @@ def kg_disponibles(lote: Any, kg_despachados: Decimal | float = 0) -> Decimal | 
 
 # --------------------------------------------------------- código de lote
 
-# CCAA + año(1) + juliano(3) + SKU + '-' + correlativo(2).
-#
-# El SKU es lo que distingue dos lotes del mismo día, y el correlativo lo que
-# distingue dos lotes del mismo producto el mismo día. Antes el sufijo
-# codificaba la torre y el uso nacional (POE.009.02); ahora eso vive dentro
-# del SKU del producto, que es donde se mantiene una sola vez.
-_PATRON_CODIGO = re.compile(r"^CCAA\d{4}[A-Za-z0-9]+-\d{2}$")
+# CCAA + año(1) + juliano(3) + sigla + '-' + correlativo(2 o más).
+_PATRON_CODIGO = re.compile(r"^CCAA\d{4}[A-Z0-9]{1,3}-\d{2,}$")
 
 
-def generar_codigo_lote(fecha: date, sku: str, correlativo: int = 1) -> str | None:
+def generar_codigo_lote(fecha: date, sigla: str, correlativo: int = 1) -> str | None:
     """
-    Arma el código de un lote: CCAA + año + día juliano + SKU + correlativo.
+    Arma el código de una corrida: CCAA + año + día juliano + sigla + correlativo.
 
     El correlativo va **siempre**, desde `-01`. Ponerlo solo a partir del
     segundo lote deja dos formas distintas conviviendo, y quien lee, ordena o
     busca códigos tiene que conocer la excepción.
 
-    Devuelve `None` si el producto no tiene SKU. Es la única pieza que el
-    sistema no puede deducir, y componer un código sin ella —o con un relleno
-    inventado— imprimiría en la bolsa algo que no identifica al producto.
+    Devuelve `None` si el equipo no tiene sigla cargada.
 
     Es una función pura: arma el texto y nada más. **No garantiza unicidad**;
-    la clave natural del lote sigue siendo `codigo_lote + producto + fecha`,
-    que es lo que la base controla (MODELO_DATOS.md §2.1).
+    la unicidad la garantiza la base.
     """
-    limpio = (sku or "").strip()
+    limpio = (sigla or "").strip().upper()
 
     if not limpio:
         return None

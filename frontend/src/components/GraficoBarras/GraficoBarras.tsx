@@ -43,7 +43,7 @@ function GraficoBarras({ titulo, subtitulo, datos, unidad = "kg" }: Props) {
 
       {subtitulo && (
 
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-600">
 
           {subtitulo}
 
@@ -53,7 +53,7 @@ function GraficoBarras({ titulo, subtitulo, datos, unidad = "kg" }: Props) {
 
       {datos.length === 0 ? (
 
-        <p className="mt-6 text-sm text-slate-400">
+        <p className="mt-6 text-sm text-slate-600">
 
           Sin datos en el periodo.
 
@@ -83,7 +83,7 @@ function GraficoBarras({ titulo, subtitulo, datos, unidad = "kg" }: Props) {
 
                     {formato.format(dato.kg)}
 
-                    <span className="ml-1 text-xs font-normal text-slate-400">
+                    <span className="ml-1 text-xs font-normal text-slate-600">
 
                       {unidad}
 

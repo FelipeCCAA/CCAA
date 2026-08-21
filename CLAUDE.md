@@ -28,17 +28,22 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - Español en UI, datos y comentarios. Fechas ISO `YYYY-MM-DD`. `codigo_lote` como string.
 - El diseño manda: extender el modelo, no reescribirlo.
 - **Dónde va cada registro:** `produccion` guarda **cómo se produjo** (lote, análisis, control de proceso — el PCC 1 vive ahí como un límite dentro del control). `inocuidad` guarda lo que **solo existe para vigilar un peligro**: PPRO, PCC de detector de metales, y más adelante limpieza CIP/COP, no conformidades y calibraciones. Mover modelos entre apps después obliga a renombrar tablas a mano, así que la separación se decidió con dos modelos y no con seis.
-- **Código de lote** (vigente desde 2026-07-31): `CCAA` + último dígito del año + día juliano (3) + **SKU del producto** + `-` + correlativo del día (2) — p. ej. `CCAA6212010102010201-01`. El correlativo va **siempre**, desde `-01`: dos formas conviviendo obligan a conocer la excepción al leer, ordenar y buscar. Reemplaza al esquema del POE.009.02, donde el sufijo codificaba la torre (E1→1, E2→2) y el uso nacional (`N`); eso ahora vive dentro del SKU, que es donde se mantiene una sola vez.
+- **Código de lote** (vigente desde 2026-08-20): `CCAA` + último dígito del año + día juliano (3) + **sigla del equipo** + `-` + correlativo del día en esa máquina —p. ej. `CCAA6232E1-01`. El correlativo va siempre desde `-01`. Identifica una corrida, no describe el producto; `Equipo.sigla` es configuración corta y estable del maestro, y `lote_codigo_unico_sucursal` garantiza la unicidad sobre `(sucursal, codigo_lote)`.
+
+- **Dónde termina un lote** (decisión de planta, 2026-08-20): una corrida de torre es un lote aunque cruce turnos o se envase en dos formatos. Solo se parte por un tema de inocuidad mediante `POST lotes/{id}/partir/`, con motivo obligatorio; `Lote.lote_anterior` encadena la continuación.
 - `codigo_lote_valido` **avisa, no restringe**: el histórico de planta trae códigos que no siguen el patrón —empezando por todos los del POE anterior— y hay que poder registrarlos. No conectarlo al `clean()` de `Lote`.
 - **`Producto.codigo` guarda el SKU** y es parte del código de lote. Un producto sin él no frena nada: `codigo-sugerido/` devuelve `codigo: null` con un motivo que dice qué falta y dónde, y el operador escribe el código a mano. Se carga desde el admin, y conviene componerlo con `generar_sku` en vez de teclearlo.
 - **SKU de producto** (`maestros/dominio.py` + `catalogos_sku.py`): 12 dígitos en 6 segmentos, compuestos **solo desde catálogos**. Un valor fuera de catálogo falla en vez de improvisar — un SKU con un segmento inventado se ve igual de válido que uno correcto y termina impreso en un saco. El orden de los segmentos se dedujo de los datos, no de los encabezados de la planilla, que están desalineados; `tests_dominio_sku.py` recompone los 24 productos reales del archivo y es lo que fija ese orden. `sku_valido` comprueba además la regla naturaleza↔cliente, para que el validador no apruebe lo que el generador se niega a componer.
 - **Auditoría** (`auditoria`): se captura por señales, no desde las vistas, para cubrir todo lo que escribe en la base —API, admin, scripts, shell— y no solo los caminos instrumentados. Los dos lados del diff se leen **de la base** en `pre_save`/`post_save`: comparar la base contra el objeto en memoria marca como cambiados campos que solo cambiaron de tipo. Todos los cambios tienen la **misma forma** `{campo: [antes, después]}`, también las altas —con `None` delante—: dos formas obligan a cada consumidor a distinguirlas y el que no lo haga revienta. Es **de solo lectura en las tres capas** (viewset, admin y servicio del frontend): un registro que se puede editar no prueba nada.
 - **Máquinas** (`maestros.Equipo`): `consume_leche` es una **regla del balance**, no una etiqueta. Un mismo código de producción se programa en el evaporador y en la línea que lo recibe; si ambos restaran, la semana contaría la misma leche dos veces. Solo los evaporadores.
-- **Un código de cliente, un mandante** (desde 2026-08-03, restricción `mandante_unico_por_codigo_cliente`). El segmento de cliente del SKU no tiene forma de distinguir dos mandantes que lo compartan: sus productos salen con SKU idénticos y —como el código de lote lleva el SKU dentro— también con el mismo código de lote. La base llegó a tener «Nestle» y «Nestlé» a la vez y los productos de ese cliente quedaron repartidos entre las dos fichas, sin que nada avisara porque nada lo impedía; la migración `0022` los fusionó. Los mandantes **sin** código sí pueden ser varios: uno sin código es uno que todavía no genera SKU.
+- **Un código de cliente, un mandante** (desde 2026-08-03, restricción `mandante_unico_por_codigo_cliente`). El segmento de cliente del SKU no tiene forma de distinguir dos mandantes que lo compartan: sus productos salen con SKU idénticos. La base llegó a tener «Nestle» y «Nestlé» a la vez y los productos de ese cliente quedaron repartidos entre las dos fichas, sin que nada avisara porque nada lo impedía; la migración `0022` los fusionó. Los mandantes **sin** código sí pueden ser varios: uno sin código es uno que todavía no genera SKU.
 - **Una sola representación de «equipo»** (desde 2026-08-03). `maestros.Equipo` es la única: `ControlProceso`, `MonitoreoPPRO`, `CicloCIP`, `BloquePlan` y `RegistroEquipo` lo referencian por clave foránea. Antes había cinco vocabularios para las mismas máquinas —un `TextChoices` en `produccion` («VEB», «SCH2»), el maestro («veb», «scheffers2»), y texto libre en los monitoreos y en el CIP—, y con dos alfabetos un criterio del checklist no se podía comparar contra el registro sin traducir en el medio. `linea1`/`linea2` **eran** las torres Egron: se renombraron a `e1`/`e2`, no se duplicaron. Se agregaron `rovema3` y `rovema4`.
 - Los **criterios de evidencia comparan el `codigo` del equipo**, no su nombre ni el objeto. El nombre se edita desde Maestros, y un criterio escrito contra «Torre de secado Egron 1» dejaría de cumplirse el día que alguien le corrija una tilde — en silencio, hasta que un lote no se pudiera liberar. `calidad.dominio._valor_comparable` lo resuelve, y `tests_evidencia` lo fija con un doble cuyo nombre difiere del código.
-- **Una sola planta, y no se nota** (desde 2026-08-10). CCAA no tiene sucursales. El modelo conserva la dimensión —quitarla costaría migrar quince modelos con datos encima, y volvería a costar lo mismo el día que haya una segunda— pero **nadie tiene que verla**: `usuarios.tenancy.unica_sucursal_activa` la resuelve sola cuando hay exactamente una activa, y esa resolución la usan tanto `sucursal_para_escritura` como el alta de personal. **Con dos activas vuelve a pedirse**, y esa mitad importa igual: resolver lo que solo tiene una respuesta es servicial, elegir entre dos es escribir en la planta equivocada sin que nadie lo pida. Una planta desactivada no cuenta.
-- Los **perfiles de Administración general son de alcance empresa** (`area = administracion` **y** `nivel = admin`, que es lo que `PerfilUsuario.clean()` ya exigía). Es quien responde por toda la empresa; atarla a una planta —como hizo `usuarios.0008` con todo lo existente— le negaba lo que su propio nivel dice que abarca. `usuarios.0011` sube a los que ya estaban. El alta los crea así sola, y **escribe `sucursal = None` explícitamente**: el campo tiene valor por omisión —la sucursal sembrada en pruebas, y una excepción fuera de ellas—, así que no mandarlo no es lo mismo que mandar nada.
+- **La sucursal dejó de ser una dimensión del negocio** (desde 2026-08-17, `docs/DECISION_MODELO_ORGANIZACIONAL_2026-08-17.md`). CCAA se administra como una sola organización: sucursales o plantas no aparecen en navegación, formularios, perfiles ni contratos del frontend. **Todos los perfiles son de alcance empresa** —`usuarios.0015` los reescribió a `alcance = empresa`, `sucursal = None`— y las altas operacionales reciben su organización de la sesión; el backend ignora cualquier subdivisión que mande un cliente antiguo. Las columnas siguen ahí solo por compatibilidad: `usuarios.tenancy.sucursal_para_escritura` completa la clave foránea con **el registro interno canónico**, y `unica_sucursal_activa` devuelve el primero activo, sin preguntar. Su eliminación física será una migración escalonada, no un `DROP`.
+
+  Esto **deroga** la decisión anterior («una sola planta, y no se nota», 2026-08-10), donde `unica_sucursal_activa` devolvía `None` con dos activas para obligar a elegir. Ese resguardo protegía contra escribir en la planta equivocada; ya no aplica porque la subdivisión dejó de ser algo sobre lo que se elige. **El día que haya una segunda planta hay que reponer esa pregunta**, y no basta con reactivar la función: los perfiles ya no llevan sucursal.
+
+- **Nada de inocuidad se decide comparando sucursales.** Al unificar el modelo hubo un intento de exigir `lote.sucursal_id == equipo.sucursal_id` para registrar un control de proceso, y de filtrar por sucursal los registros periódicos que cubren un lote; con dos fuentes de sucursal conviviendo —la canónica de las escrituras nuevas y la que arrastran las filas sembradas— **el PCC 1 dejaba de poder registrarse y un aseo completado dejaba de cubrir su semana en silencio**. Se quitaron las dos comparaciones (`6707a29`). El aislamiento por empresa lo sigue dando `DocumentoLiberacion`, que se acota a la empresa del lote y por el que pasa la consulta de registros. Si alguien repone una comparación de sucursal ahí, `calidad.tests_api_inocuidad` y `calidad.tests_api_periodicos` vuelven a rojo — que es para lo que están.
 - Los **catálogos de opciones** se sirven desde el backend (`/api/maestros/catalogos/`, `/api/planificacion/catalogos/`) y no se escriben en el frontend: una copia ofrece tarde o temprano un valor que el backend rechaza.
 - **Una sola receta** (desde 2026-08-03). `maestros.Receta` es el único lugar donde se declara qué lleva un producto. Un `RecetaComponente` es **un producto o un insumo, nunca los dos**: el producto se transforma aquí y la explosión sigue por su receta; el insumo se compra y lo descuenta bodega. Antes había un segundo maestro, `inventario.ConsumoProducto`, plano y sin versión, y era **ese** el que el descuento de bodega consumía — así que un lote de mayo se descontaba con las cantidades de hoy, que es justo lo que `Receta` está versionada para impedir. Los tres caminos que calculan consumo —el descuento del lote, el MRP semanal y el MRP puntual— pasan por `inventario.servicios.insumos_requeridos`; con tres implementaciones, la orden de compra y el descuento podían pedir cantidades distintas para la misma fórmula.
 - Las **especificaciones las escribe Calidad**, no Administración (desde 2026-08-06, `EscribeCalidad` en `EspecificacionViewSet`). Misma corrección que el checklist y las recetas: los rangos deciden qué producto sale conforme, y que Administración pudiera moverlos le dejaría cambiar el veredicto de un lote sin medirlo de nuevo. Se editan en **Maestros › Especificaciones**, con una fila por parámetro del catálogo y **no** un textarea de JSON: así no hay forma de escribir una clave que `clean()` rechaza. **Qué versión está vigente lo responde el backend** (`es_vigente`), con la misma función que audita el lote y calculada sobre *todas* las versiones, no sobre la página — con un producto a caballo entre dos páginas, la vieja saldría marcada como vigente.
@@ -47,7 +52,29 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - **Declarar el lote producido descuenta su material de bodega** (desde 2026-08-03), y es el único momento en que ocurre: antes hay lote pero no kilos. **No bloquea** — mismo criterio que la leche asignada: detener la producción del día porque bodega no cargó la receta o el material sigue en cuarentena traslada a la línea un problema que no es suyo. Lo que falla queda **pendiente y visible** (`consumo_inventario.pendiente` en la ficha), porque un descuento fallido que no se ve deja el saldo alto sin que nadie lo sepa.
 - Atrapar el error del consumo **es seguro solo porque `consumir_receta_produccion` es `@transaction.atomic`**: el servicio alcanza a crear la cabecera y a sacar lo que sí había antes de detectar que falta, y sin esa reversión el lote quedaría con un consumo «registrado» que descontó una fracción. Quitar ese decorador rompe `test_sin_stock_el_lote_igual_se_declara_y_avisa` —verificado por mutación—, no la vista.
 
-- **Estandarización** (`estandarizacion`, desde 2026-08-06): el RC —grasa ÷ SNG— es el cálculo que decide qué producto sale. La matemática vive en `dominio.py` sin ORM, y `ValeEstandarizacion` es el documento con su ciclo. Tres reglas justifican que cada paso sea una acción del servicio y no un `PATCH estado=…`: **no se muestrea antes de 30 minutos** de agitación (antes la mezcla no es homogénea y la muestra no mide el silo; la hora la pone el servidor), **liberar no se pide sino que se calcula** desde el RC medido, y **corregir reinicia el reloj y borra el análisis** porque agregar leche deshace la mezcla. La composición de las dos leches se congela **en el vale** —el silo cambia con cada ingreso—, y `rc_real` se deriva. `calcular/` responde sin crear: es el paso que el operador repite variando el volumen. Detalle en `docs/REGLAS_DE_PLANTA.md` §3.
+- **Estandarización** (`estandarizacion`, desde 2026-08-06): el RC —grasa ÷ SNG— es el cálculo que decide qué producto sale. La matemática vive en `dominio.py` sin ORM, y `ValeEstandarizacion` es el documento con su ciclo. Tres reglas justifican que cada paso sea una acción del servicio y no un `PATCH estado=…`: **muestrear antes de 30 minutos avisa pero no frena** (desde 2026-08-17: antes la mezcla no es homogénea, pero detener la operación lo decide la planta; el vale sella `muestreado_en` y el aviso queda auditable — la hora la pone el servidor), **liberar no se pide sino que se calcula** desde el RC medido, y **corregir reinicia el reloj y borra el análisis** porque agregar leche deshace la mezcla. La composición de las dos leches se congela **en el vale** —el silo cambia con cada ingreso—, y `rc_real` se deriva. `calcular/` responde sin crear: es el paso que el operador repite variando el volumen. Detalle en `docs/REGLAS_DE_PLANTA.md` §3.
+- **Una recepción es un camión, no un módulo** (desde 2026-08-19,
+  `docs/superpowers/specs/2026-08-19-recepcion-instructivo-design.md`). El formato
+  `CCAA.REC.FORM.002.02` pone una fila por camión con las crioscopías M1 a M4, porque un
+  camión trae hasta cuatro compartimientos pero **un** silo, **unos** litros y **un**
+  destino. `ModuloRecepcion` guarda lo que es propio del compartimiento: la
+  crioscopía, y desde la migración `0013` también `carga_recoleccion` —el vínculo con
+  la carga que Recolección dejó cerrada en el predio para ese módulo—. No lleva litros,
+  silo ni destino: darle litros abriría la puerta a que dos módulos del mismo camión
+  declararan silos distintos. La migración `0012` **no colapsó** las filas
+  hermanas existentes: sumar litros de filas con silo, estado o veredicto distintos
+  habría producido un registro que nadie hizo.
+- **Una marca horaria que falta no vale cero.** `recepcion.dominio.permanencia` devuelve
+  `None` con su motivo si falta el arribo a portería o el término del CIP. En los 26
+  libros de julio de 2026 la hora programa estaba llena en **1 de 603 filas** y la
+  planilla calculaba igual: restaba contra cero, así que cada camión «pagaba» la hora del
+  reloj a la que terminó el CIP menos dos. El 31-07 el total del día fue de 254 horas que
+  no eran sobreestadía. Por eso la permanencia se cuenta desde el **arribo a portería**, y
+  `resumen-diario/` informa `camiones_sin_marcas_horarias` en vez de dejar que el total
+  parezca completo.
+- **El pH del camión no es el pH de la leche.** `ph_camion` (5,5–8,5) es del enjuague y
+  vive en su propia columna; `controles["ph"]` (6,5–6,9) es de la leche. Con una sola
+  clave, el pH del agua retendría un camión conforme.
 
 ## Trampas conocidas
 
@@ -60,6 +87,78 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - **No reescribas archivos con acentos usando `Get-Content | … | Set-Content`**: PowerShell 5.1 lee en ANSI y escribe en UTF-8, así que un reemplazo masivo convierte cada `ó` en `Ã³` en todo el archivo. Usa Edit, o restaura con `git checkout --` y reaplica a mano.
 - Un **`default` de campo que lanza una excepción rompe la página «Añadir» del admin**, no solo el guardado: Django pide el `default` de cada campo al construir el modelo vacío del formulario. Los defaults de tenant (`empresa_predeterminada_pruebas`, `sucursal_predeterminada_pruebas`, en dos docenas de campos) lanzaban `ImproperlyConfigured` fuera de pruebas y dejaban **22 de 72 modelos** con «Añadir» en error 500. Ahora devuelven `None` fuera de pruebas: no se inventa tenant y el campo obligatorio lo exige el formulario. `usuarios.tests_admin_alta` recorre el registro entero del admin —no una lista de 22— y corre con `@override_settings(DJANGO_ENV="development")`, porque **bajo `test` el defecto no existe** y la prueba pasaría sin comprobar nada.
 - Dentro de `transaction.atomic()`, **salir con `return` confirma la transacción**: solo una excepción revierte. Un `return Response(...)` de validación a mitad de un lote de escrituras deja media operación guardada.
+- Los archivos del Instructivo (`Fabricación/2026/Instructivo/`) están **abiertos por
+  OneDrive**: leerlos con `ZipFile::OpenRead` falla con «está siendo utilizado en otro
+  proceso». Hay que copiarlos a un directorio temporal primero.
+- **`ControlInhibidores.resultado` no dispara nada.** El gatillo del bloqueo de cierre
+  (`recepcion.dominio.bloqueos_de_cierre`) sigue siendo
+  `Recepcion.controles["delvo"]`/`["inhibidores"]` más el conteo de `BusquedaProveedor`;
+  la función nunca lee `ControlInhibidores`. Y `ControlInhibidores` no tiene ViewSet ni
+  URL propia —se carga por admin o por ORM—, así que hoy se puede registrar un PPRO N°1
+  positivo sin que el cierre se entere: lo único que bloquea es que
+  `controles["inhibidores"]` diga `"Positivo"`. Que el control dispare el bloqueo por sí
+  mismo es una decisión de Calidad todavía sin tomar, no un descuido del código. Detalle
+  en `docs/REGLAS_DE_PLANTA.md` §1.2.
+
+- **El sistema parte en blanco** (desde 2026-08-20). Los libros de `Fabricación/2026` y los
+  formatos de `Documentos Planta/` son **referencia de arquitectura, no datos a migrar**: al
+  desplegar no se importa nada, y Calidad configura los productos, especificaciones, recetas y
+  formularios vigentes. Por eso las plantillas viven en JSONField y los catálogos se sirven desde
+  el backend: un formato de planta se carga **configurando, no programando**.
+
+  Lo que se lee en los archivos históricos dice **qué forma tiene el proceso**, no qué filas
+  sembrar. Las variantes que solo existen en libros viejos —crema Svelty, crema Champiñones— **no
+  se modelan ni se siembran**: son hojas de un formato anterior, y quien las necesite creará la
+  suya con el mecanismo de plantillas. Copiarlas al maestro dejaría productos que nadie pidió y
+  que alguien tendría que mantener.
+
+  Esto **baja el costo de equivocarse en el modelado**: sin códigos de lote emitidos, una decisión
+  que resulte mal se corrige antes del despliegue, sin migración ni reimpresión. No habilita a
+  posponer el esquema —igual hay que escribirlo—, pero sí a elegir el camino general y afinarlo
+  cuando haya datos reales, en vez de detener el desarrollo esperando una respuesta.
+
+- **El análisis del silo es un registro propio** (desde 2026-08-19, `recepcion.AnalisisSilo`,
+  formato `CCAA.REC.FORM.005.01`). No se confunde con `Recepcion.controles`, que son los del
+  **camión**: el silo mezcla varios camiones, y es la mezcla —no cada camión— la que alimenta el
+  cálculo del RC. Trae los siete parámetros del vale de trazabilidad, incluidas **proteína y
+  densidad**, que no existían en ninguna parte del sistema.
+
+  **La vigencia no se guarda: se decide contra el libro de movimientos.** Un análisis deja de
+  servir para componer un vale cuando entró un camión después de la muestra —una salida no, porque
+  sacar leche no cambia la composición de la que queda, e invalidar por salida obligaría a
+  re-muestrear cada vez que una línea consume—. Un campo `vigente` almacenado se desincronizaría al
+  corregir la hora de un movimiento, y un vale quedaría compuesto contra leche que ya no está.
+
+  El vale de estandarización **sigue congelando** la composición en sus columnas y solo gana dos
+  claves foráneas de **procedencia** (`analisis_entera`, `analisis_descremada`): el análisis se
+  puede corregir, y un vale de mayo tiene que auditarse contra lo que se usó en mayo. La captura
+  vive en la pantalla de **silos**, no en la del vale: quien mide el silo es Recepción, al
+  llenarlo. Que un análisis vencido **impida** crear el vale es decisión de Calidad todavía sin
+  tomar; hoy avisa.
+
+- **La organización inicial se busca por el código de su sucursal, no por su RUT** (desde
+  2026-08-19). `usuarios.0008` siembra la organización con un RUT distinto en cada rama
+  —`TENANT-TEST` bajo `DJANGO_ENV=test`, `TENANT-CI` en CI, y el de
+  `CCAA_INITIAL_COMPANY_RUT` en cualquier otro caso—, así que ninguna constante de RUT
+  puede acertarle a las tres; `CODIGO_SUCURSAL_INICIAL = "INTERNA"` sí, porque es literal
+  en la migración. Antes se buscaba por `rut="RUT-LOCAL-DESARROLLO"`, **un valor que
+  ningún camino del código escribe**: la búsqueda no acertaba nunca y los `default` de
+  tenant creaban una **segunda** organización.
+
+  El síntoma no se parecía en nada a la causa. Los maestros sembrados quedaban en una
+  organización y los perfiles de prueba en la otra, así que todo queryset acotado por
+  tenant devolvía vacío: `manage.py test` **sin** `DJANGO_ENV=test` dejaba 20 pruebas en
+  rojo repartidas entre `calidad`, `auditoria` y `usuarios`, acusando que «el equipo no
+  existe» — y no había nada malo en inocuidad ni en el PCC 1. Con la variable puesta pasaba
+  entero, porque el `get_or_create(rut="TENANT-TEST")` de respaldo acertaba por casualidad;
+  o sea que la base local y la de CI **no se construían igual**. `usuarios.tests_tenant_sembrado`
+  lo fija comprobando la consecuencia y no el RUT: un perfil por defecto tiene que ver los
+  equipos que sembró la migración, con y sin la variable.
+
+  Quedan **dos definiciones de «estamos en pruebas»** —`_en_pruebas()` mira `sys.argv` y
+  además `settings.DJANGO_ENV`; la migración solo `os.getenv("DJANGO_ENV")`—. Ya no importa,
+  porque ambos caminos convergen en la misma organización, pero si alguien vuelve a apoyar
+  una decisión en esa detección, que sepa que discrepan.
 
 ## Tarea de integración en curso
 
@@ -234,12 +333,9 @@ el saco. Lo que sí se anticipa es qué falta para poder componerlo.
   explosión multinivel y pruebas). Lo que sigue vigente de §7 es que las hojas de recetas del
   mismo Excel son la BOM por 100 kg y pueden sembrarla.
 
-**Resuelto (2026-07-31): el código de lote lleva el SKU completo de 12 dígitos**, o sea 23
-caracteres —`CCAA6212010102010201-01`—. Se planteó la alternativa de un código corto por producto
-(el Excel trae `Cód. CeGe` 101–123 y `Cód. Patricio R.` 5001–7004, que darían `CCAA6197101-01`) y
-se descartó a favor de que el código cargue toda la información del producto. Si en planta el
-largo resulta impracticable al imprimirlo o transcribirlo, el cambio es de una línea en
-`generar_codigo_lote` — pero invalida los códigos ya emitidos.
+**Resuelto (2026-08-20): el código de lote identifica una corrida** con día, sigla de equipo y
+correlativo (`CCAA6232E1-01`), no el SKU del producto. Así un cambio del SKU no altera el
+significado de un código ya impreso.
 
 **Maestro de productos cargado** (2026-08-03): los **23** del Excel, con
 `python manage.py cargar_productos` (`--aplicar` para escribir; sin eso simula recorriendo el
@@ -268,9 +364,8 @@ distintos:
 | `010311030201` | Leche Descremada c/LdS MH SP · Leche Descremada en Polvo c/Lec |
 | `020003020101` | Precondensado SemiDescremado Rc0.201 · P. Semidescremado ST 45% CCAA |
 
-Ojo: **el código de lote lleva el SKU**, así que mientras esos pares compartan código, dos lotes de
-productos distintos del mismo día pueden salir con el mismo código de lote. `Producto.variante`
-existe para desempatarlos y `generar_sku` ya lo admite; falta la decisión, no el mecanismo.
+Esto ya no afecta al código de lote, que identifica la corrida. `Producto.variante` existe para
+desempatar los SKU y `generar_sku` ya lo admite; falta la decisión, no el mecanismo.
 
 **Decisiones abiertas antes de tocar el modelo:**
 
