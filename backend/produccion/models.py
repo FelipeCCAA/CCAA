@@ -240,8 +240,8 @@ class Lote(models.Model):
         ordering = ["-fecha", "codigo_lote"]
         constraints = [
             models.UniqueConstraint(
-                fields=["sucursal", "codigo_lote", "producto", "fecha"],
-                name="lote_clave_natural_unica",
+                fields=["sucursal", "codigo_lote"],
+                name="lote_codigo_unico_sucursal",
             ),
             models.CheckConstraint(
                 condition=models.Q(kg_producidos__gte=0),
