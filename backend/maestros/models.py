@@ -381,6 +381,16 @@ class Equipo(models.Model):
         help_text="Identificador estable. No se cambia: la planificación lo referencia.",
     )
     nombre = models.CharField("Nombre", max_length=120)
+    sigla = models.CharField(
+        "Sigla",
+        max_length=3,
+        blank=True,
+        help_text=(
+            "Dos o tres caracteres que identifican la máquina dentro del código "
+            "de lote (E1, S2, R4). Solo la necesitan los equipos que encabezan "
+            "una corrida."
+        ),
+    )
     tipo = models.CharField("Tipo", max_length=20, choices=Tipo.choices)
     consume_leche = models.BooleanField(
         "Consume leche del balance",
@@ -413,7 +423,12 @@ class Equipo(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["sucursal", "codigo"], name="equipo_codigo_unico_sucursal"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["sucursal", "sigla"],
+                condition=~models.Q(sigla=""),
+                name="equipo_sigla_unica_sucursal",
+            ),
         ]
 
     def __str__(self):
