@@ -297,13 +297,13 @@ export interface CodigoSugerido {
  * forma —todos los del POE.009.02 anterior— y hay que poder registrarlos.
  */
 export async function sugerirCodigoLote(
-  producto: number,
+  equipo: number,
   fecha: string,
 ): Promise<CodigoSugerido> {
 
   const { data } = await api.get<CodigoSugerido>(
     "produccion/lotes/codigo-sugerido/",
-    { params: { producto, fecha } },
+    { params: { equipo, fecha } },
   );
 
   return data;

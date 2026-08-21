@@ -82,12 +82,12 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   }, [producto]);
 
   const sugerir = useCallback(async () => {
-    if (!producto || !fecha || codigoEditado) {
+    if (!equipo || !fecha || codigoEditado) {
       return;
     }
 
     try {
-      const sugerencia = await sugerirCodigoLote(Number(producto), fecha);
+      const sugerencia = await sugerirCodigoLote(Number(equipo), fecha);
 
       setCodigoLote(sugerencia.codigo ?? "");
       setNotaCodigo(sugerencia.motivo ?? "");
@@ -95,7 +95,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
       // Sin sugerencia el campo queda libre: se escribe a mano.
       setNotaCodigo("");
     }
-  }, [producto, fecha, codigoEditado]);
+  }, [equipo, fecha, codigoEditado]);
 
   useEffect(() => {
     const temporizador = setTimeout(sugerir, 0);
