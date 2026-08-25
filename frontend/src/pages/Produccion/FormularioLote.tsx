@@ -169,7 +169,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
     try {
 
-      const borradorId = await borrador.guardarAhora();
+      const borradorId = await borrador.guardarAhora({ propagarError: true });
       if (borradorId === null) throw new Error("El borrador no alcanzó a guardarse.");
       await confirmarBorradorLote(borradorId);
       borrador.reiniciar();

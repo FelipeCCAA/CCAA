@@ -264,7 +264,7 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
     setGuardando(true);
     try {
       setTocado(true);
-      let borradorId = await borrador.guardarAhora();
+      let borradorId = await borrador.guardarAhora({ propagarError: true });
       if (borradorId === null) {
         borradorId = (await crearBorradorRecepcion(datosBorrador)).id;
       } else {

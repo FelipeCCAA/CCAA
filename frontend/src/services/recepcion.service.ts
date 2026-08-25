@@ -478,10 +478,16 @@ export async function decidirCalidad(
   controles: Record<string, number | string>,
   decision?: "retener",
   motivo?: string,
+  phCamion?: number | null,
+  motivoCorreccion?: string,
 ): Promise<Recepcion> {
   const { data } = await api.post<Recepcion>(
     `recepcion/recepciones/${id}/decidir-calidad/`,
-    { controles, decision, motivo },
+    {
+      controles, decision, motivo,
+      ph_camion: phCamion,
+      motivo_correccion: motivoCorreccion,
+    },
   );
   return data;
 }

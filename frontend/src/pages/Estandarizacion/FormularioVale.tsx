@@ -125,6 +125,23 @@ function FormularioVale({
     return () => { vigente = false; };
   }, [reanudar]);
 
+  useEffect(() => {
+    const entera = silos.find((item) => item.id === Number(datos.silo_entera));
+    const descremada = silos.find((item) => item.id === Number(datos.silo_descremada));
+    const enteraDisponible = entera?.litros_disponibles ?? "";
+    const descremadaDisponible = descremada?.litros_disponibles ?? "";
+    if (
+      datos.entera_disponible !== enteraDisponible
+      || datos.descremada_disponible !== descremadaDisponible
+    ) {
+      setDatos((actual) => ({
+        ...actual,
+        entera_disponible: enteraDisponible,
+        descremada_disponible: descremadaDisponible,
+      }));
+    }
+  }, [silos, datos.silo_entera, datos.silo_descremada, datos.entera_disponible, datos.descremada_disponible]);
+
   const cambiar = (campo: keyof typeof inicial, valor: string) => {
     setTocado(true);
     setDatos((previo) => ({ ...previo, [campo]: valor }));
@@ -191,7 +208,7 @@ function FormularioVale({
     setError("");
 
     try {
-      const borradorId = await borrador.guardarAhora();
+      const borradorId = await borrador.guardarAhora({ propagarError: true });
       if (borradorId === null) throw new Error("El borrador no alcanzó a guardarse.");
       const confirmado = await confirmarBorradorVale(borradorId);
       borrador.reiniciar();

@@ -678,6 +678,41 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     status=status.HTTP_409_CONFLICT,
                 )
 
+            ph_enviado = request.data.get("ph_camion", recepcion.ph_camion)
+            ph_enviado = None if ph_enviado in (None, "") else Decimal(str(ph_enviado))
+            if ph_enviado != recepcion.ph_camion:
+                motivo_correccion = str(
+                    request.data.get("motivo_correccion", "")
+                ).strip()
+                if len(motivo_correccion) < 5:
+                    return Response(
+                        {
+                            "motivo_correccion": (
+                                "Indica por qué corriges el pH del camión "
+                                "(mínimo 5 caracteres)."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                ph_enviado = RecepcionSerializer().fields[
+                    "ph_camion"
+                ].run_validation(ph_enviado)
+                anterior = recepcion.ph_camion
+                recepcion.ph_camion = ph_enviado
+                recepcion.save(update_fields=["ph_camion"])
+                CorreccionRecepcion.objects.create(
+                    recepcion=recepcion,
+                    usuario=request.user,
+                    paso="calidad",
+                    motivo=motivo_correccion,
+                    cambios={
+                        "ph_camion": [
+                            str(anterior) if anterior is not None else None,
+                            str(ph_enviado) if ph_enviado is not None else None,
+                        ]
+                    },
+                )
+
             # `Recepcion.evaluar()` arma también la crioscopía de los módulos
             # y el pH del camión — llamar a `dominio.evaluar_recepcion`
             # directo aquí, sin esos dos argumentos, es la regresión que
@@ -1434,6 +1469,16 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         if analisis.estado != AnalisisSilo.Estado.CONFIRMADO:
             return Response(
                 {"detail": "Solo se firma un análisis confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if analisis.analista_id == request.user.id:
+            return Response(
+                {
+                    "detail": (
+                        "La visualización debe firmarla una persona distinta "
+                        "de quien realizó el análisis."
+                    )
+                },
                 status=status.HTTP_409_CONFLICT,
             )
         analisis.visualizado_por = request.user

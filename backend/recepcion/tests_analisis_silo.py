@@ -9,6 +9,7 @@ Hoja RC usa. Hasta ahora solo existían los controles del camión.
 from datetime import datetime, time, timezone as tz
 from decimal import Decimal
 
+from django.contrib.auth.models import User
 from django.db.utils import IntegrityError
 from django.test import TestCase
 
@@ -180,6 +181,24 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(respuesta.data["analista_nombre"], "op")
+
+    def test_quien_realiza_no_puede_poner_la_segunda_firma(self):
+        analisis = AnalisisSilo.objects.create(
+            silo=self.silo,
+            tomado_en=datetime(2026, 7, 15, 9, 40, tzinfo=tz.utc),
+            grasa="4.35", sng="8.90",
+            inhibidores_resultado="negativo", metodo="delvo_sp",
+            hora_lectura=time(10, 15), analista=User.objects.get(username="op"),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+        )
+
+        respuesta = self.cliente.post(
+            f"/api/recepcion/analisis-silo/{analisis.id}/visualizar/", {},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertIn("distinta", respuesta.data["detail"])
 
     def test_filtra_por_silo(self):
         otro = Silo.objects.create(

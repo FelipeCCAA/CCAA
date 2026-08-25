@@ -42,14 +42,16 @@ export function useBorrador<T, R extends DocumentoConId>({
     setEstado("sin_cambios");
   }, []);
 
-  const guardarAhora = useCallback(async function persistir(): Promise<number | null> {
+  const guardarAhora = useCallback(async function persistir(
+    opciones: { propagarError?: boolean } = {},
+  ): Promise<number | null> {
     if (!activo) return idRef.current;
     if (enCurso.current) {
       pendiente.current = true;
       await enCurso.current.catch(() => undefined);
       if (pendiente.current) {
         pendiente.current = false;
-        return persistir();
+        return persistir(opciones);
       }
       return idRef.current;
     }
@@ -64,15 +66,16 @@ export function useBorrador<T, R extends DocumentoConId>({
       idRef.current = documento.id;
       setId(documento.id);
       setEstado("guardado");
-    } catch {
+    } catch (error) {
       setEstado("error");
       errorRef.current?.();
+      if (opciones.propagarError) throw error;
     } finally {
       enCurso.current = null;
     }
     if (pendiente.current) {
       pendiente.current = false;
-      return persistir();
+      return persistir(opciones);
     }
     return idRef.current;
   }, [activo]);

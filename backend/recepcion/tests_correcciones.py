@@ -118,3 +118,30 @@ class CorreccionCrioscopiaTests(BaseAPIRecepcion):
         recepcion.refresh_from_db()
         self.assertEqual(recepcion.litros, Decimal("12000.00"))
 
+    def test_reanalizar_permite_corregir_ph_camion_y_audita(self):
+        recepcion = Recepcion.objects.create(
+            fecha="2026-08-25",
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("12000.00"),
+            ph_camion=Decimal("9.00"),
+            controles={"delvo": "Negativo"},
+            estado=Recepcion.Estado.RETENIDA,
+        )
+
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{recepcion.id}/decidir-calidad/",
+            {
+                "controles": {"delvo": "Negativo"},
+                "ph_camion": "7.00",
+                "motivo_correccion": "Lectura digitada incorrectamente",
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data["estado"], Recepcion.Estado.LIBERADA)
+        recepcion.refresh_from_db()
+        self.assertEqual(recepcion.ph_camion, Decimal("7.00"))
+        correccion = CorreccionRecepcion.objects.get(recepcion=recepcion)
+        self.assertEqual(correccion.paso, "calidad")
+        self.assertIn("ph_camion", correccion.cambios)

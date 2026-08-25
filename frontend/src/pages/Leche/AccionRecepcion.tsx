@@ -53,6 +53,7 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
   const [retencionManual, setRetencionManual] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [motivoCorreccion, setMotivoCorreccion] = useState("");
+  const [phCamion, setPhCamion] = useState(recepcion.ph_camion ?? "");
   const [crioscopias, setCrioscopias] = useState<Record<number, string>>(
     Object.fromEntries(
       recepcion.modulos.map((modulo) => [modulo.id, modulo.crioscopia ?? ""]),
@@ -65,6 +66,11 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
   const silosCompatibles = useMemo(
     () => silos.filter((item) => item.activo && item.tipo === (recepcion.tipo_leche === "Descremada" ? "tk_ld" : "silo")),
     [recepcion.tipo_leche, silos],
+  );
+  const phCamionCambio = (
+    phCamion === "" ? null : Number(phCamion)
+  ) !== (
+    recepcion.ph_camion === null ? null : Number(recepcion.ph_camion)
   );
 
   const cambiarControl = (clave: string, valor: string) =>
@@ -104,6 +110,8 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
           medidos,
           retencionManual ? "retener" : undefined,
           retencionManual ? motivo : undefined,
+          phCamion === "" ? null : Number(phCamion),
+          motivoCorreccion || undefined,
         );
       }
       await alGuardar();
@@ -148,6 +156,10 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
             </div>}
 
             {accion === "calidad" && <div className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div><label className={etiqueta}>pH de enjuague del camión</label><input aria-label="pH de enjuague del camión" type="number" step="0.01" className={campo} value={phCamion} onChange={(e) => setPhCamion(e.target.value)} /></div>
+                {phCamionCambio && <div><label className={etiqueta}>Motivo de corrección del pH *</label><input aria-label="Motivo de corrección del pH" minLength={5} required className={campo} value={motivoCorreccion} onChange={(e) => setMotivoCorreccion(e.target.value)} /></div>}
+              </div>
               <div><p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-600">Controles del camión</p><div className="grid grid-cols-2 gap-4 sm:grid-cols-3">{CONTROLES_NUMERICOS.map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta} {control.unidad && <span className="font-normal text-slate-600">({control.unidad})</span>}</label><input aria-label={control.etiqueta} type="number" step="any" className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} /></div>)}</div></div>
               <div className="grid gap-4 sm:grid-cols-3">{CONTROLES_OPCION.map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta}</label><select aria-label={control.etiqueta} className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} required={control.clave === "delvo"}><option value="">Sin informar</option>{control.valores.map((valor) => <option key={valor} value={valor}>{valor}</option>)}</select></div>)}</div>
               {recepcion.modulos.length > 0 && <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="mb-3 text-xs font-bold uppercase tracking-wider text-violet-700">Crioscopía registrada por módulo</p><div className="flex flex-wrap gap-3 text-sm">{recepcion.modulos.map((m) => <span key={m.id} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-violet-900 ring-1 ring-violet-200">M{m.numero}: {m.crioscopia ?? "—"} °C</span>)}</div></div>}

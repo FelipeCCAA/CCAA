@@ -29,7 +29,14 @@ export function mensajeDe(error: unknown, porDefecto: string): string {
       detail?: string;
     };
 
-    return motivo ?? detail ?? porDefecto;
+    if (motivo ?? detail) return motivo ?? detail ?? porDefecto;
+    const partes = Object.entries(datos as Record<string, unknown>).flatMap(
+      ([campo, valor]) => {
+        const valores = Array.isArray(valor) ? valor : [valor];
+        return valores.map((item) => `${campo}: ${String(item)}`);
+      },
+    );
+    return partes.length ? partes.join(" · ") : porDefecto;
   }
 
   return porDefecto;

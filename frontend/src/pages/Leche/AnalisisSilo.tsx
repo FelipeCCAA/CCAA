@@ -10,6 +10,7 @@ import {
   type AnalisisSilo as Analisis,
 } from "../../services/recepcion.service";
 import { useBorrador } from "../../hooks/useBorrador";
+import { mensajeDe } from "../../components/seccion/utilidades";
 
 /*
   La captura del análisis del silo — `CCAA.REC.FORM.005.01`.
@@ -118,7 +119,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
 
     try {
       setTocado(true);
-      let borradorId = await borrador.guardarAhora();
+      let borradorId = await borrador.guardarAhora({ propagarError: true });
       if (borradorId === null) {
         borradorId = (await crearBorradorAnalisisSilo(datosBorrador)).id;
       } else {
@@ -133,6 +134,16 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
       setError("No se pudo guardar el análisis.");
     } finally {
       setGuardando(false);
+    }
+  }
+
+  async function firmarVisualizacion(id: number) {
+    setError("");
+    try {
+      await visualizarAnalisisSilo(id);
+      setHistorial(await listarAnalisisSilo(siloId));
+    } catch (fallo) {
+      setError(mensajeDe(fallo, "No se pudo firmar la visualización."));
     }
   }
 
@@ -292,9 +303,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => void visualizarAnalisisSilo(fila.id)
-                          .then(() => listarAnalisisSilo(siloId))
-                          .then(setHistorial)}
+                        onClick={() => void firmarVisualizacion(fila.id)}
                         className="ml-2 rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold"
                       >
                         Firmar visualización
