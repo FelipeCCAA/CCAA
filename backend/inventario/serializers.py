@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from decimal import Decimal, ROUND_CEILING
 
+from maestros.models import Silo
 from produccion.models import PalletProducto
 
 from .models import (
@@ -147,6 +148,7 @@ class CicloCIPSerializer(serializers.ModelSerializer):
             validated_data["fin"] = timezone.now()
             validated_data["verificado_por"] = usuario
         ciclo = super().create(validated_data)
+        self._sincronizar_silo(ciclo)
         self._guardar_etapas(ciclo, etapas)
         return ciclo
 
@@ -166,8 +168,26 @@ class CicloCIPSerializer(serializers.ModelSerializer):
             ciclo.save(update_fields=["fin", "verificado_por"])
         if estado_anterior != CicloCIP.Estado.PROGRAMADO and ciclo.estado == CicloCIP.Estado.PROGRAMADO:
             raise serializers.ValidationError("Un aseo iniciado no puede volver a Programado.")
+        self._sincronizar_silo(ciclo)
         self._guardar_etapas(ciclo, etapas)
         return ciclo
+
+    @staticmethod
+    def _sincronizar_silo(ciclo):
+        if ciclo.tipo_objetivo != CicloCIP.TipoObjetivo.SILO or not ciclo.silo_id:
+            return
+        silo = ciclo.silo
+        if ciclo.estado == CicloCIP.Estado.EN_CURSO:
+            nuevo = Silo.Estado.EN_CIP
+        elif ciclo.estado == CicloCIP.Estado.COMPLETADO:
+            nuevo = Silo.Estado.DISPONIBLE
+        elif ciclo.estado == CicloCIP.Estado.OBSERVADO:
+            nuevo = Silo.Estado.PENDIENTE_CIP
+        else:
+            return
+        if silo.estado != nuevo:
+            silo.estado = nuevo
+            silo.save(update_fields=["estado"])
 
     def validate(self, datos):
         """

@@ -7,6 +7,7 @@ Funciones puras, como las de calidad: reciben datos y devuelven datos.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Iterable
 
@@ -635,6 +636,62 @@ def analisis_vigente(tomado_en, ingresos) -> Vigencia:
         f"Entraron {total:g} L al silo después de la muestra "
         f"({len(posteriores)} {palabra}); vuelve a muestrear.",
     )
+
+
+def motivos_silo_no_disponible(silo, analisis, ciclo_cip, ahora, *, para) -> list[str]:
+    """Razones operativas; una lista vacía habilita la operación solicitada."""
+    if para not in {"proceso", "descarga"}:
+        raise ValueError("La disponibilidad solo se evalúa para proceso o descarga.")
+
+    motivos = []
+    estado = _dato(silo, "estado")
+    if not _dato(silo, "activo", True) or estado == "fuera_servicio":
+        motivos.append("El silo está fuera de servicio.")
+    if estado == "bloqueado_calidad":
+        motivos.append("El silo está bloqueado por Calidad.")
+    cip_en_curso = ciclo_cip and _dato(ciclo_cip, "estado") == "en_curso"
+    if estado == "en_cip" or cip_en_curso:
+        motivos.append("El silo tiene un ciclo CIP en curso.")
+
+    # Descargar un camión solo se detiene por seguridad operacional. La
+    # muestra describe el contenido después de descargar, no antes.
+    if para == "descarga" or motivos:
+        return motivos
+
+    if analisis is None:
+        return ["El silo no tiene un análisis confirmado vigente."]
+    if not _dato(analisis, "vigente", False):
+        motivos.append(
+            _dato(analisis, "motivo_vigencia")
+            or "El análisis del silo perdió vigencia; vuelve a muestrear."
+        )
+    faltantes = [
+        nombre for nombre in ("grasa", "sng")
+        if _dato(analisis, nombre) is None
+    ]
+    if faltantes:
+        motivos.append(
+            "Falta composición del silo: " + ", ".join(faltantes) + "."
+        )
+    if _dato(analisis, "inhibidores_resultado") == "positivo":
+        motivos.append("El análisis del silo detectó inhibidores positivos.")
+    elif not _dato(analisis, "apto_inocuidad", False):
+        motivos.append("Falta completar el control de inhibidores del silo.")
+    if not _dato(analisis, "analista_id") or not _dato(analisis, "visualizado_por_id"):
+        motivos.append("El análisis requiere firma de realización y visualización.")
+
+    leche_mas_antigua_en = _dato(silo, "leche_mas_antigua_en")
+    if leche_mas_antigua_en is not None and ahora - leche_mas_antigua_en > timedelta(hours=48):
+        revalidaciones = (
+            _dato(analisis, "alcohol_75_conforme"),
+            _dato(analisis, "hervor_conforme"),
+            _dato(analisis, "organoleptico_conforme"),
+        )
+        if not all(valor is True for valor in revalidaciones):
+            motivos.append(
+                "La leche supera 48 h y requiere alcohol 75°, hervor y control organoléptico conformes."
+            )
+    return motivos
 
 
 def parametros_faltantes(valores, requeridos) -> list[str]:

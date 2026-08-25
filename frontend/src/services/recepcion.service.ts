@@ -622,9 +622,19 @@ export interface AnalisisSilo {
   proteina: string | null;
   temperatura: string | null;
   densidad: string | null;
+  inhibidores_resultado: "negativo" | "positivo" | "";
+  metodo: "tri_sensor" | "charm" | "delvo_sp" | "";
+  hora_lectura: string | null;
+  alcohol_75_conforme: boolean | null;
+  hervor_conforme: boolean | null;
+  organoleptico_conforme: boolean | null;
+  apto_inocuidad: boolean;
   certificada: boolean | null;
   procedencia: string;
   analista_nombre: string;
+  visualizado_por: number | null;
+  visualizado_por_nombre: string;
+  visualizado_en: string | null;
   observacion: string;
   estado: "borrador" | "confirmado" | "anulado";
   es_borrador: boolean;
@@ -694,4 +704,12 @@ export async function confirmarBorradorAnalisisSilo(
 
 export async function descartarBorradorAnalisisSilo(id: number): Promise<void> {
   await api.post(`/recepcion/analisis-silo/${id}/descartar-borrador/`, {});
+}
+
+
+export async function visualizarAnalisisSilo(id: number): Promise<AnalisisSilo> {
+  const { data } = await api.post<AnalisisSilo>(
+    `/recepcion/analisis-silo/${id}/visualizar/`, {},
+  );
+  return data;
 }

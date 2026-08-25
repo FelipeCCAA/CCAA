@@ -33,7 +33,7 @@ from .serializers import (
     AjusteSiloSerializer, AnalisisSiloSerializer, CorreccionCrioscopiasSerializer,
     MovimientoSiloSerializer, RecepcionSerializer, TransferenciaSiloSerializer,
 )
-from .servicios import ajustar_silo, transferir_silo
+from .servicios import ajustar_silo, motivos_silo_no_disponible, transferir_silo
 
 
 def _usuarios_recepcion(usuario):
@@ -811,6 +811,11 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 )
 
             silo = Silo.objects.select_for_update().get(pk=recepcion.silo_id)
+            bloqueos_silo = motivos_silo_no_disponible(silo, para="descarga")
+            if bloqueos_silo:
+                return Response(
+                    {"motivos": bloqueos_silo}, status=status.HTTP_409_CONFLICT
+                )
             ocupacion_actual = MovimientoSilo.objects.filter(silo=silo).aggregate(
                 total=Coalesce(
                     Sum(Case(
@@ -1396,7 +1401,9 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     tenant_lookup_sucursal = "silo__sucursal_id"
     tenant_lookup_empresa = "silo__sucursal__empresa_id"
     tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = AnalisisSilo.objects.select_related("silo", "analista")
+    queryset = AnalisisSilo.objects.select_related(
+        "silo", "analista", "visualizado_por"
+    )
     serializer_class = AnalisisSiloSerializer
     permission_classes = [EscribeRecepcion]
 
@@ -1420,6 +1427,19 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
             analista=self.request.user,
             estado=AnalisisSilo.Estado.CONFIRMADO,
         )
+
+    @action(detail=True, methods=["post"])
+    def visualizar(self, request, pk=None):
+        analisis = self.get_object()
+        if analisis.estado != AnalisisSilo.Estado.CONFIRMADO:
+            return Response(
+                {"detail": "Solo se firma un análisis confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        analisis.visualizado_por = request.user
+        analisis.visualizado_en = timezone.now()
+        analisis.save(update_fields=["visualizado_por", "visualizado_en"])
+        return Response(self.get_serializer(analisis).data)
 
     def _borrador_del_usuario(self, request, pk=None):
         consulta = filtrar_por_scope(

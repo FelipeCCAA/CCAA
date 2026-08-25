@@ -251,7 +251,7 @@ def iniciar_condensacion(*, corrida_id, usuario):
     from maestros.models import Silo
     from produccion.models import OrdenProduccion
     from recepcion.models import MovimientoSilo
-    from recepcion.servicios import ESTADOS_SIN_CONSUMO, saldo_silo
+    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
     from .models import EntradaProceso
 
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
@@ -278,8 +278,9 @@ def iniciar_condensacion(*, corrida_id, usuario):
         raise ValidationError(impedimento)
 
     origen = Silo.objects.select_for_update().get(pk=corrida.silo_origen_id)
-    if not origen.activo or origen.estado in ESTADOS_SIN_CONSUMO:
-        raise ValidationError(f"{origen.codigo} no está habilitado para consumo.")
+    motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos_silo:
+        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos_silo))
 
     # Tras integrar el lote con el motor de procesos aparecieron dos caminos
     # representando el mismo hecho: abrir el lote ya consumía el silo y dejaba

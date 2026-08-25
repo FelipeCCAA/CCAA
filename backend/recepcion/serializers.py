@@ -375,21 +375,42 @@ class AnalisisSiloSerializer(serializers.ModelSerializer):
     faltantes_para_vale = serializers.ListField(
         child=serializers.CharField(), read_only=True
     )
+    apto_inocuidad = serializers.BooleanField(read_only=True)
+    visualizado_por_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = AnalisisSilo
         fields = [
             "id", "silo", "silo_codigo", "tomado_en", "hora_inicio_llenado",
             "ph", "acidez", "grasa", "sng", "proteina", "temperatura", "densidad",
+            "inhibidores_resultado", "metodo", "hora_lectura",
+            "alcohol_75_conforme", "hervor_conforme", "organoleptico_conforme",
+            "apto_inocuidad",
             "certificada", "procedencia", "analista", "analista_nombre",
+            "visualizado_por", "visualizado_por_nombre", "visualizado_en",
             "observacion", "creado_en", "estado", "es_borrador",
             "abierto_por", "abierto_en", "actualizado_en",
             "vigente", "motivo_vigencia", "faltantes_para_vale",
         ]
         read_only_fields = [
             "analista", "creado_en", "estado", "es_borrador",
+            "visualizado_por", "visualizado_en",
             "abierto_por", "abierto_en", "actualizado_en",
         ]
 
     def get_analista_nombre(self, obj):
         return obj.analista.username if obj.analista_id else ""
+
+    def get_visualizado_por_nombre(self, obj):
+        return obj.visualizado_por.username if obj.visualizado_por_id else ""
+
+    def validate(self, attrs):
+        if self.instance is None and not self.partial:
+            requeridos = AnalisisSilo.CAMPOS_OBLIGATORIOS_AL_CONFIRMAR
+            faltantes = [campo for campo in requeridos if not attrs.get(campo)]
+            if faltantes:
+                raise serializers.ValidationError({
+                    campo: "Este control es obligatorio para confirmar la muestra."
+                    for campo in faltantes
+                })
+        return attrs

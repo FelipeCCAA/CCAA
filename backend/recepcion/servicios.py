@@ -50,6 +50,72 @@ def capas_fifo_silo(silo, antes_de=None):
     return dominio.saldo_por_recepcion(movimientos, atribuciones)
 
 
+def motivos_silo_no_disponible(silo, *, para, ahora=None):
+    """Adapta la compuerta pura al libro, análisis y CIP persistidos."""
+    from inventario.models import CicloCIP
+    from .models import AnalisisSilo
+
+    ahora = ahora or timezone.now()
+    analisis = (
+        AnalisisSilo.objects.filter(
+            silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
+        )
+        .select_related("analista", "visualizado_por")
+        .order_by("-tomado_en", "-id")
+        .first()
+    )
+    ciclo_cip = (
+        CicloCIP.objects.filter(
+            silo=silo,
+            tipo_objetivo=CicloCIP.TipoObjetivo.SILO,
+            estado=CicloCIP.Estado.EN_CURSO,
+        )
+        .order_by("-inicio", "-id")
+        .first()
+    )
+
+    capas = capas_fifo_silo(silo)
+    leche_mas_antigua_en = None
+    if capas:
+        primera = capas[0]
+        ingresos = MovimientoSilo.objects.filter(
+            silo=silo, tipo=MovimientoSilo.Tipo.INGRESO
+        )
+        if primera.recepcion_id is not None:
+            ingresos = ingresos.filter(
+                origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+                origen_id=primera.recepcion_id,
+            )
+        leche_mas_antigua_en = ingresos.order_by("fecha_hora", "id").values_list(
+            "fecha_hora", flat=True
+        ).first()
+
+    datos_silo = {
+        "activo": silo.activo,
+        "estado": silo.estado,
+        "leche_mas_antigua_en": leche_mas_antigua_en,
+    }
+    datos_analisis = None
+    if analisis is not None:
+        vigencia = analisis.vigencia
+        datos_analisis = {
+            "vigente": vigencia.vigente,
+            "motivo_vigencia": vigencia.motivo,
+            "grasa": analisis.grasa,
+            "sng": analisis.sng,
+            "inhibidores_resultado": analisis.inhibidores_resultado,
+            "apto_inocuidad": analisis.apto_inocuidad,
+            "analista_id": analisis.analista_id,
+            "visualizado_por_id": analisis.visualizado_por_id,
+            "alcohol_75_conforme": analisis.alcohol_75_conforme,
+            "hervor_conforme": analisis.hervor_conforme,
+            "organoleptico_conforme": analisis.organoleptico_conforme,
+        }
+    return dominio.motivos_silo_no_disponible(
+        datos_silo, datos_analisis, ciclo_cip, ahora, para=para
+    )
+
+
 @transaction.atomic
 def atribuir_salida(movimiento):
     """Congela la composición FIFO de una salida; repetirlo es idempotente."""

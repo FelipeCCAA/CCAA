@@ -92,7 +92,8 @@ class CorridaCondensacionViewSet(
                 corrida_id=self.get_object().pk, usuario=request.user
             )
         except DjangoValidationError as error:
-            return self._respuesta_error(error)
+            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            return Response(detalle, status=status.HTTP_409_CONFLICT)
         return Response(self.get_serializer(corrida).data)
 
     @action(detail=True, methods=["post"])

@@ -18,7 +18,7 @@ from .models import ValeEstandarizacion
 from maestros.models import Silo
 from procesos.servicios import cerrar_estandarizacion, registrar_estandarizacion
 from recepcion.models import MovimientoSilo
-from recepcion.servicios import ESTADOS_SIN_CONSUMO
+from recepcion.servicios import ESTADOS_SIN_CONSUMO, motivos_silo_no_disponible
 
 
 def _saldo(silo):
@@ -62,10 +62,9 @@ def transferir(*, vale_id, usuario):
     descremada = bloqueados.get(vale.silo_descremada_id)
 
     for silo in filter(None, [entera, descremada]):
-        if not silo.activo or silo.estado in ESTADOS_SIN_CONSUMO:
-            raise ValidationError(
-                f"{silo.codigo} no está habilitado para consumo ({silo.get_estado_display()})."
-            )
+        motivos = motivos_silo_no_disponible(silo, para="proceso")
+        if motivos:
+            raise ValidationError(f"{silo.codigo}: " + " ".join(motivos))
     if not destino.activo or destino.estado in {
         Silo.Estado.BLOQUEADO_CALIDAD,
         Silo.Estado.EN_CIP,

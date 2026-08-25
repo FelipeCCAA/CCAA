@@ -857,7 +857,10 @@ class AnalisisSilo(DocumentoBorradorMixin, models.Model):
         CONFIRMADO = "confirmado", "Confirmado"
         ANULADO = "anulado", "Anulado"
 
-    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = ("silo", "tomado_en")
+    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
+        "silo", "tomado_en", "grasa", "sng",
+        "inhibidores_resultado", "metodo", "hora_lectura",
+    )
     ESTADO_BORRADOR = Estado.BORRADOR
     ESTADO_CONFIRMADO = Estado.CONFIRMADO
 
@@ -891,6 +894,28 @@ class AnalisisSilo(DocumentoBorradorMixin, models.Model):
     densidad = models.DecimalField(
         "Densidad (kg/m³)", max_digits=7, decimal_places=2, null=True, blank=True
     )
+    inhibidores_resultado = models.CharField(
+        "Resultado de inhibidores",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    metodo = models.CharField(
+        "Método de inhibidores",
+        max_length=20,
+        choices=ControlInhibidores.Metodo.choices,
+        blank=True,
+    )
+    hora_lectura = models.TimeField("Hora de lectura", null=True, blank=True)
+    alcohol_75_conforme = models.BooleanField(
+        "Prueba de alcohol 75° conforme", null=True, blank=True
+    )
+    hervor_conforme = models.BooleanField(
+        "Prueba de hervor conforme", null=True, blank=True
+    )
+    organoleptico_conforme = models.BooleanField(
+        "Control organoléptico conforme", null=True, blank=True
+    )
 
     certificada = models.BooleanField(
         "Leche certificada",
@@ -909,6 +934,15 @@ class AnalisisSilo(DocumentoBorradorMixin, models.Model):
         blank=True,
         verbose_name="Analista",
     )
+    visualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="analisis_silo_visualizados",
+        null=True,
+        blank=True,
+        verbose_name="Visualizado por",
+    )
+    visualizado_en = models.DateTimeField(null=True, blank=True)
     observacion = models.TextField("Observación", blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
     estado = models.CharField(
@@ -964,3 +998,11 @@ class AnalisisSilo(DocumentoBorradorMixin, models.Model):
             for nombre in dominio.PARAMETROS_ANALISIS_SILO
         }
         return dominio.parametros_faltantes(valores, self.REQUERIDOS_PARA_VALE)
+
+    @property
+    def apto_inocuidad(self):
+        return (
+            self.inhibidores_resultado == ControlInhibidores.Resultado.NEGATIVO
+            and bool(self.metodo)
+            and self.hora_lectura is not None
+        )

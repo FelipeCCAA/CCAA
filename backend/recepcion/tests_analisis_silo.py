@@ -151,6 +151,9 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
                 "temperatura": "6.00",
                 "densidad": "1032.00",
                 "certificada": True,
+                "inhibidores_resultado": "negativo",
+                "metodo": "delvo_sp",
+                "hora_lectura": "10:15",
             },
             format="json",
         )
@@ -163,7 +166,15 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
     def test_el_analista_es_quien_lo_registra(self):
         respuesta = self.cliente.post(
             "/api/recepcion/analisis-silo/",
-            {"silo": self.silo.id, "tomado_en": "2026-07-15T09:40:00Z"},
+            {
+                "silo": self.silo.id,
+                "tomado_en": "2026-07-15T09:40:00Z",
+                "grasa": "4.35",
+                "sng": "8.90",
+                "inhibidores_resultado": "negativo",
+                "metodo": "delvo_sp",
+                "hora_lectura": "10:15",
+            },
             format="json",
         )
 

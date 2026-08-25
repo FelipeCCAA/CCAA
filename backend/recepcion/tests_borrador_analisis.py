@@ -30,7 +30,12 @@ class BorradorAnalisisSiloTests(BaseAPIRecepcion):
         )
         guardado = self.cliente.patch(
             f"{self.url}{creado['id']}/guardar-borrador/",
-            {"sng": "8.90"},
+            {
+                "sng": "8.90",
+                "inhibidores_resultado": "negativo",
+                "metodo": "delvo_sp",
+                "hora_lectura": "10:15",
+            },
             format="json",
         )
         confirmado = self.cliente.post(
