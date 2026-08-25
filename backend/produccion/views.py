@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
@@ -182,6 +183,10 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         estado = parametros.get("estado")
         if estado:
             consulta = consulta.filter(estado=estado)
+            if estado == Lote.Estado.BORRADOR:
+                consulta = consulta.filter(abierto_por=self.request.user)
+        else:
+            consulta = consulta.exclude(estado=Lote.Estado.BORRADOR)
 
         desde = parametros.get("desde")
         if desde:
@@ -200,6 +205,110 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             consulta = consulta.filter(id__in=self._ids_con_calidad(consulta, calidad))
 
         return consulta
+
+    # --------------------------------------------------------- borradores
+
+    def _borrador_del_usuario(self, request, pk=None):
+        consulta = self.queryset.filter(
+            estado=Lote.Estado.BORRADOR, abierto_por=request.user
+        )
+        if pk is not None:
+            consulta = consulta.filter(pk=pk)
+        return consulta.order_by("-actualizado_en", "-id").first()
+
+    @action(detail=False, methods=["get"], url_path="mi-borrador")
+    def mi_borrador(self, request):
+        borrador = self._borrador_del_usuario(request)
+        if borrador is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(borrador).data)
+
+    @action(detail=False, methods=["post"], url_path="crear-borrador")
+    def crear_borrador(self, request):
+        existente = self._borrador_del_usuario(request)
+        if existente is not None:
+            return Response(
+                {
+                    "detail": "Ya tienes un borrador de lote abierto.",
+                    "borrador": self.get_serializer(existente).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = request.data.copy()
+        datos.pop("codigo_lote", None)
+        datos.pop("estado", None)
+        serializer = self.get_serializer(data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        validados = dict(serializer.validated_data)
+        validados.pop("litros_estandarizados", None)
+        validados.pop("motivo_anulacion", None)
+        fecha = validados.pop("fecha", timezone.localdate())
+        lote = Lote.objects.create(
+            **validados,
+            codigo_lote=Lote.nuevo_codigo_borrador(),
+            fecha=fecha,
+            estado=Lote.Estado.BORRADOR,
+            abierto_por=request.user,
+            abierto_en=timezone.now(),
+        )
+        return Response(self.get_serializer(lote).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    def guardar_borrador(self, request, pk=None):
+        lote = self._borrador_del_usuario(request, pk)
+        if lote is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = request.data.copy()
+        datos.pop("codigo_lote", None)
+        datos.pop("estado", None)
+        serializer = self.get_serializer(lote, data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    def confirmar_borrador(self, request, pk=None):
+        lote = self._borrador_del_usuario(request, pk)
+        if lote is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        motivos = lote.motivos_para_confirmar()
+        if motivos:
+            return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            confirmado = servicios_produccion.abrir_lote_desde_vale(
+                vale=lote.vale,
+                producto=lote.producto,
+                codigo_lote=lote.codigo_lote_propuesto.strip(),
+                fecha=lote.fecha,
+                litros=lote.litros_estandarizados_borrador,
+                usuario=request.user,
+                lote_borrador=lote,
+                op=lote.op,
+                orden=lote.orden,
+                equipo=lote.equipo,
+                linea=lote.linea,
+                turno=lote.turno,
+                observacion=lote.observacion,
+            )
+        except DjangoValidationError as error:
+            detalle = error.message_dict if hasattr(error, "message_dict") else {
+                "motivos": error.messages
+            }
+            return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(confirmado).data)
+
+    @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    def descartar_borrador(self, request, pk=None):
+        lote = self._borrador_del_usuario(request, pk)
+        if lote is not None:
+            lote.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def create(self, request, *args, **kwargs):
         """
@@ -799,7 +908,7 @@ def resumen(request):
     lotes = filtrar_por_scope(
         Lote.objects.select_related("producto", "producto__mandante")
         .prefetch_related("analisis")
-        .exclude(estado=Lote.Estado.ANULADO),
+        .exclude(estado__in=[Lote.Estado.BORRADOR, Lote.Estado.ANULADO]),
         request.user,
         campo_sucursal="sucursal_id",
         campo_empresa="sucursal__empresa_id",

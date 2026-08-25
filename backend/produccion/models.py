@@ -26,6 +26,7 @@ from django.db import models
 
 from maestros.catalogos import CLAVES_PARAMETROS
 from maestros.models import Especificacion, Producto
+from usuarios.documentos import DocumentoBorradorMixin
 from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 
@@ -112,7 +113,7 @@ class OrdenProduccion(models.Model):
             raise ValidationError({"equipo": "El equipo pertenece a otra planta."})
 
 
-class Lote(models.Model):
+class Lote(DocumentoBorradorMixin, models.Model):
     """Unidad de producción y de liberación."""
 
     class Linea(models.TextChoices):
@@ -125,6 +126,7 @@ class Lote(models.Model):
         C = "C", "Turno C"
 
     class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
         EN_PROCESO = "en_proceso", "En proceso"
         PRODUCIDO = "producido", "Producido"
         CERRADO = "cerrado", "Cerrado"
@@ -134,11 +136,19 @@ class Lote(models.Model):
     # prototipo. Por ahora solo documentan; el bloqueo real vive en la capa de
     # dominio, que se porta en la fase siguiente.
     TRANSICIONES = {
+        Estado.BORRADOR: [Estado.EN_PROCESO, Estado.ANULADO],
         Estado.EN_PROCESO: [Estado.PRODUCIDO, Estado.ANULADO],
         Estado.PRODUCIDO: [Estado.CERRADO, Estado.ANULADO],
         Estado.CERRADO: [],
         Estado.ANULADO: [],
     }
+
+    ESTADO_BORRADOR = Estado.BORRADOR
+    ESTADO_CONFIRMADO = Estado.EN_PROCESO
+    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
+        "codigo_lote_propuesto", "producto", "vale", "equipo", "fecha",
+        "linea", "litros_estandarizados_borrador",
+    )
 
     sucursal = models.ForeignKey(
         "usuarios.Sucursal",
@@ -151,6 +161,9 @@ class Lote(models.Model):
         "Código de lote",
         max_length=60,
         help_text="Correlativo de planta. No es único: se repite entre productos y días",
+    )
+    codigo_lote_propuesto = models.CharField(
+        "Código definitivo propuesto", max_length=60, blank=True
     )
     op = models.CharField(
         "OP",
@@ -171,6 +184,8 @@ class Lote(models.Model):
         on_delete=models.PROTECT,
         related_name="lotes",
         verbose_name="Producto",
+        null=True,
+        blank=True,
     )
 
     vale = models.ForeignKey(
@@ -233,6 +248,13 @@ class Lote(models.Model):
         default=Estado.EN_PROCESO,
     )
     observacion = models.TextField("Observación", blank=True)
+    litros_estandarizados_borrador = models.DecimalField(
+        "Litros estandarizados por confirmar",
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
     lote_anterior = models.ForeignKey(
         "self", on_delete=models.PROTECT, related_name="continuaciones",
         null=True, blank=True, verbose_name="Continúa a",
@@ -256,6 +278,19 @@ class Lote(models.Model):
 
     def __str__(self):
         return f"{self.codigo_lote} · {self.producto} · {self.fecha}"
+
+    @classmethod
+    def nuevo_codigo_borrador(cls):
+        return f"BORRADOR-{uuid.uuid4().hex[:8].upper()}"
+
+    def motivos_para_confirmar(self):
+        motivos = super().motivos_para_confirmar()
+        codigo = self.codigo_lote_propuesto.strip()
+        if codigo and type(self).objects.exclude(pk=self.pk).filter(
+            sucursal_id=self.sucursal_id, codigo_lote=codigo
+        ).exists():
+            motivos.append("El código de lote ya existe en esta planta.")
+        return motivos
 
     def clean(self):
         if self.lote_anterior_id and not self.motivo_corte.strip():

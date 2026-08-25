@@ -131,6 +131,7 @@ class AnalisisSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
+
         if not request:
             return
         self.fields["lote"].queryset = filtrar_por_scope(
@@ -182,9 +183,11 @@ class LoteSerializer(serializers.ModelSerializer):
         allow_blank=False,
         trim_whitespace=True,
     )
-    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    producto_nombre = serializers.CharField(
+        source="producto.nombre", read_only=True, allow_null=True
+    )
     mandante_nombre = serializers.CharField(
-        source="producto.mandante.nombre", read_only=True
+        source="producto.mandante.nombre", read_only=True, allow_null=True
     )
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
     vale_codigo = serializers.CharField(source="vale.codigo", read_only=True)
@@ -208,6 +211,7 @@ class LoteSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "codigo_lote",
+            "codigo_lote_propuesto",
             "op",
             "orden",
             "orden_codigo",
@@ -218,6 +222,7 @@ class LoteSerializer(serializers.ModelSerializer):
             "vale_codigo",
             "silo_estandarizado_codigo",
             "litros_estandarizados",
+            "litros_estandarizados_borrador",
             "litros_procesados",
             "equipo",
             "equipo_nombre",
@@ -238,8 +243,15 @@ class LoteSerializer(serializers.ModelSerializer):
             "motivo_corte",
             "motivo_anulacion",
             "calidad",
+            "es_borrador",
+            "abierto_por",
+            "abierto_en",
+            "actualizado_en",
         ]
-        read_only_fields = ["ejecucion", "lote_anterior", "motivo_corte"]
+        read_only_fields = [
+            "ejecucion", "lote_anterior", "motivo_corte", "es_borrador",
+            "abierto_por", "abierto_en", "actualizado_en",
+        ]
         validators = []
         """validators = [
             # El mensaje por defecto de DRF viene en inglés y lo lee quien
@@ -258,6 +270,9 @@ class LoteSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
+
+        if self.instance is None and not self.partial and datos.get("producto") is None:
+            raise serializers.ValidationError({"producto": "Este campo es obligatorio."})
         if not request:
             return
         scope = scope_de(request.user)
@@ -376,7 +391,7 @@ class LoteSerializer(serializers.ModelSerializer):
                 {"producto": "El producto y la orden deben pertenecer a la misma organización."}
             )
 
-        if self.instance is None and vale is not None:
+        if self.instance is None and not self.partial and vale is not None:
             if producto and vale.producto_id != producto.id:
                 raise serializers.ValidationError({
                     "producto": (
@@ -452,11 +467,17 @@ class LoteSerializer(serializers.ModelSerializer):
         datos.pop("motivo_anulacion", None)
         litros = datos.pop("litros_estandarizados", None)
         vale = datos.pop("vale", None)
+        codigo = datos.pop("codigo_lote")
+        datos.pop("codigo_lote_propuesto", None)
 
         # Los registros históricos pueden no tener vale. La operación normal
         # de planta entra siempre por el servicio transaccional.
         if vale is None:
-            return super().create(datos)
+            return super().create({
+                **datos,
+                "codigo_lote": codigo,
+                "codigo_lote_propuesto": codigo,
+            })
 
         from django.core.exceptions import ValidationError as DjangoValidationError
         from .servicios import abrir_lote_desde_vale
@@ -466,7 +487,7 @@ class LoteSerializer(serializers.ModelSerializer):
             return abrir_lote_desde_vale(
                 vale=vale,
                 producto=datos.pop("producto"),
-                codigo_lote=datos.pop("codigo_lote"),
+                codigo_lote=codigo,
                 fecha=datos.pop("fecha"),
                 litros=litros,
                 usuario=getattr(self.context.get("request"), "user", None),
@@ -571,6 +592,12 @@ class LoteSerializer(serializers.ModelSerializer):
         una sola vez en la vista. Consultarlos aquí por cada lote convertiría
         un listado de 50 lotes en más de 100 consultas.
         """
+        if lote.estado == Lote.Estado.BORRADOR:
+            return {
+                "resultado": "sin_analisis", "etiqueta": "Borrador",
+                "evaluados": 0, "desviaciones": [], "especificacion_id": None,
+            }
+
         especificaciones = self.context.get("especificaciones")
 
         if especificaciones is None:
