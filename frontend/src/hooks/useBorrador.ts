@@ -35,6 +35,13 @@ export function useBorrador<T, R extends DocumentoConId>({
     setEstado("guardado");
   }, []);
 
+  const reiniciar = useCallback(() => {
+    idRef.current = null;
+    pendiente.current = false;
+    setId(null);
+    setEstado("sin_cambios");
+  }, []);
+
   const guardarAhora = useCallback(async function persistir(): Promise<number | null> {
     if (!activo) return idRef.current;
     if (enCurso.current) {
@@ -76,5 +83,5 @@ export function useBorrador<T, R extends DocumentoConId>({
     return () => window.clearTimeout(temporizador);
   }, [activo, datos, demora, guardarAhora]);
 
-  return { id, estado, guardarAhora, reanudar };
+  return { id, estado, guardarAhora, reanudar, reiniciar };
 }

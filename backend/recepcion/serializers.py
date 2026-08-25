@@ -359,10 +359,14 @@ class AnalisisSiloSerializer(serializers.ModelSerializer):
             "id", "silo", "silo_codigo", "tomado_en", "hora_inicio_llenado",
             "ph", "acidez", "grasa", "sng", "proteina", "temperatura", "densidad",
             "certificada", "procedencia", "analista", "analista_nombre",
-            "observacion", "creado_en",
+            "observacion", "creado_en", "estado", "es_borrador",
+            "abierto_por", "abierto_en", "actualizado_en",
             "vigente", "motivo_vigencia", "faltantes_para_vale",
         ]
-        read_only_fields = ["analista", "creado_en"]
+        read_only_fields = [
+            "analista", "creado_en", "estado", "es_borrador",
+            "abierto_por", "abierto_en", "actualizado_en",
+        ]
 
     def get_analista_nombre(self, obj):
         return obj.analista.username if obj.analista_id else ""

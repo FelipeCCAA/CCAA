@@ -184,6 +184,7 @@ function Silos() {
 
       {seleccionado && (
         <AnalisisSiloPanel
+          key={seleccionado.silo_id}
           siloId={seleccionado.silo_id}
           siloCodigo={seleccionado.codigo}
         />

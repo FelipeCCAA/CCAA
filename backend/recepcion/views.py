@@ -1233,7 +1233,9 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     permission_classes = [EscribeRecepcion]
 
     def get_queryset(self):
-        consulta = super().get_queryset()
+        consulta = super().get_queryset().exclude(
+            estado__in=[AnalisisSilo.Estado.BORRADOR, AnalisisSilo.Estado.ANULADO]
+        )
 
         silo = self.request.query_params.get("silo")
         if silo:
@@ -1246,4 +1248,85 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         return consulta
 
     def perform_create(self, serializer):
-        serializer.save(analista=self.request.user)
+        serializer.save(
+            analista=self.request.user,
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+        )
+
+    def _borrador_del_usuario(self, request, pk=None):
+        consulta = filtrar_por_scope(
+            AnalisisSilo.objects.select_related("silo", "analista"),
+            request.user,
+            campo_sucursal="silo__sucursal_id",
+            campo_empresa="silo__sucursal__empresa_id",
+        ).filter(estado=AnalisisSilo.Estado.BORRADOR, abierto_por=request.user)
+        silo = request.query_params.get("silo") or request.data.get("silo")
+        if silo:
+            consulta = consulta.filter(silo_id=silo)
+        if pk is not None:
+            consulta = consulta.filter(pk=pk)
+        return consulta.order_by("-actualizado_en", "-id").first()
+
+    @action(detail=False, methods=["get"], url_path="mi-borrador")
+    def mi_borrador(self, request):
+        borrador = self._borrador_del_usuario(request)
+        if borrador is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(borrador).data)
+
+    @action(detail=False, methods=["post"], url_path="crear-borrador")
+    def crear_borrador(self, request):
+        existente = self._borrador_del_usuario(request)
+        if existente is not None:
+            return Response(
+                {"detail": "Ya existe un borrador para este silo."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = request.data.copy()
+        datos.setdefault("tomado_en", timezone.now())
+        serializer = self.get_serializer(data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        analisis = serializer.save(
+            analista=request.user,
+            abierto_por=request.user,
+            abierto_en=timezone.now(),
+            estado=AnalisisSilo.Estado.BORRADOR,
+            tomado_en=serializer.validated_data["tomado_en"],
+        )
+        return Response(self.get_serializer(analisis).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    def guardar_borrador(self, request, pk=None):
+        analisis = self._borrador_del_usuario(request, pk)
+        if analisis is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        serializer = self.get_serializer(analisis, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    def confirmar_borrador(self, request, pk=None):
+        analisis = self._borrador_del_usuario(request, pk)
+        if analisis is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        analisis.tomado_en = timezone.now()
+        motivos = analisis.confirmar(request.user)
+        if motivos:
+            return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(analisis).data)
+
+    @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    def descartar_borrador(self, request, pk=None):
+        analisis = self._borrador_del_usuario(request, pk)
+        if analisis is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        analisis.estado = AnalisisSilo.Estado.ANULADO
+        analisis.save(update_fields=["estado", "actualizado_en"])
+        return Response(status=status.HTTP_204_NO_CONTENT)

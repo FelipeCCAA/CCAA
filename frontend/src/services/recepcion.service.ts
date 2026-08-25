@@ -613,6 +613,11 @@ export interface AnalisisSilo {
   procedencia: string;
   analista_nombre: string;
   observacion: string;
+  estado: "borrador" | "confirmado" | "anulado";
+  es_borrador: boolean;
+  abierto_por: number | null;
+  abierto_en: string | null;
+  actualizado_en: string;
   vigente: boolean;
   motivo_vigencia: string;
   faltantes_para_vale: string[];
@@ -630,4 +635,50 @@ export async function crearAnalisisSilo(
 ): Promise<AnalisisSilo> {
   const { data } = await api.post("/recepcion/analisis-silo/", datos);
   return data;
+}
+
+
+export async function obtenerBorradorAnalisisSilo(
+  siloId: number,
+): Promise<AnalisisSilo | null> {
+  const respuesta = await api.get<AnalisisSilo>(
+    "/recepcion/analisis-silo/mi-borrador/", { params: { silo: siloId } },
+  );
+  return respuesta.status === 204 ? null : respuesta.data;
+}
+
+
+export async function crearBorradorAnalisisSilo(
+  datos: Record<string, unknown>,
+): Promise<AnalisisSilo> {
+  const { data } = await api.post<AnalisisSilo>(
+    "/recepcion/analisis-silo/crear-borrador/", datos,
+  );
+  return data;
+}
+
+
+export async function guardarBorradorAnalisisSilo(
+  id: number,
+  datos: Record<string, unknown>,
+): Promise<AnalisisSilo> {
+  const { data } = await api.patch<AnalisisSilo>(
+    `/recepcion/analisis-silo/${id}/guardar-borrador/`, datos,
+  );
+  return data;
+}
+
+
+export async function confirmarBorradorAnalisisSilo(
+  id: number,
+): Promise<AnalisisSilo> {
+  const { data } = await api.post<AnalisisSilo>(
+    `/recepcion/analisis-silo/${id}/confirmar-borrador/`, {},
+  );
+  return data;
+}
+
+
+export async function descartarBorradorAnalisisSilo(id: number): Promise<void> {
+  await api.post(`/recepcion/analisis-silo/${id}/descartar-borrador/`, {});
 }

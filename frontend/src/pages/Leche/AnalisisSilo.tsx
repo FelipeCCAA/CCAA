@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, FlaskConical } from "lucide-react";
 
 import {
-  crearAnalisisSilo,
+  confirmarBorradorAnalisisSilo, crearBorradorAnalisisSilo,
+  descartarBorradorAnalisisSilo, guardarBorradorAnalisisSilo,
   listarAnalisisSilo,
+  obtenerBorradorAnalisisSilo,
   type AnalisisSilo as Analisis,
 } from "../../services/recepcion.service";
+import { useBorrador } from "../../hooks/useBorrador";
 
 /*
   La captura del análisis del silo — `CCAA.REC.FORM.005.01`.
@@ -45,6 +48,8 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
   const [valores, setValores] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [tocado, setTocado] = useState(false);
+  const [borradorPendiente, setBorradorPendiente] = useState<Analisis | null>(null);
 
   useEffect(() => {
     let vigente = true;
@@ -52,25 +57,60 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
     listarAnalisisSilo(siloId)
       .then((filas) => { if (vigente) setHistorial(filas); })
       .catch(() => { if (vigente) setError("No se pudo leer el historial de análisis."); });
+    obtenerBorradorAnalisisSilo(siloId)
+      .then((borrador) => { if (vigente) setBorradorPendiente(borrador); })
+      .catch(() => undefined);
+    const reinicio = window.setTimeout(() => {
+      setValores({});
+      setTocado(false);
+    }, 0);
 
-    return () => { vigente = false; };
+    return () => {
+      vigente = false;
+      window.clearTimeout(reinicio);
+    };
   }, [siloId]);
+
+  const datosBorrador = useMemo<Record<string, unknown>>(() => ({
+    silo: siloId,
+    ...Object.fromEntries(
+      PARAMETROS.map(({ clave }) => [clave, valores[clave] || null]),
+    ),
+  }), [siloId, valores]);
+
+  const borrador = useBorrador({
+    datos: datosBorrador,
+    activo: tocado && borradorPendiente === null,
+    crear: crearBorradorAnalisisSilo,
+    actualizar: guardarBorradorAnalisisSilo,
+    alError: () => setError("No se pudo autoguardar el análisis."),
+  });
+
+  const reanudar = (documento: Analisis) => {
+    setValores(Object.fromEntries(
+      PARAMETROS.map(({ clave }) => [clave, documento[clave] ?? ""]),
+    ));
+    borrador.reanudar(documento.id);
+    setTocado(false);
+    setBorradorPendiente(null);
+  };
 
   async function guardar() {
     setGuardando(true);
     setError("");
 
     try {
-      const datos: Record<string, unknown> = {
-        silo: siloId,
-        tomado_en: new Date().toISOString(),
-      };
-      for (const { clave } of PARAMETROS) {
-        if (valores[clave]) datos[clave] = valores[clave];
+      setTocado(true);
+      let borradorId = await borrador.guardarAhora();
+      if (borradorId === null) {
+        borradorId = (await crearBorradorAnalisisSilo(datosBorrador)).id;
+      } else {
+        await guardarBorradorAnalisisSilo(borradorId, datosBorrador);
       }
-
-      await crearAnalisisSilo(datos);
+      await confirmarBorradorAnalisisSilo(borradorId);
+      borrador.reiniciar();
       setValores({});
+      setTocado(false);
       setHistorial(await listarAnalisisSilo(siloId));
     } catch {
       setError("No se pudo guardar el análisis.");
@@ -106,7 +146,21 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
         </p>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+      {borradorPendiente && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+          <strong>Análisis sin terminar.</strong> Puedes continuar los valores
+          guardados o descartarlos; todavía no cuentan como muestra vigente.
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => reanudar(borradorPendiente)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white">Continuar</button>
+            <button type="button" onClick={() => void descartarBorradorAnalisisSilo(borradorPendiente.id).then(() => setBorradorPendiente(null))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold">Descartar</button>
+          </div>
+        </div>
+      )}
+
+      <div
+        className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7"
+        onBlur={() => { if (tocado) void borrador.guardarAhora(); }}
+      >
         {PARAMETROS.map(({ clave, etiqueta }) => (
           <label key={clave} className="text-xs font-medium text-slate-600">
             {etiqueta}
@@ -115,7 +169,11 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
               step="0.01"
               inputMode="decimal"
               value={valores[clave] ?? ""}
-              onChange={(e) => setValores({ ...valores, [clave]: e.target.value })}
+              onChange={(e) => {
+                setTocado(true);
+                setValores({ ...valores, [clave]: e.target.value });
+              }}
+              disabled={borradorPendiente !== null}
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm tabular-nums text-slate-900"
             />
           </label>
@@ -126,13 +184,13 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
         <button
           type="button"
           onClick={() => void guardar()}
-          disabled={guardando}
+          disabled={guardando || borradorPendiente !== null}
           className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
-          {guardando ? "Guardando…" : "Registrar análisis"}
+          {guardando ? "Confirmando…" : "Confirmar análisis"}
         </button>
         <p className="text-xs text-slate-600">
-          La hora de la muestra la pone el servidor al registrar.
+          {borrador.estado === "guardando" ? "Guardando borrador…" : borrador.id ? "Borrador guardado. La hora de muestra se fija al confirmar." : "La hora de la muestra la pone el servidor al confirmar."}
         </p>
       </div>
 

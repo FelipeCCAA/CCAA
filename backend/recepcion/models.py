@@ -728,7 +728,7 @@ class BusquedaProveedor(models.Model):
         return f"{self.proveedor} · {self.resultado}"
 
 
-class AnalisisSilo(models.Model):
+class AnalisisSilo(DocumentoBorradorMixin, models.Model):
     """
     El análisis de la leche que hay en un silo.
 
@@ -746,6 +746,15 @@ class AnalisisSilo(models.Model):
     laboratorio devuelve la muestra. Qué falta para componer un vale lo
     responde `dominio.parametros_faltantes`, no el esquema.
     """
+
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        CONFIRMADO = "confirmado", "Confirmado"
+        ANULADO = "anulado", "Anulado"
+
+    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = ("silo", "tomado_en")
+    ESTADO_BORRADOR = Estado.BORRADOR
+    ESTADO_CONFIRMADO = Estado.CONFIRMADO
 
     silo = models.ForeignKey(
         Silo, on_delete=models.PROTECT, related_name="analisis", verbose_name="Silo"
@@ -797,6 +806,9 @@ class AnalisisSilo(models.Model):
     )
     observacion = models.TextField("Observación", blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
+    estado = models.CharField(
+        max_length=15, choices=Estado.choices, default=Estado.BORRADOR
+    )
 
     class Meta:
         verbose_name = "Análisis de silo"
