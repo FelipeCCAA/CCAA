@@ -8,8 +8,8 @@ from usuarios.tenancy import filtrar_por_scope, scope_de, sucursal_para_escritur
 
 from . import dominio
 from .models import (
-    Analisis, ControlProceso, ControlProcesoLectura, Lote, OrdenProduccion,
-    PalletProducto, RegistroEnvase,
+    Analisis, ControlProceso, ControlProcesoLectura, CorreccionLote, Lote,
+    OrdenProduccion, PalletProducto, RegistroEnvase,
 )
 
 
@@ -131,6 +131,7 @@ class AnalisisSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
+
         if not request:
             return
         self.fields["lote"].queryset = filtrar_por_scope(
@@ -182,9 +183,15 @@ class LoteSerializer(serializers.ModelSerializer):
         allow_blank=False,
         trim_whitespace=True,
     )
-    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    producto_nombre = serializers.CharField(
+        source="producto.nombre", read_only=True, allow_null=True
+    )
+    motivo_correccion = serializers.CharField(
+        write_only=True, required=False, allow_blank=False, min_length=5,
+        trim_whitespace=True,
+    )
     mandante_nombre = serializers.CharField(
-        source="producto.mandante.nombre", read_only=True
+        source="producto.mandante.nombre", read_only=True, allow_null=True
     )
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
     vale_codigo = serializers.CharField(source="vale.codigo", read_only=True)
@@ -208,6 +215,7 @@ class LoteSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "codigo_lote",
+            "codigo_lote_propuesto",
             "op",
             "orden",
             "orden_codigo",
@@ -218,6 +226,7 @@ class LoteSerializer(serializers.ModelSerializer):
             "vale_codigo",
             "silo_estandarizado_codigo",
             "litros_estandarizados",
+            "litros_estandarizados_borrador",
             "litros_procesados",
             "equipo",
             "equipo_nombre",
@@ -237,9 +246,17 @@ class LoteSerializer(serializers.ModelSerializer):
             "lote_anterior",
             "motivo_corte",
             "motivo_anulacion",
+            "motivo_correccion",
             "calidad",
+            "es_borrador",
+            "abierto_por",
+            "abierto_en",
+            "actualizado_en",
         ]
-        read_only_fields = ["ejecucion", "lote_anterior", "motivo_corte"]
+        read_only_fields = [
+            "ejecucion", "lote_anterior", "motivo_corte", "es_borrador",
+            "abierto_por", "abierto_en", "actualizado_en",
+        ]
         validators = []
         """validators = [
             # El mensaje por defecto de DRF viene en inglés y lo lee quien
@@ -258,6 +275,9 @@ class LoteSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
+
+        if self.instance is None and not self.partial and datos.get("producto") is None:
+            raise serializers.ValidationError({"producto": "Este campo es obligatorio."})
         if not request:
             return
         scope = scope_de(request.user)
@@ -376,7 +396,7 @@ class LoteSerializer(serializers.ModelSerializer):
                 {"producto": "El producto y la orden deben pertenecer a la misma organización."}
             )
 
-        if self.instance is None and vale is not None:
+        if self.instance is None and not self.partial and vale is not None:
             if producto and vale.producto_id != producto.id:
                 raise serializers.ValidationError({
                     "producto": (
@@ -436,27 +456,93 @@ class LoteSerializer(serializers.ModelSerializer):
         self._rechazar_si_es_final()
         self._rechazar_si_esta_liberado(cambios)
 
+        es_cierre_normal = (
+            self.instance.estado == Lote.Estado.EN_PROCESO
+            and datos.get("estado") == Lote.Estado.PRODUCIDO
+        )
+        if not es_cierre_normal:
+            from recepcion.models import MovimientoSilo
+
+            campos_de_libro = set(cambios) & set(Lote.CAMPOS_QUE_MUEVEN_LIBRO)
+            if campos_de_libro and MovimientoSilo.objects.filter(
+                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                origen_id=self.instance.id,
+            ).exists():
+                raise serializers.ValidationError({
+                    campo: (
+                        "Este dato ya quedó reflejado en el movimiento de leche. "
+                        "Anula y rehace el lote con motivo."
+                    )
+                    for campo in campos_de_libro
+                })
+            if (
+                self.instance.estado == Lote.Estado.PRODUCIDO
+                and "kg_producidos" in cambios
+            ):
+                raise serializers.ValidationError({
+                    "kg_producidos": (
+                        "Los kilos ya cerraron producción e inventario; corrige "
+                        "con un ajuste, no editando el lote."
+                    )
+                })
+            if not datos.get("motivo_correccion", "").strip():
+                raise serializers.ValidationError({
+                    "motivo_correccion": "Indica por qué corriges un paso anterior."
+                })
+
         return datos
 
     def update(self, instancia, datos_validados):
         motivo = datos_validados.pop("motivo_anulacion", "").strip()
+        motivo_correccion = datos_validados.pop("motivo_correccion", "").strip()
         if motivo:
             marca = f"[ANULACIÓN] {motivo}"
             anterior = datos_validados.get("observacion", instancia.observacion).strip()
             datos_validados["observacion"] = "\n".join(
                 parte for parte in (anterior, marca) if parte
             )
-        return super().update(instancia, datos_validados)
+        antes = {
+            campo: getattr(instancia, campo)
+            for campo in self.CAMPOS_SUSTANTIVOS
+            if campo in datos_validados
+        }
+        actualizada = super().update(instancia, datos_validados)
+        if motivo_correccion:
+            def serializable(valor):
+                if valor is None or isinstance(valor, (bool, int, float, str)):
+                    return valor
+                return str(valor)
+
+            diferencias = {
+                campo: [serializable(anterior), serializable(getattr(actualizada, campo))]
+                for campo, anterior in antes.items()
+                if anterior != getattr(actualizada, campo)
+            }
+            if diferencias:
+                CorreccionLote.objects.create(
+                    lote=actualizada,
+                    usuario=self.context["request"].user,
+                    motivo=motivo_correccion,
+                    cambios=diferencias,
+                )
+        return actualizada
 
     def create(self, datos):
         datos.pop("motivo_anulacion", None)
+        datos.pop("motivo_correccion", None)
         litros = datos.pop("litros_estandarizados", None)
         vale = datos.pop("vale", None)
+        codigo = datos.pop("codigo_lote")
+        datos.pop("codigo_lote_propuesto", None)
 
         # Los registros históricos pueden no tener vale. La operación normal
         # de planta entra siempre por el servicio transaccional.
         if vale is None:
-            return super().create(datos)
+            return super().create({
+                **datos,
+                "codigo_lote": codigo,
+                "codigo_lote_propuesto": codigo,
+            })
 
         from django.core.exceptions import ValidationError as DjangoValidationError
         from .servicios import abrir_lote_desde_vale
@@ -466,7 +552,7 @@ class LoteSerializer(serializers.ModelSerializer):
             return abrir_lote_desde_vale(
                 vale=vale,
                 producto=datos.pop("producto"),
-                codigo_lote=datos.pop("codigo_lote"),
+                codigo_lote=codigo,
                 fecha=datos.pop("fecha"),
                 litros=litros,
                 usuario=getattr(self.context.get("request"), "user", None),
@@ -571,6 +657,12 @@ class LoteSerializer(serializers.ModelSerializer):
         una sola vez en la vista. Consultarlos aquí por cada lote convertiría
         un listado de 50 lotes en más de 100 consultas.
         """
+        if lote.estado == Lote.Estado.BORRADOR:
+            return {
+                "resultado": "sin_analisis", "etiqueta": "Borrador",
+                "evaluados": 0, "desviaciones": [], "especificacion_id": None,
+            }
+
         especificaciones = self.context.get("especificaciones")
 
         if especificaciones is None:
@@ -609,12 +701,14 @@ class LoteDetalleSerializer(LoteSerializer):
     # la ficha porque un descuento que falló y no se ve es peor que uno que no
     # se intentó: el saldo de bodega queda alto y nadie lo sabe.
     consumo_inventario = serializers.SerializerMethodField()
+    recepciones_origen = serializers.SerializerMethodField()
 
     class Meta(LoteSerializer.Meta):
         fields = LoteSerializer.Meta.fields + [
             "analisis",
             "liberacion",
             "consumo_inventario",
+            "recepciones_origen",
         ]
 
     def get_liberacion(self, lote):
@@ -650,6 +744,44 @@ class LoteDetalleSerializer(LoteSerializer):
             "kg_base": consumo.kg_base if consumo else None,
             "pendiente": dominio.consumo_de_inventario_pendiente(lote, consumo),
         }
+
+    def get_recepciones_origen(self, lote):
+        """Camiones que aportaron al lote, incluidos saldos no atribuibles."""
+        from recepcion.models import AtribucionRecepcion, MovimientoSilo
+
+        atribuciones = (
+            AtribucionRecepcion.objects.filter(
+                movimiento__tipo=MovimientoSilo.Tipo.SALIDA,
+                movimiento__origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                movimiento__origen_id=lote.id,
+            )
+            .select_related("recepcion__vehiculo")
+            .order_by("movimiento__fecha_hora", "orden")
+        )
+        total = sum((item.litros for item in atribuciones), Decimal("0"))
+        agrupadas = {}
+        for item in atribuciones:
+            clave = (item.recepcion_id, item.origen_no_atribuible)
+            if clave not in agrupadas:
+                agrupadas[clave] = {
+                    "recepcion_id": item.recepcion_id,
+                    "guia": item.recepcion.guia if item.recepcion_id else None,
+                    "camion": (
+                        str(item.recepcion.vehiculo)
+                        if item.recepcion_id and item.recepcion.vehiculo_id else None
+                    ),
+                    "origen_no_atribuible": item.origen_no_atribuible,
+                    "litros": Decimal("0"),
+                }
+            agrupadas[clave]["litros"] += item.litros
+        resultado = []
+        for fila in agrupadas.values():
+            fila["porcentaje"] = (
+                (fila["litros"] * 100 / total).quantize(Decimal("0.01"))
+                if total else Decimal("0")
+            )
+            resultado.append(fila)
+        return resultado
 
 
 class ControlProcesoLecturaSerializer(serializers.ModelSerializer):

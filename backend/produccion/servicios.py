@@ -47,7 +47,8 @@ def litros_ya_tomados(vale, excluyendo=None):
 
 @transaction.atomic
 def abrir_lote_desde_vale(
-    *, vale, producto, codigo_lote, fecha, litros, usuario=None, **extra
+    *, vale, producto, codigo_lote, fecha, litros, usuario=None,
+    lote_borrador=None, **extra
 ):
     """
     Abre un lote con la leche que el vale dejó en su silo de destino.
@@ -83,28 +84,51 @@ def abrir_lote_desde_vale(
             )
         })
 
-    lote = Lote.objects.create(
-        sucursal=vale.silo_destino.sucursal,
-        codigo_lote=codigo_lote,
-        producto=producto,
-        vale=vale,
-        fecha=fecha,
-        estado=Lote.Estado.EN_PROCESO,
-        **extra,
-    )
+    if lote_borrador is None:
+        lote = Lote.objects.create(
+            sucursal=vale.silo_destino.sucursal,
+            codigo_lote=codigo_lote,
+            codigo_lote_propuesto=codigo_lote,
+            producto=producto,
+            vale=vale,
+            fecha=fecha,
+            estado=Lote.Estado.EN_PROCESO,
+            **extra,
+        )
+    else:
+        lote = Lote.objects.select_for_update().get(pk=lote_borrador.pk)
+        if lote.estado != Lote.Estado.BORRADOR:
+            raise ValidationError("El lote ya no está en borrador.")
+        lote.sucursal = vale.silo_destino.sucursal
+        lote.codigo_lote = codigo_lote
+        lote.codigo_lote_propuesto = codigo_lote
+        lote.producto = producto
+        lote.vale = vale
+        lote.fecha = fecha
+        lote.estado = Lote.Estado.EN_PROCESO
+        lote.litros_estandarizados_borrador = None
+        for campo, valor in extra.items():
+            setattr(lote, campo, valor)
+        lote.save()
 
-    MovimientoSilo.objects.create(
+    salida = MovimientoSilo.objects.create(
         silo=vale.silo_destino,
         tipo=MovimientoSilo.Tipo.SALIDA,
         litros=Decimal(str(litros)),
         fecha_hora=timezone.now(),
         origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
         origen_id=lote.id,
+        lote=lote,
+        producto=lote.producto,
+        equipo=lote.equipo,
+        usuario=usuario,
         motivo=(
             f"Leche estandarizada del vale {vale.codigo} al lote "
             f"{lote.codigo_lote}"
         ),
     )
+    from recepcion.servicios import atribuir_salida
+    atribuir_salida(salida)
 
     _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=usuario)
 

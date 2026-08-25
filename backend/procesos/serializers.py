@@ -1,7 +1,8 @@
 from rest_framework import serializers
 
 from .models import (
-    CorridaCondensacion, CorridaMantequilla, EjecucionProceso, EntradaProceso,
+    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    EjecucionProceso, EntradaProceso,
     EtapaProceso, EventoProceso, Proceso,
     RutaProducto, SalidaProceso,
 )
@@ -50,6 +51,47 @@ class CorridaCondensacionSerializer(serializers.ModelSerializer):
                 **attrs,
             }
         )
+        candidato.clean()
+        return attrs
+
+
+class CierreDescremacionSerializer(serializers.Serializer):
+    litros_descremada = serializers.DecimalField(max_digits=14, decimal_places=2)
+    grasa_descremada = serializers.DecimalField(max_digits=6, decimal_places=3)
+    litros_crema = serializers.DecimalField(max_digits=14, decimal_places=2)
+    grasa_crema = serializers.DecimalField(max_digits=6, decimal_places=3)
+    controles = serializers.JSONField(required=False, default=dict)
+
+
+class CorridaDescremacionSerializer(serializers.ModelSerializer):
+    ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
+    equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)
+    silo_entera_codigo = serializers.CharField(source="silo_entera.codigo", read_only=True)
+    silo_descremada_codigo = serializers.CharField(source="silo_descremada.codigo", read_only=True)
+    estanque_crema_codigo = serializers.CharField(source="estanque_crema.codigo", read_only=True)
+    estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+
+    class Meta:
+        model = CorridaDescremacion
+        fields = "__all__"
+        read_only_fields = [
+            "estado", "operacion_id", "litros_descremada", "grasa_descremada",
+            "litros_crema", "grasa_crema", "controles", "iniciada_por",
+            "iniciada_en", "finalizada_por", "finalizada_en", "motivo_anulacion",
+        ]
+
+    def validate(self, attrs):
+        candidato = CorridaDescremacion(**{
+            **{
+                campo: getattr(self.instance, campo, None)
+                for campo in (
+                    "ejecucion", "orden", "silo_entera", "analisis_entrada",
+                    "litros_entrada", "grasa_entrada", "sng_entrada",
+                    "silo_descremada", "estanque_crema",
+                )
+            },
+            **attrs,
+        })
         candidato.clean()
         return attrs
 
@@ -168,6 +210,7 @@ class EventoProcesoSerializer(serializers.ModelSerializer):
 class EjecucionProcesoSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
     etapa_nombre = serializers.CharField(source="etapa.nombre", read_only=True)
+    etapa_tipo = serializers.CharField(source="etapa.tipo", read_only=True)
     equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
     vale_codigo = serializers.CharField(source="vale.codigo", read_only=True)
     lote_codigo = serializers.CharField(

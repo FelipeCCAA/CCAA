@@ -197,6 +197,99 @@ class CorridaCondensacion(models.Model):
         return f"Condensación {self.ejecucion.codigo}"
 
 
+class CorridaDescremacion(models.Model):
+    """Una pasada de descremadora: leche entera entra; descremada y crema salen."""
+
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        EN_CURSO = "en_curso", "En curso"
+        CERRADA = "cerrada", "Cerrada"
+        ANULADA = "anulada", "Anulada"
+
+    ejecucion = models.OneToOneField(
+        "procesos.EjecucionProceso", on_delete=models.PROTECT,
+        related_name="corrida_descremacion",
+    )
+    orden = models.ForeignKey(
+        "produccion.OrdenProduccion", on_delete=models.PROTECT,
+        related_name="corridas_descremacion", null=True, blank=True,
+    )
+    silo_entera = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT, related_name="descremaciones_origen"
+    )
+    analisis_entrada = models.ForeignKey(
+        "recepcion.AnalisisSilo", on_delete=models.PROTECT,
+        related_name="descremaciones",
+    )
+    litros_entrada = models.DecimalField(max_digits=14, decimal_places=2)
+    grasa_entrada = models.DecimalField(max_digits=6, decimal_places=3)
+    sng_entrada = models.DecimalField(max_digits=6, decimal_places=3)
+    silo_descremada = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT, related_name="descremaciones_salida"
+    )
+    litros_descremada = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    grasa_descremada = models.DecimalField(
+        max_digits=6, decimal_places=3, null=True, blank=True
+    )
+    estanque_crema = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT, related_name="crema_descremaciones"
+    )
+    litros_crema = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    grasa_crema = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    controles = models.JSONField(default=dict, blank=True)
+    estado = models.CharField(
+        max_length=20, choices=Estado.choices, default=Estado.BORRADOR, db_index=True
+    )
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    iniciada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="descremaciones_iniciadas", null=True, blank=True,
+    )
+    iniciada_en = models.DateTimeField(null=True, blank=True)
+    finalizada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="descremaciones_finalizadas", null=True, blank=True,
+    )
+    finalizada_en = models.DateTimeField(null=True, blank=True)
+    motivo_anulacion = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(litros_entrada__gt=0), name="descremacion_entrada_positiva"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(litros_descremada__isnull=True)
+                | models.Q(litros_descremada__gt=0), name="descremacion_descremada_positiva"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(litros_crema__isnull=True)
+                | models.Q(litros_crema__gt=0), name="descremacion_crema_positiva"
+            ),
+        ]
+
+    def clean(self):
+        if self.ejecucion_id and self.ejecucion.etapa.tipo != EtapaProceso.Tipo.DESCREMACION:
+            raise ValidationError({"ejecucion": "La ejecución no corresponde a descremación."})
+        ids = {self.silo_entera_id, self.silo_descremada_id, self.estanque_crema_id}
+        if None not in ids and len(ids) != 3:
+            raise ValidationError("La entrada, la descremada y la crema requieren estanques distintos.")
+        if self.analisis_entrada_id and self.silo_entera_id:
+            if self.analisis_entrada.silo_id != self.silo_entera_id:
+                raise ValidationError({"analisis_entrada": "El análisis no pertenece al silo de leche entera."})
+        if self.ejecucion_id:
+            for campo in ("silo_entera", "silo_descremada", "estanque_crema"):
+                silo = getattr(self, campo, None)
+                if silo and silo.sucursal_id != self.ejecucion.sucursal_id:
+                    raise ValidationError({campo: "El estanque pertenece a otra planta."})
+
+    def __str__(self):
+        return f"Descremación {self.ejecucion.codigo}"
+
+
 class CorridaMantequilla(models.Model):
     class Estado(models.TextChoices):
         BORRADOR = "borrador", "Borrador"

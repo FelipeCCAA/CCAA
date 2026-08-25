@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from maestros.models import Silo
 
@@ -5,9 +7,11 @@ from .models import ValeEstandarizacion
 
 
 class ValeEstandarizacionSerializer(serializers.ModelSerializer):
-    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    producto_nombre = serializers.CharField(
+        source="producto.nombre", read_only=True, allow_null=True
+    )
     silo_entera_codigo = serializers.CharField(
-        source="silo_entera.codigo", read_only=True
+        source="silo_entera.codigo", read_only=True, allow_null=True
     )
     # `allow_null` y no `default`: sin él la clave desaparece del JSON cuando el
     # silo es nulo, y una clave ausente y una nula se leen distinto en el
@@ -15,8 +19,11 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     silo_descremada_codigo = serializers.CharField(
         source="silo_descremada.codigo", read_only=True, allow_null=True
     )
+    silo_crema_codigo = serializers.CharField(
+        source="silo_crema.codigo", read_only=True, allow_null=True
+    )
     silo_destino_codigo = serializers.CharField(
-        source="silo_destino.codigo", read_only=True
+        source="silo_destino.codigo", read_only=True, allow_null=True
     )
     responsable_nombre = serializers.CharField(
         source="responsable.get_full_name", read_only=True, allow_null=True
@@ -37,25 +44,29 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ValeEstandarizacion
         fields = [
-            "id", "codigo", "fecha",
+            "id", "codigo", "codigo_propuesto", "fecha",
             "producto", "producto_nombre", "rc_objetivo", "volumen",
             "silo_entera", "silo_entera_codigo",
             "silo_descremada", "silo_descremada_codigo",
+            "silo_crema", "silo_crema_codigo",
             "silo_destino", "silo_destino_codigo",
+            "silo_sugerido_fifo", "motivo_desvio_fifo",
             "entera_grasa", "entera_sng", "descremada_grasa", "descremada_sng",
-            "analisis_entera", "analisis_descremada",
-            "litros_entera", "litros_descremada",
+            "crema_grasa", "crema_sng", "analisis_entera", "analisis_descremada",
+            "analisis_crema", "litros_entera", "litros_descremada", "litros_crema",
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",
             "rc_real", "minutos_agitando", "avisos", "evaluacion",
             "observaciones", "responsable", "responsable_nombre", "creado_en",
+            "es_borrador", "abierto_por", "abierto_en", "actualizado_en",
         ]
         # El estado lo mueven las acciones del ciclo, no un PATCH: liberar
         # exige que el RC cumpla, y con un campo escribible eso se salta.
         read_only_fields = [
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",
-            "responsable", "creado_en",
+            "responsable", "creado_en", "es_borrador",
+            "abierto_por", "abierto_en", "actualizado_en",
         ]
 
     def get_evaluacion(self, vale):
@@ -73,13 +84,25 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        if self.instance is None and not self.partial:
+            obligatorios = (
+                "codigo", "fecha", "producto", "rc_objetivo", "volumen",
+                "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
+                "litros_entera",
+            )
+            faltantes = [campo for campo in obligatorios if attrs.get(campo) is None]
+            if faltantes:
+                raise serializers.ValidationError({
+                    campo: "Este campo es obligatorio." for campo in faltantes
+                })
+
         # DRF no llama a `Model.clean()`: hay que invocarlo a mano o las reglas
         # del modelo solo protegen al admin. Se arma un vale desechable con los
         # tres silos —lo único que `clean` mira— para no ensuciar la instancia
         # real cuando la validación falla.
         silos = {
             campo: attrs.get(campo, getattr(self.instance, campo, None))
-            for campo in ("silo_entera", "silo_descremada", "silo_destino")
+            for campo in ("silo_entera", "silo_descremada", "silo_crema", "silo_destino")
         }
         ValeEstandarizacion(**silos).clean()
 
@@ -96,6 +119,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
 
         entera = silos["silo_entera"]
         descremada = silos["silo_descremada"]
+        crema = silos["silo_crema"]
         destino = silos["silo_destino"]
         if entera and entera.tipo != Silo.Tipo.SILO:
             raise serializers.ValidationError(
@@ -105,6 +129,8 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"silo_descremada": "Selecciona un TK de leche descremada."}
             )
+        if crema and crema.tipo != Silo.Tipo.TK_CREMA:
+            raise serializers.ValidationError({"silo_crema": "Selecciona un TK de crema."})
         if destino and destino.tipo != Silo.Tipo.SILO:
             raise serializers.ValidationError(
                 {"silo_destino": "El destino debe ser un silo de leche."}
@@ -117,6 +143,28 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"silo_descremada": "La mezcla requiere un TK de leche descremada."}
             )
+        litros_crema = attrs.get(
+            "litros_crema", getattr(self.instance, "litros_crema", 0)
+        )
+        if litros_crema and not crema:
+            raise serializers.ValidationError(
+                {"silo_crema": "La mezcla requiere un TK de crema."}
+            )
+
+        sugerido = attrs.get(
+            "silo_sugerido_fifo",
+            getattr(self.instance, "silo_sugerido_fifo", None),
+        )
+        motivo_desvio = attrs.get(
+            "motivo_desvio_fifo",
+            getattr(self.instance, "motivo_desvio_fifo", ""),
+        ) or ""
+        if sugerido and entera and sugerido.pk != entera.pk and len(motivo_desvio.strip()) < 5:
+            raise serializers.ValidationError({
+                "motivo_desvio_fifo": (
+                    "Indica por qué no usarás el silo sugerido por FIFO."
+                )
+            })
 
         return attrs
 
@@ -127,9 +175,12 @@ class CalculoMezclaSerializer(serializers.Serializer):
     entera_grasa = serializers.FloatField()
     entera_sng = serializers.FloatField()
     entera_disponible = serializers.FloatField(required=False, default=0.0)
-    descremada_grasa = serializers.FloatField()
-    descremada_sng = serializers.FloatField()
+    descremada_grasa = serializers.FloatField(required=False, allow_null=True)
+    descremada_sng = serializers.FloatField(required=False, allow_null=True)
     descremada_disponible = serializers.FloatField(required=False, default=0.0)
+    crema_grasa = serializers.FloatField(required=False, allow_null=True)
+    crema_sng = serializers.FloatField(required=False, allow_null=True)
+    crema_disponible = serializers.FloatField(required=False, default=0.0)
     rc_objetivo = serializers.FloatField()
     volumen = serializers.FloatField()
 
@@ -137,3 +188,13 @@ class CalculoMezclaSerializer(serializers.Serializer):
 class MuestraSerializer(serializers.Serializer):
     grasa = serializers.FloatField()
     sng = serializers.FloatField()
+
+
+class CorreccionMuestraSerializer(serializers.Serializer):
+    grasa = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0")
+    )
+    sng = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0.01")
+    )
+    motivo = serializers.CharField(min_length=5, trim_whitespace=True)

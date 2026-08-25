@@ -58,10 +58,80 @@ class Mezcla:
     motivo: str = ""
     entera: float = 0.0
     descremada: float = 0.0
+    crema: float = 0.0
     rc_esperado: float | None = None
     grasa_esperada: float | None = None
     sng_esperado: float | None = None
     avisos: list[str] = field(default_factory=list)
+
+
+def sugerir_mezcla_con_crema(
+    *, entera: Leche, descremada: Leche, crema: Leche,
+    rc_objetivo: float, volumen: float,
+) -> Mezcla:
+    """Maximiza la crema utilizable y resuelve el resto con las dos leches."""
+    if volumen <= 0 or rc_objetivo <= 0:
+        return calcular_mezcla(
+            entera=entera, descremada=descremada,
+            rc_objetivo=rc_objetivo, volumen=volumen,
+        )
+
+    tope = min(max(crema.cantidad, 0.0), volumen)
+    ae = entera.grasa - rc_objetivo * entera.sng
+    ad = descremada.grasa - rc_objetivo * descremada.sng
+    ac = crema.grasa - rc_objetivo * crema.sng
+
+    def resolver(litros_crema):
+        restante = volumen - litros_crema
+        denominador = ae - ad
+        if abs(denominador) < 1e-9:
+            return None
+        litros_entera = (-litros_crema * ac - restante * ad) / denominador
+        litros_descremada = restante - litros_entera
+        if litros_entera < -1e-6 or litros_descremada < -1e-6:
+            return None
+        return max(0.0, litros_entera), max(0.0, litros_descremada)
+
+    elegido = None
+    # Baja el tope en pasos de 0,1 %. Es determinista, suficientemente fino
+    # para una válvula medida a décimas de litro y no agrega un solucionador.
+    for paso in range(1001):
+        litros_crema = tope * (1000 - paso) / 1000
+        par = resolver(litros_crema)
+        if par is not None:
+            elegido = (*par, litros_crema)
+            break
+    if elegido is None:
+        base = calcular_mezcla(
+            entera=entera, descremada=descremada,
+            rc_objetivo=rc_objetivo, volumen=volumen,
+        )
+        base.avisos.append("La crema disponible no permite una mezcla factible.")
+        return base
+
+    x, y, z = elegido
+    grasa = (x * entera.grasa + y * descremada.grasa + z * crema.grasa) / volumen
+    sng = (x * entera.sng + y * descremada.sng + z * crema.sng) / volumen
+    avisos = []
+    if tope - z > 0.1:
+        avisos.append(
+            f"Con {_redondear(tope)} L de crema el RC no se alcanza; "
+            f"la sugerencia usa {_redondear(z)} L."
+        )
+    for nombre, requerido, disponible in (
+        ("leche entera", x, entera.cantidad),
+        ("descremada", y, descremada.cantidad),
+    ):
+        if requerido > disponible:
+            avisos.append(
+                f"Faltan {_redondear(requerido - disponible)} L de {nombre}: "
+                f"hay {_redondear(disponible)} y se necesitan {_redondear(requerido)}."
+            )
+    return Mezcla(
+        True, entera=_redondear(x), descremada=_redondear(y), crema=_redondear(z),
+        rc_esperado=grasa / sng if sng else None,
+        grasa_esperada=round(grasa, 3), sng_esperado=round(sng, 3), avisos=avisos,
+    )
 
 
 def _redondear(valor: float) -> float:
@@ -72,7 +142,7 @@ def _redondear(valor: float) -> float:
 def calcular_mezcla(
     *,
     entera: Leche,
-    descremada: Leche,
+    descremada: Leche | None,
     rc_objetivo: float,
     volumen: float,
 ) -> Mezcla:
@@ -95,6 +165,26 @@ def calcular_mezcla(
 
     if rc_objetivo <= 0:
         return Mezcla(False, "El RC objetivo debe ser mayor que cero.")
+
+    if descremada is None:
+        alcanzado = entera.rc
+        if alcanzado is not None and abs(alcanzado - rc_objetivo) < 1e-6:
+            avisos = []
+            if volumen > entera.cantidad:
+                avisos.append(
+                    f"Faltan {_redondear(volumen - entera.cantidad)} L de leche entera: "
+                    f"hay {_redondear(entera.cantidad)} y se necesitan {_redondear(volumen)}."
+                )
+            return Mezcla(
+                True, entera=_redondear(volumen), descremada=0.0,
+                rc_esperado=alcanzado, grasa_esperada=entera.grasa,
+                sng_esperado=entera.sng, avisos=avisos,
+            )
+        return Mezcla(
+            False,
+            "La leche entera no está al RC objetivo. Selecciona una fuente "
+            "complementaria para ajustar la mezcla.",
+        )
 
     denominador = (entera.grasa - descremada.grasa) - rc_objetivo * (
         entera.sng - descremada.sng

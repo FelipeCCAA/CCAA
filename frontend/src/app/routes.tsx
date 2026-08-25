@@ -37,6 +37,7 @@ const LecheCalidad = lazy(() => import("../pages/Leche/Calidad"));
 const LecheDescarga = lazy(() => import("../pages/Leche/SiloDescarga"));
 const LecheSilos = lazy(() => import("../pages/Leche/Silos"));
 const LecheHistorial = lazy(() => import("../pages/Leche/Historial"));
+const LecheReporte = lazy(() => import("../pages/Leche/ReporteDiario"));
 const Liberacion = lazy(() => import("../pages/Liberacion/Liberacion"));
 const Planificacion = lazy(() => import("../pages/Planificacion/Planificacion"));
 const Maestros = lazy(() => import("../pages/Maestros/Maestros"));
@@ -195,6 +196,7 @@ function RoutesApp(){
                         <Route path="descarga" element={diferido(<LecheDescarga />)} />
                         <Route path="silos" element={diferido(<LecheSilos />)} />
                         <Route path="historial" element={diferido(<LecheHistorial />)} />
+                        <Route path="reporte" element={diferido(<LecheReporte />)} />
                     </Route>
 
                     {/* Las dos direcciones anteriores siguen funcionando: hay

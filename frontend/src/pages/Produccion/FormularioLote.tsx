@@ -3,13 +3,19 @@ import { ArrowRight, Beaker, Factory, X } from "lucide-react";
 import axios from "axios";
 
 import {
-  crearLote,
+  confirmarBorradorLote,
+  crearBorradorLote,
+  descartarBorradorLote,
+  guardarBorradorLote,
+  obtenerBorradorLote,
   obtenerValesDisponibles,
   sugerirCodigoLote,
+  type DatosBorradorLote,
   type Producto,
   type ValeDisponible,
 } from "../../services/produccion.service";
 import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
+import { useBorrador } from "../../hooks/useBorrador";
 
 
 /*
@@ -67,6 +73,58 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [tocado, setTocado] = useState(false);
+
+  const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
+  const datosBorrador: DatosBorradorLote = {
+    codigo_lote_propuesto: codigoLote,
+    producto: numeroONull(producto),
+    vale: numeroONull(vale),
+    litros_estandarizados_borrador: numeroONull(litros),
+    equipo: numeroONull(equipo),
+    fecha,
+    op,
+    linea,
+    turno,
+    observacion,
+  };
+  const borrador = useBorrador({
+    datos: datosBorrador,
+    activo: tocado,
+    crear: crearBorradorLote,
+    actualizar: guardarBorradorLote,
+    alError: () => setError("No se pudo autoguardar el borrador."),
+  });
+  const { reanudar } = borrador;
+
+  useEffect(() => {
+    let vigente = true;
+    void obtenerBorradorLote().then(async (guardado) => {
+      if (!vigente || !guardado) return;
+      if (!window.confirm("Tienes un lote sin abrir. ¿Quieres continuarlo?")) {
+        await descartarBorradorLote(guardado.id);
+        return;
+      }
+      setCodigoLote(guardado.codigo_lote_propuesto);
+      setCodigoEditado(Boolean(guardado.codigo_lote_propuesto));
+      setProducto(guardado.producto == null ? "" : String(guardado.producto));
+      setVale(guardado.vale == null ? "" : String(guardado.vale));
+      setLitros(
+        guardado.litros_estandarizados_borrador == null
+          ? "" : String(guardado.litros_estandarizados_borrador)
+      );
+      setEquipo(guardado.equipo == null ? "" : String(guardado.equipo));
+      setFecha(guardado.fecha);
+      setOp(guardado.op);
+      setLinea(guardado.linea);
+      setTurno(guardado.turno);
+      setObservacion(guardado.observacion);
+      reanudar(guardado.id);
+    }).catch(() => {
+      if (vigente) setError("No se pudo consultar el borrador.");
+    });
+    return () => { vigente = false; };
+  }, [reanudar]);
 
   useEffect(() => {
     obtenerEquipos().then(setEquipos).catch(() => setEquipos([]));
@@ -111,18 +169,10 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
     try {
 
-      await crearLote({
-        codigo_lote: codigoLote,
-        producto: Number(producto),
-        vale: Number(vale),
-        litros_estandarizados: Number(litros),
-        equipo: equipo ? Number(equipo) : undefined,
-        fecha,
-        op: op || undefined,
-        linea: linea || undefined,
-        turno: turno || undefined,
-        observacion: observacion || undefined,
-      });
+      const borradorId = await borrador.guardarAhora({ propagarError: true });
+      if (borradorId === null) throw new Error("El borrador no alcanzó a guardarse.");
+      await confirmarBorradorLote(borradorId);
+      borrador.reiniciar();
 
       alGuardar();
       alCerrar();
@@ -198,7 +248,11 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
         </div>
 
-        <form onSubmit={enviar} className="px-6 py-6">
+        <form
+          onSubmit={enviar}
+          onChange={() => setTocado(true)}
+          className="px-6 py-6"
+        >
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
 
@@ -459,6 +513,13 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
           )}
 
           <div className="mt-8 flex justify-end gap-3">
+
+            <p className="mr-auto self-center text-xs text-slate-500">
+              {borrador.estado === "guardando" ? "Guardando borrador…" :
+                borrador.estado === "error" ? "No se pudo autoguardar." :
+                  borrador.id ? "Borrador guardado. La leche aún no se descuenta." :
+                    "Los cambios se guardarán automáticamente."}
+            </p>
 
             <button
               type="button"

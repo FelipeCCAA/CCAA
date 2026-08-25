@@ -1,6 +1,8 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db import transaction
+from django.db.models import Case, Count, DecimalField, F, Max, Sum, Value, When
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -11,10 +13,13 @@ from maestros.models import Silo
 from recepcion.models import AnalisisSilo
 
 from . import servicios
-from .dominio import Leche, calcular_mezcla
-from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
+from .dominio import Leche, calcular_mezcla, sugerir_mezcla_con_crema
+from .models import (
+    MINUTOS_DE_AGITACION, CorreccionValeEstandarizacion, ValeEstandarizacion,
+)
 from .serializers import (
     CalculoMezclaSerializer,
+    CorreccionMuestraSerializer,
     MuestraSerializer,
     ValeEstandarizacionSerializer,
 )
@@ -31,10 +36,12 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         "producto": (None, "mandante__empresa_id"),
         "silo_entera": ("sucursal_id", "sucursal__empresa_id"),
         "silo_descremada": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_crema": ("sucursal_id", "sucursal__empresa_id"),
         "silo_destino": ("sucursal_id", "sucursal__empresa_id"),
     }
     queryset = ValeEstandarizacion.objects.select_related(
-        "producto", "silo_entera", "silo_descremada", "silo_destino", "responsable"
+        "producto", "silo_entera", "silo_descremada", "silo_crema",
+        "silo_destino", "responsable"
     )
     serializer_class = ValeEstandarizacionSerializer
     permission_classes = [EscribeEstandarizacion]
@@ -45,6 +52,10 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         estado = self.request.query_params.get("estado")
         if estado:
             consulta = consulta.filter(estado=estado)
+            if estado == ValeEstandarizacion.Estado.BORRADOR:
+                consulta = consulta.filter(abierto_por=self.request.user)
+        else:
+            consulta = consulta.exclude(estado=ValeEstandarizacion.Estado.BORRADOR)
 
         if self.request.query_params.get("abiertos") in {"1", "true"}:
             consulta = consulta.exclude(
@@ -57,7 +68,94 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         return consulta
 
     def perform_create(self, serializer):
-        serializer.save(responsable=self.request.user)
+        serializer.save(
+            responsable=self.request.user,
+            estado=ValeEstandarizacion.Estado.CALCULADO,
+            codigo_propuesto=serializer.validated_data["codigo"],
+        )
+
+    # --------------------------------------------------------- borradores
+
+    def _borrador_del_usuario(self, request, pk=None):
+        consulta = ValeEstandarizacion.objects.select_related(
+            "producto", "silo_entera", "silo_descremada", "silo_crema", "silo_destino",
+            "responsable",
+        ).filter(
+            estado=ValeEstandarizacion.Estado.BORRADOR,
+            abierto_por=request.user,
+        )
+        if pk is not None:
+            consulta = consulta.filter(pk=pk)
+        return consulta.order_by("-actualizado_en", "-id").first()
+
+    @action(detail=False, methods=["get"], url_path="mi-borrador")
+    def mi_borrador(self, request):
+        borrador = self._borrador_del_usuario(request)
+        if borrador is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(borrador).data)
+
+    @action(detail=False, methods=["post"], url_path="crear-borrador")
+    def crear_borrador(self, request):
+        existente = self._borrador_del_usuario(request)
+        if existente is not None:
+            return Response(
+                {
+                    "detail": "Ya tienes un borrador de vale abierto.",
+                    "borrador": self.get_serializer(existente).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = request.data.copy()
+        datos.pop("codigo", None)
+        serializer = self.get_serializer(data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        vale = serializer.save(
+            codigo=ValeEstandarizacion.nuevo_codigo_borrador(),
+            fecha=serializer.validated_data.get("fecha", timezone.localdate()),
+            responsable=request.user,
+            abierto_por=request.user,
+            abierto_en=timezone.now(),
+            estado=ValeEstandarizacion.Estado.BORRADOR,
+        )
+        return Response(self.get_serializer(vale).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    def guardar_borrador(self, request, pk=None):
+        vale = self._borrador_del_usuario(request, pk)
+        if vale is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = request.data.copy()
+        datos.pop("codigo", None)
+        serializer = self.get_serializer(vale, data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    def confirmar_borrador(self, request, pk=None):
+        vale = self._borrador_del_usuario(request, pk)
+        if vale is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        motivos = vale.confirmar(request.user)
+        if motivos:
+            return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(vale).data)
+
+    @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    def descartar_borrador(self, request, pk=None):
+        vale = self._borrador_del_usuario(request, pk)
+        if vale is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        vale.estado = ValeEstandarizacion.Estado.ANULADO
+        vale.save(update_fields=["estado", "actualizado_en"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # ------------------------------------------------------ cálculo previo
 
@@ -73,31 +171,76 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         entrada.is_valid(raise_exception=True)
         datos = entrada.validated_data
 
-        mezcla = calcular_mezcla(
-            entera=Leche(
-                cantidad=datos["entera_disponible"],
-                grasa=datos["entera_grasa"],
-                sng=datos["entera_sng"],
-            ),
-            descremada=Leche(
+        tiene_descremada = (
+            datos.get("descremada_grasa") is not None
+            and datos.get("descremada_sng") is not None
+        )
+        entera = Leche(
+            cantidad=datos["entera_disponible"],
+            grasa=datos["entera_grasa"], sng=datos["entera_sng"],
+        )
+        descremada = Leche(
                 cantidad=datos["descremada_disponible"],
                 grasa=datos["descremada_grasa"],
                 sng=datos["descremada_sng"],
-            ),
-            rc_objetivo=datos["rc_objetivo"],
-            volumen=datos["volumen"],
+        ) if tiene_descremada else None
+        tiene_crema = (
+            datos.get("crema_grasa") is not None
+            and datos.get("crema_sng") is not None
         )
+        if tiene_crema and descremada is not None:
+            mezcla = sugerir_mezcla_con_crema(
+                entera=entera, descremada=descremada,
+                crema=Leche(
+                    cantidad=datos["crema_disponible"],
+                    grasa=datos["crema_grasa"], sng=datos["crema_sng"],
+                ),
+                rc_objetivo=datos["rc_objetivo"], volumen=datos["volumen"],
+            )
+        else:
+            mezcla = calcular_mezcla(
+                entera=entera, descremada=descremada,
+                rc_objetivo=datos["rc_objetivo"], volumen=datos["volumen"],
+            )
 
         return Response({
             "posible": mezcla.posible,
             "motivo": mezcla.motivo,
             "entera": mezcla.entera,
             "descremada": mezcla.descremada,
+            "crema": mezcla.crema,
             "rc_esperado": mezcla.rc_esperado,
             "grasa_esperada": mezcla.grasa_esperada,
             "sng_esperado": mezcla.sng_esperado,
             "avisos": mezcla.avisos,
         })
+
+    @action(detail=False, methods=["get"], url_path="guia-rc")
+    def guia_rc(self, request):
+        """RC realmente usados, agrupados por producto, como guía operacional."""
+        consulta = filtrar_por_scope(
+            ValeEstandarizacion.objects.filter(
+                producto__isnull=False, rc_objetivo__isnull=False
+            ),
+            request.user,
+            campo_sucursal="silo_destino__sucursal_id",
+            campo_empresa="silo_destino__sucursal__empresa_id",
+        )
+        filas = consulta.values(
+            "producto_id", "producto__nombre", "rc_objetivo"
+        ).annotate(
+            usos=Count("id"), usado_por_ultima_vez=Max("fecha")
+        ).order_by("rc_objetivo", "producto__nombre")
+        return Response([
+            {
+                "producto": fila["producto_id"],
+                "producto_nombre": fila["producto__nombre"],
+                "rc_objetivo": str(fila["rc_objetivo"]),
+                "usos": fila["usos"],
+                "usado_por_ultima_vez": fila["usado_por_ultima_vez"],
+            }
+            for fila in filas
+        ])
 
     @action(detail=False, methods=["get"], url_path="composicion-silos")
     def composicion_silos(self, request):
@@ -198,6 +341,59 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             )
         except DjangoValidationError as error:
             return _conflicto(error)
+
+        return Response(self.get_serializer(vale).data)
+
+    @action(detail=True, methods=["patch"], url_path="corregir-muestra")
+    def corregir_muestra(self, request, pk=None):
+        entrada = CorreccionMuestraSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            vale = ValeEstandarizacion.objects.select_for_update().get(
+                pk=self.get_object().pk
+            )
+            if vale.estado not in {
+                ValeEstandarizacion.Estado.MUESTREADO,
+                ValeEstandarizacion.Estado.CORRIGIENDO,
+            }:
+                return Response(
+                    {
+                        "detail": (
+                            "La muestra solo puede corregirse antes de liberar "
+                            "o anular el vale."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            grasa = entrada.validated_data["grasa"]
+            sng = entrada.validated_data["sng"]
+            cambios = {}
+            if vale.grasa_real != grasa:
+                cambios["grasa_real"] = [str(vale.grasa_real), str(grasa)]
+            if vale.sng_real != sng:
+                cambios["sng_real"] = [str(vale.sng_real), str(sng)]
+            if not cambios:
+                return Response(
+                    {"detail": "No hay cambios de muestra que guardar."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            estado_anterior = vale.estado
+            vale.grasa_real = grasa
+            vale.sng_real = sng
+            vale.estado = ValeEstandarizacion.Estado.MUESTREADO
+            vale.save(update_fields=["grasa_real", "sng_real", "estado"])
+            if estado_anterior != vale.estado:
+                cambios["estado"] = [estado_anterior, vale.estado]
+            CorreccionValeEstandarizacion.objects.create(
+                vale=vale,
+                usuario=request.user,
+                paso="muestreo",
+                motivo=entrada.validated_data["motivo"],
+                cambios=cambios,
+            )
 
         return Response(self.get_serializer(vale).data)
 

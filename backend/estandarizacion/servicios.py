@@ -18,7 +18,7 @@ from .models import ValeEstandarizacion
 from maestros.models import Silo
 from procesos.servicios import cerrar_estandarizacion, registrar_estandarizacion
 from recepcion.models import MovimientoSilo
-from recepcion.servicios import ESTADOS_SIN_CONSUMO
+from recepcion.servicios import ESTADOS_SIN_CONSUMO, motivos_silo_no_disponible
 
 
 def _saldo(silo):
@@ -53,6 +53,8 @@ def transferir(*, vale_id, usuario):
     ids_silos = [vale.silo_entera_id, vale.silo_destino_id]
     if vale.silo_descremada_id:
         ids_silos.append(vale.silo_descremada_id)
+    if vale.silo_crema_id:
+        ids_silos.append(vale.silo_crema_id)
     bloqueados = {
         silo.id: silo
         for silo in Silo.objects.select_for_update().filter(pk__in=ids_silos)
@@ -60,12 +62,12 @@ def transferir(*, vale_id, usuario):
     entera = bloqueados[vale.silo_entera_id]
     destino = bloqueados[vale.silo_destino_id]
     descremada = bloqueados.get(vale.silo_descremada_id)
+    crema = bloqueados.get(vale.silo_crema_id)
 
-    for silo in filter(None, [entera, descremada]):
-        if not silo.activo or silo.estado in ESTADOS_SIN_CONSUMO:
-            raise ValidationError(
-                f"{silo.codigo} no está habilitado para consumo ({silo.get_estado_display()})."
-            )
+    for silo in filter(None, [entera, descremada, crema]):
+        motivos = motivos_silo_no_disponible(silo, para="proceso")
+        if motivos:
+            raise ValidationError(f"{silo.codigo}: " + " ".join(motivos))
     if not destino.activo or destino.estado in {
         Silo.Estado.BLOQUEADO_CALIDAD,
         Silo.Estado.EN_CIP,
@@ -85,6 +87,13 @@ def transferir(*, vale_id, usuario):
         codigo = descremada.codigo if descremada else "el TK seleccionado"
         raise ValidationError(
             f"{codigo} no tiene {vale.litros_descremada} L de leche descremada disponibles."
+        )
+    if vale.litros_crema and (
+        crema is None or _saldo(crema) < vale.litros_crema
+    ):
+        codigo = crema.codigo if crema else "el TK de crema seleccionado"
+        raise ValidationError(
+            f"{codigo} no tiene {vale.litros_crema} L de crema disponibles."
         )
     if _saldo(destino) + vale.volumen > destino.capacidad_l:
         disponible = destino.capacidad_l - _saldo(destino)
@@ -118,7 +127,27 @@ def transferir(*, vale_id, usuario):
             origen_id=vale.id,
             operacion_id=operacion_id, usuario=usuario,
         ))
-    MovimientoSilo.objects.bulk_create(movimientos)
+    if crema and vale.litros_crema:
+        movimientos.append(MovimientoSilo(
+            silo=crema, tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=vale.litros_crema, fecha_hora=ahora,
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id, operacion_id=operacion_id, usuario=usuario,
+        ))
+    creados = MovimientoSilo.objects.bulk_create(movimientos)
+    from recepcion.servicios import atribuir_salida, heredar_atribuciones
+
+    salidas = [
+        movimiento for movimiento in creados
+        if movimiento.tipo == MovimientoSilo.Tipo.SALIDA
+    ]
+    ingreso = next(
+        movimiento for movimiento in creados
+        if movimiento.tipo == MovimientoSilo.Tipo.INGRESO
+    )
+    for salida in salidas:
+        atribuir_salida(salida)
+    heredar_atribuciones(ingreso, salidas)
 
     vale.estado = ValeEstandarizacion.Estado.TRANSFERIDO
     vale.responsable = vale.responsable or usuario

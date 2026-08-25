@@ -363,6 +363,56 @@ export async function crearLote(lote: LoteNuevo): Promise<Lote> {
   return data;
 }
 
+export interface DatosBorradorLote {
+  codigo_lote_propuesto: string;
+  producto: number | null;
+  vale: number | null;
+  litros_estandarizados_borrador: number | null;
+  equipo: number | null;
+  fecha: string;
+  op: string;
+  linea: string;
+  turno: string;
+  observacion: string;
+}
+
+export interface BorradorLote extends DatosBorradorLote {
+  id: number;
+  codigo_lote: string;
+  estado: "borrador";
+  actualizado_en: string;
+}
+
+export async function obtenerBorradorLote(): Promise<BorradorLote | null> {
+  const respuesta = await api.get<BorradorLote>("produccion/lotes/mi-borrador/");
+  return respuesta.status === 204 ? null : respuesta.data;
+}
+
+export async function crearBorradorLote(datos: DatosBorradorLote) {
+  const { data } = await api.post<BorradorLote>(
+    "produccion/lotes/crear-borrador/", datos,
+  );
+  return data;
+}
+
+export async function guardarBorradorLote(id: number, datos: DatosBorradorLote) {
+  const { data } = await api.patch<BorradorLote>(
+    `produccion/lotes/${id}/guardar-borrador/`, datos,
+  );
+  return data;
+}
+
+export async function confirmarBorradorLote(id: number) {
+  const { data } = await api.post<Lote>(
+    `produccion/lotes/${id}/confirmar-borrador/`,
+  );
+  return data;
+}
+
+export async function descartarBorradorLote(id: number) {
+  await api.post(`produccion/lotes/${id}/descartar-borrador/`);
+}
+
 
 export async function crearAnalisis(
   loteId: number,
@@ -413,9 +463,13 @@ export interface LoteEditado {
 export async function editarLote(
   id: number,
   cambios: LoteEditado,
+  motivoCorreccion?: string,
 ): Promise<LoteDetalle> {
 
-  const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, cambios);
+  const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, {
+    ...cambios,
+    ...(motivoCorreccion ? { motivo_correccion: motivoCorreccion } : {}),
+  });
 
   return data;
 }

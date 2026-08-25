@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
   AlertTriangle, ArrowDownToLine, Beaker, CheckCircle2, ChevronLeft,
-  ChevronRight, Clock3, Search, ShieldCheck, Truck, Warehouse,
+  ChevronRight, Clock3, Pencil, Search, ShieldCheck, Truck, Warehouse,
 } from "lucide-react";
 
 import {
@@ -329,6 +329,11 @@ function TablaRecepciones({
                       <Warehouse className="h-3.5 w-3.5 text-slate-600" />
                       {r.silo_codigo || "Sin asignar"}
                     </span>
+                    {r.alerta_silo_activa && (
+                      <span className="mt-1 block text-xs font-semibold text-rose-700">
+                        Revisar calidad del silo
+                      </span>
+                    )}
                   </td>
 
                   <td className="px-5 py-4">
@@ -343,6 +348,7 @@ function TablaRecepciones({
                   </td>
 
                   <td className="px-5 py-4 text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
                     {puedeEditar && r.estado === "registrada" ? (
                       <button
                         type="button"
@@ -376,9 +382,17 @@ function TablaRecepciones({
                       >
                         <ArrowDownToLine className="h-3.5 w-3.5" />Descargar
                       </button>
-                    ) : (
-                      <span className="text-xs text-slate-300">—</span>
+                    ) : null}
+                    {puedeEditar && ["analizada", "liberada", "retenida", "descargada"].includes(r.estado) && (
+                      <button
+                        type="button"
+                        onClick={() => setAccion({ tipo: "crioscopia", recepcion: r })}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />Corregir crioscopía
+                      </button>
                     )}
+                    </div>
                   </td>
 
                 </tr>

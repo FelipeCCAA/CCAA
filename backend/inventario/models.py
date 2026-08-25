@@ -354,6 +354,7 @@ class Existencia(models.Model):
     cantidad_reservada = models.DecimalField(max_digits=16, decimal_places=3, default=0)
 
     class Meta:
+        ordering = ["-id"]
         constraints = [
             models.UniqueConstraint(fields=["lote", "ubicacion"], name="existencia_unica_lote_ubicacion"),
             models.CheckConstraint(condition=models.Q(cantidad_fisica__gte=0), name="existencia_fisica_no_negativa"),
@@ -554,6 +555,9 @@ class InspeccionMaterial(models.Model):
     observaciones = models.TextField(blank=True)
     decidida_en = models.DateTimeField(null=True, blank=True)
     creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
 
 
 class PlantillaInspeccion(models.Model):
@@ -762,6 +766,7 @@ class SolicitudMaterial(models.Model):
     creada_en = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        ordering = ["-id"]
         constraints = [models.UniqueConstraint(fields=["sucursal", "numero"], name="solicitud_material_numero_unico_sucursal")]
 
 
@@ -817,6 +822,9 @@ class AjusteInventario(models.Model):
     estado = models.CharField(max_length=15, choices=Estado.choices, default=Estado.PENDIENTE)
     creado_en = models.DateTimeField(auto_now_add=True)
     aplicado_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-id"]
 
     def clean(self):
         if self.cantidad <= 0:

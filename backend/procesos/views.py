@@ -9,20 +9,22 @@ from usuarios.tenancy import (
     sucursal_para_escritura,
 )
 from .models import (
-    CorridaCondensacion, CorridaMantequilla, EjecucionProceso, EntradaProceso,
+    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    EjecucionProceso, EntradaProceso,
     EtapaProceso, Proceso, RutaProducto,
     SalidaProceso,
 )
 from .serializers import (
-    CierreCondensacionSerializer, CierreMantequillaSerializer,
-    CorridaCondensacionSerializer, CorridaMantequillaSerializer,
+    CierreCondensacionSerializer, CierreDescremacionSerializer,
+    CierreMantequillaSerializer, CorridaCondensacionSerializer,
+    CorridaDescremacionSerializer, CorridaMantequillaSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     ProcesoSerializer, SalidaProcesoSerializer,
     RutaProductoSerializer,
 )
 from .servicios import (
-    cerrar_condensacion, cerrar_mantequilla, genealogia_lote,
-    iniciar_condensacion, iniciar_mantequilla,
+    cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, genealogia_lote,
+    iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     transicionar_ejecucion,
 )
 
@@ -92,7 +94,8 @@ class CorridaCondensacionViewSet(
                 corrida_id=self.get_object().pk, usuario=request.user
             )
         except DjangoValidationError as error:
-            return self._respuesta_error(error)
+            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            return Response(detalle, status=status.HTTP_409_CONFLICT)
         return Response(self.get_serializer(corrida).data)
 
     @action(detail=True, methods=["post"])
@@ -108,6 +111,55 @@ class CorridaCondensacionViewSet(
             )
         except DjangoValidationError as error:
             return self._respuesta_error(error)
+        return Response(self.get_serializer(corrida).data)
+
+
+class CorridaDescremacionViewSet(
+    RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
+):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
+        "orden": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_entera": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_descremada": ("sucursal_id", "sucursal__empresa_id"),
+        "estanque_crema": ("sucursal_id", "sucursal__empresa_id"),
+    }
+    queryset = CorridaDescremacion.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden", "analisis_entrada",
+        "silo_entera", "silo_descremada", "estanque_crema",
+    )
+    serializer_class = CorridaDescremacionSerializer
+    permission_classes = [EscribeProduccion]
+    http_method_names = ["get", "post", "head", "options"]
+
+    @staticmethod
+    def _error(error, codigo=status.HTTP_400_BAD_REQUEST):
+        detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+        return Response(detalle, status=codigo)
+
+    @action(detail=True, methods=["post"])
+    def iniciar(self, request, pk=None):
+        try:
+            corrida = iniciar_descremacion(
+                corrida_id=self.get_object().pk, usuario=request.user
+            )
+        except DjangoValidationError as error:
+            return self._error(error, status.HTTP_409_CONFLICT)
+        return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        entrada = CierreDescremacionSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        try:
+            corrida = cerrar_descremacion(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                **entrada.validated_data,
+            )
+        except DjangoValidationError as error:
+            return self._error(error)
         return Response(self.get_serializer(corrida).data)
 
 

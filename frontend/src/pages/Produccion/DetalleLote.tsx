@@ -251,12 +251,20 @@ function DetalleLote({
       return;
     }
 
+    const corrigePasoAnterior = Object.keys(diferencias).some(
+      (campo) => campo !== "observacion",
+    );
+    const motivoCorreccion = corrigePasoAnterior
+      ? window.prompt("¿Por qué corriges estos datos del lote?")?.trim()
+      : undefined;
+    if (corrigePasoAnterior && !motivoCorreccion) return;
+
     setError("");
     setGuardando(true);
 
     try {
 
-      setLote(await editarLote(loteId, diferencias));
+      setLote(await editarLote(loteId, diferencias, motivoCorreccion));
       setEditando(false);
       alCambiar();
 

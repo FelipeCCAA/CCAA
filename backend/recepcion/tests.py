@@ -347,6 +347,25 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
             25000,
         )
 
+    def test_asigna_silo_a_recepcion_sin_vehiculo(self):
+        """La planta de la recepción manda; el camión es un dato opcional."""
+        recepcion = Recepcion.objects.create(
+            fecha=date(2026, 7, 20),
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("25000"),
+            estado=Recepcion.Estado.LIBERADA,
+        )
+
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{recepcion.pk}/asignar-silo/",
+            {"silo": self.silo.pk},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        recepcion.refresh_from_db()
+        self.assertEqual(recepcion.silo, self.silo)
+
     def test_delvo_positivo_retiene_y_no_permite_asignar_silo(self):
         creada = self._crear().json()
         base = f"/api/recepcion/recepciones/{creada['id']}"
@@ -469,6 +488,18 @@ class DescargaTests(BaseAPIRecepcion):
 
 
 class OcupacionAPITests(BaseAPIRecepcion):
+    def test_el_panel_explica_por_que_un_silo_no_puede_iniciar_proceso(self):
+        MovimientoSilo.objects.create(
+            silo=self.silo, tipo=MovimientoSilo.Tipo.INGRESO, litros=1000,
+            fecha_hora=instante(20),
+        )
+
+        silo = self.cliente.get("/api/recepcion/ocupacion/").json()["silos"][0]
+
+        self.assertFalse(silo["analisis_vigente"])
+        self.assertIn("análisis confirmado", silo["motivos_no_disponible"][0])
+        self.assertIsNotNone(silo["antiguedad_horas"])
+
     def test_el_endpoint_informa_el_saldo_y_sus_alertas(self):
         MovimientoSilo.objects.create(
             silo=self.silo,

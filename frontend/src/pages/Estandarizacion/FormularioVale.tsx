@@ -1,12 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calculator, CheckCircle2, X } from "lucide-react";
 
-import type {
-  EntradaCalculo, Mezcla, NuevoVale,
+import {
+  confirmarBorradorVale, crearBorradorVale, descartarBorradorVale,
+  guardarBorradorVale, obtenerBorradorVale,
+  type DatosBorradorVale, type EntradaCalculo, type Mezcla,
+  type ValeEstandarizacion,
 } from "../../services/estandarizacion.service";
 import type { Producto } from "../../services/produccion.service";
-import type { Silo } from "../../services/recepcion.service";
+import {
+  obtenerSugerenciaSilos, type Silo, type SugerenciaSilo,
+} from "../../services/recepcion.service";
 import { mensajeDe } from "../../components/seccion/utilidades";
+import { useBorrador } from "../../hooks/useBorrador";
 
 /*
   Nuevo vale, en dos tiempos: **primero se calcula, después se guarda**.
@@ -33,13 +39,19 @@ const inicial = {
   volumen: "",
   silo_entera: "",
   silo_descremada: "",
+  silo_crema: "",
   silo_destino: "",
+  silo_sugerido_fifo: "",
+  motivo_desvio_fifo: "",
   entera_grasa: "",
   entera_sng: "",
   entera_disponible: "",
   descremada_grasa: "",
   descremada_sng: "",
   descremada_disponible: "",
+  crema_grasa: "",
+  crema_sng: "",
+  crema_disponible: "",
   observaciones: "",
 };
 
@@ -47,22 +59,152 @@ const inicial = {
 function FormularioVale({
   productos,
   silos,
+  preseleccion,
   onCerrar,
   onCalcular,
-  onGuardar,
+  onConfirmado,
 }: {
   productos: Producto[];
   silos: Silo[];
+  preseleccion?: {
+    producto?: number; rc_objetivo?: string; silo_entera?: number;
+  } | null;
   onCerrar: () => void;
   onCalcular: (datos: EntradaCalculo) => Promise<Mezcla>;
-  onGuardar: (datos: NuevoVale) => Promise<void>;
+  onConfirmado: (vale: ValeEstandarizacion) => Promise<void>;
 }) {
-  const [datos, setDatos] = useState(inicial);
+  const [datos, setDatos] = useState({
+    ...inicial,
+    producto: preseleccion?.producto ? String(preseleccion.producto) : "",
+    rc_objetivo: preseleccion?.rc_objetivo ?? "",
+    silo_entera: preseleccion?.silo_entera ? String(preseleccion.silo_entera) : "",
+  });
   const [mezcla, setMezcla] = useState<Mezcla | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
+  const [tocado, setTocado] = useState(false);
+  const [sugerencias, setSugerencias] = useState<SugerenciaSilo[]>([]);
+
+  const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
+  const datosBorrador: DatosBorradorVale = {
+    codigo_propuesto: datos.codigo,
+    fecha: datos.fecha,
+    producto: numeroONull(datos.producto),
+    rc_objetivo: numeroONull(datos.rc_objetivo),
+    volumen: numeroONull(datos.volumen),
+    silo_entera: numeroONull(datos.silo_entera),
+    silo_descremada: numeroONull(datos.silo_descremada),
+    silo_crema: numeroONull(datos.silo_crema),
+    silo_destino: numeroONull(datos.silo_destino),
+    silo_sugerido_fifo: numeroONull(datos.silo_sugerido_fifo),
+    motivo_desvio_fifo: datos.motivo_desvio_fifo,
+    entera_grasa: numeroONull(datos.entera_grasa),
+    entera_sng: numeroONull(datos.entera_sng),
+    descremada_grasa: numeroONull(datos.descremada_grasa),
+    descremada_sng: numeroONull(datos.descremada_sng),
+    crema_grasa: numeroONull(datos.crema_grasa),
+    crema_sng: numeroONull(datos.crema_sng),
+    litros_entera: mezcla?.posible ? mezcla.entera : null,
+    litros_descremada: mezcla?.posible ? mezcla.descremada : null,
+    litros_crema: mezcla?.posible ? mezcla.crema : null,
+    observaciones: datos.observaciones,
+  };
+  const borrador = useBorrador({
+    datos: datosBorrador,
+    activo: tocado,
+    crear: crearBorradorVale,
+    actualizar: guardarBorradorVale,
+    alError: () => setError("No se pudo autoguardar el borrador."),
+  });
+  const { reanudar } = borrador;
+
+  useEffect(() => {
+    let vigente = true;
+    void obtenerBorradorVale().then(async (guardado) => {
+      if (!vigente || !guardado) return;
+      if (!window.confirm("Tienes un vale sin confirmar. ¿Quieres continuarlo?")) {
+        await descartarBorradorVale(guardado.id);
+        return;
+      }
+      setDatos({
+        ...inicial,
+        codigo: guardado.codigo_propuesto,
+        fecha: guardado.fecha,
+        producto: guardado.producto == null ? "" : String(guardado.producto),
+        rc_objetivo: guardado.rc_objetivo ?? "",
+        volumen: guardado.volumen ?? "",
+        silo_entera: guardado.silo_entera == null ? "" : String(guardado.silo_entera),
+        silo_descremada: guardado.silo_descremada == null ? "" : String(guardado.silo_descremada),
+        silo_crema: guardado.silo_crema == null ? "" : String(guardado.silo_crema),
+        silo_destino: guardado.silo_destino == null ? "" : String(guardado.silo_destino),
+        silo_sugerido_fifo: guardado.silo_sugerido_fifo == null ? "" : String(guardado.silo_sugerido_fifo),
+        motivo_desvio_fifo: guardado.motivo_desvio_fifo,
+        entera_grasa: guardado.entera_grasa ?? "",
+        entera_sng: guardado.entera_sng ?? "",
+        descremada_grasa: guardado.descremada_grasa ?? "",
+        descremada_sng: guardado.descremada_sng ?? "",
+        crema_grasa: guardado.crema_grasa ?? "",
+        crema_sng: guardado.crema_sng ?? "",
+        observaciones: guardado.observaciones,
+      });
+      reanudar(guardado.id);
+    }).catch((e) => {
+      if (vigente) setError(mensajeDe(e, "No se pudo consultar el borrador."));
+    });
+    return () => { vigente = false; };
+  }, [reanudar]);
+
+  useEffect(() => {
+    const entera = silos.find((item) => item.id === Number(datos.silo_entera));
+    const descremada = silos.find((item) => item.id === Number(datos.silo_descremada));
+    const crema = silos.find((item) => item.id === Number(datos.silo_crema));
+    const enteraDisponible = entera?.litros_disponibles ?? "";
+    const descremadaDisponible = descremada?.litros_disponibles ?? "";
+    const cremaDisponible = crema?.litros_disponibles ?? "";
+    if (
+      datos.entera_disponible !== enteraDisponible
+      || datos.descremada_disponible !== descremadaDisponible
+      || datos.crema_disponible !== cremaDisponible
+    ) {
+      setDatos((actual) => ({
+        ...actual,
+        entera_disponible: enteraDisponible,
+        descremada_disponible: descremadaDisponible,
+        crema_disponible: cremaDisponible,
+      }));
+    }
+  }, [silos, datos.silo_entera, datos.silo_descremada, datos.silo_crema, datos.entera_disponible, datos.descremada_disponible, datos.crema_disponible]);
+
+  useEffect(() => {
+    const volumen = Number(datos.volumen);
+    if (!(volumen > 0)) {
+      setSugerencias([]);
+      return;
+    }
+    let vigente = true;
+    const temporizador = window.setTimeout(() => {
+      void obtenerSugerenciaSilos(volumen).then((filas) => {
+        if (!vigente) return;
+        setSugerencias(filas);
+        const sugerido = filas.find((fila) => fila.sugerido);
+        if (!sugerido) return;
+        setDatos((actual) => ({
+          ...actual,
+          silo_sugerido_fifo: String(sugerido.silo),
+          silo_entera: actual.silo_entera || String(sugerido.silo),
+          entera_disponible: actual.silo_entera
+            ? actual.entera_disponible : sugerido.litros_disponibles,
+        }));
+      }).catch(() => undefined);
+    }, 350);
+    return () => {
+      vigente = false;
+      window.clearTimeout(temporizador);
+    };
+  }, [datos.volumen]);
 
   const cambiar = (campo: keyof typeof inicial, valor: string) => {
+    setTocado(true);
     setDatos((previo) => ({ ...previo, [campo]: valor }));
     // Cambiar cualquier dato invalida el cálculo anterior: dejarlo en pantalla
     // ofrecería crear el vale con cantidades de otra composición.
@@ -70,10 +212,11 @@ function FormularioVale({
   };
 
   const seleccionarOrigen = (
-    campo: "silo_entera" | "silo_descremada",
-    disponible: "entera_disponible" | "descremada_disponible",
+    campo: "silo_entera" | "silo_descremada" | "silo_crema",
+    disponible: "entera_disponible" | "descremada_disponible" | "crema_disponible",
     valor: string,
   ) => {
+    setTocado(true);
     const silo = silos.find((item) => item.id === Number(valor));
     setDatos((previo) => ({
       ...previo,
@@ -89,12 +232,16 @@ function FormularioVale({
   const silosDescremada = silos.filter(
     (silo) => silo.tipo === "tk_ld" && Number(silo.litros_disponibles ?? 0) > 0,
   );
+  const estanquesCrema = silos.filter(
+    (silo) => silo.tipo === "tk_crema" && Number(silo.litros_disponibles ?? 0) > 0,
+  );
   const silosDestino = silos.filter(
     (silo) => silo.tipo === "silo" && ![datos.silo_entera, datos.silo_descremada].includes(String(silo.id)),
   );
 
   const calcular = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTocado(true);
     setOcupado(true);
     setError("");
 
@@ -104,9 +251,14 @@ function FormularioVale({
           entera_grasa: Number(datos.entera_grasa),
           entera_sng: Number(datos.entera_sng),
           entera_disponible: Number(datos.entera_disponible || 0),
-          descremada_grasa: Number(datos.descremada_grasa),
-          descremada_sng: Number(datos.descremada_sng),
+          descremada_grasa: datos.silo_descremada
+            ? numeroONull(datos.descremada_grasa) : null,
+          descremada_sng: datos.silo_descremada
+            ? numeroONull(datos.descremada_sng) : null,
           descremada_disponible: Number(datos.descremada_disponible || 0),
+          crema_grasa: datos.silo_crema ? numeroONull(datos.crema_grasa) : null,
+          crema_sng: datos.silo_crema ? numeroONull(datos.crema_sng) : null,
+          crema_disponible: Number(datos.crema_disponible || 0),
           rc_objetivo: Number(datos.rc_objetivo),
           volumen: Number(datos.volumen),
         }),
@@ -125,25 +277,11 @@ function FormularioVale({
     setError("");
 
     try {
-      await onGuardar({
-        codigo: datos.codigo,
-        fecha: datos.fecha,
-        producto: Number(datos.producto),
-        rc_objetivo: Number(datos.rc_objetivo),
-        volumen: Number(datos.volumen),
-        silo_entera: Number(datos.silo_entera),
-        silo_descremada: datos.silo_descremada
-          ? Number(datos.silo_descremada)
-          : null,
-        silo_destino: Number(datos.silo_destino),
-        entera_grasa: Number(datos.entera_grasa),
-        entera_sng: Number(datos.entera_sng),
-        descremada_grasa: Number(datos.descremada_grasa),
-        descremada_sng: Number(datos.descremada_sng),
-        litros_entera: mezcla.entera,
-        litros_descremada: mezcla.descremada,
-        observaciones: datos.observaciones,
-      });
+      const borradorId = await borrador.guardarAhora({ propagarError: true });
+      if (borradorId === null) throw new Error("El borrador no alcanzó a guardarse.");
+      const confirmado = await confirmarBorradorVale(borradorId);
+      borrador.reiniciar();
+      await onConfirmado(confirmado);
     } catch (e) {
       setError(mensajeDe(e, "No se pudo crear el vale."));
     } finally {
@@ -248,7 +386,7 @@ function FormularioVale({
             >
               <option value="">Selecciona</option>
               {silosEntera.map((s) => (
-                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.litros_disponibles).toLocaleString("es-CL")} L disponibles</option>
+                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.litros_disponibles).toLocaleString("es-CL")} L disponibles{String(s.id) === datos.silo_sugerido_fifo ? " · sugerido FIFO" : ""}</option>
               ))}
             </select>
           </Campo>
@@ -264,7 +402,20 @@ function FormularioVale({
             label="Disponible en silo (L)" valor={datos.entera_disponible} opcional soloLectura
             onChange={(v) => cambiar("entera_disponible", v)}
           />
+          {datos.silo_sugerido_fifo && datos.silo_entera !== datos.silo_sugerido_fifo && (
+            <Campo label="Motivo para no usar el silo FIFO">
+              <input required minLength={5} value={datos.motivo_desvio_fifo} onChange={(e) => cambiar("motivo_desvio_fifo", e.target.value)} className="control" />
+            </Campo>
+          )}
         </Bloque>
+
+        {sugerencias[0] && (
+          <p className="mt-3 rounded-xl bg-sky-50 px-4 py-3 text-xs text-sky-800">
+            {sugerencias.find((fila) => fila.sugerido)
+              ? `FIFO sugiere ${sugerencias.find((fila) => fila.sugerido)?.codigo}: leche de ${Number(sugerencias.find((fila) => fila.sugerido)?.antiguedad_horas ?? 0).toLocaleString("es-CL")} h.`
+              : `No hay un silo utilizable: ${sugerencias.flatMap((fila) => fila.motivos_no_disponible).join(" · ")}`}
+          </p>
+        )}
 
         <Bloque titulo="Leche descremada">
           <Campo label="Estanque">
@@ -282,15 +433,35 @@ function FormularioVale({
           <Numero
             label="Materia grasa %" valor={datos.descremada_grasa}
             onChange={(v) => cambiar("descremada_grasa", v)}
+            opcional={!datos.silo_descremada}
           />
           <Numero
             label="Sólidos no grasos %" valor={datos.descremada_sng}
             onChange={(v) => cambiar("descremada_sng", v)}
+            opcional={!datos.silo_descremada}
           />
           <Numero
             label="Disponible en TK (L)" valor={datos.descremada_disponible} opcional soloLectura
             onChange={(v) => cambiar("descremada_disponible", v)}
           />
+        </Bloque>
+
+        <Bloque titulo="Crema disponible (opcional)">
+          <Campo label="Estanque">
+            <select
+              value={datos.silo_crema}
+              onChange={(e) => seleccionarOrigen("silo_crema", "crema_disponible", e.target.value)}
+              className="control bg-white"
+            >
+              <option value="">No usar crema</option>
+              {estanquesCrema.map((s) => (
+                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.litros_disponibles).toLocaleString("es-CL")} L disponibles</option>
+              ))}
+            </select>
+          </Campo>
+          <Numero label="Materia grasa %" valor={datos.crema_grasa} onChange={(v) => cambiar("crema_grasa", v)} opcional={!datos.silo_crema} />
+          <Numero label="Sólidos no grasos %" valor={datos.crema_sng} onChange={(v) => cambiar("crema_sng", v)} opcional={!datos.silo_crema} />
+          <Numero label="Disponible en TK (L)" valor={datos.crema_disponible} onChange={(v) => cambiar("crema_disponible", v)} opcional soloLectura />
         </Bloque>
 
         <Campo label="Observaciones" ancho>
@@ -320,6 +491,7 @@ function FormularioVale({
                 <p className="font-medium">
                   {mezcla.entera.toLocaleString("es-CL")} L de entera +{" "}
                   {mezcla.descremada.toLocaleString("es-CL")} L de descremada
+                  {mezcla.crema > 0 && ` + ${mezcla.crema.toLocaleString("es-CL")} L de crema`}
                 </p>
                 <p className="mt-1">
                   RC esperado {mezcla.rc_esperado?.toFixed(4)} ·{" "}
@@ -336,6 +508,12 @@ function FormularioVale({
         )}
 
         <div className="mt-6 flex flex-wrap gap-3">
+          <p className="w-full text-xs text-slate-500">
+            {borrador.estado === "guardando" ? "Guardando borrador…" :
+              borrador.estado === "error" ? "No se pudo autoguardar." :
+                borrador.id ? "Borrador guardado. El código se reserva al confirmar." :
+                  "Los cambios se guardarán automáticamente."}
+          </p>
           <button
             type="submit"
             disabled={ocupado}

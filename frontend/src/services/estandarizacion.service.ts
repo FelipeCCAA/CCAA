@@ -4,6 +4,7 @@ import type { Silo } from "./recepcion.service";
 interface Pagina<T> { results: T[] }
 
 export type EstadoVale =
+  | "borrador"
   | "calculado"
   | "transferido"
   | "agitando"
@@ -23,23 +24,31 @@ export interface Evaluacion {
 export interface ValeEstandarizacion {
   id: number;
   codigo: string;
+  codigo_propuesto: string;
   fecha: string;
-  producto: number;
-  producto_nombre: string;
-  rc_objetivo: string;
-  volumen: string;
-  silo_entera: number;
-  silo_entera_codigo: string;
+  producto: number | null;
+  producto_nombre: string | null;
+  rc_objetivo: string | null;
+  volumen: string | null;
+  silo_entera: number | null;
+  silo_entera_codigo: string | null;
   silo_descremada: number | null;
   silo_descremada_codigo: string | null;
-  silo_destino: number;
-  silo_destino_codigo: string;
-  entera_grasa: string;
-  entera_sng: string;
-  descremada_grasa: string;
-  descremada_sng: string;
-  litros_entera: string;
-  litros_descremada: string;
+  silo_crema: number | null;
+  silo_crema_codigo: string | null;
+  silo_destino: number | null;
+  silo_destino_codigo: string | null;
+  silo_sugerido_fifo: number | null;
+  motivo_desvio_fifo: string;
+  entera_grasa: string | null;
+  entera_sng: string | null;
+  descremada_grasa: string | null;
+  descremada_sng: string | null;
+  litros_entera: string | null;
+  litros_descremada: string | null;
+  crema_grasa: string | null;
+  crema_sng: string | null;
+  litros_crema: string | null;
   estado: EstadoVale;
   agitacion_desde: string | null;
   muestreado_en: string | null;
@@ -51,6 +60,8 @@ export interface ValeEstandarizacion {
   evaluacion: Evaluacion | null;
   observaciones: string;
   responsable_nombre: string | null;
+  es_borrador: boolean;
+  actualizado_en: string;
 }
 
 export interface Mezcla {
@@ -58,6 +69,7 @@ export interface Mezcla {
   motivo: string;
   entera: number;
   descremada: number;
+  crema: number;
   rc_esperado: number | null;
   grasa_esperada: number | null;
   sng_esperado: number | null;
@@ -76,6 +88,14 @@ export interface CatalogosEstandarizacion {
   minutos_agitacion: number;
   transiciones: Record<string, string[]>;
   silos: Silo[];
+}
+
+export interface GuiaRC {
+  producto: number;
+  producto_nombre: string;
+  rc_objetivo: string;
+  usos: number;
+  usado_por_ultima_vez: string;
 }
 
 export async function obtenerVales(params?: {
@@ -100,9 +120,12 @@ export interface EntradaCalculo {
   entera_grasa: number;
   entera_sng: number;
   entera_disponible?: number;
-  descremada_grasa: number;
-  descremada_sng: number;
+  descremada_grasa?: number | null;
+  descremada_sng?: number | null;
   descremada_disponible?: number;
+  crema_grasa?: number | null;
+  crema_sng?: number | null;
+  crema_disponible?: number;
   rc_objetivo: number;
   volumen: number;
 }
@@ -145,6 +168,69 @@ export async function crearVale(datos: NuevoVale): Promise<ValeEstandarizacion> 
   return data;
 }
 
+export interface DatosBorradorVale {
+  codigo_propuesto: string;
+  fecha: string;
+  producto: number | null;
+  rc_objetivo: number | null;
+  volumen: number | null;
+  silo_entera: number | null;
+  silo_descremada: number | null;
+  silo_crema: number | null;
+  silo_destino: number | null;
+  silo_sugerido_fifo: number | null;
+  motivo_desvio_fifo: string;
+  entera_grasa: number | null;
+  entera_sng: number | null;
+  descremada_grasa: number | null;
+  descremada_sng: number | null;
+  crema_grasa: number | null;
+  crema_sng: number | null;
+  litros_entera: number | null;
+  litros_descremada: number | null;
+  litros_crema: number | null;
+  observaciones: string;
+}
+
+export async function obtenerBorradorVale(): Promise<ValeEstandarizacion | null> {
+  const respuesta = await api.get<ValeEstandarizacion>(
+    "estandarizacion/vales/mi-borrador/",
+  );
+  return respuesta.status === 204 ? null : respuesta.data;
+}
+
+export async function crearBorradorVale(datos: DatosBorradorVale) {
+  const { data } = await api.post<ValeEstandarizacion>(
+    "estandarizacion/vales/crear-borrador/", datos,
+  );
+  return data;
+}
+
+export async function obtenerGuiaRC(): Promise<GuiaRC[]> {
+  const { data } = await api.get<GuiaRC[]>(
+    "estandarizacion/vales/guia-rc/",
+  );
+  return data;
+}
+
+export async function guardarBorradorVale(id: number, datos: DatosBorradorVale) {
+  const { data } = await api.patch<ValeEstandarizacion>(
+    `estandarizacion/vales/${id}/guardar-borrador/`, datos,
+  );
+  return data;
+}
+
+export async function confirmarBorradorVale(id: number) {
+  const { data } = await api.post<ValeEstandarizacion>(
+    `estandarizacion/vales/${id}/confirmar-borrador/`,
+  );
+  return data;
+}
+
+export async function descartarBorradorVale(id: number) {
+  await api.post(`estandarizacion/vales/${id}/descartar-borrador/`);
+}
+
 /*
   Cada paso del ciclo es su propia acción, no un `PATCH estado=...`. La
   diferencia importa en `decidir`: **no recibe la decisión, la calcula** desde
@@ -165,6 +251,16 @@ export const decidirVale = (id: number) => accion(id, "decidir");
 
 export const muestrearVale = (id: number, grasa: number, sng: number) =>
   accion(id, "muestrear", { grasa, sng });
+
+export async function corregirMuestraVale(
+  id: number, grasa: number, sng: number, motivo: string,
+) {
+  const { data } = await api.patch<ValeEstandarizacion>(
+    `estandarizacion/vales/${id}/corregir-muestra/`,
+    { grasa, sng, motivo },
+  );
+  return data;
+}
 
 export const anularVale = (id: number, motivo: string) =>
   accion(id, "anular", { motivo });

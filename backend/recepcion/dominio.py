@@ -7,6 +7,7 @@ Funciones puras, como las de calidad: reciben datos y devuelven datos.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Iterable
 
@@ -39,6 +40,191 @@ LIMITES = {
 # porque es el que produjo las cifras que la planta reportó. Si Calidad
 # resuelve la discrepancia, se cambia aquí y en ningún otro lugar.
 FACTOR_LITROS_A_KILOS = Decimal("1.03")
+
+
+@dataclass(frozen=True)
+class CapaSilo:
+    recepcion_id: int | None
+    litros: Decimal
+    orden: int
+    origen_no_atribuible: str = ""
+
+
+@dataclass(frozen=True)
+class ParteFIFO:
+    recepcion_id: int | None
+    litros: Decimal
+    orden: int
+    origen_no_atribuible: str = ""
+
+
+@dataclass(frozen=True)
+class ResultadoFIFO:
+    partes: list[ParteFIFO]
+    remanente_no_atribuible: Decimal
+
+
+@dataclass(frozen=True)
+class SugerenciaOrigen:
+    silo_id: int
+    litros_disponibles: Decimal
+    leche_mas_antigua_en: Any
+    antiguedad_horas: Decimal | None
+    motivos_no_disponible: tuple[str, ...]
+    litros_sugeridos: Decimal
+    sugerido: bool
+
+
+def _dato(objeto, nombre, defecto=None):
+    return objeto.get(nombre, defecto) if isinstance(objeto, dict) else getattr(
+        objeto, nombre, defecto
+    )
+
+
+def atribuir_fifo(capas, litros) -> ResultadoFIFO:
+    """Consume las capas más antiguas y declara cualquier remanente sin origen."""
+    pendiente = Decimal(str(litros))
+    partes = []
+    for capa in capas:
+        if pendiente <= 0:
+            break
+        disponible = Decimal(str(capa.litros))
+        if disponible <= 0:
+            continue
+        tomado = min(disponible, pendiente)
+        partes.append(ParteFIFO(
+            recepcion_id=capa.recepcion_id,
+            litros=tomado,
+            orden=len(partes) + 1,
+            origen_no_atribuible=capa.origen_no_atribuible,
+        ))
+        pendiente -= tomado
+    return ResultadoFIFO(partes=partes, remanente_no_atribuible=max(pendiente, Decimal("0")))
+
+
+def sugerir_origenes(silos, volumen) -> list[SugerenciaOrigen]:
+    """Ordena silos utilizables por su capa más antigua y reparte el volumen."""
+    pendiente = max(Decimal(str(volumen or 0)), Decimal("0"))
+    ordenados = sorted(
+        silos,
+        key=lambda silo: (
+            bool(_dato(silo, "motivos_no_disponible", [])),
+            _dato(silo, "leche_mas_antigua_en") is None,
+            _dato(silo, "leche_mas_antigua_en") or "9999-12-31",
+            _dato(silo, "silo_id"),
+        ),
+    )
+    resultado = []
+    for silo in ordenados:
+        disponible = max(
+            Decimal(str(_dato(silo, "litros_disponibles", 0))), Decimal("0")
+        )
+        motivos = tuple(_dato(silo, "motivos_no_disponible", []))
+        tomado = min(disponible, pendiente) if not motivos else Decimal("0")
+        antiguedad = _dato(silo, "antiguedad_horas")
+        resultado.append(SugerenciaOrigen(
+            silo_id=_dato(silo, "silo_id"),
+            litros_disponibles=disponible,
+            leche_mas_antigua_en=_dato(silo, "leche_mas_antigua_en"),
+            antiguedad_horas=(Decimal(str(antiguedad)) if antiguedad is not None else None),
+            motivos_no_disponible=motivos,
+            litros_sugeridos=tomado,
+            sugerido=tomado > 0,
+        ))
+        pendiente -= tomado
+    return resultado
+
+
+def saldo_por_recepcion(movimientos, atribuciones) -> list[CapaSilo]:
+    """Reconstruye las capas disponibles sin reemplazar el saldo contable."""
+    atribuciones_por_movimiento = {}
+    for atribucion in atribuciones:
+        atribuciones_por_movimiento.setdefault(
+            _dato(atribucion, "movimiento_id"), []
+        ).append(atribucion)
+
+    capas = []
+    orden = 0
+
+    def agregar(recepcion_id, litros, origen=""):
+        nonlocal orden
+        cantidad = Decimal(str(litros))
+        if cantidad <= 0:
+            return
+        orden += 1
+        capas.append({
+            "recepcion_id": recepcion_id,
+            "litros": cantidad,
+            "orden": orden,
+            "origen_no_atribuible": origen,
+        })
+
+    def descontar(recepcion_id, litros, origen=""):
+        pendiente = Decimal(str(litros))
+        candidatas = [
+            capa for capa in capas
+            if capa["litros"] > 0 and (
+                (recepcion_id is not None and capa["recepcion_id"] == recepcion_id)
+                or (
+                    recepcion_id is None
+                    and capa["recepcion_id"] is None
+                    and (not origen or capa["origen_no_atribuible"] == origen)
+                )
+            )
+        ]
+        for capa in candidatas:
+            tomado = min(capa["litros"], pendiente)
+            capa["litros"] -= tomado
+            pendiente -= tomado
+            if pendiente <= 0:
+                break
+        return pendiente
+
+    ordenados = sorted(
+        movimientos,
+        key=lambda mov: (
+            _dato(mov, "fecha_hora"), _dato(mov, "id", 0)
+        ),
+    )
+    for movimiento in ordenados:
+        cantidad = Decimal(str(_dato(movimiento, "litros", 0)))
+        tipo = _dato(movimiento, "tipo")
+        es_ingreso = tipo == "ingreso" or (tipo == "ajuste" and cantidad > 0)
+        atribuidas = sorted(
+            atribuciones_por_movimiento.get(_dato(movimiento, "id"), []),
+            key=lambda item: _dato(item, "orden", 0),
+        )
+        if es_ingreso:
+            if atribuidas:
+                for item in atribuidas:
+                    agregar(
+                        _dato(item, "recepcion_id"), _dato(item, "litros"),
+                        _dato(item, "origen_no_atribuible", ""),
+                    )
+            elif _dato(movimiento, "origen_tipo") == "recepcion":
+                agregar(_dato(movimiento, "origen_id"), cantidad)
+            else:
+                agregar(None, cantidad, _dato(movimiento, "motivo") or "saldo sin recepción")
+            continue
+
+        consumo = abs(cantidad)
+        if atribuidas:
+            remanente = Decimal("0")
+            for item in atribuidas:
+                remanente += descontar(
+                    _dato(item, "recepcion_id"), _dato(item, "litros"),
+                    _dato(item, "origen_no_atribuible", ""),
+                )
+        else:
+            resultado = atribuir_fifo([
+                CapaSilo(**capa) for capa in capas if capa["litros"] > 0
+            ], consumo)
+            for parte in resultado.partes:
+                descontar(
+                    parte.recepcion_id, parte.litros, parte.origen_no_atribuible
+                )
+
+    return [CapaSilo(**capa) for capa in capas if capa["litros"] > 0]
 
 
 def kilos_desde_litros(litros) -> Decimal | None:
@@ -494,6 +680,62 @@ def analisis_vigente(tomado_en, ingresos) -> Vigencia:
         f"Entraron {total:g} L al silo después de la muestra "
         f"({len(posteriores)} {palabra}); vuelve a muestrear.",
     )
+
+
+def motivos_silo_no_disponible(silo, analisis, ciclo_cip, ahora, *, para) -> list[str]:
+    """Razones operativas; una lista vacía habilita la operación solicitada."""
+    if para not in {"proceso", "descarga"}:
+        raise ValueError("La disponibilidad solo se evalúa para proceso o descarga.")
+
+    motivos = []
+    estado = _dato(silo, "estado")
+    if not _dato(silo, "activo", True) or estado == "fuera_servicio":
+        motivos.append("El silo está fuera de servicio.")
+    if estado == "bloqueado_calidad":
+        motivos.append("El silo está bloqueado por Calidad.")
+    cip_en_curso = ciclo_cip and _dato(ciclo_cip, "estado") == "en_curso"
+    if estado == "en_cip" or cip_en_curso:
+        motivos.append("El silo tiene un ciclo CIP en curso.")
+
+    # Descargar un camión solo se detiene por seguridad operacional. La
+    # muestra describe el contenido después de descargar, no antes.
+    if para == "descarga" or motivos:
+        return motivos
+
+    if analisis is None:
+        return ["El silo no tiene un análisis confirmado vigente."]
+    if not _dato(analisis, "vigente", False):
+        motivos.append(
+            _dato(analisis, "motivo_vigencia")
+            or "El análisis del silo perdió vigencia; vuelve a muestrear."
+        )
+    faltantes = [
+        nombre for nombre in ("grasa", "sng")
+        if _dato(analisis, nombre) is None
+    ]
+    if faltantes:
+        motivos.append(
+            "Falta composición del silo: " + ", ".join(faltantes) + "."
+        )
+    if _dato(analisis, "inhibidores_resultado") == "positivo":
+        motivos.append("El análisis del silo detectó inhibidores positivos.")
+    elif not _dato(analisis, "apto_inocuidad", False):
+        motivos.append("Falta completar el control de inhibidores del silo.")
+    if not _dato(analisis, "analista_id") or not _dato(analisis, "visualizado_por_id"):
+        motivos.append("El análisis requiere firma de realización y visualización.")
+
+    leche_mas_antigua_en = _dato(silo, "leche_mas_antigua_en")
+    if leche_mas_antigua_en is not None and ahora - leche_mas_antigua_en > timedelta(hours=48):
+        revalidaciones = (
+            _dato(analisis, "alcohol_75_conforme"),
+            _dato(analisis, "hervor_conforme"),
+            _dato(analisis, "organoleptico_conforme"),
+        )
+        if not all(valor is True for valor in revalidaciones):
+            motivos.append(
+                "La leche supera 48 h y requiere alcohol 75°, hervor y control organoléptico conformes."
+            )
+    return motivos
 
 
 def parametros_faltantes(valores, requeridos) -> list[str]:

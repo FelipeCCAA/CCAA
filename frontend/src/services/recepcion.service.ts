@@ -31,6 +31,8 @@ export interface Vehiculo {
 export interface OcupacionSilo {
   silo_id: number;
   codigo: string;
+  tipo: string;
+  tipo_etiqueta: string;
   litros: number;
   capacidad: number;
   estado: string;
@@ -39,6 +41,15 @@ export interface OcupacionSilo {
   temperatura_actual: number | null;
   ultima_limpieza: string | null;
   ultimo_movimiento: string | null;
+  leche_mas_antigua_en: string | null;
+  antiguedad_horas: number | null;
+  analisis: number | null;
+  analisis_tomado_en: string | null;
+  grasa: string | null;
+  sng: string | null;
+  analisis_vigente: boolean;
+  motivo_vigencia: string;
+  motivos_no_disponible: string[];
   pct: number;
   /* Por encima de la capacidad. */
   excedido: boolean;
@@ -164,6 +175,10 @@ export interface Recepcion {
 
   estado: string;
   estado_etiqueta: string;
+  es_borrador: boolean;
+  abierto_por: number | null;
+  abierto_en: string | null;
+  actualizado_en: string;
   motivo: string;
   observacion: string;
   codigo_muestra: string;
@@ -177,6 +192,7 @@ export interface Recepcion {
   silo_asignado_por_nombre: string;
   silo_asignado_en: string | null;
   evaluacion: EvaluacionRecepcion;
+  alerta_silo_activa: boolean;
 }
 
 
@@ -250,8 +266,21 @@ export interface LlegadaCamionNueva {
 }
 
 
-export interface ResumenDiarioRecepcion {
+export type BorradorRecepcionDatos = {
+  [K in keyof LlegadaCamionNueva]?: LlegadaCamionNueva[K] | null;
+} & {
   fecha: string;
+  tipo_leche: string;
+  litros: string;
+  vehiculo: number | null;
+  modulos: LlegadaCamionNueva["modulos"];
+};
+
+
+export interface ResumenDiarioRecepcion {
+  fecha: string | null;
+  desde: string;
+  hasta: string;
   camiones: number;
   litros: string;
   kg_guia: string;
@@ -269,6 +298,36 @@ export interface ResumenDiarioRecepcion {
      sobre los que sí se pesaron, así que este contador dice cuántos quedaron
      fuera de esos dos totales. */
   camiones_sin_romana: number;
+  detalle?: DetalleResumenRecepcion[];
+}
+
+
+export interface DetalleResumenRecepcion {
+  id: number;
+  fecha: string;
+  hora_arribo: string | null;
+  guia: string;
+  patente: string;
+  procedencia: string;
+  tipo_leche: string;
+  litros: string;
+  kg_guia: string;
+  kg_romana: string | null;
+  diferencia_kg: string | null;
+  silo: string;
+  estado: string;
+  estado_etiqueta: string;
+  crioscopias: Array<{ modulo: number; valor: string | null }>;
+  permanencia_horas: number | null;
+  permanencia_motivo: string;
+  horas_a_pagar: number | null;
+}
+
+
+export interface PeriodoResumenRecepcion {
+  fecha?: string;
+  desde?: string;
+  hasta?: string;
 }
 
 
@@ -430,10 +489,16 @@ export async function decidirCalidad(
   controles: Record<string, number | string>,
   decision?: "retener",
   motivo?: string,
+  phCamion?: number | null,
+  motivoCorreccion?: string,
 ): Promise<Recepcion> {
   const { data } = await api.post<Recepcion>(
     `recepcion/recepciones/${id}/decidir-calidad/`,
-    { controles, decision, motivo },
+    {
+      controles, decision, motivo,
+      ph_camion: phCamion,
+      motivo_correccion: motivoCorreccion,
+    },
   );
   return data;
 }
@@ -451,15 +516,112 @@ export async function asignarSilo(id: number, silo: number): Promise<Recepcion> 
 /*
   Los totales que la planilla pone al pie: litros y kilos del día, reparto
   por silo y por procedencia, promedios de grasa y SNG, y las horas de
-  sobreestadía. `fecha` es obligatoria para el backend (400 sin ella).
+  sobreestadía. El backend acepta un `fecha` o el par `desde`/`hasta`.
 */
 export async function resumenDiarioRecepcion(
-  fecha: string,
+  periodo: string | PeriodoResumenRecepcion,
 ): Promise<ResumenDiarioRecepcion> {
   const { data } = await api.get<ResumenDiarioRecepcion>(
-    `recepcion/recepciones/resumen-diario/?fecha=${fecha}`,
+    "recepcion/recepciones/resumen-diario/",
+    {
+      params: {
+        ...(typeof periodo === "string" ? { fecha: periodo } : periodo),
+        detalle: 1,
+      },
+    },
   );
   return data;
+}
+
+export interface SugerenciaSilo {
+  silo: number;
+  codigo: string;
+  litros_disponibles: string;
+  litros_sugeridos: string;
+  leche_mas_antigua_en: string | null;
+  antiguedad_horas: string | null;
+  grasa: string | null;
+  sng: string | null;
+  motivos_no_disponible: string[];
+  sugerido: boolean;
+}
+
+export async function obtenerSugerenciaSilos(
+  volumen: number, tipo = "silo",
+): Promise<SugerenciaSilo[]> {
+  const { data } = await api.get<{ sugerencias: SugerenciaSilo[] }>(
+    "recepcion/silos/sugerencia/", { params: { volumen, tipo } },
+  );
+  return data.sugerencias;
+}
+
+export async function corregirCrioscopias(
+  id: number,
+  modulos: Array<{ id: number; crioscopia: number | null }>,
+  motivo: string,
+): Promise<Recepcion> {
+  const { data } = await api.patch<Recepcion>(
+    `recepcion/recepciones/${id}/corregir-crioscopias/`,
+    { modulos, motivo },
+  );
+  return data;
+}
+
+
+export async function obtenerBorradorRecepcion(): Promise<Recepcion | null> {
+  const respuesta = await api.get<Recepcion>(
+    "recepcion/recepciones/mi-borrador/",
+  );
+  return respuesta.status === 204 ? null : respuesta.data;
+}
+
+
+export async function crearBorradorRecepcion(
+  datos: BorradorRecepcionDatos,
+): Promise<Recepcion> {
+  const { data } = await api.post<Recepcion>(
+    "recepcion/recepciones/crear-borrador/", datos,
+  );
+  return data;
+}
+
+
+export async function guardarBorradorRecepcion(
+  id: number,
+  datos: BorradorRecepcionDatos,
+): Promise<Recepcion> {
+  const { data } = await api.patch<Recepcion>(
+    `recepcion/recepciones/${id}/guardar-borrador/`, datos,
+  );
+  return data;
+}
+
+
+export async function confirmarBorradorRecepcion(id: number): Promise<Recepcion> {
+  const { data } = await api.post<Recepcion>(
+    `recepcion/recepciones/${id}/confirmar-borrador/`, {},
+  );
+  return data;
+}
+
+
+export async function descartarBorradorRecepcion(id: number): Promise<void> {
+  await api.post(`recepcion/recepciones/${id}/descartar-borrador/`, {});
+}
+
+
+export async function descargarResumenRecepcion(
+  periodo: PeriodoResumenRecepcion,
+  formato: "csv" | "xlsx",
+): Promise<{ contenido: Blob; nombre: string }> {
+  const respuesta = await api.get<Blob>(
+    "recepcion/recepciones/resumen-diario/",
+    { params: { ...periodo, formato }, responseType: "blob" },
+  );
+  const disposicion = String(respuesta.headers["content-disposition"] ?? "");
+  const nombre = disposicion.match(/filename="?([^";]+)"?/i)?.[1]
+    ?? `recepciones.${formato}`;
+  return { contenido: respuesta.data, nombre };
 }
 
 
@@ -499,10 +661,25 @@ export interface AnalisisSilo {
   proteina: string | null;
   temperatura: string | null;
   densidad: string | null;
+  inhibidores_resultado: "negativo" | "positivo" | "";
+  metodo: "tri_sensor" | "charm" | "delvo_sp" | "";
+  hora_lectura: string | null;
+  alcohol_75_conforme: boolean | null;
+  hervor_conforme: boolean | null;
+  organoleptico_conforme: boolean | null;
+  apto_inocuidad: boolean;
   certificada: boolean | null;
   procedencia: string;
   analista_nombre: string;
+  visualizado_por: number | null;
+  visualizado_por_nombre: string;
+  visualizado_en: string | null;
   observacion: string;
+  estado: "borrador" | "confirmado" | "anulado";
+  es_borrador: boolean;
+  abierto_por: number | null;
+  abierto_en: string | null;
+  actualizado_en: string;
   vigente: boolean;
   motivo_vigencia: string;
   faltantes_para_vale: string[];
@@ -519,5 +696,59 @@ export async function crearAnalisisSilo(
   datos: Record<string, unknown>,
 ): Promise<AnalisisSilo> {
   const { data } = await api.post("/recepcion/analisis-silo/", datos);
+  return data;
+}
+
+
+export async function obtenerBorradorAnalisisSilo(
+  siloId: number,
+): Promise<AnalisisSilo | null> {
+  const respuesta = await api.get<AnalisisSilo>(
+    "/recepcion/analisis-silo/mi-borrador/", { params: { silo: siloId } },
+  );
+  return respuesta.status === 204 ? null : respuesta.data;
+}
+
+
+export async function crearBorradorAnalisisSilo(
+  datos: Record<string, unknown>,
+): Promise<AnalisisSilo> {
+  const { data } = await api.post<AnalisisSilo>(
+    "/recepcion/analisis-silo/crear-borrador/", datos,
+  );
+  return data;
+}
+
+
+export async function guardarBorradorAnalisisSilo(
+  id: number,
+  datos: Record<string, unknown>,
+): Promise<AnalisisSilo> {
+  const { data } = await api.patch<AnalisisSilo>(
+    `/recepcion/analisis-silo/${id}/guardar-borrador/`, datos,
+  );
+  return data;
+}
+
+
+export async function confirmarBorradorAnalisisSilo(
+  id: number,
+): Promise<AnalisisSilo> {
+  const { data } = await api.post<AnalisisSilo>(
+    `/recepcion/analisis-silo/${id}/confirmar-borrador/`, {},
+  );
+  return data;
+}
+
+
+export async function descartarBorradorAnalisisSilo(id: number): Promise<void> {
+  await api.post(`/recepcion/analisis-silo/${id}/descartar-borrador/`, {});
+}
+
+
+export async function visualizarAnalisisSilo(id: number): Promise<AnalisisSilo> {
+  const { data } = await api.post<AnalisisSilo>(
+    `/recepcion/analisis-silo/${id}/visualizar/`, {},
+  );
   return data;
 }

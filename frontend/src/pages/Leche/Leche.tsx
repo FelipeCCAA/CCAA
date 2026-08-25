@@ -38,6 +38,7 @@ const PESTANAS = [
   { a: "descarga", texto: "Silo y descarga" },
   { a: "silos", texto: "Silos" },
   { a: "historial", texto: "Historial" },
+  { a: "reporte", texto: "Reporte" },
 ];
 
 

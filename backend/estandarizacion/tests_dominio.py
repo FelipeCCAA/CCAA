@@ -9,7 +9,10 @@ objetivo.
 
 from unittest import TestCase
 
-from .dominio import Leche, calcular_mezcla, evaluar_rc, litros_a_agregar
+from .dominio import (
+    Leche, calcular_mezcla, evaluar_rc, litros_a_agregar,
+    sugerir_mezcla_con_crema,
+)
 
 
 # Composiciones representativas de la planta.
@@ -24,6 +27,28 @@ DESCREMADA = Leche(cantidad=30000, grasa=0.05, sng=8.9)
 
 
 class CalcularMezclaTests(TestCase):
+
+    def test_la_sugerencia_aprovecha_crema_y_mantiene_el_rc(self):
+        crema = Leche(cantidad=500, grasa=40, sng=5.5)
+        mezcla = sugerir_mezcla_con_crema(
+            entera=ENTERA, descremada=DESCREMADA, crema=crema,
+            rc_objetivo=0.422, volumen=10000,
+        )
+
+        grasa = (
+            mezcla.entera * ENTERA.grasa
+            + mezcla.descremada * DESCREMADA.grasa
+            + mezcla.crema * crema.grasa
+        )
+        sng = (
+            mezcla.entera * ENTERA.sng
+            + mezcla.descremada * DESCREMADA.sng
+            + mezcla.crema * crema.sng
+        )
+        self.assertTrue(mezcla.posible)
+        self.assertGreater(mezcla.crema, 0)
+        self.assertAlmostEqual(mezcla.entera + mezcla.descremada + mezcla.crema, 10000, places=0)
+        self.assertAlmostEqual(grasa / sng, 0.422, places=3)
 
     def _rc_resultante(self, mezcla, entera=ENTERA, descremada=DESCREMADA):
         """Recalcula el RC desde las cantidades que devolvió el cálculo."""

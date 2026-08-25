@@ -11,11 +11,11 @@ from datetime import date
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from maestros.models import Especificacion, Mandante, Producto
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
+from usuarios.tests_helpers import credencial_sesion
 
 from .models import Analisis, Lote
 
@@ -38,10 +38,10 @@ class BaseAPI(TestCase):
             sucursal=self.sucursal,
             alcance=PerfilUsuario.Alcance.SUCURSAL,
         )
-        token = Token.objects.create(user=usuario)
-
         self.cliente = APIClient()
-        self.cliente.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self.cliente.credentials(
+            HTTP_AUTHORIZATION=f"Token {credencial_sesion(usuario)}"
+        )
 
         self.nestle = Mandante.objects.create(empresa=self.empresa, nombre="Nestlé")
         self.producto = Producto.objects.create(

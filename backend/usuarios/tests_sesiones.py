@@ -7,6 +7,7 @@ from django.core.cache import cache
 from django.db import close_old_connections
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from .models import EventoSeguridad, PerfilUsuario, SesionUsuario
@@ -90,6 +91,17 @@ class SesionUnicaTests(TestCase):
         respuesta = cliente.get("/api/usuarios/yo/")
         self.assertEqual(respuesta.status_code, 401)
         self.assertEqual(respuesta.json()["code"], "USER_DISABLED")
+
+    @override_settings(PERMITIR_TOKEN_DRF_LEGACY_EN_PRUEBAS=False)
+    def test_un_token_drf_no_es_una_sesion_operacional(self):
+        token = Token.objects.create(user=self.usuario)
+        cliente = APIClient()
+        cliente.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        respuesta = cliente.get("/api/usuarios/yo/")
+
+        self.assertEqual(respuesta.status_code, 401)
+        self.assertEqual(respuesta.json()["code"], "SESSION_REVOKED")
 
     def test_sesion_expirada_permite_login_nuevo(self):
         self.login()

@@ -22,6 +22,24 @@ class ModuloRecepcionSerializer(serializers.ModelSerializer):
         fields = ["id", "numero", "crioscopia", "carga_recoleccion"]
 
 
+class CrioscopiaCorregidaSerializer(serializers.Serializer):
+    id = serializers.IntegerField(min_value=1)
+    crioscopia = serializers.DecimalField(
+        max_digits=6, decimal_places=3, allow_null=True
+    )
+
+
+class CorreccionCrioscopiasSerializer(serializers.Serializer):
+    motivo = serializers.CharField(min_length=5, trim_whitespace=True)
+    modulos = CrioscopiaCorregidaSerializer(many=True, allow_empty=False)
+
+    def validate_modulos(self, modulos):
+        ids = [item["id"] for item in modulos]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError("No repitas un módulo.")
+        return modulos
+
+
 class BusquedaProveedorSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusquedaProveedor
@@ -65,6 +83,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
     # El veredicto de los controles se calcula, no se guarda: al corregir un
     # límite, todas las recepciones quedan reevaluadas.
     evaluacion = serializers.SerializerMethodField()
+    alerta_silo_activa = serializers.SerializerMethodField()
 
     # Los módulos se crean a mano en `registrar_llegada` (el bucle explícito
     # sobre `ModuloRecepcion.objects.create`). De solo lectura acá: un solo
@@ -132,6 +151,10 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "controles",
             "estado",
             "estado_etiqueta",
+            "es_borrador",
+            "abierto_por",
+            "abierto_en",
+            "actualizado_en",
             "motivo",
             "observacion",
             "codigo_muestra",
@@ -145,6 +168,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "silo_asignado_por_nombre",
             "silo_asignado_en",
             "evaluacion",
+            "alerta_silo_activa",
             "modulos",
             "controles_inhibidores",
             "kg_guia",
@@ -165,6 +189,10 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "operador",
             "controles",
             "estado",
+            "es_borrador",
+            "abierto_por",
+            "abierto_en",
+            "actualizado_en",
             "motivo",
             "codigo_muestra",
             "muestreado_por",
@@ -192,6 +220,9 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "faltantes": evaluacion.faltantes,
             "analizada": evaluacion.analizada,
         }
+
+    def get_alerta_silo_activa(self, recepcion):
+        return any(alerta.activa for alerta in recepcion.alertas_calidad_silo.all())
 
     def validate_controles(self, controles):
         if not isinstance(controles, dict):
@@ -344,17 +375,42 @@ class AnalisisSiloSerializer(serializers.ModelSerializer):
     faltantes_para_vale = serializers.ListField(
         child=serializers.CharField(), read_only=True
     )
+    apto_inocuidad = serializers.BooleanField(read_only=True)
+    visualizado_por_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = AnalisisSilo
         fields = [
             "id", "silo", "silo_codigo", "tomado_en", "hora_inicio_llenado",
             "ph", "acidez", "grasa", "sng", "proteina", "temperatura", "densidad",
+            "inhibidores_resultado", "metodo", "hora_lectura",
+            "alcohol_75_conforme", "hervor_conforme", "organoleptico_conforme",
+            "apto_inocuidad",
             "certificada", "procedencia", "analista", "analista_nombre",
-            "observacion", "creado_en",
+            "visualizado_por", "visualizado_por_nombre", "visualizado_en",
+            "observacion", "creado_en", "estado", "es_borrador",
+            "abierto_por", "abierto_en", "actualizado_en",
             "vigente", "motivo_vigencia", "faltantes_para_vale",
         ]
-        read_only_fields = ["analista", "creado_en"]
+        read_only_fields = [
+            "analista", "creado_en", "estado", "es_borrador",
+            "visualizado_por", "visualizado_en",
+            "abierto_por", "abierto_en", "actualizado_en",
+        ]
 
     def get_analista_nombre(self, obj):
         return obj.analista.username if obj.analista_id else ""
+
+    def get_visualizado_por_nombre(self, obj):
+        return obj.visualizado_por.username if obj.visualizado_por_id else ""
+
+    def validate(self, attrs):
+        if self.instance is None and not self.partial:
+            requeridos = AnalisisSilo.CAMPOS_OBLIGATORIOS_AL_CONFIRMAR
+            faltantes = [campo for campo in requeridos if not attrs.get(campo)]
+            if faltantes:
+                raise serializers.ValidationError({
+                    campo: "Este control es obligatorio para confirmar la muestra."
+                    for campo in faltantes
+                })
+        return attrs

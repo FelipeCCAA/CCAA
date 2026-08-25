@@ -13,10 +13,13 @@ movimiento, y un saldo negativo dejaría de ser lo que hoy es, la señal
 automática de que el registro está descuadrado.
 """
 
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from usuarios.tenancy import sucursal_predeterminada_pruebas
+from usuarios.documentos import DocumentoBorradorMixin
 
 from maestros.models import Silo, Vehiculo
 
@@ -53,7 +56,7 @@ VALORES_ADMITIDOS = {
 }
 
 
-class Recepcion(models.Model):
+class Recepcion(DocumentoBorradorMixin, models.Model):
     """
     Llegada de un camión.
 
@@ -111,6 +114,7 @@ class Recepcion(models.Model):
         C = "C", "Turno C"
 
     class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
         REGISTRADA = "registrada", "En espera de muestra"
         MUESTREADA = "muestreada", "Muestra tomada"
         ANALIZADA = "analizada", "Analizada"
@@ -118,10 +122,12 @@ class Recepcion(models.Model):
         RETENIDA = "retenida", "Retenida"
         DESCARGADA = "descargada", "Descargada"
         CERRADA = "cerrada", "Cerrada"
+        ANULADA = "anulada", "Anulada"
 
     # Transiciones válidas, tal como las declara el esquema del prototipo.
     # Una retenida puede liberarse tras reanálisis, o cerrarse rechazada.
     TRANSICIONES = {
+        Estado.BORRADOR: [Estado.REGISTRADA, Estado.ANULADA],
         Estado.REGISTRADA: [Estado.MUESTREADA, Estado.CERRADA],
         Estado.MUESTREADA: [Estado.ANALIZADA],
         Estado.ANALIZADA: [Estado.LIBERADA, Estado.RETENIDA],
@@ -129,7 +135,25 @@ class Recepcion(models.Model):
         Estado.RETENIDA: [Estado.LIBERADA, Estado.CERRADA],
         Estado.DESCARGADA: [Estado.CERRADA],
         Estado.CERRADA: [],
+        Estado.ANULADA: [],
     }
+
+    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
+        "fecha", "vehiculo", "tipo_leche", "litros",
+    )
+    ESTADO_BORRADOR = Estado.BORRADOR
+    ESTADO_CONFIRMADO = Estado.REGISTRADA
+    CAMPOS_POR_PASO = {
+        "llegada": (
+            "fecha", "hora", "guia", "vehiculo", "procedencia", "tipo_leche",
+            "litros", "kg_romana", "certificada", "uso", "uso_numero",
+            "modulos.crioscopia",
+        ),
+        "muestreo": ("codigo_muestra", "muestreado_por", "muestreado_en"),
+        "calidad": ("controles", "ph_camion", "calidad_por", "calidad_en"),
+        "destino": ("silo", "silo_asignado_por", "silo_asignado_en"),
+    }
+    CAMPOS_QUE_MUEVEN_LIBRO = ("litros", "silo")
 
     fecha = models.DateField("Fecha")
     hora = models.TimeField("Hora", null=True, blank=True)
@@ -222,7 +246,7 @@ class Recepcion(models.Model):
         help_text='{"delvo": "Negativo", "acidez": 16.5, "ph": 6.7, ...}',
     )
     estado = models.CharField(
-        "Estado", max_length=20, choices=Estado.choices, default=Estado.REGISTRADA
+        "Estado", max_length=20, choices=Estado.choices, default=Estado.BORRADOR
     )
     motivo = models.TextField(
         "Motivo", blank=True, help_text="Obligatorio si la recepción se retiene"
@@ -429,6 +453,15 @@ class Recepcion(models.Model):
     def puede_pasar_a(self, estado) -> bool:
         return estado in self.TRANSICIONES.get(self.estado, [])
 
+    def motivos_para_confirmar(self):
+        motivos = super().motivos_para_confirmar()
+        if self.litros is None or self.litros <= 0:
+            motivos = [m for m in motivos if "litros" not in m]
+            motivos.append("Los litros deben ser mayores que cero.")
+        if not self.modulos.exists():
+            motivos.append("Declara al menos un compartimiento del camión.")
+        return motivos
+
 
 class ModuloRecepcion(models.Model):
     """
@@ -497,6 +530,42 @@ class ModuloRecepcion(models.Model):
         return f"{self.recepcion_id} · M{self.numero}"
 
 
+class CorreccionRecepcion(models.Model):
+    """Edición justificada de un paso ya recorrido por la recepción."""
+
+    recepcion = models.ForeignKey(
+        Recepcion, on_delete=models.PROTECT, related_name="correcciones"
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="correcciones_recepcion",
+    )
+    paso = models.CharField(max_length=30)
+    motivo = models.TextField()
+    cambios = models.JSONField(default=dict)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]
+
+
+class AlertaCalidadSilo(models.Model):
+    """Silo potencialmente afectado; informa sin bloquearlo automáticamente."""
+
+    recepcion = models.ForeignKey(
+        Recepcion, on_delete=models.PROTECT, related_name="alertas_calidad_silo"
+    )
+    silo = models.ForeignKey(
+        Silo, on_delete=models.PROTECT, related_name="alertas_calidad_recepcion"
+    )
+    motivo = models.TextField()
+    activa = models.BooleanField(default=True, db_index=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]
+
+
 class MovimientoSilo(models.Model):
     """
     Un asiento del libro mayor de un silo.
@@ -513,6 +582,7 @@ class MovimientoSilo(models.Model):
     class OrigenTipo(models.TextChoices):
         RECEPCION = "recepcion", "Recepción"
         ESTANDARIZACION = "estandarizacion", "Estandarización"
+        DESCREMACION = "descremacion", "Descremación"
         LOTE = "lote", "Consumo de lote"
         TRANSFERENCIA = "transferencia", "Transferencia"
         PRODUCCION = "produccion", "Producción"
@@ -602,7 +672,63 @@ class MovimientoSilo(models.Model):
             raise ValidationError(
                 "Los movimientos de silo son inmutables; corrige mediante un ajuste o reversa."
             )
-        return super().save(*args, **kwargs)
+        self.litros = Decimal(str(self.litros))
+        with transaction.atomic():
+            resultado = super().save(*args, **kwargs)
+            if (
+                self.tipo == self.Tipo.SALIDA
+                or (
+                    self.tipo == self.Tipo.AJUSTE
+                    and Decimal(str(self.litros)) < 0
+                )
+            ):
+                # Import local para evitar el ciclo models -> servicios -> models.
+                from .servicios import atribuir_salida
+                atribuir_salida(self)
+        return resultado
+
+
+class AtribucionRecepcion(models.Model):
+    """Parte de un movimiento explicada por una recepción, en orden FIFO."""
+
+    movimiento = models.ForeignKey(
+        MovimientoSilo, on_delete=models.PROTECT,
+        related_name="atribuciones_recepcion",
+    )
+    recepcion = models.ForeignKey(
+        Recepcion, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="atribuciones_silo",
+    )
+    litros = models.DecimalField(max_digits=12, decimal_places=2)
+    orden = models.PositiveSmallIntegerField()
+    origen_no_atribuible = models.CharField(max_length=160, blank=True)
+
+    class Meta:
+        ordering = ["movimiento_id", "orden"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["movimiento", "orden"],
+                name="atribucion_orden_unico_por_movimiento",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(litros__gt=0),
+                name="atribucion_litros_positivos",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(recepcion__isnull=False, origen_no_atribuible="")
+                    | (
+                        models.Q(recepcion__isnull=True)
+                        & ~models.Q(origen_no_atribuible="")
+                    )
+                ),
+                name="atribucion_recepcion_o_motivo",
+            ),
+        ]
+
+    def __str__(self):
+        origen = self.recepcion_id or self.origen_no_atribuible
+        return f"{self.litros} L de {origen}"
 
 
 class ControlInhibidores(models.Model):
@@ -708,7 +834,7 @@ class BusquedaProveedor(models.Model):
         return f"{self.proveedor} · {self.resultado}"
 
 
-class AnalisisSilo(models.Model):
+class AnalisisSilo(DocumentoBorradorMixin, models.Model):
     """
     El análisis de la leche que hay en un silo.
 
@@ -726,6 +852,18 @@ class AnalisisSilo(models.Model):
     laboratorio devuelve la muestra. Qué falta para componer un vale lo
     responde `dominio.parametros_faltantes`, no el esquema.
     """
+
+    class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
+        CONFIRMADO = "confirmado", "Confirmado"
+        ANULADO = "anulado", "Anulado"
+
+    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
+        "silo", "tomado_en", "grasa", "sng",
+        "inhibidores_resultado", "metodo", "hora_lectura",
+    )
+    ESTADO_BORRADOR = Estado.BORRADOR
+    ESTADO_CONFIRMADO = Estado.CONFIRMADO
 
     silo = models.ForeignKey(
         Silo, on_delete=models.PROTECT, related_name="analisis", verbose_name="Silo"
@@ -757,6 +895,28 @@ class AnalisisSilo(models.Model):
     densidad = models.DecimalField(
         "Densidad (kg/m³)", max_digits=7, decimal_places=2, null=True, blank=True
     )
+    inhibidores_resultado = models.CharField(
+        "Resultado de inhibidores",
+        max_length=20,
+        choices=ControlInhibidores.Resultado.choices,
+        blank=True,
+    )
+    metodo = models.CharField(
+        "Método de inhibidores",
+        max_length=20,
+        choices=ControlInhibidores.Metodo.choices,
+        blank=True,
+    )
+    hora_lectura = models.TimeField("Hora de lectura", null=True, blank=True)
+    alcohol_75_conforme = models.BooleanField(
+        "Prueba de alcohol 75° conforme", null=True, blank=True
+    )
+    hervor_conforme = models.BooleanField(
+        "Prueba de hervor conforme", null=True, blank=True
+    )
+    organoleptico_conforme = models.BooleanField(
+        "Control organoléptico conforme", null=True, blank=True
+    )
 
     certificada = models.BooleanField(
         "Leche certificada",
@@ -775,8 +935,20 @@ class AnalisisSilo(models.Model):
         blank=True,
         verbose_name="Analista",
     )
+    visualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="analisis_silo_visualizados",
+        null=True,
+        blank=True,
+        verbose_name="Visualizado por",
+    )
+    visualizado_en = models.DateTimeField(null=True, blank=True)
     observacion = models.TextField("Observación", blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
+    estado = models.CharField(
+        max_length=15, choices=Estado.choices, default=Estado.BORRADOR
+    )
 
     class Meta:
         verbose_name = "Análisis de silo"
@@ -827,3 +999,11 @@ class AnalisisSilo(models.Model):
             for nombre in dominio.PARAMETROS_ANALISIS_SILO
         }
         return dominio.parametros_faltantes(valores, self.REQUERIDOS_PARA_VALE)
+
+    @property
+    def apto_inocuidad(self):
+        return (
+            self.inhibidores_resultado == ControlInhibidores.Resultado.NEGATIVO
+            and bool(self.metodo)
+            and self.hora_lectura is not None
+        )

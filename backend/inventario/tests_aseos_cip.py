@@ -125,6 +125,28 @@ class AseosCIPApiTests(TestCase):
         self.assertEqual(respuesta.json()["verificacion"], "conforme")
         self.assertEqual(respuesta.json()["verificado_por"], self.secado.id)
 
+    def test_cip_de_silo_sincroniza_su_estado_operacional(self):
+        ciclo = self._crear_directo(
+            area=PerfilUsuario.Area.RECEPCION, silo=self.silo
+        )
+        cliente = self._cliente(self.aseo)
+
+        iniciado = cliente.patch(
+            f"/api/inventario/cip/{ciclo.id}/",
+            {"estado": "en_curso"}, format="json",
+        )
+        self.silo.refresh_from_db()
+        self.assertEqual(iniciado.status_code, 200, iniciado.json())
+        self.assertEqual(self.silo.estado, Silo.Estado.EN_CIP)
+
+        cerrado = cliente.patch(
+            f"/api/inventario/cip/{ciclo.id}/",
+            {"estado": "completado", "verificacion": "conforme"}, format="json",
+        )
+        self.silo.refresh_from_db()
+        self.assertEqual(cerrado.status_code, 200, cerrado.json())
+        self.assertEqual(self.silo.estado, Silo.Estado.DISPONIBLE)
+
     def test_objetivo_exige_el_atributo_correcto(self):
         respuesta = self._cliente(self.aseo).post(
             "/api/inventario/cip/",

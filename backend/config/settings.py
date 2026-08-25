@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 import dj_database_url
@@ -48,6 +49,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 DJANGO_ENV = normalizar_entorno(os.environ.get("DJANGO_ENV"))
+
+# La suite histórica crea tokens de DRF directamente en varios fixtures. La
+# aplicación real ya no los emite ni los acepta: usa ``SesionUsuario`` y guarda
+# solo el hash de la credencial. Mantener este adaptador exclusivamente durante
+# ``manage.py test`` permite migrar los fixtures sin abrir una segunda vía de
+# autenticación en desarrollo o producción. Las pruebas dedicadas de sesiones
+# siguen recorriendo el mecanismo real.
+PERMITIR_TOKEN_DRF_LEGACY_EN_PRUEBAS = "test" in sys.argv
 
 
 # Quick-start development settings - unsuitable for production
@@ -188,6 +197,7 @@ DATABASE_VARIABLES = ("DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT")
 DATABASE_CONFIGURED = bool(DATABASE_URL) or all(
     os.getenv(nombre) for nombre in DATABASE_VARIABLES
 )
+DB_CONN_MAX_AGE = int(os.getenv("DB_CONN_MAX_AGE", "60"))
 
 if DATABASE_URL:
     # Algunos proveedores entregan la conexion completa en DATABASE_URL.
@@ -195,7 +205,7 @@ if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
-            conn_max_age=int(os.getenv("DB_CONN_MAX_AGE", "0")),
+            conn_max_age=DB_CONN_MAX_AGE,
             conn_health_checks=True,
         )
     }
@@ -208,6 +218,8 @@ else:
             "PASSWORD": os.getenv("DB_PASSWORD", ""),
             "HOST": os.getenv("DB_HOST", "localhost"),
             "PORT": os.getenv("DB_PORT", "5432"),
+            "CONN_MAX_AGE": DB_CONN_MAX_AGE,
+            "CONN_HEALTH_CHECKS": True,
         }
     }
 

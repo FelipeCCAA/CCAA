@@ -2,11 +2,12 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .models import (
-    CorridaCondensacion, CorridaMantequilla, EjecucionProceso, EventoProceso,
+    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    EjecucionProceso, EventoProceso,
 )
 
 
@@ -212,6 +213,14 @@ def registrar_estandarizacion(*, vale):
             cantidad=vale.litros_descremada,
             unidad="L",
         )
+    if vale.silo_crema_id and vale.litros_crema:
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion,
+            silo=vale.silo_crema,
+            tipo=EntradaProceso.Tipo.MEZCLA,
+            cantidad=vale.litros_crema,
+            unidad="L",
+        )
 
     SalidaProceso.objects.create(
         ejecucion=ejecucion,
@@ -251,13 +260,19 @@ def iniciar_condensacion(*, corrida_id, usuario):
     from maestros.models import Silo
     from produccion.models import OrdenProduccion
     from recepcion.models import MovimientoSilo
-    from recepcion.servicios import ESTADOS_SIN_CONSUMO, saldo_silo
+    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
     from .models import EntradaProceso
 
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
         "silo_origen", "silo_destino",
     ).get(pk=corrida_id)
+    # La ejecución también se bloquea. Una corrida puede especializar la que
+    # abrió el lote; sin este bloqueo podría cerrarse mientras decidimos si la
+    # adoptamos o la iniciamos.
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(
+        of=("self",)
+    ).select_related("etapa", "equipo").get(pk=corrida.ejecucion_id)
     if corrida.estado != CorridaCondensacion.Estado.BORRADOR:
         raise ValidationError("Solo una corrida en borrador puede iniciarse.")
     corrida.clean()
@@ -272,37 +287,84 @@ def iniciar_condensacion(*, corrida_id, usuario):
         raise ValidationError(impedimento)
 
     origen = Silo.objects.select_for_update().get(pk=corrida.silo_origen_id)
-    if not origen.activo or origen.estado in ESTADOS_SIN_CONSUMO:
-        raise ValidationError(f"{origen.codigo} no está habilitado para consumo.")
-    disponible = saldo_silo(origen)
-    if corrida.litros_entrada > disponible:
-        raise ValidationError(
-            f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
-        )
+    motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos_silo:
+        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos_silo))
 
-    MovimientoSilo.objects.create(
-        silo=origen, silo_contraparte=corrida.silo_destino,
-        tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
-        fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
-        origen_id=corrida.pk, operacion_id=corrida.operacion_id,
-        lote=corrida.lote, producto=corrida.lote.producto,
-        equipo=corrida.ejecucion.equipo, usuario=usuario,
+    # Tras integrar el lote con el motor de procesos aparecieron dos caminos
+    # representando el mismo hecho: abrir el lote ya consumía el silo y dejaba
+    # su ejecución activa; luego la corrida intentaba consumir y arrancar otra
+    # vez. Si esta corrida especializa ESA ejecución, adopta su entrada y su
+    # movimiento. No es idempotencia por casualidad: es una sola ejecución
+    # física con un registro genérico y otro especializado.
+    consumo_del_lote = MovimientoSilo.objects.filter(
+        Q(lote_id=corrida.lote_id)
+        | Q(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=corrida.lote_id,
+        ),
+        silo=origen,
+        tipo=MovimientoSilo.Tipo.SALIDA,
+    ).first()
+    adopta_ejecucion_del_lote = (
+        corrida.lote.ejecucion_id == corrida.ejecucion_id
+        and corrida.ejecucion.estado == EjecucionProceso.Estado.EJECUCION
     )
-    EntradaProceso.objects.create(
-        ejecucion=corrida.ejecucion, silo=origen,
-        cantidad=corrida.litros_entrada, unidad="L",
-    )
-    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+
+    if adopta_ejecucion_del_lote:
+        if consumo_del_lote is None:
+            raise ValidationError(
+                "La ejecución del lote ya está activa, pero no tiene su consumo "
+                "de silo. Corrige esa inconsistencia antes de iniciar la condensación."
+            )
+        if consumo_del_lote.litros != corrida.litros_entrada:
+            raise ValidationError({
+                "litros_entrada": (
+                    f"El lote ya consumió {consumo_del_lote.litros} L; la corrida "
+                    f"declara {corrida.litros_entrada} L. Deben coincidir."
+                )
+            })
+        entrada = EntradaProceso.objects.filter(
+            ejecucion=corrida.ejecucion,
+            silo=origen,
+            cantidad=corrida.litros_entrada,
+            unidad="L",
+        ).first()
+        if entrada is None:
+            raise ValidationError(
+                "La ejecución del lote ya está activa, pero no tiene la entrada "
+                "de proceso que corresponde al consumo del silo."
+            )
+    else:
+        disponible = saldo_silo(origen)
+        if corrida.litros_entrada > disponible:
+            raise ValidationError(
+                f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
+            )
+
+        consumo_del_lote = MovimientoSilo.objects.create(
+            silo=origen, silo_contraparte=corrida.silo_destino,
+            tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
+            fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+            origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+            lote=corrida.lote, producto=corrida.lote.producto,
+            equipo=corrida.ejecucion.equipo, usuario=usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=corrida.ejecucion, silo=origen,
+            cantidad=corrida.litros_entrada, unidad="L",
+        )
+        if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+            transicionar_ejecucion(
+                ejecucion_id=corrida.ejecucion_id,
+                estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+                usuario=usuario,
+            )
         transicionar_ejecucion(
             ejecucion_id=corrida.ejecucion_id,
-            estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+            estado_nuevo=EjecucionProceso.Estado.EJECUCION,
             usuario=usuario,
         )
-    transicionar_ejecucion(
-        ejecucion_id=corrida.ejecucion_id,
-        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
-        usuario=usuario,
-    )
     corrida.estado = CorridaCondensacion.Estado.EN_PROCESO
     corrida.iniciada_por = usuario
     corrida.iniciada_en = timezone.now()
@@ -317,7 +379,7 @@ def iniciar_condensacion(*, corrida_id, usuario):
 def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles):
     from maestros.models import Silo
     from recepcion.models import MovimientoSilo
-    from recepcion.servicios import saldo_silo
+    from recepcion.servicios import heredar_atribuciones, saldo_silo
     from .models import SalidaProceso
 
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
@@ -344,7 +406,7 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
             raise ValidationError({campo: "Control de condensación no reconocido."})
         setattr(corrida, campo, valor)
     corrida.litros_precondensado = cantidad
-    MovimientoSilo.objects.create(
+    ingreso = MovimientoSilo.objects.create(
         silo=destino, silo_contraparte=corrida.silo_origen,
         tipo=MovimientoSilo.Tipo.INGRESO, litros=cantidad,
         fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
@@ -352,6 +414,24 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         lote=corrida.lote, producto=corrida.lote.producto,
         equipo=corrida.ejecucion.equipo, usuario=usuario,
     )
+    consumo = MovimientoSilo.objects.filter(
+        Q(lote_id=corrida.lote_id)
+        | Q(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=corrida.lote_id,
+        )
+        | Q(
+            origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+            origen_id=corrida.pk,
+        ),
+        silo_id=corrida.silo_origen_id,
+        tipo=MovimientoSilo.Tipo.SALIDA,
+    ).order_by("fecha_hora", "id").last()
+    if consumo is None:
+        raise ValidationError(
+            "La condensación no tiene un consumo de silo del cual heredar trazabilidad."
+        )
+    heredar_atribuciones(ingreso, [consumo])
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, silo=destino,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL, cantidad=cantidad, unidad="L",
@@ -373,6 +453,152 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     corrida.finalizada_por = usuario
     corrida.finalizada_en = timezone.now()
     corrida.save()
+    return corrida
+
+
+@transaction.atomic
+def iniciar_descremacion(*, corrida_id, usuario):
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from maestros.models import Silo
+    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+    from .models import EntradaProceso
+
+    corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "analisis_entrada",
+        "silo_entera", "silo_descremada", "estanque_crema",
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaDescremacion.Estado.BORRADOR:
+        raise ValidationError("Solo una descremación en borrador puede iniciarse.")
+    corrida.clean()
+    if not corrida.ejecucion.equipo_id:
+        raise ValidationError("La descremación requiere un equipo asignado.")
+    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
+    if impedimento:
+        raise ValidationError(impedimento)
+    origen = Silo.objects.select_for_update().get(pk=corrida.silo_entera_id)
+    motivos = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos:
+        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
+    if corrida.analisis_entrada.estado != corrida.analisis_entrada.Estado.CONFIRMADO:
+        raise ValidationError({"analisis_entrada": "El análisis de entrada debe estar confirmado."})
+    if corrida.analisis_entrada.grasa != corrida.grasa_entrada or corrida.analisis_entrada.sng != corrida.sng_entrada:
+        raise ValidationError({
+            "analisis_entrada": "Grasa y SNG deben coincidir con el análisis seleccionado."
+        })
+    if saldo_silo(origen) < corrida.litros_entrada:
+        raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
+
+    EntradaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=origen,
+        tipo=EntradaProceso.Tipo.PRINCIPAL, cantidad=corrida.litros_entrada, unidad="L",
+    )
+    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id,
+            estado_nuevo=EjecucionProceso.Estado.PREPARACION, usuario=usuario,
+        )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.EJECUCION, usuario=usuario,
+    )
+    corrida.estado = CorridaDescremacion.Estado.EN_CURSO
+    corrida.iniciada_por = usuario
+    corrida.iniciada_en = timezone.now()
+    corrida.save(update_fields=["estado", "iniciada_por", "iniciada_en"])
+    return corrida
+
+
+@transaction.atomic
+def cerrar_descremacion(
+    *, corrida_id, usuario, litros_descremada, grasa_descremada,
+    litros_crema, grasa_crema, controles=None,
+):
+    from maestros.models import Silo
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import heredar_atribuciones, motivos_silo_no_disponible, saldo_silo
+    from .dominio import calcular_balance_descremacion
+    from .models import SalidaProceso
+
+    corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "silo_entera",
+        "silo_descremada", "estanque_crema",
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaDescremacion.Estado.EN_CURSO:
+        raise ValidationError("Solo una descremación en curso puede cerrarse.")
+    ld, lc = Decimal(str(litros_descremada)), Decimal(str(litros_crema))
+    gd, gc = Decimal(str(grasa_descremada)), Decimal(str(grasa_crema))
+    if min(ld, lc) <= 0:
+        raise ValidationError("Las dos salidas deben ser mayores que cero.")
+    if ld + lc > corrida.litros_entrada:
+        raise ValidationError("La descremada y la crema superan los litros de entrada.")
+
+    silos = {
+        silo.pk: silo for silo in Silo.objects.select_for_update().filter(
+            pk__in=[corrida.silo_entera_id, corrida.silo_descremada_id, corrida.estanque_crema_id]
+        ).order_by("pk")
+    }
+    origen, destino_d, destino_c = (
+        silos[corrida.silo_entera_id], silos[corrida.silo_descremada_id],
+        silos[corrida.estanque_crema_id],
+    )
+    motivos = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos:
+        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
+    if saldo_silo(origen) < corrida.litros_entrada:
+        raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
+    for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
+        if not destino.activo or destino.estado in {
+            Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+        }:
+            raise ValidationError(f"{destino.codigo} no admite producto.")
+        if saldo_silo(destino) + cantidad > destino.capacidad_l:
+            raise ValidationError(f"{destino.codigo} excedería su capacidad.")
+
+    ahora = timezone.now()
+    consumo = MovimientoSilo.objects.create(
+        silo=origen, tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
+        fecha_hora=ahora, origen_tipo=MovimientoSilo.OrigenTipo.DESCREMACION,
+        origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+        equipo=corrida.ejecucion.equipo, usuario=usuario,
+    )
+    ingresos = []
+    for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
+        ingreso = MovimientoSilo.objects.create(
+            silo=destino, silo_contraparte=origen, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=cantidad, fecha_hora=ahora,
+            origen_tipo=MovimientoSilo.OrigenTipo.DESCREMACION,
+            origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+            equipo=corrida.ejecucion.equipo, usuario=usuario,
+        )
+        heredar_atribuciones(ingreso, [consumo])
+        ingresos.append(ingreso)
+    SalidaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=destino_d,
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL, cantidad=ld, unidad="L",
+    )
+    SalidaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=destino_c,
+        naturaleza=SalidaProceso.Naturaleza.COPRODUCTO, cantidad=lc, unidad="L",
+    )
+    balance = calcular_balance_descremacion(
+        corrida.litros_entrada, corrida.grasa_entrada, corrida.sng_entrada, gd, gc,
+        litros_descremada=ld, litros_crema=lc,
+    )
+    corrida.litros_descremada, corrida.grasa_descremada = ld, gd
+    corrida.litros_crema, corrida.grasa_crema = lc, gc
+    corrida.controles = {**(controles or {}), "avisos_balance": list(balance.avisos)}
+    corrida.estado = CorridaDescremacion.Estado.CERRADA
+    corrida.finalizada_por = usuario
+    corrida.finalizada_en = ahora
+    corrida.save()
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
+    )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.CERRADA, usuario=usuario,
+    )
     return corrida
 
 

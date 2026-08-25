@@ -1,10 +1,13 @@
+import csv
 import uuid
 from decimal import Decimal
+from io import BytesIO, StringIO
 
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Max, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
@@ -23,14 +26,17 @@ from usuarios.tenancy import (
 
 from . import dominio
 from .models import (
-    CONTROLES_DECLARADOS, AnalisisSilo, BusquedaProveedor, ModuloRecepcion, MovimientoSilo,
-    Recepcion,
+    CONTROLES_DECLARADOS, AlertaCalidadSilo, AnalisisSilo, BusquedaProveedor,
+    AtribucionRecepcion, CorreccionRecepcion, ModuloRecepcion, MovimientoSilo, Recepcion,
 )
 from .serializers import (
-    AjusteSiloSerializer, AnalisisSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
-    TransferenciaSiloSerializer,
+    AjusteSiloSerializer, AnalisisSiloSerializer, CorreccionCrioscopiasSerializer,
+    MovimientoSiloSerializer, RecepcionSerializer, TransferenciaSiloSerializer,
 )
-from .servicios import ajustar_silo, transferir_silo
+from .servicios import (
+    ajustar_silo, momento_leche_mas_antigua, motivos_silo_no_disponible,
+    saldo_silo, transferir_silo,
+)
 
 
 def _usuarios_recepcion(usuario):
@@ -96,6 +102,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         # recorren `modulos` por fila; sin este prefetch, exponerlas en el
         # serializer dispara una consulta por recepción (N+1) al listar.
         "controles_inhibidores__busquedas",
+        "alertas_calidad_silo",
     )
     serializer_class = RecepcionSerializer
     permission_classes = [EscribeRecepcion]
@@ -104,6 +111,43 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         if self.action == "decidir_calidad":
             return [DecideCalidadRecepcion()]
         return super().get_permissions()
+
+    @action(detail=True, methods=["get"])
+    def destino(self, request, pk=None):
+        """Movimientos posteriores en que aparece leche de esta recepción."""
+        recepcion = self.get_object()
+        atribuciones = (
+            AtribucionRecepcion.objects.filter(
+                recepcion=recepcion,
+                movimiento__tipo=MovimientoSilo.Tipo.SALIDA,
+            )
+            .select_related("movimiento__silo", "movimiento__lote")
+            .order_by("movimiento__fecha_hora", "orden")
+        )
+        destinos = []
+        for item in atribuciones:
+            movimiento = item.movimiento
+            destinos.append({
+                "movimiento_id": movimiento.id,
+                "fecha_hora": movimiento.fecha_hora,
+                "litros": item.litros,
+                "silo": movimiento.silo.codigo,
+                "origen_tipo": movimiento.origen_tipo,
+                "lote": (
+                    {"id": movimiento.lote_id, "codigo": movimiento.lote.codigo_lote}
+                    if movimiento.lote_id else None
+                ),
+                "porcentaje_movimiento": (
+                    item.litros * 100 / movimiento.litros
+                ).quantize(Decimal("0.01")),
+            })
+        return Response({
+            "recepcion_id": recepcion.id,
+            "litros_atribuidos": sum(
+                (item.litros for item in atribuciones), Decimal("0")
+            ),
+            "destinos": destinos,
+        })
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -121,6 +165,12 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 consulta.filter(estado__in=estados)
                 if len(estados) > 1
                 else consulta.filter(estado=estados[0])
+            )
+            if Recepcion.Estado.BORRADOR in estados:
+                consulta = consulta.filter(abierto_por=self.request.user)
+        else:
+            consulta = consulta.exclude(
+                estado__in=[Recepcion.Estado.BORRADOR, Recepcion.Estado.ANULADA]
             )
 
         silo = parametros.get("silo")
@@ -170,7 +220,9 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         describe la planta, no la vista.
         """
         base = filtrar_por_scope(
-            Recepcion.objects.all(), request.user,
+            Recepcion.objects.exclude(
+                estado__in=[Recepcion.Estado.BORRADOR, Recepcion.Estado.ANULADA]
+            ), request.user,
             campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
         )
@@ -221,6 +273,155 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
     def perform_update(self, serializer):
         serializer.save()
+
+    def update(self, request, *args, **kwargs):
+        recepcion = self.get_object()
+        if recepcion.estado in {Recepcion.Estado.CERRADA, Recepcion.Estado.ANULADA}:
+            return Response(
+                {"detail": "El documento está cerrado y ya no admite edición."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if "litros" in request.data and MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+            origen_id=recepcion.id,
+        ).exists():
+            return Response(
+                {
+                    "litros": (
+                        "Los litros ya movieron el saldo del silo. Corrígelos "
+                        "mediante un ajuste con motivo, no editando la recepción."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return super().update(request, *args, **kwargs)
+
+    def _borrador_del_usuario(self, request, pk=None):
+        consulta = filtrar_por_scope(
+            Recepcion.objects.select_related("vehiculo", "silo").prefetch_related(
+                "modulos", "controles_inhibidores__busquedas"
+            ),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        ).filter(estado=Recepcion.Estado.BORRADOR, abierto_por=request.user)
+        if pk is not None:
+            consulta = consulta.filter(pk=pk)
+        return consulta.order_by("-actualizado_en", "-id").first()
+
+    @action(detail=False, methods=["get"], url_path="mi-borrador")
+    def mi_borrador(self, request):
+        borrador = self._borrador_del_usuario(request)
+        if borrador is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(borrador).data)
+
+    @action(detail=False, methods=["post"], url_path="crear-borrador")
+    def crear_borrador(self, request):
+        existente = self._borrador_del_usuario(request)
+        if existente is not None:
+            return Response(
+                {
+                    "detail": "Ya tienes un borrador de recepción abierto.",
+                    "borrador": self.get_serializer(existente).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        datos = {
+            clave: valor for clave, valor in request.data.items()
+            if clave != "modulos" and valor not in (None, "")
+        }
+        serializer = self.get_serializer(data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            recepcion = serializer.save(
+                sucursal=sucursal_para_escritura(request.user, {}),
+                operador=request.user,
+                abierto_por=request.user,
+                abierto_en=timezone.now(),
+                estado=Recepcion.Estado.BORRADOR,
+                fecha=serializer.validated_data.get("fecha", timezone.localdate()),
+                tipo_leche=serializer.validated_data.get(
+                    "tipo_leche", Recepcion.TipoLeche.ENTERA
+                ),
+                litros=serializer.validated_data.get("litros", Decimal("0")),
+            )
+            self._guardar_modulos_borrador(
+                recepcion, request.data.get("modulos", [])
+            )
+        return Response(self.get_serializer(recepcion).data, status=status.HTTP_201_CREATED)
+
+    def _guardar_modulos_borrador(self, recepcion, modulos):
+        if not isinstance(modulos, list):
+            raise DRFValidationError({"modulos": "Debe ser una lista."})
+        numeros = [item.get("numero") for item in modulos if isinstance(item, dict)]
+        if len(numeros) != len(modulos) or any(
+            not isinstance(numero, int) or numero < 1 or numero > 4
+            for numero in numeros
+        ) or len(set(numeros)) != len(numeros):
+            raise DRFValidationError(
+                {"modulos": "Usa números únicos de módulo entre 1 y 4."}
+            )
+        recepcion.modulos.all().delete()
+        ModuloRecepcion.objects.bulk_create([
+            ModuloRecepcion(
+                recepcion=recepcion,
+                numero=item["numero"],
+                crioscopia=item.get("crioscopia") or None,
+                carga_recoleccion_id=item.get("carga_recoleccion") or None,
+            )
+            for item in modulos
+        ])
+
+    @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    def guardar_borrador(self, request, pk=None):
+        recepcion = self._borrador_del_usuario(request, pk)
+        if recepcion is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = {clave: valor for clave, valor in request.data.items() if clave != "modulos"}
+        serializer = self.get_serializer(recepcion, data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            recepcion = serializer.save()
+            if "modulos" in request.data:
+                self._guardar_modulos_borrador(recepcion, request.data["modulos"])
+        return Response(self.get_serializer(recepcion).data)
+
+    @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    def confirmar_borrador(self, request, pk=None):
+        recepcion = self._borrador_del_usuario(request, pk)
+        if recepcion is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        motivos = recepcion.confirmar(request.user)
+        if motivos:
+            return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        _notificar_recepcion(
+            recepcion,
+            tipo="leche_recepcionada",
+            titulo="Camión de leche recepcionado",
+            mensaje=(
+                f"Se recibieron {recepcion.litros} L del camión "
+                f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'}."
+            ),
+            areas=[PerfilUsuario.Area.RECEPCION],
+        )
+        return Response(self.get_serializer(recepcion).data)
+
+    @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    def descartar_borrador(self, request, pk=None):
+        recepcion = self._borrador_del_usuario(request, pk)
+        if recepcion is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        recepcion.estado = Recepcion.Estado.ANULADA
+        recepcion.save(update_fields=["estado", "actualizado_en"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["post"], url_path="registrar-llegada")
     def registrar_llegada(self, request):
@@ -298,6 +499,114 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             self.get_serializer(recepcion).data, status=status.HTTP_201_CREATED
         )
 
+    @action(detail=True, methods=["patch"], url_path="corregir-crioscopias")
+    def corregir_crioscopias(self, request, pk=None):
+        """Corrige un paso recorrido sin tocar litros ni movimientos de silo."""
+        entrada = CorreccionCrioscopiasSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            recepcion = Recepcion.objects.select_for_update().get(
+                pk=self.get_object().pk
+            )
+            if recepcion.estado in {
+                Recepcion.Estado.BORRADOR,
+                Recepcion.Estado.CERRADA,
+                Recepcion.Estado.ANULADA,
+            }:
+                return Response(
+                    {
+                        "detail": (
+                            "Una recepción cerrada, anulada o todavía en borrador "
+                            "no admite correcciones de pasos recorridos."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            modulos = {
+                modulo.id: modulo
+                for modulo in recepcion.modulos.select_for_update()
+            }
+            solicitados = entrada.validated_data["modulos"]
+            ajenos = [item["id"] for item in solicitados if item["id"] not in modulos]
+            if ajenos:
+                return Response(
+                    {"modulos": f"Los módulos {ajenos} no pertenecen a esta recepción."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            evaluacion_antes = recepcion.evaluar()
+            cambios = {}
+            for item in solicitados:
+                modulo = modulos[item["id"]]
+                anterior = modulo.crioscopia
+                nuevo = item["crioscopia"]
+                if anterior == nuevo:
+                    continue
+                modulo.crioscopia = nuevo
+                modulo.save(update_fields=["crioscopia"])
+                cambios[f"M{modulo.numero}.crioscopia"] = [
+                    str(anterior) if anterior is not None else None,
+                    str(nuevo) if nuevo is not None else None,
+                ]
+
+            if not cambios:
+                return Response(
+                    {"modulos": "No hay cambios de crioscopía que guardar."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            evaluacion_despues = recepcion.evaluar()
+            estado_anterior = recepcion.estado
+            se_volvio_no_conforme = (
+                evaluacion_antes.conforme and not evaluacion_despues.conforme
+            )
+            if se_volvio_no_conforme and estado_anterior in {
+                Recepcion.Estado.LIBERADA,
+                Recepcion.Estado.DESCARGADA,
+            }:
+                recepcion.estado = Recepcion.Estado.RETENIDA
+                recepcion.motivo = " · ".join(evaluacion_despues.motivos)
+                recepcion.calidad_por = request.user
+                recepcion.calidad_en = timezone.now()
+                recepcion.save(update_fields=[
+                    "estado", "motivo", "calidad_por", "calidad_en",
+                ])
+
+            CorreccionRecepcion.objects.create(
+                recepcion=recepcion,
+                usuario=request.user,
+                paso="llegada",
+                motivo=entrada.validated_data["motivo"],
+                cambios=cambios,
+            )
+
+            if (
+                se_volvio_no_conforme
+                and estado_anterior == Recepcion.Estado.DESCARGADA
+                and recepcion.silo_id is not None
+            ):
+                detalle = (
+                    f"La recepción {recepcion.id} cambió a no conforme tras "
+                    f"corregir crioscopía: {' · '.join(evaluacion_despues.motivos)}"
+                )
+                AlertaCalidadSilo.objects.create(
+                    recepcion=recepcion,
+                    silo=recepcion.silo,
+                    motivo=detalle,
+                )
+                _notificar_recepcion(
+                    recepcion,
+                    tipo="silo_afectado_por_correccion",
+                    titulo=f"Revisar calidad de {recepcion.silo.codigo}",
+                    mensaje=detalle,
+                    areas=[PerfilUsuario.Area.CALIDAD, PerfilUsuario.Area.RECEPCION],
+                )
+
+        recepcion = self.queryset.get(pk=recepcion.pk)
+        return Response(self.get_serializer(recepcion).data)
+
     @action(detail=True, methods=["post"], url_path="tomar-muestra")
     def tomar_muestra(self, request, pk=None):
         """Identifica la muestra del módulo y lo entrega a la cola de Calidad."""
@@ -372,6 +681,41 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     status=status.HTTP_409_CONFLICT,
                 )
 
+            ph_enviado = request.data.get("ph_camion", recepcion.ph_camion)
+            ph_enviado = None if ph_enviado in (None, "") else Decimal(str(ph_enviado))
+            if ph_enviado != recepcion.ph_camion:
+                motivo_correccion = str(
+                    request.data.get("motivo_correccion", "")
+                ).strip()
+                if len(motivo_correccion) < 5:
+                    return Response(
+                        {
+                            "motivo_correccion": (
+                                "Indica por qué corriges el pH del camión "
+                                "(mínimo 5 caracteres)."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                ph_enviado = RecepcionSerializer().fields[
+                    "ph_camion"
+                ].run_validation(ph_enviado)
+                anterior = recepcion.ph_camion
+                recepcion.ph_camion = ph_enviado
+                recepcion.save(update_fields=["ph_camion"])
+                CorreccionRecepcion.objects.create(
+                    recepcion=recepcion,
+                    usuario=request.user,
+                    paso="calidad",
+                    motivo=motivo_correccion,
+                    cambios={
+                        "ph_camion": [
+                            str(anterior) if anterior is not None else None,
+                            str(ph_enviado) if ph_enviado is not None else None,
+                        ]
+                    },
+                )
+
             # `Recepcion.evaluar()` arma también la crioscopía de los módulos
             # y el pH del camión — llamar a `dominio.evaluar_recepcion`
             # directo aquí, sin esos dos argumentos, es la regresión que
@@ -428,7 +772,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     {"detail": "El silo se asigna solo después de la aprobación de Calidad."},
                     status=status.HTTP_409_CONFLICT,
                 )
-            if silo.sucursal_id != recepcion.vehiculo.sucursal_id:
+            if silo.sucursal_id != recepcion.sucursal_id:
                 return Response(
                     {"silo": "El silo debe pertenecer a la sucursal de la recepción."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -505,6 +849,11 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 )
 
             silo = Silo.objects.select_for_update().get(pk=recepcion.silo_id)
+            bloqueos_silo = motivos_silo_no_disponible(silo, para="descarga")
+            if bloqueos_silo:
+                return Response(
+                    {"motivos": bloqueos_silo}, status=status.HTTP_409_CONFLICT
+                )
             ocupacion_actual = MovimientoSilo.objects.filter(silo=silo).aggregate(
                 total=Coalesce(
                     Sum(Case(
@@ -634,35 +983,59 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         contra cero— es justamente la que la planilla perdía.
         """
         fecha_texto = request.query_params.get("fecha")
+        desde_texto = request.query_params.get("desde")
+        hasta_texto = request.query_params.get("hasta")
 
-        if not fecha_texto:
+        if fecha_texto and (desde_texto or hasta_texto):
             return Response(
-                {"fecha": "Indica la fecha del resumen (YYYY-MM-DD)."},
+                {"fecha": "Usa fecha o el rango desde/hasta, no ambos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not fecha_texto and not (desde_texto and hasta_texto):
+            return Response(
+                {"fecha": "Indica fecha o un rango completo desde/hasta (AAAA-MM-DD)."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            # `parse_date` devuelve None si el texto no tiene forma de fecha
-            # (p. ej. "abc"), pero levanta ValueError si la forma es correcta
-            # y el valor no existe (p. ej. "2026-13-45", mes 13). Las dos
-            # cosas son la misma pregunta del usuario: "esto no es una
-            # fecha", y las dos se responden 400, no 500.
-            fecha = parse_date(fecha_texto)
-        except ValueError:
-            fecha = None
+        def fecha_valida(texto):
+            try:
+                return parse_date(texto)
+            except (TypeError, ValueError):
+                return None
 
-        if fecha is None:
+        desde = fecha_valida(fecha_texto or desde_texto)
+        hasta = fecha_valida(fecha_texto or hasta_texto)
+        if desde is None or hasta is None:
+            valor = fecha_texto or f"{desde_texto} / {hasta_texto}"
             return Response(
-                {"fecha": f"Fecha no reconocida: {fecha_texto!r} (usa AAAA-MM-DD)."},
+                {"fecha": f"Fecha no reconocida: {valor!r} (usa AAAA-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if desde > hasta:
+            return Response(
+                {"fecha": "El inicio del rango no puede ser posterior al término."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        formato = request.query_params.get("formato", "json").lower()
+        if formato not in {"json", "csv", "xlsx"}:
+            return Response(
+                {"formato": "Formato no reconocido. Usa json, csv o xlsx."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         base = filtrar_por_scope(
-            Recepcion.objects.filter(fecha=fecha).prefetch_related("modulos"),
+            Recepcion.objects.filter(
+                fecha__range=(desde, hasta)
+            ).exclude(
+                estado__in=[Recepcion.Estado.BORRADOR, Recepcion.Estado.ANULADA]
+            )
+            .select_related("silo", "vehiculo")
+            .prefetch_related("modulos"),
             request.user,
             campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
-        )
+        ).order_by("fecha", "hora", "id")
 
         recepciones = list(base)
 
@@ -712,8 +1085,47 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         horas = [r.horas_a_pagar for r in recepciones]
         medidas = [h for h in horas if h is not None]
 
-        return Response({
-            "fecha": fecha_texto,
+        detalle = [
+            {
+                "id": r.id,
+                "fecha": r.fecha.isoformat(),
+                "hora_arribo": (
+                    (r.hora_arribo_porteria or r.hora).strftime("%H:%M")
+                    if (r.hora_arribo_porteria or r.hora)
+                    else None
+                ),
+                "guia": r.guia,
+                "patente": r.vehiculo.placa if r.vehiculo_id else "",
+                "procedencia": r.procedencia,
+                "tipo_leche": r.tipo_leche,
+                "litros": str(r.litros),
+                "kg_guia": str(r.kg_guia),
+                "kg_romana": str(r.kg_romana) if r.kg_romana is not None else None,
+                "diferencia_kg": (
+                    str(r.diferencia_kg) if r.diferencia_kg is not None else None
+                ),
+                "silo": r.silo.codigo if r.silo_id else "",
+                "estado": r.estado,
+                "estado_etiqueta": r.get_estado_display(),
+                "crioscopias": [
+                    {
+                        "modulo": modulo.numero,
+                        "valor": str(modulo.crioscopia)
+                        if modulo.crioscopia is not None else None,
+                    }
+                    for modulo in r.modulos.all()
+                ],
+                "permanencia_horas": r.permanencia_horas,
+                "permanencia_motivo": r.permanencia_motivo,
+                "horas_a_pagar": r.horas_a_pagar,
+            }
+            for r in recepciones
+        ]
+
+        resumen = {
+            "fecha": desde.isoformat() if desde == hasta else None,
+            "desde": desde.isoformat(),
+            "hasta": hasta.isoformat(),
             "camiones": len(recepciones),
             "litros": str(litros),
             "kg_guia": str(kg_guia),
@@ -734,7 +1146,103 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             # parecería completo aunque la mitad de los camiones no se
             # pesaron.
             "camiones_sin_romana": camiones_sin_romana,
-        })
+        }
+
+        if formato == "json":
+            if request.query_params.get("detalle") == "1":
+                resumen["detalle"] = detalle
+            return Response(resumen)
+
+        nombre = (
+            f"recepciones-{desde.isoformat()}"
+            if desde == hasta
+            else f"recepciones-{desde.isoformat()}-{hasta.isoformat()}"
+        )
+        columnas = [
+            ("Fecha", "fecha"),
+            ("Hora arribo", "hora_arribo"),
+            ("Guía", "guia"),
+            ("Patente", "patente"),
+            ("Procedencia", "procedencia"),
+            ("Tipo de leche", "tipo_leche"),
+            ("Litros", "litros"),
+            ("Kg guía", "kg_guia"),
+            ("Kg romana", "kg_romana"),
+            ("Diferencia kg", "diferencia_kg"),
+            ("Silo", "silo"),
+            ("Estado", "estado_etiqueta"),
+            ("Crioscopías", "crioscopias_texto"),
+            ("Permanencia horas", "permanencia_horas"),
+            ("Horas a pagar", "horas_a_pagar"),
+            ("Dato horario faltante", "permanencia_motivo"),
+        ]
+        filas = []
+        for item in detalle:
+            fila = dict(item)
+            fila["crioscopias_texto"] = " · ".join(
+                f"M{m['modulo']}: {m['valor'] if m['valor'] is not None else 'sin dato'}"
+                for m in item["crioscopias"]
+            )
+            filas.append(fila)
+
+        if formato == "csv":
+            salida = StringIO()
+            escritor = csv.writer(salida, delimiter=";")
+            escritor.writerow([titulo for titulo, _ in columnas])
+            escritor.writerows(
+                [
+                    [
+                        fila.get(clave) if fila.get(clave) is not None else ""
+                        for _, clave in columnas
+                    ]
+                    for fila in filas
+                ]
+            )
+            respuesta = HttpResponse(
+                "\ufeff" + salida.getvalue(), content_type="text/csv; charset=utf-8"
+            )
+            respuesta["Content-Disposition"] = f'attachment; filename="{nombre}.csv"'
+            return respuesta
+
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.title = "Recepciones"
+        hoja.append([titulo for titulo, _ in columnas])
+        for fila in filas:
+            hoja.append([
+                fila.get(clave) if fila.get(clave) is not None else ""
+                for _, clave in columnas
+            ])
+        hoja.freeze_panes = "A2"
+        hoja.auto_filter.ref = hoja.dimensions
+        for columna in hoja.columns:
+            largo = min(max(len(str(celda.value or "")) for celda in columna) + 2, 40)
+            hoja.column_dimensions[columna[0].column_letter].width = largo
+
+        totales = libro.create_sheet("Totales")
+        for etiqueta, valor in [
+            ("Desde", resumen["desde"]),
+            ("Hasta", resumen["hasta"]),
+            ("Camiones", resumen["camiones"]),
+            ("Litros", resumen["litros"]),
+            ("Kg guía", resumen["kg_guia"]),
+            ("Kg romana", resumen["kg_romana"]),
+            ("Diferencia kg", resumen["diferencia_kg"]),
+            ("Horas a pagar", resumen["horas_a_pagar"]),
+            ("Camiones sin romana", resumen["camiones_sin_romana"]),
+            ("Camiones sin marcas horarias", resumen["camiones_sin_marcas_horarias"]),
+        ]:
+            totales.append([etiqueta, valor if valor is not None else ""])
+        contenido = BytesIO()
+        libro.save(contenido)
+        respuesta = HttpResponse(
+            contenido.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        respuesta["Content-Disposition"] = f'attachment; filename="{nombre}.xlsx"'
+        return respuesta
 
 
 class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
@@ -883,8 +1391,16 @@ def ocupacion(request):
         ),
         ultimo_movimiento=Max("movimientos__fecha_hora"),
     )
+    from recepcion.servicios import momento_leche_mas_antigua, motivos_silo_no_disponible
+
     ocupaciones = []
     for silo in silos:
+        analisis = AnalisisSilo.objects.filter(
+            silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
+        ).order_by("-tomado_en", "-id").first()
+        vigencia = analisis.vigencia if analisis else None
+        leche_mas_antigua_en = momento_leche_mas_antigua(silo)
+        motivos = motivos_silo_no_disponible(silo, para="proceso")
         porcentaje = (
             silo.litros_ocupados / silo.capacidad_l * 100
             if silo.capacidad_l
@@ -893,6 +1409,8 @@ def ocupacion(request):
         ocupaciones.append({
             "silo_id": silo.id,
             "codigo": silo.codigo,
+            "tipo": silo.tipo,
+            "tipo_etiqueta": silo.get_tipo_display(),
             "litros": silo.litros_ocupados,
             "capacidad": silo.capacidad_l,
             "estado": silo.estado,
@@ -901,6 +1419,18 @@ def ocupacion(request):
             "temperatura_actual": silo.temperatura_actual,
             "ultima_limpieza": silo.ultima_limpieza,
             "ultimo_movimiento": silo.ultimo_movimiento,
+            "leche_mas_antigua_en": leche_mas_antigua_en,
+            "antiguedad_horas": (
+                round((timezone.now() - leche_mas_antigua_en).total_seconds() / 3600, 1)
+                if leche_mas_antigua_en else None
+            ),
+            "analisis": analisis.pk if analisis else None,
+            "analisis_tomado_en": analisis.tomado_en if analisis else None,
+            "grasa": analisis.grasa if analisis else None,
+            "sng": analisis.sng if analisis else None,
+            "analisis_vigente": vigencia.vigente if vigencia else False,
+            "motivo_vigencia": vigencia.motivo if vigencia else "Sin análisis confirmado.",
+            "motivos_no_disponible": motivos,
             "pct": round(porcentaje, 1),
             "excedido": silo.litros_ocupados > silo.capacidad_l,
             "negativo": silo.litros_ocupados < 0,
@@ -931,12 +1461,18 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     tenant_lookup_sucursal = "silo__sucursal_id"
     tenant_lookup_empresa = "silo__sucursal__empresa_id"
     tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = AnalisisSilo.objects.select_related("silo", "analista")
+    queryset = AnalisisSilo.objects.select_related(
+        "silo", "analista", "visualizado_por"
+    )
+
+
     serializer_class = AnalisisSiloSerializer
     permission_classes = [EscribeRecepcion]
 
     def get_queryset(self):
-        consulta = super().get_queryset()
+        consulta = super().get_queryset().exclude(
+            estado__in=[AnalisisSilo.Estado.BORRADOR, AnalisisSilo.Estado.ANULADO]
+        )
 
         silo = self.request.query_params.get("silo")
         if silo:
@@ -949,4 +1485,161 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         return consulta
 
     def perform_create(self, serializer):
-        serializer.save(analista=self.request.user)
+        serializer.save(
+            analista=self.request.user,
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+        )
+
+    @action(detail=True, methods=["post"])
+    def visualizar(self, request, pk=None):
+        analisis = self.get_object()
+        if analisis.estado != AnalisisSilo.Estado.CONFIRMADO:
+            return Response(
+                {"detail": "Solo se firma un análisis confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if analisis.analista_id == request.user.id:
+            return Response(
+                {
+                    "detail": (
+                        "La visualización debe firmarla una persona distinta "
+                        "de quien realizó el análisis."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        analisis.visualizado_por = request.user
+        analisis.visualizado_en = timezone.now()
+        analisis.save(update_fields=["visualizado_por", "visualizado_en"])
+        return Response(self.get_serializer(analisis).data)
+
+    def _borrador_del_usuario(self, request, pk=None):
+        consulta = filtrar_por_scope(
+            AnalisisSilo.objects.select_related("silo", "analista"),
+            request.user,
+            campo_sucursal="silo__sucursal_id",
+            campo_empresa="silo__sucursal__empresa_id",
+        ).filter(estado=AnalisisSilo.Estado.BORRADOR, abierto_por=request.user)
+        silo = request.query_params.get("silo") or request.data.get("silo")
+        if silo:
+            consulta = consulta.filter(silo_id=silo)
+        if pk is not None:
+            consulta = consulta.filter(pk=pk)
+        return consulta.order_by("-actualizado_en", "-id").first()
+
+    @action(detail=False, methods=["get"], url_path="mi-borrador")
+    def mi_borrador(self, request):
+        borrador = self._borrador_del_usuario(request)
+        if borrador is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(borrador).data)
+
+    @action(detail=False, methods=["post"], url_path="crear-borrador")
+    def crear_borrador(self, request):
+        existente = self._borrador_del_usuario(request)
+        if existente is not None:
+            # Idempotente ante la carrera GET inicial / primer autoguardado:
+            # el cliente adopta este id y continúa con PATCH, sin repetir POST.
+            return Response(self.get_serializer(existente).data)
+        datos = request.data.copy()
+        datos.setdefault("tomado_en", timezone.now())
+        serializer = self.get_serializer(data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        analisis = serializer.save(
+            analista=request.user,
+            abierto_por=request.user,
+            abierto_en=timezone.now(),
+            estado=AnalisisSilo.Estado.BORRADOR,
+            tomado_en=serializer.validated_data["tomado_en"],
+        )
+        return Response(self.get_serializer(analisis).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    def guardar_borrador(self, request, pk=None):
+        analisis = self._borrador_del_usuario(request, pk)
+        if analisis is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        serializer = self.get_serializer(analisis, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    def confirmar_borrador(self, request, pk=None):
+        analisis = self._borrador_del_usuario(request, pk)
+        if analisis is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        analisis.tomado_en = timezone.now()
+        motivos = analisis.confirmar(request.user)
+        if motivos:
+            return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(analisis).data)
+
+    @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    def descartar_borrador(self, request, pk=None):
+        analisis = self._borrador_del_usuario(request, pk)
+        if analisis is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        analisis.estado = AnalisisSilo.Estado.ANULADO
+        analisis.save(update_fields=["estado", "actualizado_en"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET"])
+def sugerencia_silos(request):
+    """Silos ordenados por la leche utilizable más antigua."""
+    try:
+        volumen = Decimal(str(request.query_params.get("volumen", "0")))
+    except Exception:
+        return Response({"volumen": "Indica un volumen numérico."}, status=400)
+    tipo = request.query_params.get("tipo", Silo.Tipo.SILO)
+    silos = filtrar_por_scope(
+        Silo.objects.filter(activo=True, tipo=tipo), request.user,
+        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ).order_by("codigo")
+    ahora = timezone.now()
+    entradas = []
+    metadatos = {}
+    for silo in silos:
+        antigua = momento_leche_mas_antigua(silo)
+        motivos = motivos_silo_no_disponible(silo, para="proceso", ahora=ahora)
+        analisis = silo.analisis.filter(
+            estado=AnalisisSilo.Estado.CONFIRMADO
+        ).order_by("-tomado_en", "-id").first()
+        antiguedad = (
+            Decimal(str(round((ahora - antigua).total_seconds() / 3600, 1)))
+            if antigua else None
+        )
+        entradas.append({
+            "silo_id": silo.id,
+            "litros_disponibles": saldo_silo(silo),
+            "leche_mas_antigua_en": antigua,
+            "antiguedad_horas": antiguedad,
+            "motivos_no_disponible": motivos,
+        })
+        metadatos[silo.id] = (silo, analisis)
+    sugerencias = dominio.sugerir_origenes(entradas, volumen)
+    return Response({
+        "volumen": volumen,
+        "sugerencias": [
+            {
+                "silo": item.silo_id,
+                "codigo": metadatos[item.silo_id][0].codigo,
+                "litros_disponibles": item.litros_disponibles,
+                "litros_sugeridos": item.litros_sugeridos,
+                "leche_mas_antigua_en": item.leche_mas_antigua_en,
+                "antiguedad_horas": item.antiguedad_horas,
+                "grasa": metadatos[item.silo_id][1].grasa if metadatos[item.silo_id][1] else None,
+                "sng": metadatos[item.silo_id][1].sng if metadatos[item.silo_id][1] else None,
+                "motivos_no_disponible": item.motivos_no_disponible,
+                "sugerido": item.sugerido,
+            }
+            for item in sugerencias
+        ],
+    })

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Beaker, CheckCircle2, Droplets, Plus, Timer } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Beaker, BookOpen, CheckCircle2, Droplets, Pencil, Plus, Timer } from "lucide-react";
 
 import {
-  agitarVale, anularVale, calcularMezcla, crearVale, decidirVale,
-  muestrearVale, obtenerCatalogos, obtenerVales, reagitarVale, transferirVale,
-  type CatalogosEstandarizacion, type ValeEstandarizacion,
+  agitarVale, anularVale, calcularMezcla, corregirMuestraVale, decidirVale,
+  muestrearVale, obtenerCatalogos, obtenerGuiaRC, obtenerVales, reagitarVale,
+  transferirVale, type CatalogosEstandarizacion, type GuiaRC,
+  type ValeEstandarizacion,
 } from "../../services/estandarizacion.service";
 import { obtenerProductos, type Producto } from "../../services/produccion.service";
 import type { Silo } from "../../services/recepcion.service";
@@ -31,13 +33,22 @@ const rc = (valor: number | string | null | undefined) =>
 
 
 function Estandarizacion() {
+  const [parametros] = useSearchParams();
   const [vales, setVales] = useState<ValeEstandarizacion[]>([]);
   const [catalogos, setCatalogos] = useState<CatalogosEstandarizacion | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [guiaRC, setGuiaRC] = useState<GuiaRC[]>([]);
+  const [buscarRC, setBuscarRC] = useState("");
+  const [preseleccion, setPreseleccion] = useState<{
+    producto?: number; rc_objetivo?: string; silo_entera?: number;
+  } | null>(null);
   const [silos, setSilos] = useState<Silo[]>([]);
   const [valeId, setValeId] = useState<number | null>(null);
   const [nuevoAbierto, setNuevoAbierto] = useState(false);
   const [muestra, setMuestra] = useState({ grasa: "", sng: "" });
+  const [correccion, setCorreccion] = useState<{
+    grasa: string; sng: string; motivo: string;
+  } | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
   const [historico, setHistorico] = useState(false);
@@ -50,6 +61,14 @@ function Estandarizacion() {
     porDecidir: vales.filter((item) => item.estado === "muestreado").length,
     corrigiendo: vales.filter((item) => item.estado === "corrigiendo").length,
   }), [vales]);
+  const guiaFiltrada = useMemo(() => {
+    const texto = buscarRC.trim().toLocaleLowerCase("es");
+    if (!texto) return guiaRC;
+    return guiaRC.filter((item) =>
+      item.producto_nombre.toLocaleLowerCase("es").includes(texto)
+      || item.rc_objetivo.includes(texto.replace(",", ".")),
+    );
+  }, [buscarRC, guiaRC]);
 
   const cargar = async (verHistorico = historico) => {
     try {
@@ -82,11 +101,20 @@ function Estandarizacion() {
         setSilos([]);
       });
       void obtenerProductos().then(setProductos).catch(() => setProductos([]));
+      void obtenerGuiaRC().then(setGuiaRC).catch(() => setGuiaRC([]));
     }, 0);
 
     return () => clearTimeout(tarea);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const silo = Number(parametros.get("silo"));
+    if (silo > 0) {
+      setPreseleccion({ silo_entera: silo });
+      setNuevoAbierto(true);
+    }
+  }, [parametros]);
 
   const ejecutar = async (
     accion: () => Promise<unknown>,
@@ -114,6 +142,25 @@ function Estandarizacion() {
       "No se pudo registrar la muestra.",
     );
     setMuestra({ grasa: "", sng: "" });
+  };
+
+  const guardarCorreccion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vale || !correccion) return;
+    setOcupado(true);
+    setError("");
+    try {
+      await corregirMuestraVale(
+        vale.id, Number(correccion.grasa), Number(correccion.sng),
+        correccion.motivo,
+      );
+      setCorreccion(null);
+      await cargar();
+    } catch (e) {
+      setError(mensajeDe(e, "No se pudo corregir la muestra."));
+    } finally {
+      setOcupado(false);
+    }
   };
 
   const anular = async () => {
@@ -156,7 +203,7 @@ function Estandarizacion() {
 
           {editable && (
             <button
-              onClick={() => setNuevoAbierto(true)}
+              onClick={() => { setPreseleccion(null); setNuevoAbierto(true); }}
               className="flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white"
             >
               <Plus className="h-4 w-4" />
@@ -174,6 +221,50 @@ function Estandarizacion() {
           <p className="mt-1 text-xs text-sky-700">{catalogos?.silos.filter((silo) => Number(silo.litros_disponibles ?? 0) > 0).map((silo) => `${silo.codigo}: ${numero(silo.litros_disponibles)} L`).join(" · ")}</p>
         </div>
       )}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 font-semibold text-slate-900">
+              <BookOpen className="h-5 w-5 text-emerald-700" /> Guía rápida de RC
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">
+              Objetivos usados anteriormente por producto. “Usar RC” abre el vale precargado.
+            </p>
+          </div>
+          <input
+            value={buscarRC}
+            onChange={(e) => setBuscarRC(e.target.value)}
+            placeholder="Buscar producto o RC…"
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm sm:w-64"
+          />
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {guiaFiltrada.map((item) => (
+            <article key={`${item.producto}-${item.rc_objetivo}`} className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-600">{item.producto_nombre}</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-900">RC {rc(item.rc_objetivo)}</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Usado {item.usos} {item.usos === 1 ? "vez" : "veces"} · último {item.usado_por_ultima_vez}
+              </p>
+              {editable && (
+                <button
+                  type="button"
+                  onClick={() => { setPreseleccion(item); setNuevoAbierto(true); }}
+                  className="mt-3 text-xs font-semibold text-emerald-700"
+                >
+                  Usar este RC →
+                </button>
+              )}
+            </article>
+          ))}
+          {guiaFiltrada.length === 0 && (
+            <p className="text-sm text-slate-500">
+              Aún no hay RC registrados que coincidan. Al crear vales aparecerán aquí.
+            </p>
+          )}
+        </div>
+      </section>
 
       <section className="grid gap-4 sm:grid-cols-3">
         {([
@@ -203,7 +294,7 @@ function Estandarizacion() {
             {vales.map((item) => (
               <button
                 key={item.id}
-                onClick={() => setValeId(item.id)}
+                onClick={() => { setValeId(item.id); setCorreccion(null); }}
                 className={`w-full rounded-xl border p-3 text-left ${
                   valeId === item.id
                     ? "border-emerald-300 bg-emerald-50"
@@ -256,6 +347,13 @@ function Estandarizacion() {
                     valor={`${numero(vale.litros_descremada)} L`}
                     pie={`${vale.descremada_grasa}% MG · ${vale.descremada_sng}% SNG`}
                   />
+                  {Number(vale.litros_crema ?? 0) > 0 && (
+                    <Dato
+                      etiqueta={`Crema · ${vale.silo_crema_codigo ?? "—"}`}
+                      valor={`${numero(vale.litros_crema)} L`}
+                      pie={`${vale.crema_grasa}% MG · ${vale.crema_sng}% SNG`}
+                    />
+                  )}
                   <Dato etiqueta="RC objetivo" valor={rc(vale.rc_objetivo)} />
                   <Dato
                     etiqueta="RC medido"
@@ -408,6 +506,29 @@ function Estandarizacion() {
                       />
                     )}
 
+                    {["muestreado", "corrigiendo"].includes(vale.estado) && !correccion && (
+                      <button
+                        type="button"
+                        onClick={() => setCorreccion({
+                          grasa: vale.grasa_real ?? "",
+                          sng: vale.sng_real ?? "",
+                          motivo: "",
+                        })}
+                        className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800"
+                      >
+                        <Pencil className="h-4 w-4" />Corregir muestra anterior
+                      </button>
+                    )}
+
+                    {correccion && ["muestreado", "corrigiendo"].includes(vale.estado) && (
+                      <form onSubmit={guardarCorreccion} className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:grid-cols-2">
+                        <label className="text-sm text-slate-700">Materia grasa %<input required type="number" step="0.01" min="0" value={correccion.grasa} onChange={(e) => setCorreccion({ ...correccion, grasa: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
+                        <label className="text-sm text-slate-700">SNG %<input required type="number" step="0.01" min="0.01" value={correccion.sng} onChange={(e) => setCorreccion({ ...correccion, sng: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
+                        <label className="text-sm text-slate-700 sm:col-span-2">Motivo de la corrección *<textarea required minLength={5} value={correccion.motivo} onChange={(e) => setCorreccion({ ...correccion, motivo: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
+                        <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setCorreccion(null)} className="px-3 py-2 text-sm text-slate-600">Cancelar</button><button disabled={ocupado} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Guardar y recalcular</button></div>
+                      </form>
+                    )}
+
                     {vale.estado === "liberado" && (
                       <p className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                         <CheckCircle2 className="h-4 w-4" />
@@ -437,12 +558,13 @@ function Estandarizacion() {
         <FormularioVale
           productos={productos}
           silos={silos}
+          preseleccion={preseleccion}
           onCerrar={() => setNuevoAbierto(false)}
           onCalcular={calcularMezcla}
-          onGuardar={async (datos) => {
-            const creado = await crearVale(datos);
+          onConfirmado={async (creado) => {
             setNuevoAbierto(false);
             await cargar();
+            void obtenerGuiaRC().then(setGuiaRC).catch(() => undefined);
             setValeId(creado.id);
           }}
         />

@@ -11,7 +11,9 @@ from produccion.models import Lote, OrdenProduccion
 from recepcion.models import MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
-from .models import CorridaCondensacion, EjecucionProceso, EtapaProceso, Proceso
+from .models import (
+    CorridaCondensacion, EjecucionProceso, EntradaProceso, EtapaProceso, Proceso,
+)
 from .servicios import cerrar_condensacion, iniciar_condensacion
 
 
@@ -120,4 +122,53 @@ class FlujoCondensacionTests(TestCase):
 
         self.assertFalse(MovimientoSilo.objects.filter(
             origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION
+        ).exists())
+
+    def test_adopta_la_ejecucion_del_lote_sin_consumir_dos_veces(self):
+        """La corrida es el detalle especializado del mismo hecho físico."""
+        self.lote.ejecucion = self.ejecucion
+        self.lote.save(update_fields=["ejecucion"])
+        self.ejecucion.estado = EjecucionProceso.Estado.EJECUCION
+        self.ejecucion.inicio = timezone.now()
+        self.ejecucion.save(update_fields=["estado", "inicio"])
+        EntradaProceso.objects.create(
+            ejecucion=self.ejecucion,
+            silo=self.origen,
+            cantidad=Decimal("600"),
+            unidad="L",
+        )
+        MovimientoSilo.objects.create(
+            silo=self.origen,
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=Decimal("600"),
+            fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=self.lote.pk,
+            lote=self.lote,
+        )
+
+        iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaCondensacion.Estado.EN_PROCESO)
+        self.assertEqual(
+            MovimientoSilo.objects.filter(
+                silo=self.origen, tipo=MovimientoSilo.Tipo.SALIDA
+            ).count(),
+            1,
+        )
+        self.assertEqual(self.ejecucion.entradas.count(), 1)
+
+    def test_no_adopta_una_ejecucion_activa_sin_consumo(self):
+        self.lote.ejecucion = self.ejecucion
+        self.lote.save(update_fields=["ejecucion"])
+        self.ejecucion.estado = EjecucionProceso.Estado.EJECUCION
+        self.ejecucion.inicio = timezone.now()
+        self.ejecucion.save(update_fields=["estado", "inicio"])
+
+        with self.assertRaisesMessage(ValidationError, "no tiene su consumo"):
+            iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        self.assertFalse(MovimientoSilo.objects.filter(
+            silo=self.origen, tipo=MovimientoSilo.Tipo.SALIDA
         ).exists())

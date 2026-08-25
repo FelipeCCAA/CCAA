@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
   Clock3, Layers3, Plus, Scale, SprayCan, Trash2, Truck, Warehouse, X,
 } from "lucide-react";
 
 import {
-  obtenerCatalogosFlujo, registrarLlegadaCamion,
-  type CatalogosFlujoRecepcion, type Vehiculo,
+  confirmarBorradorRecepcion, crearBorradorRecepcion,
+  descartarBorradorRecepcion, guardarBorradorRecepcion,
+  obtenerBorradorRecepcion, obtenerCatalogosFlujo,
+  type BorradorRecepcionDatos, type CatalogosFlujoRecepcion,
+  type Recepcion, type Vehiculo,
 } from "../../services/recepcion.service";
 import { obtenerCargasPendientes, type CargaEsperada } from "../../services/recoleccion.service";
+import { useBorrador } from "../../hooks/useBorrador";
 
 interface Props {
   vehiculos: Vehiculo[];
@@ -50,6 +54,22 @@ function SelectTriEstado({
       <option value="true">Sí</option>
       <option value="false">No</option>
     </select>
+  );
+}
+
+function Encabezado({
+  icono: Icono, tono, titulo, detalle,
+}: {
+  icono: typeof Truck;
+  tono: string;
+  titulo: string;
+  detalle: string;
+}) {
+  return (
+    <div className="mb-5 flex items-center gap-3">
+      <span className={`rounded-xl p-2 ${tono}`}><Icono className="h-5 w-5" /></span>
+      <div><h3 className="font-semibold text-slate-900">{titulo}</h3><p className="text-xs text-slate-600">{detalle}</p></div>
+    </div>
   );
 }
 
@@ -98,12 +118,15 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
   const [catalogos, setCatalogos] = useState<CatalogosFlujoRecepcion | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [tocado, setTocado] = useState(false);
+  const [borradorPendiente, setBorradorPendiente] = useState<Recepcion | null>(null);
 
   // Los catálogos de los desplegables se sirven desde el backend y van
   // aparte: si este endpoint falla, el resto del formulario sigue usable.
   useEffect(() => {
     void obtenerCatalogosFlujo().then(setCatalogos).catch(() => setCatalogos(null));
     void obtenerCargasPendientes().then(setCargasEsperadas).catch(() => setCargasEsperadas([]));
+    void obtenerBorradorRecepcion().then(setBorradorPendiente).catch(() => undefined);
   }, []);
 
   const muestraNumeroDeUso = Boolean(uso && catalogos?.usos_numerados.includes(uso));
@@ -151,47 +174,103 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
     setModulos((actuales) => actuales.filter((item) => item.clave !== clave));
   };
 
+  const datosBorrador = useMemo<BorradorRecepcionDatos>(() => ({
+    fecha,
+    hora: hora || null,
+    guia,
+    vehiculo: vehiculo ? Number(vehiculo) : null,
+    procedencia,
+    tipo_leche: tipoLeche,
+    turno,
+    litros: litros || "0",
+    kg_romana: kgRomana || null,
+    certificada: certificada === "" ? null : certificada === "true",
+    uso,
+    uso_numero: muestraNumeroDeUso && usoNumero ? Number(usoNumero) : null,
+    hora_programa: horaPrograma || null,
+    hora_arribo_porteria: horaArriboPorteria || null,
+    hora_ingreso: horaIngreso || null,
+    hora_inicio_descarga: horaInicioDescarga || null,
+    hora_termino_descarga: horaTerminoDescarga || null,
+    hora_inicio_cip: horaInicioCip || null,
+    hora_termino_cip: horaTerminoCip || null,
+    hora_salida: horaSalida || null,
+    lavado_ruedas: lavadoRuedas === "" ? null : lavadoRuedas === "true",
+    relavado: relavado === "" ? null : relavado === "true",
+    recambio_dilucion: recambioDilucion,
+    ph_camion: phCamion || null,
+    observacion,
+    modulos: modulos.map(({ numero, crioscopia, carga_recoleccion }) => ({
+      numero, crioscopia: crioscopia || undefined, carga_recoleccion,
+    })),
+  }), [
+    fecha, hora, guia, vehiculo, procedencia, tipoLeche, turno, litros,
+    kgRomana, certificada, uso, usoNumero, muestraNumeroDeUso, horaPrograma,
+    horaArriboPorteria, horaIngreso, horaInicioDescarga, horaTerminoDescarga,
+    horaInicioCip, horaTerminoCip, horaSalida, lavadoRuedas, relavado,
+    recambioDilucion, phCamion, observacion, modulos,
+  ]);
+
+  const borrador = useBorrador({
+    datos: datosBorrador,
+    activo: tocado && borradorPendiente === null,
+    crear: crearBorradorRecepcion,
+    actualizar: guardarBorradorRecepcion,
+    alError: () => setError("No se pudo autoguardar el borrador."),
+  });
+
+  const reanudarBorrador = (documento: Recepcion) => {
+    setFecha(documento.fecha);
+    setHora(documento.hora?.slice(0, 5) ?? "");
+    setGuia(documento.guia);
+    setVehiculo(documento.vehiculo ? String(documento.vehiculo) : "");
+    setProcedencia(documento.procedencia);
+    setTipoLeche(documento.tipo_leche);
+    setTurno(documento.turno);
+    setLitros(Number(documento.litros) > 0 ? documento.litros : "");
+    setKgRomana(documento.kg_romana ?? "");
+    setCertificada(documento.certificada === null ? "" : String(documento.certificada) as "true" | "false");
+    setUso(documento.uso);
+    setUsoNumero(documento.uso_numero ? String(documento.uso_numero) : "");
+    setHoraPrograma(documento.hora_programa?.slice(0, 5) ?? "");
+    setHoraArriboPorteria(documento.hora_arribo_porteria?.slice(0, 5) ?? "");
+    setHoraIngreso(documento.hora_ingreso?.slice(0, 5) ?? "");
+    setHoraInicioDescarga(documento.hora_inicio_descarga?.slice(0, 5) ?? "");
+    setHoraTerminoDescarga(documento.hora_termino_descarga?.slice(0, 5) ?? "");
+    setHoraInicioCip(documento.hora_inicio_cip?.slice(0, 5) ?? "");
+    setHoraTerminoCip(documento.hora_termino_cip?.slice(0, 5) ?? "");
+    setHoraSalida(documento.hora_salida?.slice(0, 5) ?? "");
+    setLavadoRuedas(documento.lavado_ruedas === null ? "" : String(documento.lavado_ruedas) as "true" | "false");
+    setRelavado(documento.relavado === null ? "" : String(documento.relavado) as "true" | "false");
+    setRecambioDilucion(documento.recambio_dilucion);
+    setPhCamion(documento.ph_camion ?? "");
+    setObservacion(documento.observacion);
+    const restaurados = documento.modulos.map((item, indice) => ({
+      clave: indice + 1,
+      numero: item.numero,
+      crioscopia: item.crioscopia ?? "",
+      carga_recoleccion: item.carga_recoleccion ?? undefined,
+    }));
+    setModulos(restaurados.length ? restaurados : [nuevoModulo(1, 1)]);
+    setSiguienteClave(Math.max(2, restaurados.length + 1));
+    borrador.reanudar(documento.id);
+    setTocado(false);
+    setBorradorPendiente(null);
+  };
+
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
     evento.preventDefault();
     setError("");
     setGuardando(true);
     try {
-      const cabecera = {
-        fecha,
-        hora: hora || undefined,
-        guia: guia || undefined,
-        vehiculo: Number(vehiculo),
-        procedencia: procedencia || undefined,
-        tipo_leche: tipoLeche,
-        turno: turno || undefined,
-        kg_romana: kgRomana || undefined,
-        certificada: certificada === "" ? undefined : certificada === "true",
-        uso: uso || undefined,
-        uso_numero: muestraNumeroDeUso && usoNumero ? Number(usoNumero) : undefined,
-        hora_programa: horaPrograma || undefined,
-        hora_arribo_porteria: horaArriboPorteria || undefined,
-        hora_ingreso: horaIngreso || undefined,
-        hora_inicio_descarga: horaInicioDescarga || undefined,
-        hora_termino_descarga: horaTerminoDescarga || undefined,
-        hora_inicio_cip: horaInicioCip || undefined,
-        hora_termino_cip: horaTerminoCip || undefined,
-        hora_salida: horaSalida || undefined,
-        lavado_ruedas: lavadoRuedas === "" ? undefined : lavadoRuedas === "true",
-        relavado: relavado === "" ? undefined : relavado === "true",
-        recambio_dilucion: recambioDilucion || undefined,
-        ph_camion: phCamion || undefined,
-        observacion: observacion || undefined,
-      };
-
-      await registrarLlegadaCamion({
-        ...cabecera,
-        litros,
-        modulos: modulos.map(({ numero, crioscopia, carga_recoleccion }) => ({
-          numero,
-          crioscopia: crioscopia || undefined,
-          carga_recoleccion,
-        })),
-      });
+      setTocado(true);
+      let borradorId = await borrador.guardarAhora({ propagarError: true });
+      if (borradorId === null) {
+        borradorId = (await crearBorradorRecepcion(datosBorrador)).id;
+      } else {
+        await guardarBorradorRecepcion(borradorId, datosBorrador);
+      }
+      await confirmarBorradorRecepcion(borradorId);
       alGuardar();
       alCerrar();
     } catch (fallo) {
@@ -208,22 +287,6 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
   const etiqueta = "mb-1.5 block text-xs font-semibold text-slate-600";
   const campo = "h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10";
 
-  function Encabezado({
-    icono: Icono, tono, titulo, detalle,
-  }: {
-    icono: typeof Truck;
-    tono: string;
-    titulo: string;
-    detalle: string;
-  }) {
-    return (
-      <div className="mb-5 flex items-center gap-3">
-        <span className={`rounded-xl p-2 ${tono}`}><Icono className="h-5 w-5" /></span>
-        <div><h3 className="font-semibold text-slate-900">{titulo}</h3><p className="text-xs text-slate-600">{detalle}</p></div>
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-[2px] sm:p-6">
       <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl bg-slate-50 shadow-2xl">
@@ -232,7 +295,29 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
           <button type="button" onClick={alCerrar} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" aria-label="Cerrar"><X className="h-5 w-5" /></button>
         </div>
 
-        <form onSubmit={enviar}>
+        {borradorPendiente ? (
+          <div className="p-6 sm:p-8">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+              <h3 className="font-semibold text-amber-950">Tienes una recepción sin terminar</h3>
+              <p className="mt-2 text-sm leading-6 text-amber-900">
+                Se guardó automáticamente el {new Intl.DateTimeFormat("es-CL", {
+                  dateStyle: "short", timeStyle: "short",
+                }).format(new Date(borradorPendiente.actualizado_en))}. Puedes continuarla
+                o descartarla. No ha movido saldo ni enviado avisos.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button type="button" onClick={() => reanudarBorrador(borradorPendiente)} className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800">Continuar borrador</button>
+                <button type="button" onClick={() => void descartarBorradorRecepcion(borradorPendiente.id).then(() => setBorradorPendiente(null))} className="h-10 rounded-xl border border-amber-300 px-5 text-sm font-semibold text-amber-900 hover:bg-amber-100">Descartar</button>
+                <button type="button" onClick={alCerrar} className="h-10 px-4 text-sm font-semibold text-slate-600">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        ) : (
+        <form
+          onSubmit={enviar}
+          onChange={() => setTocado(true)}
+          onBlur={() => { if (tocado) void borrador.guardarAhora(); }}
+        >
           <div className="space-y-5 p-5 sm:p-8">
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
@@ -333,8 +418,9 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
           </div>
 
           {error && <div className="mx-5 mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-8">{error}</div>}
-          <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-5 sm:px-8"><p className="hidden text-xs text-slate-600 sm:block">Se registrará {modulos.length} módulo{modulos.length === 1 ? "" : "s"} bajo este camión.</p><div className="ml-auto flex gap-3"><button type="button" onClick={alCerrar} className="h-11 rounded-xl px-5 text-sm font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button><button type="submit" disabled={guardando} className="h-11 rounded-xl bg-emerald-700 px-6 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{guardando ? "Registrando…" : "Registrar camión"}</button></div></div>
+          <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-5 sm:px-8"><p className="hidden text-xs text-slate-600 sm:block">{borrador.estado === "guardando" ? "Guardando borrador…" : borrador.estado === "error" ? "No se pudo autoguardar" : borrador.id ? "Borrador guardado" : `Se registrará ${modulos.length} módulo${modulos.length === 1 ? "" : "s"}.`}</p><div className="ml-auto flex gap-3"><button type="button" onClick={alCerrar} className="h-11 rounded-xl px-5 text-sm font-semibold text-slate-600 hover:bg-slate-100">Cerrar</button><button type="submit" disabled={guardando} className="h-11 rounded-xl bg-emerald-700 px-6 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{guardando ? "Confirmando…" : "Confirmar llegada"}</button></div></div>
         </form>
+        )}
       </div>
     </div>
   );
