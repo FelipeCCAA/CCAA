@@ -4,6 +4,7 @@ import type { Silo } from "./recepcion.service";
 interface Pagina<T> { results: T[] }
 
 export type EstadoVale =
+  | "borrador"
   | "calculado"
   | "transferido"
   | "agitando"
@@ -23,23 +24,24 @@ export interface Evaluacion {
 export interface ValeEstandarizacion {
   id: number;
   codigo: string;
+  codigo_propuesto: string;
   fecha: string;
-  producto: number;
-  producto_nombre: string;
-  rc_objetivo: string;
-  volumen: string;
-  silo_entera: number;
-  silo_entera_codigo: string;
+  producto: number | null;
+  producto_nombre: string | null;
+  rc_objetivo: string | null;
+  volumen: string | null;
+  silo_entera: number | null;
+  silo_entera_codigo: string | null;
   silo_descremada: number | null;
   silo_descremada_codigo: string | null;
-  silo_destino: number;
-  silo_destino_codigo: string;
-  entera_grasa: string;
-  entera_sng: string;
-  descremada_grasa: string;
-  descremada_sng: string;
-  litros_entera: string;
-  litros_descremada: string;
+  silo_destino: number | null;
+  silo_destino_codigo: string | null;
+  entera_grasa: string | null;
+  entera_sng: string | null;
+  descremada_grasa: string | null;
+  descremada_sng: string | null;
+  litros_entera: string | null;
+  litros_descremada: string | null;
   estado: EstadoVale;
   agitacion_desde: string | null;
   muestreado_en: string | null;
@@ -51,6 +53,8 @@ export interface ValeEstandarizacion {
   evaluacion: Evaluacion | null;
   observaciones: string;
   responsable_nombre: string | null;
+  es_borrador: boolean;
+  actualizado_en: string;
 }
 
 export interface Mezcla {
@@ -143,6 +147,56 @@ export async function crearVale(datos: NuevoVale): Promise<ValeEstandarizacion> 
     datos,
   );
   return data;
+}
+
+export interface DatosBorradorVale {
+  codigo_propuesto: string;
+  fecha: string;
+  producto: number | null;
+  rc_objetivo: number | null;
+  volumen: number | null;
+  silo_entera: number | null;
+  silo_descremada: number | null;
+  silo_destino: number | null;
+  entera_grasa: number | null;
+  entera_sng: number | null;
+  descremada_grasa: number | null;
+  descremada_sng: number | null;
+  litros_entera: number | null;
+  litros_descremada: number | null;
+  observaciones: string;
+}
+
+export async function obtenerBorradorVale(): Promise<ValeEstandarizacion | null> {
+  const respuesta = await api.get<ValeEstandarizacion>(
+    "estandarizacion/vales/mi-borrador/",
+  );
+  return respuesta.status === 204 ? null : respuesta.data;
+}
+
+export async function crearBorradorVale(datos: DatosBorradorVale) {
+  const { data } = await api.post<ValeEstandarizacion>(
+    "estandarizacion/vales/crear-borrador/", datos,
+  );
+  return data;
+}
+
+export async function guardarBorradorVale(id: number, datos: DatosBorradorVale) {
+  const { data } = await api.patch<ValeEstandarizacion>(
+    `estandarizacion/vales/${id}/guardar-borrador/`, datos,
+  );
+  return data;
+}
+
+export async function confirmarBorradorVale(id: number) {
+  const { data } = await api.post<ValeEstandarizacion>(
+    `estandarizacion/vales/${id}/confirmar-borrador/`,
+  );
+  return data;
+}
+
+export async function descartarBorradorVale(id: number) {
+  await api.post(`estandarizacion/vales/${id}/descartar-borrador/`);
 }
 
 /*

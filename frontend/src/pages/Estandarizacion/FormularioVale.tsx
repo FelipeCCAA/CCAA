@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calculator, CheckCircle2, X } from "lucide-react";
 
-import type {
-  EntradaCalculo, Mezcla, NuevoVale,
+import {
+  confirmarBorradorVale, crearBorradorVale, descartarBorradorVale,
+  guardarBorradorVale, obtenerBorradorVale,
+  type DatosBorradorVale, type EntradaCalculo, type Mezcla,
+  type ValeEstandarizacion,
 } from "../../services/estandarizacion.service";
 import type { Producto } from "../../services/produccion.service";
 import type { Silo } from "../../services/recepcion.service";
 import { mensajeDe } from "../../components/seccion/utilidades";
+import { useBorrador } from "../../hooks/useBorrador";
 
 /*
   Nuevo vale, en dos tiempos: **primero se calcula, después se guarda**.
@@ -49,20 +53,80 @@ function FormularioVale({
   silos,
   onCerrar,
   onCalcular,
-  onGuardar,
+  onConfirmado,
 }: {
   productos: Producto[];
   silos: Silo[];
   onCerrar: () => void;
   onCalcular: (datos: EntradaCalculo) => Promise<Mezcla>;
-  onGuardar: (datos: NuevoVale) => Promise<void>;
+  onConfirmado: (vale: ValeEstandarizacion) => Promise<void>;
 }) {
   const [datos, setDatos] = useState(inicial);
   const [mezcla, setMezcla] = useState<Mezcla | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
+  const [tocado, setTocado] = useState(false);
+
+  const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
+  const datosBorrador: DatosBorradorVale = {
+    codigo_propuesto: datos.codigo,
+    fecha: datos.fecha,
+    producto: numeroONull(datos.producto),
+    rc_objetivo: numeroONull(datos.rc_objetivo),
+    volumen: numeroONull(datos.volumen),
+    silo_entera: numeroONull(datos.silo_entera),
+    silo_descremada: numeroONull(datos.silo_descremada),
+    silo_destino: numeroONull(datos.silo_destino),
+    entera_grasa: numeroONull(datos.entera_grasa),
+    entera_sng: numeroONull(datos.entera_sng),
+    descremada_grasa: numeroONull(datos.descremada_grasa),
+    descremada_sng: numeroONull(datos.descremada_sng),
+    litros_entera: mezcla?.posible ? mezcla.entera : null,
+    litros_descremada: mezcla?.posible ? mezcla.descremada : null,
+    observaciones: datos.observaciones,
+  };
+  const borrador = useBorrador({
+    datos: datosBorrador,
+    activo: tocado,
+    crear: crearBorradorVale,
+    actualizar: guardarBorradorVale,
+    alError: () => setError("No se pudo autoguardar el borrador."),
+  });
+  const { reanudar } = borrador;
+
+  useEffect(() => {
+    let vigente = true;
+    void obtenerBorradorVale().then(async (guardado) => {
+      if (!vigente || !guardado) return;
+      if (!window.confirm("Tienes un vale sin confirmar. ¿Quieres continuarlo?")) {
+        await descartarBorradorVale(guardado.id);
+        return;
+      }
+      setDatos({
+        ...inicial,
+        codigo: guardado.codigo_propuesto,
+        fecha: guardado.fecha,
+        producto: guardado.producto == null ? "" : String(guardado.producto),
+        rc_objetivo: guardado.rc_objetivo ?? "",
+        volumen: guardado.volumen ?? "",
+        silo_entera: guardado.silo_entera == null ? "" : String(guardado.silo_entera),
+        silo_descremada: guardado.silo_descremada == null ? "" : String(guardado.silo_descremada),
+        silo_destino: guardado.silo_destino == null ? "" : String(guardado.silo_destino),
+        entera_grasa: guardado.entera_grasa ?? "",
+        entera_sng: guardado.entera_sng ?? "",
+        descremada_grasa: guardado.descremada_grasa ?? "",
+        descremada_sng: guardado.descremada_sng ?? "",
+        observaciones: guardado.observaciones,
+      });
+      reanudar(guardado.id);
+    }).catch((e) => {
+      if (vigente) setError(mensajeDe(e, "No se pudo consultar el borrador."));
+    });
+    return () => { vigente = false; };
+  }, [reanudar]);
 
   const cambiar = (campo: keyof typeof inicial, valor: string) => {
+    setTocado(true);
     setDatos((previo) => ({ ...previo, [campo]: valor }));
     // Cambiar cualquier dato invalida el cálculo anterior: dejarlo en pantalla
     // ofrecería crear el vale con cantidades de otra composición.
@@ -74,6 +138,7 @@ function FormularioVale({
     disponible: "entera_disponible" | "descremada_disponible",
     valor: string,
   ) => {
+    setTocado(true);
     const silo = silos.find((item) => item.id === Number(valor));
     setDatos((previo) => ({
       ...previo,
@@ -95,6 +160,7 @@ function FormularioVale({
 
   const calcular = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTocado(true);
     setOcupado(true);
     setError("");
 
@@ -125,25 +191,11 @@ function FormularioVale({
     setError("");
 
     try {
-      await onGuardar({
-        codigo: datos.codigo,
-        fecha: datos.fecha,
-        producto: Number(datos.producto),
-        rc_objetivo: Number(datos.rc_objetivo),
-        volumen: Number(datos.volumen),
-        silo_entera: Number(datos.silo_entera),
-        silo_descremada: datos.silo_descremada
-          ? Number(datos.silo_descremada)
-          : null,
-        silo_destino: Number(datos.silo_destino),
-        entera_grasa: Number(datos.entera_grasa),
-        entera_sng: Number(datos.entera_sng),
-        descremada_grasa: Number(datos.descremada_grasa),
-        descremada_sng: Number(datos.descremada_sng),
-        litros_entera: mezcla.entera,
-        litros_descremada: mezcla.descremada,
-        observaciones: datos.observaciones,
-      });
+      const borradorId = await borrador.guardarAhora();
+      if (borradorId === null) throw new Error("El borrador no alcanzó a guardarse.");
+      const confirmado = await confirmarBorradorVale(borradorId);
+      borrador.reiniciar();
+      await onConfirmado(confirmado);
     } catch (e) {
       setError(mensajeDe(e, "No se pudo crear el vale."));
     } finally {
@@ -336,6 +388,12 @@ function FormularioVale({
         )}
 
         <div className="mt-6 flex flex-wrap gap-3">
+          <p className="w-full text-xs text-slate-500">
+            {borrador.estado === "guardando" ? "Guardando borrador…" :
+              borrador.estado === "error" ? "No se pudo autoguardar." :
+                borrador.id ? "Borrador guardado. El código se reserva al confirmar." :
+                  "Los cambios se guardarán automáticamente."}
+          </p>
           <button
             type="submit"
             disabled={ocupado}

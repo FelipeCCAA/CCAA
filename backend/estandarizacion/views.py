@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -45,6 +46,10 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         estado = self.request.query_params.get("estado")
         if estado:
             consulta = consulta.filter(estado=estado)
+            if estado == ValeEstandarizacion.Estado.BORRADOR:
+                consulta = consulta.filter(abierto_por=self.request.user)
+        else:
+            consulta = consulta.exclude(estado=ValeEstandarizacion.Estado.BORRADOR)
 
         if self.request.query_params.get("abiertos") in {"1", "true"}:
             consulta = consulta.exclude(
@@ -57,7 +62,94 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         return consulta
 
     def perform_create(self, serializer):
-        serializer.save(responsable=self.request.user)
+        serializer.save(
+            responsable=self.request.user,
+            estado=ValeEstandarizacion.Estado.CALCULADO,
+            codigo_propuesto=serializer.validated_data["codigo"],
+        )
+
+    # --------------------------------------------------------- borradores
+
+    def _borrador_del_usuario(self, request, pk=None):
+        consulta = ValeEstandarizacion.objects.select_related(
+            "producto", "silo_entera", "silo_descremada", "silo_destino",
+            "responsable",
+        ).filter(
+            estado=ValeEstandarizacion.Estado.BORRADOR,
+            abierto_por=request.user,
+        )
+        if pk is not None:
+            consulta = consulta.filter(pk=pk)
+        return consulta.order_by("-actualizado_en", "-id").first()
+
+    @action(detail=False, methods=["get"], url_path="mi-borrador")
+    def mi_borrador(self, request):
+        borrador = self._borrador_del_usuario(request)
+        if borrador is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(borrador).data)
+
+    @action(detail=False, methods=["post"], url_path="crear-borrador")
+    def crear_borrador(self, request):
+        existente = self._borrador_del_usuario(request)
+        if existente is not None:
+            return Response(
+                {
+                    "detail": "Ya tienes un borrador de vale abierto.",
+                    "borrador": self.get_serializer(existente).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = request.data.copy()
+        datos.pop("codigo", None)
+        serializer = self.get_serializer(data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        vale = serializer.save(
+            codigo=ValeEstandarizacion.nuevo_codigo_borrador(),
+            fecha=serializer.validated_data.get("fecha", timezone.localdate()),
+            responsable=request.user,
+            abierto_por=request.user,
+            abierto_en=timezone.now(),
+            estado=ValeEstandarizacion.Estado.BORRADOR,
+        )
+        return Response(self.get_serializer(vale).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    def guardar_borrador(self, request, pk=None):
+        vale = self._borrador_del_usuario(request, pk)
+        if vale is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = request.data.copy()
+        datos.pop("codigo", None)
+        serializer = self.get_serializer(vale, data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    def confirmar_borrador(self, request, pk=None):
+        vale = self._borrador_del_usuario(request, pk)
+        if vale is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        motivos = vale.confirmar(request.user)
+        if motivos:
+            return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(vale).data)
+
+    @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    def descartar_borrador(self, request, pk=None):
+        vale = self._borrador_del_usuario(request, pk)
+        if vale is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        vale.estado = ValeEstandarizacion.Estado.ANULADO
+        vale.save(update_fields=["estado", "actualizado_en"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # ------------------------------------------------------ cálculo previo
 

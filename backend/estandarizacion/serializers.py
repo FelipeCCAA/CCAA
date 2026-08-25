@@ -5,9 +5,11 @@ from .models import ValeEstandarizacion
 
 
 class ValeEstandarizacionSerializer(serializers.ModelSerializer):
-    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    producto_nombre = serializers.CharField(
+        source="producto.nombre", read_only=True, allow_null=True
+    )
     silo_entera_codigo = serializers.CharField(
-        source="silo_entera.codigo", read_only=True
+        source="silo_entera.codigo", read_only=True, allow_null=True
     )
     # `allow_null` y no `default`: sin él la clave desaparece del JSON cuando el
     # silo es nulo, y una clave ausente y una nula se leen distinto en el
@@ -16,7 +18,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         source="silo_descremada.codigo", read_only=True, allow_null=True
     )
     silo_destino_codigo = serializers.CharField(
-        source="silo_destino.codigo", read_only=True
+        source="silo_destino.codigo", read_only=True, allow_null=True
     )
     responsable_nombre = serializers.CharField(
         source="responsable.get_full_name", read_only=True, allow_null=True
@@ -37,7 +39,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ValeEstandarizacion
         fields = [
-            "id", "codigo", "fecha",
+            "id", "codigo", "codigo_propuesto", "fecha",
             "producto", "producto_nombre", "rc_objetivo", "volumen",
             "silo_entera", "silo_entera_codigo",
             "silo_descremada", "silo_descremada_codigo",
@@ -49,13 +51,15 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "grasa_real", "sng_real",
             "rc_real", "minutos_agitando", "avisos", "evaluacion",
             "observaciones", "responsable", "responsable_nombre", "creado_en",
+            "es_borrador", "abierto_por", "abierto_en", "actualizado_en",
         ]
         # El estado lo mueven las acciones del ciclo, no un PATCH: liberar
         # exige que el RC cumpla, y con un campo escribible eso se salta.
         read_only_fields = [
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",
-            "responsable", "creado_en",
+            "responsable", "creado_en", "es_borrador",
+            "abierto_por", "abierto_en", "actualizado_en",
         ]
 
     def get_evaluacion(self, vale):
@@ -73,6 +77,19 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        if self.instance is None and not self.partial:
+            obligatorios = (
+                "codigo", "fecha", "producto", "rc_objetivo", "volumen",
+                "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
+                "descremada_grasa", "descremada_sng", "litros_entera",
+                "litros_descremada",
+            )
+            faltantes = [campo for campo in obligatorios if attrs.get(campo) is None]
+            if faltantes:
+                raise serializers.ValidationError({
+                    campo: "Este campo es obligatorio." for campo in faltantes
+                })
+
         # DRF no llama a `Model.clean()`: hay que invocarlo a mano o las reglas
         # del modelo solo protegen al admin. Se arma un vale desechable con los
         # tres silos —lo único que `clean` mira— para no ensuciar la instancia

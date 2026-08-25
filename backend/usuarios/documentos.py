@@ -1,5 +1,7 @@
 """Comportamiento común de documentos operacionales persistidos a medias."""
 
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -32,7 +34,7 @@ class DocumentoBorradorMixin(models.Model):
         for campo in self.CAMPOS_OBLIGATORIOS_AL_CONFIRMAR:
             valor = getattr(self, campo)
             if valor in (None, "") or (
-                isinstance(valor, (int, float)) and valor <= 0
+                isinstance(valor, (int, float, Decimal)) and valor <= 0
             ):
                 etiqueta = self._meta.get_field(campo).verbose_name
                 motivos.append(f"Falta {str(etiqueta).lower()}.")

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Beaker, CheckCircle2, Droplets, Plus, Timer } from "lucide-react";
 
 import {
-  agitarVale, anularVale, calcularMezcla, crearVale, decidirVale,
+  agitarVale, anularVale, calcularMezcla, decidirVale,
   muestrearVale, obtenerCatalogos, obtenerVales, reagitarVale, transferirVale,
   type CatalogosEstandarizacion, type ValeEstandarizacion,
 } from "../../services/estandarizacion.service";
@@ -439,8 +439,7 @@ function Estandarizacion() {
           silos={silos}
           onCerrar={() => setNuevoAbierto(false)}
           onCalcular={calcularMezcla}
-          onGuardar={async (datos) => {
-            const creado = await crearVale(datos);
+          onConfirmado={async (creado) => {
             setNuevoAbierto(false);
             await cargar();
             setValeId(creado.id);

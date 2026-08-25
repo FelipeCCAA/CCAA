@@ -16,10 +16,13 @@ reglas de su ciclo — las que dependen del tiempo y del estado, que el dominio
 puro no puede conocer.
 """
 
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+from usuarios.documentos import DocumentoBorradorMixin
 
 from . import dominio
 
@@ -40,9 +43,10 @@ from . import dominio
 MINUTOS_DE_AGITACION = 30
 
 
-class ValeEstandarizacion(models.Model):
+class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
 
     class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
         CALCULADO = "calculado", "Calculado"
         TRANSFERIDO = "transferido", "Transferido"
         AGITANDO = "agitando", "En agitación"
@@ -52,6 +56,7 @@ class ValeEstandarizacion(models.Model):
         ANULADO = "anulado", "Anulado"
 
     TRANSICIONES = {
+        Estado.BORRADOR: {Estado.CALCULADO, Estado.ANULADO},
         Estado.CALCULADO: {Estado.TRANSFERIDO, Estado.ANULADO},
         Estado.TRANSFERIDO: {Estado.AGITANDO, Estado.ANULADO},
         Estado.AGITANDO: {Estado.MUESTREADO, Estado.ANULADO},
@@ -63,44 +68,65 @@ class ValeEstandarizacion(models.Model):
         Estado.ANULADO: set(),
     }
 
+    ESTADO_BORRADOR = Estado.BORRADOR
+    ESTADO_CONFIRMADO = Estado.CALCULADO
+    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
+        "codigo_propuesto", "fecha", "producto", "rc_objetivo", "volumen",
+        "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
+        "descremada_grasa", "descremada_sng", "litros_entera",
+        "litros_descremada",
+    )
+
     codigo = models.CharField("Código de vale", max_length=40, unique=True)
+    codigo_propuesto = models.CharField(
+        "Código definitivo propuesto", max_length=40, blank=True
+    )
     fecha = models.DateField("Fecha")
 
     producto = models.ForeignKey(
-        "maestros.Producto", on_delete=models.PROTECT,
+        "maestros.Producto", on_delete=models.PROTECT, null=True, blank=True,
         related_name="vales_estandarizacion",
         help_text="El producto al que se estandariza. De él sale el RC objetivo.",
     )
     rc_objetivo = models.DecimalField(
-        "RC objetivo", max_digits=6, decimal_places=4,
+        "RC objetivo", max_digits=6, decimal_places=4, null=True, blank=True,
         help_text="Materia grasa dividida por sólidos no grasos.",
     )
     volumen = models.DecimalField(
-        "Volumen a preparar", max_digits=12, decimal_places=2, help_text="En litros"
+        "Volumen a preparar", max_digits=12, decimal_places=2,
+        null=True, blank=True, help_text="En litros"
     )
 
     silo_entera = models.ForeignKey(
-        "maestros.Silo", on_delete=models.PROTECT, related_name="vales_como_entera"
+        "maestros.Silo", on_delete=models.PROTECT, related_name="vales_como_entera",
+        null=True, blank=True,
     )
     silo_descremada = models.ForeignKey(
         "maestros.Silo", on_delete=models.PROTECT,
         related_name="vales_como_descremada", null=True, blank=True,
     )
     silo_destino = models.ForeignKey(
-        "maestros.Silo", on_delete=models.PROTECT, related_name="vales_como_destino"
+        "maestros.Silo", on_delete=models.PROTECT, related_name="vales_como_destino",
+        null=True, blank=True,
     )
 
     # Composición con la que se calculó. Se guarda **en el vale** y no se lee
     # del silo al mirarlo: el silo cambia con cada ingreso, y un vale de mayo
     # tiene que poder auditarse contra la leche que había en mayo. Es el mismo
     # criterio que los límites del PCC en `ControlProceso`.
-    entera_grasa = models.DecimalField("Grasa de la entera", max_digits=5, decimal_places=2)
-    entera_sng = models.DecimalField("SNG de la entera", max_digits=5, decimal_places=2)
+    entera_grasa = models.DecimalField(
+        "Grasa de la entera", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    entera_sng = models.DecimalField(
+        "SNG de la entera", max_digits=5, decimal_places=2, null=True, blank=True
+    )
     descremada_grasa = models.DecimalField(
-        "Grasa de la descremada", max_digits=5, decimal_places=2
+        "Grasa de la descremada", max_digits=5, decimal_places=2,
+        null=True, blank=True,
     )
     descremada_sng = models.DecimalField(
-        "SNG de la descremada", max_digits=5, decimal_places=2
+        "SNG de la descremada", max_digits=5, decimal_places=2,
+        null=True, blank=True,
     )
 
     # De dónde salieron los cuatro números de arriba. Es **procedencia**, no
@@ -125,10 +151,10 @@ class ValeEstandarizacion(models.Model):
     )
 
     litros_entera = models.DecimalField(
-        "Litros de entera", max_digits=12, decimal_places=2
+        "Litros de entera", max_digits=12, decimal_places=2, null=True, blank=True
     )
     litros_descremada = models.DecimalField(
-        "Litros de descremada", max_digits=12, decimal_places=2
+        "Litros de descremada", max_digits=12, decimal_places=2, null=True, blank=True
     )
 
     estado = models.CharField(
@@ -177,6 +203,24 @@ class ValeEstandarizacion(models.Model):
 
     def __str__(self):
         return f"{self.codigo} · RC {self.rc_objetivo}"
+
+    @classmethod
+    def nuevo_codigo_borrador(cls):
+        return f"BORRADOR-{uuid.uuid4().hex[:8].upper()}"
+
+    def motivos_para_confirmar(self):
+        motivos = super().motivos_para_confirmar()
+        codigo = self.codigo_propuesto.strip()
+        if codigo and type(self).objects.exclude(pk=self.pk).filter(codigo=codigo).exists():
+            motivos.append("El código de vale ya existe.")
+        return motivos
+
+    def confirmar(self, usuario):
+        motivos = self.motivos_para_confirmar()
+        if motivos:
+            return motivos
+        self.codigo = self.codigo_propuesto.strip()
+        return super().confirmar(usuario)
 
     # ------------------------------------------------------------ cálculos
 
