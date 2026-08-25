@@ -224,8 +224,10 @@ function FormularioVale({
           entera_grasa: Number(datos.entera_grasa),
           entera_sng: Number(datos.entera_sng),
           entera_disponible: Number(datos.entera_disponible || 0),
-          descremada_grasa: Number(datos.descremada_grasa),
-          descremada_sng: Number(datos.descremada_sng),
+          descremada_grasa: datos.silo_descremada
+            ? numeroONull(datos.descremada_grasa) : null,
+          descremada_sng: datos.silo_descremada
+            ? numeroONull(datos.descremada_sng) : null,
           descremada_disponible: Number(datos.descremada_disponible || 0),
           rc_objetivo: Number(datos.rc_objetivo),
           volumen: Number(datos.volumen),
@@ -401,10 +403,12 @@ function FormularioVale({
           <Numero
             label="Materia grasa %" valor={datos.descremada_grasa}
             onChange={(v) => cambiar("descremada_grasa", v)}
+            opcional={!datos.silo_descremada}
           />
           <Numero
             label="Sólidos no grasos %" valor={datos.descremada_sng}
             onChange={(v) => cambiar("descremada_sng", v)}
+            opcional={!datos.silo_descremada}
           />
           <Numero
             label="Disponible en TK (L)" valor={datos.descremada_disponible} opcional soloLectura

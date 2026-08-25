@@ -624,6 +624,24 @@ class ApiTests(BaseVale):
         self.assertFalse(cuerpo["posible"])
         self.assertIn("no se alcanza", cuerpo["motivo"])
 
+    def test_calcular_solo_entera_no_inventa_falta_de_descremada(self):
+        respuesta = self.cliente.post(
+            "/api/estandarizacion/vales/calcular/",
+            {
+                "entera_grasa": 3.9, "entera_sng": 8.6,
+                "entera_disponible": 10000,
+                "rc_objetivo": 3.9 / 8.6, "volumen": 10000,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        cuerpo = respuesta.json()
+        self.assertTrue(cuerpo["posible"])
+        self.assertEqual(cuerpo["entera"], 10000)
+        self.assertEqual(cuerpo["descremada"], 0)
+        self.assertFalse(any("descremada" in aviso for aviso in cuerpo["avisos"]))
+
     def test_los_minutos_se_sirven_desde_el_backend(self):
         """
         La pantalla dibuja la cuenta regresiva contra este número. Escribirlo

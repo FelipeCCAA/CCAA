@@ -169,6 +169,10 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         entrada.is_valid(raise_exception=True)
         datos = entrada.validated_data
 
+        tiene_descremada = (
+            datos.get("descremada_grasa") is not None
+            and datos.get("descremada_sng") is not None
+        )
         mezcla = calcular_mezcla(
             entera=Leche(
                 cantidad=datos["entera_disponible"],
@@ -179,7 +183,7 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
                 cantidad=datos["descremada_disponible"],
                 grasa=datos["descremada_grasa"],
                 sng=datos["descremada_sng"],
-            ),
+            ) if tiene_descremada else None,
             rc_objetivo=datos["rc_objetivo"],
             volumen=datos["volumen"],
         )

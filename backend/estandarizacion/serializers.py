@@ -84,8 +84,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             obligatorios = (
                 "codigo", "fecha", "producto", "rc_objetivo", "volumen",
                 "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
-                "descremada_grasa", "descremada_sng", "litros_entera",
-                "litros_descremada",
+                "litros_entera",
             )
             faltantes = [campo for campo in obligatorios if attrs.get(campo) is None]
             if faltantes:
@@ -162,8 +161,8 @@ class CalculoMezclaSerializer(serializers.Serializer):
     entera_grasa = serializers.FloatField()
     entera_sng = serializers.FloatField()
     entera_disponible = serializers.FloatField(required=False, default=0.0)
-    descremada_grasa = serializers.FloatField()
-    descremada_sng = serializers.FloatField()
+    descremada_grasa = serializers.FloatField(required=False, allow_null=True)
+    descremada_sng = serializers.FloatField(required=False, allow_null=True)
     descremada_disponible = serializers.FloatField(required=False, default=0.0)
     rc_objetivo = serializers.FloatField()
     volumen = serializers.FloatField()

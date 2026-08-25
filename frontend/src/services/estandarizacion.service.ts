@@ -106,8 +106,8 @@ export interface EntradaCalculo {
   entera_grasa: number;
   entera_sng: number;
   entera_disponible?: number;
-  descremada_grasa: number;
-  descremada_sng: number;
+  descremada_grasa?: number | null;
+  descremada_sng?: number | null;
   descremada_disponible?: number;
   rc_objetivo: number;
   volumen: number;

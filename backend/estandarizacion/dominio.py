@@ -72,7 +72,7 @@ def _redondear(valor: float) -> float:
 def calcular_mezcla(
     *,
     entera: Leche,
-    descremada: Leche,
+    descremada: Leche | None,
     rc_objetivo: float,
     volumen: float,
 ) -> Mezcla:
@@ -95,6 +95,26 @@ def calcular_mezcla(
 
     if rc_objetivo <= 0:
         return Mezcla(False, "El RC objetivo debe ser mayor que cero.")
+
+    if descremada is None:
+        alcanzado = entera.rc
+        if alcanzado is not None and abs(alcanzado - rc_objetivo) < 1e-6:
+            avisos = []
+            if volumen > entera.cantidad:
+                avisos.append(
+                    f"Faltan {_redondear(volumen - entera.cantidad)} L de leche entera: "
+                    f"hay {_redondear(entera.cantidad)} y se necesitan {_redondear(volumen)}."
+                )
+            return Mezcla(
+                True, entera=_redondear(volumen), descremada=0.0,
+                rc_esperado=alcanzado, grasa_esperada=entera.grasa,
+                sng_esperado=entera.sng, avisos=avisos,
+            )
+        return Mezcla(
+            False,
+            "La leche entera no está al RC objetivo. Selecciona una fuente "
+            "complementaria para ajustar la mezcla.",
+        )
 
     denominador = (entera.grasa - descremada.grasa) - rc_objetivo * (
         entera.sng - descremada.sng

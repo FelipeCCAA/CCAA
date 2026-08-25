@@ -73,8 +73,7 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
     CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
         "codigo_propuesto", "fecha", "producto", "rc_objetivo", "volumen",
         "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
-        "descremada_grasa", "descremada_sng", "litros_entera",
-        "litros_descremada",
+        "litros_entera",
     )
     CAMPOS_POR_PASO = {
         "calculo": (
@@ -228,6 +227,13 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
 
     def motivos_para_confirmar(self):
         motivos = super().motivos_para_confirmar()
+        if self.litros_descremada and self.litros_descremada > 0:
+            requeridos = (
+                (self.silo_descremada_id, "Falta el estanque de leche descremada."),
+                (self.descremada_grasa, "Falta grasa de la descremada."),
+                (self.descremada_sng, "Falta SNG de la descremada."),
+            )
+            motivos.extend(motivo for valor, motivo in requeridos if valor in (None, ""))
         codigo = self.codigo_propuesto.strip()
         if codigo and type(self).objects.exclude(pk=self.pk).filter(codigo=codigo).exists():
             motivos.append("El código de vale ya existe.")

@@ -92,3 +92,27 @@ class BorradorValeTests(BaseVale):
         self.assertEqual(respuesta.json()["estado"], ValeEstandarizacion.Estado.CALCULADO)
         self.assertEqual(MovimientoSilo.objects.count(), 0)
 
+    def test_confirma_mezcla_solo_entera_sin_exigir_tanque_descremada(self):
+        borrador = self.crear_borrador().json()
+        datos = self.datos_completos()
+        datos.update({
+            "codigo_propuesto": "VE-SOLO-ENTERA",
+            "rc_objetivo": "0.4535",
+            "silo_descremada": None,
+            "descremada_grasa": None,
+            "descremada_sng": None,
+            "litros_entera": "10000.00",
+            "litros_descremada": "0.00",
+        })
+        guardado = self.cliente.patch(
+            f"/api/estandarizacion/vales/{borrador['id']}/guardar-borrador/",
+            datos, format="json",
+        )
+        self.assertEqual(guardado.status_code, 200, guardado.json())
+
+        respuesta = self.cliente.post(
+            f"/api/estandarizacion/vales/{borrador['id']}/confirmar-borrador/"
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.json())
+        self.assertIsNone(respuesta.json()["silo_descremada"])
