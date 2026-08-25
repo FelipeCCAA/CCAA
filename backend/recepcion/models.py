@@ -582,6 +582,7 @@ class MovimientoSilo(models.Model):
     class OrigenTipo(models.TextChoices):
         RECEPCION = "recepcion", "Recepción"
         ESTANDARIZACION = "estandarizacion", "Estandarización"
+        DESCREMACION = "descremacion", "Descremación"
         LOTE = "lote", "Consumo de lote"
         TRANSFERENCIA = "transferencia", "Transferencia"
         PRODUCCION = "produccion", "Producción"

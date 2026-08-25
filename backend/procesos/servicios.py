@@ -6,7 +6,8 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .models import (
-    CorridaCondensacion, CorridaMantequilla, EjecucionProceso, EventoProceso,
+    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    EjecucionProceso, EventoProceso,
 )
 
 
@@ -444,6 +445,152 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     corrida.finalizada_por = usuario
     corrida.finalizada_en = timezone.now()
     corrida.save()
+    return corrida
+
+
+@transaction.atomic
+def iniciar_descremacion(*, corrida_id, usuario):
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from maestros.models import Silo
+    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+    from .models import EntradaProceso
+
+    corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "analisis_entrada",
+        "silo_entera", "silo_descremada", "estanque_crema",
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaDescremacion.Estado.BORRADOR:
+        raise ValidationError("Solo una descremación en borrador puede iniciarse.")
+    corrida.clean()
+    if not corrida.ejecucion.equipo_id:
+        raise ValidationError("La descremación requiere un equipo asignado.")
+    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
+    if impedimento:
+        raise ValidationError(impedimento)
+    origen = Silo.objects.select_for_update().get(pk=corrida.silo_entera_id)
+    motivos = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos:
+        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
+    if corrida.analisis_entrada.estado != corrida.analisis_entrada.Estado.CONFIRMADO:
+        raise ValidationError({"analisis_entrada": "El análisis de entrada debe estar confirmado."})
+    if corrida.analisis_entrada.grasa != corrida.grasa_entrada or corrida.analisis_entrada.sng != corrida.sng_entrada:
+        raise ValidationError({
+            "analisis_entrada": "Grasa y SNG deben coincidir con el análisis seleccionado."
+        })
+    if saldo_silo(origen) < corrida.litros_entrada:
+        raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
+
+    EntradaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=origen,
+        tipo=EntradaProceso.Tipo.PRINCIPAL, cantidad=corrida.litros_entrada, unidad="L",
+    )
+    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id,
+            estado_nuevo=EjecucionProceso.Estado.PREPARACION, usuario=usuario,
+        )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.EJECUCION, usuario=usuario,
+    )
+    corrida.estado = CorridaDescremacion.Estado.EN_CURSO
+    corrida.iniciada_por = usuario
+    corrida.iniciada_en = timezone.now()
+    corrida.save(update_fields=["estado", "iniciada_por", "iniciada_en"])
+    return corrida
+
+
+@transaction.atomic
+def cerrar_descremacion(
+    *, corrida_id, usuario, litros_descremada, grasa_descremada,
+    litros_crema, grasa_crema, controles=None,
+):
+    from maestros.models import Silo
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import heredar_atribuciones, motivos_silo_no_disponible, saldo_silo
+    from .dominio import calcular_balance_descremacion
+    from .models import SalidaProceso
+
+    corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "silo_entera",
+        "silo_descremada", "estanque_crema",
+    ).get(pk=corrida_id)
+    if corrida.estado != CorridaDescremacion.Estado.EN_CURSO:
+        raise ValidationError("Solo una descremación en curso puede cerrarse.")
+    ld, lc = Decimal(str(litros_descremada)), Decimal(str(litros_crema))
+    gd, gc = Decimal(str(grasa_descremada)), Decimal(str(grasa_crema))
+    if min(ld, lc) <= 0:
+        raise ValidationError("Las dos salidas deben ser mayores que cero.")
+    if ld + lc > corrida.litros_entrada:
+        raise ValidationError("La descremada y la crema superan los litros de entrada.")
+
+    silos = {
+        silo.pk: silo for silo in Silo.objects.select_for_update().filter(
+            pk__in=[corrida.silo_entera_id, corrida.silo_descremada_id, corrida.estanque_crema_id]
+        ).order_by("pk")
+    }
+    origen, destino_d, destino_c = (
+        silos[corrida.silo_entera_id], silos[corrida.silo_descremada_id],
+        silos[corrida.estanque_crema_id],
+    )
+    motivos = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos:
+        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
+    if saldo_silo(origen) < corrida.litros_entrada:
+        raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
+    for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
+        if not destino.activo or destino.estado in {
+            Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+        }:
+            raise ValidationError(f"{destino.codigo} no admite producto.")
+        if saldo_silo(destino) + cantidad > destino.capacidad_l:
+            raise ValidationError(f"{destino.codigo} excedería su capacidad.")
+
+    ahora = timezone.now()
+    consumo = MovimientoSilo.objects.create(
+        silo=origen, tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
+        fecha_hora=ahora, origen_tipo=MovimientoSilo.OrigenTipo.DESCREMACION,
+        origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+        equipo=corrida.ejecucion.equipo, usuario=usuario,
+    )
+    ingresos = []
+    for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
+        ingreso = MovimientoSilo.objects.create(
+            silo=destino, silo_contraparte=origen, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=cantidad, fecha_hora=ahora,
+            origen_tipo=MovimientoSilo.OrigenTipo.DESCREMACION,
+            origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+            equipo=corrida.ejecucion.equipo, usuario=usuario,
+        )
+        heredar_atribuciones(ingreso, [consumo])
+        ingresos.append(ingreso)
+    SalidaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=destino_d,
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL, cantidad=ld, unidad="L",
+    )
+    SalidaProceso.objects.create(
+        ejecucion=corrida.ejecucion, silo=destino_c,
+        naturaleza=SalidaProceso.Naturaleza.COPRODUCTO, cantidad=lc, unidad="L",
+    )
+    balance = calcular_balance_descremacion(
+        corrida.litros_entrada, corrida.grasa_entrada, corrida.sng_entrada, gd, gc,
+        litros_descremada=ld, litros_crema=lc,
+    )
+    corrida.litros_descremada, corrida.grasa_descremada = ld, gd
+    corrida.litros_crema, corrida.grasa_crema = lc, gc
+    corrida.controles = {**(controles or {}), "avisos_balance": list(balance.avisos)}
+    corrida.estado = CorridaDescremacion.Estado.CERRADA
+    corrida.finalizada_por = usuario
+    corrida.finalizada_en = ahora
+    corrida.save()
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
+    )
+    transicionar_ejecucion(
+        ejecucion_id=corrida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.CERRADA, usuario=usuario,
+    )
     return corrida
 
 
