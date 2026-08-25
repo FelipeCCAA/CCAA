@@ -1391,8 +1391,16 @@ def ocupacion(request):
         ),
         ultimo_movimiento=Max("movimientos__fecha_hora"),
     )
+    from recepcion.servicios import momento_leche_mas_antigua, motivos_silo_no_disponible
+
     ocupaciones = []
     for silo in silos:
+        analisis = AnalisisSilo.objects.filter(
+            silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
+        ).order_by("-tomado_en", "-id").first()
+        vigencia = analisis.vigencia if analisis else None
+        leche_mas_antigua_en = momento_leche_mas_antigua(silo)
+        motivos = motivos_silo_no_disponible(silo, para="proceso")
         porcentaje = (
             silo.litros_ocupados / silo.capacidad_l * 100
             if silo.capacidad_l
@@ -1401,6 +1409,8 @@ def ocupacion(request):
         ocupaciones.append({
             "silo_id": silo.id,
             "codigo": silo.codigo,
+            "tipo": silo.tipo,
+            "tipo_etiqueta": silo.get_tipo_display(),
             "litros": silo.litros_ocupados,
             "capacidad": silo.capacidad_l,
             "estado": silo.estado,
@@ -1409,6 +1419,18 @@ def ocupacion(request):
             "temperatura_actual": silo.temperatura_actual,
             "ultima_limpieza": silo.ultima_limpieza,
             "ultimo_movimiento": silo.ultimo_movimiento,
+            "leche_mas_antigua_en": leche_mas_antigua_en,
+            "antiguedad_horas": (
+                round((timezone.now() - leche_mas_antigua_en).total_seconds() / 3600, 1)
+                if leche_mas_antigua_en else None
+            ),
+            "analisis": analisis.pk if analisis else None,
+            "analisis_tomado_en": analisis.tomado_en if analisis else None,
+            "grasa": analisis.grasa if analisis else None,
+            "sng": analisis.sng if analisis else None,
+            "analisis_vigente": vigencia.vigente if vigencia else False,
+            "motivo_vigencia": vigencia.motivo if vigencia else "Sin análisis confirmado.",
+            "motivos_no_disponible": motivos,
             "pct": round(porcentaje, 1),
             "excedido": silo.litros_ocupados > silo.capacidad_l,
             "negativo": silo.litros_ocupados < 0,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Warehouse } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, Beaker, FlaskConical, GitBranch, Truck, Warehouse } from "lucide-react";
 
 import {
   obtenerOcupacion, type Ocupacion, type OcupacionSilo,
@@ -26,6 +27,26 @@ import AnalisisSiloPanel from "./AnalisisSilo";
 */
 
 const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
+
+
+function AccionSilo({
+  texto, icono: Icono, destino, bloqueado, onClick,
+}: {
+  texto: string;
+  icono: typeof Beaker;
+  destino?: string;
+  bloqueado?: string;
+  onClick?: () => void;
+}) {
+  const clase = "flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold";
+  if (bloqueado) {
+    return <button type="button" disabled title={bloqueado} className={`${clase} cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400`}><Icono className="h-4 w-4" />{texto}</button>;
+  }
+  if (destino) {
+    return <Link to={destino} className={`${clase} border-emerald-200 bg-emerald-50 text-emerald-800`}><Icono className="h-4 w-4" />{texto}</Link>;
+  }
+  return <button type="button" onClick={onClick} className={`${clase} border-emerald-200 bg-emerald-50 text-emerald-800`}><Icono className="h-4 w-4" />{texto}</button>;
+}
 
 
 function Barra({
@@ -183,11 +204,46 @@ function Silos() {
       </section>
 
       {seleccionado && (
-        <AnalisisSiloPanel
-          key={seleccionado.silo_id}
-          siloId={seleccionado.silo_id}
-          siloCodigo={seleccionado.codigo}
-        />
+        <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Operar {seleccionado.codigo}</p>
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                  {formato.format(seleccionado.litros)} L disponibles
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  {seleccionado.grasa ?? "—"}% MG · {seleccionado.sng ?? "—"}% SNG ·{" "}
+                  {seleccionado.antiguedad_horas == null ? "sin antigüedad" : `${seleccionado.antiguedad_horas} h desde la leche más antigua`}
+                </p>
+                <p className={`mt-2 text-xs ${seleccionado.analisis_vigente ? "text-emerald-700" : "text-amber-700"}`}>
+                  {seleccionado.analisis_vigente ? "Análisis vigente" : seleccionado.motivo_vigencia}
+                </p>
+              </div>
+              <p className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                Último aseo: {seleccionado.ultima_limpieza ?? "sin registro"}
+              </p>
+            </div>
+            {seleccionado.motivos_no_disponible.length > 0 && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                {seleccionado.motivos_no_disponible.join(" · ")}
+              </div>
+            )}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AccionSilo texto="Tomar muestra" icono={Beaker} onClick={() => document.getElementById("analisis-silo")?.scrollIntoView({ behavior: "smooth" })} />
+              <AccionSilo texto="Estandarizar" icono={FlaskConical} destino={`/estandarizacion?silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
+              <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
+              <AccionSilo texto="Despachar" icono={Truck} bloqueado="Pendiente configurar cliente, guía y liberación exigida para leche a granel." />
+            </div>
+          </section>
+          <div id="analisis-silo">
+            <AnalisisSiloPanel
+              key={seleccionado.silo_id}
+              siloId={seleccionado.silo_id}
+              siloCodigo={seleccionado.codigo}
+            />
+          </div>
+        </>
       )}
 
       {conLeche.length > 0 && (

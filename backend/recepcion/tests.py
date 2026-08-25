@@ -488,6 +488,18 @@ class DescargaTests(BaseAPIRecepcion):
 
 
 class OcupacionAPITests(BaseAPIRecepcion):
+    def test_el_panel_explica_por_que_un_silo_no_puede_iniciar_proceso(self):
+        MovimientoSilo.objects.create(
+            silo=self.silo, tipo=MovimientoSilo.Tipo.INGRESO, litros=1000,
+            fecha_hora=instante(20),
+        )
+
+        silo = self.cliente.get("/api/recepcion/ocupacion/").json()["silos"][0]
+
+        self.assertFalse(silo["analisis_vigente"])
+        self.assertIn("análisis confirmado", silo["motivos_no_disponible"][0])
+        self.assertIsNotNone(silo["antiguedad_horas"])
+
     def test_el_endpoint_informa_el_saldo_y_sus_alertas(self):
         MovimientoSilo.objects.create(
             silo=self.silo,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Beaker, BookOpen, CheckCircle2, Droplets, Pencil, Plus, Timer } from "lucide-react";
 
 import {
@@ -32,12 +33,15 @@ const rc = (valor: number | string | null | undefined) =>
 
 
 function Estandarizacion() {
+  const [parametros] = useSearchParams();
   const [vales, setVales] = useState<ValeEstandarizacion[]>([]);
   const [catalogos, setCatalogos] = useState<CatalogosEstandarizacion | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [guiaRC, setGuiaRC] = useState<GuiaRC[]>([]);
   const [buscarRC, setBuscarRC] = useState("");
-  const [preseleccion, setPreseleccion] = useState<GuiaRC | null>(null);
+  const [preseleccion, setPreseleccion] = useState<{
+    producto?: number; rc_objetivo?: string; silo_entera?: number;
+  } | null>(null);
   const [silos, setSilos] = useState<Silo[]>([]);
   const [valeId, setValeId] = useState<number | null>(null);
   const [nuevoAbierto, setNuevoAbierto] = useState(false);
@@ -103,6 +107,14 @@ function Estandarizacion() {
     return () => clearTimeout(tarea);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const silo = Number(parametros.get("silo"));
+    if (silo > 0) {
+      setPreseleccion({ silo_entera: silo });
+      setNuevoAbierto(true);
+    }
+  }, [parametros]);
 
   const ejecutar = async (
     accion: () => Promise<unknown>,

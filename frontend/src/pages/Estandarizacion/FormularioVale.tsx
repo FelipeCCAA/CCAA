@@ -66,15 +66,18 @@ function FormularioVale({
 }: {
   productos: Producto[];
   silos: Silo[];
-  preseleccion?: { producto: number; rc_objetivo: string } | null;
+  preseleccion?: {
+    producto?: number; rc_objetivo?: string; silo_entera?: number;
+  } | null;
   onCerrar: () => void;
   onCalcular: (datos: EntradaCalculo) => Promise<Mezcla>;
   onConfirmado: (vale: ValeEstandarizacion) => Promise<void>;
 }) {
   const [datos, setDatos] = useState({
     ...inicial,
-    producto: preseleccion ? String(preseleccion.producto) : "",
+    producto: preseleccion?.producto ? String(preseleccion.producto) : "",
     rc_objetivo: preseleccion?.rc_objetivo ?? "",
+    silo_entera: preseleccion?.silo_entera ? String(preseleccion.silo_entera) : "",
   });
   const [mezcla, setMezcla] = useState<Mezcla | null>(null);
   const [ocupado, setOcupado] = useState(false);

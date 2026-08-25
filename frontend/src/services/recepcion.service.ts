@@ -31,6 +31,8 @@ export interface Vehiculo {
 export interface OcupacionSilo {
   silo_id: number;
   codigo: string;
+  tipo: string;
+  tipo_etiqueta: string;
   litros: number;
   capacidad: number;
   estado: string;
@@ -39,6 +41,15 @@ export interface OcupacionSilo {
   temperatura_actual: number | null;
   ultima_limpieza: string | null;
   ultimo_movimiento: string | null;
+  leche_mas_antigua_en: string | null;
+  antiguedad_horas: number | null;
+  analisis: number | null;
+  analisis_tomado_en: string | null;
+  grasa: string | null;
+  sng: string | null;
+  analisis_vigente: boolean;
+  motivo_vigencia: string;
+  motivos_no_disponible: string[];
   pct: number;
   /* Por encima de la capacidad. */
   excedido: boolean;
