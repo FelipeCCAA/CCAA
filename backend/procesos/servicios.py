@@ -213,6 +213,14 @@ def registrar_estandarizacion(*, vale):
             cantidad=vale.litros_descremada,
             unidad="L",
         )
+    if vale.silo_crema_id and vale.litros_crema:
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion,
+            silo=vale.silo_crema,
+            tipo=EntradaProceso.Tipo.MEZCLA,
+            cantidad=vale.litros_crema,
+            unidad="L",
+        )
 
     SalidaProceso.objects.create(
         ejecucion=ejecucion,

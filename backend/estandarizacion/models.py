@@ -86,7 +86,7 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
     }
     CAMPOS_QUE_MUEVEN_LIBRO = (
         "volumen", "silo_entera", "silo_descremada", "silo_destino",
-        "litros_entera", "litros_descremada",
+        "silo_crema", "litros_entera", "litros_descremada", "litros_crema",
     )
 
     codigo = models.CharField("Código de vale", max_length=40, unique=True)
@@ -117,6 +117,10 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
         "maestros.Silo", on_delete=models.PROTECT,
         related_name="vales_como_descremada", null=True, blank=True,
     )
+    silo_crema = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT,
+        related_name="vales_como_crema", null=True, blank=True,
+    )
     silo_destino = models.ForeignKey(
         "maestros.Silo", on_delete=models.PROTECT, related_name="vales_como_destino",
         null=True, blank=True,
@@ -145,6 +149,12 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
         "SNG de la descremada", max_digits=5, decimal_places=2,
         null=True, blank=True,
     )
+    crema_grasa = models.DecimalField(
+        "Grasa de la crema", max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    crema_sng = models.DecimalField(
+        "SNG de la crema", max_digits=5, decimal_places=2, null=True, blank=True
+    )
 
     # De dónde salieron los cuatro números de arriba. Es **procedencia**, no
     # fuente de verdad: la composición sigue congelada en las columnas del
@@ -167,11 +177,20 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
         verbose_name="Análisis de la descremada",
     )
 
+    analisis_crema = models.ForeignKey(
+        "recepcion.AnalisisSilo", on_delete=models.PROTECT,
+        related_name="vales_con_esta_crema", null=True, blank=True,
+        verbose_name="Análisis de la crema",
+    )
+
     litros_entera = models.DecimalField(
         "Litros de entera", max_digits=12, decimal_places=2, null=True, blank=True
     )
     litros_descremada = models.DecimalField(
         "Litros de descremada", max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    litros_crema = models.DecimalField(
+        "Litros de crema", max_digits=12, decimal_places=2, null=True, blank=True
     )
 
     estado = models.CharField(
@@ -232,6 +251,13 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
                 (self.silo_descremada_id, "Falta el estanque de leche descremada."),
                 (self.descremada_grasa, "Falta grasa de la descremada."),
                 (self.descremada_sng, "Falta SNG de la descremada."),
+            )
+            motivos.extend(motivo for valor, motivo in requeridos if valor in (None, ""))
+        if self.litros_crema and self.litros_crema > 0:
+            requeridos = (
+                (self.silo_crema_id, "Falta el estanque de crema."),
+                (self.crema_grasa, "Falta grasa de la crema."),
+                (self.crema_sng, "Falta SNG de la crema."),
             )
             motivos.extend(motivo for valor, motivo in requeridos if valor in (None, ""))
         codigo = self.codigo_propuesto.strip()
@@ -336,6 +362,10 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
         ):
             raise ValidationError({
                 "silo_destino": "El destino no puede ser el silo de la descremada."
+            })
+        if self.silo_crema_id and self.silo_crema_id == self.silo_destino_id:
+            raise ValidationError({
+                "silo_destino": "El destino no puede ser el estanque de crema."
             })
 
 

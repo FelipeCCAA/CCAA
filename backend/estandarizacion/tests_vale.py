@@ -12,6 +12,7 @@ la planta pone sobre él:
 """
 
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -116,6 +117,31 @@ class BaseVale(TestCase):
 
 
 class AgitacionTests(BaseVale):
+
+    def test_transferir_descuenta_la_crema_como_tercer_origen(self):
+        crema, _ = Silo.objects.update_or_create(
+            codigo="TK-CREMA-TEST",
+            defaults={"tipo": Silo.Tipo.TK_CREMA, "capacidad_l": 5000},
+        )
+        vale = self.crear_vale(
+            volumen="10100.00", silo_crema=crema,
+            crema_grasa="40.00", crema_sng="5.50", litros_crema="100.00",
+        )
+        self.abastecer_origenes()
+        MovimientoSilo.objects.create(
+            silo=crema, tipo=MovimientoSilo.Tipo.INGRESO, litros="500.00",
+            fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+            motivo="Crema para prueba",
+        )
+
+        with patch("estandarizacion.servicios.motivos_silo_no_disponible", return_value=[]):
+            servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        self.assertTrue(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id, silo=crema, tipo=MovimientoSilo.Tipo.SALIDA,
+            litros="100.00",
+        ).exists())
 
     def test_transferir_mueve_litros_entre_silos(self):
         vale = self.crear_vale()

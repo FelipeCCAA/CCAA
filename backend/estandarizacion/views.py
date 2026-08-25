@@ -13,7 +13,7 @@ from maestros.models import Silo
 from recepcion.models import AnalisisSilo
 
 from . import servicios
-from .dominio import Leche, calcular_mezcla
+from .dominio import Leche, calcular_mezcla, sugerir_mezcla_con_crema
 from .models import (
     MINUTOS_DE_AGITACION, CorreccionValeEstandarizacion, ValeEstandarizacion,
 )
@@ -36,10 +36,12 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         "producto": (None, "mandante__empresa_id"),
         "silo_entera": ("sucursal_id", "sucursal__empresa_id"),
         "silo_descremada": ("sucursal_id", "sucursal__empresa_id"),
+        "silo_crema": ("sucursal_id", "sucursal__empresa_id"),
         "silo_destino": ("sucursal_id", "sucursal__empresa_id"),
     }
     queryset = ValeEstandarizacion.objects.select_related(
-        "producto", "silo_entera", "silo_descremada", "silo_destino", "responsable"
+        "producto", "silo_entera", "silo_descremada", "silo_crema",
+        "silo_destino", "responsable"
     )
     serializer_class = ValeEstandarizacionSerializer
     permission_classes = [EscribeEstandarizacion]
@@ -76,7 +78,7 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
 
     def _borrador_del_usuario(self, request, pk=None):
         consulta = ValeEstandarizacion.objects.select_related(
-            "producto", "silo_entera", "silo_descremada", "silo_destino",
+            "producto", "silo_entera", "silo_descremada", "silo_crema", "silo_destino",
             "responsable",
         ).filter(
             estado=ValeEstandarizacion.Estado.BORRADOR,
@@ -173,26 +175,40 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             datos.get("descremada_grasa") is not None
             and datos.get("descremada_sng") is not None
         )
-        mezcla = calcular_mezcla(
-            entera=Leche(
-                cantidad=datos["entera_disponible"],
-                grasa=datos["entera_grasa"],
-                sng=datos["entera_sng"],
-            ),
-            descremada=Leche(
+        entera = Leche(
+            cantidad=datos["entera_disponible"],
+            grasa=datos["entera_grasa"], sng=datos["entera_sng"],
+        )
+        descremada = Leche(
                 cantidad=datos["descremada_disponible"],
                 grasa=datos["descremada_grasa"],
                 sng=datos["descremada_sng"],
-            ) if tiene_descremada else None,
-            rc_objetivo=datos["rc_objetivo"],
-            volumen=datos["volumen"],
+        ) if tiene_descremada else None
+        tiene_crema = (
+            datos.get("crema_grasa") is not None
+            and datos.get("crema_sng") is not None
         )
+        if tiene_crema and descremada is not None:
+            mezcla = sugerir_mezcla_con_crema(
+                entera=entera, descremada=descremada,
+                crema=Leche(
+                    cantidad=datos["crema_disponible"],
+                    grasa=datos["crema_grasa"], sng=datos["crema_sng"],
+                ),
+                rc_objetivo=datos["rc_objetivo"], volumen=datos["volumen"],
+            )
+        else:
+            mezcla = calcular_mezcla(
+                entera=entera, descremada=descremada,
+                rc_objetivo=datos["rc_objetivo"], volumen=datos["volumen"],
+            )
 
         return Response({
             "posible": mezcla.posible,
             "motivo": mezcla.motivo,
             "entera": mezcla.entera,
             "descremada": mezcla.descremada,
+            "crema": mezcla.crema,
             "rc_esperado": mezcla.rc_esperado,
             "grasa_esperada": mezcla.grasa_esperada,
             "sng_esperado": mezcla.sng_esperado,

@@ -34,6 +34,8 @@ export interface ValeEstandarizacion {
   silo_entera_codigo: string | null;
   silo_descremada: number | null;
   silo_descremada_codigo: string | null;
+  silo_crema: number | null;
+  silo_crema_codigo: string | null;
   silo_destino: number | null;
   silo_destino_codigo: string | null;
   silo_sugerido_fifo: number | null;
@@ -44,6 +46,9 @@ export interface ValeEstandarizacion {
   descremada_sng: string | null;
   litros_entera: string | null;
   litros_descremada: string | null;
+  crema_grasa: string | null;
+  crema_sng: string | null;
+  litros_crema: string | null;
   estado: EstadoVale;
   agitacion_desde: string | null;
   muestreado_en: string | null;
@@ -64,6 +69,7 @@ export interface Mezcla {
   motivo: string;
   entera: number;
   descremada: number;
+  crema: number;
   rc_esperado: number | null;
   grasa_esperada: number | null;
   sng_esperado: number | null;
@@ -117,6 +123,9 @@ export interface EntradaCalculo {
   descremada_grasa?: number | null;
   descremada_sng?: number | null;
   descremada_disponible?: number;
+  crema_grasa?: number | null;
+  crema_sng?: number | null;
+  crema_disponible?: number;
   rc_objetivo: number;
   volumen: number;
 }
@@ -167,6 +176,7 @@ export interface DatosBorradorVale {
   volumen: number | null;
   silo_entera: number | null;
   silo_descremada: number | null;
+  silo_crema: number | null;
   silo_destino: number | null;
   silo_sugerido_fifo: number | null;
   motivo_desvio_fifo: string;
@@ -174,8 +184,11 @@ export interface DatosBorradorVale {
   entera_sng: number | null;
   descremada_grasa: number | null;
   descremada_sng: number | null;
+  crema_grasa: number | null;
+  crema_sng: number | null;
   litros_entera: number | null;
   litros_descremada: number | null;
+  litros_crema: number | null;
   observaciones: string;
 }
 

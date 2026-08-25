@@ -19,6 +19,9 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     silo_descremada_codigo = serializers.CharField(
         source="silo_descremada.codigo", read_only=True, allow_null=True
     )
+    silo_crema_codigo = serializers.CharField(
+        source="silo_crema.codigo", read_only=True, allow_null=True
+    )
     silo_destino_codigo = serializers.CharField(
         source="silo_destino.codigo", read_only=True, allow_null=True
     )
@@ -45,11 +48,12 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "producto", "producto_nombre", "rc_objetivo", "volumen",
             "silo_entera", "silo_entera_codigo",
             "silo_descremada", "silo_descremada_codigo",
+            "silo_crema", "silo_crema_codigo",
             "silo_destino", "silo_destino_codigo",
             "silo_sugerido_fifo", "motivo_desvio_fifo",
             "entera_grasa", "entera_sng", "descremada_grasa", "descremada_sng",
-            "analisis_entera", "analisis_descremada",
-            "litros_entera", "litros_descremada",
+            "crema_grasa", "crema_sng", "analisis_entera", "analisis_descremada",
+            "analisis_crema", "litros_entera", "litros_descremada", "litros_crema",
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",
             "rc_real", "minutos_agitando", "avisos", "evaluacion",
@@ -98,7 +102,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         # real cuando la validación falla.
         silos = {
             campo: attrs.get(campo, getattr(self.instance, campo, None))
-            for campo in ("silo_entera", "silo_descremada", "silo_destino")
+            for campo in ("silo_entera", "silo_descremada", "silo_crema", "silo_destino")
         }
         ValeEstandarizacion(**silos).clean()
 
@@ -115,6 +119,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
 
         entera = silos["silo_entera"]
         descremada = silos["silo_descremada"]
+        crema = silos["silo_crema"]
         destino = silos["silo_destino"]
         if entera and entera.tipo != Silo.Tipo.SILO:
             raise serializers.ValidationError(
@@ -124,6 +129,8 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"silo_descremada": "Selecciona un TK de leche descremada."}
             )
+        if crema and crema.tipo != Silo.Tipo.TK_CREMA:
+            raise serializers.ValidationError({"silo_crema": "Selecciona un TK de crema."})
         if destino and destino.tipo != Silo.Tipo.SILO:
             raise serializers.ValidationError(
                 {"silo_destino": "El destino debe ser un silo de leche."}
@@ -135,6 +142,13 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         if litros_descremada and not descremada:
             raise serializers.ValidationError(
                 {"silo_descremada": "La mezcla requiere un TK de leche descremada."}
+            )
+        litros_crema = attrs.get(
+            "litros_crema", getattr(self.instance, "litros_crema", 0)
+        )
+        if litros_crema and not crema:
+            raise serializers.ValidationError(
+                {"silo_crema": "La mezcla requiere un TK de crema."}
             )
 
         sugerido = attrs.get(
@@ -164,6 +178,9 @@ class CalculoMezclaSerializer(serializers.Serializer):
     descremada_grasa = serializers.FloatField(required=False, allow_null=True)
     descremada_sng = serializers.FloatField(required=False, allow_null=True)
     descremada_disponible = serializers.FloatField(required=False, default=0.0)
+    crema_grasa = serializers.FloatField(required=False, allow_null=True)
+    crema_sng = serializers.FloatField(required=False, allow_null=True)
+    crema_disponible = serializers.FloatField(required=False, default=0.0)
     rc_objetivo = serializers.FloatField()
     volumen = serializers.FloatField()
 

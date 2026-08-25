@@ -335,6 +335,13 @@ function Estandarizacion() {
                     valor={`${numero(vale.litros_descremada)} L`}
                     pie={`${vale.descremada_grasa}% MG · ${vale.descremada_sng}% SNG`}
                   />
+                  {Number(vale.litros_crema ?? 0) > 0 && (
+                    <Dato
+                      etiqueta={`Crema · ${vale.silo_crema_codigo ?? "—"}`}
+                      valor={`${numero(vale.litros_crema)} L`}
+                      pie={`${vale.crema_grasa}% MG · ${vale.crema_sng}% SNG`}
+                    />
+                  )}
                   <Dato etiqueta="RC objetivo" valor={rc(vale.rc_objetivo)} />
                   <Dato
                     etiqueta="RC medido"
