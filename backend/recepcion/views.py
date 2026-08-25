@@ -27,7 +27,7 @@ from usuarios.tenancy import (
 from . import dominio
 from .models import (
     CONTROLES_DECLARADOS, AlertaCalidadSilo, AnalisisSilo, BusquedaProveedor,
-    CorreccionRecepcion, ModuloRecepcion, MovimientoSilo, Recepcion,
+    AtribucionRecepcion, CorreccionRecepcion, ModuloRecepcion, MovimientoSilo, Recepcion,
 )
 from .serializers import (
     AjusteSiloSerializer, AnalisisSiloSerializer, CorreccionCrioscopiasSerializer,
@@ -108,6 +108,43 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         if self.action == "decidir_calidad":
             return [DecideCalidadRecepcion()]
         return super().get_permissions()
+
+    @action(detail=True, methods=["get"])
+    def destino(self, request, pk=None):
+        """Movimientos posteriores en que aparece leche de esta recepción."""
+        recepcion = self.get_object()
+        atribuciones = (
+            AtribucionRecepcion.objects.filter(
+                recepcion=recepcion,
+                movimiento__tipo=MovimientoSilo.Tipo.SALIDA,
+            )
+            .select_related("movimiento__silo", "movimiento__lote")
+            .order_by("movimiento__fecha_hora", "orden")
+        )
+        destinos = []
+        for item in atribuciones:
+            movimiento = item.movimiento
+            destinos.append({
+                "movimiento_id": movimiento.id,
+                "fecha_hora": movimiento.fecha_hora,
+                "litros": item.litros,
+                "silo": movimiento.silo.codigo,
+                "origen_tipo": movimiento.origen_tipo,
+                "lote": (
+                    {"id": movimiento.lote_id, "codigo": movimiento.lote.codigo_lote}
+                    if movimiento.lote_id else None
+                ),
+                "porcentaje_movimiento": (
+                    item.litros * 100 / movimiento.litros
+                ).quantize(Decimal("0.01")),
+            })
+        return Response({
+            "recepcion_id": recepcion.id,
+            "litros_atribuidos": sum(
+                (item.litros for item in atribuciones), Decimal("0")
+            ),
+            "destinos": destinos,
+        })
 
     def get_queryset(self):
         consulta = super().get_queryset()

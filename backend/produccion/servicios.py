@@ -111,7 +111,7 @@ def abrir_lote_desde_vale(
             setattr(lote, campo, valor)
         lote.save()
 
-    MovimientoSilo.objects.create(
+    salida = MovimientoSilo.objects.create(
         silo=vale.silo_destino,
         tipo=MovimientoSilo.Tipo.SALIDA,
         litros=Decimal(str(litros)),
@@ -127,6 +127,8 @@ def abrir_lote_desde_vale(
             f"{lote.codigo_lote}"
         ),
     )
+    from recepcion.servicios import atribuir_salida
+    atribuir_salida(salida)
 
     _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=usuario)
 

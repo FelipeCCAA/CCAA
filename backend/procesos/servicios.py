@@ -332,7 +332,7 @@ def iniciar_condensacion(*, corrida_id, usuario):
                 f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
             )
 
-        MovimientoSilo.objects.create(
+        consumo_del_lote = MovimientoSilo.objects.create(
             silo=origen, silo_contraparte=corrida.silo_destino,
             tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
             fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
@@ -369,7 +369,7 @@ def iniciar_condensacion(*, corrida_id, usuario):
 def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles):
     from maestros.models import Silo
     from recepcion.models import MovimientoSilo
-    from recepcion.servicios import saldo_silo
+    from recepcion.servicios import heredar_atribuciones, saldo_silo
     from .models import SalidaProceso
 
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
@@ -396,7 +396,7 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
             raise ValidationError({campo: "Control de condensación no reconocido."})
         setattr(corrida, campo, valor)
     corrida.litros_precondensado = cantidad
-    MovimientoSilo.objects.create(
+    ingreso = MovimientoSilo.objects.create(
         silo=destino, silo_contraparte=corrida.silo_origen,
         tipo=MovimientoSilo.Tipo.INGRESO, litros=cantidad,
         fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
@@ -404,6 +404,24 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         lote=corrida.lote, producto=corrida.lote.producto,
         equipo=corrida.ejecucion.equipo, usuario=usuario,
     )
+    consumo = MovimientoSilo.objects.filter(
+        Q(lote_id=corrida.lote_id)
+        | Q(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=corrida.lote_id,
+        )
+        | Q(
+            origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+            origen_id=corrida.pk,
+        ),
+        silo_id=corrida.silo_origen_id,
+        tipo=MovimientoSilo.Tipo.SALIDA,
+    ).order_by("fecha_hora", "id").last()
+    if consumo is None:
+        raise ValidationError(
+            "La condensación no tiene un consumo de silo del cual heredar trazabilidad."
+        )
+    heredar_atribuciones(ingreso, [consumo])
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, silo=destino,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL, cantidad=cantidad, unidad="L",

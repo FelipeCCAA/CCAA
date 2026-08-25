@@ -118,7 +118,20 @@ def transferir(*, vale_id, usuario):
             origen_id=vale.id,
             operacion_id=operacion_id, usuario=usuario,
         ))
-    MovimientoSilo.objects.bulk_create(movimientos)
+    creados = MovimientoSilo.objects.bulk_create(movimientos)
+    from recepcion.servicios import atribuir_salida, heredar_atribuciones
+
+    salidas = [
+        movimiento for movimiento in creados
+        if movimiento.tipo == MovimientoSilo.Tipo.SALIDA
+    ]
+    ingreso = next(
+        movimiento for movimiento in creados
+        if movimiento.tipo == MovimientoSilo.Tipo.INGRESO
+    )
+    for salida in salidas:
+        atribuir_salida(salida)
+    heredar_atribuciones(ingreso, salidas)
 
     vale.estado = ValeEstandarizacion.Estado.TRANSFERIDO
     vale.responsable = vale.responsable or usuario

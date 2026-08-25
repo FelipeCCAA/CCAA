@@ -2,13 +2,14 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from maestros.models import Silo
 
-from .models import MovimientoSilo
+from . import dominio
+from .models import AtribucionRecepcion, MovimientoSilo
 
 
 ESTADOS_SIN_CONSUMO = {
@@ -31,6 +32,96 @@ def saldo_silo(silo):
             output_field=DecimalField(max_digits=14, decimal_places=2),
         )
     )["total"]
+
+
+def capas_fifo_silo(silo, antes_de=None):
+    """Reconstruye el saldo del silo por origen justo antes de un movimiento."""
+    movimientos = MovimientoSilo.objects.filter(silo=silo)
+    if antes_de is not None:
+        movimientos = movimientos.filter(
+            Q(fecha_hora__lt=antes_de.fecha_hora)
+            | Q(fecha_hora=antes_de.fecha_hora, id__lt=antes_de.id)
+        )
+    movimientos = list(movimientos.order_by("fecha_hora", "id"))
+    ids = [movimiento.id for movimiento in movimientos]
+    atribuciones = AtribucionRecepcion.objects.filter(
+        movimiento_id__in=ids
+    ).order_by("movimiento_id", "orden")
+    return dominio.saldo_por_recepcion(movimientos, atribuciones)
+
+
+@transaction.atomic
+def atribuir_salida(movimiento):
+    """Congela la composición FIFO de una salida; repetirlo es idempotente."""
+    existentes = list(movimiento.atribuciones_recepcion.all())
+    if existentes:
+        return existentes
+    es_salida = movimiento.tipo == MovimientoSilo.Tipo.SALIDA
+    es_ajuste_negativo = (
+        movimiento.tipo == MovimientoSilo.Tipo.AJUSTE
+        and Decimal(str(movimiento.litros)) < 0
+    )
+    if not (es_salida or es_ajuste_negativo):
+        raise ValidationError("Solo se atribuyen salidas o ajustes negativos.")
+
+    Silo.objects.select_for_update().get(pk=movimiento.silo_id)
+    resultado = dominio.atribuir_fifo(
+        capas_fifo_silo(movimiento.silo, antes_de=movimiento),
+        abs(Decimal(str(movimiento.litros))),
+    )
+    filas = [
+        AtribucionRecepcion(
+            movimiento=movimiento,
+            recepcion_id=parte.recepcion_id,
+            litros=parte.litros,
+            orden=parte.orden,
+            origen_no_atribuible=parte.origen_no_atribuible,
+        )
+        for parte in resultado.partes
+    ]
+    if resultado.remanente_no_atribuible > 0:
+        filas.append(AtribucionRecepcion(
+            movimiento=movimiento,
+            recepcion=None,
+            litros=resultado.remanente_no_atribuible,
+            orden=len(filas) + 1,
+            origen_no_atribuible="saldo histórico sin recepción atribuible",
+        ))
+    return AtribucionRecepcion.objects.bulk_create(filas)
+
+
+@transaction.atomic
+def heredar_atribuciones(ingreso, salidas):
+    """Propaga al ingreso las recepciones consumidas por sus salidas fuente."""
+    existentes = list(ingreso.atribuciones_recepcion.all())
+    if existentes:
+        return existentes
+    fuentes = []
+    for salida in salidas:
+        fuentes.extend(atribuir_salida(salida))
+    total_fuente = sum((fila.litros for fila in fuentes), Decimal("0"))
+    if total_fuente <= 0:
+        return []
+
+    objetivo = abs(ingreso.litros)
+    filas = []
+    acumulado = Decimal("0")
+    for indice, fuente in enumerate(fuentes, start=1):
+        if indice == len(fuentes):
+            litros = objetivo - acumulado
+        else:
+            litros = (objetivo * fuente.litros / total_fuente).quantize(Decimal("0.01"))
+            acumulado += litros
+        if litros <= 0:
+            continue
+        filas.append(AtribucionRecepcion(
+            movimiento=ingreso,
+            recepcion_id=fuente.recepcion_id,
+            litros=litros,
+            orden=len(filas) + 1,
+            origen_no_atribuible=fuente.origen_no_atribuible,
+        ))
+    return AtribucionRecepcion.objects.bulk_create(filas)
 
 
 @transaction.atomic
@@ -108,6 +199,8 @@ def transferir_silo(
         silo=destino, silo_contraparte=origen,
         tipo=MovimientoSilo.Tipo.INGRESO, **comunes,
     )
+    atribuir_salida(salida)
+    heredar_atribuciones(ingreso, [salida])
     if producto and destino.producto_actual_id is None:
         destino.producto_actual = producto
         destino.save(update_fields=["producto_actual"])

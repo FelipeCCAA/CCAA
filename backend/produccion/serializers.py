@@ -701,12 +701,14 @@ class LoteDetalleSerializer(LoteSerializer):
     # la ficha porque un descuento que falló y no se ve es peor que uno que no
     # se intentó: el saldo de bodega queda alto y nadie lo sabe.
     consumo_inventario = serializers.SerializerMethodField()
+    recepciones_origen = serializers.SerializerMethodField()
 
     class Meta(LoteSerializer.Meta):
         fields = LoteSerializer.Meta.fields + [
             "analisis",
             "liberacion",
             "consumo_inventario",
+            "recepciones_origen",
         ]
 
     def get_liberacion(self, lote):
@@ -742,6 +744,44 @@ class LoteDetalleSerializer(LoteSerializer):
             "kg_base": consumo.kg_base if consumo else None,
             "pendiente": dominio.consumo_de_inventario_pendiente(lote, consumo),
         }
+
+    def get_recepciones_origen(self, lote):
+        """Camiones que aportaron al lote, incluidos saldos no atribuibles."""
+        from recepcion.models import AtribucionRecepcion, MovimientoSilo
+
+        atribuciones = (
+            AtribucionRecepcion.objects.filter(
+                movimiento__tipo=MovimientoSilo.Tipo.SALIDA,
+                movimiento__origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                movimiento__origen_id=lote.id,
+            )
+            .select_related("recepcion__vehiculo")
+            .order_by("movimiento__fecha_hora", "orden")
+        )
+        total = sum((item.litros for item in atribuciones), Decimal("0"))
+        agrupadas = {}
+        for item in atribuciones:
+            clave = (item.recepcion_id, item.origen_no_atribuible)
+            if clave not in agrupadas:
+                agrupadas[clave] = {
+                    "recepcion_id": item.recepcion_id,
+                    "guia": item.recepcion.guia if item.recepcion_id else None,
+                    "camion": (
+                        str(item.recepcion.vehiculo)
+                        if item.recepcion_id and item.recepcion.vehiculo_id else None
+                    ),
+                    "origen_no_atribuible": item.origen_no_atribuible,
+                    "litros": Decimal("0"),
+                }
+            agrupadas[clave]["litros"] += item.litros
+        resultado = []
+        for fila in agrupadas.values():
+            fila["porcentaje"] = (
+                (fila["litros"] * 100 / total).quantize(Decimal("0.01"))
+                if total else Decimal("0")
+            )
+            resultado.append(fila)
+        return resultado
 
 
 class ControlProcesoLecturaSerializer(serializers.ModelSerializer):

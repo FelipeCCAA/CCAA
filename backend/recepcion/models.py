@@ -13,9 +13,11 @@ movimiento, y un saldo negativo dejaría de ser lo que hoy es, la señal
 automática de que el registro está descuadrado.
 """
 
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from usuarios.tenancy import sucursal_predeterminada_pruebas
 from usuarios.documentos import DocumentoBorradorMixin
 
@@ -669,7 +671,63 @@ class MovimientoSilo(models.Model):
             raise ValidationError(
                 "Los movimientos de silo son inmutables; corrige mediante un ajuste o reversa."
             )
-        return super().save(*args, **kwargs)
+        self.litros = Decimal(str(self.litros))
+        with transaction.atomic():
+            resultado = super().save(*args, **kwargs)
+            if (
+                self.tipo == self.Tipo.SALIDA
+                or (
+                    self.tipo == self.Tipo.AJUSTE
+                    and Decimal(str(self.litros)) < 0
+                )
+            ):
+                # Import local para evitar el ciclo models -> servicios -> models.
+                from .servicios import atribuir_salida
+                atribuir_salida(self)
+        return resultado
+
+
+class AtribucionRecepcion(models.Model):
+    """Parte de un movimiento explicada por una recepción, en orden FIFO."""
+
+    movimiento = models.ForeignKey(
+        MovimientoSilo, on_delete=models.PROTECT,
+        related_name="atribuciones_recepcion",
+    )
+    recepcion = models.ForeignKey(
+        Recepcion, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="atribuciones_silo",
+    )
+    litros = models.DecimalField(max_digits=12, decimal_places=2)
+    orden = models.PositiveSmallIntegerField()
+    origen_no_atribuible = models.CharField(max_length=160, blank=True)
+
+    class Meta:
+        ordering = ["movimiento_id", "orden"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["movimiento", "orden"],
+                name="atribucion_orden_unico_por_movimiento",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(litros__gt=0),
+                name="atribucion_litros_positivos",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(recepcion__isnull=False, origen_no_atribuible="")
+                    | (
+                        models.Q(recepcion__isnull=True)
+                        & ~models.Q(origen_no_atribuible="")
+                    )
+                ),
+                name="atribucion_recepcion_o_motivo",
+            ),
+        ]
+
+    def __str__(self):
+        origen = self.recepcion_id or self.origen_no_atribuible
+        return f"{self.litros} L de {origen}"
 
 
 class ControlInhibidores(models.Model):

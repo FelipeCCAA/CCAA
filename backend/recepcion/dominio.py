@@ -41,6 +41,147 @@ LIMITES = {
 FACTOR_LITROS_A_KILOS = Decimal("1.03")
 
 
+@dataclass(frozen=True)
+class CapaSilo:
+    recepcion_id: int | None
+    litros: Decimal
+    orden: int
+    origen_no_atribuible: str = ""
+
+
+@dataclass(frozen=True)
+class ParteFIFO:
+    recepcion_id: int | None
+    litros: Decimal
+    orden: int
+    origen_no_atribuible: str = ""
+
+
+@dataclass(frozen=True)
+class ResultadoFIFO:
+    partes: list[ParteFIFO]
+    remanente_no_atribuible: Decimal
+
+
+def _dato(objeto, nombre, defecto=None):
+    return objeto.get(nombre, defecto) if isinstance(objeto, dict) else getattr(
+        objeto, nombre, defecto
+    )
+
+
+def atribuir_fifo(capas, litros) -> ResultadoFIFO:
+    """Consume las capas más antiguas y declara cualquier remanente sin origen."""
+    pendiente = Decimal(str(litros))
+    partes = []
+    for capa in capas:
+        if pendiente <= 0:
+            break
+        disponible = Decimal(str(capa.litros))
+        if disponible <= 0:
+            continue
+        tomado = min(disponible, pendiente)
+        partes.append(ParteFIFO(
+            recepcion_id=capa.recepcion_id,
+            litros=tomado,
+            orden=len(partes) + 1,
+            origen_no_atribuible=capa.origen_no_atribuible,
+        ))
+        pendiente -= tomado
+    return ResultadoFIFO(partes=partes, remanente_no_atribuible=max(pendiente, Decimal("0")))
+
+
+def saldo_por_recepcion(movimientos, atribuciones) -> list[CapaSilo]:
+    """Reconstruye las capas disponibles sin reemplazar el saldo contable."""
+    atribuciones_por_movimiento = {}
+    for atribucion in atribuciones:
+        atribuciones_por_movimiento.setdefault(
+            _dato(atribucion, "movimiento_id"), []
+        ).append(atribucion)
+
+    capas = []
+    orden = 0
+
+    def agregar(recepcion_id, litros, origen=""):
+        nonlocal orden
+        cantidad = Decimal(str(litros))
+        if cantidad <= 0:
+            return
+        orden += 1
+        capas.append({
+            "recepcion_id": recepcion_id,
+            "litros": cantidad,
+            "orden": orden,
+            "origen_no_atribuible": origen,
+        })
+
+    def descontar(recepcion_id, litros, origen=""):
+        pendiente = Decimal(str(litros))
+        candidatas = [
+            capa for capa in capas
+            if capa["litros"] > 0 and (
+                (recepcion_id is not None and capa["recepcion_id"] == recepcion_id)
+                or (
+                    recepcion_id is None
+                    and capa["recepcion_id"] is None
+                    and (not origen or capa["origen_no_atribuible"] == origen)
+                )
+            )
+        ]
+        for capa in candidatas:
+            tomado = min(capa["litros"], pendiente)
+            capa["litros"] -= tomado
+            pendiente -= tomado
+            if pendiente <= 0:
+                break
+        return pendiente
+
+    ordenados = sorted(
+        movimientos,
+        key=lambda mov: (
+            _dato(mov, "fecha_hora"), _dato(mov, "id", 0)
+        ),
+    )
+    for movimiento in ordenados:
+        cantidad = Decimal(str(_dato(movimiento, "litros", 0)))
+        tipo = _dato(movimiento, "tipo")
+        es_ingreso = tipo == "ingreso" or (tipo == "ajuste" and cantidad > 0)
+        atribuidas = sorted(
+            atribuciones_por_movimiento.get(_dato(movimiento, "id"), []),
+            key=lambda item: _dato(item, "orden", 0),
+        )
+        if es_ingreso:
+            if atribuidas:
+                for item in atribuidas:
+                    agregar(
+                        _dato(item, "recepcion_id"), _dato(item, "litros"),
+                        _dato(item, "origen_no_atribuible", ""),
+                    )
+            elif _dato(movimiento, "origen_tipo") == "recepcion":
+                agregar(_dato(movimiento, "origen_id"), cantidad)
+            else:
+                agregar(None, cantidad, _dato(movimiento, "motivo") or "saldo sin recepción")
+            continue
+
+        consumo = abs(cantidad)
+        if atribuidas:
+            remanente = Decimal("0")
+            for item in atribuidas:
+                remanente += descontar(
+                    _dato(item, "recepcion_id"), _dato(item, "litros"),
+                    _dato(item, "origen_no_atribuible", ""),
+                )
+        else:
+            resultado = atribuir_fifo([
+                CapaSilo(**capa) for capa in capas if capa["litros"] > 0
+            ], consumo)
+            for parte in resultado.partes:
+                descontar(
+                    parte.recepcion_id, parte.litros, parte.origen_no_atribuible
+                )
+
+    return [CapaSilo(**capa) for capa in capas if capa["litros"] > 0]
+
+
 def kilos_desde_litros(litros) -> Decimal | None:
     """Kilos de la guía. Sin litros devuelve None, que no es cero."""
     if litros in (None, ""):
