@@ -8,8 +8,8 @@ from usuarios.tenancy import filtrar_por_scope, scope_de, sucursal_para_escritur
 
 from . import dominio
 from .models import (
-    Analisis, ControlProceso, ControlProcesoLectura, Lote, OrdenProduccion,
-    PalletProducto, RegistroEnvase,
+    Analisis, ControlProceso, ControlProcesoLectura, CorreccionLote, Lote,
+    OrdenProduccion, PalletProducto, RegistroEnvase,
 )
 
 
@@ -186,6 +186,10 @@ class LoteSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(
         source="producto.nombre", read_only=True, allow_null=True
     )
+    motivo_correccion = serializers.CharField(
+        write_only=True, required=False, allow_blank=False, min_length=5,
+        trim_whitespace=True,
+    )
     mandante_nombre = serializers.CharField(
         source="producto.mandante.nombre", read_only=True, allow_null=True
     )
@@ -242,6 +246,7 @@ class LoteSerializer(serializers.ModelSerializer):
             "lote_anterior",
             "motivo_corte",
             "motivo_anulacion",
+            "motivo_correccion",
             "calidad",
             "es_borrador",
             "abierto_por",
@@ -451,20 +456,80 @@ class LoteSerializer(serializers.ModelSerializer):
         self._rechazar_si_es_final()
         self._rechazar_si_esta_liberado(cambios)
 
+        es_cierre_normal = (
+            self.instance.estado == Lote.Estado.EN_PROCESO
+            and datos.get("estado") == Lote.Estado.PRODUCIDO
+        )
+        if not es_cierre_normal:
+            from recepcion.models import MovimientoSilo
+
+            campos_de_libro = set(cambios) & set(Lote.CAMPOS_QUE_MUEVEN_LIBRO)
+            if campos_de_libro and MovimientoSilo.objects.filter(
+                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                origen_id=self.instance.id,
+            ).exists():
+                raise serializers.ValidationError({
+                    campo: (
+                        "Este dato ya quedó reflejado en el movimiento de leche. "
+                        "Anula y rehace el lote con motivo."
+                    )
+                    for campo in campos_de_libro
+                })
+            if (
+                self.instance.estado == Lote.Estado.PRODUCIDO
+                and "kg_producidos" in cambios
+            ):
+                raise serializers.ValidationError({
+                    "kg_producidos": (
+                        "Los kilos ya cerraron producción e inventario; corrige "
+                        "con un ajuste, no editando el lote."
+                    )
+                })
+            if not datos.get("motivo_correccion", "").strip():
+                raise serializers.ValidationError({
+                    "motivo_correccion": "Indica por qué corriges un paso anterior."
+                })
+
         return datos
 
     def update(self, instancia, datos_validados):
         motivo = datos_validados.pop("motivo_anulacion", "").strip()
+        motivo_correccion = datos_validados.pop("motivo_correccion", "").strip()
         if motivo:
             marca = f"[ANULACIÓN] {motivo}"
             anterior = datos_validados.get("observacion", instancia.observacion).strip()
             datos_validados["observacion"] = "\n".join(
                 parte for parte in (anterior, marca) if parte
             )
-        return super().update(instancia, datos_validados)
+        antes = {
+            campo: getattr(instancia, campo)
+            for campo in self.CAMPOS_SUSTANTIVOS
+            if campo in datos_validados
+        }
+        actualizada = super().update(instancia, datos_validados)
+        if motivo_correccion:
+            def serializable(valor):
+                if valor is None or isinstance(valor, (bool, int, float, str)):
+                    return valor
+                return str(valor)
+
+            diferencias = {
+                campo: [serializable(anterior), serializable(getattr(actualizada, campo))]
+                for campo, anterior in antes.items()
+                if anterior != getattr(actualizada, campo)
+            }
+            if diferencias:
+                CorreccionLote.objects.create(
+                    lote=actualizada,
+                    usuario=self.context["request"].user,
+                    motivo=motivo_correccion,
+                    cambios=diferencias,
+                )
+        return actualizada
 
     def create(self, datos):
         datos.pop("motivo_anulacion", None)
+        datos.pop("motivo_correccion", None)
         litros = datos.pop("litros_estandarizados", None)
         vale = datos.pop("vale", None)
         codigo = datos.pop("codigo_lote")

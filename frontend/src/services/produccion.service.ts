@@ -463,9 +463,13 @@ export interface LoteEditado {
 export async function editarLote(
   id: number,
   cambios: LoteEditado,
+  motivoCorreccion?: string,
 ): Promise<LoteDetalle> {
 
-  const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, cambios);
+  const { data } = await api.patch<LoteDetalle>(`produccion/lotes/${id}/`, {
+    ...cambios,
+    ...(motivoCorreccion ? { motivo_correccion: motivoCorreccion } : {}),
+  });
 
   return data;
 }

@@ -149,6 +149,17 @@ class Lote(DocumentoBorradorMixin, models.Model):
         "codigo_lote_propuesto", "producto", "vale", "equipo", "fecha",
         "linea", "litros_estandarizados_borrador",
     )
+    CAMPOS_POR_PASO = {
+        "apertura": (
+            "codigo_lote", "op", "producto", "vale", "equipo", "fecha",
+            "linea", "turno",
+        ),
+        "cierre_produccion": (
+            "kg_producidos", "bultos", "hora_inicio", "hora_termino",
+            "vencimiento",
+        ),
+    }
+    CAMPOS_QUE_MUEVEN_LIBRO = ("codigo_lote", "producto", "vale", "equipo")
 
     sucursal = models.ForeignKey(
         "usuarios.Sucursal",
@@ -324,6 +335,22 @@ class Lote(DocumentoBorradorMixin, models.Model):
             raise ValidationError(
                 {"hora_termino": "La hora de término no puede ser igual a la de inicio."}
             )
+
+
+class CorreccionLote(models.Model):
+    lote = models.ForeignKey(
+        Lote, on_delete=models.PROTECT, related_name="correcciones"
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="correcciones_lote_produccion",
+    )
+    motivo = models.TextField()
+    cambios = models.JSONField(default=dict)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]
 
 
 class Analisis(models.Model):
