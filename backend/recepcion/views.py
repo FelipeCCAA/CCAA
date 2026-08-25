@@ -125,6 +125,12 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 if len(estados) > 1
                 else consulta.filter(estado=estados[0])
             )
+            if Recepcion.Estado.BORRADOR in estados:
+                consulta = consulta.filter(abierto_por=self.request.user)
+        else:
+            consulta = consulta.exclude(
+                estado__in=[Recepcion.Estado.BORRADOR, Recepcion.Estado.ANULADA]
+            )
 
         silo = parametros.get("silo")
         if silo:
@@ -173,7 +179,9 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         describe la planta, no la vista.
         """
         base = filtrar_por_scope(
-            Recepcion.objects.all(), request.user,
+            Recepcion.objects.exclude(
+                estado__in=[Recepcion.Estado.BORRADOR, Recepcion.Estado.ANULADA]
+            ), request.user,
             campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
         )
@@ -224,6 +232,133 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
     def perform_update(self, serializer):
         serializer.save()
+
+    def _borrador_del_usuario(self, request, pk=None):
+        consulta = filtrar_por_scope(
+            Recepcion.objects.select_related("vehiculo", "silo").prefetch_related(
+                "modulos", "controles_inhibidores__busquedas"
+            ),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        ).filter(estado=Recepcion.Estado.BORRADOR, abierto_por=request.user)
+        if pk is not None:
+            consulta = consulta.filter(pk=pk)
+        return consulta.order_by("-actualizado_en", "-id").first()
+
+    @action(detail=False, methods=["get"], url_path="mi-borrador")
+    def mi_borrador(self, request):
+        borrador = self._borrador_del_usuario(request)
+        if borrador is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(self.get_serializer(borrador).data)
+
+    @action(detail=False, methods=["post"], url_path="crear-borrador")
+    def crear_borrador(self, request):
+        existente = self._borrador_del_usuario(request)
+        if existente is not None:
+            return Response(
+                {
+                    "detail": "Ya tienes un borrador de recepción abierto.",
+                    "borrador": self.get_serializer(existente).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        datos = {
+            clave: valor for clave, valor in request.data.items()
+            if clave != "modulos" and valor not in (None, "")
+        }
+        serializer = self.get_serializer(data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            recepcion = serializer.save(
+                sucursal=sucursal_para_escritura(request.user, {}),
+                operador=request.user,
+                abierto_por=request.user,
+                abierto_en=timezone.now(),
+                estado=Recepcion.Estado.BORRADOR,
+                fecha=serializer.validated_data.get("fecha", timezone.localdate()),
+                tipo_leche=serializer.validated_data.get(
+                    "tipo_leche", Recepcion.TipoLeche.ENTERA
+                ),
+                litros=serializer.validated_data.get("litros", Decimal("0")),
+            )
+            self._guardar_modulos_borrador(
+                recepcion, request.data.get("modulos", [])
+            )
+        return Response(self.get_serializer(recepcion).data, status=status.HTTP_201_CREATED)
+
+    def _guardar_modulos_borrador(self, recepcion, modulos):
+        if not isinstance(modulos, list):
+            raise DRFValidationError({"modulos": "Debe ser una lista."})
+        numeros = [item.get("numero") for item in modulos if isinstance(item, dict)]
+        if len(numeros) != len(modulos) or any(
+            not isinstance(numero, int) or numero < 1 or numero > 4
+            for numero in numeros
+        ) or len(set(numeros)) != len(numeros):
+            raise DRFValidationError(
+                {"modulos": "Usa números únicos de módulo entre 1 y 4."}
+            )
+        recepcion.modulos.all().delete()
+        ModuloRecepcion.objects.bulk_create([
+            ModuloRecepcion(
+                recepcion=recepcion,
+                numero=item["numero"],
+                crioscopia=item.get("crioscopia") or None,
+                carga_recoleccion_id=item.get("carga_recoleccion") or None,
+            )
+            for item in modulos
+        ])
+
+    @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    def guardar_borrador(self, request, pk=None):
+        recepcion = self._borrador_del_usuario(request, pk)
+        if recepcion is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        datos = {clave: valor for clave, valor in request.data.items() if clave != "modulos"}
+        serializer = self.get_serializer(recepcion, data=datos, partial=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            recepcion = serializer.save()
+            if "modulos" in request.data:
+                self._guardar_modulos_borrador(recepcion, request.data["modulos"])
+        return Response(self.get_serializer(recepcion).data)
+
+    @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    def confirmar_borrador(self, request, pk=None):
+        recepcion = self._borrador_del_usuario(request, pk)
+        if recepcion is None:
+            return Response(
+                {"detail": "El borrador no existe o ya fue confirmado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        motivos = recepcion.confirmar(request.user)
+        if motivos:
+            return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        _notificar_recepcion(
+            recepcion,
+            tipo="leche_recepcionada",
+            titulo="Camión de leche recepcionado",
+            mensaje=(
+                f"Se recibieron {recepcion.litros} L del camión "
+                f"{recepcion.vehiculo.placa if recepcion.vehiculo else 'sin patente'}."
+            ),
+            areas=[PerfilUsuario.Area.RECEPCION],
+        )
+        return Response(self.get_serializer(recepcion).data)
+
+    @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    def descartar_borrador(self, request, pk=None):
+        recepcion = self._borrador_del_usuario(request, pk)
+        if recepcion is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        recepcion.estado = Recepcion.Estado.ANULADA
+        recepcion.save(update_fields=["estado", "actualizado_en"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["post"], url_path="registrar-llegada")
     def registrar_llegada(self, request):
@@ -679,7 +814,11 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             )
 
         base = filtrar_por_scope(
-            Recepcion.objects.filter(fecha__range=(desde, hasta))
+            Recepcion.objects.filter(
+                fecha__range=(desde, hasta)
+            ).exclude(
+                estado__in=[Recepcion.Estado.BORRADOR, Recepcion.Estado.ANULADA]
+            )
             .select_related("silo", "vehiculo")
             .prefetch_related("modulos"),
             request.user,

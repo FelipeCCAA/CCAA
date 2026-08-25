@@ -164,6 +164,10 @@ export interface Recepcion {
 
   estado: string;
   estado_etiqueta: string;
+  es_borrador: boolean;
+  abierto_por: number | null;
+  abierto_en: string | null;
+  actualizado_en: string;
   motivo: string;
   observacion: string;
   codigo_muestra: string;
@@ -248,6 +252,17 @@ export interface LlegadaCamionNueva {
     carga_recoleccion?: number;
   }>;
 }
+
+
+export type BorradorRecepcionDatos = {
+  [K in keyof LlegadaCamionNueva]?: LlegadaCamionNueva[K] | null;
+} & {
+  fecha: string;
+  tipo_leche: string;
+  litros: string;
+  vehiculo: number | null;
+  modulos: LlegadaCamionNueva["modulos"];
+};
 
 
 export interface ResumenDiarioRecepcion {
@@ -498,6 +513,48 @@ export async function resumenDiarioRecepcion(
     },
   );
   return data;
+}
+
+
+export async function obtenerBorradorRecepcion(): Promise<Recepcion | null> {
+  const respuesta = await api.get<Recepcion>(
+    "recepcion/recepciones/mi-borrador/",
+  );
+  return respuesta.status === 204 ? null : respuesta.data;
+}
+
+
+export async function crearBorradorRecepcion(
+  datos: BorradorRecepcionDatos,
+): Promise<Recepcion> {
+  const { data } = await api.post<Recepcion>(
+    "recepcion/recepciones/crear-borrador/", datos,
+  );
+  return data;
+}
+
+
+export async function guardarBorradorRecepcion(
+  id: number,
+  datos: BorradorRecepcionDatos,
+): Promise<Recepcion> {
+  const { data } = await api.patch<Recepcion>(
+    `recepcion/recepciones/${id}/guardar-borrador/`, datos,
+  );
+  return data;
+}
+
+
+export async function confirmarBorradorRecepcion(id: number): Promise<Recepcion> {
+  const { data } = await api.post<Recepcion>(
+    `recepcion/recepciones/${id}/confirmar-borrador/`, {},
+  );
+  return data;
+}
+
+
+export async function descartarBorradorRecepcion(id: number): Promise<void> {
+  await api.post(`recepcion/recepciones/${id}/descartar-borrador/`, {});
 }
 
 

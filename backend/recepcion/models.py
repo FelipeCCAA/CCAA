@@ -17,6 +17,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from usuarios.tenancy import sucursal_predeterminada_pruebas
+from usuarios.documentos import DocumentoBorradorMixin
 
 from maestros.models import Silo, Vehiculo
 
@@ -53,7 +54,7 @@ VALORES_ADMITIDOS = {
 }
 
 
-class Recepcion(models.Model):
+class Recepcion(DocumentoBorradorMixin, models.Model):
     """
     Llegada de un camión.
 
@@ -111,6 +112,7 @@ class Recepcion(models.Model):
         C = "C", "Turno C"
 
     class Estado(models.TextChoices):
+        BORRADOR = "borrador", "Borrador"
         REGISTRADA = "registrada", "En espera de muestra"
         MUESTREADA = "muestreada", "Muestra tomada"
         ANALIZADA = "analizada", "Analizada"
@@ -118,10 +120,12 @@ class Recepcion(models.Model):
         RETENIDA = "retenida", "Retenida"
         DESCARGADA = "descargada", "Descargada"
         CERRADA = "cerrada", "Cerrada"
+        ANULADA = "anulada", "Anulada"
 
     # Transiciones válidas, tal como las declara el esquema del prototipo.
     # Una retenida puede liberarse tras reanálisis, o cerrarse rechazada.
     TRANSICIONES = {
+        Estado.BORRADOR: [Estado.REGISTRADA, Estado.ANULADA],
         Estado.REGISTRADA: [Estado.MUESTREADA, Estado.CERRADA],
         Estado.MUESTREADA: [Estado.ANALIZADA],
         Estado.ANALIZADA: [Estado.LIBERADA, Estado.RETENIDA],
@@ -129,7 +133,14 @@ class Recepcion(models.Model):
         Estado.RETENIDA: [Estado.LIBERADA, Estado.CERRADA],
         Estado.DESCARGADA: [Estado.CERRADA],
         Estado.CERRADA: [],
+        Estado.ANULADA: [],
     }
+
+    CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
+        "fecha", "vehiculo", "tipo_leche", "litros",
+    )
+    ESTADO_BORRADOR = Estado.BORRADOR
+    ESTADO_CONFIRMADO = Estado.REGISTRADA
 
     fecha = models.DateField("Fecha")
     hora = models.TimeField("Hora", null=True, blank=True)
@@ -222,7 +233,7 @@ class Recepcion(models.Model):
         help_text='{"delvo": "Negativo", "acidez": 16.5, "ph": 6.7, ...}',
     )
     estado = models.CharField(
-        "Estado", max_length=20, choices=Estado.choices, default=Estado.REGISTRADA
+        "Estado", max_length=20, choices=Estado.choices, default=Estado.BORRADOR
     )
     motivo = models.TextField(
         "Motivo", blank=True, help_text="Obligatorio si la recepción se retiene"
@@ -428,6 +439,15 @@ class Recepcion(models.Model):
 
     def puede_pasar_a(self, estado) -> bool:
         return estado in self.TRANSICIONES.get(self.estado, [])
+
+    def motivos_para_confirmar(self):
+        motivos = super().motivos_para_confirmar()
+        if self.litros is None or self.litros <= 0:
+            motivos = [m for m in motivos if "litros" not in m]
+            motivos.append("Los litros deben ser mayores que cero.")
+        if not self.modulos.exists():
+            motivos.append("Declara al menos un compartimiento del camión.")
+        return motivos
 
 
 class ModuloRecepcion(models.Model):
