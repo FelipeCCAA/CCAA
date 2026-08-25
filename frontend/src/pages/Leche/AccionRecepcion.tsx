@@ -4,6 +4,7 @@ import { AlertTriangle, FlaskConical, TestTube2, Warehouse, X } from "lucide-rea
 
 import {
   asignarSilo,
+  corregirCrioscopias,
   CONTROLES_NUMERICOS,
   CONTROLES_OPCION,
   decidirCalidad,
@@ -14,7 +15,7 @@ import {
 } from "../../services/recepcion.service";
 
 
-export type AccionFlujo = "muestra" | "calidad" | "silo";
+export type AccionFlujo = "muestra" | "calidad" | "silo" | "crioscopia";
 
 interface Props {
   accion: AccionFlujo;
@@ -51,6 +52,12 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
   );
   const [retencionManual, setRetencionManual] = useState(false);
   const [motivo, setMotivo] = useState("");
+  const [motivoCorreccion, setMotivoCorreccion] = useState("");
+  const [crioscopias, setCrioscopias] = useState<Record<number, string>>(
+    Object.fromEntries(
+      recepcion.modulos.map((modulo) => [modulo.id, modulo.crioscopia ?? ""]),
+    ),
+  );
   const [silo, setSilo] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -69,7 +76,17 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
     setError("");
 
     try {
-      if (accion === "muestra") {
+      if (accion === "crioscopia") {
+        await corregirCrioscopias(
+          recepcion.id,
+          recepcion.modulos.map((modulo) => ({
+            id: modulo.id,
+            crioscopia: crioscopias[modulo.id] === ""
+              ? null : Number(crioscopias[modulo.id]),
+          })),
+          motivoCorreccion,
+        );
+      } else if (accion === "muestra") {
         await tomarMuestra(recepcion.id, codigoMuestra, Number(responsable));
       } else if (accion === "silo") {
         await asignarSilo(recepcion.id, Number(silo));
@@ -101,6 +118,7 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
     muestra: { sobre: "Etapa 2 · Muestreo", titulo: "Identificar muestra", icono: TestTube2, boton: "Confirmar muestra" },
     calidad: { sobre: "Etapa 3 · Calidad", titulo: "Evaluar módulo", icono: FlaskConical, boton: "Guardar decisión" },
     silo: { sobre: "Etapa 4 · Destino", titulo: "Asignar silo", icono: Warehouse, boton: "Confirmar destino" },
+    crioscopia: { sobre: "Corrección · Paso anterior", titulo: "Corregir crioscopía", icono: FlaskConical, boton: "Guardar corrección" },
   }[accion];
   const Icono = configuracion.icono;
   const etiqueta = "mb-1.5 block text-xs font-semibold text-slate-600";
@@ -135,6 +153,12 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
               {recepcion.modulos.length > 0 && <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="mb-3 text-xs font-bold uppercase tracking-wider text-violet-700">Crioscopía registrada por módulo</p><div className="flex flex-wrap gap-3 text-sm">{recepcion.modulos.map((m) => <span key={m.id} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-violet-900 ring-1 ring-violet-200">M{m.numero}: {m.crioscopia ?? "—"} °C</span>)}</div></div>}
               <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-amber-600" checked={retencionManual} onChange={(e) => setRetencionManual(e.target.checked)} /><span><span className="block text-sm font-semibold text-slate-800">Retener por observación operacional</span><span className="mt-1 block text-xs leading-5 text-slate-600">Úsalo para sello roto, contaminación visible u otra condición no representada por un análisis.</span></span></label>
               {retencionManual && <div><label className={etiqueta}>Motivo de retención *</label><textarea aria-label="Motivo de retención" className={`${campo} h-auto py-3`} rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} required /></div>}
+            </div>}
+
+            {accion === "crioscopia" && <div className="space-y-5">
+              <p className="rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">Esta corrección recalcula el veredicto. Si la leche ya fue descargada y queda no conforme, se alertará a Calidad y el silo quedará marcado para revisión sin bloquearse automáticamente.</p>
+              <div className="grid gap-4 sm:grid-cols-2">{recepcion.modulos.map((modulo) => <div key={modulo.id}><label className={etiqueta}>Módulo {modulo.numero} · Crioscopía (°C)</label><input aria-label={`Crioscopía módulo ${modulo.numero}`} type="number" step="0.001" className={campo} value={crioscopias[modulo.id] ?? ""} onChange={(e) => setCrioscopias((actuales) => ({ ...actuales, [modulo.id]: e.target.value }))} /></div>)}</div>
+              <div><label className={etiqueta}>Motivo de la corrección *</label><textarea aria-label="Motivo de la corrección" className={`${campo} h-auto py-3`} rows={3} minLength={5} value={motivoCorreccion} onChange={(e) => setMotivoCorreccion(e.target.value)} required /></div>
             </div>}
 
             {accion === "silo" && <div><label className={etiqueta}>Silo compatible *</label><select aria-label="Silo compatible" className={campo} value={silo} onChange={(e) => setSilo(e.target.value)} required><option value="">Seleccionar destino</option>{silosCompatibles.map((item) => <option key={item.id} value={item.id}>{item.codigo} · capacidad {Number(item.capacidad_l).toLocaleString("es-CL")} L</option>)}</select>{silosCompatibles.length === 0 ? <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700"><AlertTriangle className="h-4 w-4 shrink-0" />No hay silos activos compatibles con leche {recepcion.tipo_leche.toLowerCase()}.</p> : <p className="mt-2 text-xs text-slate-600">Solo se muestran destinos compatibles con {recepcion.tipo_leche.toLowerCase()}.</p>}</div>}

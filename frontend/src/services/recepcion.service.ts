@@ -181,6 +181,7 @@ export interface Recepcion {
   silo_asignado_por_nombre: string;
   silo_asignado_en: string | null;
   evaluacion: EvaluacionRecepcion;
+  alerta_silo_activa: boolean;
 }
 
 
@@ -511,6 +512,18 @@ export async function resumenDiarioRecepcion(
         detalle: 1,
       },
     },
+  );
+  return data;
+}
+
+export async function corregirCrioscopias(
+  id: number,
+  modulos: Array<{ id: number; crioscopia: number | null }>,
+  motivo: string,
+): Promise<Recepcion> {
+  const { data } = await api.patch<Recepcion>(
+    `recepcion/recepciones/${id}/corregir-crioscopias/`,
+    { modulos, motivo },
   );
   return data;
 }

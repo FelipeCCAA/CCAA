@@ -26,12 +26,12 @@ from usuarios.tenancy import (
 
 from . import dominio
 from .models import (
-    CONTROLES_DECLARADOS, AnalisisSilo, BusquedaProveedor, ModuloRecepcion, MovimientoSilo,
-    Recepcion,
+    CONTROLES_DECLARADOS, AlertaCalidadSilo, AnalisisSilo, BusquedaProveedor,
+    CorreccionRecepcion, ModuloRecepcion, MovimientoSilo, Recepcion,
 )
 from .serializers import (
-    AjusteSiloSerializer, AnalisisSiloSerializer, MovimientoSiloSerializer, RecepcionSerializer,
-    TransferenciaSiloSerializer,
+    AjusteSiloSerializer, AnalisisSiloSerializer, CorreccionCrioscopiasSerializer,
+    MovimientoSiloSerializer, RecepcionSerializer, TransferenciaSiloSerializer,
 )
 from .servicios import ajustar_silo, transferir_silo
 
@@ -99,6 +99,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         # recorren `modulos` por fila; sin este prefetch, exponerlas en el
         # serializer dispara una consulta por recepción (N+1) al listar.
         "controles_inhibidores__busquedas",
+        "alertas_calidad_silo",
     )
     serializer_class = RecepcionSerializer
     permission_classes = [EscribeRecepcion]
@@ -232,6 +233,28 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
 
     def perform_update(self, serializer):
         serializer.save()
+
+    def update(self, request, *args, **kwargs):
+        recepcion = self.get_object()
+        if recepcion.estado in {Recepcion.Estado.CERRADA, Recepcion.Estado.ANULADA}:
+            return Response(
+                {"detail": "El documento está cerrado y ya no admite edición."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if "litros" in request.data and MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+            origen_id=recepcion.id,
+        ).exists():
+            return Response(
+                {
+                    "litros": (
+                        "Los litros ya movieron el saldo del silo. Corrígelos "
+                        "mediante un ajuste con motivo, no editando la recepción."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return super().update(request, *args, **kwargs)
 
     def _borrador_del_usuario(self, request, pk=None):
         consulta = filtrar_por_scope(
@@ -435,6 +458,114 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         return Response(
             self.get_serializer(recepcion).data, status=status.HTTP_201_CREATED
         )
+
+    @action(detail=True, methods=["patch"], url_path="corregir-crioscopias")
+    def corregir_crioscopias(self, request, pk=None):
+        """Corrige un paso recorrido sin tocar litros ni movimientos de silo."""
+        entrada = CorreccionCrioscopiasSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            recepcion = Recepcion.objects.select_for_update().get(
+                pk=self.get_object().pk
+            )
+            if recepcion.estado in {
+                Recepcion.Estado.BORRADOR,
+                Recepcion.Estado.CERRADA,
+                Recepcion.Estado.ANULADA,
+            }:
+                return Response(
+                    {
+                        "detail": (
+                            "Una recepción cerrada, anulada o todavía en borrador "
+                            "no admite correcciones de pasos recorridos."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            modulos = {
+                modulo.id: modulo
+                for modulo in recepcion.modulos.select_for_update()
+            }
+            solicitados = entrada.validated_data["modulos"]
+            ajenos = [item["id"] for item in solicitados if item["id"] not in modulos]
+            if ajenos:
+                return Response(
+                    {"modulos": f"Los módulos {ajenos} no pertenecen a esta recepción."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            evaluacion_antes = recepcion.evaluar()
+            cambios = {}
+            for item in solicitados:
+                modulo = modulos[item["id"]]
+                anterior = modulo.crioscopia
+                nuevo = item["crioscopia"]
+                if anterior == nuevo:
+                    continue
+                modulo.crioscopia = nuevo
+                modulo.save(update_fields=["crioscopia"])
+                cambios[f"M{modulo.numero}.crioscopia"] = [
+                    str(anterior) if anterior is not None else None,
+                    str(nuevo) if nuevo is not None else None,
+                ]
+
+            if not cambios:
+                return Response(
+                    {"modulos": "No hay cambios de crioscopía que guardar."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            evaluacion_despues = recepcion.evaluar()
+            estado_anterior = recepcion.estado
+            se_volvio_no_conforme = (
+                evaluacion_antes.conforme and not evaluacion_despues.conforme
+            )
+            if se_volvio_no_conforme and estado_anterior in {
+                Recepcion.Estado.LIBERADA,
+                Recepcion.Estado.DESCARGADA,
+            }:
+                recepcion.estado = Recepcion.Estado.RETENIDA
+                recepcion.motivo = " · ".join(evaluacion_despues.motivos)
+                recepcion.calidad_por = request.user
+                recepcion.calidad_en = timezone.now()
+                recepcion.save(update_fields=[
+                    "estado", "motivo", "calidad_por", "calidad_en",
+                ])
+
+            CorreccionRecepcion.objects.create(
+                recepcion=recepcion,
+                usuario=request.user,
+                paso="llegada",
+                motivo=entrada.validated_data["motivo"],
+                cambios=cambios,
+            )
+
+            if (
+                se_volvio_no_conforme
+                and estado_anterior == Recepcion.Estado.DESCARGADA
+                and recepcion.silo_id is not None
+            ):
+                detalle = (
+                    f"La recepción {recepcion.id} cambió a no conforme tras "
+                    f"corregir crioscopía: {' · '.join(evaluacion_despues.motivos)}"
+                )
+                AlertaCalidadSilo.objects.create(
+                    recepcion=recepcion,
+                    silo=recepcion.silo,
+                    motivo=detalle,
+                )
+                _notificar_recepcion(
+                    recepcion,
+                    tipo="silo_afectado_por_correccion",
+                    titulo=f"Revisar calidad de {recepcion.silo.codigo}",
+                    mensaje=detalle,
+                    areas=[PerfilUsuario.Area.CALIDAD, PerfilUsuario.Area.RECEPCION],
+                )
+
+        recepcion = self.queryset.get(pk=recepcion.pk)
+        return Response(self.get_serializer(recepcion).data)
 
     @action(detail=True, methods=["post"], url_path="tomar-muestra")
     def tomar_muestra(self, request, pk=None):

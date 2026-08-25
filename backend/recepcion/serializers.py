@@ -22,6 +22,24 @@ class ModuloRecepcionSerializer(serializers.ModelSerializer):
         fields = ["id", "numero", "crioscopia", "carga_recoleccion"]
 
 
+class CrioscopiaCorregidaSerializer(serializers.Serializer):
+    id = serializers.IntegerField(min_value=1)
+    crioscopia = serializers.DecimalField(
+        max_digits=6, decimal_places=3, allow_null=True
+    )
+
+
+class CorreccionCrioscopiasSerializer(serializers.Serializer):
+    motivo = serializers.CharField(min_length=5, trim_whitespace=True)
+    modulos = CrioscopiaCorregidaSerializer(many=True, allow_empty=False)
+
+    def validate_modulos(self, modulos):
+        ids = [item["id"] for item in modulos]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError("No repitas un módulo.")
+        return modulos
+
+
 class BusquedaProveedorSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusquedaProveedor
@@ -65,6 +83,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
     # El veredicto de los controles se calcula, no se guarda: al corregir un
     # límite, todas las recepciones quedan reevaluadas.
     evaluacion = serializers.SerializerMethodField()
+    alerta_silo_activa = serializers.SerializerMethodField()
 
     # Los módulos se crean a mano en `registrar_llegada` (el bucle explícito
     # sobre `ModuloRecepcion.objects.create`). De solo lectura acá: un solo
@@ -149,6 +168,7 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "silo_asignado_por_nombre",
             "silo_asignado_en",
             "evaluacion",
+            "alerta_silo_activa",
             "modulos",
             "controles_inhibidores",
             "kg_guia",
@@ -200,6 +220,9 @@ class RecepcionSerializer(serializers.ModelSerializer):
             "faltantes": evaluacion.faltantes,
             "analizada": evaluacion.analizada,
         }
+
+    def get_alerta_silo_activa(self, recepcion):
+        return any(alerta.activa for alerta in recepcion.alertas_calidad_silo.all())
 
     def validate_controles(self, controles):
         if not isinstance(controles, dict):

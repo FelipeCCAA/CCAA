@@ -141,6 +141,17 @@ class Recepcion(DocumentoBorradorMixin, models.Model):
     )
     ESTADO_BORRADOR = Estado.BORRADOR
     ESTADO_CONFIRMADO = Estado.REGISTRADA
+    CAMPOS_POR_PASO = {
+        "llegada": (
+            "fecha", "hora", "guia", "vehiculo", "procedencia", "tipo_leche",
+            "litros", "kg_romana", "certificada", "uso", "uso_numero",
+            "modulos.crioscopia",
+        ),
+        "muestreo": ("codigo_muestra", "muestreado_por", "muestreado_en"),
+        "calidad": ("controles", "ph_camion", "calidad_por", "calidad_en"),
+        "destino": ("silo", "silo_asignado_por", "silo_asignado_en"),
+    }
+    CAMPOS_QUE_MUEVEN_LIBRO = ("litros", "silo")
 
     fecha = models.DateField("Fecha")
     hora = models.TimeField("Hora", null=True, blank=True)
@@ -515,6 +526,42 @@ class ModuloRecepcion(models.Model):
 
     def __str__(self):
         return f"{self.recepcion_id} · M{self.numero}"
+
+
+class CorreccionRecepcion(models.Model):
+    """Edición justificada de un paso ya recorrido por la recepción."""
+
+    recepcion = models.ForeignKey(
+        Recepcion, on_delete=models.PROTECT, related_name="correcciones"
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="correcciones_recepcion",
+    )
+    paso = models.CharField(max_length=30)
+    motivo = models.TextField()
+    cambios = models.JSONField(default=dict)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]
+
+
+class AlertaCalidadSilo(models.Model):
+    """Silo potencialmente afectado; informa sin bloquearlo automáticamente."""
+
+    recepcion = models.ForeignKey(
+        Recepcion, on_delete=models.PROTECT, related_name="alertas_calidad_silo"
+    )
+    silo = models.ForeignKey(
+        Silo, on_delete=models.PROTECT, related_name="alertas_calidad_recepcion"
+    )
+    motivo = models.TextField()
+    activa = models.BooleanField(default=True, db_index=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]
 
 
 class MovimientoSilo(models.Model):
