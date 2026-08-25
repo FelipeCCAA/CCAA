@@ -8,6 +8,9 @@ export interface EjecucionProceso {
   estado: string;
   estado_etiqueta: string;
   etapa_nombre: string;
+  etapa: number;
+  etapa_tipo: string;
+  equipo: number | null;
   equipo_nombre: string | null;
   vale_codigo: string | null;
   lote_codigo: string | null;
@@ -56,6 +59,37 @@ export interface CorridaMantequilla {
   kg_mantequilla: string | null;
   kg_suero: string;
   kg_merma: string;
+  estado: string;
+  estado_etiqueta: string;
+}
+
+export interface EtapaProceso {
+  id: number;
+  nombre: string;
+  tipo: string;
+  activa: boolean;
+}
+
+export interface CorridaDescremacion {
+  id: number;
+  ejecucion: number;
+  ejecucion_codigo: string;
+  equipo_nombre: string | null;
+  silo_entera: number;
+  silo_entera_codigo: string;
+  silo_descremada: number;
+  silo_descremada_codigo: string;
+  estanque_crema: number;
+  estanque_crema_codigo: string;
+  analisis_entrada: number;
+  litros_entrada: string;
+  grasa_entrada: string;
+  sng_entrada: string;
+  litros_descremada: string | null;
+  grasa_descremada: string | null;
+  litros_crema: string | null;
+  grasa_crema: string | null;
+  controles: Record<string, unknown>;
   estado: string;
   estado_etiqueta: string;
 }
@@ -123,6 +157,48 @@ export async function obtenerCondensaciones(): Promise<Pagina<CorridaCondensacio
 
 export async function obtenerMantequillas(): Promise<Pagina<CorridaMantequilla>> {
   const { data } = await api.get<Pagina<CorridaMantequilla>>("procesos/mantequillas/");
+  return data;
+}
+
+export async function obtenerEtapas(): Promise<Pagina<EtapaProceso>> {
+  const { data } = await api.get<Pagina<EtapaProceso>>("procesos/etapas/");
+  return data;
+}
+
+export async function crearEjecucion(datos: {
+  codigo: string; etapa: number; equipo: number;
+}): Promise<EjecucionProceso> {
+  const { data } = await api.post<EjecucionProceso>("procesos/ejecuciones/", datos);
+  return data;
+}
+
+export async function obtenerDescremaciones(): Promise<Pagina<CorridaDescremacion>> {
+  const { data } = await api.get<Pagina<CorridaDescremacion>>("procesos/descremaciones/");
+  return data;
+}
+
+export async function crearDescremacion(datos: {
+  ejecucion: number; silo_entera: number; analisis_entrada: number;
+  litros_entrada: number; grasa_entrada: number; sng_entrada: number;
+  silo_descremada: number; estanque_crema: number;
+}): Promise<CorridaDescremacion> {
+  const { data } = await api.post<CorridaDescremacion>("procesos/descremaciones/", datos);
+  return data;
+}
+
+export async function iniciarDescremacion(id: number): Promise<CorridaDescremacion> {
+  const { data } = await api.post<CorridaDescremacion>(`procesos/descremaciones/${id}/iniciar/`);
+  return data;
+}
+
+export async function cerrarDescremacion(id: number, datos: {
+  litros_descremada: number; grasa_descremada: number;
+  litros_crema: number; grasa_crema: number;
+  controles?: Record<string, unknown>;
+}): Promise<CorridaDescremacion> {
+  const { data } = await api.post<CorridaDescremacion>(
+    `procesos/descremaciones/${id}/cerrar/`, datos,
+  );
   return data;
 }
 

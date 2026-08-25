@@ -210,6 +210,7 @@ class EventoProcesoSerializer(serializers.ModelSerializer):
 class EjecucionProcesoSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
     etapa_nombre = serializers.CharField(source="etapa.nombre", read_only=True)
+    etapa_tipo = serializers.CharField(source="etapa.tipo", read_only=True)
     equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
     vale_codigo = serializers.CharField(source="vale.codigo", read_only=True)
     lote_codigo = serializers.CharField(
