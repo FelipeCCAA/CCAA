@@ -347,6 +347,25 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
             25000,
         )
 
+    def test_asigna_silo_a_recepcion_sin_vehiculo(self):
+        """La planta de la recepción manda; el camión es un dato opcional."""
+        recepcion = Recepcion.objects.create(
+            fecha=date(2026, 7, 20),
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("25000"),
+            estado=Recepcion.Estado.LIBERADA,
+        )
+
+        respuesta = self.cliente.post(
+            f"/api/recepcion/recepciones/{recepcion.pk}/asignar-silo/",
+            {"silo": self.silo.pk},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        recepcion.refresh_from_db()
+        self.assertEqual(recepcion.silo, self.silo)
+
     def test_delvo_positivo_retiene_y_no_permite_asignar_silo(self):
         creada = self._crear().json()
         base = f"/api/recepcion/recepciones/{creada['id']}"

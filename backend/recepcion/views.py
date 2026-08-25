@@ -428,7 +428,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                     {"detail": "El silo se asigna solo después de la aprobación de Calidad."},
                     status=status.HTTP_409_CONFLICT,
                 )
-            if silo.sucursal_id != recepcion.vehiculo.sucursal_id:
+            if silo.sucursal_id != recepcion.sucursal_id:
                 return Response(
                     {"silo": "El silo debe pertenecer a la sucursal de la recepción."},
                     status=status.HTTP_400_BAD_REQUEST,

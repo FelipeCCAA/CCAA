@@ -53,6 +53,22 @@ function SelectTriEstado({
   );
 }
 
+function Encabezado({
+  icono: Icono, tono, titulo, detalle,
+}: {
+  icono: typeof Truck;
+  tono: string;
+  titulo: string;
+  detalle: string;
+}) {
+  return (
+    <div className="mb-5 flex items-center gap-3">
+      <span className={`rounded-xl p-2 ${tono}`}><Icono className="h-5 w-5" /></span>
+      <div><h3 className="font-semibold text-slate-900">{titulo}</h3><p className="text-xs text-slate-600">{detalle}</p></div>
+    </div>
+  );
+}
+
 function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
   // Identificación
   const [fecha, setFecha] = useState(hoy());
@@ -207,22 +223,6 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
 
   const etiqueta = "mb-1.5 block text-xs font-semibold text-slate-600";
   const campo = "h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10";
-
-  function Encabezado({
-    icono: Icono, tono, titulo, detalle,
-  }: {
-    icono: typeof Truck;
-    tono: string;
-    titulo: string;
-    detalle: string;
-  }) {
-    return (
-      <div className="mb-5 flex items-center gap-3">
-        <span className={`rounded-xl p-2 ${tono}`}><Icono className="h-5 w-5" /></span>
-        <div><h3 className="font-semibold text-slate-900">{titulo}</h3><p className="text-xs text-slate-600">{detalle}</p></div>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 p-3 backdrop-blur-[2px] sm:p-6">

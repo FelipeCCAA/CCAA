@@ -41,6 +41,24 @@ class TokenAuthenticationConScope(TokenAuthentication):
                 token_hash=digest
             )
         except SesionUsuario.DoesNotExist:
+            # Compatibilidad acotada a fixtures anteriores al modelo de sesión
+            # opaca. Nunca se habilita al ejecutar el servidor: en operación un
+            # token de DRF no constituye una sesión y debe rechazarse.
+            if getattr(settings, "PERMITIR_TOKEN_DRF_LEGACY_EN_PRUEBAS", False):
+                model = self.get_model()
+                try:
+                    token = model.objects.select_related("user", "user__perfil").get(
+                        key=key
+                    )
+                except model.DoesNotExist:
+                    pass
+                else:
+                    if not token.user.is_active:
+                        raise exceptions.AuthenticationFailed({
+                            "code": "USER_DISABLED",
+                            "error": "La cuenta está desactivada.",
+                        })
+                    return token.user, token
             raise exceptions.AuthenticationFailed(
                 {"code": "SESSION_REVOKED", "error": "La sesión ya no es válida."}
             )

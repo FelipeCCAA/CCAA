@@ -100,6 +100,10 @@ def abrir_lote_desde_vale(
         fecha_hora=timezone.now(),
         origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
         origen_id=lote.id,
+        lote=lote,
+        producto=lote.producto,
+        equipo=lote.equipo,
+        usuario=usuario,
         motivo=(
             f"Leche estandarizada del vale {vale.codigo} al lote "
             f"{lote.codigo_lote}"

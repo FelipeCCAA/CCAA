@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .models import (
@@ -258,6 +258,12 @@ def iniciar_condensacion(*, corrida_id, usuario):
         "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
         "silo_origen", "silo_destino",
     ).get(pk=corrida_id)
+    # La ejecución también se bloquea. Una corrida puede especializar la que
+    # abrió el lote; sin este bloqueo podría cerrarse mientras decidimos si la
+    # adoptamos o la iniciamos.
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(
+        of=("self",)
+    ).select_related("etapa", "equipo").get(pk=corrida.ejecucion_id)
     if corrida.estado != CorridaCondensacion.Estado.BORRADOR:
         raise ValidationError("Solo una corrida en borrador puede iniciarse.")
     corrida.clean()
@@ -274,35 +280,81 @@ def iniciar_condensacion(*, corrida_id, usuario):
     origen = Silo.objects.select_for_update().get(pk=corrida.silo_origen_id)
     if not origen.activo or origen.estado in ESTADOS_SIN_CONSUMO:
         raise ValidationError(f"{origen.codigo} no está habilitado para consumo.")
-    disponible = saldo_silo(origen)
-    if corrida.litros_entrada > disponible:
-        raise ValidationError(
-            f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
-        )
 
-    MovimientoSilo.objects.create(
-        silo=origen, silo_contraparte=corrida.silo_destino,
-        tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
-        fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
-        origen_id=corrida.pk, operacion_id=corrida.operacion_id,
-        lote=corrida.lote, producto=corrida.lote.producto,
-        equipo=corrida.ejecucion.equipo, usuario=usuario,
+    # Tras integrar el lote con el motor de procesos aparecieron dos caminos
+    # representando el mismo hecho: abrir el lote ya consumía el silo y dejaba
+    # su ejecución activa; luego la corrida intentaba consumir y arrancar otra
+    # vez. Si esta corrida especializa ESA ejecución, adopta su entrada y su
+    # movimiento. No es idempotencia por casualidad: es una sola ejecución
+    # física con un registro genérico y otro especializado.
+    consumo_del_lote = MovimientoSilo.objects.filter(
+        Q(lote_id=corrida.lote_id)
+        | Q(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=corrida.lote_id,
+        ),
+        silo=origen,
+        tipo=MovimientoSilo.Tipo.SALIDA,
+    ).first()
+    adopta_ejecucion_del_lote = (
+        corrida.lote.ejecucion_id == corrida.ejecucion_id
+        and corrida.ejecucion.estado == EjecucionProceso.Estado.EJECUCION
     )
-    EntradaProceso.objects.create(
-        ejecucion=corrida.ejecucion, silo=origen,
-        cantidad=corrida.litros_entrada, unidad="L",
-    )
-    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+
+    if adopta_ejecucion_del_lote:
+        if consumo_del_lote is None:
+            raise ValidationError(
+                "La ejecución del lote ya está activa, pero no tiene su consumo "
+                "de silo. Corrige esa inconsistencia antes de iniciar la condensación."
+            )
+        if consumo_del_lote.litros != corrida.litros_entrada:
+            raise ValidationError({
+                "litros_entrada": (
+                    f"El lote ya consumió {consumo_del_lote.litros} L; la corrida "
+                    f"declara {corrida.litros_entrada} L. Deben coincidir."
+                )
+            })
+        entrada = EntradaProceso.objects.filter(
+            ejecucion=corrida.ejecucion,
+            silo=origen,
+            cantidad=corrida.litros_entrada,
+            unidad="L",
+        ).first()
+        if entrada is None:
+            raise ValidationError(
+                "La ejecución del lote ya está activa, pero no tiene la entrada "
+                "de proceso que corresponde al consumo del silo."
+            )
+    else:
+        disponible = saldo_silo(origen)
+        if corrida.litros_entrada > disponible:
+            raise ValidationError(
+                f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
+            )
+
+        MovimientoSilo.objects.create(
+            silo=origen, silo_contraparte=corrida.silo_destino,
+            tipo=MovimientoSilo.Tipo.SALIDA, litros=corrida.litros_entrada,
+            fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+            origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+            lote=corrida.lote, producto=corrida.lote.producto,
+            equipo=corrida.ejecucion.equipo, usuario=usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=corrida.ejecucion, silo=origen,
+            cantidad=corrida.litros_entrada, unidad="L",
+        )
+        if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
+            transicionar_ejecucion(
+                ejecucion_id=corrida.ejecucion_id,
+                estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+                usuario=usuario,
+            )
         transicionar_ejecucion(
             ejecucion_id=corrida.ejecucion_id,
-            estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+            estado_nuevo=EjecucionProceso.Estado.EJECUCION,
             usuario=usuario,
         )
-    transicionar_ejecucion(
-        ejecucion_id=corrida.ejecucion_id,
-        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
-        usuario=usuario,
-    )
     corrida.estado = CorridaCondensacion.Estado.EN_PROCESO
     corrida.iniciada_por = usuario
     corrida.iniciada_en = timezone.now()

@@ -28,6 +28,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 
+from maestros.dominio import generar_sku
 from maestros.models import Mandante, Producto
 
 
@@ -173,6 +174,13 @@ class Command(BaseCommand):
         aplicar = opciones["aplicar"]
         resultados = []
 
+        # No se descubre una colisión escribiendo. En una base nueva la
+        # restricción única abortaría a mitad de la carga y el mensaje de
+        # PostgreSQL no explicaría qué decisión falta. La simulación conserva
+        # su informe; ``--aplicar`` se niega antes de crear un solo mandante.
+        if aplicar:
+            self._exigir_skus_unicos(filas)
+
         # La simulación recorre **el mismo camino** y revierte al final, en vez
         # de calcular aparte lo que pasaría. Una segunda implementación del
         # cálculo es libre de discrepar justo con la que escribe, y entonces la
@@ -187,6 +195,38 @@ class Command(BaseCommand):
             pass
 
         self._informar(resultados, aplicar)
+
+    @staticmethod
+    def _sku_de_fila(datos):
+        return generar_sku(
+            datos["naturaleza_comercial"],
+            datos["cliente"],
+            datos["categoria"],
+            datos["tipo"],
+            datos["formato"],
+            Producto.Mercado.LOCAL,
+        )
+
+    @classmethod
+    def _exigir_skus_unicos(cls, filas):
+        por_sku = defaultdict(list)
+        for datos in filas:
+            por_sku[cls._sku_de_fila(datos)].append(datos["nombre"])
+
+        colisiones = {
+            sku: nombres for sku, nombres in por_sku.items() if len(nombres) > 1
+        }
+        if not colisiones:
+            return
+
+        detalle = []
+        for sku, nombres in sorted(colisiones.items()):
+            detalle.append(f"{sku}: " + " · ".join(nombres))
+        raise CommandError(
+            "No se aplicó ningún producto: hay SKU compartidos. Decide si "
+            "cada par es un duplicado o asigna una variante para desempatar:\n"
+            + "\n".join(detalle)
+        )
 
     # ------------------------------------------------------------ lectura
 
