@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Beaker, CheckCircle2, Droplets, Plus, Timer } from "lucide-react";
+import { Beaker, CheckCircle2, Droplets, Pencil, Plus, Timer } from "lucide-react";
 
 import {
-  agitarVale, anularVale, calcularMezcla, decidirVale,
+  agitarVale, anularVale, calcularMezcla, corregirMuestraVale, decidirVale,
   muestrearVale, obtenerCatalogos, obtenerVales, reagitarVale, transferirVale,
   type CatalogosEstandarizacion, type ValeEstandarizacion,
 } from "../../services/estandarizacion.service";
@@ -38,6 +38,9 @@ function Estandarizacion() {
   const [valeId, setValeId] = useState<number | null>(null);
   const [nuevoAbierto, setNuevoAbierto] = useState(false);
   const [muestra, setMuestra] = useState({ grasa: "", sng: "" });
+  const [correccion, setCorreccion] = useState<{
+    grasa: string; sng: string; motivo: string;
+  } | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
   const [historico, setHistorico] = useState(false);
@@ -114,6 +117,25 @@ function Estandarizacion() {
       "No se pudo registrar la muestra.",
     );
     setMuestra({ grasa: "", sng: "" });
+  };
+
+  const guardarCorreccion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vale || !correccion) return;
+    setOcupado(true);
+    setError("");
+    try {
+      await corregirMuestraVale(
+        vale.id, Number(correccion.grasa), Number(correccion.sng),
+        correccion.motivo,
+      );
+      setCorreccion(null);
+      await cargar();
+    } catch (e) {
+      setError(mensajeDe(e, "No se pudo corregir la muestra."));
+    } finally {
+      setOcupado(false);
+    }
   };
 
   const anular = async () => {
@@ -203,7 +225,7 @@ function Estandarizacion() {
             {vales.map((item) => (
               <button
                 key={item.id}
-                onClick={() => setValeId(item.id)}
+                onClick={() => { setValeId(item.id); setCorreccion(null); }}
                 className={`w-full rounded-xl border p-3 text-left ${
                   valeId === item.id
                     ? "border-emerald-300 bg-emerald-50"
@@ -406,6 +428,29 @@ function Estandarizacion() {
                           )
                         }
                       />
+                    )}
+
+                    {["muestreado", "corrigiendo"].includes(vale.estado) && !correccion && (
+                      <button
+                        type="button"
+                        onClick={() => setCorreccion({
+                          grasa: vale.grasa_real ?? "",
+                          sng: vale.sng_real ?? "",
+                          motivo: "",
+                        })}
+                        className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800"
+                      >
+                        <Pencil className="h-4 w-4" />Corregir muestra anterior
+                      </button>
+                    )}
+
+                    {correccion && ["muestreado", "corrigiendo"].includes(vale.estado) && (
+                      <form onSubmit={guardarCorreccion} className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:grid-cols-2">
+                        <label className="text-sm text-slate-700">Materia grasa %<input required type="number" step="0.01" min="0" value={correccion.grasa} onChange={(e) => setCorreccion({ ...correccion, grasa: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
+                        <label className="text-sm text-slate-700">SNG %<input required type="number" step="0.01" min="0.01" value={correccion.sng} onChange={(e) => setCorreccion({ ...correccion, sng: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
+                        <label className="text-sm text-slate-700 sm:col-span-2">Motivo de la corrección *<textarea required minLength={5} value={correccion.motivo} onChange={(e) => setCorreccion({ ...correccion, motivo: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
+                        <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setCorreccion(null)} className="px-3 py-2 text-sm text-slate-600">Cancelar</button><button disabled={ocupado} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Guardar y recalcular</button></div>
+                      </form>
                     )}
 
                     {vale.estado === "liberado" && (

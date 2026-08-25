@@ -76,6 +76,19 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
         "descremada_grasa", "descremada_sng", "litros_entera",
         "litros_descremada",
     )
+    CAMPOS_POR_PASO = {
+        "calculo": (
+            "producto", "rc_objetivo", "volumen", "silo_entera",
+            "silo_descremada", "silo_destino", "entera_grasa", "entera_sng",
+            "descremada_grasa", "descremada_sng", "litros_entera",
+            "litros_descremada",
+        ),
+        "muestreo": ("grasa_real", "sng_real", "muestreado_en"),
+    }
+    CAMPOS_QUE_MUEVEN_LIBRO = (
+        "volumen", "silo_entera", "silo_descremada", "silo_destino",
+        "litros_entera", "litros_descremada",
+    )
 
     codigo = models.CharField("Código de vale", max_length=40, unique=True)
     codigo_propuesto = models.CharField(
@@ -313,3 +326,20 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
             raise ValidationError({
                 "silo_destino": "El destino no puede ser el silo de la descremada."
             })
+
+
+class CorreccionValeEstandarizacion(models.Model):
+    vale = models.ForeignKey(
+        ValeEstandarizacion, on_delete=models.PROTECT, related_name="correcciones"
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="correcciones_vale_estandarizacion",
+    )
+    paso = models.CharField(max_length=30)
+    motivo = models.TextField()
+    cambios = models.JSONField(default=dict)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]

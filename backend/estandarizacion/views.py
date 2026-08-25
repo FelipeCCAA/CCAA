@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -13,9 +14,12 @@ from recepcion.models import AnalisisSilo
 
 from . import servicios
 from .dominio import Leche, calcular_mezcla
-from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
+from .models import (
+    MINUTOS_DE_AGITACION, CorreccionValeEstandarizacion, ValeEstandarizacion,
+)
 from .serializers import (
     CalculoMezclaSerializer,
+    CorreccionMuestraSerializer,
     MuestraSerializer,
     ValeEstandarizacionSerializer,
 )
@@ -290,6 +294,59 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             )
         except DjangoValidationError as error:
             return _conflicto(error)
+
+        return Response(self.get_serializer(vale).data)
+
+    @action(detail=True, methods=["patch"], url_path="corregir-muestra")
+    def corregir_muestra(self, request, pk=None):
+        entrada = CorreccionMuestraSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            vale = ValeEstandarizacion.objects.select_for_update().get(
+                pk=self.get_object().pk
+            )
+            if vale.estado not in {
+                ValeEstandarizacion.Estado.MUESTREADO,
+                ValeEstandarizacion.Estado.CORRIGIENDO,
+            }:
+                return Response(
+                    {
+                        "detail": (
+                            "La muestra solo puede corregirse antes de liberar "
+                            "o anular el vale."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            grasa = entrada.validated_data["grasa"]
+            sng = entrada.validated_data["sng"]
+            cambios = {}
+            if vale.grasa_real != grasa:
+                cambios["grasa_real"] = [str(vale.grasa_real), str(grasa)]
+            if vale.sng_real != sng:
+                cambios["sng_real"] = [str(vale.sng_real), str(sng)]
+            if not cambios:
+                return Response(
+                    {"detail": "No hay cambios de muestra que guardar."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            estado_anterior = vale.estado
+            vale.grasa_real = grasa
+            vale.sng_real = sng
+            vale.estado = ValeEstandarizacion.Estado.MUESTREADO
+            vale.save(update_fields=["grasa_real", "sng_real", "estado"])
+            if estado_anterior != vale.estado:
+                cambios["estado"] = [estado_anterior, vale.estado]
+            CorreccionValeEstandarizacion.objects.create(
+                vale=vale,
+                usuario=request.user,
+                paso="muestreo",
+                motivo=entrada.validated_data["motivo"],
+                cambios=cambios,
+            )
 
         return Response(self.get_serializer(vale).data)
 

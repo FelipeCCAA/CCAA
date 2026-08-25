@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from maestros.models import Silo
 
@@ -154,3 +156,13 @@ class CalculoMezclaSerializer(serializers.Serializer):
 class MuestraSerializer(serializers.Serializer):
     grasa = serializers.FloatField()
     sng = serializers.FloatField()
+
+
+class CorreccionMuestraSerializer(serializers.Serializer):
+    grasa = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0")
+    )
+    sng = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0.01")
+    )
+    motivo = serializers.CharField(min_length=5, trim_whitespace=True)

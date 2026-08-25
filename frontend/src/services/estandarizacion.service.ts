@@ -220,6 +220,16 @@ export const decidirVale = (id: number) => accion(id, "decidir");
 export const muestrearVale = (id: number, grasa: number, sng: number) =>
   accion(id, "muestrear", { grasa, sng });
 
+export async function corregirMuestraVale(
+  id: number, grasa: number, sng: number, motivo: string,
+) {
+  const { data } = await api.patch<ValeEstandarizacion>(
+    `estandarizacion/vales/${id}/corregir-muestra/`,
+    { grasa, sng, motivo },
+  );
+  return data;
+}
+
 export const anularVale = (id: number, motivo: string) =>
   accion(id, "anular", { motivo });
 
