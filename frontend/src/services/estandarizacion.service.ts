@@ -84,6 +84,14 @@ export interface CatalogosEstandarizacion {
   silos: Silo[];
 }
 
+export interface GuiaRC {
+  producto: number;
+  producto_nombre: string;
+  rc_objetivo: string;
+  usos: number;
+  usado_por_ultima_vez: string;
+}
+
 export async function obtenerVales(params?: {
   estado?: string;
   abiertos?: boolean;
@@ -181,6 +189,13 @@ export async function obtenerBorradorVale(): Promise<ValeEstandarizacion | null>
 export async function crearBorradorVale(datos: DatosBorradorVale) {
   const { data } = await api.post<ValeEstandarizacion>(
     "estandarizacion/vales/crear-borrador/", datos,
+  );
+  return data;
+}
+
+export async function obtenerGuiaRC(): Promise<GuiaRC[]> {
+  const { data } = await api.get<GuiaRC[]>(
+    "estandarizacion/vales/guia-rc/",
   );
   return data;
 }

@@ -466,6 +466,17 @@ class ApiTests(BaseVale):
         vale.refresh_from_db()
         self.assertEqual(vale.estado, ValeEstandarizacion.Estado.CALCULADO)
 
+    def test_guia_rc_agrupa_los_objetivos_usados_por_producto(self):
+        self.crear_vale(codigo="VE-GUIA-1")
+        self.crear_vale(codigo="VE-GUIA-2")
+
+        respuesta = self.cliente.get("/api/estandarizacion/vales/guia-rc/")
+
+        self.assertEqual(respuesta.status_code, 200)
+        fila = next(item for item in respuesta.json() if item["rc_objetivo"] == "0.2010")
+        self.assertEqual(fila["producto"], self.producto.pk)
+        self.assertEqual(fila["usos"], 2)
+
     def test_el_analisis_tampoco_se_escribe_por_patch(self):
         """
         El análisis entra por la acción, que es la que sella `muestreado_en` y

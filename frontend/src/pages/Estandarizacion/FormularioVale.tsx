@@ -55,17 +55,23 @@ const inicial = {
 function FormularioVale({
   productos,
   silos,
+  preseleccion,
   onCerrar,
   onCalcular,
   onConfirmado,
 }: {
   productos: Producto[];
   silos: Silo[];
+  preseleccion?: { producto: number; rc_objetivo: string } | null;
   onCerrar: () => void;
   onCalcular: (datos: EntradaCalculo) => Promise<Mezcla>;
   onConfirmado: (vale: ValeEstandarizacion) => Promise<void>;
 }) {
-  const [datos, setDatos] = useState(inicial);
+  const [datos, setDatos] = useState({
+    ...inicial,
+    producto: preseleccion ? String(preseleccion.producto) : "",
+    rc_objetivo: preseleccion?.rc_objetivo ?? "",
+  });
   const [mezcla, setMezcla] = useState<Mezcla | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");

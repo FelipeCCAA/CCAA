@@ -1,6 +1,6 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, Max, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -198,6 +198,33 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             "sng_esperado": mezcla.sng_esperado,
             "avisos": mezcla.avisos,
         })
+
+    @action(detail=False, methods=["get"], url_path="guia-rc")
+    def guia_rc(self, request):
+        """RC realmente usados, agrupados por producto, como guía operacional."""
+        consulta = filtrar_por_scope(
+            ValeEstandarizacion.objects.filter(
+                producto__isnull=False, rc_objetivo__isnull=False
+            ),
+            request.user,
+            campo_sucursal="silo_destino__sucursal_id",
+            campo_empresa="silo_destino__sucursal__empresa_id",
+        )
+        filas = consulta.values(
+            "producto_id", "producto__nombre", "rc_objetivo"
+        ).annotate(
+            usos=Count("id"), usado_por_ultima_vez=Max("fecha")
+        ).order_by("rc_objetivo", "producto__nombre")
+        return Response([
+            {
+                "producto": fila["producto_id"],
+                "producto_nombre": fila["producto__nombre"],
+                "rc_objetivo": str(fila["rc_objetivo"]),
+                "usos": fila["usos"],
+                "usado_por_ultima_vez": fila["usado_por_ultima_vez"],
+            }
+            for fila in filas
+        ])
 
     @action(detail=False, methods=["get"], url_path="composicion-silos")
     def composicion_silos(self, request):
