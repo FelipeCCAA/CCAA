@@ -18,6 +18,18 @@ class BorradorAnalisisSiloTests(BaseAPIRecepcion):
         listado = self.cliente.get(f"{self.url}?silo={self.silo.id}")
         self.assertEqual(listado.data["count"], 0)
 
+    def test_crear_borrador_repetido_reutiliza_el_existente(self):
+        primero = self.cliente.post(
+            f"{self.url}crear-borrador/", {"silo": self.silo.id}, format="json"
+        )
+        segundo = self.cliente.post(
+            f"{self.url}crear-borrador/", {"silo": self.silo.id}, format="json"
+        )
+
+        self.assertEqual(segundo.status_code, 200, segundo.data)
+        self.assertEqual(segundo.data["id"], primero.data["id"])
+        self.assertEqual(AnalisisSilo.objects.filter(estado="borrador").count(), 1)
+
     def test_reanuda_actualiza_y_confirma_el_mismo_analisis(self):
         creado = self.cliente.post(
             f"{self.url}crear-borrador/",

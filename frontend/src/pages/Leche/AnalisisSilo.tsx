@@ -118,12 +118,9 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
     setError("");
 
     try {
-      setTocado(true);
       let borradorId = await borrador.guardarAhora({ propagarError: true });
       if (borradorId === null) {
         borradorId = (await crearBorradorAnalisisSilo(datosBorrador)).id;
-      } else {
-        await guardarBorradorAnalisisSilo(borradorId, datosBorrador);
       }
       await confirmarBorradorAnalisisSilo(borradorId);
       borrador.reiniciar();
