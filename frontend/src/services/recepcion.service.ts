@@ -251,7 +251,9 @@ export interface LlegadaCamionNueva {
 
 
 export interface ResumenDiarioRecepcion {
-  fecha: string;
+  fecha: string | null;
+  desde: string;
+  hasta: string;
   camiones: number;
   litros: string;
   kg_guia: string;
@@ -269,6 +271,36 @@ export interface ResumenDiarioRecepcion {
      sobre los que sí se pesaron, así que este contador dice cuántos quedaron
      fuera de esos dos totales. */
   camiones_sin_romana: number;
+  detalle?: DetalleResumenRecepcion[];
+}
+
+
+export interface DetalleResumenRecepcion {
+  id: number;
+  fecha: string;
+  hora_arribo: string | null;
+  guia: string;
+  patente: string;
+  procedencia: string;
+  tipo_leche: string;
+  litros: string;
+  kg_guia: string;
+  kg_romana: string | null;
+  diferencia_kg: string | null;
+  silo: string;
+  estado: string;
+  estado_etiqueta: string;
+  crioscopias: Array<{ modulo: number; valor: string | null }>;
+  permanencia_horas: number | null;
+  permanencia_motivo: string;
+  horas_a_pagar: number | null;
+}
+
+
+export interface PeriodoResumenRecepcion {
+  fecha?: string;
+  desde?: string;
+  hasta?: string;
 }
 
 
@@ -451,15 +483,36 @@ export async function asignarSilo(id: number, silo: number): Promise<Recepcion> 
 /*
   Los totales que la planilla pone al pie: litros y kilos del día, reparto
   por silo y por procedencia, promedios de grasa y SNG, y las horas de
-  sobreestadía. `fecha` es obligatoria para el backend (400 sin ella).
+  sobreestadía. El backend acepta un `fecha` o el par `desde`/`hasta`.
 */
 export async function resumenDiarioRecepcion(
-  fecha: string,
+  periodo: string | PeriodoResumenRecepcion,
 ): Promise<ResumenDiarioRecepcion> {
   const { data } = await api.get<ResumenDiarioRecepcion>(
-    `recepcion/recepciones/resumen-diario/?fecha=${fecha}`,
+    "recepcion/recepciones/resumen-diario/",
+    {
+      params: {
+        ...(typeof periodo === "string" ? { fecha: periodo } : periodo),
+        detalle: 1,
+      },
+    },
   );
   return data;
+}
+
+
+export async function descargarResumenRecepcion(
+  periodo: PeriodoResumenRecepcion,
+  formato: "csv" | "xlsx",
+): Promise<{ contenido: Blob; nombre: string }> {
+  const respuesta = await api.get<Blob>(
+    "recepcion/recepciones/resumen-diario/",
+    { params: { ...periodo, formato }, responseType: "blob" },
+  );
+  const disposicion = String(respuesta.headers["content-disposition"] ?? "");
+  const nombre = disposicion.match(/filename="?([^";]+)"?/i)?.[1]
+    ?? `recepciones.${formato}`;
+  return { contenido: respuesta.data, nombre };
 }
 
 

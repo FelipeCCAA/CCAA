@@ -9,6 +9,7 @@ from recepcion.models import ModuloRecepcion, Recepcion
 from recepcion.tests import BaseAPIRecepcion
 from recoleccion.models import CargaModulo, ParadaRuta, RutaRecoleccion
 from recoleccion.models import Recoleccion as RecoleccionRecolectada
+from usuarios.models import Empresa, Sucursal
 
 
 class RegistrarLlegadaTests(BaseAPIRecepcion):
@@ -177,6 +178,97 @@ class ResumenDiarioTests(BaseAPIRecepcion):
         # −5100,00: la contaminación del camión sin pesar (kg_guia 5150 más).
         self.assertEqual(respuesta.data["diferencia_kg"], "-50.00")
         self.assertEqual(respuesta.data["camiones_sin_romana"], 1)
+
+    def test_un_rango_totaliza_todos_los_dias_incluidos(self):
+        for dia, litros in ((30, "1000"), (31, "2500")):
+            Recepcion.objects.create(
+                fecha=date(2026, 7, dia),
+                tipo_leche=Recepcion.TipoLeche.ENTERA,
+                litros=Decimal(litros),
+            )
+        Recepcion.objects.create(
+            fecha=date(2026, 8, 1),
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("9999"),
+        )
+
+        respuesta = self.cliente.get(
+            "/api/recepcion/recepciones/resumen-diario/"
+            "?desde=2026-07-30&hasta=2026-07-31&detalle=1"
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIsNone(respuesta.data["fecha"])
+        self.assertEqual(respuesta.data["litros"], "3500.00")
+        self.assertEqual(len(respuesta.data["detalle"]), 2)
+
+    def test_el_detalle_incluye_camion_crioscopias_y_sobreestadia(self):
+        recepcion = Recepcion.objects.create(
+            fecha=date(2026, 7, 31),
+            hora_arribo_porteria="07:00",
+            hora_termino_cip="11:30",
+            guia="G-42",
+            vehiculo=self.camion,
+            silo=self.silo,
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("5000"),
+        )
+        ModuloRecepcion.objects.create(
+            recepcion=recepcion, numero=1, crioscopia=Decimal("-0.521")
+        )
+
+        respuesta = self.cliente.get(
+            "/api/recepcion/recepciones/resumen-diario/"
+            "?fecha=2026-07-31&detalle=1"
+        )
+
+        item = respuesta.data["detalle"][0]
+        self.assertEqual(item["patente"], self.camion.placa)
+        self.assertEqual(item["crioscopias"], [{"modulo": 1, "valor": "-0.521"}])
+        self.assertEqual(item["permanencia_horas"], 2.5)
+        self.assertEqual(item["horas_a_pagar"], 2)
+
+    def test_no_mezcla_recepciones_de_otra_empresa(self):
+        otra_empresa = Empresa.objects.create(rut="99.999.999-9", nombre="Otra")
+        otra_sucursal = Sucursal.objects.create(
+            empresa=otra_empresa, codigo="OTRA", nombre="Otra planta"
+        )
+        Recepcion.objects.create(
+            sucursal=otra_sucursal,
+            fecha=date(2026, 7, 31),
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("9999"),
+        )
+
+        respuesta = self.cliente.get(
+            "/api/recepcion/recepciones/resumen-diario/?fecha=2026-07-31"
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data["camiones"], 0)
+
+    def test_exporta_csv_y_xlsx(self):
+        Recepcion.objects.create(
+            fecha=date(2026, 7, 31),
+            guia="G-1",
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("1000"),
+        )
+
+        csv = self.cliente.get(
+            "/api/recepcion/recepciones/resumen-diario/"
+            "?fecha=2026-07-31&formato=csv"
+        )
+        xlsx = self.cliente.get(
+            "/api/recepcion/recepciones/resumen-diario/"
+            "?fecha=2026-07-31&formato=xlsx"
+        )
+
+        self.assertEqual(csv.status_code, 200)
+        self.assertIn("text/csv", csv["Content-Type"])
+        self.assertIn("G-1", csv.content.decode("utf-8-sig"))
+        self.assertEqual(xlsx.status_code, 200)
+        self.assertTrue(xlsx.content.startswith(b"PK"))
 
 
 class DecidirCalidadCrioscopiaYPhTests(BaseAPIRecepcion):

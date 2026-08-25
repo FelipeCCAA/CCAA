@@ -1,10 +1,13 @@
+import csv
 import uuid
 from decimal import Decimal
+from io import BytesIO, StringIO
 
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Max, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
@@ -634,35 +637,55 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         contra cero— es justamente la que la planilla perdía.
         """
         fecha_texto = request.query_params.get("fecha")
+        desde_texto = request.query_params.get("desde")
+        hasta_texto = request.query_params.get("hasta")
 
-        if not fecha_texto:
+        if fecha_texto and (desde_texto or hasta_texto):
             return Response(
-                {"fecha": "Indica la fecha del resumen (YYYY-MM-DD)."},
+                {"fecha": "Usa fecha o el rango desde/hasta, no ambos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not fecha_texto and not (desde_texto and hasta_texto):
+            return Response(
+                {"fecha": "Indica fecha o un rango completo desde/hasta (AAAA-MM-DD)."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            # `parse_date` devuelve None si el texto no tiene forma de fecha
-            # (p. ej. "abc"), pero levanta ValueError si la forma es correcta
-            # y el valor no existe (p. ej. "2026-13-45", mes 13). Las dos
-            # cosas son la misma pregunta del usuario: "esto no es una
-            # fecha", y las dos se responden 400, no 500.
-            fecha = parse_date(fecha_texto)
-        except ValueError:
-            fecha = None
+        def fecha_valida(texto):
+            try:
+                return parse_date(texto)
+            except (TypeError, ValueError):
+                return None
 
-        if fecha is None:
+        desde = fecha_valida(fecha_texto or desde_texto)
+        hasta = fecha_valida(fecha_texto or hasta_texto)
+        if desde is None or hasta is None:
+            valor = fecha_texto or f"{desde_texto} / {hasta_texto}"
             return Response(
-                {"fecha": f"Fecha no reconocida: {fecha_texto!r} (usa AAAA-MM-DD)."},
+                {"fecha": f"Fecha no reconocida: {valor!r} (usa AAAA-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if desde > hasta:
+            return Response(
+                {"fecha": "El inicio del rango no puede ser posterior al término."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        formato = request.query_params.get("formato", "json").lower()
+        if formato not in {"json", "csv", "xlsx"}:
+            return Response(
+                {"formato": "Formato no reconocido. Usa json, csv o xlsx."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         base = filtrar_por_scope(
-            Recepcion.objects.filter(fecha=fecha).prefetch_related("modulos"),
+            Recepcion.objects.filter(fecha__range=(desde, hasta))
+            .select_related("silo", "vehiculo")
+            .prefetch_related("modulos"),
             request.user,
             campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
-        )
+        ).order_by("fecha", "hora", "id")
 
         recepciones = list(base)
 
@@ -712,8 +735,47 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         horas = [r.horas_a_pagar for r in recepciones]
         medidas = [h for h in horas if h is not None]
 
-        return Response({
-            "fecha": fecha_texto,
+        detalle = [
+            {
+                "id": r.id,
+                "fecha": r.fecha.isoformat(),
+                "hora_arribo": (
+                    (r.hora_arribo_porteria or r.hora).strftime("%H:%M")
+                    if (r.hora_arribo_porteria or r.hora)
+                    else None
+                ),
+                "guia": r.guia,
+                "patente": r.vehiculo.placa if r.vehiculo_id else "",
+                "procedencia": r.procedencia,
+                "tipo_leche": r.tipo_leche,
+                "litros": str(r.litros),
+                "kg_guia": str(r.kg_guia),
+                "kg_romana": str(r.kg_romana) if r.kg_romana is not None else None,
+                "diferencia_kg": (
+                    str(r.diferencia_kg) if r.diferencia_kg is not None else None
+                ),
+                "silo": r.silo.codigo if r.silo_id else "",
+                "estado": r.estado,
+                "estado_etiqueta": r.get_estado_display(),
+                "crioscopias": [
+                    {
+                        "modulo": modulo.numero,
+                        "valor": str(modulo.crioscopia)
+                        if modulo.crioscopia is not None else None,
+                    }
+                    for modulo in r.modulos.all()
+                ],
+                "permanencia_horas": r.permanencia_horas,
+                "permanencia_motivo": r.permanencia_motivo,
+                "horas_a_pagar": r.horas_a_pagar,
+            }
+            for r in recepciones
+        ]
+
+        resumen = {
+            "fecha": desde.isoformat() if desde == hasta else None,
+            "desde": desde.isoformat(),
+            "hasta": hasta.isoformat(),
             "camiones": len(recepciones),
             "litros": str(litros),
             "kg_guia": str(kg_guia),
@@ -734,7 +796,103 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             # parecería completo aunque la mitad de los camiones no se
             # pesaron.
             "camiones_sin_romana": camiones_sin_romana,
-        })
+        }
+
+        if formato == "json":
+            if request.query_params.get("detalle") == "1":
+                resumen["detalle"] = detalle
+            return Response(resumen)
+
+        nombre = (
+            f"recepciones-{desde.isoformat()}"
+            if desde == hasta
+            else f"recepciones-{desde.isoformat()}-{hasta.isoformat()}"
+        )
+        columnas = [
+            ("Fecha", "fecha"),
+            ("Hora arribo", "hora_arribo"),
+            ("Guía", "guia"),
+            ("Patente", "patente"),
+            ("Procedencia", "procedencia"),
+            ("Tipo de leche", "tipo_leche"),
+            ("Litros", "litros"),
+            ("Kg guía", "kg_guia"),
+            ("Kg romana", "kg_romana"),
+            ("Diferencia kg", "diferencia_kg"),
+            ("Silo", "silo"),
+            ("Estado", "estado_etiqueta"),
+            ("Crioscopías", "crioscopias_texto"),
+            ("Permanencia horas", "permanencia_horas"),
+            ("Horas a pagar", "horas_a_pagar"),
+            ("Dato horario faltante", "permanencia_motivo"),
+        ]
+        filas = []
+        for item in detalle:
+            fila = dict(item)
+            fila["crioscopias_texto"] = " · ".join(
+                f"M{m['modulo']}: {m['valor'] if m['valor'] is not None else 'sin dato'}"
+                for m in item["crioscopias"]
+            )
+            filas.append(fila)
+
+        if formato == "csv":
+            salida = StringIO()
+            escritor = csv.writer(salida, delimiter=";")
+            escritor.writerow([titulo for titulo, _ in columnas])
+            escritor.writerows(
+                [
+                    [
+                        fila.get(clave) if fila.get(clave) is not None else ""
+                        for _, clave in columnas
+                    ]
+                    for fila in filas
+                ]
+            )
+            respuesta = HttpResponse(
+                "\ufeff" + salida.getvalue(), content_type="text/csv; charset=utf-8"
+            )
+            respuesta["Content-Disposition"] = f'attachment; filename="{nombre}.csv"'
+            return respuesta
+
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.title = "Recepciones"
+        hoja.append([titulo for titulo, _ in columnas])
+        for fila in filas:
+            hoja.append([
+                fila.get(clave) if fila.get(clave) is not None else ""
+                for _, clave in columnas
+            ])
+        hoja.freeze_panes = "A2"
+        hoja.auto_filter.ref = hoja.dimensions
+        for columna in hoja.columns:
+            largo = min(max(len(str(celda.value or "")) for celda in columna) + 2, 40)
+            hoja.column_dimensions[columna[0].column_letter].width = largo
+
+        totales = libro.create_sheet("Totales")
+        for etiqueta, valor in [
+            ("Desde", resumen["desde"]),
+            ("Hasta", resumen["hasta"]),
+            ("Camiones", resumen["camiones"]),
+            ("Litros", resumen["litros"]),
+            ("Kg guía", resumen["kg_guia"]),
+            ("Kg romana", resumen["kg_romana"]),
+            ("Diferencia kg", resumen["diferencia_kg"]),
+            ("Horas a pagar", resumen["horas_a_pagar"]),
+            ("Camiones sin romana", resumen["camiones_sin_romana"]),
+            ("Camiones sin marcas horarias", resumen["camiones_sin_marcas_horarias"]),
+        ]:
+            totales.append([etiqueta, valor if valor is not None else ""])
+        contenido = BytesIO()
+        libro.save(contenido)
+        respuesta = HttpResponse(
+            contenido.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        respuesta["Content-Disposition"] = f'attachment; filename="{nombre}.xlsx"'
+        return respuesta
 
 
 class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
