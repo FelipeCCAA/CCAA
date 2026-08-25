@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AnalisisSiloViewSet, MovimientoSiloViewSet, RecepcionViewSet, ocupacion,
+    sugerencia_silos,
 )
 
 router = DefaultRouter()
@@ -12,5 +13,6 @@ router.register("analisis-silo", AnalisisSiloViewSet)
 
 urlpatterns = [
     path("ocupacion/", ocupacion, name="ocupacion"),
+    path("silos/sugerencia/", sugerencia_silos, name="sugerencia-silos"),
     path("", include(router.urls)),
 ]

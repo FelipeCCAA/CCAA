@@ -130,6 +130,11 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
     entera_grasa = models.DecimalField(
         "Grasa de la entera", max_digits=5, decimal_places=2, null=True, blank=True
     )
+    silo_sugerido_fifo = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT,
+        related_name="vales_sugeridos_fifo", null=True, blank=True,
+    )
+    motivo_desvio_fifo = models.CharField(max_length=250, blank=True)
     entera_sng = models.DecimalField(
         "SNG de la entera", max_digits=5, decimal_places=2, null=True, blank=True
     )

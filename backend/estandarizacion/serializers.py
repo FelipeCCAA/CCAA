@@ -46,6 +46,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "silo_entera", "silo_entera_codigo",
             "silo_descremada", "silo_descremada_codigo",
             "silo_destino", "silo_destino_codigo",
+            "silo_sugerido_fifo", "motivo_desvio_fifo",
             "entera_grasa", "entera_sng", "descremada_grasa", "descremada_sng",
             "analisis_entera", "analisis_descremada",
             "litros_entera", "litros_descremada",
@@ -136,6 +137,21 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"silo_descremada": "La mezcla requiere un TK de leche descremada."}
             )
+
+        sugerido = attrs.get(
+            "silo_sugerido_fifo",
+            getattr(self.instance, "silo_sugerido_fifo", None),
+        )
+        motivo_desvio = attrs.get(
+            "motivo_desvio_fifo",
+            getattr(self.instance, "motivo_desvio_fifo", ""),
+        ) or ""
+        if sugerido and entera and sugerido.pk != entera.pk and len(motivo_desvio.strip()) < 5:
+            raise serializers.ValidationError({
+                "motivo_desvio_fifo": (
+                    "Indica por qué no usarás el silo sugerido por FIFO."
+                )
+            })
 
         return attrs
 

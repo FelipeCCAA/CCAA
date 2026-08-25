@@ -64,6 +64,17 @@ class ResultadoFIFO:
     remanente_no_atribuible: Decimal
 
 
+@dataclass(frozen=True)
+class SugerenciaOrigen:
+    silo_id: int
+    litros_disponibles: Decimal
+    leche_mas_antigua_en: Any
+    antiguedad_horas: Decimal | None
+    motivos_no_disponible: tuple[str, ...]
+    litros_sugeridos: Decimal
+    sugerido: bool
+
+
 def _dato(objeto, nombre, defecto=None):
     return objeto.get(nombre, defecto) if isinstance(objeto, dict) else getattr(
         objeto, nombre, defecto
@@ -89,6 +100,39 @@ def atribuir_fifo(capas, litros) -> ResultadoFIFO:
         ))
         pendiente -= tomado
     return ResultadoFIFO(partes=partes, remanente_no_atribuible=max(pendiente, Decimal("0")))
+
+
+def sugerir_origenes(silos, volumen) -> list[SugerenciaOrigen]:
+    """Ordena silos utilizables por su capa más antigua y reparte el volumen."""
+    pendiente = max(Decimal(str(volumen or 0)), Decimal("0"))
+    ordenados = sorted(
+        silos,
+        key=lambda silo: (
+            bool(_dato(silo, "motivos_no_disponible", [])),
+            _dato(silo, "leche_mas_antigua_en") is None,
+            _dato(silo, "leche_mas_antigua_en") or "9999-12-31",
+            _dato(silo, "silo_id"),
+        ),
+    )
+    resultado = []
+    for silo in ordenados:
+        disponible = max(
+            Decimal(str(_dato(silo, "litros_disponibles", 0))), Decimal("0")
+        )
+        motivos = tuple(_dato(silo, "motivos_no_disponible", []))
+        tomado = min(disponible, pendiente) if not motivos else Decimal("0")
+        antiguedad = _dato(silo, "antiguedad_horas")
+        resultado.append(SugerenciaOrigen(
+            silo_id=_dato(silo, "silo_id"),
+            litros_disponibles=disponible,
+            leche_mas_antigua_en=_dato(silo, "leche_mas_antigua_en"),
+            antiguedad_horas=(Decimal(str(antiguedad)) if antiguedad is not None else None),
+            motivos_no_disponible=motivos,
+            litros_sugeridos=tomado,
+            sugerido=tomado > 0,
+        ))
+        pendiente -= tomado
+    return resultado
 
 
 def saldo_por_recepcion(movimientos, atribuciones) -> list[CapaSilo]:

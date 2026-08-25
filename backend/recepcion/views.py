@@ -33,7 +33,10 @@ from .serializers import (
     AjusteSiloSerializer, AnalisisSiloSerializer, CorreccionCrioscopiasSerializer,
     MovimientoSiloSerializer, RecepcionSerializer, TransferenciaSiloSerializer,
 )
-from .servicios import ajustar_silo, motivos_silo_no_disponible, transferir_silo
+from .servicios import (
+    ajustar_silo, momento_leche_mas_antigua, motivos_silo_no_disponible,
+    saldo_silo, transferir_silo,
+)
 
 
 def _usuarios_recepcion(usuario):
@@ -1439,6 +1442,60 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     queryset = AnalisisSilo.objects.select_related(
         "silo", "analista", "visualizado_por"
     )
+
+
+@api_view(["GET"])
+def sugerencia_silos(request):
+    """Silos ordenados por la leche utilizable más antigua."""
+    try:
+        volumen = Decimal(str(request.query_params.get("volumen", "0")))
+    except Exception:
+        return Response({"volumen": "Indica un volumen numérico."}, status=400)
+    tipo = request.query_params.get("tipo", Silo.Tipo.SILO)
+    silos = filtrar_por_scope(
+        Silo.objects.filter(activo=True, tipo=tipo), request.user,
+        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ).order_by("codigo")
+    ahora = timezone.now()
+    entradas = []
+    metadatos = {}
+    for silo in silos:
+        antigua = momento_leche_mas_antigua(silo)
+        motivos = motivos_silo_no_disponible(silo, para="proceso", ahora=ahora)
+        analisis = silo.analisis.filter(
+            estado=AnalisisSilo.Estado.CONFIRMADO
+        ).order_by("-tomado_en", "-id").first()
+        antiguedad = (
+            Decimal(str(round((ahora - antigua).total_seconds() / 3600, 1)))
+            if antigua else None
+        )
+        entradas.append({
+            "silo_id": silo.id,
+            "litros_disponibles": saldo_silo(silo),
+            "leche_mas_antigua_en": antigua,
+            "antiguedad_horas": antiguedad,
+            "motivos_no_disponible": motivos,
+        })
+        metadatos[silo.id] = (silo, analisis)
+    sugerencias = dominio.sugerir_origenes(entradas, volumen)
+    return Response({
+        "volumen": volumen,
+        "sugerencias": [
+            {
+                "silo": item.silo_id,
+                "codigo": metadatos[item.silo_id][0].codigo,
+                "litros_disponibles": item.litros_disponibles,
+                "litros_sugeridos": item.litros_sugeridos,
+                "leche_mas_antigua_en": item.leche_mas_antigua_en,
+                "antiguedad_horas": item.antiguedad_horas,
+                "grasa": metadatos[item.silo_id][1].grasa if metadatos[item.silo_id][1] else None,
+                "sng": metadatos[item.silo_id][1].sng if metadatos[item.silo_id][1] else None,
+                "motivos_no_disponible": item.motivos_no_disponible,
+                "sugerido": item.sugerido,
+            }
+            for item in sugerencias
+        ],
+    })
     serializer_class = AnalisisSiloSerializer
     permission_classes = [EscribeRecepcion]
 

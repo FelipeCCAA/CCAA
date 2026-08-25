@@ -8,7 +8,9 @@ import {
   type ValeEstandarizacion,
 } from "../../services/estandarizacion.service";
 import type { Producto } from "../../services/produccion.service";
-import type { Silo } from "../../services/recepcion.service";
+import {
+  obtenerSugerenciaSilos, type Silo, type SugerenciaSilo,
+} from "../../services/recepcion.service";
 import { mensajeDe } from "../../components/seccion/utilidades";
 import { useBorrador } from "../../hooks/useBorrador";
 
@@ -38,6 +40,8 @@ const inicial = {
   silo_entera: "",
   silo_descremada: "",
   silo_destino: "",
+  silo_sugerido_fifo: "",
+  motivo_desvio_fifo: "",
   entera_grasa: "",
   entera_sng: "",
   entera_disponible: "",
@@ -66,6 +70,7 @@ function FormularioVale({
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
   const [tocado, setTocado] = useState(false);
+  const [sugerencias, setSugerencias] = useState<SugerenciaSilo[]>([]);
 
   const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
   const datosBorrador: DatosBorradorVale = {
@@ -77,6 +82,8 @@ function FormularioVale({
     silo_entera: numeroONull(datos.silo_entera),
     silo_descremada: numeroONull(datos.silo_descremada),
     silo_destino: numeroONull(datos.silo_destino),
+    silo_sugerido_fifo: numeroONull(datos.silo_sugerido_fifo),
+    motivo_desvio_fifo: datos.motivo_desvio_fifo,
     entera_grasa: numeroONull(datos.entera_grasa),
     entera_sng: numeroONull(datos.entera_sng),
     descremada_grasa: numeroONull(datos.descremada_grasa),
@@ -112,6 +119,8 @@ function FormularioVale({
         silo_entera: guardado.silo_entera == null ? "" : String(guardado.silo_entera),
         silo_descremada: guardado.silo_descremada == null ? "" : String(guardado.silo_descremada),
         silo_destino: guardado.silo_destino == null ? "" : String(guardado.silo_destino),
+        silo_sugerido_fifo: guardado.silo_sugerido_fifo == null ? "" : String(guardado.silo_sugerido_fifo),
+        motivo_desvio_fifo: guardado.motivo_desvio_fifo,
         entera_grasa: guardado.entera_grasa ?? "",
         entera_sng: guardado.entera_sng ?? "",
         descremada_grasa: guardado.descremada_grasa ?? "",
@@ -141,6 +150,34 @@ function FormularioVale({
       }));
     }
   }, [silos, datos.silo_entera, datos.silo_descremada, datos.entera_disponible, datos.descremada_disponible]);
+
+  useEffect(() => {
+    const volumen = Number(datos.volumen);
+    if (!(volumen > 0)) {
+      setSugerencias([]);
+      return;
+    }
+    let vigente = true;
+    const temporizador = window.setTimeout(() => {
+      void obtenerSugerenciaSilos(volumen).then((filas) => {
+        if (!vigente) return;
+        setSugerencias(filas);
+        const sugerido = filas.find((fila) => fila.sugerido);
+        if (!sugerido) return;
+        setDatos((actual) => ({
+          ...actual,
+          silo_sugerido_fifo: String(sugerido.silo),
+          silo_entera: actual.silo_entera || String(sugerido.silo),
+          entera_disponible: actual.silo_entera
+            ? actual.entera_disponible : sugerido.litros_disponibles,
+        }));
+      }).catch(() => undefined);
+    }, 350);
+    return () => {
+      vigente = false;
+      window.clearTimeout(temporizador);
+    };
+  }, [datos.volumen]);
 
   const cambiar = (campo: keyof typeof inicial, valor: string) => {
     setTocado(true);
@@ -317,7 +354,7 @@ function FormularioVale({
             >
               <option value="">Selecciona</option>
               {silosEntera.map((s) => (
-                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.litros_disponibles).toLocaleString("es-CL")} L disponibles</option>
+                <option key={s.id} value={s.id}>{s.codigo} · {Number(s.litros_disponibles).toLocaleString("es-CL")} L disponibles{String(s.id) === datos.silo_sugerido_fifo ? " · sugerido FIFO" : ""}</option>
               ))}
             </select>
           </Campo>
@@ -333,7 +370,20 @@ function FormularioVale({
             label="Disponible en silo (L)" valor={datos.entera_disponible} opcional soloLectura
             onChange={(v) => cambiar("entera_disponible", v)}
           />
+          {datos.silo_sugerido_fifo && datos.silo_entera !== datos.silo_sugerido_fifo && (
+            <Campo label="Motivo para no usar el silo FIFO">
+              <input required minLength={5} value={datos.motivo_desvio_fifo} onChange={(e) => cambiar("motivo_desvio_fifo", e.target.value)} className="control" />
+            </Campo>
+          )}
         </Bloque>
+
+        {sugerencias[0] && (
+          <p className="mt-3 rounded-xl bg-sky-50 px-4 py-3 text-xs text-sky-800">
+            {sugerencias.find((fila) => fila.sugerido)
+              ? `FIFO sugiere ${sugerencias.find((fila) => fila.sugerido)?.codigo}: leche de ${Number(sugerencias.find((fila) => fila.sugerido)?.antiguedad_horas ?? 0).toLocaleString("es-CL")} h.`
+              : `No hay un silo utilizable: ${sugerencias.flatMap((fila) => fila.motivos_no_disponible).join(" · ")}`}
+          </p>
+        )}
 
         <Bloque titulo="Leche descremada">
           <Campo label="Estanque">

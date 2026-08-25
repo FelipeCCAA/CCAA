@@ -36,6 +36,8 @@ export interface ValeEstandarizacion {
   silo_descremada_codigo: string | null;
   silo_destino: number | null;
   silo_destino_codigo: string | null;
+  silo_sugerido_fifo: number | null;
+  motivo_desvio_fifo: string;
   entera_grasa: string | null;
   entera_sng: string | null;
   descremada_grasa: string | null;
@@ -158,6 +160,8 @@ export interface DatosBorradorVale {
   silo_entera: number | null;
   silo_descremada: number | null;
   silo_destino: number | null;
+  silo_sugerido_fifo: number | null;
+  motivo_desvio_fifo: string;
   entera_grasa: number | null;
   entera_sng: number | null;
   descremada_grasa: number | null;

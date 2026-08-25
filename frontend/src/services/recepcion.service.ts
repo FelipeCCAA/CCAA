@@ -522,6 +522,28 @@ export async function resumenDiarioRecepcion(
   return data;
 }
 
+export interface SugerenciaSilo {
+  silo: number;
+  codigo: string;
+  litros_disponibles: string;
+  litros_sugeridos: string;
+  leche_mas_antigua_en: string | null;
+  antiguedad_horas: string | null;
+  grasa: string | null;
+  sng: string | null;
+  motivos_no_disponible: string[];
+  sugerido: boolean;
+}
+
+export async function obtenerSugerenciaSilos(
+  volumen: number, tipo = "silo",
+): Promise<SugerenciaSilo[]> {
+  const { data } = await api.get<{ sugerencias: SugerenciaSilo[] }>(
+    "recepcion/silos/sugerencia/", { params: { volumen, tipo } },
+  );
+  return data.sugerencias;
+}
+
 export async function corregirCrioscopias(
   id: number,
   modulos: Array<{ id: number; crioscopia: number | null }>,

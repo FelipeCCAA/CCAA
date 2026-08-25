@@ -74,22 +74,7 @@ def motivos_silo_no_disponible(silo, *, para, ahora=None):
         .first()
     )
 
-    capas = capas_fifo_silo(silo)
-    leche_mas_antigua_en = None
-    if capas:
-        primera = capas[0]
-        ingresos = MovimientoSilo.objects.filter(
-            silo=silo, tipo=MovimientoSilo.Tipo.INGRESO
-        )
-        if primera.recepcion_id is not None:
-            ingresos = ingresos.filter(
-                origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
-                origen_id=primera.recepcion_id,
-            )
-        leche_mas_antigua_en = ingresos.order_by("fecha_hora", "id").values_list(
-            "fecha_hora", flat=True
-        ).first()
-
+    leche_mas_antigua_en = momento_leche_mas_antigua(silo)
     datos_silo = {
         "activo": silo.activo,
         "estado": silo.estado,
@@ -114,6 +99,26 @@ def motivos_silo_no_disponible(silo, *, para, ahora=None):
     return dominio.motivos_silo_no_disponible(
         datos_silo, datos_analisis, ciclo_cip, ahora, para=para
     )
+
+
+def momento_leche_mas_antigua(silo):
+    capas = capas_fifo_silo(silo)
+    leche_mas_antigua_en = None
+    if capas:
+        primera = capas[0]
+        ingresos = MovimientoSilo.objects.filter(
+            silo=silo, tipo=MovimientoSilo.Tipo.INGRESO
+        )
+        if primera.recepcion_id is not None:
+            ingresos = ingresos.filter(
+                origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+                origen_id=primera.recepcion_id,
+            )
+        leche_mas_antigua_en = ingresos.order_by("fecha_hora", "id").values_list(
+            "fecha_hora", flat=True
+        ).first()
+
+    return leche_mas_antigua_en
 
 
 @transaction.atomic
