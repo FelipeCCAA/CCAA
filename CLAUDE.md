@@ -160,6 +160,32 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
   porque ambos caminos convergen en la misma organización, pero si alguien vuelve a apoyar
   una decisión en esa detección, que sepa que discrepan.
 
+- **El grafo de código no se actualiza solo, y la herramienta no está en el PATH.**
+  `graphify-out/` lo genera **`graphifyy`**, instalado en un entorno virtual aparte que no
+  es el del backend ni una dependencia del proyecto:
+
+  ```bash
+  "$LOCALAPPDATA/graphify-tool/.venv/Scripts/graphify.exe" update .
+  ```
+
+  `update` **no cuesta tokens** —re-extrae por AST, sin modelo— así que no hay motivo para
+  dejarlo envejecer. El 2026-08-26 estaba **79 commits atrás**: decía venir de `9071583a` y
+  no conocía `AnalisisSilo`, la app `observabilidad`, `Equipo.sigla` ni el código de lote por
+  corrida. Un grafo viejo no avisa que lo está; el propio `GRAPH_REPORT.md` trae la línea
+  `Built from commit`, y contra `git rev-parse HEAD` se ve en un segundo.
+
+  Lo que **sí** cuesta es `graphify label`, que nombra las comunidades con un LLM (la
+  construcción original gastó ~164.000 tokens de entrada). Tras un `update` grande, las
+  comunidades nuevas quedan con nombre puesto por heurística hasta que alguien lo corra;
+  para navegar alcanza igual.
+
+  **`graphify-out/` está en `.gitignore` y aun así hay ~380 archivos rastreados** —362 de
+  ellos en `cache/`—: se commitearon antes de que existiera la regla, y git no deja de
+  seguir lo que ya sigue. Así que la salida que el propio `.gitignore` declara «no se
+  versiona» produce igual un diff de cientos de miles de líneas en cada `update`. Se
+  arregla una sola vez con `git rm -r --cached graphify-out`, que alinea el estado con la
+  intención ya declarada; el directorio son 42 MB en disco y se regenera solo.
+
 ## Tarea de integración en curso
 
 Integrar el delta del levantamiento (`LEVANTAMIENTO_PLANTA.md` §2–§5) siguiendo el backlog
