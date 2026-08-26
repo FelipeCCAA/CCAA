@@ -1,0 +1,31 @@
+# Salidas generadas que no son código del proyecto.
+#
+# Están en .gitignore, pero fueron commiteadas antes de que existiera esa
+# regla, así que git las sigue rastreando y no las reporta como ignoradas —
+# y graphify, que respeta .gitignore, termina ingiriéndolas igual.
+#
+# El informe de Playwright trae bundles minificados (codeMirrorModule-*.js,
+# defaultSettingsView-*.js) cuyos símbolos son `i`, `r`, `t`… Eso metió 4.700
+# nodos sin sentido en el grafo y desplazó a las comunidades reales.
+frontend/e2e/.informe-html/
+frontend/e2e/.artefactos/
+frontend/e2e/.registro/
+playwright-report/
+test-results/
+dist/
+node_modules/
+
+# --- Pruebas: se excluyen del grafo de aplicación ---
+#
+# Son el 40 % de los nodos —más que el backend de aplicación— y contaminaban
+# 101 comunidades mezclando código con sus pruebas, de modo que los hubs
+# describían el andamiaje en vez del sistema. Sin ellas el grafo baja de 6.132
+# a ~3.700 nodos y cae bajo el límite de 5.000 de la visualización.
+#
+# Para ver la cobertura de pruebas, comentar este bloque y regenerar.
+backend/**/tests*.py
+backend/**/test_*.py
+frontend/e2e/
+**/*.spec.ts
+**/*.test.ts
+**/*.test.tsx
