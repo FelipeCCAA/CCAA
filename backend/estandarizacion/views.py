@@ -197,11 +197,16 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
                 ),
                 rc_objetivo=datos["rc_objetivo"], volumen=datos["volumen"],
             )
+            alternativa_sin_crema = calcular_mezcla(
+                entera=entera, descremada=descremada,
+                rc_objetivo=datos["rc_objetivo"], volumen=datos["volumen"],
+            )
         else:
             mezcla = calcular_mezcla(
                 entera=entera, descremada=descremada,
                 rc_objetivo=datos["rc_objetivo"], volumen=datos["volumen"],
             )
+            alternativa_sin_crema = None
 
         return Response({
             "posible": mezcla.posible,
@@ -213,6 +218,17 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             "grasa_esperada": mezcla.grasa_esperada,
             "sng_esperado": mezcla.sng_esperado,
             "avisos": mezcla.avisos,
+            "alternativa_sin_crema": None if alternativa_sin_crema is None else {
+                "posible": alternativa_sin_crema.posible,
+                "motivo": alternativa_sin_crema.motivo,
+                "entera": alternativa_sin_crema.entera,
+                "descremada": alternativa_sin_crema.descremada,
+                "crema": alternativa_sin_crema.crema,
+                "rc_esperado": alternativa_sin_crema.rc_esperado,
+                "grasa_esperada": alternativa_sin_crema.grasa_esperada,
+                "sng_esperado": alternativa_sin_crema.sng_esperado,
+                "avisos": alternativa_sin_crema.avisos,
+            },
         })
 
     @action(detail=False, methods=["get"], url_path="guia-rc")

@@ -500,6 +500,13 @@ function FormularioVale({
                 {mezcla.avisos.map((aviso) => (
                   <p key={aviso} className="mt-1 text-amber-800">⚠ {aviso}</p>
                 ))}
+                {mezcla.alternativa_sin_crema && (
+                  <p className="mt-3 border-t border-emerald-200 pt-3 text-xs text-emerald-900">
+                    Sin crema: {mezcla.alternativa_sin_crema.posible
+                      ? `${mezcla.alternativa_sin_crema.entera.toLocaleString("es-CL")} L de entera + ${mezcla.alternativa_sin_crema.descremada.toLocaleString("es-CL")} L de descremada`
+                      : mezcla.alternativa_sin_crema.motivo}
+                  </p>
+                )}
               </>
             ) : (
               <p>{mezcla.motivo}</p>

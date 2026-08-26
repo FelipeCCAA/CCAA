@@ -661,6 +661,22 @@ class ApiTests(BaseVale):
         self.assertFalse(cuerpo["posible"])
         self.assertIn("no se alcanza", cuerpo["motivo"])
 
+    def test_calcular_con_crema_entrega_alternativa_sin_crema(self):
+        respuesta = self.cliente.post(
+            "/api/estandarizacion/vales/calcular/",
+            {
+                "entera_grasa": 3.9, "entera_sng": 8.6,
+                "descremada_grasa": 0.05, "descremada_sng": 8.9,
+                "crema_grasa": 40, "crema_sng": 5.5, "crema_disponible": 500,
+                "rc_objetivo": 0.422, "volumen": 10000,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertGreater(respuesta.data["crema"], 0)
+        self.assertIsNotNone(respuesta.data["alternativa_sin_crema"])
+
     def test_calcular_solo_entera_no_inventa_falta_de_descremada(self):
         respuesta = self.cliente.post(
             "/api/estandarizacion/vales/calcular/",

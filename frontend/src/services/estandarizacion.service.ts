@@ -74,6 +74,7 @@ export interface Mezcla {
   grasa_esperada: number | null;
   sng_esperado: number | null;
   avisos: string[];
+  alternativa_sin_crema: Omit<Mezcla, "alternativa_sin_crema"> | null;
 }
 
 export interface CatalogosEstandarizacion {
