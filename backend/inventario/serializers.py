@@ -37,28 +37,60 @@ class InsumoSerializer(serializers.ModelSerializer):
         model = Insumo
         fields = "__all__"
 
-    def _existencias(self, insumo):
-        return [e for lote in insumo.lotes.all() for e in lote.existencias.all()]
+    def _saldos(self, insumo):
+        """Calcula los saldos una vez durante la serialización de la fila."""
+        cache = getattr(self, "_saldos_cache", None)
+        if cache is None:
+            cache = self._saldos_cache = {}
+        clave = id(insumo)
+        if clave not in cache:
+            existencias = (
+                existencia
+                for lote in insumo.lotes.all()
+                for existencia in lote.existencias.all()
+            )
+            fisico = Decimal("0")
+            disponible = Decimal("0")
+            for existencia in existencias:
+                fisico += existencia.cantidad_fisica
+                disponible += existencia.cantidad_disponible
+            cache[clave] = (fisico, disponible)
+        return cache[clave]
 
     def get_stock_fisico(self, insumo):
-        return sum((e.cantidad_fisica for e in self._existencias(insumo)), 0)
+        return self._saldos(insumo)[0]
 
     def get_stock_disponible(self, insumo):
-        return sum((e.cantidad_disponible for e in self._existencias(insumo)), 0)
+        return self._saldos(insumo)[1]
 
     def get_stock_bloqueado(self, insumo):
-        return self.get_stock_fisico(insumo) - self.get_stock_disponible(insumo)
+        fisico, disponible = self._saldos(insumo)
+        return fisico - disponible
 
     def _eoq_ajuste(self, insumo):
+        cache = getattr(self, "_eoq_cache", None)
+        if cache is None:
+            cache = self._eoq_cache = {}
+        clave = id(insumo)
+        if clave in cache:
+            return cache[clave]
+
         if insumo.eoq is None:
             faltan = []
             if insumo.demanda_anual <= 0: faltan.append("demanda anual")
             if insumo.costo_por_pedido <= 0: faltan.append("costo por pedido")
             if insumo.costo_mantencion_unitario <= 0: faltan.append("costo de mantención")
-            return None, {"valido": False, "faltan": faltan}
+            cache[clave] = (None, {"valido": False, "faltan": faltan})
+            return cache[clave]
         cantidad = insumo.eoq
         motivos = []
-        proveedor = insumo.proveedores.filter(principal=True).order_by("id").first()
+        principales = getattr(insumo, "proveedores_principales", None)
+        if principales is None:
+            proveedor = (
+                insumo.proveedores.filter(principal=True).order_by("id").first()
+            )
+        else:
+            proveedor = principales[0] if principales else None
         if proveedor:
             if cantidad < proveedor.compra_minima:
                 cantidad = proveedor.compra_minima; motivos.append("mínimo del proveedor")
@@ -73,7 +105,15 @@ class InsumoSerializer(serializers.ModelSerializer):
             if cantidad > consumible:
                 cantidad = consumible; motivos.append("vida útil")
         cobertura = cantidad / (insumo.demanda_anual / Decimal("365")) if insumo.demanda_anual > 0 else None
-        return cantidad, {"valido": True, "motivos": motivos or ["EOQ matemático"], "cobertura_dias": round(float(cobertura), 1) if cobertura else None}
+        cache[clave] = (
+            cantidad,
+            {
+                "valido": True,
+                "motivos": motivos or ["EOQ matemático"],
+                "cobertura_dias": round(float(cobertura), 1) if cobertura else None,
+            },
+        )
+        return cache[clave]
 
     def get_eoq_ajustado(self, insumo):
         return self._eoq_ajuste(insumo)[0]

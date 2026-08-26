@@ -673,6 +673,9 @@ class LiberacionExcepcionalMaterial(models.Model):
         """
         from decimal import Decimal
 
+        anotada = getattr(self, "cantidad_usada_anotada", None)
+        if anotada is not None:
+            return anotada
         return self.movimientos.aggregate(
             total=models.Sum("cantidad")
         )["total"] or Decimal("0")

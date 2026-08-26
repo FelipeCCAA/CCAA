@@ -10,7 +10,7 @@ from maestros.models import Equipo, Mandante, Producto
 from produccion.models import Lote
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, SalidaProceso
-from .servicios import transicionar_ejecucion
+from .servicios import genealogia_lote, transicionar_ejecucion
 
 
 class ProcesosIndustrialesTests(TestCase):
@@ -204,6 +204,45 @@ class TrazabilidadPorCodigoTests(TestCase):
 
         codigos = {n["codigo"] for n in respuesta.data["nodos"]}
         self.assertIn("CCAA-TZ-POLVO", codigos)
+
+    def test_el_flujo_completo_con_vale_conserva_su_contrato(self):
+        from estandarizacion.models import ValeEstandarizacion
+        from maestros.models import Silo
+
+        silo = Silo.objects.create(
+            codigo="S-TZ",
+            tipo=Silo.Tipo.SILO,
+            capacidad_l=10000,
+        )
+        vale = ValeEstandarizacion.objects.create(
+            codigo="V-TZ",
+            fecha=date(2026, 8, 1),
+            producto=self.polvo.producto,
+            silo_destino=silo,
+            rc_objetivo=Decimal("0.40"),
+            volumen=1000,
+            estado=ValeEstandarizacion.Estado.LIBERADO,
+        )
+        self.polvo.vale = vale
+        self.polvo.save(update_fields=["vale"])
+
+        respuesta = self._consultar(self.polvo.pk)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data["flujo"]["estandarizacion"]["vale_codigo"], "V-TZ")
+        self.assertEqual(respuesta.data["flujo"]["produccion"]["lote_codigo"], "CCAA-TZ-POLVO")
+        self.assertEqual(respuesta.data["flujo"]["pallets"], [])
+
+    def test_el_ancho_del_grafo_no_agrega_consultas(self):
+        # Raíz y todos sus orígenes se resuelven en dos SQL: una para la
+        # raíz y una para las relaciones del nivel. Antes se consultaba de
+        # nuevo cada lote de origen, incluso al alcanzar el límite.
+        with self.assertNumQueries(2):
+            datos = genealogia_lote(
+                self.polvo.pk, "atras", profundidad_maxima=1
+            )
+
+        self.assertEqual(len(datos["nodos"]), 3)
 
     def test_un_lote_que_no_existe_responde_404_con_su_motivo(self):
         respuesta = self._consultar("CCAA-NO-EXISTE")

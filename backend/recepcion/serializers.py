@@ -404,8 +404,8 @@ class AnalisisSiloSerializer(serializers.ModelSerializer):
     # Método y no `source="analista.username"`: el analista es nulable, y una
     # travesía sobre `None` en DRF revienta en vez de devolver el vacío.
     analista_nombre = serializers.SerializerMethodField()
-    vigente = serializers.BooleanField(read_only=True)
-    motivo_vigencia = serializers.CharField(read_only=True)
+    vigente = serializers.SerializerMethodField()
+    motivo_vigencia = serializers.SerializerMethodField()
     faltantes_para_vale = serializers.ListField(
         child=serializers.CharField(), read_only=True
     )
@@ -437,6 +437,21 @@ class AnalisisSiloSerializer(serializers.ModelSerializer):
 
     def get_visualizado_por_nombre(self, obj):
         return obj.visualizado_por.username if obj.visualizado_por_id else ""
+
+    def _vigencia(self, obj):
+        cache = getattr(self, "_vigencias_cache", None)
+        if cache is None:
+            cache = self._vigencias_cache = {}
+        clave = id(obj)
+        if clave not in cache:
+            cache[clave] = obj.vigencia
+        return cache[clave]
+
+    def get_vigente(self, obj):
+        return self._vigencia(obj).vigente
+
+    def get_motivo_vigencia(self, obj):
+        return self._vigencia(obj).motivo
 
     def validate(self, attrs):
         if self.instance is None and not self.partial:

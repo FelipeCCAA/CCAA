@@ -570,6 +570,13 @@ class LoteSerializer(serializers.ModelSerializer):
         if not lote.vale_id:
             return None
 
+        # El listado trae este dato con una subconsulta correlacionada. Las
+        # instancias sueltas (por ejemplo, la respuesta inmediata de crear)
+        # conservan el cálculo original como respaldo.
+        if hasattr(lote, "litros_procesados_anotados"):
+            litros = lote.litros_procesados_anotados
+            return float(litros) if litros is not None else None
+
         from recepcion.models import MovimientoSilo
 
         movimiento = MovimientoSilo.objects.filter(

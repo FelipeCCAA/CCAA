@@ -15,6 +15,8 @@ x-backend-environment: &backend-environment
   DB_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env}
   DB_HOST: db
   DB_PORT: 5432
+  # Seis hilos web + un proceso Celery reutilizan conexiones; 60 s evita el
+  # costo de abrir TLS/TCP por request sin retener un pool sobredimensionado.
   DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
   DJANGO_HEALTHCHECK_HOST: ${DJANGO_HEALTHCHECK_HOST:-localhost}
   CCAA_INITIAL_COMPANY_RUT: ${CCAA_INITIAL_COMPANY_RUT:?Defina CCAA_INITIAL_COMPANY_RUT}
@@ -35,38 +37,71 @@ x-backend-environment: &backend-environment
   SESSION_ABSOLUTE_TIMEOUT_HOURS: ${SESSION_ABSOLUTE_TIMEOUT_HOURS:-12}
   SESSION_ACTIVITY_UPDATE_SECONDS: ${SESSION_ACTIVITY_UPDATE_SECONDS:-120}
   RESUMEN_DIAS: ${RESUMEN_DIAS:-90}
-  # Vacías por defecto: sin ellas la caché usa PostgreSQL y el MRP corre dentro
-  # de la petición, que es el comportamiento actual. Se rellenan cuando llegue
-  # la fase de Redis.
-  CACHE_URL: ${CACHE_URL:-redis://redis:6379/1}
+  # Broker y cache usan procesos Redis separados: la presion de cache nunca
+  # puede ocupar la memoria reservada a las tareas Celery.
+  CACHE_URL: ${CACHE_URL:-redis://redis-cache:6379/0}
   CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
   CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-1200}
 
 services:
   db:
     image: postgres:17-alpine
+    command:
+      - postgres
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-50}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-768MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-4MB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ccaa}
       POSTGRES_USER: ${POSTGRES_USER:-ccaa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    shm_size: ${POSTGRES_SHM_SIZE:-256m}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 12
     restart: unless-stopped
+    stop_grace_period: 60s
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1024m}
+    mem_reservation: ${POSTGRES_MEMORY_RESERVATION:-512m}
+    cpus: "${POSTGRES_CPUS:-2.0}"
+    cpu_shares: 1024
+    pids_limit: 200
     networks: [private]
     logging: &rotated-logs
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "5"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    # Broker durable. No comparte memoria con cache: ninguna rafaga de claves
+    # web puede impedir que Celery encole una tarea ni expulsar mensajes.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - ${REDIS_BROKER_MAXMEMORY:-64mb}
+      - --maxmemory-policy
+      - noeviction
+      - --maxclients
+      - "${REDIS_BROKER_MAXCLIENTS:-100}"
+      - --tcp-keepalive
+      - "60"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -75,12 +110,54 @@ services:
       timeout: 3s
       retries: 12
     restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: ${REDIS_BROKER_MEMORY_LIMIT:-160m}
+    mem_reservation: ${REDIS_BROKER_MEMORY_RESERVATION:-64m}
+    cpus: "${REDIS_BROKER_CPUS:-0.35}"
+    cpu_shares: 256
+    pids_limit: 100
+    networks: [private]
+    logging: *rotated-logs
+
+  redis-cache:
+    image: redis:7-alpine
+    # AOF conserva throttles entre reinicios igual que el Redis compartido que
+    # reemplaza. Noeviction falla visible/cerrado en vez de olvidar contadores.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - ${REDIS_CACHE_MAXMEMORY:-96mb}
+      - --maxmemory-policy
+      - noeviction
+      - --maxclients
+      - "${REDIS_CACHE_MAXCLIENTS:-100}"
+      - --tcp-keepalive
+      - "60"
+    volumes:
+      - redis_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: ${REDIS_CACHE_MEMORY_LIMIT:-224m}
+    mem_reservation: ${REDIS_CACHE_MEMORY_RESERVATION:-64m}
+    cpus: "${REDIS_CACHE_CPUS:-0.35}"
+    cpu_shares: 256
+    pids_limit: 100
     networks: [private]
     logging: *rotated-logs
 
   migrate:
-    build:
-      context: ./backend
+    # Backend, migraciones y workers ejecutan exactamente la misma imagen.
+    # Solo `backend` la construye para no repetir cuatro builds identicos.
+    image: ${CCAA_BACKEND_IMAGE:-ccaa-backend:local}
     command: ["python", "manage.py", "migrate", "--noinput"]
     environment: *backend-environment
     depends_on:
@@ -88,15 +165,26 @@ services:
         condition: service_healthy
     networks: [private]
     restart: "no"
+    init: true
+    mem_limit: ${MIGRATE_MEMORY_LIMIT:-512m}
+    cpus: "${MIGRATE_CPUS:-1.0}"
+    pids_limit: 128
 
   backend:
+    image: ${CCAA_BACKEND_IMAGE:-ccaa-backend:local}
     build:
       context: ./backend
     environment:
       <<: *backend-environment
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      # 3 x 2 = 6 requests simultaneas; deja un nucleo disponible para Celery
+      # y evita multiplicar procesos/conexiones en un host de 4 GiB.
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
       GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
-      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-30}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-35}
+      GUNICORN_GRACEFUL_TIMEOUT: ${GUNICORN_GRACEFUL_TIMEOUT:-30}
+      GUNICORN_KEEPALIVE: ${GUNICORN_KEEPALIVE:-5}
+      GUNICORN_WORKER_TMP_DIR: ${GUNICORN_WORKER_TMP_DIR:-/dev/shm}
+      GUNICORN_ACCESS_LOG: ${GUNICORN_ACCESS_LOG:-}
       GUNICORN_MAX_REQUESTS: ${GUNICORN_MAX_REQUESTS:-1000}
       GUNICORN_MAX_REQUESTS_JITTER: ${GUNICORN_MAX_REQUESTS_JITTER:-100}
     depends_on:
@@ -106,6 +194,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redis-cache:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -114,18 +204,36 @@ services:
           "-c",
           "import os, urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/api/salud/listo/', headers={'Host': os.environ['DJANGO_HEALTHCHECK_HOST'], 'X-Forwarded-Proto': 'https'}); urllib.request.urlopen(r, timeout=3)",
         ]
-      interval: 10s
+      interval: 15s
       timeout: 5s
       retries: 6
       start_period: 10s
     restart: unless-stopped
+    stop_grace_period: 45s
+    init: true
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-896m}
+    mem_reservation: ${BACKEND_MEMORY_RESERVATION:-384m}
+    cpus: "${BACKEND_CPUS:-2.5}"
+    cpu_shares: 1536
+    pids_limit: 256
     networks: [private, egress]
     logging: *rotated-logs
 
   celery:
-    build:
-      context: ./backend
-    command: ["celery", "-A", "config", "worker", "--loglevel=INFO", "--concurrency=2"]
+    image: ${CCAA_BACKEND_IMAGE:-ccaa-backend:local}
+    # Un solo proceso pesado protege la latencia web. Prefetch 1 evita que ese
+    # proceso reserve varias tareas mientras aun esta ocupado.
+    command:
+      - celery
+      - -A
+      - config
+      - worker
+      - --loglevel=${CELERY_LOG_LEVEL:-INFO}
+      - --concurrency=${CELERY_CONCURRENCY:-1}
+      - --prefetch-multiplier=${CELERY_PREFETCH_MULTIPLIER:-1}
+      - --max-tasks-per-child=${CELERY_MAX_TASKS_PER_CHILD:-50}
+      - --without-gossip
+      - --without-mingle
     environment: *backend-environment
     depends_on:
       migrate:
@@ -133,12 +241,20 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # El hard time limit es 20 min. Dar un minuto extra evita perder una tarea
+    # ya reconocida por Celery durante un despliegue o reinicio ordenado.
+    stop_grace_period: 21m
+    init: true
+    mem_limit: ${CELERY_MEMORY_LIMIT:-640m}
+    mem_reservation: ${CELERY_MEMORY_RESERVATION:-256m}
+    cpus: "${CELERY_CPUS:-1.0}"
+    cpu_shares: 256
+    pids_limit: 128
     networks: [private, egress]
     logging: *rotated-logs
 
   celery-beat:
-    build:
-      context: ./backend
+    image: ${CCAA_BACKEND_IMAGE:-ccaa-backend:local}
     command: ["celery", "-A", "config", "beat", "--loglevel=INFO"]
     environment: *backend-environment
     depends_on:
@@ -147,6 +263,13 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 30s
+    init: true
+    mem_limit: ${CELERY_BEAT_MEMORY_LIMIT:-192m}
+    mem_reservation: ${CELERY_BEAT_MEMORY_RESERVATION:-64m}
+    cpus: "${CELERY_BEAT_CPUS:-0.25}"
+    cpu_shares: 128
+    pids_limit: 64
     networks: [private]
     logging: *rotated-logs
 
@@ -164,11 +287,19 @@ services:
     ports:
       - "${CCAA_HTTP_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/api/salud/listo/"]
+      # Nginx prueba su propio proceso; backend ya tiene readiness con SQL.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/nginx-health"]
       interval: 10s
       timeout: 5s
       retries: 6
     restart: unless-stopped
+    stop_grace_period: 15s
+    init: true
+    mem_limit: ${NGINX_MEMORY_LIMIT:-128m}
+    mem_reservation: ${NGINX_MEMORY_RESERVATION:-32m}
+    cpus: "${NGINX_CPUS:-0.5}"
+    cpu_shares: 512
+    pids_limit: 100
     networks: [private, edge]
     logging: *rotated-logs
 
@@ -181,3 +312,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  redis_cache_data:

@@ -669,16 +669,29 @@ def analisis_vigente(tomado_en, ingresos) -> Vigencia:
         (cuando, litros) for cuando, litros in ingresos if cuando > tomado_en
     ]
 
-    if not posteriores:
+    return analisis_vigente_resumido(
+        tomado_en,
+        cantidad_ingresos=len(posteriores),
+        litros_ingresados=sum((litros for _, litros in posteriores), 0),
+    )
+
+
+def analisis_vigente_resumido(
+    tomado_en, *, cantidad_ingresos: int, litros_ingresados
+) -> Vigencia:
+    """Misma decisión a partir de un resumen calculado por la base."""
+    if tomado_en is None:
+        return Vigencia(False, "El análisis no tiene hora de muestreo.")
+
+    if not cantidad_ingresos:
         return Vigencia(True, "")
 
-    total = sum(litros for _, litros in posteriores)
-    palabra = "ingreso" if len(posteriores) == 1 else "ingresos"
+    palabra = "ingreso" if cantidad_ingresos == 1 else "ingresos"
 
     return Vigencia(
         False,
-        f"Entraron {total:g} L al silo después de la muestra "
-        f"({len(posteriores)} {palabra}); vuelve a muestrear.",
+        f"Entraron {litros_ingresados:g} L al silo después de la muestra "
+        f"({cantidad_ingresos} {palabra}); vuelve a muestrear.",
     )
 
 

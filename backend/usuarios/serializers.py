@@ -5,7 +5,10 @@ from django.db import transaction
 from rest_framework import serializers
 
 from .models import Empresa, PerfilUsuario, SesionUsuario, rol_de
-from .permisos_industriales import permisos_asignables_por
+from .permisos_industriales import (
+    permisos_asignables_por,
+    permisos_industriales_de,
+)
 from .tenancy import unica_empresa_activa, scope_de
 
 
@@ -163,12 +166,7 @@ class TrabajadorSerializer(UsuarioSerializer):
         }
 
     def get_permisos_asignados(self, usuario):
-        return list(
-            usuario.user_permissions.filter(
-                content_type__app_label="usuarios",
-                content_type__model="perfilusuario",
-            ).values_list("codename", flat=True)
-        )
+        return permisos_industriales_de(usuario)
 
     def _validar_permisos(self, codigos):
         if codigos is None:
@@ -191,6 +189,12 @@ class TrabajadorSerializer(UsuarioSerializer):
             codename__in=codigos,
         )
         usuario.user_permissions.set(permisos)
+        # Un objeto obtenido desde el listado puede traer el ``to_attr`` de
+        # la precarga. Tras cambiar el M2M esa lista ya no representa la base;
+        # quitarla hace que la respuesta del mismo PATCH relea los permisos
+        # recién guardados en vez de devolver la copia anterior.
+        if hasattr(usuario, "permisos_industriales_precargados"):
+            del usuario.permisos_industriales_precargados
 
     @transaction.atomic
     def create(self, validated_data):

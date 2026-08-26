@@ -14,6 +14,8 @@ Firmar una liberación es lo único que cambia el estado del mundo, y por eso es
 lo único que va en una transacción.
 """
 
+from collections import defaultdict
+
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -378,18 +380,40 @@ def expedientes(request):
         )
     )
 
-    def _del_lote(registros, lote_id, campo="lote_id"):
-        return [r for r in registros if getattr(r, campo, None) == lote_id]
+    def _agrupar(registros, campo):
+        grupos = defaultdict(list)
+        for registro in registros:
+            grupos[getattr(registro, campo, None)].append(registro)
+        return grupos
+
+    # Indexar una vez evita volver a recorrer todas las filas auxiliares por
+    # cada lote de la página. No se cachea ningún veredicto: solo se organiza
+    # en memoria el resultado de las mismas consultas de esta petición.
+    controles_por_lote = _agrupar(controles, "lote_id")
+    monitoreos_por_lote = _agrupar(monitoreos, "lote_id")
+    movimientos_por_lote = _agrupar(movimientos, "origen_id")
+    lecturas_por_control = _agrupar(lecturas_control, "control_id")
+    especificaciones_por_producto = _agrupar(especificaciones, "producto_id")
+    exigibles_por_producto = {}
 
     filas = []
     for lote in lotes:
         registros = list(lote.registros_calidad.all())
         analisis = list(lote.analisis.all())
-        exigibles = dominio.documentos_aplicables(documentos, lote.producto)
+        if lote.producto_id not in exigibles_por_producto:
+            exigibles_por_producto[lote.producto_id] = (
+                dominio.documentos_aplicables(documentos, lote.producto)
+            )
+        exigibles = exigibles_por_producto[lote.producto_id]
 
-        suyos_control = _del_lote(controles, lote.id)
-        suyos_monitoreo = _del_lote(monitoreos, lote.id)
-        suyos_movimiento = _del_lote(movimientos, lote.id, "origen_id")
+        suyos_control = controles_por_lote[lote.id]
+        suyos_monitoreo = monitoreos_por_lote[lote.id]
+        suyos_movimiento = movimientos_por_lote[lote.id]
+        suyas_lecturas = [
+            lectura
+            for control in suyos_control
+            for lectura in lecturas_por_control[control.id]
+        ]
 
         cumplidos_por_dato = dominio.documentos_con_evidencia(
             documentos,
@@ -410,9 +434,9 @@ def expedientes(request):
             documentos=documentos,
             registros=registros,
             analisis=analisis,
-            especificaciones=especificaciones,
+            especificaciones=especificaciones_por_producto[lote.producto_id],
             controles=suyos_control,
-            lecturas_control=lecturas_control,
+            lecturas_control=suyas_lecturas,
             monitoreos=suyos_monitoreo,
             cumplidos_por_dato=cumplidos_por_dato,
         )

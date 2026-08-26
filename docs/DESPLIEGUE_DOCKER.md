@@ -1,8 +1,8 @@
 # Despliegue Docker de CCAA
 
-Esta guía corresponde a la infraestructura base de la Fase 0. PostgreSQL,
-Django y Nginx están versionados; solo Nginx publica puertos. Redis, PgBouncer
-y Celery se incorporarán después de medir y validar sus fases respectivas.
+PostgreSQL, Django, Nginx, el worker Celery y sus dos Redis privados están
+versionados; solo Nginx publica puertos. El presupuesto y los controles para
+el VPS objetivo se detallan en [OPTIMIZACION_VPS_4VCPU_4GB.md](OPTIMIZACION_VPS_4VCPU_4GB.md).
 
 ## Requisitos Ubuntu
 
@@ -47,7 +47,7 @@ Validar antes de crear servicios:
 
 ```bash
 docker compose -f compose.yml -f compose.production.yml config --quiet
-docker compose -f compose.yml -f compose.production.yml build
+COMPOSE_PARALLEL_LIMIT=1 docker compose -f compose.yml -f compose.production.yml build
 docker compose -f compose.yml -f compose.production.yml run --rm backend python manage.py check --deploy
 ```
 
@@ -83,7 +83,7 @@ Luego actualizar sin ejecutar migraciones fuera del contenedor definido:
 ```bash
 git pull --ff-only
 docker compose -f compose.yml -f compose.production.yml config --quiet
-docker compose -f compose.yml -f compose.production.yml build
+COMPOSE_PARALLEL_LIMIT=1 docker compose -f compose.yml -f compose.production.yml build
 docker compose -f compose.yml -f compose.production.yml up -d
 docker compose -f compose.yml -f compose.production.yml ps
 curl --fail --silent https://ccaa.example.com/api/salud/listo/
@@ -100,7 +100,7 @@ ss -lntp
 ```
 
 Solo deben publicarse 80/443 (o los puertos configurados). No deben aparecer
-5432 ni 8000 en interfaces del host.
+5432, 6379 ni 8000 en interfaces del host.
 
 ## Rollback
 
@@ -223,9 +223,10 @@ el cuerpo de la petición.
 
 ## Límites conocidos de esta fase
 
-- Los valores de workers/threads son una base conservadora, no capacidad
-  certificada; se ajustarán con pruebas de carga en Fase 4.
-- No existe aún PgBouncer, Redis, throttling distribuido ni Celery.
+- El perfil de 3 workers x 2 threads es una base conservadora para 4 vCPU y
+  4 GiB, no capacidad certificada; se ajusta solo con la prueba escalonada.
+- Redis y Celery ya están aislados y acotados. PgBouncer no se agrega mientras
+  seis hilos web y un worker no justifiquen otro salto operacional.
 - El volumen Docker de PostgreSQL no reemplaza backups externos.
 - La renovación automática de certificados depende de la solución TLS del
   servidor y debe incluir un `nginx -s reload` probado.

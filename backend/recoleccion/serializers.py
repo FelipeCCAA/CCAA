@@ -29,6 +29,9 @@ class CargaModuloSerializer(serializers.ModelSerializer):
         read_only_fields = ["cargada_en"]
 
     def get_recepcionada(self, carga):
+        calculada = getattr(carga, "recepcionada_calculada", None)
+        if calculada is not None:
+            return calculada
         return carga.modulos_recepcion.exists()
 
 

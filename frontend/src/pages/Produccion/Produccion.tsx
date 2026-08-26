@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { Plus, Search } from "lucide-react";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
@@ -6,25 +13,54 @@ import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 import {
   buscarLotes,
   kilos,
-  obtenerParametros,
   obtenerPallets,
   obtenerProductos,
   RESULTADOS,
   type Lote,
-  type Parametro,
   type PalletProducto,
   type Producto,
 } from "../../services/produccion.service";
 
 import { puedeEscribir } from "../../services/sesion";
 
-import DetalleLote from "./DetalleLote";
-import FormularioLote from "./FormularioLote";
+const DetalleLote = lazy(() => import("./DetalleLote"));
+const FormularioLote = lazy(() => import("./FormularioLote"));
 
 
 const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
 const POR_PAGINA = 50;
+
+
+const FilaLote = memo(function FilaLote({
+  lote,
+  onAbrir,
+}: {
+  lote: Lote;
+  onAbrir: (id: number) => void;
+}) {
+  return (
+    <tr
+      onClick={() => onAbrir(lote.id)}
+      className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+      title="Ver el lote y cerrar la producción"
+    >
+      <td className="px-6 py-4 font-medium text-slate-800">
+        {lote.codigo_lote}
+      </td>
+      <td className="px-6 py-4 text-slate-600">{lote.producto_nombre}</td>
+      <td className="px-6 py-4 text-slate-600">{lote.mandante_nombre}</td>
+      <td className="px-6 py-4 text-slate-600">{lote.fecha}</td>
+      <td className="px-6 py-4 text-slate-600">{kilos(lote.kg_producidos)}</td>
+      <td className="px-6 py-4 text-slate-600">{lote.linea || "—"}</td>
+      <td className="px-6 py-4 text-slate-600">{lote.turno || "—"}</td>
+      <td className="px-6 py-4 text-slate-600">{lote.estado_etiqueta}</td>
+      <td className="px-6 py-4">
+        <EtiquetaCalidad calidad={lote.calidad} />
+      </td>
+    </tr>
+  );
+});
 
 
 function Produccion() {
@@ -34,8 +70,9 @@ function Produccion() {
   const [pagina, setPagina] = useState(1);
 
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [parametros, setParametros] = useState<Parametro[]>([]);
-  const [pallets, setPallets] = useState<PalletProducto[]>([]);
+  const [pallets, setPallets] = useState<PalletProducto[] | null>(null);
+  const [cargandoPallets, setCargandoPallets] = useState(false);
+  const [errorPallets, setErrorPallets] = useState("");
 
   const [buscar, setBuscar] = useState("");
   const [filtroProducto, setFiltroProducto] = useState("");
@@ -79,18 +116,38 @@ function Produccion() {
 
   }, [buscar, filtroProducto, filtroCalidad, pagina]);
 
-  // Los maestros no cambian al filtrar: se cargan una sola vez.
+  // Los productos alimentan el filtro visible y se cargan una sola vez. Los
+  // parámetros y pallets se piden al abrir las secciones que los usan.
   useEffect(() => {
-
-    Promise.all([obtenerProductos(), obtenerParametros(), obtenerPallets()])
-      .then(([listaProductos, listaParametros, paginaPallets]) => {
-        setProductos(listaProductos);
-        setParametros(listaParametros);
-        setPallets(paginaPallets.results);
-      })
-      .catch((error) => console.error("Error cargando los maestros:", error));
-
+    obtenerProductos()
+      .then(setProductos)
+      .catch((error) => console.error("Error cargando los productos:", error));
   }, []);
+
+  const cargarPallets = useCallback(async () => {
+    if (pallets !== null || cargandoPallets) return;
+    setCargandoPallets(true);
+    setErrorPallets("");
+    try {
+      const paginaPallets = await obtenerPallets();
+      setPallets(paginaPallets.results);
+    } catch {
+      setErrorPallets("No se pudieron cargar los pallets recientes.");
+    } finally {
+      setCargandoPallets(false);
+    }
+  }, [cargandoPallets, pallets]);
+
+  const abrirLote = useCallback((id: number) => setLoteAbierto(id), []);
+
+  // Mantiene la sección automática, pero deja primero pasar las dos lecturas
+  // críticas (lotes y productos). Así entrar al módulo no dispara las tres
+  // consultas en la misma ráfaga.
+  useEffect(() => {
+    if (pallets !== null || cargandoPallets || errorPallets) return;
+    const temporizador = window.setTimeout(() => void cargarPallets(), 600);
+    return () => window.clearTimeout(temporizador);
+  }, [cargandoPallets, cargarPallets, errorPallets, pallets]);
 
   // Espera a que el usuario deje de escribir antes de consultar, para no
   // lanzar una petición por tecla.
@@ -284,66 +341,11 @@ function Produccion() {
                 <tbody>
 
                   {lotes.map((lote) => (
-
-                    <tr
+                    <FilaLote
                       key={lote.id}
-                      onClick={() => setLoteAbierto(lote.id)}
-                      className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
-                      title="Ver el lote y cerrar la producción"
-                    >
-
-                      <td className="px-6 py-4 font-medium text-slate-800">
-
-                        {lote.codigo_lote}
-
-                      </td>
-
-                      <td className="px-6 py-4 text-slate-600">
-
-                        {lote.producto_nombre}
-
-                      </td>
-
-                      <td className="px-6 py-4 text-slate-600">
-
-                        {lote.mandante_nombre}
-
-                      </td>
-
-                      <td className="px-6 py-4 text-slate-600">{lote.fecha}</td>
-
-                      <td className="px-6 py-4 text-slate-600">
-
-                        {kilos(lote.kg_producidos)}
-
-                      </td>
-
-                      <td className="px-6 py-4 text-slate-600">
-
-                        {lote.linea || "—"}
-
-                      </td>
-
-                      <td className="px-6 py-4 text-slate-600">
-
-                        {lote.turno || "—"}
-
-                      </td>
-
-                      <td className="px-6 py-4 text-slate-600">
-
-                        {lote.estado_etiqueta}
-
-                      </td>
-
-                      <td className="px-6 py-4">
-
-                        <EtiquetaCalidad calidad={lote.calidad} />
-
-                      </td>
-
-                    </tr>
-
+                      lote={lote}
+                      onAbrir={abrirLote}
+                    />
                   ))}
 
                 </tbody>
@@ -359,7 +361,59 @@ function Produccion() {
         <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold text-slate-800">Envase y pallets recientes</h2>
           <p className="mt-1 text-sm text-slate-600">Unidades físicas vinculadas al lote maestro y pendientes de su puerta de Calidad.</p>
-          {pallets.length === 0 ? <p className="py-8 text-center text-sm text-slate-600">Todavía no hay pallets registrados.</p> : <div className="mt-5 overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-slate-600"><tr><th className="px-4 py-3">Pallet</th><th className="px-4 py-3">Unidades</th><th className="px-4 py-3">Peso neto</th><th className="px-4 py-3">Estado</th></tr></thead><tbody>{pallets.slice(0, 10).map((pallet) => <tr key={pallet.id} className="border-t border-slate-100"><td className="px-4 py-3 font-semibold text-slate-800">{pallet.codigo}</td><td className="px-4 py-3 text-slate-600">{formato.format(pallet.unidades)}</td><td className="px-4 py-3 text-slate-600">{kilos(pallet.kg_neto)}</td><td className="px-4 py-3 text-slate-600">{pallet.estado_etiqueta}</td></tr>)}</tbody></table></div>}
+          {pallets === null ? (
+            errorPallets ? (
+              <div className="pt-5">
+                <p className="text-sm text-red-700">{errorPallets}</p>
+                <button
+                  type="button"
+                  onClick={() => void cargarPallets()}
+                  className="mt-3 rounded-xl border border-green-700 px-4 py-2 text-sm font-semibold text-green-700"
+                >
+                  Reintentar
+                </button>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-slate-600">
+                Cargando pallets recientes…
+              </p>
+            )
+          ) : pallets.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              Todavía no hay pallets registrados.
+            </p>
+          ) : (
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3">Pallet</th>
+                    <th className="px-4 py-3">Unidades</th>
+                    <th className="px-4 py-3">Peso neto</th>
+                    <th className="px-4 py-3">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pallets.slice(0, 10).map((pallet) => (
+                    <tr key={pallet.id} className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-semibold text-slate-800">
+                        {pallet.codigo}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formato.format(pallet.unidades)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {kilos(pallet.kg_neto)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {pallet.estado_etiqueta}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         {/* Paginación */}
@@ -402,27 +456,32 @@ function Produccion() {
 
       </div>
 
-      {formularioAbierto && (
+      <Suspense
+        fallback={(
+          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/30">
+            <p className="rounded-xl bg-white px-5 py-3 text-sm text-slate-600 shadow-lg">
+              Preparando detalle…
+            </p>
+          </div>
+        )}
+      >
+        {formularioAbierto && (
+          <FormularioLote
+            productos={productos}
+            alCerrar={() => setFormularioAbierto(false)}
+            alGuardar={cargarLotes}
+          />
+        )}
 
-        <FormularioLote
-          productos={productos}
-          alCerrar={() => setFormularioAbierto(false)}
-          alGuardar={cargarLotes}
-        />
-
-      )}
-
-      {loteAbierto !== null && (
-
-        <DetalleLote
-          loteId={loteAbierto}
-          puedeEditar={puedeEditar}
-          parametros={parametros}
-          alCerrar={() => setLoteAbierto(null)}
-          alCambiar={cargarLotes}
-        />
-
-      )}
+        {loteAbierto !== null && (
+          <DetalleLote
+            loteId={loteAbierto}
+            puedeEditar={puedeEditar}
+            alCerrar={() => setLoteAbierto(null)}
+            alCambiar={cargarLotes}
+          />
+        )}
+      </Suspense>
 
     </div>
   );

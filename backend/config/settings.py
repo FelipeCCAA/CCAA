@@ -434,9 +434,9 @@ CELERY_BEAT_SCHEDULE = {
 # varias replicas-- un limite de «15 por hora» se convierte en «15 por hora y
 # por worker»: existe en el codigo y no en la practica.
 #
-# Se usa PostgreSQL y no Redis porque ya esta ahi: es compartida, que es la
-# propiedad que hace falta, y no agrega infraestructura que mantener hoy.
-# `CACHE_URL` deja pasar a Redis sin tocar codigo cuando llegue su fase.
+# Compose entrega un Redis exclusivo para esta caché compartida, separado del
+# broker de tareas. Sin `CACHE_URL` se conserva PostgreSQL como respaldo para
+# desarrollo y pruebas sin infraestructura adicional.
 CACHE_URL = os.environ.get("CACHE_URL", "")
 
 if CACHE_URL:

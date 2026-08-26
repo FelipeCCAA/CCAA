@@ -1,4 +1,5 @@
 from datetime import timedelta
+from types import SimpleNamespace
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -8,8 +9,10 @@ from rest_framework.test import APIClient
 
 from maestros.models import Equipo
 from usuarios.models import PerfilUsuario
-from .models import OrdenTrabajo, PlanPreventivo
+from .models import OrdenTrabajo, PlanPreventivo, RepuestoUtilizado
+from .serializers import OrdenTrabajoSerializer
 from .servicios import transicionar_orden
+from .views import OrdenTrabajoViewSet
 
 
 class MantenimientoTests(TestCase):
@@ -186,6 +189,33 @@ class RepuestoRespaldadoTests(TestCase):
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertFalse(respuesta.data["respaldado"])
         self.assertIsNone(respuesta.data["lote_codigo"])
+
+    def test_listar_repuestos_respaldados_no_consulta_por_repuesto(self):
+        RepuestoUtilizado.objects.bulk_create([
+            RepuestoUtilizado(
+                orden=self.orden,
+                insumo=self.empaquetadura,
+                entrega=self.entrega,
+                cantidad=1,
+            )
+            for _ in range(4)
+        ])
+        # Deja el scope en la caché de la instancia antes de medir solo el
+        # queryset y su serialización.
+        _ = self.usuario.perfil
+        vista = OrdenTrabajoViewSet()
+        vista.request = SimpleNamespace(user=self.usuario, query_params={})
+        consulta = vista.get_queryset().filter(pk=self.orden.pk)
+
+        # Orden, fallas y repuestos (estos últimos ya unidos a entrega+lote).
+        with self.assertNumQueries(3):
+            datos = OrdenTrabajoSerializer(consulta, many=True).data
+
+        self.assertEqual(len(datos[0]["repuestos"]), 4)
+        self.assertTrue(all(
+            repuesto["lote_codigo"] == "PROV-EMP-1"
+            for repuesto in datos[0]["repuestos"]
+        ))
 
     def test_no_se_imputa_mas_de_lo_que_bodega_entrego(self):
         self._crear(entrega=self.entrega.id, cantidad="3")

@@ -1,5 +1,7 @@
 """Catálogo y límites de asignación para permisos industriales Django."""
 
+from django.contrib.auth.models import Permission
+
 from .models import PerfilUsuario
 
 
@@ -38,6 +40,26 @@ PERMISOS_SENSIBLES = {
 }
 
 
+def queryset_permisos_industriales():
+    """Queryset compartido para precargar solo los permisos que expone la API."""
+    return Permission.objects.filter(
+        content_type__app_label="usuarios",
+        content_type__model="perfilusuario",
+    ).only("id", "codename", "content_type_id")
+
+
+def permisos_industriales_de(usuario) -> list[str]:
+    """Permisos directos, usando la precarga del listado cuando está presente."""
+    precargados = getattr(usuario, "permisos_industriales_precargados", None)
+    if precargados is not None:
+        return sorted(permiso.codename for permiso in precargados)
+    return sorted(
+        queryset_permisos_industriales()
+        .filter(user=usuario)
+        .values_list("codename", flat=True)
+    )
+
+
 def permisos_asignables_por(usuario) -> set[str]:
     """Solo capacidades que el actor puede delegar sin escalar privilegios."""
     if not usuario or not usuario.is_authenticated:
@@ -61,9 +83,4 @@ def capacidades_de(usuario) -> list[str]:
         return []
     if usuario.is_superuser:
         return sorted(TODOS_LOS_PERMISOS)
-    return sorted(
-        usuario.user_permissions.filter(
-            content_type__app_label="usuarios",
-            content_type__model="perfilusuario",
-        ).values_list("codename", flat=True)
-    )
+    return permisos_industriales_de(usuario)

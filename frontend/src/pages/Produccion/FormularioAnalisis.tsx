@@ -2,7 +2,11 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import axios from "axios";
 
-import { crearAnalisis, type Parametro } from "../../services/produccion.service";
+import {
+  crearAnalisis,
+  obtenerParametros,
+  type Parametro,
+} from "../../services/produccion.service";
 
 
 /*
@@ -21,14 +25,15 @@ import { crearAnalisis, type Parametro } from "../../services/produccion.service
 interface Props {
   loteId: number;
   fechaLote: string;
-  parametros: Parametro[];
   alGuardar: () => void;
 }
 
 
-function FormularioAnalisis({ loteId, fechaLote, parametros, alGuardar }: Props) {
+function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
 
   const [abierto, setAbierto] = useState(false);
+  const [parametros, setParametros] = useState<Parametro[] | null>(null);
+  const [cargandoParametros, setCargandoParametros] = useState(false);
   const [fecha, setFecha] = useState(fechaLote);
   const [muestra, setMuestra] = useState("");
   const [medidos, setMedidos] = useState<Record<string, string>>({});
@@ -43,6 +48,22 @@ function FormularioAnalisis({ loteId, fechaLote, parametros, alGuardar }: Props)
     setMedidos({});
     setMuestra("");
     setError("");
+  };
+
+  const abrir = async () => {
+    if (parametros === null) {
+      setCargandoParametros(true);
+      setError("");
+      try {
+        setParametros(await obtenerParametros());
+      } catch {
+        setError("No se pudieron cargar los parámetros del análisis.");
+        setCargandoParametros(false);
+        return;
+      }
+      setCargandoParametros(false);
+    }
+    setAbierto(true);
   };
 
   const guardar = async () => {
@@ -85,14 +106,22 @@ function FormularioAnalisis({ loteId, fechaLote, parametros, alGuardar }: Props)
 
   if (!abierto) {
     return (
-      <button
-        type="button"
-        onClick={() => setAbierto(true)}
-        className="mt-3 flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-      >
-        <Plus className="h-4 w-4" />
-        Agregar análisis
-      </button>
+      <div className="mt-3">
+        <button
+          type="button"
+          disabled={cargandoParametros}
+          onClick={() => void abrir()}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" />
+          {cargandoParametros ? "Preparando…" : "Agregar análisis"}
+        </button>
+        {error && (
+          <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
+      </div>
     );
   }
 
@@ -136,7 +165,7 @@ function FormularioAnalisis({ loteId, fechaLote, parametros, alGuardar }: Props)
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
 
-        {parametros.map((parametro) => (
+        {(parametros ?? []).map((parametro) => (
 
           <div key={parametro.clave}>
 

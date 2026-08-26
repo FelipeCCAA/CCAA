@@ -12,7 +12,6 @@ import {
   TRANSICIONES,
   type EstadoLote,
   type LoteDetalle,
-  type Parametro,
   type LoteEditado,
 } from "../../services/produccion.service";
 
@@ -37,8 +36,6 @@ import PanelAsignacion from "./PanelAsignacion";
 interface Props {
   loteId: number;
   puedeEditar: boolean;
-  /* Vienen de la pantalla de Producción, que ya los pidió una vez. */
-  parametros: Parametro[];
   alCerrar: () => void;
   alCambiar: () => void;
 }
@@ -149,7 +146,6 @@ function cambios(original: Borrador, actual: Borrador): LoteEditado {
 function DetalleLote({
   loteId,
   puedeEditar,
-  parametros,
   alCerrar,
   alCambiar,
 }: Props) {
@@ -698,7 +694,6 @@ function DetalleLote({
                 <FormularioAnalisis
                   loteId={lote.id}
                   fechaLote={lote.fecha}
-                  parametros={parametros}
                   alGuardar={() => {
                     void cargar();
                     alCambiar();

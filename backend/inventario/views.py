@@ -2,6 +2,8 @@ from decimal import Decimal
 from math import ceil
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import DecimalField, Prefetch, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -113,7 +115,24 @@ class AccesoAseos(BasePermission):
 
 class InsumoViewSet(FiltroAreaAdminMixin, EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_empresa = "empresa_id"
-    queryset = Insumo.objects.prefetch_related("lotes__existencias", "proveedores__proveedor")
+    queryset = Insumo.objects.prefetch_related(
+        # ``cantidad_disponible`` consulta el tipo de la ubicación. Traerla
+        # junto con cada existencia evita una consulta adicional por saldo al
+        # serializar el listado de materiales.
+        Prefetch(
+            "lotes__existencias",
+            queryset=Existencia.objects.select_related("ubicacion"),
+        ),
+        # El EOQ ajustado solo necesita al proveedor principal. Prefetch de
+        # todos los proveedores (y luego ``filter().first()`` en el
+        # serializer) materializaba datos que no se usan y, además, anulaba
+        # la propia precarga con una consulta por material.
+        Prefetch(
+            "proveedores",
+            queryset=InsumoProveedor.objects.filter(principal=True).order_by("id"),
+            to_attr="proveedores_principales",
+        ),
+    )
     serializer_class = InsumoSerializer
     permission_classes = [EscribeBodega]
 
@@ -644,7 +663,14 @@ class SolicitudMaterialViewSet(SucursalTenantViewSetMixin, RelacionesTenantMixin
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
     tenant_relation_fields = {"lote_produccion": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = SolicitudMaterial.objects.select_related("solicitante", "lote_produccion").prefetch_related("detalles")
+    queryset = SolicitudMaterial.objects.select_related(
+        "solicitante", "lote_produccion"
+    ).prefetch_related(
+        Prefetch(
+            "detalles",
+            queryset=DetalleSolicitudMaterial.objects.select_related("insumo"),
+        )
+    )
     serializer_class = SolicitudMaterialSerializer
     permission_classes = [EscribeMRQ]
 
@@ -850,7 +876,19 @@ class LiberacionExcepcionalViewSet(RelacionesTenantMixin, QuerysetTenantMixin, v
         "lote": ("sucursal_id", "sucursal__empresa_id"),
         "solicitante": ("perfil__sucursal_id", "perfil__empresa_id"),
     }
-    queryset = LiberacionExcepcionalMaterial.objects.select_related("lote", "solicitante", "aprobada_calidad_por")
+    queryset = LiberacionExcepcionalMaterial.objects.select_related(
+        "lote", "lote__insumo", "solicitante", "aprobada_calidad_por",
+        "aprobada_jefatura_por",
+    ).annotate(
+        # El serializer expone cantidad usada y saldo. Calcular la suma en la
+        # consulta del listado evita dos agregaciones por concesión sin guardar
+        # un contador que pueda desincronizarse del libro de movimientos.
+        cantidad_usada_anotada=Coalesce(
+            Sum("movimientos__cantidad"),
+            Value(Decimal("0")),
+            output_field=DecimalField(max_digits=16, decimal_places=3),
+        )
+    )
     serializer_class = LiberacionExcepcionalSerializer
     permission_classes = [EscribeCalidad]
 

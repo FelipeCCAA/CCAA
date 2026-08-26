@@ -977,6 +977,15 @@ class AnalisisSilo(DocumentoBorradorMixin, models.Model):
         la leche que queda, e invalidar por salida obligaría a re-muestrear
         cada vez que una línea consume.
         """
+        cantidad_anotada = getattr(self, "ingresos_posteriores_cantidad", None)
+        litros_anotados = getattr(self, "ingresos_posteriores_litros", None)
+        if cantidad_anotada is not None and litros_anotados is not None:
+            return dominio.analisis_vigente_resumido(
+                self.tomado_en,
+                cantidad_ingresos=cantidad_anotada,
+                litros_ingresados=litros_anotados,
+            )
+
         ingresos = MovimientoSilo.objects.filter(
             silo_id=self.silo_id,
             tipo=MovimientoSilo.Tipo.INGRESO,

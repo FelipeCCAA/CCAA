@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Database, Pencil, Plus } from "lucide-react";
 
 import {
@@ -36,11 +44,16 @@ import {
 
 import { puedeEscribir } from "../../services/sesion";
 
-import FormularioEquipo from "./FormularioEquipo";
-import FormularioEspecificacion from "./FormularioEspecificacion";
-import FormularioMaestro, { type Campo } from "./FormularioMaestro";
-import FormularioMandante from "./FormularioMandante";
-import FormularioProducto from "./FormularioProducto";
+import { type Campo } from "./FormularioMaestro";
+
+
+const FormularioEquipo = lazy(() => import("./FormularioEquipo"));
+const FormularioEspecificacion = lazy(
+  () => import("./FormularioEspecificacion"),
+);
+const FormularioMaestro = lazy(() => import("./FormularioMaestro"));
+const FormularioMandante = lazy(() => import("./FormularioMandante"));
+const FormularioProducto = lazy(() => import("./FormularioProducto"));
 
 
 /*
@@ -74,6 +87,19 @@ type Pestana =
   | "codigos"
   | "documentos";
 
+type EstadoCarga = "inactivo" | "cargando" | "listo" | "error";
+
+const ESTADO_INICIAL: Record<Pestana, EstadoCarga> = {
+  productos: "inactivo",
+  mandantes: "inactivo",
+  especificaciones: "inactivo",
+  equipos: "inactivo",
+  silos: "inactivo",
+  camiones: "inactivo",
+  codigos: "inactivo",
+  documentos: "inactivo",
+};
+
 const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "productos", etiqueta: "Productos" },
   { clave: "mandantes", etiqueta: "Mandantes" },
@@ -85,19 +111,6 @@ const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "documentos", etiqueta: "Documentos de liberación" },
 ];
 
-
-
-/*
-  El nombre legible de un parámetro, según el catálogo del backend.
-
-  Si el catálogo todavía no llegó, se muestra la clave cruda en vez de una
-  etiqueta escrita aquí: una tabla de nombres en el frontend se separa del
-  modelo sin que nadie lo note, y esta pantalla existe justamente para no
-  tener que conocer las claves.
-*/
-function etiquetaParametro(parametros: Parametro[], clave: string): string {
-  return parametros.find((p) => p.clave === clave)?.etiqueta ?? clave;
-}
 
 
 /*
@@ -241,8 +254,12 @@ function Maestros() {
   const [guardandoDoc, setGuardandoDoc] = useState<number | null>(null);
   const [catalogos, setCatalogos] = useState<CatalogosSku | null>(null);
 
-  const [cargando, setCargando] = useState(true);
+  const [estadoCarga, setEstadoCarga] =
+    useState<Record<Pestana, EstadoCarga>>(ESTADO_INICIAL);
   const [error, setError] = useState("");
+  const cargadas = useRef(new Set<Pestana>());
+  const catalogosRef = useRef<CatalogosSku | null>(null);
+  const catPlanRef = useRef<CatalogosPlanificacion | null>(null);
 
   const [editandoProducto, setEditandoProducto] = useState<ProductoMaestro | null>(null);
   const [nuevoProducto, setNuevoProducto] = useState(false);
@@ -262,74 +279,140 @@ function Maestros() {
   // Solo Administración escribe maestros: una especificación decide qué sale
   // como conforme. El backend manda; esto solo evita ofrecer lo que rechaza.
   const puedeEditar = puedeEscribir("maestros");
+  const puedeEditarCalidad = puedeEscribir("calidad");
 
-  const cargar = useCallback(async () => {
+  /*
+    Cada pestaña trae solo el listado que presenta. Antes, entrar aquí lanzaba
+    once GET aunque el usuario normalmente consulta una sola pestaña. Las
+    dependencias estrictas se comparten mediante la deduplicación de `api.get`.
+  */
+  const cargarPestana = useCallback(async (
+    objetivo: Pestana,
+    forzar = false,
+  ): Promise<boolean> => {
+    if (!forzar && cargadas.current.has(objetivo)) return true;
 
-    setCargando(true);
+    setEstadoCarga((actual) => ({ ...actual, [objetivo]: "cargando" }));
     setError("");
 
     try {
+      switch (objetivo) {
+        case "productos":
+          setProductos(await obtenerProductosMaestros());
+          break;
+        case "mandantes": {
+          const necesitaProductos = !cargadas.current.has("productos");
+          const [listaMandantes, listaProductos] = await Promise.all([
+            obtenerMandantes(),
+            necesitaProductos ? obtenerProductosMaestros() : Promise.resolve(null),
+          ]);
+          setMandantes(listaMandantes);
+          if (listaProductos) {
+            setProductos(listaProductos);
+            cargadas.current.add("productos");
+            setEstadoCarga((actual) => ({ ...actual, productos: "listo" }));
+          }
+          break;
+        }
+        case "especificaciones": {
+          const necesitaProductos = !cargadas.current.has("productos");
+          const [lista, listaProductos, listaParametros] = await Promise.all([
+            obtenerEspecificaciones(),
+            necesitaProductos ? obtenerProductosMaestros() : Promise.resolve(null),
+            obtenerParametros(),
+          ]);
+          setEspecificaciones(lista);
+          setParametros(listaParametros);
+          if (listaProductos) {
+            setProductos(listaProductos);
+            cargadas.current.add("productos");
+            setEstadoCarga((actual) => ({ ...actual, productos: "listo" }));
+          }
+          break;
+        }
+        case "equipos":
+          setEquipos(await obtenerEquipos());
+          break;
+        case "silos":
+          setSilos(await obtenerSilosMaestros());
+          break;
+        case "camiones":
+          setCamiones(await obtenerVehiculosMaestros());
+          break;
+        case "codigos":
+          setCodigos(await obtenerCodigos());
+          break;
+        case "documentos": {
+          setDocumentos(await obtenerDocumentos());
+          if (puedeEditarCalidad && !catalogosRef.current) {
+            try {
+              const nuevosCatalogos = await obtenerCatalogosSku();
+              catalogosRef.current = nuevosCatalogos;
+              setCatalogos(nuevosCatalogos);
+            } catch {
+              setCatalogos(null);
+            }
+          }
+          break;
+        }
+      }
 
-      // Los listados van juntos: sin ellos no hay nada que mostrar.
-      const [p, m, e, s, v, k, d, esp] = await Promise.all([
-        obtenerProductosMaestros(),
-        obtenerMandantes(),
-        obtenerEquipos(),
-        obtenerSilosMaestros(),
-        obtenerVehiculosMaestros(),
-        obtenerCodigos(),
-        obtenerDocumentos(),
-        obtenerEspecificaciones(),
-      ]);
-
-      setProductos(p);
-      setMandantes(m);
-      setEquipos(e);
-      setSilos(s);
-      setCamiones(v);
-      setCodigos(k);
-      setDocumentos(d);
-      setEspecificaciones(esp);
-
+      cargadas.current.add(objetivo);
+      setEstadoCarga((actual) => ({ ...actual, [objetivo]: "listo" }));
+      return true;
     } catch {
+      setEstadoCarga((actual) => ({ ...actual, [objetivo]: "error" }));
       setError(
-        "No se pudieron cargar los maestros. Revisa que el servidor esté " +
-          "corriendo y vuelve a intentarlo.",
+        "No se pudo cargar esta sección de maestros. Revisa que el servidor " +
+          "esté corriendo y vuelve a intentarlo.",
       );
-    } finally {
-      setCargando(false);
+      return false;
     }
+  }, [puedeEditarCalidad]);
 
-    /*
-      Los catálogos van aparte y cada uno por su cuenta.
+  const asegurarCatalogos = useCallback(async (): Promise<boolean> => {
+    if (catalogosRef.current) return true;
+    try {
+      const nuevosCatalogos = await obtenerCatalogosSku();
+      catalogosRef.current = nuevosCatalogos;
+      setCatalogos(nuevosCatalogos);
+      return true;
+    } catch {
+      setError("No se pudieron cargar las opciones del formulario.");
+      return false;
+    }
+  }, []);
 
-      Solo alimentan los desplegables de los formularios. Pedirlos en el mismo
-      `Promise.all` que los listados hacía que un solo endpoint caído dejara
-      las seis pestañas vacías — pasó con un 500 en los catálogos de
-      planificación, y desde la pantalla parecía que no había datos.
-    */
-    obtenerCatalogosSku()
-      .then(setCatalogos)
-      .catch(() => setCatalogos(null));
+  const asegurarCatalogosPlanificacion = useCallback(
+    async (): Promise<boolean> => {
+      if (catPlanRef.current) return true;
+      try {
+        const nuevosCatalogos = await obtenerCatalogosPlanificacion();
+        catPlanRef.current = nuevosCatalogos;
+        setCatPlan(nuevosCatalogos);
+        return true;
+      } catch {
+        setError("No se pudieron cargar las opciones de planificación.");
+        return false;
+      }
+    },
+    [],
+  );
 
-    obtenerCatalogosPlanificacion()
-      .then(setCatPlan)
-      .catch(() => setCatPlan(null));
-
-    // El catálogo de parámetros medibles alimenta el formulario de rangos.
-    // Viene del backend por la misma razón que el resto: escribir las nueve
-    // claves aquí dejaría ofrecer una que `Especificacion.clean()` rechaza.
-    obtenerParametros()
-      .then(setParametros)
-      .catch(() => setParametros([]));
-
+  const invalidarPestanas = useCallback((objetivos: Pestana[]) => {
+    objetivos.forEach((objetivo) => cargadas.current.delete(objetivo));
+    setEstadoCarga((actual) => {
+      const siguiente = { ...actual };
+      objetivos.forEach((objetivo) => { siguiente[objetivo] = "inactivo"; });
+      return siguiente;
+    });
   }, []);
 
   useEffect(() => {
-    const temporizador = setTimeout(cargar, 0);
+    const temporizador = setTimeout(() => void cargarPestana(pestana), 0);
 
     return () => clearTimeout(temporizador);
-  }, [cargar]);
+  }, [cargarPestana, pestana]);
 
   /*
     Lo que decide sobre la calidad del producto lo escribe Calidad, no
@@ -337,8 +420,6 @@ function Maestros() {
     y el formulario cambia sin desplegar— y las especificaciones, que son las
     que dicen qué sale conforme.
   */
-  const puedeEditarCalidad = puedeEscribir("calidad");
-
   const cambiarFrecuencia = async (
     documento: DocumentoLiberacion,
     frecuencia: string,
@@ -373,11 +454,32 @@ function Maestros() {
     Qué versión está vigente lo dice el backend en `es_vigente`, con la misma
     función que audita el lote. Aquí solo se resta.
   */
-  const conVigente = new Set(
-    especificaciones.filter((e) => e.es_vigente).map((e) => e.producto),
+  const conVigente = useMemo(
+    () => new Set(
+      especificaciones.filter((e) => e.es_vigente).map((e) => e.producto),
+    ),
+    [especificaciones],
   );
-  const sinEspecificacion = productos.filter(
-    (p) => p.activo && !conVigente.has(p.id),
+  const sinEspecificacion = useMemo(
+    () => productos.filter((p) => p.activo && !conVigente.has(p.id)),
+    [conVigente, productos],
+  );
+  const productosPorMandante = useMemo(() => {
+    const cantidades = new Map<number, number>();
+    productos.forEach((producto) => {
+      cantidades.set(
+        producto.mandante,
+        (cantidades.get(producto.mandante) ?? 0) + 1,
+      );
+    });
+    return cantidades;
+  }, [productos]);
+  const etiquetasParametro = useMemo(
+    () => new Map(parametros.map((parametro) => [
+      parametro.clave,
+      parametro.etiqueta,
+    ])),
+    [parametros],
   );
 
   const guardarSpec = async (
@@ -390,6 +492,42 @@ function Maestros() {
     // cambia cuál es la vigente, y esa respuesta la da el backend.
     setEspecificaciones(await obtenerEspecificaciones());
   };
+
+  const abrirProducto = async (producto: ProductoMaestro | null) => {
+    const [conCatalogos, conMandantes] = await Promise.all([
+      asegurarCatalogos(),
+      cargarPestana("mandantes"),
+    ]);
+    if (!conCatalogos || !conMandantes) return;
+    if (producto) setEditandoProducto(producto);
+    else setNuevoProducto(true);
+  };
+
+  const abrirMandante = async (mandante: Mandante | null) => {
+    if (!await asegurarCatalogos()) return;
+    if (mandante) setEditandoMandante(mandante);
+    else setNuevoMandante(true);
+  };
+
+  const abrirSimple = async (
+    entidad: "silo" | "camion" | "codigo",
+    id: number | null,
+    valores: Record<string, unknown>,
+  ) => {
+    if (entidad === "silo" && !await asegurarCatalogos()) return;
+    if (entidad === "codigo") {
+      const [conProductos, conMandantes, conCatalogos] = await Promise.all([
+        cargarPestana("productos"),
+        cargarPestana("mandantes"),
+        asegurarCatalogosPlanificacion(),
+      ]);
+      if (!conProductos || !conMandantes || !conCatalogos) return;
+    }
+    setSimple({ entidad, id, valores });
+  };
+
+  const cargando = estadoCarga[pestana] === "cargando" ||
+    estadoCarga[pestana] === "inactivo";
 
   const celda = "px-4 py-3 text-sm";
   const encabezado =
@@ -472,7 +610,7 @@ function Maestros() {
                   <div className="border-b border-slate-100 px-4 py-3">
                     <button
                       type="button"
-                      onClick={() => setNuevoProducto(true)}
+                      onClick={() => void abrirProducto(null)}
                       className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
                     >
                       <Plus className="h-4 w-4" />
@@ -544,7 +682,7 @@ function Maestros() {
                               {puedeEditar && (
                                 <button
                                   type="button"
-                                  onClick={() => setEditandoProducto(p)}
+                                  onClick={() => void abrirProducto(p)}
                                   title="Editar"
                                   className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                                 >
@@ -579,7 +717,7 @@ function Maestros() {
                   <div className="border-b border-slate-100 px-4 py-3">
                     <button
                       type="button"
-                      onClick={() => setNuevoMandante(true)}
+                      onClick={() => void abrirMandante(null)}
                       className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
                     >
                       <Plus className="h-4 w-4" />
@@ -622,14 +760,14 @@ function Maestros() {
                         </td>
 
                         <td className={`${celda} text-slate-600`}>
-                          {productos.filter((p) => p.mandante === m.id).length}
+                          {productosPorMandante.get(m.id) ?? 0}
                         </td>
 
                         <td className={`${celda} text-right`}>
                           {puedeEditar && (
                             <button
                               type="button"
-                              onClick={() => setEditandoMandante(m)}
+                              onClick={() => void abrirMandante(m)}
                               title="Editar"
                               className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                             >
@@ -775,7 +913,7 @@ function Maestros() {
                                   className="mr-1.5 inline-block rounded-lg bg-slate-100 px-2 py-0.5 text-xs"
                                   title={r.obligatorio ? "Obligatorio" : "Opcional"}
                                 >
-                                  {etiquetaParametro(parametros, clave)}{" "}
+                                  {etiquetasParametro.get(clave) ?? clave}{" "}
                                   {r.min ?? "—"}…{r.max ?? "—"}
                                   {r.obligatorio && "*"}
                                 </span>
@@ -1046,11 +1184,11 @@ function Maestros() {
                     <button
                       type="button"
                       onClick={() =>
-                        setSimple({
-                          entidad: "silo",
-                          id: null,
-                          valores: { tipo: "silo", activo: true },
-                        })
+                        void abrirSimple(
+                          "silo",
+                          null,
+                          { tipo: "silo", activo: true },
+                        )
                       }
                       className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
                     >
@@ -1092,15 +1230,11 @@ function Maestros() {
                             <button
                               type="button"
                               onClick={() =>
-                                setSimple({
-                                  entidad: "silo",
-                                  id: s.id,
-                                  valores: {
-                                    codigo: s.codigo,
-                                    tipo: s.tipo,
-                                    capacidad_l: s.capacidad_l,
-                                    activo: s.activo,
-                                  },
+                                void abrirSimple("silo", s.id, {
+                                  codigo: s.codigo,
+                                  tipo: s.tipo,
+                                  capacidad_l: s.capacidad_l,
+                                  activo: s.activo,
                                 })
                               }
                               title="Editar"
@@ -1140,11 +1274,11 @@ function Maestros() {
                     <button
                       type="button"
                       onClick={() =>
-                        setSimple({
-                          entidad: "camion",
-                          id: null,
-                          valores: { tipo: "Camión", activo: true },
-                        })
+                        void abrirSimple(
+                          "camion",
+                          null,
+                          { tipo: "Camión", activo: true },
+                        )
                       }
                       className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
                     >
@@ -1208,19 +1342,15 @@ function Maestros() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  setSimple({
-                                    entidad: "camion",
-                                    id: v.id,
-                                    valores: {
-                                      placa: v.placa,
-                                      numero: v.numero,
-                                      tipo: v.tipo,
-                                      capacidad_l: v.capacidad_l,
-                                      transportista: v.transportista,
-                                      chofer_am: v.chofer_am,
-                                      chofer_pm: v.chofer_pm,
-                                      activo: v.activo,
-                                    },
+                                  void abrirSimple("camion", v.id, {
+                                    placa: v.placa,
+                                    numero: v.numero,
+                                    tipo: v.tipo,
+                                    capacidad_l: v.capacidad_l,
+                                    transportista: v.transportista,
+                                    chofer_am: v.chofer_am,
+                                    chofer_pm: v.chofer_pm,
+                                    activo: v.activo,
                                   })
                                 }
                                 title="Editar"
@@ -1256,11 +1386,7 @@ function Maestros() {
                     <button
                       type="button"
                       onClick={() =>
-                        setSimple({
-                          entidad: "codigo",
-                          id: null,
-                          valores: { activo: true },
-                        })
+                        void abrirSimple("codigo", null, { activo: true })
                       }
                       className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
                     >
@@ -1317,19 +1443,15 @@ function Maestros() {
                             <button
                               type="button"
                               onClick={() =>
-                                setSimple({
-                                  entidad: "codigo",
-                                  id: k.id,
-                                  valores: {
-                                    codigo: k.codigo,
-                                    nombre: k.nombre,
-                                    producto: k.producto,
-                                    mandante: k.mandante,
-                                    formato: k.formato,
-                                    categoria: k.categoria,
-                                    rendimiento_lh: k.rendimiento_lh,
-                                    activo: k.activo,
-                                  },
+                                void abrirSimple("codigo", k.id, {
+                                  codigo: k.codigo,
+                                  nombre: k.nombre,
+                                  producto: k.producto,
+                                  mandante: k.mandante,
+                                  formato: k.formato,
+                                  categoria: k.categoria,
+                                  rendimiento_lh: k.rendimiento_lh,
+                                  activo: k.activo,
                                 })
                               }
                               title="Editar"
@@ -1374,75 +1496,100 @@ function Maestros() {
 
       {/* Formularios */}
 
-      {catalogos && (nuevoProducto || editandoProducto) && (
-        <FormularioProducto
-          producto={editandoProducto}
-          mandantes={mandantes}
-          catalogos={catalogos}
-          alCerrar={() => {
-            setNuevoProducto(false);
-            setEditandoProducto(null);
-          }}
-          alGuardar={cargar}
-        />
-      )}
+      <Suspense
+        fallback={(
+          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/30">
+            <p className="rounded-xl bg-white px-5 py-3 text-sm text-slate-600 shadow-lg">
+              Preparando formulario…
+            </p>
+          </div>
+        )}
+      >
+        {catalogos && (nuevoProducto || editandoProducto) && (
+          <FormularioProducto
+            producto={editandoProducto}
+            mandantes={mandantes}
+            catalogos={catalogos}
+            alCerrar={() => {
+              setNuevoProducto(false);
+              setEditandoProducto(null);
+            }}
+            alGuardar={() => {
+              // El producto aparece por nombre en estas pestañas y también
+              // cambia el conteo por mandante. Se refrescan solo al visitarlas.
+              invalidarPestanas(["mandantes", "especificaciones", "codigos"]);
+              void cargarPestana("productos", true);
+            }}
+          />
+        )}
 
-      {simple && (
-        <FormularioMaestro
-          titulo={`${simple.id ? "Editar" : "Nuevo"} ${TITULO_SIMPLE[simple.entidad]}`}
-          campos={camposDe(
-            simple.entidad,
-            catalogos,
-            catPlan,
-            productos,
-            mandantes,
-          )}
-          valores={simple.valores}
-          edicion={simple.id !== null}
-          alCerrar={() => setSimple(null)}
-          alGuardar={(datos) => {
-            if (simple.entidad === "silo") return guardarSilo(simple.id, datos);
-            if (simple.entidad === "camion")
-              return guardarVehiculo(simple.id, datos);
-            return guardarCodigo(simple.id, datos);
-          }}
-          alTerminar={cargar}
-        />
-      )}
+        {simple && (
+          <FormularioMaestro
+            titulo={`${simple.id ? "Editar" : "Nuevo"} ${TITULO_SIMPLE[simple.entidad]}`}
+            campos={camposDe(
+              simple.entidad,
+              catalogos,
+              catPlan,
+              productos,
+              mandantes,
+            )}
+            valores={simple.valores}
+            edicion={simple.id !== null}
+            alCerrar={() => setSimple(null)}
+            alGuardar={(datos) => {
+              if (simple.entidad === "silo") return guardarSilo(simple.id, datos);
+              if (simple.entidad === "camion")
+                return guardarVehiculo(simple.id, datos);
+              return guardarCodigo(simple.id, datos);
+            }}
+            alTerminar={() => {
+              const afectada: Pestana = simple.entidad === "silo"
+                ? "silos"
+                : simple.entidad === "camion" ? "camiones" : "codigos";
+              void cargarPestana(afectada, true);
+            }}
+          />
+        )}
 
-      {(nuevoEquipo || editandoEquipo) && (
-        <FormularioEquipo
-          equipo={editandoEquipo}
-          alCerrar={() => {
-            setNuevoEquipo(false);
-            setEditandoEquipo(null);
-          }}
-          alGuardar={cargar}
-        />
-      )}
+        {(nuevoEquipo || editandoEquipo) && (
+          <FormularioEquipo
+            equipo={editandoEquipo}
+            alCerrar={() => {
+              setNuevoEquipo(false);
+              setEditandoEquipo(null);
+            }}
+            alGuardar={() => { void cargarPestana("equipos", true); }}
+          />
+        )}
 
-      {catalogos && (nuevoMandante || editandoMandante) && (
-        <FormularioMandante
-          mandante={editandoMandante}
-          catalogos={catalogos}
-          alCerrar={() => {
-            setNuevoMandante(false);
-            setEditandoMandante(null);
-          }}
-          alGuardar={cargar}
-        />
-      )}
+        {catalogos && (nuevoMandante || editandoMandante) && (
+          <FormularioMandante
+            mandante={editandoMandante}
+            catalogos={catalogos}
+            alCerrar={() => {
+              setNuevoMandante(false);
+              setEditandoMandante(null);
+            }}
+            alGuardar={() => {
+              // Productos y códigos incluyen el nombre del mandante en su
+              // respuesta; no deben conservar la copia anterior toda la visita.
+              invalidarPestanas(["productos", "codigos"]);
+              void cargarPestana("mandantes", true);
+            }}
+          />
+        )}
 
-      {spec && (
-        <FormularioEspecificacion
-          modo={spec.modo}
-          inicial={spec.inicial}
-          productos={productos}
-          parametros={parametros}
-          onGuardar={guardarSpec}
-          onCerrar={() => setSpec(null)}
-        />
-      )}
+        {spec && (
+          <FormularioEspecificacion
+            modo={spec.modo}
+            inicial={spec.inicial}
+            productos={productos}
+            parametros={parametros}
+            onGuardar={guardarSpec}
+            onCerrar={() => setSpec(null)}
+          />
+        )}
+      </Suspense>
 
     </div>
   );

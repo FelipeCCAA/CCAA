@@ -7,17 +7,22 @@ consulta por lote.
 """
 
 from datetime import date
+from types import SimpleNamespace
 
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from maestros.models import Especificacion, Mandante, Producto
+from estandarizacion.models import ValeEstandarizacion
+from maestros.models import Especificacion, Mandante, Producto, Silo
+from recepcion.models import MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 from usuarios.tests_helpers import credencial_sesion
 
 from .models import Analisis, Lote
+from .serializers import LoteSerializer
+from .views import LoteViewSet
 
 
 class BaseAPI(TestCase):
@@ -464,17 +469,96 @@ class LotesAPITests(BaseAPI):
         Con prefetch, agregar lotes no debe agregar consultas. Sin él, esto
         crecería con cada lote y el panel se volvería lento con datos reales.
         """
+        silo = Silo.objects.create(
+            sucursal=self.sucursal,
+            codigo="S-PERF-LOTES",
+            tipo=Silo.Tipo.SILO,
+            capacidad_l=50000,
+        )
+        vale = ValeEstandarizacion.objects.create(
+            codigo="V-PERF-LOTES",
+            fecha=date(2026, 7, 20),
+            producto=self.producto,
+            silo_destino=silo,
+        )
         for i in range(5):
-            lote = self._lote(codigo=f"L-{i}")
+            lote = self._lote(codigo=f"L-{i}", vale=vale)
             Analisis.objects.create(
                 lote=lote, fecha=date(2026, 7, 20), valores={"humedad": 3.0, "mg": 27.0}
+            )
+            MovimientoSilo.objects.create(
+                silo=silo,
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                litros=1000 + i,
+                fecha_hora=timezone.now(),
+                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                origen_id=lote.pk,
             )
 
         # 1 valida el token, 1 cuenta para paginar, 1 trae los lotes, 1 trae
         # todos sus análisis de una vez y 1 las especificaciones. Ninguna
         # depende del número de lotes.
         with self.assertNumQueries(5):
-            self.cliente.get("/api/produccion/lotes/")
+            respuesta = self.cliente.get("/api/produccion/lotes/")
+
+        self.assertEqual(
+            sorted(fila["litros_procesados"] for fila in respuesta.json()["results"]),
+            [1000.0, 1001.0, 1002.0, 1003.0, 1004.0],
+        )
+
+    def test_un_patch_no_reutiliza_litros_anotados_antes_de_guardar(self):
+        silos = [
+            Silo.objects.create(
+                sucursal=self.sucursal,
+                codigo=f"S-PATCH-{numero}",
+                tipo=Silo.Tipo.SILO,
+                capacidad_l=50000,
+            )
+            for numero in (1, 2)
+        ]
+        vales = [
+            ValeEstandarizacion.objects.create(
+                codigo=f"V-PATCH-{numero}",
+                fecha=date(2026, 7, 20),
+                producto=self.producto,
+                silo_destino=silo,
+            )
+            for numero, silo in enumerate(silos, 1)
+        ]
+        lote = self._lote(vale=vales[0])
+        for silo, litros in zip(silos, (100, 200)):
+            MovimientoSilo.objects.create(
+                silo=silo,
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                litros=litros,
+                fecha_hora=timezone.now(),
+                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                origen_id=lote.pk,
+            )
+
+        instancia = LoteViewSet.queryset.get(pk=lote.pk)
+        serializador_lote = LoteSerializer(instancia)
+        self.assertEqual(
+            serializador_lote.get_litros_procesados(instancia), 100.0
+        )
+
+        class SerializerGuardado:
+            def __init__(self, objeto):
+                self.instance = objeto
+
+            def save(self):
+                self.instance.vale = vales[1]
+                self.instance.save(update_fields=["vale"])
+
+        serializer = SerializerGuardado(instancia)
+        vista = LoteViewSet()
+        vista.request = SimpleNamespace(data={})
+        vista.perform_update(serializer)
+
+        self.assertFalse(hasattr(instancia, "litros_procesados_anotados"))
+        self.assertEqual(
+            serializador_lote.get_litros_procesados(instancia), 200.0
+        )
 
 
 class ResumenAPITests(BaseAPI):

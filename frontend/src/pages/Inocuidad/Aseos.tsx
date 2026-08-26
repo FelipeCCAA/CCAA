@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
   AlertTriangle, Beaker, CalendarClock, CheckCircle2, ClipboardCheck,
@@ -17,6 +17,10 @@ import { obtenerSesion } from "../../services/sesion";
 
 const control = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-600";
 const etapasCip = ["pre_enjuague", "soda", "enjuague", "acido", "enjuague"];
+const formatoFecha = new Intl.DateTimeFormat("es-CL", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
 
 function mensajeDe(error: unknown): string {
   if (!axios.isAxiosError(error)) return "No se pudo guardar el aseo.";
@@ -32,7 +36,7 @@ function mensajeDe(error: unknown): string {
 }
 
 function fechaLocal(iso: string): string {
-  return new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
+  return formatoFecha.format(new Date(iso));
 }
 
 function ahoraLocal(): string {
@@ -147,33 +151,73 @@ export default function Aseos() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [nuevo, setNuevo] = useState(false);
+  const [preparandoNuevo, setPreparandoNuevo] = useState(false);
   const [seleccionado, setSeleccionado] = useState<number | null>(null);
   const [filtro, setFiltro] = useState("todos");
+  const objetivosCargados = useRef(false);
 
   const cargar = useCallback(async () => {
     setCargando(true); setError("");
     try {
-      const [lista, cats, maquinas, tanques] = await Promise.all([obtenerAseos(), obtenerCatalogosAseo(), obtenerEquipos(), obtenerSilosMaestros()]);
-      setAseos(lista); setCatalogos(cats); setEquipos(maquinas.filter((e) => e.activo)); setSilos(tanques.filter((s) => s.activo));
+      const [lista, cats] = await Promise.all([obtenerAseos(), obtenerCatalogosAseo()]);
+      setAseos(lista); setCatalogos(cats);
     } catch { setError("No se pudo cargar la planilla de aseos."); } finally { setCargando(false); }
   }, []);
   useEffect(() => {
     const tarea = window.setTimeout(() => void cargar(), 0);
     return () => window.clearTimeout(tarea);
   }, [cargar]);
+
+  const abrirNuevo = useCallback(async () => {
+    if (objetivosCargados.current) {
+      setNuevo(true);
+      return;
+    }
+    setPreparandoNuevo(true);
+    setError("");
+    try {
+      const [maquinas, tanques] = await Promise.all([
+        obtenerEquipos(),
+        obtenerSilosMaestros(),
+      ]);
+      setEquipos(maquinas.filter((equipo) => equipo.activo));
+      setSilos(tanques.filter((silo) => silo.activo));
+      objetivosCargados.current = true;
+      setNuevo(true);
+    } catch {
+      setError("No se pudieron cargar los equipos y estanques del formulario.");
+    } finally {
+      setPreparandoNuevo(false);
+    }
+  }, []);
+
   const visibles = useMemo(() => filtro === "todos" ? aseos : aseos.filter((a) => a.estado === filtro), [aseos, filtro]);
+  const resumen = useMemo(() => {
+    const cantidades = {
+      programado: 0,
+      en_curso: 0,
+      completado: 0,
+      observado: 0,
+    };
+    aseos.forEach((aseo) => {
+      if (aseo.estado in cantidades) {
+        cantidades[aseo.estado as keyof typeof cantidades] += 1;
+      }
+    });
+    return cantidades;
+  }, [aseos]);
   const activo = aseos.find((a) => a.id === seleccionado) ?? null;
   const reemplazar = (actualizado: AseoCip) => setAseos((lista) => lista.map((a) => a.id === actualizado.id ? actualizado : a));
 
   return <main className="px-6 py-8 lg:px-10"><div className="mx-auto max-w-7xl space-y-6">
-    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-emerald-700"><ShieldCheck className="h-4 w-4" />Inocuidad</p><h1 className="mt-2 text-3xl font-bold text-slate-900">Aseos y CIP</h1><p className="mt-2 max-w-3xl text-slate-600">Planifica y controla el aseo de máquinas, silos, tanques y áreas. Cada área ve su planilla; Aseo y saneamiento ve todas las áreas.</p></div><button onClick={() => setNuevo(true)} className="flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Programar aseo</button></header>
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-emerald-700"><ShieldCheck className="h-4 w-4" />Inocuidad</p><h1 className="mt-2 text-3xl font-bold text-slate-900">Aseos y CIP</h1><p className="mt-2 max-w-3xl text-slate-600">Planifica y controla el aseo de máquinas, silos, tanques y áreas. Cada área ve su planilla; Aseo y saneamiento ve todas las áreas.</p></div><button disabled={preparandoNuevo} onClick={() => void abrirNuevo()} className="flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Plus className="h-4 w-4" />{preparandoNuevo ? "Preparando…" : "Programar aseo"}</button></header>
     {error && <ErrorState mensaje={error} />}
     {cargando || !catalogos ? <PageLoader /> : <>
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[
-        ["Programados", aseos.filter((a) => a.estado === "programado").length, CalendarClock],
-        ["En curso", aseos.filter((a) => a.estado === "en_curso").length, Droplets],
-        ["Conformes", aseos.filter((a) => a.estado === "completado").length, ClipboardCheck],
-        ["Observados", aseos.filter((a) => a.estado === "observado").length, AlertTriangle],
+        ["Programados", resumen.programado, CalendarClock],
+        ["En curso", resumen.en_curso, Droplets],
+        ["Conformes", resumen.completado, ClipboardCheck],
+        ["Observados", resumen.observado, AlertTriangle],
       ].map(([etiqueta, valor, Icono]) => { const I = Icono as typeof Beaker; return <article key={String(etiqueta)} className="rounded-2xl border border-slate-200 bg-white p-5"><I className="h-5 w-5 text-emerald-700" /><p className="mt-3 text-sm text-slate-600">{String(etiqueta)}</p><p className="mt-1 text-2xl font-bold text-slate-900">{String(valor)}</p></article>; })}</section>
       {nuevo && <FormularioPlan catalogos={catalogos} equipos={equipos} silos={silos} alCerrar={() => setNuevo(false)} alCrear={(a) => { setAseos((lista) => [a, ...lista]); setNuevo(false); setSeleccionado(a.id); }} />}
       {activo && <ControlAseo aseo={activo} catalogos={catalogos} alCambiar={reemplazar} alCerrar={() => setSeleccionado(null)} />}

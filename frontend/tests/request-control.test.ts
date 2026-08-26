@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { claveGet, LimitadorSolicitudes } from "../src/services/request-control.ts";
+import {
+  claveGet,
+  esLecturaMiBorrador,
+  LimitadorSolicitudes,
+  recursoDeEscrituraSoloBorrador,
+} from "../src/services/request-control.ts";
 
 test("solo deja dos lecturas activas al mismo tiempo", async () => {
   const limite = new LimitadorSolicitudes(2);
@@ -28,4 +33,32 @@ test("la caché separa parámetros y credenciales", () => {
     claveGet("silos", { pagina: 2 }, "a"),
   );
   assert.notEqual(claveGet("silos", {}, "a"), claveGet("silos", {}, "b"));
+});
+
+test("draft write invalidates only its matching resume read", () => {
+  const recurso = recursoDeEscrituraSoloBorrador(
+    "/api/recepcion/analisis-silo/42/guardar-borrador/",
+  );
+
+  assert.equal(recurso, "recepcion/analisis-silo");
+  assert.equal(
+    esLecturaMiBorrador(
+      "recepcion/analisis-silo/mi-borrador/?silo=3",
+      recurso!,
+    ),
+    true,
+  );
+  assert.equal(
+    esLecturaMiBorrador("recepcion/recepciones/mi-borrador/", recurso!),
+    false,
+  );
+});
+
+test("confirming a draft preserves global invalidation", () => {
+  assert.equal(
+    recursoDeEscrituraSoloBorrador(
+      "produccion/lotes/7/confirmar-borrador/",
+    ),
+    null,
+  );
 });

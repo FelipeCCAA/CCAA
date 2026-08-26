@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
@@ -37,7 +38,15 @@ class OrdenTrabajoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = filtrar_por_scope(OrdenTrabajo.objects.select_related(
             "equipo", "plan", "responsable", "creada_por"
-        ).prefetch_related("fallas", "repuestos__insumo"), self.request.user,
+        ).prefetch_related(
+            "fallas",
+            Prefetch(
+                "repuestos",
+                queryset=RepuestoUtilizado.objects.select_related(
+                    "insumo", "entrega__lote"
+                ),
+            ),
+        ), self.request.user,
             campo_sucursal="equipo__sucursal_id",
             campo_empresa="equipo__sucursal__empresa_id",
         )
@@ -102,7 +111,9 @@ class RepuestoUtilizadoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, views
     tenant_relation_fields = {
         "orden": ("equipo__sucursal_id", "equipo__sucursal__empresa_id")
     }
-    queryset = RepuestoUtilizado.objects.select_related("orden", "insumo")
+    queryset = RepuestoUtilizado.objects.select_related(
+        "orden", "insumo", "entrega__lote"
+    )
     serializer_class = RepuestoUtilizadoSerializer
     permission_classes = [EscribeMantenimiento]
     http_method_names = ["get", "post", "head", "options"]

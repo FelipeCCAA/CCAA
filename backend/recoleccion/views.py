@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Prefetch
+from django.db.models import Exists, OuterRef, Prefetch
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -7,10 +7,20 @@ from rest_framework.response import Response
 
 from usuarios.permisos import EscribeRecepcion
 from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin
+from recepcion.models import ModuloRecepcion
 
 from .models import CargaModulo, ParadaRuta, Recoleccion, RutaRecoleccion
 from .serializers import ParadaRutaSerializer, RecoleccionSerializer, RutaRecoleccionSerializer, CargaModuloSerializer
 from .services import agregar_carga, cerrar_ruta
+
+
+def _cargas_con_estado_recepcion():
+    """Carga el booleano que muestra la API sin materializar la relación."""
+    return CargaModulo.objects.annotate(
+        recepcionada_calculada=Exists(
+            ModuloRecepcion.objects.filter(carga_recoleccion_id=OuterRef("pk"))
+        )
+    )
 
 
 class RutaRecoleccionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
@@ -59,7 +69,9 @@ class RecoleccionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mo
     }
     queryset = Recoleccion.objects.select_related(
         "parada__ruta__vehiculo", "operador"
-    ).prefetch_related("cargas")
+    ).prefetch_related(
+        Prefetch("cargas", queryset=_cargas_con_estado_recepcion())
+    )
     serializer_class = RecoleccionSerializer
     permission_classes = [EscribeRecepcion]
 
@@ -107,9 +119,9 @@ class RecoleccionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mo
 class CargaModuloViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "recoleccion__parada__ruta__vehiculo__sucursal_id"
     tenant_lookup_empresa = "recoleccion__parada__ruta__vehiculo__sucursal__empresa_id"
-    queryset = CargaModulo.objects.select_related(
+    queryset = _cargas_con_estado_recepcion().select_related(
         "recoleccion__parada__ruta__vehiculo"
-    ).prefetch_related("modulos_recepcion")
+    )
     serializer_class = CargaModuloSerializer
     permission_classes = [EscribeRecepcion]
 

@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import DecimalField, OuterRef, Subquery, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -15,6 +15,7 @@ from rest_framework.response import Response
 
 from maestros import recetas
 from maestros.models import Equipo, Especificacion, Producto, Receta, Silo
+from recepcion.models import MovimientoSilo
 from usuarios.permisos import EscribeProduccion
 from usuarios.tenancy import (
     QuerysetTenantMixin,
@@ -123,12 +124,24 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     # `prefetch_related` trae los análisis de todos los lotes en una sola
     # consulta. Sin esto, calcular la calidad de un listado dispararía una
     # consulta por lote.
+    salida_del_lote = MovimientoSilo.objects.filter(
+        tipo=MovimientoSilo.Tipo.SALIDA,
+        origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+        origen_id=OuterRef("pk"),
+        silo_id=OuterRef("vale__silo_destino_id"),
+    ).order_by("-fecha_hora")
     queryset = (
         Lote.objects.select_related(
             "sucursal", "producto", "producto__mandante", "vale",
             "vale__silo_destino", "equipo", "ejecucion", "orden",
         )
         .prefetch_related("analisis")
+        .annotate(
+            litros_procesados_anotados=Subquery(
+                salida_del_lote.values("litros")[:1],
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
     )
     serializer_class = LoteSerializer
     permission_classes = [EscribeProduccion]
@@ -205,6 +218,13 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             consulta = consulta.filter(id__in=self._ids_con_calidad(consulta, calidad))
 
         return consulta
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        # La instancia se obtuvo desde el queryset anotado antes del PATCH.
+        # Si cambió el vale, esa anotación describe el silo anterior. La
+        # respuesta inmediata debe usar el cálculo fresco de respaldo.
+        serializer.instance.__dict__.pop("litros_procesados_anotados", None)
 
     # --------------------------------------------------------- borradores
 

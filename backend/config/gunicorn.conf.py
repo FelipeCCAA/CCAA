@@ -4,16 +4,21 @@ import os
 
 
 bind = "0.0.0.0:8000"
-workers = int(os.getenv("GUNICORN_WORKERS", "2"))
+workers = int(os.getenv("GUNICORN_WORKERS", "3"))
 threads = int(os.getenv("GUNICORN_THREADS", "2"))
 worker_class = "gthread"
-timeout = int(os.getenv("GUNICORN_TIMEOUT", "30"))
+timeout = int(os.getenv("GUNICORN_TIMEOUT", "35"))
 graceful_timeout = int(os.getenv("GUNICORN_GRACEFUL_TIMEOUT", "30"))
 keepalive = int(os.getenv("GUNICORN_KEEPALIVE", "5"))
+# Gunicorn actualiza un heartbeat por worker. /dev/shm evita que esa escritura
+# periodica se bloquee detras del almacenamiento del contenedor.
+worker_tmp_dir = os.getenv("GUNICORN_WORKER_TMP_DIR", "/dev/shm")
 # Reciclar procesos de forma escalonada evita que un crecimiento accidental de
 # memoria se acumule indefinidamente en un servidor de larga vida.
 max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "1000"))
 max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "100"))
-accesslog = "-"
+# Nginx ya registra cada request con tiempo de upstream y request_id. Evitar un
+# segundo access log reduce JSON, locks y escrituras; se puede reactivar con -.
+accesslog = os.getenv("GUNICORN_ACCESS_LOG") or None
 errorlog = "-"
 capture_output = True

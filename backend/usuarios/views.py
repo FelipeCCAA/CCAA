@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import get_connection
 from django.db import DatabaseError, IntegrityError, transaction
+from django.db.models import Prefetch
 from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
@@ -36,7 +37,10 @@ from .serializers import (
     UsuarioSerializer,
 )
 from .permisos import IsAdminDeArea, PuedeGestionarSesiones
-from .permisos_industriales import permisos_asignables_por
+from .permisos_industriales import (
+    permisos_asignables_por,
+    queryset_permisos_industriales,
+)
 from .throttling import LoginIPThrottle, LoginUsuarioThrottle
 from .tenancy import scope_de
 from .sesiones import (
@@ -266,6 +270,12 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         usuarios = User.objects.select_related(
             "perfil", "perfil__empresa", "perfil__sucursal"
+        ).prefetch_related(
+            Prefetch(
+                "user_permissions",
+                queryset=queryset_permisos_industriales(),
+                to_attr="permisos_industriales_precargados",
+            )
         ).order_by("first_name", "last_name", "username")
         if self.request.user.is_superuser:
             return usuarios
@@ -567,8 +577,16 @@ class SesionUsuarioViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        return SesionUsuario.objects.filter(fecha_cierre__isnull=True).select_related(
-            "usuario", "usuario__perfil"
+        return (
+            SesionUsuario.objects.filter(fecha_cierre__isnull=True)
+            .select_related("usuario", "usuario__perfil")
+            .prefetch_related(
+                Prefetch(
+                    "usuario__user_permissions",
+                    queryset=queryset_permisos_industriales(),
+                    to_attr="permisos_industriales_precargados",
+                )
+            )
         )
 
     @action(detail=True, methods=["post"], url_path="cerrar")

@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import F, Q, Sum
 from django.utils import timezone
 
 from .models import (
@@ -84,64 +84,83 @@ def genealogia_lote(
     lote_id, direccion, profundidad_maxima=12, sucursal_id=None, empresa_id=None
 ):
     from produccion.models import Lote
+    from .models import EntradaProceso, SalidaProceso
 
     if direccion not in {"atras", "adelante"}:
         raise ValueError("Dirección inválida.")
 
-    visitados = {int(lote_id)}
-    frontera = [(int(lote_id), 0)]
-    nodos = {}
-    enlaces = []
-
-    while frontera:
-        actual_id, profundidad = frontera.pop(0)
-        lotes = Lote.objects.select_related("producto")
+    def acotar_por_tenant(consulta, prefijo=""):
         if sucursal_id is not None:
-            lotes = lotes.filter(sucursal_id=sucursal_id)
-        elif empresa_id is not None:
-            lotes = lotes.filter(sucursal__empresa_id=empresa_id)
-        lote = lotes.get(pk=actual_id)
-        nodos[actual_id] = {
+            return consulta.filter(**{f"{prefijo}sucursal_id": sucursal_id})
+        if empresa_id is not None:
+            return consulta.filter(
+                **{f"{prefijo}sucursal__empresa_id": empresa_id}
+            )
+        return consulta
+
+    def serializar_nodo(lote):
+        return {
             "id": lote.id,
             "codigo": lote.codigo_lote,
             "producto": lote.producto.nombre,
             "fecha": lote.fecha,
         }
-        if profundidad >= profundidad_maxima:
-            continue
 
+    lotes = acotar_por_tenant(Lote.objects.select_related("producto"))
+    raiz = lotes.get(pk=int(lote_id))
+    visitados = {raiz.id}
+    frontera = [raiz]
+    nodos = {raiz.id: serializar_nodo(raiz)}
+    enlaces = []
+
+    # Una consulta por nivel, no por nodo. En un proceso con varias entradas
+    # o coproductos, el recorrido anterior volvía a consultar el lote y sus
+    # relaciones para cada rama, de modo que el costo crecía con el ancho del
+    # grafo. El JOIN devuelve a la vez el vecino y el extremo de la arista.
+    for _profundidad in range(max(0, profundidad_maxima)):
+        if not frontera:
+            break
+        ids_actuales = [lote.id for lote in frontera]
         if direccion == "atras":
-            ejecuciones = lote.salidas_proceso.select_related("ejecucion").all()
-            relacionados = [
-                entrada.lote
-                for salida in ejecuciones
-                for entrada in salida.ejecucion.entradas.select_related("lote__producto")
-                # Una entrada puede venir de un **silo** y no de un lote:
-                # es el caso de la estandarizacion, que toma leche cruda.
-                # La cadena de lotes termina ahi, y de ahi hacia atras la
-                # responde el libro de movimientos de silo.
-                if entrada.lote_id
-                and (sucursal_id is None or entrada.lote.sucursal_id == sucursal_id)
-                and (empresa_id is None or entrada.lote.sucursal.empresa_id == empresa_id)
-            ]
-            pares = [(rel.id, actual_id) for rel in relacionados]
+            relaciones = EntradaProceso.objects.filter(
+                ejecucion__salidas__lote_id__in=ids_actuales,
+                lote_id__isnull=False,
+            ).annotate(
+                actual_relacion_id=F("ejecucion__salidas__lote_id")
+            ).select_related("lote__producto")
+            relaciones = acotar_por_tenant(relaciones, "lote__").order_by(
+                "ejecucion__salidas__id", "id"
+            )
         else:
-            ejecuciones = lote.entradas_proceso.select_related("ejecucion").all()
-            relacionados = [
-                salida.lote
-                for entrada in ejecuciones
-                for salida in entrada.ejecucion.salidas.select_related("lote__producto")
-                if salida.lote_id
-                and (sucursal_id is None or salida.lote.sucursal_id == sucursal_id)
-                and (empresa_id is None or salida.lote.sucursal.empresa_id == empresa_id)
-            ]
-            pares = [(actual_id, rel.id) for rel in relacionados]
+            relaciones = SalidaProceso.objects.filter(
+                ejecucion__entradas__lote_id__in=ids_actuales,
+                lote_id__isnull=False,
+            ).annotate(
+                actual_relacion_id=F("ejecucion__entradas__lote_id")
+            ).select_related("lote__producto")
+            relaciones = acotar_por_tenant(relaciones, "lote__").order_by(
+                "ejecucion__entradas__id", "id"
+            )
 
-        for relacionado, (origen, destino) in zip(relacionados, pares):
-            enlaces.append({"origen": origen, "destino": destino})
-            if relacionado.id not in visitados:
+        por_actual = {actual_id: [] for actual_id in ids_actuales}
+        for relacion in relaciones:
+            por_actual[relacion.actual_relacion_id].append(relacion.lote)
+
+        siguiente = {}
+        for actual_id in ids_actuales:
+            for relacionado in por_actual[actual_id]:
+                origen, destino = (
+                    (relacionado.id, actual_id)
+                    if direccion == "atras"
+                    else (actual_id, relacionado.id)
+                )
+                enlaces.append({"origen": origen, "destino": destino})
+                if relacionado.id in visitados:
+                    continue
                 visitados.add(relacionado.id)
-                frontera.append((relacionado.id, profundidad + 1))
+                nodos[relacionado.id] = serializar_nodo(relacionado)
+                siguiente[relacionado.id] = relacionado
+        frontera = list(siguiente.values())
 
     return {"nodos": list(nodos.values()), "enlaces": enlaces}
 

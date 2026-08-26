@@ -5,7 +5,10 @@ from io import BytesIO, StringIO
 
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import Case, Count, DecimalField, F, Max, Q, Sum, Value, When
+from django.db.models import (
+    Case, Count, DecimalField, F, IntegerField, Max, OuterRef, Q, Subquery,
+    Sum, Value, When,
+)
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.utils import timezone
@@ -1504,22 +1507,46 @@ class DespachoLecheViewSet(
         return Response(self.get_serializer(despacho).data)
 
 
+def _analisis_silo_con_vigencia():
+    posteriores = (
+        MovimientoSilo.objects.filter(
+            silo_id=OuterRef("silo_id"),
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            fecha_hora__gt=OuterRef("tomado_en"),
+        )
+        .order_by()
+        .values("silo_id")
+        .annotate(total=Sum("litros"), cantidad=Count("id"))
+    )
+    return AnalisisSilo.objects.select_related(
+        "silo", "analista", "visualizado_por"
+    ).annotate(
+        ingresos_posteriores_litros=Coalesce(
+            Subquery(posteriores.values("total")[:1]),
+            Value(Decimal("0")),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        ),
+        ingresos_posteriores_cantidad=Coalesce(
+            Subquery(posteriores.values("cantidad")[:1]),
+            Value(0),
+            output_field=IntegerField(),
+        ),
+    )
+
+
 class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
     """
     El análisis del silo — `CCAA.REC.FORM.005.01`.
 
-    `?vigentes=1` filtra en Python y no en la base: la vigencia se decide
-    contra el libro de movimientos, y expresarla como consulta duplicaría en
-    SQL una regla que ya está en el dominio. Con ocho silos el costo es nulo
-    y la regla sigue teniendo una sola implementación.
+    La vigencia sigue decidiéndose en el dominio. El queryset solo anota el
+    resumen objetivo que esa regla necesita (cantidad y litros ingresados
+    después de la muestra), evitando consultar el libro dos veces por fila.
     """
 
     tenant_lookup_sucursal = "silo__sucursal_id"
     tenant_lookup_empresa = "silo__sucursal__empresa_id"
     tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = AnalisisSilo.objects.select_related(
-        "silo", "analista", "visualizado_por"
-    )
+    queryset = _analisis_silo_con_vigencia()
 
 
     serializer_class = AnalisisSiloSerializer
@@ -1535,8 +1562,10 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
             consulta = consulta.filter(silo_id=silo)
 
         if self.request.query_params.get("vigentes") in {"1", "true"}:
-            vigentes = [fila.id for fila in consulta if fila.vigente]
-            consulta = consulta.filter(id__in=vigentes)
+            consulta = consulta.filter(
+                ingresos_posteriores_cantidad=0,
+                tomado_en__isnull=False,
+            )
 
         return consulta
 
@@ -1545,6 +1574,14 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
             analista=self.request.user,
             estado=AnalisisSilo.Estado.CONFIRMADO,
         )
+
+    def perform_update(self, serializer):
+        serializer.save()
+        # `silo` y `tomado_en` pueden cambiar en el PATCH. Las sumas anotadas
+        # pertenecen a los valores con que se leyó la fila; quitarlas obliga a
+        # recalcular la vigencia correcta en la respuesta de esta escritura.
+        serializer.instance.__dict__.pop("ingresos_posteriores_litros", None)
+        serializer.instance.__dict__.pop("ingresos_posteriores_cantidad", None)
 
     @action(detail=True, methods=["post"])
     def visualizar(self, request, pk=None):

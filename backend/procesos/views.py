@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Prefetch, Q
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
@@ -308,7 +309,11 @@ def trazabilidad(request, lote):
     direccion = request.query_params.get("direccion", "atras")
 
     lotes = filtrar_por_scope(
-        Lote.objects.all(), request.user,
+        Lote.objects.select_related(
+            "producto", "equipo", "ejecucion",
+            "vale__silo_destino", "vale__ejecucion",
+            "liberacion__autorizada_por",
+        ), request.user,
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     )
     if str(lote).isdigit():
@@ -321,7 +326,11 @@ def trazabilidad(request, lote):
                 campo_sucursal="envase__lote__sucursal_id",
                 campo_empresa="envase__lote__sucursal__empresa_id",
             ).filter(codigo=lote).first()
-            encontrado = pallet.envase.lote if pallet else None
+            # Recuperarlo desde el queryset enriquecido evita que el camino
+            # por pallet pierda los ``select_related`` que usa el flujo.
+            encontrado = (
+                lotes.filter(pk=pallet.envase.lote_id).first() if pallet else None
+            )
 
     if encontrado is None:
         return Response(
@@ -348,6 +357,8 @@ def trazabilidad(request, lote):
 
 def _flujo_completo(lote):
     """Recepción → estandarización → producción para una corrida concreta."""
+    from inventario.models import DetalleDespacho
+    from produccion.models import PalletProducto
     from recepcion.models import MovimientoSilo, Recepcion
 
     vale = lote.vale
@@ -362,16 +373,40 @@ def _flujo_completo(lote):
         ).select_related("silo")
     )
 
+    # Todos los ingresos candidatos se consultan juntos. Antes cada consumo
+    # de estandarización hacía una consulta por ids y otra por recepciones.
+    # Se conserva el corte temporal propio de cada consumo al agruparlos en
+    # memoria.
+    filtro_ingresos = Q(pk__in=[])
+    for consumo in consumos_estandarizacion:
+        filtro_ingresos |= Q(
+            silo_id=consumo.silo_id, fecha_hora__lte=consumo.fecha_hora
+        )
+    ingresos = list(
+        MovimientoSilo.objects.filter(
+            filtro_ingresos,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+        ).only("silo_id", "origen_id", "fecha_hora")
+    ) if consumos_estandarizacion else []
+    recepciones_por_orden = list(
+        Recepcion.objects.filter(
+            pk__in={ingreso.origen_id for ingreso in ingresos}
+        ).select_related("vehiculo")
+    )
+
     recepciones = []
     vistos = set()
     for consumo in consumos_estandarizacion:
-        ids = MovimientoSilo.objects.filter(
-            silo=consumo.silo,
-            tipo=MovimientoSilo.Tipo.INGRESO,
-            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
-            fecha_hora__lte=consumo.fecha_hora,
-        ).values_list("origen_id", flat=True)
-        for recepcion in Recepcion.objects.filter(pk__in=ids).select_related("vehiculo"):
+        ids = {
+            ingreso.origen_id
+            for ingreso in ingresos
+            if ingreso.silo_id == consumo.silo_id
+            and ingreso.fecha_hora <= consumo.fecha_hora
+        }
+        for recepcion in recepciones_por_orden:
+            if recepcion.pk not in ids:
+                continue
             clave = (recepcion.pk, consumo.silo_id)
             if clave in vistos:
                 continue
@@ -387,16 +422,27 @@ def _flujo_completo(lote):
 
     ejecucion_est = getattr(vale, "ejecucion", None)
     ejecucion_prod = lote.ejecucion
+    pallets_serializables = PalletProducto.objects.select_related(
+        "existencia_producto__ubicacion"
+    ).prefetch_related(
+        Prefetch(
+            "detalles_despacho",
+            queryset=DetalleDespacho.objects.filter(
+                despacho__estado="despachado"
+            ).select_related("despacho__cliente").order_by("pk"),
+            to_attr="detalles_despachados",
+        )
+    )
     pallets = []
     for envase in lote.registros_envase.prefetch_related(
-        "pallets__existencia_producto__ubicacion",
-        "pallets__detalles_despacho__despacho__cliente",
+        Prefetch("pallets", queryset=pallets_serializables)
     ):
         for pallet in envase.pallets.all():
             existencia = getattr(pallet, "existencia_producto", None)
-            detalle = pallet.detalles_despacho.filter(
-                despacho__estado="despachado"
-            ).select_related("despacho__cliente").first()
+            detalle = (
+                pallet.detalles_despachados[0]
+                if pallet.detalles_despachados else None
+            )
             pallets.append({
                 "id": pallet.pk,
                 "codigo": pallet.codigo,
