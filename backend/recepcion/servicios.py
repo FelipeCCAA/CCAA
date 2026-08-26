@@ -9,7 +9,7 @@ from django.utils import timezone
 from maestros.models import Silo
 
 from . import dominio
-from .models import AtribucionRecepcion, MovimientoSilo
+from .models import AnalisisSilo, AtribucionRecepcion, DespachoLeche, MovimientoSilo
 
 
 ESTADOS_SIN_CONSUMO = {
@@ -276,6 +276,53 @@ def transferir_silo(
         destino.producto_actual = producto
         destino.save(update_fields=["producto_actual"])
     return [salida, ingreso]
+
+
+@transaction.atomic
+def despachar_leche(
+    *, silo_id, litros, destino, guia_despacho, patente, fecha_hora,
+    operacion_id, usuario,
+):
+    """Registra una salida a granel, con liberación vigente y FIFO."""
+    existente = DespachoLeche.objects.filter(operacion_id=operacion_id).first()
+    if existente:
+        return existente
+
+    silo = Silo.objects.select_for_update().get(pk=silo_id)
+    cantidad = Decimal(str(litros))
+    if cantidad <= 0:
+        raise ValidationError({"litros": "La cantidad debe ser mayor que cero."})
+    motivos = motivos_silo_no_disponible(silo, para="proceso", ahora=fecha_hora)
+    if motivos:
+        raise ValidationError({"silo": motivos})
+    disponible = saldo_silo(silo)
+    if cantidad > disponible:
+        raise ValidationError({
+            "litros": f"Saldo insuficiente: {silo.codigo} tiene {disponible} L."
+        })
+    analisis = AnalisisSilo.objects.filter(
+        silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
+    ).order_by("-tomado_en", "-id").first()
+    if analisis.tomado_en > fecha_hora:
+        raise ValidationError({
+            "fecha_hora": "La liberación de Calidad debe ser anterior al despacho."
+        })
+
+    despacho = DespachoLeche.objects.create(
+        silo=silo, litros=cantidad, destino=destino.strip(),
+        guia_despacho=guia_despacho.strip(), patente=patente.strip().upper(),
+        fecha_hora=fecha_hora, liberacion_analisis=analisis,
+        responsable=usuario, operacion_id=operacion_id,
+    )
+    movimiento = MovimientoSilo.objects.create(
+        silo=silo, tipo=MovimientoSilo.Tipo.SALIDA, litros=cantidad,
+        fecha_hora=fecha_hora, origen_tipo=MovimientoSilo.OrigenTipo.DESPACHO,
+        origen_id=despacho.pk, operacion_id=operacion_id,
+        motivo=f"Guía {despacho.guia_despacho} · {despacho.destino}", usuario=usuario,
+    )
+    despacho.movimiento = movimiento
+    despacho.save(update_fields=["movimiento"])
+    return despacho
 
 
 @transaction.atomic

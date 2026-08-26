@@ -6,6 +6,7 @@ import {
   obtenerOcupacion, type Ocupacion, type OcupacionSilo,
 } from "../../services/recepcion.service";
 import AnalisisSiloPanel from "./AnalisisSilo";
+import FormularioDespachoLeche from "./FormularioDespachoLeche";
 
 /*
   Los silos como herramienta, no como decoración.
@@ -121,6 +122,7 @@ function Silos() {
   // `Promise.all`: si su endpoint cae, la pantalla de silos sigue
   // sirviendo para lo que sirve hoy.
   const [seleccionado, setSeleccionado] = useState<OcupacionSilo | null>(null);
+  const [despachando, setDespachando] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -205,6 +207,7 @@ function Silos() {
 
       {seleccionado && (
         <>
+          {despachando && <FormularioDespachoLeche siloId={seleccionado.silo_id} siloCodigo={seleccionado.codigo} disponible={seleccionado.litros} onCerrar={() => setDespachando(false)} onCreado={async () => { const nueva = await obtenerOcupacion(); setOcupacion(nueva); setSeleccionado(nueva.silos.find((item) => item.silo_id === seleccionado.silo_id) ?? null); setDespachando(false); }} />}
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -233,7 +236,7 @@ function Silos() {
               <AccionSilo texto="Tomar muestra" icono={Beaker} onClick={() => document.getElementById("analisis-silo")?.scrollIntoView({ behavior: "smooth" })} />
               <AccionSilo texto="Estandarizar" icono={FlaskConical} destino={`/estandarizacion?silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
               <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
-              <AccionSilo texto="Despachar" icono={Truck} bloqueado="Pendiente configurar cliente, guía y liberación exigida para leche a granel." />
+              <AccionSilo texto="Despachar" icono={Truck} onClick={() => setDespachando(true)} bloqueado={seleccionado.motivos_no_disponible[0]} />
             </div>
           </section>
           <div id="analisis-silo">

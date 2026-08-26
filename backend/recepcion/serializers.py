@@ -10,6 +10,7 @@ from .models import (
     VALORES_ADMITIDOS,
     BusquedaProveedor,
     ControlInhibidores,
+    DespachoLeche,
     ModuloRecepcion,
     MovimientoSilo,
     Recepcion,
@@ -363,6 +364,35 @@ class TransferenciaSiloSerializer(serializers.Serializer):
     lote = serializers.IntegerField(required=False, allow_null=True)
     producto = serializers.IntegerField(required=False, allow_null=True)
     equipo = serializers.IntegerField(required=False, allow_null=True)
+
+
+class CrearDespachoLecheSerializer(serializers.Serializer):
+    silo = serializers.IntegerField(min_value=1)
+    litros = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("0.01")
+    )
+    destino = serializers.CharField(max_length=160, trim_whitespace=True)
+    guia_despacho = serializers.CharField(max_length=60, trim_whitespace=True)
+    patente = serializers.CharField(max_length=15, trim_whitespace=True)
+    fecha_hora = serializers.DateTimeField()
+    operacion_id = serializers.UUIDField()
+
+
+class DespachoLecheSerializer(serializers.ModelSerializer):
+    silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
+    responsable_nombre = serializers.CharField(
+        source="responsable.username", read_only=True
+    )
+
+    class Meta:
+        model = DespachoLeche
+        fields = [
+            "id", "silo", "silo_codigo", "litros", "destino",
+            "guia_despacho", "patente", "fecha_hora", "liberacion_analisis",
+            "responsable", "responsable_nombre", "operacion_id", "movimiento",
+            "creado_en",
+        ]
+        read_only_fields = fields
 
 
 class AnalisisSiloSerializer(serializers.ModelSerializer):

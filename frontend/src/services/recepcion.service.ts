@@ -752,3 +752,34 @@ export async function visualizarAnalisisSilo(id: number): Promise<AnalisisSilo> 
   );
   return data;
 }
+
+
+export interface DespachoLeche {
+  id: number;
+  silo: number;
+  silo_codigo: string;
+  litros: string;
+  destino: string;
+  guia_despacho: string;
+  patente: string;
+  fecha_hora: string;
+  liberacion_analisis: number;
+  responsable_nombre: string;
+  movimiento: number;
+}
+
+
+export async function crearDespachoLeche(datos: {
+  silo: number;
+  litros: number;
+  destino: string;
+  guia_despacho: string;
+  patente: string;
+  fecha_hora: string;
+  operacion_id: string;
+}): Promise<DespachoLeche> {
+  const { data } = await api.post<DespachoLeche>(
+    "/recepcion/despachos-leche/", datos,
+  );
+  return data;
+}

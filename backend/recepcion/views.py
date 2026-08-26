@@ -28,13 +28,15 @@ from . import dominio
 from .models import (
     CONTROLES_DECLARADOS, AlertaCalidadSilo, AnalisisSilo, BusquedaProveedor,
     AtribucionRecepcion, CorreccionRecepcion, ModuloRecepcion, MovimientoSilo, Recepcion,
+    DespachoLeche,
 )
 from .serializers import (
     AjusteSiloSerializer, AnalisisSiloSerializer, CorreccionCrioscopiasSerializer,
+    CrearDespachoLecheSerializer, DespachoLecheSerializer,
     MovimientoSiloSerializer, RecepcionSerializer, TransferenciaSiloSerializer,
 )
 from .servicios import (
-    ajustar_silo, momento_leche_mas_antigua, motivos_silo_no_disponible,
+    ajustar_silo, despachar_leche, momento_leche_mas_antigua, motivos_silo_no_disponible,
     saldo_silo, transferir_silo,
 )
 
@@ -1446,6 +1448,42 @@ def ocupacion(request):
             },
         }
     )
+
+
+class DespachoLecheViewSet(
+    RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
+):
+    tenant_lookup_sucursal = "silo__sucursal_id"
+    tenant_lookup_empresa = "silo__sucursal__empresa_id"
+    tenant_relation_fields = {"silo": ("sucursal_id", "sucursal__empresa_id")}
+    queryset = DespachoLeche.objects.select_related(
+        "silo", "liberacion_analisis", "responsable", "movimiento"
+    )
+    serializer_class = DespachoLecheSerializer
+    permission_classes = [EscribeRecepcion]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        entrada = CrearDespachoLecheSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        silos = filtrar_por_scope(
+            Silo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        if not silos.filter(pk=datos["silo"]).exists():
+            raise DRFValidationError({"silo": "Silo inexistente o fuera de tu planta."})
+        try:
+            despacho = despachar_leche(
+                silo_id=datos.pop("silo"), usuario=request.user, **datos
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(self.get_serializer(despacho).data, status=status.HTTP_201_CREATED)
 
 
 class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):

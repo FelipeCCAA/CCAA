@@ -589,6 +589,7 @@ class MovimientoSilo(models.Model):
         MERMA = "merma", "Merma"
         DEVOLUCION = "devolucion", "Devolución"
         REWORK = "rework", "Reproceso"
+        DESPACHO = "despacho", "Despacho de leche"
         AJUSTE = "ajuste", "Ajuste manual"
 
     silo = models.ForeignKey(
@@ -1007,3 +1008,38 @@ class AnalisisSilo(DocumentoBorradorMixin, models.Model):
             and bool(self.metodo)
             and self.hora_lectura is not None
         )
+
+
+class DespachoLeche(models.Model):
+    """Salida auditada de leche a granel desde un silo."""
+
+    silo = models.ForeignKey(
+        Silo, on_delete=models.PROTECT, related_name="despachos_leche"
+    )
+    litros = models.DecimalField(max_digits=12, decimal_places=2)
+    destino = models.CharField(max_length=160)
+    guia_despacho = models.CharField(max_length=60)
+    patente = models.CharField(max_length=15)
+    fecha_hora = models.DateTimeField()
+    liberacion_analisis = models.ForeignKey(
+        AnalisisSilo, on_delete=models.PROTECT, related_name="despachos_liberados"
+    )
+    responsable = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="despachos_leche_registrados",
+    )
+    operacion_id = models.UUIDField(unique=True)
+    movimiento = models.OneToOneField(
+        MovimientoSilo, on_delete=models.PROTECT, related_name="despacho_leche",
+        null=True, blank=True,
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-fecha_hora", "-id"]
+
+    def __str__(self):
+        return f"{self.guia_despacho} · {self.silo} · {self.litros} L"
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Un despacho no se elimina; se reversa conservando auditoría.")
