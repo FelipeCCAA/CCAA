@@ -794,3 +794,11 @@ export async function obtenerDespachosLeche(silo: number): Promise<DespachoLeche
   );
   return data.results;
 }
+
+
+export async function reversarDespachoLeche(id: number, motivo: string): Promise<DespachoLeche> {
+  const { data } = await api.post<DespachoLeche>(
+    `/recepcion/despachos-leche/${id}/reversar/`, { motivo },
+  );
+  return data;
+}

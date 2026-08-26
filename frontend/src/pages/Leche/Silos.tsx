@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, Beaker, FlaskConical, GitBranch, Truck, Warehouse } from "lucide-react";
 
 import {
-  obtenerDespachosLeche, obtenerOcupacion, type DespachoLeche, type Ocupacion, type OcupacionSilo,
+  obtenerDespachosLeche, obtenerOcupacion, reversarDespachoLeche, type DespachoLeche, type Ocupacion, type OcupacionSilo,
 } from "../../services/recepcion.service";
 import AnalisisSiloPanel from "./AnalisisSilo";
 import FormularioDespachoLeche from "./FormularioDespachoLeche";
@@ -241,7 +241,7 @@ function Silos() {
             </div>
             <div className="mt-4">
               <button type="button" onClick={() => void obtenerDespachosLeche(seleccionado.silo_id).then(setDespachos).catch(() => setError("No se pudo cargar el historial de despachos."))} className="text-sm font-medium text-emerald-700 underline">Ver historial de despachos</button>
-              {despachos && <div className="mt-3 space-y-2">{despachos.length === 0 ? <p className="text-sm text-slate-600">Sin despachos registrados.</p> : despachos.slice(0, 8).map((despacho) => <div key={despacho.id} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700"><span className="font-semibold">{despacho.guia_despacho}</span> · {Number(despacho.litros).toLocaleString("es-CL")} L · {despacho.destino}{despacho.anulado_en && <span className="ml-2 text-amber-700">Reversado: {despacho.motivo_anulacion}</span>}</div>)}</div>}
+              {despachos && <div className="mt-3 space-y-2">{despachos.length === 0 ? <p className="text-sm text-slate-600">Sin despachos registrados.</p> : despachos.slice(0, 8).map((despacho) => <div key={despacho.id} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700"><span className="font-semibold">{despacho.guia_despacho}</span> · {Number(despacho.litros).toLocaleString("es-CL")} L · {despacho.destino}{despacho.anulado_en ? <span className="ml-2 text-amber-700">Reversado: {despacho.motivo_anulacion}</span> : <button type="button" onClick={() => { const motivo = window.prompt(`Motivo para reversar ${despacho.guia_despacho}:`); if (!motivo) return; void reversarDespachoLeche(despacho.id, motivo).then(async () => { const nueva = await obtenerOcupacion(); setOcupacion(nueva); setSeleccionado(nueva.silos.find((item) => item.silo_id === seleccionado.silo_id) ?? null); setDespachos(await obtenerDespachosLeche(seleccionado.silo_id)); }).catch(() => setError("No se pudo reversar el despacho.")); }} className="ml-3 font-semibold text-rose-700 underline">Reversar</button>}</div>)}</div>}
             </div>
           </section>
           <div id="analisis-silo">
