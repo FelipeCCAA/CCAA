@@ -766,6 +766,9 @@ export interface DespachoLeche {
   liberacion_analisis: number;
   responsable_nombre: string;
   movimiento: number;
+  reversa: number | null;
+  anulado_en: string | null;
+  motivo_anulacion: string;
 }
 
 
@@ -782,4 +785,12 @@ export async function crearDespachoLeche(datos: {
     "/recepcion/despachos-leche/", datos,
   );
   return data;
+}
+
+
+export async function obtenerDespachosLeche(silo: number): Promise<DespachoLeche[]> {
+  const { data } = await api.get<{ results: DespachoLeche[] }>(
+    "/recepcion/despachos-leche/", { params: { silo } },
+  );
+  return data.results;
 }

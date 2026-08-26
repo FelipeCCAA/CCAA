@@ -1033,6 +1033,16 @@ class DespachoLeche(models.Model):
         MovimientoSilo, on_delete=models.PROTECT, related_name="despacho_leche",
         null=True, blank=True,
     )
+    reversa = models.OneToOneField(
+        MovimientoSilo, on_delete=models.PROTECT, related_name="reversa_despacho_leche",
+        null=True, blank=True,
+    )
+    anulado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="despachos_leche_anulados", null=True, blank=True,
+    )
+    anulado_en = models.DateTimeField(null=True, blank=True)
+    motivo_anulacion = models.TextField(blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
 
     class Meta:

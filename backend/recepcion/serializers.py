@@ -390,9 +390,13 @@ class DespachoLecheSerializer(serializers.ModelSerializer):
             "id", "silo", "silo_codigo", "litros", "destino",
             "guia_despacho", "patente", "fecha_hora", "liberacion_analisis",
             "responsable", "responsable_nombre", "operacion_id", "movimiento",
-            "creado_en",
+            "reversa", "anulado_por", "anulado_en", "motivo_anulacion", "creado_en",
         ]
         read_only_fields = fields
+
+
+class ReversaDespachoLecheSerializer(serializers.Serializer):
+    motivo = serializers.CharField(min_length=5, trim_whitespace=True)
 
 
 class AnalisisSiloSerializer(serializers.ModelSerializer):

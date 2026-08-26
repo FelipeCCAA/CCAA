@@ -41,3 +41,14 @@ class DespachoLecheAPITests(BaseAPIRecepcion):
         self.assertEqual(despacho.liberacion_analisis, analisis)
         self.assertEqual(despacho.movimiento.origen_tipo, "despacho")
         self.assertEqual(saldo_silo(self.silo), 600)
+
+        reversa = self.cliente.post(
+            f"/api/recepcion/despachos-leche/{despacho.id}/reversar/",
+            {"motivo": "Guía digitada por error"}, format="json",
+        )
+
+        self.assertEqual(reversa.status_code, 200, reversa.data)
+        despacho.refresh_from_db()
+        self.assertIsNotNone(despacho.reversa_id)
+        self.assertEqual(despacho.reversa.origen_tipo, "devolucion")
+        self.assertEqual(saldo_silo(self.silo), 1000)

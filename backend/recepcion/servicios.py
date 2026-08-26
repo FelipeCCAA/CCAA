@@ -326,6 +326,36 @@ def despachar_leche(
 
 
 @transaction.atomic
+def reversar_despacho_leche(*, despacho_id, motivo, usuario):
+    """Devuelve al silo un despacho digitado por error, sin borrar la salida."""
+    despacho = DespachoLeche.objects.select_for_update().select_related("silo").get(
+        pk=despacho_id
+    )
+    if despacho.reversa_id:
+        return despacho
+    texto = motivo.strip()
+    if len(texto) < 5:
+        raise ValidationError({"motivo": "Indica el motivo de la reversa (mínimo 5 caracteres)."})
+    silo = Silo.objects.select_for_update().get(pk=despacho.silo_id)
+    if saldo_silo(silo) + despacho.litros > silo.capacidad_l:
+        raise ValidationError({
+            "motivo": f"No se puede reversar: {silo.codigo} excedería su capacidad."
+        })
+    reversa = MovimientoSilo.objects.create(
+        silo=silo, tipo=MovimientoSilo.Tipo.INGRESO, litros=despacho.litros,
+        fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.DEVOLUCION,
+        origen_id=despacho.pk, motivo=f"Reversa guía {despacho.guia_despacho}: {texto}",
+        usuario=usuario,
+    )
+    despacho.reversa = reversa
+    despacho.anulado_por = usuario
+    despacho.anulado_en = timezone.now()
+    despacho.motivo_anulacion = texto
+    despacho.save(update_fields=["reversa", "anulado_por", "anulado_en", "motivo_anulacion"])
+    return despacho
+
+
+@transaction.atomic
 def ajustar_silo(*, silo_id, litros, operacion_id, usuario, motivo):
     existente = MovimientoSilo.objects.filter(operacion_id=operacion_id).first()
     if existente:

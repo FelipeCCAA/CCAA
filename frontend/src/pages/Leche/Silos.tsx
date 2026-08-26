@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, Beaker, FlaskConical, GitBranch, Truck, Warehouse } from "lucide-react";
 
 import {
-  obtenerOcupacion, type Ocupacion, type OcupacionSilo,
+  obtenerDespachosLeche, obtenerOcupacion, type DespachoLeche, type Ocupacion, type OcupacionSilo,
 } from "../../services/recepcion.service";
 import AnalisisSiloPanel from "./AnalisisSilo";
 import FormularioDespachoLeche from "./FormularioDespachoLeche";
@@ -123,6 +123,7 @@ function Silos() {
   // sirviendo para lo que sirve hoy.
   const [seleccionado, setSeleccionado] = useState<OcupacionSilo | null>(null);
   const [despachando, setDespachando] = useState(false);
+  const [despachos, setDespachos] = useState<DespachoLeche[] | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -207,7 +208,7 @@ function Silos() {
 
       {seleccionado && (
         <>
-          {despachando && <FormularioDespachoLeche siloId={seleccionado.silo_id} siloCodigo={seleccionado.codigo} disponible={seleccionado.litros} onCerrar={() => setDespachando(false)} onCreado={async () => { const nueva = await obtenerOcupacion(); setOcupacion(nueva); setSeleccionado(nueva.silos.find((item) => item.silo_id === seleccionado.silo_id) ?? null); setDespachando(false); }} />}
+          {despachando && <FormularioDespachoLeche siloId={seleccionado.silo_id} siloCodigo={seleccionado.codigo} disponible={seleccionado.litros} onCerrar={() => setDespachando(false)} onCreado={async () => { const nueva = await obtenerOcupacion(); setOcupacion(nueva); setSeleccionado(nueva.silos.find((item) => item.silo_id === seleccionado.silo_id) ?? null); setDespachos(null); setDespachando(false); }} />}
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -238,6 +239,10 @@ function Silos() {
               <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
               <AccionSilo texto="Despachar" icono={Truck} onClick={() => setDespachando(true)} bloqueado={seleccionado.motivos_no_disponible[0]} />
             </div>
+            <div className="mt-4">
+              <button type="button" onClick={() => void obtenerDespachosLeche(seleccionado.silo_id).then(setDespachos).catch(() => setError("No se pudo cargar el historial de despachos."))} className="text-sm font-medium text-emerald-700 underline">Ver historial de despachos</button>
+              {despachos && <div className="mt-3 space-y-2">{despachos.length === 0 ? <p className="text-sm text-slate-600">Sin despachos registrados.</p> : despachos.slice(0, 8).map((despacho) => <div key={despacho.id} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700"><span className="font-semibold">{despacho.guia_despacho}</span> · {Number(despacho.litros).toLocaleString("es-CL")} L · {despacho.destino}{despacho.anulado_en && <span className="ml-2 text-amber-700">Reversado: {despacho.motivo_anulacion}</span>}</div>)}</div>}
+            </div>
           </section>
           <div id="analisis-silo">
             <AnalisisSiloPanel
@@ -258,11 +263,12 @@ function Silos() {
                 key={s.silo_id}
                 silo={s}
                 activo={seleccionado?.silo_id === s.silo_id}
-                onSelect={(elegido) =>
+                onSelect={(elegido) => {
+                  setDespachos(null);
                   setSeleccionado((actual) =>
                     actual?.silo_id === elegido.silo_id ? null : elegido,
-                  )
-                }
+                  );
+                }}
               />
             ))}
           </div>
@@ -285,11 +291,12 @@ function Silos() {
                 key={s.silo_id}
                 silo={s}
                 activo={seleccionado?.silo_id === s.silo_id}
-                onSelect={(elegido) =>
+                onSelect={(elegido) => {
+                  setDespachos(null);
                   setSeleccionado((actual) =>
                     actual?.silo_id === elegido.silo_id ? null : elegido,
-                  )
-                }
+                  );
+                }}
               />
             ))}
           </div>

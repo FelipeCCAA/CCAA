@@ -32,11 +32,12 @@ from .models import (
 )
 from .serializers import (
     AjusteSiloSerializer, AnalisisSiloSerializer, CorreccionCrioscopiasSerializer,
-    CrearDespachoLecheSerializer, DespachoLecheSerializer,
+    CrearDespachoLecheSerializer, DespachoLecheSerializer, ReversaDespachoLecheSerializer,
     MovimientoSiloSerializer, RecepcionSerializer, TransferenciaSiloSerializer,
 )
 from .servicios import (
     ajustar_silo, despachar_leche, momento_leche_mas_antigua, motivos_silo_no_disponible,
+    reversar_despacho_leche,
     saldo_silo, transferir_silo,
 )
 
@@ -1484,6 +1485,23 @@ class DespachoLecheViewSet(
                 raise DRFValidationError(error.messages) from error
             raise
         return Response(self.get_serializer(despacho).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def reversar(self, request, pk=None):
+        entrada = ReversaDespachoLecheSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        try:
+            despacho = reversar_despacho_leche(
+                despacho_id=self.get_object().pk, usuario=request.user,
+                **entrada.validated_data,
+            )
+        except Exception as error:
+            if hasattr(error, "message_dict"):
+                raise DRFValidationError(error.message_dict) from error
+            if hasattr(error, "messages"):
+                raise DRFValidationError(error.messages) from error
+            raise
+        return Response(self.get_serializer(despacho).data)
 
 
 class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
