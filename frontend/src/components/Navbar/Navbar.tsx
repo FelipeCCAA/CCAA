@@ -17,7 +17,6 @@ import {
   Truck,
   Users,
   Warehouse,
-  Wrench,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -42,18 +41,32 @@ interface Grupo {
 const gruposBase: Grupo[] = [
   {
     etiqueta: "Inicio",
-    modulos: [{ etiqueta: "Panel general", ruta: "/dashboard", icono: LayoutDashboard }],
+    modulos: [
+      { etiqueta: "Panel general", ruta: "/dashboard", icono: LayoutDashboard },
+      { etiqueta: "Silos principales", ruta: "/silos", icono: Warehouse },
+    ],
+  },
+  {
+    etiqueta: "Calidad",
+    modulos: [
+      { etiqueta: "Centro de calidad", ruta: "/calidad", icono: ClipboardCheck },
+      { etiqueta: "Liberación de producto", ruta: "/liberacion", icono: FlaskConical },
+    ],
   },
   {
     etiqueta: "Operación",
     modulos: [
-      { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
       { etiqueta: "Recepción de leche", ruta: "/leche", icono: Truck },
       { etiqueta: "Estandarización", ruta: "/estandarizacion", icono: FlaskConical },
       { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
       { etiqueta: "Procesos y trazabilidad", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion", "calidad", "despacho"] },
-      { etiqueta: "Calidad y liberación", ruta: "/liberacion", icono: ClipboardCheck },
       { etiqueta: "Registros operacionales", ruta: "/registros", icono: ClipboardList },
+    ],
+  },
+  {
+    etiqueta: "Planificación y control",
+    modulos: [
+      { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
       { etiqueta: "Inocuidad · Aseos", ruta: "/inocuidad/aseos", icono: ShieldCheck },
     ],
   },
@@ -62,12 +75,6 @@ const gruposBase: Grupo[] = [
     modulos: [
       { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
       { etiqueta: "Inventario y bodegas", ruta: "/abastecimiento/stock", icono: Warehouse },
-    ],
-  },
-  {
-    etiqueta: "Soporte",
-    modulos: [
-      { etiqueta: "Mantenimiento", ruta: "/mantenimiento", icono: Wrench, areas: ["mantenimiento", "administracion"] },
     ],
   },
   {

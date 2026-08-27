@@ -96,3 +96,13 @@ class BorradorLoteTests(BaseApertura):
         movimiento = MovimientoSilo.objects.get(origen_id=borrador["id"])
         self.assertEqual(movimiento.litros, Decimal("12000.00"))
 
+    def test_autoguardado_de_borrador_no_exige_motivo_de_correccion(self):
+        borrador = self.crear_borrador()
+        respuesta = self.cliente.patch(
+            f"/api/produccion/lotes/{borrador['id']}/guardar-borrador/",
+            {"producto": self.polvo.id, "observacion": "Avance"},
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 200, respuesta.json())
+        self.assertEqual(respuesta.json()["producto"], self.polvo.id)
+

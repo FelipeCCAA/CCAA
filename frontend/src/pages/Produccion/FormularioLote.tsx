@@ -15,6 +15,7 @@ import {
   type ValeDisponible,
 } from "../../services/produccion.service";
 import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
+import { obtenerAseos, type AseoCip } from "../../services/aseos.service";
 import { useBorrador } from "../../hooks/useBorrador";
 
 
@@ -70,6 +71,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const [vale, setVale] = useState("");
   const [litros, setLitros] = useState("");
   const [equipos, setEquipos] = useState<Equipo[]>([]);
+  const [aseos, setAseos] = useState<AseoCip[]>([]);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -128,6 +130,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
   useEffect(() => {
     obtenerEquipos().then(setEquipos).catch(() => setEquipos([]));
+    obtenerAseos().then(setAseos).catch(() => setAseos([]));
   }, []);
 
   useEffect(() => {
@@ -211,6 +214,35 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const campo =
     "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-green-600";
   const valeSeleccionado = vales.find((item) => item.id === Number(vale));
+  const productoSeleccionado = productos.find((item) => item.id === Number(producto));
+  const rutaPorFamilia: Record<string, { ruta: string; tipos: string[]; ayuda: string }> = {
+    polvo: {
+      ruta: "Leche estandarizada → Evaporación → Torre Egron → Envasado 25 kg",
+      tipos: ["torre"],
+      ayuda: "Esta apertura corresponde a la fase de secado; selecciona solo una torre Egron.",
+    },
+    liquido: {
+      ruta: "Leche estandarizada → Evaporación / concentración → Producto a granel",
+      tipos: ["evaporador", "carga"],
+      ayuda: "Selecciona el evaporador o punto de carga que ejecuta esta corrida.",
+    },
+    crema: {
+      ruta: "Leche estandarizada → Separación / proceso → Envasado o granel",
+      tipos: ["linea", "envasadora"],
+      ayuda: "Selecciona solo la línea o envasadora de crema correspondiente.",
+    },
+    otro: {
+      ruta: "Proceso definido para el producto → Envasado",
+      tipos: ["linea", "envasadora", "carga"],
+      ayuda: "Selecciona la máquina final definida para este producto.",
+    },
+  };
+  const ruta = productoSeleccionado ? rutaPorFamilia[productoSeleccionado.familia] : null;
+  const equiposCompatibles = equipos.filter((item) => item.activo && (!ruta || ruta.tipos.includes(item.tipo)));
+  const ultimoAseoEquipo = aseos
+    .filter((aseo) => aseo.equipo === Number(equipo))
+    .sort((a, b) => b.inicio.localeCompare(a.inicio))[0];
+  const advertenciaAseo = equipo && (!ultimoAseoEquipo || ultimoAseoEquipo.verificacion !== "conforme");
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
@@ -265,6 +297,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
                 value={producto}
                 onChange={(e) => {
                   setProducto(e.target.value);
+                  setEquipo("");
                   setVale("");
                   setLitros("");
                   setVales([]);
@@ -285,6 +318,8 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
                 ))}
 
               </select>
+
+              {ruta && <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800"><strong>Ruta del producto:</strong> {ruta.ruta}<br />{ruta.ayuda}</div>}
 
             </div>
 
@@ -332,12 +367,14 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
                 required
               >
                 <option value="">Selecciona una máquina…</option>
-                {equipos.filter((item) => item.activo).map((item) => (
+                {equiposCompatibles.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nombre} · {item.tipo_etiqueta}
                   </option>
                 ))}
               </select>
+              {productoSeleccionado && equiposCompatibles.length === 0 && <p className="mt-1.5 text-xs text-amber-700">No hay una máquina activa configurada para esta familia. Revísala en Maestros.</p>}
+              {advertenciaAseo && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><strong>Advertencia de aseo:</strong> no hay un CIP/aseo conforme registrado para esta máquina. Puedes continuar por ahora, pero verifica el aseo antes de iniciar la corrida.</div>}
 
             </div>
 

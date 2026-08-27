@@ -150,6 +150,8 @@ export interface PalletProducto {
   kg_neto: string;
   estado: string;
   estado_etiqueta: string;
+  lote_codigo?: string;
+  producto_nombre?: string;
 }
 
 export async function obtenerPallets(): Promise<Pagina<PalletProducto>> {

@@ -15,10 +15,15 @@ from .models import (
 
 class PalletProductoSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    lote_codigo = serializers.CharField(source="envase.lote.codigo_lote", read_only=True)
+    producto_nombre = serializers.CharField(source="envase.lote.producto.nombre", read_only=True)
 
     class Meta:
         model = PalletProducto
-        fields = ["id", "codigo", "unidades", "kg_neto", "estado", "estado_etiqueta"]
+        fields = [
+            "id", "codigo", "unidades", "kg_neto", "estado", "estado_etiqueta",
+            "lote_codigo", "producto_nombre",
+        ]
         read_only_fields = ["estado"]
 
 
@@ -447,6 +452,13 @@ class LoteSerializer(serializers.ModelSerializer):
             for campo in self.CAMPOS_SUSTANTIVOS
             if campo in datos and datos[campo] != getattr(self.instance, campo)
         ]
+
+        # Un borrador todavía no es un hecho productivo ni tiene una firma
+        # que proteger. El autoguardado debe poder completar sus campos sin
+        # pedir ``motivo_correccion`` en cada tecla; ese motivo solo aplica a
+        # corregir un lote ya abierto en producción.
+        if self.instance.estado == Lote.Estado.BORRADOR:
+            return datos
 
         self._rechazar_si_no_puede_declararse_producido(datos)
 

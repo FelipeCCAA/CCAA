@@ -275,6 +275,18 @@ function Expediente({ loteId, alVolver }: Props) {
 
           )}
 
+          {calidad?.resultado === "sin_analisis" && (
+            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              Falta el análisis del lote. Regístralo desde Producción antes de completar la liberación; el checklist no reemplaza el control de calidad.
+            </p>
+          )}
+
+          {calidad?.resultado === "sin_especificacion" && (
+            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              El producto no tiene una especificación vigente. Configúrala en Maestros antes de liberar el lote.
+            </p>
+          )}
+
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">

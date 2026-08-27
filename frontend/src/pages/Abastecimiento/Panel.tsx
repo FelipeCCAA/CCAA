@@ -17,6 +17,7 @@ import {
   obtenerNotificaciones,
   type Alerta,
 } from "../../services/inventario.service";
+import { obtenerPallets } from "../../services/produccion.service";
 
 import { Aviso, Indicador, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import { numero, useCarga } from "../../components/seccion/utilidades";
@@ -81,6 +82,7 @@ function Panel() {
   const mrq = useCarga(obtenerMRQ);
   const ajustes = useCarga(obtenerAjustes);
   const notificaciones = useCarga(obtenerNotificaciones);
+  const pallets = useCarga(async () => (await obtenerPallets()).results);
 
   const listaAlertas = [...(alertas.datos ?? [])].sort(
     (a, b) =>
@@ -108,13 +110,17 @@ function Panel() {
     (a) => a.estado === "pendiente",
   );
 
+  const palletsLiberados = (pallets.datos ?? []).filter(
+    (p) => p.estado === "liberado",
+  );
+
   /* Lo que espera a una persona, con el enlace a donde se resuelve. Un
      pendiente sin salida obliga a buscar la pestaña a mano. */
   const pendientes = [
     {
       cuantos: inspeccionesAbiertas.length,
       texto: "lote(s) esperando decisión de Calidad",
-      a: "calidad",
+      a: "/calidad",
     },
     {
       cuantos: ajustesPendientes.length,
@@ -162,6 +168,42 @@ function Panel() {
           alertas se estira hasta igualar la columna de la derecha y aparece
           un vacío enorme debajo de «sin alertas». */}
       <div className="grid items-start gap-8 xl:grid-cols-2">
+
+        <Tarjeta
+          titulo="Flujo operativo rápido"
+          descripcion="Qué hacer según lo que llegó o se produjo."
+        >
+          <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+            <Link to="recepcion" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>1. Bolsas e insumos</b><br />Recibir contra compra → cuarentena → Calidad.</Link>
+            <Link to="/calidad" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>2. Muestra</b><br />Calidad verifica, aprueba o rechaza.</Link>
+            <Link to="/produccion" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>3. Pallets</b><br />Envase crea pallets de leche en polvo de 25 kg.</Link>
+            <Link to="producto-terminado" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>4. Stock liberado</b><br />Bodega asigna ubicación y queda disponible.</Link>
+          </div>
+        </Tarjeta>
+
+        <Tarjeta
+          titulo="Liberados pendientes de ingreso"
+          descripcion="Calidad liberó estos pallets; Bodega debe asignarles una ubicación disponible."
+        >
+          {pallets.error ? (
+            <Aviso>No se pudo consultar los pallets liberados.</Aviso>
+          ) : palletsLiberados.length === 0 ? (
+            <Vacio>No hay pallets liberados esperando ingreso.</Vacio>
+          ) : (
+            <div className="space-y-3">
+              {palletsLiberados.slice(0, 8).map((p) => (
+                <Link
+                  key={p.id}
+                  to="producto-terminado"
+                  className="block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:bg-emerald-100"
+                >
+                  <p className="font-medium text-emerald-900">{p.codigo} · {p.kg_neto} kg</p>
+                  <p className="text-sm text-emerald-800">{p.producto_nombre ?? "Producto"} · lote {p.lote_codigo ?? "—"}</p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </Tarjeta>
 
         <Tarjeta
           titulo="Alertas vigentes"

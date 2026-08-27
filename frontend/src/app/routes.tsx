@@ -39,6 +39,7 @@ const LecheSilos = lazy(() => import("../pages/Leche/Silos"));
 const LecheHistorial = lazy(() => import("../pages/Leche/Historial"));
 const LecheReporte = lazy(() => import("../pages/Leche/ReporteDiario"));
 const Liberacion = lazy(() => import("../pages/Liberacion/Liberacion"));
+const CentroCalidad = lazy(() => import("../pages/Calidad/CentroCalidad"));
 const Planificacion = lazy(() => import("../pages/Planificacion/Planificacion"));
 const Maestros = lazy(() => import("../pages/Maestros/Maestros"));
 const Auditoria = lazy(() => import("../pages/Auditoria/Auditoria"));
@@ -72,7 +73,6 @@ const AbastecimientoBodegas = lazy(() => import("../pages/Abastecimiento/Bodegas
 const AbastecimientoCompras = lazy(() => import("../pages/Abastecimiento/Compras"));
 const AbastecimientoProveedores = lazy(() => import("../pages/Abastecimiento/Proveedores"));
 const AbastecimientoRecepcion = lazy(() => import("../pages/Abastecimiento/Recepcion"));
-const AbastecimientoCalidad = lazy(() => import("../pages/Abastecimiento/Calidad"));
 const AbastecimientoPedidos = lazy(() => import("../pages/Abastecimiento/Pedidos"));
 const AbastecimientoMrp = lazy(() => import("../pages/Abastecimiento/Mrp"));
 
@@ -171,7 +171,7 @@ function RoutesApp(){
                         <Route path="compras" element={diferido(<AbastecimientoCompras />)} />
                         <Route path="proveedores" element={diferido(<AbastecimientoProveedores />)} />
                         <Route path="recepcion" element={diferido(<AbastecimientoRecepcion />)} />
-                        <Route path="calidad" element={diferido(<AbastecimientoCalidad />)} />
+                        <Route path="calidad" element={<Navigate to="/calidad" replace />} />
                         <Route path="pedidos" element={diferido(<AbastecimientoPedidos />)} />
                         <Route path="mrp" element={diferido(<AbastecimientoMrp />)} />
                     </Route>
@@ -181,6 +181,11 @@ function RoutesApp(){
                     <Route path="/mantenimiento" element={diferido(<Mantenimiento />)} />
 
                     <Route path="/inocuidad/aseos" element={diferido(<Aseos />)} />
+
+                    {/* Acceso directo al panel de los ocho silos principales.
+                        Reutiliza la pantalla de recepción y su única lectura
+                        de ocupación; no duplica consultas ni reglas. */}
+                    <Route path="/silos" element={diferido(<LecheSilos soloPrincipales />)} />
 
                     <Route
                         path="/produccion"
@@ -213,6 +218,8 @@ function RoutesApp(){
                         path="/liberacion"
                         element={diferido(<Liberacion />)}
                     />
+
+                    <Route path="/calidad" element={diferido(<CentroCalidad />)} />
 
                     <Route
                         path="/planificacion"

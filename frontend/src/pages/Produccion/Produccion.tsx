@@ -221,6 +221,13 @@ function Produccion() {
 
         </header>
 
+        <section className="mb-8 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-4">
+          <div><b>1. Recepción</b><br /><span className="text-slate-600">Leche analizada y descargada a silo.</span></div>
+          <div><b>2. Estandarización</b><br /><span className="text-slate-600">Vale liberado y leche disponible en silo destino.</span></div>
+          <div><b>3. Producción</b><br /><span className="text-slate-600">Producto, máquina compatible y lote trazable.</span></div>
+          <div><b>4. Calidad e Inventario</b><br /><span className="text-slate-600">Análisis, liberación, pallet y ubicación de bodega.</span></div>
+        </section>
+
         {/* Filtros */}
 
         <section className="mb-6 flex flex-wrap items-center gap-3">

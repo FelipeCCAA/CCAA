@@ -32,7 +32,6 @@ const PESTANAS = [
   { a: "compras", texto: "Compras" },
   { a: "proveedores", texto: "Proveedores" },
   { a: "recepcion", texto: "Recepción" },
-  { a: "calidad", texto: "Calidad" },
   { a: "pedidos", texto: "Pedidos" },
   { a: "mrp", texto: "MRP" },
 ];

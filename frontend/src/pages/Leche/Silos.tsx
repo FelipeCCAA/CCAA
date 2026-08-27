@@ -91,6 +91,7 @@ function Barra({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-800">{silo.tipo_etiqueta}</span>
         <span className={`rounded-full px-2.5 py-1 font-medium ${silo.estado === "bloqueado_calidad" || silo.estado === "en_cip" || silo.estado === "fuera_servicio" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>{silo.estado_etiqueta}</span>
         {silo.producto_actual && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{silo.producto_actual}</span>}
         {silo.temperatura_actual != null && <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">{silo.temperatura_actual} °C</span>}
@@ -114,7 +115,11 @@ function Barra({
 }
 
 
-function Silos() {
+interface SilosProps {
+  soloPrincipales?: boolean;
+}
+
+function Silos({ soloPrincipales = false }: SilosProps) {
   const [ocupacion, setOcupacion] = useState<Ocupacion | null>(null);
   const [error, setError] = useState("");
   const [verVacios, setVerVacios] = useState(false);
@@ -147,17 +152,29 @@ function Silos() {
     return <p className="py-10 text-center text-sm text-slate-600">Cargando…</p>;
   }
 
-  const descuadrados = ocupacion.silos.filter((s) => s.negativo || s.excedido);
-  const conLeche = ocupacion.silos.filter((s) => !s.negativo && !s.excedido && s.litros > 0);
-  const vacios = ocupacion.silos.filter((s) => !s.negativo && !s.excedido && s.litros <= 0);
+  const silos = soloPrincipales ? ocupacion.silos.slice(0, 8) : ocupacion.silos;
+  const descuadrados = silos.filter((s) => s.negativo || s.excedido);
+  const conLeche = silos.filter((s) => !s.negativo && !s.excedido && s.litros > 0);
+  const vacios = silos.filter((s) => !s.negativo && !s.excedido && s.litros <= 0);
+  const silosConLeche = conLeche.filter((s) => s.tipo === "silo");
+  const tanquesProceso = silos.filter((s) => !s.negativo && !s.excedido && s.tipo !== "silo");
+  const faltaTkCrema = !silos.some((s) => s.tipo === "tk_crema");
 
-  const capacidadTotal = ocupacion.silos.reduce((suma, s) => suma + s.capacidad, 0);
+  const capacidadTotal = silos.reduce((suma, s) => suma + s.capacidad, 0);
   const pctTotal = capacidadTotal > 0
     ? Math.round((ocupacion.litros_totales / capacidadTotal) * 100)
     : 0;
 
   return (
     <div className="space-y-6">
+
+      {soloPrincipales && (
+        <header>
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Recepción de leche</p>
+          <h1 className="mt-1 text-3xl font-bold text-slate-900">Silos principales</h1>
+          <p className="mt-2 text-sm text-slate-600">Vista rápida de los ocho silos de recepción. Selecciona uno para operar su flujo.</p>
+        </header>
+      )}
 
       {/* El aviso que antes estaba escondido dentro de una tarjeta entre
           diecinueve. Un saldo negativo es imposible: significa que salió más
@@ -201,9 +218,16 @@ function Silos() {
           </div>
           <p className="text-sm text-slate-600">
             {pctTotal}% de {formato.format(capacidadTotal)} L ·{" "}
-            {ocupacion.silos.length} unidades
+            {silos.length} de {ocupacion.silos.length} unidades
           </p>
         </div>
+      </section>
+
+      <section className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-4">
+        <div><b>1. Silo de leche</b><br /><span className="text-slate-600">Recepción, muestra vigente y saldo disponible.</span></div>
+        <div><b>2. Descremación</b><br /><span className="text-slate-600">Silo entero → TK descremada + estanque de crema.</span></div>
+        <div><b>3. Estandarización</b><br /><span className="text-slate-600">Mezcla controlada → silo estandarizado.</span></div>
+        <div><b>4. Producción</b><br /><span className="text-slate-600">Vale liberado → lote → Calidad → pallet.</span></div>
       </section>
 
       {seleccionado && (
@@ -212,7 +236,7 @@ function Silos() {
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Operar {seleccionado.codigo}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Operar {seleccionado.codigo} · {seleccionado.tipo_etiqueta}</p>
                 <h2 className="mt-1 text-xl font-semibold text-slate-900">
                   {formato.format(seleccionado.litros)} L disponibles
                 </h2>
@@ -233,10 +257,15 @@ function Silos() {
                 {seleccionado.motivos_no_disponible.join(" · ")}
               </div>
             )}
+            {seleccionado.tipo === "tk_ld" && (
+              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+                Este es el <strong>TK de leche descremada</strong>: se usa como insumo de la estandarización. No es el silo de entrada para una nueva descremación.
+              </div>
+            )}
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <AccionSilo texto="Tomar muestra" icono={Beaker} onClick={() => document.getElementById("analisis-silo")?.scrollIntoView({ behavior: "smooth" })} />
               <AccionSilo texto="Estandarizar" icono={FlaskConical} destino={`/estandarizacion?silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
-              <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
+              {seleccionado.tipo === "silo" && <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />}
               <AccionSilo texto="Despachar" icono={Truck} onClick={() => setDespachando(true)} bloqueado={seleccionado.motivos_no_disponible[0]} />
             </div>
             <div className="mt-4">
@@ -254,11 +283,11 @@ function Silos() {
         </>
       )}
 
-      {conLeche.length > 0 && (
+      {silosConLeche.length > 0 && (
         <section>
-          <h2 className="mb-3 font-semibold text-slate-900">Con leche</h2>
+          <h2 className="mb-3 font-semibold text-slate-900">Silos de recepción con leche</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {conLeche.map((s) => (
+            {silosConLeche.map((s) => (
               <Barra
                 key={s.silo_id}
                 silo={s}
@@ -275,18 +304,38 @@ function Silos() {
         </section>
       )}
 
+      {(tanquesProceso.length > 0 || faltaTkCrema) && (
+        <section>
+          <h2 className="mb-3 font-semibold text-slate-900">TK y estanques de proceso</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {tanquesProceso.map((s) => (
+              <Barra key={s.silo_id} silo={s} activo={seleccionado?.silo_id === s.silo_id} onSelect={(elegido) => {
+                setDespachos(null);
+                setSeleccionado((actual) => actual?.silo_id === elegido.silo_id ? null : elegido);
+              }} />
+            ))}
+            {faltaTkCrema && (
+              <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-5">
+                <p className="font-semibold text-amber-900">TK de crema pendiente</p>
+                <p className="mt-2 text-sm text-amber-800">La descremación necesita un estanque de crema. Falta cargarlo en Maestros antes de cerrar una corrida real.</p>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       <section>
         <button
           type="button"
           onClick={() => setVerVacios((v) => !v)}
           className="text-sm font-medium text-slate-600 underline"
         >
-          {verVacios ? "Ocultar" : "Ver"} los {vacios.length} vacíos
+          {verVacios ? "Ocultar" : "Ver"} los {vacios.filter((s) => s.tipo === "silo").length} silos vacíos
         </button>
 
         {verVacios && (
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {vacios.map((s) => (
+            {vacios.filter((s) => s.tipo === "silo").map((s) => (
               <Barra
                 key={s.silo_id}
                 silo={s}

@@ -30,6 +30,7 @@ from django.db import transaction
 
 from maestros.dominio import generar_sku
 from maestros.models import Mandante, Producto
+from usuarios.models import Empresa
 
 
 ARCHIVO = (
@@ -158,6 +159,16 @@ class Command(BaseCommand):
             action="store_true",
             help="Escribe en la base. Sin esto solo simula.",
         )
+        parser.add_argument(
+            "--empresa",
+            type=int,
+            help="ID de la empresa destino. Obligatorio si hay más de una activa.",
+        )
+        parser.add_argument(
+            "--omitir-sku-duplicados",
+            action="store_true",
+            help="Conserva la primera fila de cada SKU repetido e informa las omitidas.",
+        )
 
     def handle(self, *args, **opciones):
         try:
@@ -170,16 +181,21 @@ class Command(BaseCommand):
         if not ARCHIVO.exists():
             raise CommandError(f"No encuentro el archivo: {ARCHIVO}")
 
+        self.empresa = self._empresa(opciones.get("empresa"))
         filas = self._leer(load_workbook)
         aplicar = opciones["aplicar"]
         resultados = []
+        omitidas = []
 
         # No se descubre una colisión escribiendo. En una base nueva la
         # restricción única abortaría a mitad de la carga y el mensaje de
         # PostgreSQL no explicaría qué decisión falta. La simulación conserva
         # su informe; ``--aplicar`` se niega antes de crear un solo mandante.
         if aplicar:
-            self._exigir_skus_unicos(filas)
+            if opciones["omitir_sku_duplicados"]:
+                filas, omitidas = self._omitir_skus_duplicados(filas)
+            else:
+                self._exigir_skus_unicos(filas)
 
         # La simulación recorre **el mismo camino** y revierte al final, en vez
         # de calcular aparte lo que pasaría. Una segunda implementación del
@@ -194,7 +210,7 @@ class Command(BaseCommand):
         except _Simulacion:
             pass
 
-        self._informar(resultados, aplicar)
+        self._informar(resultados, aplicar, omitidas)
 
     @staticmethod
     def _sku_de_fila(datos):
@@ -276,6 +292,36 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------ escritura
 
+    def _empresa(self, empresa_id):
+        empresas = Empresa.objects.filter(activa=True)
+        if empresa_id is not None:
+            try:
+                return empresas.get(pk=empresa_id)
+            except Empresa.DoesNotExist as error:
+                raise CommandError(f"No existe una empresa activa con id {empresa_id}.") from error
+
+        if empresas.count() == 1:
+            return empresas.first()
+        raise CommandError(
+            "Indica --empresa ID: la carga de productos debe saber en qué empresa crear el maestro."
+        )
+
+    @classmethod
+    def _omitir_skus_duplicados(cls, filas):
+        """Conserva la primera ficha del Excel para cada SKU compartido."""
+        vistos = {}
+        conservadas = []
+        omitidas = []
+        for fila in filas:
+            sku = cls._sku_de_fila(fila)
+            anterior = vistos.get(sku)
+            if anterior is None:
+                vistos[sku] = fila
+                conservadas.append(fila)
+            else:
+                omitidas.append((sku, anterior["nombre"], fila["nombre"]))
+        return conservadas, omitidas
+
     def _mandante(self, clave):
         """
         El mandante que corresponde a ese código de cliente.
@@ -286,7 +332,9 @@ class Command(BaseCommand):
         método elegía el más antiguo y avisaba; ese aviso ya no puede
         dispararse, así que no está.
         """
-        mandante = Mandante.objects.filter(codigo_cliente=clave).first()
+        mandante = Mandante.objects.filter(
+            empresa=self.empresa, codigo_cliente=clave
+        ).first()
 
         if mandante is not None:
             return mandante
@@ -295,7 +343,9 @@ class Command(BaseCommand):
             clave, "CCAA"
         )
 
-        return Mandante.objects.create(nombre=nombre, codigo_cliente=clave)
+        return Mandante.objects.create(
+            empresa=self.empresa, nombre=nombre, codigo_cliente=clave
+        )
 
     def _atributos(self, datos, mandante):
         return {
@@ -326,13 +376,18 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------ informe
 
-    def _informar(self, resultados, aplicar):
+    def _informar(self, resultados, aplicar, omitidas=()):
         titulo = "APLICADO" if aplicar else "SIMULACIÓN (usa --aplicar para escribir)"
         self.stdout.write(self.style.MIGRATE_HEADING(f"\n{titulo}\n"))
 
         for r in resultados:
             marca = "+" if r["creado"] else "="
             self.stdout.write(f"  {marca} {r['sku']:<16} {r['nombre']}")
+
+        if omitidas:
+            self.stdout.write(self.style.WARNING("\nSKU duplicados omitidos:"))
+            for sku, conservado, omitido in omitidas:
+                self.stdout.write(f"  · {sku}: se conserva {conservado}; se omite {omitido}")
 
         corregidos = [r for r in resultados if r["corregido"]]
 
@@ -341,7 +396,7 @@ class Command(BaseCommand):
                 self.style.WARNING("\nCorregidos respecto del archivo:")
             )
             for r in corregidos:
-                self.stdout.write(f"  · {r['nombre']}\n      {r['corregido']}")
+                self.stdout.write(f"  - {r['nombre']}\n      {r['corregido']}")
 
         self._informar_colisiones(resultados)
 

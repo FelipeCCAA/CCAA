@@ -3,11 +3,10 @@ import { Link } from "react-router-dom";
 import {
   AlertTriangle, ArrowRight, CalendarRange, CheckCircle2, ChevronRight,
   CircleDot, Droplets, Factory, FlaskConical, Gauge, GitBranch, PackageCheck,
-  ShieldCheck, Truck, Wrench, type LucideIcon,
+  ShieldCheck, Truck, type LucideIcon,
 } from "lucide-react";
 
 import { buscarExpedientes, type FilaExpediente } from "../../services/calidad.service";
-import { obtenerResumenMantenimiento, type ResumenMantenimiento } from "../../services/mantenimiento.service";
 import { obtenerContraste, obtenerSemanas, type Contraste, type Semana } from "../../services/planificacion.service";
 import { obtenerEjecuciones, type EjecucionProceso } from "../../services/procesos.service";
 import { obtenerLotes, obtenerResumen as obtenerResumenProduccion, type Lote, type Resumen } from "../../services/produccion.service";
@@ -24,14 +23,13 @@ type DatosPanel = {
   ocupacion: Ocupacion | null;
   ejecuciones: EjecucionProceso[];
   calidad: FilaExpediente[];
-  mantenimiento: ResumenMantenimiento | null;
   semana: Semana | null;
   contraste: Contraste | null;
 };
 
 const VACIO: DatosPanel = {
   produccion: null, lotes: [], recepcion: null, ocupacion: null,
-  ejecuciones: [], calidad: [], mantenimiento: null, semana: null, contraste: null,
+  ejecuciones: [], calidad: [], semana: null, contraste: null,
 };
 
 function Kpi({ etiqueta, valor, unidad, detalle, icono: Icono, tono = "emerald" }: {
@@ -81,13 +79,12 @@ function Dashboard() {
     const cargar = async () => {
       const resultados = await Promise.allSettled([
         obtenerResumenProduccion(), obtenerLotes(6), obtenerResumenRecepcion(),
-        obtenerOcupacion(), obtenerEjecuciones(), buscarExpedientes(),
-        obtenerResumenMantenimiento(), obtenerSemanas(),
+        obtenerOcupacion(), obtenerEjecuciones(), buscarExpedientes(), obtenerSemanas(),
       ]);
       if (!vigente) return;
       const valor = <T,>(indice: number, defecto: T): T => resultados[indice].status === "fulfilled"
         ? (resultados[indice] as PromiseFulfilledResult<T>).value : defecto;
-      const semanas = valor<Semana[]>(7, []);
+      const semanas = valor<Semana[]>(6, []);
       const semana = semanas.find((item) => item.estado === "publicada") ?? semanas[0] ?? null;
       let contraste: Contraste | null = null;
       if (semana) {
@@ -99,7 +96,7 @@ function Dashboard() {
         recepcion: valor<ResumenRecepcion | null>(2, null), ocupacion: valor<Ocupacion | null>(3, null),
         ejecuciones: valor<{ results: EjecucionProceso[] }>(4, { results: [] }).results,
         calidad: valor<{ resultados: FilaExpediente[] }>(5, { resultados: [] }).resultados,
-        mantenimiento: valor<ResumenMantenimiento | null>(6, null), semana, contraste,
+        semana, contraste,
       });
       setFuentesConError(resultados.filter((item) => item.status === "rejected").length + (semana && !contraste ? 1 : 0));
       setCargando(false);
@@ -115,10 +112,9 @@ function Dashboard() {
   const recibida = datos.contraste?.resumen.leche_recibida;
   const cumplimiento = recibida?.pct == null ? null : 100 + recibida.pct;
   const alertas = useMemo(() => [
-    ...(silosCriticos.length ? [{ texto: `${silosCriticos.length} silo(s) con saldo fuera de rango`, ruta: "/leche/silos", tono: "rose" }] : []),
+    ...(silosCriticos.length ? [{ texto: `${silosCriticos.length} silo(s) con saldo fuera de rango`, ruta: "/silos", tono: "rose" }] : []),
     ...(bloqueadosCalidad ? [{ texto: `${bloqueadosCalidad} lote(s) bloqueados por Calidad`, ruta: "/liberacion", tono: "amber" }] : []),
-    ...((datos.mantenimiento?.fallas_criticas_abiertas ?? 0) ? [{ texto: `${datos.mantenimiento?.fallas_criticas_abiertas} falla(s) crítica(s) abierta(s)`, ruta: "/mantenimiento", tono: "rose" }] : []),
-  ], [bloqueadosCalidad, datos.mantenimiento?.fallas_criticas_abiertas, silosCriticos.length]);
+  ], [bloqueadosCalidad, silosCriticos.length]);
 
   return (
     <main className="px-5 py-7 sm:px-8 lg:px-10 lg:py-9">
@@ -169,13 +165,13 @@ function Dashboard() {
           <article className="rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white sm:p-6">
             <div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-300">Puertas de control</p><h2 className="mt-1 text-lg font-semibold">Atención requerida</h2></div><Gauge className="h-6 w-6 text-slate-400" /></div>
             <div className="mt-5 space-y-3">{alertas.length === 0 ? <div className="flex items-center gap-3 rounded-xl bg-white/5 px-4 py-4 text-sm text-slate-300"><CheckCircle2 className="h-5 w-5 text-emerald-400" /> Sin alertas críticas visibles</div> : alertas.map((alerta) => <Link key={alerta.texto} to={alerta.ruta} className="flex items-center gap-3 rounded-xl bg-white/5 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/10"><AlertTriangle className={`h-4 w-4 ${alerta.tono === "rose" ? "text-rose-400" : "text-amber-400"}`} /><span className="flex-1">{alerta.texto}</span><ChevronRight className="h-4 w-4 text-slate-400" /></Link>)}</div>
-            <div className="mt-5 grid grid-cols-3 gap-2 border-t border-white/10 pt-5 text-center"><div><p className="text-xl font-semibold">{pendientesCalidad.length}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">Calidad</p></div><div><p className="text-xl font-semibold">{datos.recepcion?.por_estado.retenida ?? 0}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">Retenidas</p></div><div><p className="text-xl font-semibold">{datos.mantenimiento?.ordenes_abiertas ?? 0}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">Mantención</p></div></div>
+            <div className="mt-5 grid grid-cols-3 gap-2 border-t border-white/10 pt-5 text-center"><div><p className="text-xl font-semibold">{pendientesCalidad.length}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">Calidad</p></div><div><p className="text-xl font-semibold">{datos.recepcion?.por_estado.retenida ?? 0}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">Retenidas</p></div><div><p className="text-xl font-semibold">{silosCriticos.length}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">Silos alerta</p></div></div>
           </article>
         </section>
 
         <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
           <article className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-            <div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Inventario de proceso</p><h2 className="mt-1 text-lg font-semibold text-slate-900">Ocupación de silos</h2></div><Link to="/leche/silos" className="text-sm font-semibold text-emerald-700">Ver silos</Link></div>
+            <div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Inventario de proceso</p><h2 className="mt-1 text-lg font-semibold text-slate-900">Ocupación de silos</h2></div><Link to="/silos" className="text-sm font-semibold text-emerald-700">Ver silos principales</Link></div>
             <div className="mt-5 space-y-4">{(datos.ocupacion?.silos ?? []).slice(0, 6).map((silo) => <div key={silo.silo_id}><div className="flex items-center justify-between text-sm"><span className="font-medium text-slate-700">{silo.codigo}</span><span className={silo.excedido || silo.negativo ? "font-semibold text-rose-600" : "text-slate-600"}>{numero.format(silo.litros)} / {numero.format(silo.capacidad)} L · {porcentaje.format(silo.pct)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${silo.excedido || silo.negativo ? "bg-rose-500" : silo.pct >= 85 ? "bg-amber-500" : "bg-sky-500"}`} style={{ width: `${Math.max(0, Math.min(100, silo.pct))}%` }} /></div></div>)}{!cargando && !datos.ocupacion?.silos.length && <p className="py-8 text-center text-sm text-slate-600">No hay silos con movimientos registrados.</p>}</div>
           </article>
 
@@ -185,7 +181,7 @@ function Dashboard() {
           </article>
         </section>
 
-        <footer className="flex flex-wrap gap-3 border-t border-slate-200 pt-5 text-xs text-slate-600"><span className="inline-flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Recepción real</span><span className="inline-flex items-center gap-1.5"><Droplets className="h-3.5 w-3.5" /> Saldos por movimientos</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Calidad transversal</span><span className="inline-flex items-center gap-1.5"><Wrench className="h-3.5 w-3.5" /> Disponibilidad operacional</span></footer>
+        <footer className="flex flex-wrap gap-3 border-t border-slate-200 pt-5 text-xs text-slate-600"><span className="inline-flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Recepción real</span><span className="inline-flex items-center gap-1.5"><Droplets className="h-3.5 w-3.5" /> Saldos por movimientos</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Calidad transversal</span></footer>
       </div>
     </main>
   );

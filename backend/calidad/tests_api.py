@@ -160,6 +160,22 @@ class ExpedienteTests(BaseAPI):
         self.assertIn("CCAA6140N", codigos)
         self.assertNotIn("EN-CURSO", codigos)
 
+    def test_el_listado_omite_lotes_historicos_sin_producto(self):
+        """Un registro incompleto no puede tumbar la pantalla de Calidad."""
+        Lote.objects.create(
+            codigo_lote="SIN-PRODUCTO",
+            fecha=date(2026, 7, 22),
+            kg_producidos=100,
+            estado=Lote.Estado.CERRADO,
+        )
+
+        respuesta = self.cliente.get("/api/calidad/expedientes/")
+
+        self.assertEqual(respuesta.status_code, 200)
+        codigos = [fila["lote"]["codigo_lote"] for fila in respuesta.json()["resultados"]]
+        self.assertIn("CCAA6140N", codigos)
+        self.assertNotIn("SIN-PRODUCTO", codigos)
+
     def test_el_listado_trae_el_avance_de_cada_lote(self):
         self._checklist_completo()
 

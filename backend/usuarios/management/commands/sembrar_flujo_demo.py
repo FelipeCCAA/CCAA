@@ -34,12 +34,12 @@ from django.utils import timezone
 from estandarizacion import servicios
 from estandarizacion.dominio import Leche, calcular_mezcla
 from estandarizacion.models import ValeEstandarizacion
-from maestros.models import Especificacion, Silo, Vehiculo
+from maestros.models import Equipo, Especificacion, Silo, Vehiculo
 from produccion.dominio import generar_codigo_lote
 from produccion import servicios as servicios_produccion
 from produccion.models import Analisis, Lote
 from recepcion import dominio as dominio_recepcion
-from recepcion.models import ModuloRecepcion, MovimientoSilo, Recepcion
+from recepcion.models import AnalisisSilo, ModuloRecepcion, MovimientoSilo, Recepcion
 from usuarios.models import Sucursal
 
 
@@ -117,6 +117,10 @@ class Command(BaseCommand):
                 f"{recepcion.silo.codigo} ({recepcion.get_estado_display()})"
             )
 
+        # Los ingresos cambian la composición del silo. La compuerta de
+        # estandarización exige por eso una muestra tomada DESPUÉS de cargarlos.
+        self._muestrear_silos(contexto)
+
         lineas += ["", "=== 2. Estandarizacion ==="]
         vale, evaluacion = self._estandarizar(contexto)
         lineas += [
@@ -164,6 +168,7 @@ class Command(BaseCommand):
         sucursal = Sucursal.objects.filter(activa=True).first()
         operador = User.objects.filter(is_active=True).order_by("pk").first()
         vehiculo = Vehiculo.objects.filter(activo=True).first()
+        equipo = Equipo.objects.filter(activo=True).exclude(sigla="").order_by("orden", "pk").first()
 
         silos = list(Silo.objects.filter(activo=True, tipo=Silo.Tipo.SILO).order_by("pk"))
         tanques = list(Silo.objects.filter(activo=True, tipo=Silo.Tipo.TK_LD).order_by("pk"))
@@ -179,6 +184,7 @@ class Command(BaseCommand):
             "sucursal": sucursal,
             "operador": operador,
             "vehiculo": vehiculo,
+            "equipo": equipo,
             "silo_recepcion": silos[0],
             "silo_destino": silos[1],
             "tanque": tanques[0],
@@ -256,6 +262,33 @@ class Command(BaseCommand):
 
         return creadas
 
+    def _muestrear_silos(self, contexto):
+        """Registra las muestras vigentes que necesita el vale demostrativo."""
+        ahora = timezone.now()
+        for silo, leche in (
+            (contexto["silo_recepcion"], ENTERA),
+            (contexto["tanque"], DESCREMADA),
+        ):
+            AnalisisSilo.objects.create(
+                silo=silo,
+                tomado_en=ahora,
+                grasa=Decimal(str(leche.grasa)),
+                sng=Decimal(str(leche.sng)),
+                ph=Decimal("6.70"),
+                acidez=Decimal("0.15"),
+                temperatura=Decimal("4.00"),
+                inhibidores_resultado="negativo",
+                metodo="delvo_sp",
+                hora_lectura=ahora.time(),
+                alcohol_75_conforme=True,
+                hervor_conforme=True,
+                organoleptico_conforme=True,
+                analista=contexto["operador"],
+                visualizado_por=contexto["operador"],
+                visualizado_en=ahora,
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+            )
+
     def _estandarizar(self, contexto):
         volumen = 20000.0
         rc_objetivo = 0.4000
@@ -320,8 +353,11 @@ class Command(BaseCommand):
 
     def _producir(self, contexto, vale):
         producto = contexto["producto"]
+        equipo = contexto["equipo"]
+        if equipo is None:
+            raise CommandError("Hace falta un equipo activo con sigla para generar el código de lote.")
         codigo = generar_codigo_lote(
-            fecha=self.fecha, sku=producto.codigo, correlativo=1
+            fecha=self.fecha, sigla=equipo.sigla, correlativo=1
         )
 
         # El lote **nace del vale**, y por eso no elige silo: quien consumió la
@@ -334,6 +370,7 @@ class Command(BaseCommand):
             codigo_lote=codigo,
             fecha=self.fecha,
             litros=vale.volumen,
+            equipo=equipo,
             linea="E1",
             turno="A",
             hora_inicio=time(8, 0),

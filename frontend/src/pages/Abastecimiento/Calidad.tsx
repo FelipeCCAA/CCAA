@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   decidirInspeccion,
@@ -6,6 +7,7 @@ import {
 } from "../../services/inventario.service";
 
 import { obtenerSesion } from "../../services/sesion";
+import { buscarExpedientes, type FilaExpediente } from "../../services/calidad.service";
 
 import { Aviso, Estado, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import NoConformidades from "./NoConformidades";
@@ -30,6 +32,12 @@ const CERRADAS = ["aprobada", "observada", "rechazada", "bloqueada"];
 function Calidad() {
 
   const inspecciones = useCarga(obtenerInspecciones);
+  // Bandeja única: además de insumos en cuarentena, muestra lotes de
+  // producción que esperan análisis/checklist/liberación. Se pide solo la
+  // página pendiente para no cargar el histórico completo.
+  const lotesProduccion = useCarga(async () =>
+    (await buscarExpedientes({ estado: "pendiente", pagina: 1 })).resultados,
+  );
   const [error, setError] = useState("");
 
   const sesion = obtenerSesion();
@@ -53,6 +61,7 @@ function Calidad() {
   const lista = inspecciones.datos ?? [];
   const abiertas = lista.filter((i) => !CERRADAS.includes(i.estado));
   const cerradas = lista.filter((i) => CERRADAS.includes(i.estado));
+  const pendientesProduccion = (lotesProduccion.datos ?? []) as FilaExpediente[];
 
   const tabla = (filas: typeof lista, conAcciones: boolean) => (
     <div className="overflow-x-auto">
@@ -114,6 +123,36 @@ function Calidad() {
     <div className="space-y-8">
 
       {error && <Aviso>{error}</Aviso>}
+
+      <Tarjeta
+        titulo="Bandeja única de Calidad"
+        descripcion="Aquí se reúnen los insumos recibidos en cuarentena y los lotes de producto terminado que esperan análisis o liberación."
+      >
+        {lotesProduccion.error ? (
+          <Aviso>No se pudo consultar la cola de lotes de producción.</Aviso>
+        ) : lotesProduccion.cargando ? (
+          <Vacio>Cargando lotes…</Vacio>
+        ) : pendientesProduccion.length === 0 ? (
+          <Vacio>No hay lotes de producción pendientes.</Vacio>
+        ) : (
+          <div className="space-y-3">
+            {pendientesProduccion.slice(0, 10).map((fila) => (
+              <Link
+                key={fila.lote.id}
+                to="/liberacion"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 hover:bg-slate-50"
+              >
+                <div>
+                  <p className="font-medium text-slate-800">{fila.lote.producto_nombre} · {fila.lote.codigo_lote}</p>
+                  <p className="text-sm text-slate-600">Calidad: {fila.calidad?.etiqueta ?? "pendiente"} · Checklist: {fila.avance.pct}%</p>
+                </div>
+                <Estado valor={fila.liberacion?.estado ?? "pendiente"} />
+              </Link>
+            ))}
+            <p className="text-xs text-slate-500">Selecciona un lote para registrar análisis, completar documentos y liberar o rechazar.</p>
+          </div>
+        )}
+      </Tarjeta>
 
       <Tarjeta
         titulo="En cuarentena"

@@ -299,6 +299,10 @@ def expedientes(request):
         _lotes_permitidos(request).select_related("producto", "producto__mandante")
         .prefetch_related("analisis", "registros_calidad", "liberacion")
         .exclude(estado__in=[Lote.Estado.EN_PROCESO, Lote.Estado.ANULADO])
+        # Un lote histórico sin producto no tiene especificación, checklist ni
+        # identidad comercial que liberar. Antes llegaba al serializador y
+        # hacía caer toda la pantalla al leer ``lote.producto.nombre``.
+        .filter(producto__isnull=False)
     )
 
     parametros = request.query_params
@@ -605,6 +609,22 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         PalletProducto.objects.filter(envase__lote=lote).exclude(
             estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
         ).update(estado=PalletProducto.Estado.LIBERADO)
+
+    # Calidad no deja el lote "perdido" en su módulo: Bodega recibe un aviso
+    # para ingresar los pallets liberados al stock de producto terminado.
+    # El ingreso físico sigue requiriendo una ubicación elegida por Bodega.
+    from inventario.servicios import _notificar_area
+    _notificar_area(
+        "bodega",
+        tipo="producto_liberado",
+        titulo="Producto terminado liberado por Calidad",
+        mensaje=(
+            f"Lote {lote.codigo_lote} ({lote.producto.nombre}) liberado. "
+            "Ingrese sus pallets en Producto terminado para dejarlo disponible."
+        ),
+        documento_tipo="lote_produccion",
+        documento_id=lote.id,
+    )
 
     return Response(LiberacionSerializer(liberacion).data)
 

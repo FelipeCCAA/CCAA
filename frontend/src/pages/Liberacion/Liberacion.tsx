@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 
 import {
@@ -8,6 +9,7 @@ import {
 } from "../../services/calidad.service";
 
 import { kilos } from "../../services/produccion.service";
+import { mensajeDe } from "../../components/seccion/utilidades";
 
 import Expediente from "./Expediente";
 
@@ -51,12 +53,17 @@ function prioridad(fila: FilaExpediente): number {
 
 function Liberacion() {
 
+  const [parametros] = useSearchParams();
+
   const [filas, setFilas] = useState<FilaExpediente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
   const [filtroEstado, setFiltroEstado] = useState("");
-  const [loteAbierto, setLoteAbierto] = useState<number | null>(null);
+  const [loteAbierto, setLoteAbierto] = useState<number | null>(() => {
+    const id = Number(parametros.get("lote"));
+    return Number.isInteger(id) && id > 0 ? id : null;
+  });
 
   /* El listado viene paginado desde el servidor: armar el expediente de cada
      lote es caro, y sin techo la pantalla pedía el histórico entero. */
@@ -76,8 +83,8 @@ function Liberacion() {
       setTotal(datos.total);
       setHayMas(datos.hay_mas);
 
-    } catch {
-      setError("No se pudo cargar el listado.");
+    } catch (error) {
+      setError(mensajeDe(error, "No se pudo cargar el listado."));
     } finally {
       setCargando(false);
     }
