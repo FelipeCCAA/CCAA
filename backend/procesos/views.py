@@ -248,6 +248,44 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Una ejecución cerrada o cancelada es inmutable.")
         serializer.save()
 
+    @action(detail=False, methods=["get"], url_path="operativas")
+    def operativas(self, request):
+        """Bandeja liviana: solo ejecuciones que todavía requieren operación."""
+        queryset = filtrar_por_scope(
+            EjecucionProceso.objects.exclude(
+                estado__in={EjecucionProceso.Estado.CERRADA, EjecucionProceso.Estado.CANCELADA}
+            ).select_related("etapa", "equipo").prefetch_related(
+                "entradas__silo", "entradas__lote", "salidas__silo", "salidas__lote"
+            ),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        return Response([
+            {
+                "id": ejecucion.id,
+                "codigo": ejecucion.codigo,
+                "estado": ejecucion.estado,
+                "estado_etiqueta": ejecucion.get_estado_display(),
+                "etapa_nombre": ejecucion.etapa.nombre,
+                "etapa_tipo": ejecucion.etapa.tipo,
+                "equipo_nombre": ejecucion.equipo.nombre if ejecucion.equipo else None,
+                "acciones_permitidas": sorted(
+                    EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set())
+                ),
+                "entradas": [
+                    entrada.lote.codigo_lote if entrada.lote else entrada.silo.codigo
+                    for entrada in ejecucion.entradas.all()
+                ],
+                "salidas": [
+                    salida.lote.codigo_lote if salida.lote else salida.silo.codigo
+                    for salida in ejecucion.salidas.all()
+                    if salida.lote_id or salida.silo_id
+                ],
+            }
+            for ejecucion in queryset
+        ])
+
     @action(detail=True, methods=["post"])
     def transicionar(self, request, pk=None):
         try:

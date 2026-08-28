@@ -68,6 +68,18 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertEqual(self.ejecucion.salidas.count(), 3)
         self.assertEqual(sum(s.cantidad for s in self.ejecucion.salidas.all()), Decimal("1000"))
 
+    def test_bandeja_operativa_excluye_ejecuciones_terminadas(self):
+        EjecucionProceso.objects.create(
+            codigo="EJ-CERRADA", etapa=self.etapa, equipo=self.equipo,
+            responsable=self.usuario, estado=EjecucionProceso.Estado.CERRADA,
+        )
+
+        respuesta = self.cliente.get("/api/procesos/ejecuciones/operativas/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual([item["codigo"] for item in respuesta.data], ["EJ-001"])
+        self.assertIn("preparacion", respuesta.data[0]["acciones_permitidas"])
+
     def test_transicion_exige_entrada_equipo_y_registra_evento(self):
         EntradaProceso.objects.create(
             ejecucion=self.ejecucion, lote=self.lote_origen, cantidad=1000

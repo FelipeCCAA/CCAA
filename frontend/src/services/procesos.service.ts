@@ -23,6 +23,19 @@ export interface EjecucionProceso {
   salidas: { id: number; lote: number | null; lote_codigo: string | null; silo: number | null; silo_codigo: string | null; cantidad: string; unidad: string; naturaleza: string }[];
 }
 
+export interface EjecucionOperativa {
+  id: number;
+  codigo: string;
+  estado: string;
+  estado_etiqueta: string;
+  etapa_nombre: string;
+  etapa_tipo: string;
+  equipo_nombre: string | null;
+  acciones_permitidas: string[];
+  entradas: string[];
+  salidas: string[];
+}
+
 export interface RutaProducto {
   id: number;
   producto_nombre: string;
@@ -144,6 +157,23 @@ export interface Genealogia {
 
 export async function obtenerEjecuciones(): Promise<Pagina<EjecucionProceso>> {
   const { data } = await api.get<Pagina<EjecucionProceso>>("procesos/ejecuciones/");
+  return data;
+}
+
+export async function obtenerEjecucionesOperativas(): Promise<EjecucionOperativa[]> {
+  const { data } = await api.get<EjecucionOperativa[]>("procesos/ejecuciones/operativas/");
+  return data;
+}
+
+export async function transicionarEjecucion(
+  id: number,
+  estado: string,
+  motivo = "",
+): Promise<EjecucionProceso> {
+  const { data } = await api.post<EjecucionProceso>(
+    `procesos/ejecuciones/${id}/transicionar/`,
+    { estado, motivo },
+  );
   return data;
 }
 

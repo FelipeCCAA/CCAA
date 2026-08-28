@@ -4,14 +4,14 @@ import { ArrowRight, Beaker, Factory, GitBranch, Search, Truck } from "lucide-re
 
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import StatusBadge from "../../components/ui/StatusBadge";
-import { obtenerCondensaciones, obtenerDescremaciones, obtenerEjecuciones, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionProceso, type Genealogia, type RutaProducto } from "../../services/procesos.service";
+import { obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type Genealogia, type RutaProducto } from "../../services/procesos.service";
 import ArbolGenealogia from "./ArbolGenealogia";
 import CierreDescremacion from "./CierreDescremacion";
 import FormularioDescremacion from "./FormularioDescremacion";
 
 export default function Procesos() {
   const [parametros, setParametros] = useSearchParams();
-  const [ejecuciones, setEjecuciones] = useState<EjecucionProceso[]>([]);
+  const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [rutas, setRutas] = useState<RutaProducto[]>([]);
   const [rutasCargadas, setRutasCargadas] = useState(false);
   const [condensaciones, setCondensaciones] = useState<CorridaCondensacion[]>([]);
@@ -26,20 +26,33 @@ export default function Procesos() {
   const [lote, setLote] = useState("");
   const [direccion, setDireccion] = useState<"atras" | "adelante">("atras");
   const [genealogia, setGenealogia] = useState<Genealogia | null>(null);
+  const [accionando, setAccionando] = useState<number | null>(null);
   const siloParametro = Number(parametros.get("silo"));
   const siloDescremacion = parametros.get("accion") === "descremar" && Number.isInteger(siloParametro) && siloParametro > 0
     ? siloParametro : null;
 
   useEffect(() => {
-    const controlador = new AbortController();
-    obtenerEjecuciones()
-      .then((pagina) => {
-        setEjecuciones(pagina.results);
+    obtenerEjecucionesOperativas()
+      .then((operativas) => {
+        setEjecuciones(operativas);
       })
       .catch(() => setError("No se pudieron cargar las ejecuciones industriales."))
       .finally(() => setCargando(false));
-    return () => controlador.abort();
   }, []);
+
+  const moverEjecucion = async (id: number) => {
+    setAccionando(id);
+    setError("");
+    try {
+      await transicionarEjecucion(id, "ejecucion");
+      setEjecuciones(await obtenerEjecucionesOperativas());
+    } catch (errorPeticion: unknown) {
+      const respuesta = errorPeticion as { response?: { data?: { error?: string } } };
+      setError(respuesta.response?.data?.error || "No se pudo iniciar la ejecución.");
+    } finally {
+      setAccionando(null);
+    }
+  };
 
   useEffect(() => {
     if (siloDescremacion !== null) {
@@ -216,8 +229,9 @@ export default function Procesos() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-xl font-semibold text-slate-800">Ejecuciones recientes</h2>
-          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Aún no hay ejecuciones" detalle="Crea procesos y etapas desde Administración para comenzar la trazabilidad." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">ID del proceso</th><th className="px-5 py-3">Etapa / documento</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entrada</th><th className="px-5 py-3">Salida</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4"><span>{item.etapa_nombre}</span><span className="block text-xs text-slate-600">{item.vale_codigo || item.lote_codigo || "—"}</span></td><td className="px-5 py-4">{item.equipo_nombre ?? "—"}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4 text-xs">{item.entradas.map((entrada) => entrada.lote_codigo || entrada.silo_codigo).filter(Boolean).join(" + ") || "—"}</td><td className="px-5 py-4 text-xs">{item.salidas.map((salida) => salida.lote_codigo || salida.silo_codigo).filter(Boolean).join(" + ") || "—"}</td></tr>)}</tbody></table></div>}
+          <h2 className="mb-1 text-xl font-semibold text-slate-800">Ejecuciones operativas</h2>
+          <p className="mb-4 text-sm text-slate-600">Solo pendientes y en curso. El inicio valida nuevamente máquina, ocupación y aseo.</p>
+          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Sin trabajo operativo pendiente" detalle="Las ejecuciones cerradas no se cargan en esta bandeja." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">ID del proceso</th><th className="px-5 py-3">Etapa</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entrada</th><th className="px-5 py-3">Salida</th><th className="px-5 py-3">Acción</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4">{item.etapa_nombre}</td><td className="px-5 py-4">{item.equipo_nombre ?? "—"}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4 text-xs">{item.entradas.join(" + ") || "—"}</td><td className="px-5 py-4 text-xs">{item.salidas.join(" + ") || "—"}</td><td className="px-5 py-4">{item.acciones_permitidas.includes("ejecucion") ? <button type="button" disabled={accionando === item.id} onClick={() => void moverEjecucion(item.id)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{accionando === item.id ? "Validando…" : item.estado === "pausada" ? "Reanudar" : "Iniciar"}</button> : <span className="text-xs text-slate-500">Sin acción directa</span>}</td></tr>)}</tbody></table></div>}
         </section>
       </div>
     </main>

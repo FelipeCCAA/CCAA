@@ -109,6 +109,12 @@ una máquina activa compatible; no arranca el equipo ni mueve físicamente leche
 El inicio sigue pasando por las compuertas de ocupación y aseo existentes, y
 nunca se crea una ruta distinta ni se salta una etapa automáticamente.
 
+La pantalla **Procesos y trazabilidad** consume una bandeja operativa reducida:
+solo trae ejecuciones no terminadas y los nombres de sus entradas/salidas. No
+descarga eventos ni expedientes históricos al entrar. Desde esa bandeja el
+operador inicia o reanuda la etapa; el servidor vuelve a validar que exista una
+entrada, que la máquina no esté ocupada y que su aseo permita operar.
+
 ---
 
 ## 2. Quién consume qué: el balance de los silos
