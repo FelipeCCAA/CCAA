@@ -1,4 +1,5 @@
 import api from "./api";
+import type { Equipo } from "./maestros.service";
 
 
 /* Los listados de DRF vienen paginados. */
@@ -257,6 +258,8 @@ export interface ValeDisponible {
   fecha: string;
   producto: number;
   producto_nombre: string;
+  producto_familia: string;
+  mandante_nombre: string;
   rc_objetivo: string;
   rc_real: number | null;
   litros_preparados: string;
@@ -265,6 +268,24 @@ export interface ValeDisponible {
   silo_entera_codigo: string;
   silo_descremada_codigo: string | null;
   silo_destino_codigo: string;
+}
+
+export interface EquipoInicioProduccion extends Equipo {
+  habilitado: boolean;
+  motivo_no_habilitado: string;
+  aseo_verificacion: "pendiente" | "conforme" | "observado" | null;
+}
+
+export interface OpcionesInicioProduccion {
+  entradas: ValeDisponible[];
+  equipos: EquipoInicioProduccion[];
+}
+
+export async function obtenerOpcionesInicioProduccion(): Promise<OpcionesInicioProduccion> {
+  const { data } = await api.get<OpcionesInicioProduccion>(
+    "produccion/lotes/opciones-inicio/",
+  );
+  return data;
 }
 
 export async function obtenerValesDisponibles(
@@ -367,7 +388,7 @@ export async function crearLote(lote: LoteNuevo): Promise<Lote> {
 
 export interface DatosBorradorLote {
   codigo_lote_propuesto: string;
-  producto: number | null;
+  producto?: number | null;
   vale: number | null;
   litros_estandarizados_borrador: number | null;
   equipo: number | null;

@@ -13,11 +13,69 @@ from django.db.models import F, Sum
 from django.utils import timezone
 
 from .models import (
-    Aprobacion, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
+    Aprobacion, Bodega, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
     InspeccionMaterial, LoteInventario, MovimientoInventario, Notificacion,
     ReservaInventario, Ubicacion, Despacho, DetalleDespacho,
     ExistenciaProductoTerminado, MovimientoProductoTerminado,
 )
+
+
+def _ubicacion_control_producto(sucursal):
+    """Ubicación física estable para producto recién envasado."""
+    bodega, _ = Bodega.objects.get_or_create(
+        sucursal=sucursal,
+        codigo="BPT",
+        defaults={"nombre": "Bodega de producto terminado", "area": "bodega"},
+    )
+    ubicacion, _ = Ubicacion.objects.get_or_create(
+        bodega=bodega,
+        codigo="PT-CUAR",
+        defaults={
+            "tipo": Ubicacion.Tipo.CUARENTENA,
+            "descripcion": "Producto terminado pendiente de decisión de Calidad",
+        },
+    )
+    if ubicacion.tipo != Ubicacion.Tipo.CUARENTENA:
+        raise ValidationError(
+            "La ubicación maestra BPT/PT-CUAR debe ser de tipo cuarentena."
+        )
+    return ubicacion
+
+
+@transaction.atomic
+def registrar_pallets_producidos(pallets, usuario):
+    """Da existencia física a pallets nuevos sin anticipar la liberación."""
+    pallets = list(pallets)
+    if not pallets:
+        return []
+    sucursal = pallets[0].envase.lote.sucursal
+    if any(p.envase.lote.sucursal_id != sucursal.id for p in pallets):
+        raise ValidationError("Todos los pallets deben pertenecer a la misma planta.")
+    ubicacion = _ubicacion_control_producto(sucursal)
+    existentes = set(
+        ExistenciaProductoTerminado.objects.filter(
+            pallet_id__in=[p.pk for p in pallets]
+        ).values_list("pallet_id", flat=True)
+    )
+    nuevos = [p for p in pallets if p.pk not in existentes]
+    ExistenciaProductoTerminado.objects.bulk_create([
+        ExistenciaProductoTerminado(pallet=p, ubicacion=ubicacion, activo=True)
+        for p in nuevos
+    ])
+    MovimientoProductoTerminado.objects.bulk_create([
+        MovimientoProductoTerminado(
+            operacion=uuid4(),
+            pallet=p,
+            tipo=MovimientoProductoTerminado.Tipo.INGRESO,
+            destino=ubicacion,
+            motivo="Ingreso automático desde envasado; pendiente de Calidad",
+            registrado_por=usuario,
+        )
+        for p in nuevos
+    ])
+    return list(
+        ExistenciaProductoTerminado.objects.filter(pallet_id__in=[p.pk for p in pallets])
+    )
 
 
 def _validar_pallet_liberado(pallet):

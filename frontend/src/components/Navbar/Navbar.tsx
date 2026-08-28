@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  Boxes,
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
@@ -71,10 +70,9 @@ const gruposBase: Grupo[] = [
     ],
   },
   {
-    etiqueta: "Materiales e inventario",
+    etiqueta: "Inventario",
     modulos: [
-      { etiqueta: "Abastecimiento", ruta: "/abastecimiento", icono: Boxes },
-      { etiqueta: "Inventario y bodegas", ruta: "/abastecimiento/stock", icono: Warehouse },
+      { etiqueta: "Panel de inventario", ruta: "/inventario", icono: Warehouse },
     ],
   },
   {

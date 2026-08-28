@@ -83,6 +83,16 @@ class FlujoIntegradoApiTests(TestCase):
         self.assertEqual(respuesta.data[0]["silo_destino_codigo"], "SILO 2")
         self.assertEqual(respuesta.data[0]["litros_disponibles"], Decimal("20000"))
 
+    def test_opciones_inicio_agrupa_entrada_y_maquinas_en_una_llamada(self):
+        respuesta = self.cliente.get(
+            "/api/produccion/lotes/opciones-inicio/"
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data["entradas"][0]["codigo"], self.vale.codigo)
+        equipo = next(item for item in respuesta.data["equipos"] if item["id"] == self.equipo.id)
+        self.assertTrue(equipo["habilitado"])
+
     def test_abre_lote_y_ejecucion_sin_elegir_silo(self):
         respuesta = self._abrir()
 

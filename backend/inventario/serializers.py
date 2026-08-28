@@ -392,6 +392,7 @@ class ExistenciaSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="lote.codigo", read_only=True)
     insumo_nombre = serializers.CharField(source="lote.insumo.nombre", read_only=True)
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
+    ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
     estado_calidad = serializers.CharField(source="lote.estado_calidad", read_only=True)
     cantidad_disponible = serializers.DecimalField(max_digits=16, decimal_places=3, read_only=True)
 
@@ -724,6 +725,22 @@ class ExistenciaProductoTerminadoSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source="pallet.envase.lote.producto.nombre", read_only=True)
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
     kg_neto = serializers.DecimalField(source="pallet.kg_neto", max_digits=14, decimal_places=3, read_only=True)
+    estado_inventario = serializers.SerializerMethodField()
+    kg_disponible = serializers.SerializerMethodField()
+
+    def get_estado_inventario(self, obj):
+        from produccion.models import PalletProducto
+        return {
+            PalletProducto.Estado.PENDIENTE_CALIDAD: "cuarentena",
+            PalletProducto.Estado.BLOQUEADO: "bloqueado",
+            PalletProducto.Estado.LIBERADO: "disponible",
+            PalletProducto.Estado.EN_INVENTARIO: "disponible",
+            PalletProducto.Estado.DESPACHADO: "despachado",
+            PalletProducto.Estado.ANULADO: "anulado",
+        }.get(obj.pallet.estado, "cuarentena")
+
+    def get_kg_disponible(self, obj):
+        return obj.pallet.kg_neto if self.get_estado_inventario(obj) == "disponible" else 0
 
     class Meta:
         model = ExistenciaProductoTerminado

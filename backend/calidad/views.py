@@ -610,9 +610,8 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
             estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
         ).update(estado=PalletProducto.Estado.LIBERADO)
 
-    # Calidad no deja el lote "perdido" en su módulo: Bodega recibe un aviso
-    # para ingresar los pallets liberados al stock de producto terminado.
-    # El ingreso físico sigue requiriendo una ubicación elegida por Bodega.
+    # La existencia física ya nació en envase. Calidad solo cambia su estado
+    # y avisa a Bodega para que reubique el pallet; no vuelve a sumar stock.
     from inventario.servicios import _notificar_area
     _notificar_area(
         "bodega",
@@ -620,7 +619,7 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         titulo="Producto terminado liberado por Calidad",
         mensaje=(
             f"Lote {lote.codigo_lote} ({lote.producto.nombre}) liberado. "
-            "Ingrese sus pallets en Producto terminado para dejarlo disponible."
+            "Sus pallets ya están disponibles en Inventario; reubíquelos desde PT-CUAR."
         ),
         documento_tipo="lote_produccion",
         documento_id=lote.id,

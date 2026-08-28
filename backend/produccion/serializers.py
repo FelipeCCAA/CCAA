@@ -280,9 +280,6 @@ class LoteSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
-
-        if self.instance is None and not self.partial and datos.get("producto") is None:
-            raise serializers.ValidationError({"producto": "Este campo es obligatorio."})
         if not request:
             return
         scope = scope_de(request.user)
@@ -390,6 +387,23 @@ class LoteSerializer(serializers.ModelSerializer):
         vale = datos.get("vale", getattr(self.instance, "vale", None))
         equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
         orden = datos.get("orden", getattr(self.instance, "orden", None))
+
+        # El vale liberado es la fuente de verdad del producto. Produccion no
+        # vuelve a decidir que fabricar: solo toma el saldo preparado por
+        # Estandarizacion. Se tolera el campo en clientes antiguos, pero nunca
+        # puede contradecir al vale.
+        if vale is not None:
+            producto_enviado = datos.get("producto")
+            if producto_enviado and producto_enviado.pk != vale.producto_id:
+                raise serializers.ValidationError({
+                    "producto": (
+                        f"El vale {vale.codigo} fue estandarizado para "
+                        f"{vale.producto.nombre}."
+                    )
+                })
+            datos["producto"] = vale.producto
+            producto = vale.producto
+
         if self.instance is None and orden is not None:
             datos["op"] = orden.codigo
             if producto and orden.producto_id != producto.id:
@@ -402,13 +416,6 @@ class LoteSerializer(serializers.ModelSerializer):
             )
 
         if self.instance is None and not self.partial and vale is not None:
-            if producto and vale.producto_id != producto.id:
-                raise serializers.ValidationError({
-                    "producto": (
-                        f"El vale {vale.codigo} fue estandarizado para "
-                        f"{vale.producto.nombre}."
-                    )
-                })
             if "litros_estandarizados" not in datos:
                 raise serializers.ValidationError({
                     "litros_estandarizados": (
@@ -563,11 +570,11 @@ class LoteSerializer(serializers.ModelSerializer):
         try:
             return abrir_lote_desde_vale(
                 vale=vale,
-                producto=datos.pop("producto"),
                 codigo_lote=codigo,
                 fecha=datos.pop("fecha"),
                 litros=litros,
                 usuario=getattr(self.context.get("request"), "user", None),
+                producto=datos.pop("producto", None),
                 **datos,
             )
         except DjangoValidationError as error:

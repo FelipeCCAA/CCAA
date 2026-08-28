@@ -49,32 +49,9 @@ const CambiarPassword = lazy(() => import("../pages/CambiarPassword/CambiarPassw
 const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
 const Mantenimiento = lazy(() => import("../pages/Mantenimiento/Mantenimiento"));
 const Aseos = lazy(() => import("../pages/Inocuidad/Aseos"));
+const Inventario = lazy(() => import("../pages/Inventario/Inventario"));
 
-/*
-  Abastecimiento es una sección con pestañas, no una página. El orden de las
-  subrutas es el ciclo del material —se compra, llega, Calidad lo libera, entra
-  a stock, se pide y se consume— y es lo que ordena la navegación.
-
-  `/inventario` ya no existe: su listado de materiales vive en la pestaña de
-  materiales y su simulador en la de MRP. Eran dos pantallas contestando la
-  misma pregunta con distinta granularidad, sin enlace entre ellas y con el
-  mismo icono en el menú. Main la reintrodujo en su rama; no se repone aquí
-  porque el archivo que servía ya no existe.
-*/
-const Abastecimiento = lazy(() => import("../pages/Abastecimiento/Abastecimiento"));
-const AbastecimientoPanel = lazy(() => import("../pages/Abastecimiento/Panel"));
-const AbastecimientoMateriales = lazy(() => import("../pages/Abastecimiento/Materiales"));
-const AbastecimientoStock = lazy(() => import("../pages/Abastecimiento/Stock"));
-const AbastecimientoProductoTerminado = lazy(() => import("../pages/Abastecimiento/ProductoTerminado"));
-const AbastecimientoDetalleLote = lazy(
-  () => import("../pages/Abastecimiento/DetalleLoteInventario"),
-);
-const AbastecimientoBodegas = lazy(() => import("../pages/Abastecimiento/Bodegas"));
-const AbastecimientoCompras = lazy(() => import("../pages/Abastecimiento/Compras"));
-const AbastecimientoProveedores = lazy(() => import("../pages/Abastecimiento/Proveedores"));
-const AbastecimientoRecepcion = lazy(() => import("../pages/Abastecimiento/Recepcion"));
-const AbastecimientoPedidos = lazy(() => import("../pages/Abastecimiento/Pedidos"));
-const AbastecimientoMrp = lazy(() => import("../pages/Abastecimiento/Mrp"));
+/* Abastecimiento queda conservado en código, pero no se monta ni precarga. */
 
 const diferido = (componente: React.ReactNode) => (
   <Suspense fallback={<div className="p-10 text-sm text-slate-600">Cargando módulo…</div>}>
@@ -152,29 +129,9 @@ function RoutesApp(){
                         element={diferido(<Dashboard />)}
                     />
 
-                    {/* La pestaña activa vive en la URL: un enlace a
-                        /abastecimiento/compras lleva a compras, y el botón de
-                        volver del navegador funciona entre pestañas. */}
-                    <Route path="/abastecimiento" element={diferido(<Abastecimiento />)}>
-                        <Route index element={diferido(<AbastecimientoPanel />)} />
-                        <Route path="materiales" element={diferido(<AbastecimientoMateriales />)} />
-                        <Route path="stock" element={diferido(<AbastecimientoStock />)} />
-                        <Route path="producto-terminado" element={diferido(<AbastecimientoProductoTerminado />)} />
-                        {/* La primera ruta de detalle del sistema. Hasta aquí
-                            todo eran listas y ningún documento tenía URL: no
-                            se podía enlazar, ni compartir, ni volver a él. */}
-                        <Route
-                            path="stock/lotes/:id"
-                            element={diferido(<AbastecimientoDetalleLote />)}
-                        />
-                        <Route path="bodegas" element={diferido(<AbastecimientoBodegas />)} />
-                        <Route path="compras" element={diferido(<AbastecimientoCompras />)} />
-                        <Route path="proveedores" element={diferido(<AbastecimientoProveedores />)} />
-                        <Route path="recepcion" element={diferido(<AbastecimientoRecepcion />)} />
-                        <Route path="calidad" element={<Navigate to="/calidad" replace />} />
-                        <Route path="pedidos" element={diferido(<AbastecimientoPedidos />)} />
-                        <Route path="mrp" element={diferido(<AbastecimientoMrp />)} />
-                    </Route>
+                    <Route path="/inventario" element={diferido(<Inventario />)} />
+                    {/* Compatibilidad sin montar el módulo desactivado. */}
+                    <Route path="/abastecimiento/*" element={<Navigate to="/inventario" replace />} />
 
                     <Route path="/procesos" element={diferido(<Procesos />)} />
 

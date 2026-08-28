@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import DecimalField, OuterRef, Subquery, Sum
+from django.db.models import DecimalField, Exists, OuterRef, Subquery, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -303,7 +303,6 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         try:
             confirmado = servicios_produccion.abrir_lote_desde_vale(
                 vale=lote.vale,
-                producto=lote.producto,
                 codigo_lote=lote.codigo_lote_propuesto.strip(),
                 fecha=lote.fecha,
                 litros=lote.litros_estandarizados_borrador,
@@ -351,6 +350,10 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="vales-disponibles")
     def vales_disponibles(self, request):
         """Vales liberados con saldo, listos para que Producción los tome."""
+        return Response(self._vales_operativos(request))
+
+    @staticmethod
+    def _vales_operativos(request):
         from estandarizacion.models import ValeEstandarizacion
 
         vales = filtrar_por_scope(
@@ -369,9 +372,18 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         if producto:
             vales = vales.filter(producto_id=producto)
 
+        vales = list(vales)
+        consumos = {
+            fila["lote__vale_id"]: fila["total"]
+            for fila in MovimientoSilo.objects.filter(
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                lote__vale_id__in=[vale.pk for vale in vales],
+            ).values("lote__vale_id").annotate(total=Sum("litros"))
+        }
         resultado = []
         for vale in vales:
-            usados = servicios_produccion.litros_ya_tomados(vale)
+            usados = consumos.get(vale.pk, Decimal("0"))
             disponibles = vale.volumen - usados
             if disponibles <= 0:
                 continue
@@ -381,6 +393,8 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 "fecha": vale.fecha,
                 "producto": vale.producto_id,
                 "producto_nombre": vale.producto.nombre,
+                "producto_familia": vale.producto.familia,
+                "mandante_nombre": vale.producto.mandante.nombre,
                 "rc_objetivo": vale.rc_objetivo,
                 "rc_real": vale.rc_real,
                 "litros_preparados": vale.volumen,
@@ -392,7 +406,62 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 ),
                 "silo_destino_codigo": vale.silo_destino.codigo,
             })
-        return Response(resultado)
+        return resultado
+
+    @action(detail=False, methods=["get"], url_path="opciones-inicio")
+    def opciones_inicio(self, request):
+        """Una sola carga liviana para abrir el asistente de Producción."""
+        from inventario.models import CicloCIP
+        from procesos.models import EjecucionProceso
+
+        cip_en_curso = CicloCIP.objects.filter(
+            equipo_id=OuterRef("pk"), estado=CicloCIP.Estado.EN_CURSO,
+        )
+        ultimo_aseo = (
+            CicloCIP.objects.filter(equipo_id=OuterRef("pk"))
+            .exclude(estado=CicloCIP.Estado.PROGRAMADO)
+            .order_by("-inicio")
+        )
+        ocupada = EjecucionProceso.objects.filter(
+            equipo_id=OuterRef("pk"),
+            estado=EjecucionProceso.Estado.EJECUCION,
+        )
+        equipos = filtrar_por_scope(
+            Equipo.objects.filter(activo=True).annotate(
+                ocupada=Exists(ocupada),
+                cip_en_curso=Exists(cip_en_curso),
+                aseo_verificacion=Subquery(ultimo_aseo.values("verificacion")[:1]),
+            ),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        opciones_equipos = []
+        for equipo in equipos:
+            motivo = ""
+            if equipo.ocupada:
+                motivo = "Máquina ocupada por otra corrida."
+            elif equipo.cip_en_curso:
+                motivo = "Máquina actualmente en CIP."
+            elif equipo.aseo_verificacion == CicloCIP.Verificacion.OBSERVADO:
+                motivo = "El último aseo quedó observado."
+            opciones_equipos.append({
+                "id": equipo.id,
+                "codigo": equipo.codigo,
+                "nombre": equipo.nombre,
+                "tipo": equipo.tipo,
+                "tipo_etiqueta": equipo.get_tipo_display(),
+                "consume_leche": equipo.consume_leche,
+                "orden": equipo.orden,
+                "activo": equipo.activo,
+                "habilitado": not motivo,
+                "motivo_no_habilitado": motivo,
+                "aseo_verificacion": equipo.aseo_verificacion,
+            })
+        return Response({
+            "entradas": self._vales_operativos(request),
+            "equipos": opciones_equipos,
+        })
 
     def update(self, request, *args, **kwargs):
         """

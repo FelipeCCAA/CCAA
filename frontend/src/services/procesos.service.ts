@@ -12,6 +12,7 @@ export interface EjecucionProceso {
   etapa_tipo: string;
   equipo: number | null;
   equipo_nombre: string | null;
+  equipo_id: number | null;
   vale_codigo: string | null;
   lote_codigo: string | null;
   producto_nombre: string | null;
@@ -38,6 +39,7 @@ export interface CorridaCondensacion {
   orden_codigo: string;
   lote_codigo: string;
   equipo_nombre: string | null;
+  equipo_id: number | null;
   silo_origen_codigo: string;
   silo_destino_codigo: string;
   litros_entrada: string;
@@ -152,6 +154,11 @@ export async function obtenerRutasProducto(): Promise<Pagina<RutaProducto>> {
 
 export async function obtenerCondensaciones(): Promise<Pagina<CorridaCondensacion>> {
   const { data } = await api.get<Pagina<CorridaCondensacion>>("procesos/condensaciones/");
+  return data;
+}
+
+export async function iniciarCondensacion(id: number): Promise<CorridaCondensacion> {
+  const { data } = await api.post<CorridaCondensacion>(`procesos/condensaciones/${id}/iniciar/`);
   return data;
 }
 

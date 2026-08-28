@@ -13,7 +13,7 @@ implementado y cubierto por pruebas; lo punteado en rojo es **hueco conocido**,
 y cada uno tiene su ficha en la sección [Huecos](#huecos-conocidos). Ese es el
 material de las próximas mejoras.
 
-> Verificado contra el código el 2026-08-14, rama `feature-inocuidadJS`.
+> Verificado contra el código el 2026-08-27.
 > Cuando una regla cambie, este documento tiene que cambiar con ella: un mapa
 > que ya no describe el terreno es peor que no tener mapa, porque se sigue.
 
@@ -85,7 +85,7 @@ que desde 2026-08-17 solo avisa y deja seguir.
 | `decidir-calidad` | Los controles completos; el veredicto lo calcula el dominio | `recepcion/dominio.py` |
 | `muestrear` | Hora de agitación la fija el servidor; muestrear antes de los 30 minutos avisa, no bloquea (desde 2026-08-17) | `estandarizacion/servicios.py` |
 | `decidir` | El RC medido contra el objetivo — **no recibe la decisión** | `estandarizacion/servicios.py` |
-| abrir lote | Vale **liberado**, producto que coincide, y no más litros de los preparados | `produccion/dominio.py` |
+| abrir lote | Vale **liberado**, producto heredado del vale, máquina habilitada y no más litros de los preparados | `produccion/dominio.py`, `produccion/servicios.py` |
 | firmar liberación | Checklist, análisis, PCC y PPRO — con bloqueo de fila | `calidad/dominio.py` |
 
 ---
@@ -105,7 +105,7 @@ flowchart LR
     VALE -->|"+ litros"| L2(["silo estandarizado"])
     L2 -->|"− litros"| LOTE["produccion<br/><b>abrir lote</b>"]
 
-    NOTA["<b>El vale consume, el lote formaliza.</b><br/>Producción no elige silos:<br/>el vale ya fijó de dónde vino<br/>la leche y dónde quedó."]
+    NOTA["<b>El vale define la entrada.</b><br/>Producción no elige producto ni silos:<br/>el vale ya fijó qué se preparó,<br/>de dónde vino y dónde quedó."]
 
     VALE -.- NOTA
 

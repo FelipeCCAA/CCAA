@@ -223,6 +223,16 @@ def transferir_silo(
     }
     if len(bloqueados) != 2:
         raise ValidationError("Uno de los silos no existe.")
+    # Dos reintentos simultáneos pueden superar juntos la lectura anterior.
+    # Tras adquirir los bloqueos se vuelve a mirar la clave: el segundo ve los
+    # dos asientos ya confirmados y responde idempotentemente.
+    existente = list(
+        MovimientoSilo.objects.filter(operacion_id=operacion_id)
+        .select_related("silo", "silo_contraparte")
+        .order_by("tipo")
+    )
+    if existente:
+        return existente
     origen = bloqueados[silo_origen_id]
     destino = bloqueados[silo_destino_id]
     if origen.sucursal_id != destino.sucursal_id:

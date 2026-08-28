@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from calidad.models import Liberacion
 from maestros.models import Equipo, Mandante, Producto
@@ -46,6 +47,8 @@ class FlujoProductoTerminadoTests(TestCase):
         bodega = Bodega.objects.create(sucursal=self.planta, codigo="BPT", nombre="Bodega PT")
         self.ubicacion = Ubicacion.objects.create(bodega=bodega, codigo="A-01")
         self.cliente = ClienteDespacho.objects.create(empresa=self.empresa, codigo="CLI", nombre="Cliente PT")
+        self.api = APIClient()
+        self.api.force_authenticate(self.usuario)
 
     def liberar(self):
         Liberacion.objects.create(lote=self.lote, estado=Liberacion.Estado.LIBERADO)
@@ -94,3 +97,16 @@ class FlujoProductoTerminadoTests(TestCase):
         with self.assertRaises(ValidationError):
             ejecutar_despacho(despacho, self.usuario)
         self.assertTrue(ExistenciaProductoTerminado.objects.get(pallet=self.pallet).activo)
+
+    def test_resumen_operacional_refleja_stock_sin_duplicarlo(self):
+        self.liberar()
+        ingresar_pallet(self.pallet, self.ubicacion, self.usuario)
+
+        respuesta = self.api.get("/api/inventario/estado-operacional/")
+
+        self.assertEqual(respuesta.status_code, 200)
+        stock = respuesta.data["stock"]
+        self.assertEqual(Decimal(str(stock["fisico_kg"])), Decimal("500"))
+        self.assertEqual(Decimal(str(stock["disponible_kg"])), Decimal("500"))
+        self.assertEqual(Decimal(str(stock["cuarentena_kg"])), Decimal("0"))
+        self.assertEqual(stock["pallets"], 1)

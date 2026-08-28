@@ -295,8 +295,37 @@ export const obtenerAlertas = () => lista<Alerta>("inventario/alertas/");
 export interface ExistenciaProductoTerminado {
   id: number; pallet: number; pallet_codigo: string; lote_codigo: string;
   producto_nombre: string; ubicacion: number; ubicacion_codigo: string;
+  ubicacion_tipo: "disponible" | "cuarentena" | "rechazado" | "produccion";
   kg_neto: string; activo: boolean; actualizado_en: string;
+  estado_inventario: "cuarentena" | "disponible" | "bloqueado" | "despachado" | "anulado";
+  kg_disponible: string | number;
 }
+
+export interface EstadoOperacionalInventario {
+  stock: {
+    fisico_kg: string | number; disponible_kg: string | number;
+    cuarentena_kg: string | number; bloqueado_kg: string | number; pallets: number;
+  };
+  actualizado_en: string;
+}
+
+export interface MovimientoProductoTerminado {
+  id: number; pallet: number; pallet_codigo: string;
+  tipo: "ingreso" | "transferencia" | "despacho";
+  origen: number | null; destino: number | null; motivo: string;
+  registrado_por: number; registrado_en: string;
+}
+
+export async function obtenerEstadoOperacionalInventario(refrescar = false) {
+  const { data } = await api.get<EstadoOperacionalInventario>(
+    "inventario/estado-operacional/",
+    refrescar ? { params: { actualizado: Date.now() } } : undefined,
+  );
+  return data;
+}
+
+export const obtenerMovimientosProductoTerminado = () =>
+  lista<MovimientoProductoTerminado>("inventario/movimientos-producto-terminado/");
 
 export interface ClienteDespacho {
   id: number; codigo: string; nombre: string; rut: string; direccion: string; activo: boolean;
@@ -676,6 +705,11 @@ export async function consumirRecetaProduccion(lote_produccion: number) {
 
 export async function registrarSalida(datos: { existencia: number; cantidad: number; tipo: "salida" | "consumo"; motivo: string }) {
   const { data } = await api.post<MovimientoInventario>("inventario/movimientos/salida/", datos);
+  return data;
+}
+
+export async function trasladarExistencia(datos: { existencia: number; destino: number; cantidad: number; motivo: string }) {
+  const { data } = await api.post<MovimientoInventario>("inventario/movimientos/trasladar/", datos);
   return data;
 }
 

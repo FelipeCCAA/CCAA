@@ -84,6 +84,12 @@ function FormularioVale({
   const [error, setError] = useState("");
   const [tocado, setTocado] = useState(false);
   const [sugerencias, setSugerencias] = useState<SugerenciaSilo[]>([]);
+  const productoElegido = productos.find((p) => p.id === Number(datos.producto));
+  const rutaProducto = productoElegido?.familia === "polvo"
+    ? "Silo estandarizado → evaporación → precondensado → secado → envase → Calidad → Inventario"
+    : productoElegido?.familia === "crema"
+      ? "Estanque de crema → mantequilla o despacho intermedio, según la orden"
+      : "Silo de producto líquido → Calidad → despacho intermedio o siguiente proceso";
 
   const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
   const datosBorrador: DatosBorradorVale = {
@@ -338,10 +344,12 @@ function FormularioVale({
             >
               <option value="">Selecciona</option>
               {productos.map((p) => (
-                <option key={p.id} value={p.id}>{p.nombre}</option>
+                <option key={p.id} value={p.id}>{p.mandante_nombre} · {p.nombre} · {p.familia_etiqueta}</option>
               ))}
             </select>
           </Campo>
+
+          {productoElegido && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm md:col-span-2"><p className="font-semibold text-emerald-900">Mandante: {productoElegido.mandante_nombre}</p><p className="mt-1 text-emerald-800">Destino: {productoElegido.nombre} · {productoElegido.familia_etiqueta}</p><p className="mt-2 text-xs text-emerald-700">Ruta propuesta: {rutaProducto}</p></div>}
 
           <Campo label="RC objetivo">
             <input

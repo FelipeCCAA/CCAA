@@ -2,13 +2,13 @@ from decimal import Decimal
 from math import ceil
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import DecimalField, Prefetch, Sum, Value
+from django.db.models import Count, DecimalField, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from usuarios.models import PerfilUsuario
@@ -68,6 +68,44 @@ def _tenant_get(modelo, usuario, pk, *, sucursal, empresa):
         modelo.objects.all(), usuario,
         campo_sucursal=sucursal, campo_empresa=empresa,
     ).get(pk=pk)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def estado_operacional(request):
+    """Resumen de bodega: stock físico y sus estados, sin procesos de planta."""
+    from produccion.models import PalletProducto
+
+    decimal = DecimalField(max_digits=18, decimal_places=3)
+    existencias = filtrar_por_scope(
+        ExistenciaProductoTerminado.objects.filter(activo=True), request.user,
+        campo_sucursal="ubicacion__bodega__sucursal_id",
+        campo_empresa="ubicacion__bodega__sucursal__empresa_id",
+    )
+    estados_disponibles = [
+        PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO,
+    ]
+    stock = existencias.aggregate(
+        fisico_kg=Coalesce(Sum("pallet__kg_neto"), Value(0), output_field=decimal),
+        disponible_kg=Coalesce(
+            Sum("pallet__kg_neto", filter=Q(pallet__estado__in=estados_disponibles)),
+            Value(0), output_field=decimal,
+        ),
+        cuarentena_kg=Coalesce(
+            Sum("pallet__kg_neto", filter=Q(pallet__estado=PalletProducto.Estado.PENDIENTE_CALIDAD)),
+            Value(0), output_field=decimal,
+        ),
+        bloqueado_kg=Coalesce(
+            Sum("pallet__kg_neto", filter=Q(pallet__estado=PalletProducto.Estado.BLOQUEADO)),
+            Value(0), output_field=decimal,
+        ),
+        pallets=Count("id"),
+    )
+
+    return Response({
+        "stock": stock,
+        "actualizado_en": timezone.now(),
+    })
 
 
 class FiltroAreaAdminMixin:
@@ -227,7 +265,8 @@ class ExistenciaProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyM
     tenant_lookup_sucursal = "ubicacion__bodega__sucursal_id"
     tenant_lookup_empresa = "ubicacion__bodega__sucursal__empresa_id"
     queryset = ExistenciaProductoTerminado.objects.select_related(
-        "pallet__envase__lote__producto", "ubicacion__bodega"
+        "pallet__envase__lote__producto", "pallet__envase__equipo",
+        "ubicacion__bodega"
     ).filter(activo=True)
     serializer_class = ExistenciaProductoTerminadoSerializer
     permission_classes = [EscribeBodega]

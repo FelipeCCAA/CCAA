@@ -8,14 +8,12 @@ import {
   descartarBorradorLote,
   guardarBorradorLote,
   obtenerBorradorLote,
-  obtenerValesDisponibles,
+  obtenerOpcionesInicioProduccion,
   sugerirCodigoLote,
   type DatosBorradorLote,
-  type Producto,
+  type EquipoInicioProduccion,
   type ValeDisponible,
 } from "../../services/produccion.service";
-import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
-import { obtenerAseos, type AseoCip } from "../../services/aseos.service";
 import { useBorrador } from "../../hooks/useBorrador";
 
 
@@ -42,7 +40,6 @@ import { useBorrador } from "../../hooks/useBorrador";
 */
 
 interface Props {
-  productos: Producto[];
   alCerrar: () => void;
   alGuardar: () => void;
 }
@@ -51,10 +48,9 @@ interface Props {
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 
-function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
+function FormularioLote({ alCerrar, alGuardar }: Props) {
 
   const [codigoLote, setCodigoLote] = useState("");
-  const [producto, setProducto] = useState("");
   const [fecha, setFecha] = useState(hoy());
   const [op, setOp] = useState("");
   const [linea, setLinea] = useState("");
@@ -70,8 +66,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const [vales, setVales] = useState<ValeDisponible[]>([]);
   const [vale, setVale] = useState("");
   const [litros, setLitros] = useState("");
-  const [equipos, setEquipos] = useState<Equipo[]>([]);
-  const [aseos, setAseos] = useState<AseoCip[]>([]);
+  const [equipos, setEquipos] = useState<EquipoInicioProduccion[]>([]);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -80,7 +75,6 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
   const datosBorrador: DatosBorradorLote = {
     codigo_lote_propuesto: codigoLote,
-    producto: numeroONull(producto),
     vale: numeroONull(vale),
     litros_estandarizados_borrador: numeroONull(litros),
     equipo: numeroONull(equipo),
@@ -109,7 +103,6 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
       }
       setCodigoLote(guardado.codigo_lote_propuesto);
       setCodigoEditado(Boolean(guardado.codigo_lote_propuesto));
-      setProducto(guardado.producto == null ? "" : String(guardado.producto));
       setVale(guardado.vale == null ? "" : String(guardado.vale));
       setLitros(
         guardado.litros_estandarizados_borrador == null
@@ -129,18 +122,16 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   }, [reanudar]);
 
   useEffect(() => {
-    obtenerEquipos().then(setEquipos).catch(() => setEquipos([]));
-    obtenerAseos().then(setAseos).catch(() => setAseos([]));
+    obtenerOpcionesInicioProduccion()
+      .then((opciones) => {
+        setVales(opciones.entradas);
+        setEquipos(opciones.equipos);
+      })
+      .catch(() => {
+        setVales([]);
+        setEquipos([]);
+      });
   }, []);
-
-  useEffect(() => {
-    if (!producto) {
-      return;
-    }
-    obtenerValesDisponibles(Number(producto))
-      .then(setVales)
-      .catch(() => setVales([]));
-  }, [producto]);
 
   const sugerir = useCallback(async () => {
     if (!equipo || !fecha || codigoEditado) {
@@ -214,7 +205,6 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
   const campo =
     "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-green-600";
   const valeSeleccionado = vales.find((item) => item.id === Number(vale));
-  const productoSeleccionado = productos.find((item) => item.id === Number(producto));
   const rutaPorFamilia: Record<string, { ruta: string; tipos: string[]; ayuda: string }> = {
     polvo: {
       ruta: "Leche estandarizada → Evaporación → Torre Egron → Envasado 25 kg",
@@ -237,12 +227,12 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
       ayuda: "Selecciona la máquina final definida para este producto.",
     },
   };
-  const ruta = productoSeleccionado ? rutaPorFamilia[productoSeleccionado.familia] : null;
-  const equiposCompatibles = equipos.filter((item) => item.activo && (!ruta || ruta.tipos.includes(item.tipo)));
-  const ultimoAseoEquipo = aseos
-    .filter((aseo) => aseo.equipo === Number(equipo))
-    .sort((a, b) => b.inicio.localeCompare(a.inicio))[0];
-  const advertenciaAseo = equipo && (!ultimoAseoEquipo || ultimoAseoEquipo.verificacion !== "conforme");
+  const ruta = valeSeleccionado ? rutaPorFamilia[valeSeleccionado.producto_familia] : null;
+  const equiposCompatibles = equipos.filter(
+    (item) => item.activo && item.habilitado && (!ruta || ruta.tipos.includes(item.tipo)),
+  );
+  const equipoSeleccionado = equipos.find((item) => item.id === Number(equipo));
+  const advertenciaAseo = equipo && equipoSeleccionado?.aseo_verificacion !== "conforme";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
@@ -290,28 +280,28 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
             <div className="sm:col-span-2">
 
-              <label className={etiquetaCampo}>Producto *</label>
+              <label className={etiquetaCampo}>Vale estandarizado liberado *</label>
 
               <select
                 className={campo}
-                value={producto}
+                value={vale}
                 onChange={(e) => {
-                  setProducto(e.target.value);
+                  const id = e.target.value;
+                  const elegido = vales.find((item) => item.id === Number(id));
+                  setVale(id);
                   setEquipo("");
-                  setVale("");
-                  setLitros("");
-                  setVales([]);
+                  setLitros(elegido?.litros_disponibles ?? "");
                 }}
                 required
               >
 
-                <option value="">Selecciona un producto…</option>
+                <option value="">Selecciona un vale con saldo…</option>
 
-                {productos.map((p) => (
+                {vales.map((item) => (
 
-                  <option key={p.id} value={p.id}>
+                  <option key={item.id} value={item.id}>
 
-                    {p.nombre} · {p.mandante_nombre}
+                    {item.codigo} · {item.producto_nombre} · {Number(item.litros_disponibles).toLocaleString("es-CL")} L
 
                   </option>
 
@@ -319,6 +309,17 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
 
               </select>
 
+              {vales.length === 0 && (
+                <p className="mt-1.5 text-xs text-amber-700">
+                  No hay vales liberados con saldo. Libera uno en Estandarización.
+                </p>
+              )}
+              {valeSeleccionado && (
+                <p className="mt-2 text-sm text-slate-700">
+                  Producto definido por el vale: <strong>{valeSeleccionado.producto_nombre}</strong>
+                  {` · ${valeSeleccionado.mandante_nombre}`}
+                </p>
+              )}
               {ruta && <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800"><strong>Ruta del producto:</strong> {ruta.ruta}<br />{ruta.ayuda}</div>}
 
             </div>
@@ -373,7 +374,7 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
                   </option>
                 ))}
               </select>
-              {productoSeleccionado && equiposCompatibles.length === 0 && <p className="mt-1.5 text-xs text-amber-700">No hay una máquina activa configurada para esta familia. Revísala en Maestros.</p>}
+              {valeSeleccionado && equiposCompatibles.length === 0 && <p className="mt-1.5 text-xs text-amber-700">No hay una máquina activa configurada para esta familia. Revísala en Maestros.</p>}
               {advertenciaAseo && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><strong>Advertencia de aseo:</strong> no hay un CIP/aseo conforme registrado para esta máquina. Puedes continuar por ahora, pero verifica el aseo antes de iniciar la corrida.</div>}
 
             </div>
@@ -454,36 +455,6 @@ function FormularioLote({ productos, alCerrar, alGuardar }: Props) {
             </p>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className={etiquetaCampo}>Vale liberado *</label>
-                <select
-                  className={campo}
-                  value={vale}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setVale(id);
-                    const elegido = vales.find((item) => item.id === Number(id));
-                    setLitros(elegido?.litros_disponibles ?? "");
-                  }}
-                  required
-                  disabled={!producto}
-                >
-                  <option value="">
-                    {producto ? "Selecciona un vale…" : "Primero selecciona el producto"}
-                  </option>
-                  {vales.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.codigo} · {Number(item.litros_disponibles).toLocaleString("es-CL")} L disponibles
-                    </option>
-                  ))}
-                </select>
-                {producto && vales.length === 0 && (
-                  <p className="mt-1.5 text-xs text-amber-700">
-                    No hay vales liberados con saldo para este producto.
-                  </p>
-                )}
-              </div>
-
               <div>
                 <label className={etiquetaCampo}>Litros para esta corrida *</label>
                 <input

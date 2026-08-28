@@ -6,17 +6,20 @@ debe dejar hacer: firmar por una vía que se salte la regla, o estampar una
 firma con datos que vengan del navegador.
 """
 
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
-from maestros.models import DocumentoLiberacion, Especificacion, Mandante, Producto
-from produccion.models import Analisis, Lote
+from inventario.models import Bodega, ExistenciaProductoTerminado, Ubicacion
+from maestros.models import DocumentoLiberacion, Equipo, Especificacion, Mandante, Producto
+from produccion.models import Analisis, Lote, PalletProducto, RegistroEnvase
 from usuarios.models import PerfilUsuario, Rol
 
 from .models import Liberacion, RegistroCalidad
@@ -239,6 +242,37 @@ class FirmaTests(BaseAPI):
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(respuesta.json()["estado"], "liberado")
         self.assertTrue(respuesta.json()["liberado"])
+
+    def test_liberar_cambia_estado_sin_duplicar_stock_fisico(self):
+        equipo = Equipo.objects.create(
+            sucursal=self.lote.sucursal, codigo="ENV-CAL", nombre="Envase Calidad",
+            tipo=Equipo.Tipo.ENVASADORA,
+        )
+        envase = RegistroEnvase.objects.create(
+            lote=self.lote, equipo=equipo, formato_kg=25, unidades=4,
+            kg_envasados=100, operador=self.usuario,
+            inicio=timezone.now() - timedelta(hours=1), termino=timezone.now(),
+        )
+        pallet = PalletProducto.objects.create(
+            envase=envase, codigo="PAL-CAL-STOCK", unidades=4,
+            kg_neto=Decimal("100"),
+        )
+        bodega = Bodega.objects.create(
+            sucursal=self.lote.sucursal, codigo="BPT-CAL", nombre="Producto terminado",
+        )
+        ubicacion = Ubicacion.objects.create(
+            bodega=bodega, codigo="PT-CUAR-CAL", tipo=Ubicacion.Tipo.CUARENTENA,
+        )
+        ExistenciaProductoTerminado.objects.create(pallet=pallet, ubicacion=ubicacion)
+        self._analisis()
+        self._checklist_completo()
+
+        respuesta = self.cliente.post(f"/api/calidad/expedientes/{self.lote.id}/liberar/")
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(ExistenciaProductoTerminado.objects.count(), 1)
+        pallet.refresh_from_db()
+        self.assertEqual(pallet.estado, PalletProducto.Estado.LIBERADO)
 
     def test_la_firma_la_estampa_el_servidor(self):
         """Quién firmó y cuándo no se aceptan del navegador: son la auditoría."""

@@ -1,13 +1,12 @@
 """
 El paso del vale al lote.
 
-**Quien consume la leche de los silos es el vale**: al transferirse saca de la
-entera y del TK de descremada, y deja la mezcla en el silo de destino. Ahí esa
-leche ya está estandarizada al RC que un producto pide, pero todavía no es de
-ningún producto.
+**Quien prepara la leche en los silos es el vale**: al transferirse saca de la
+entera y del TK de descremada, deja la mezcla en el silo de destino y conserva
+el producto para cuyo RC fue preparada.
 
-Lo que hace abrir el lote es **formalizar a qué producto va**. Por eso el lote
-nace del vale y no al revés, y por eso no elige silo: el silo lo eligió el vale.
+Abrir el lote consume una cantidad parcial de esa entrada y hereda su producto.
+Producción no vuelve a elegir ni producto ni silo: ambos los fijó el vale.
 
 Antes esto no existía y el lote se creaba suelto, escogiendo un silo cualquiera
 y descontándole litros. Dos consecuencias: la leche estandarizada y la cruda se
@@ -47,7 +46,7 @@ def litros_ya_tomados(vale, excluyendo=None):
 
 @transaction.atomic
 def abrir_lote_desde_vale(
-    *, vale, producto, codigo_lote, fecha, litros, usuario=None,
+    *, vale, codigo_lote, fecha, litros, usuario=None, producto=None,
     lote_borrador=None, **extra
 ):
     """
@@ -76,13 +75,41 @@ def abrir_lote_desde_vale(
     if not decision.permitido:
         raise ValidationError(list(decision.bloqueos))
 
-    if producto.pk != vale.producto_id:
+    if producto is not None and producto.pk != vale.producto_id:
         raise ValidationError({
             "producto": (
                 f"El vale {vale.codigo} fue estandarizado para "
                 f"{vale.producto.nombre}; no puede usarse para otro producto."
             )
         })
+    producto = vale.producto
+
+    # Se bloquea la máquina, no solo la corrida encontrada. Así dos aperturas
+    # simultáneas para una máquina todavía libre se serializan correctamente.
+    # La regla también vive aquí porque ocultar una opción en React no impide
+    # que un cliente antiguo o una llamada manual intente ocuparla.
+    equipo = extra.get("equipo")
+    if equipo is not None:
+        from inventario.servicios import motivo_equipo_no_habilitado
+        from maestros.models import Equipo
+        from procesos.models import EjecucionProceso
+
+        equipo = Equipo.objects.select_for_update().get(pk=equipo.pk)
+        if not equipo.activo:
+            raise ValidationError({"equipo": f"{equipo.nombre} está inactivo."})
+        impedimento = motivo_equipo_no_habilitado(equipo)
+        if impedimento:
+            raise ValidationError({"equipo": impedimento})
+        ocupada = EjecucionProceso.objects.filter(
+            equipo=equipo,
+            estado=EjecucionProceso.Estado.EJECUCION,
+        ).first()
+        ejecucion_del_borrador = getattr(lote_borrador, "ejecucion_id", None)
+        if ocupada and ocupada.pk != ejecucion_del_borrador:
+            raise ValidationError({
+                "equipo": f"{equipo.nombre} está ocupado por {ocupada.codigo}."
+            })
+        extra["equipo"] = equipo
 
     if lote_borrador is None:
         lote = Lote.objects.create(
@@ -249,7 +276,9 @@ def registrar_envasado(
 ):
     """Registra envase y pallets como un único cierre físico e idempotente."""
     from django.core.exceptions import ValidationError
-    from inventario.servicios import motivo_equipo_no_habilitado
+    from inventario.servicios import (
+        motivo_equipo_no_habilitado, registrar_pallets_producidos,
+    )
 
     if operacion_id:
         existente = RegistroEnvase.objects.filter(operacion_id=operacion_id).first()
@@ -287,4 +316,8 @@ def registrar_envasado(
         pallet.full_clean()
         creados.append(pallet)
     PalletProducto.objects.bulk_create(creados)
+    # El pallet ya existe físicamente al salir de envase. Inventario lo
+    # registra una sola vez en cuarentena; Calidad luego cambia su estado, no
+    # vuelve a crear stock.
+    registrar_pallets_producidos(creados, usuario)
     return registro

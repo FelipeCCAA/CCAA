@@ -73,7 +73,12 @@ function Barra({
         activo ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200"
       }`}
     >
-
+      <div className="flex items-stretch gap-4">
+        <div className="relative w-14 shrink-0 overflow-hidden rounded-b-2xl rounded-t-md border-2 border-slate-300 bg-slate-50" aria-label={`Nivel ${silo.pct}%`}>
+          <div className={`absolute inset-x-0 bottom-0 ${color} opacity-75 transition-[height]`} style={{ height: `${ancho}%` }} />
+          <span className="absolute inset-0 grid place-items-center text-[11px] font-bold text-slate-900">{silo.pct}%</span>
+        </div>
+        <div className="min-w-0 flex-1">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="rounded-xl bg-slate-100 p-2 text-slate-600">
@@ -109,7 +114,8 @@ function Barra({
           de {formato.format(silo.capacidad)} L
         </p>
       </div>
-
+        </div>
+      </div>
     </button>
   );
 }

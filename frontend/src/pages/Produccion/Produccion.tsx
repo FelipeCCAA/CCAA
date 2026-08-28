@@ -21,7 +21,8 @@ import {
   type Producto,
 } from "../../services/produccion.service";
 
-import { puedeEscribir } from "../../services/sesion";
+import { obtenerSesion, puedeEscribir } from "../../services/sesion";
+import EvaporadoresProduccion from "./EvaporadoresProduccion";
 
 const DetalleLote = lazy(() => import("./DetalleLote"));
 const FormularioLote = lazy(() => import("./FormularioLote"));
@@ -85,6 +86,8 @@ function Produccion() {
 
   // Solo Producción y Administración registran lotes. El resto consulta.
   const puedeEditar = puedeEscribir("produccion");
+  const area = obtenerSesion()?.usuario.perfil?.area;
+  const veCondensacion = !area || ["condensacion", "administracion"].includes(area);
 
   const cargarLotes = useCallback(async () => {
 
@@ -227,6 +230,8 @@ function Produccion() {
           <div><b>3. Producción</b><br /><span className="text-slate-600">Producto, máquina compatible y lote trazable.</span></div>
           <div><b>4. Calidad e Inventario</b><br /><span className="text-slate-600">Análisis, liberación, pallet y ubicación de bodega.</span></div>
         </section>
+
+        {veCondensacion && <EvaporadoresProduccion />}
 
         {/* Filtros */}
 
@@ -474,7 +479,6 @@ function Produccion() {
       >
         {formularioAbierto && (
           <FormularioLote
-            productos={productos}
             alCerrar={() => setFormularioAbierto(false)}
             alGuardar={cargarLotes}
           />

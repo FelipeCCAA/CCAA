@@ -8,6 +8,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from maestros.models import Equipo, Mandante, Producto
+from inventario.models import ExistenciaProductoTerminado, MovimientoProductoTerminado, Ubicacion
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import Lote, PalletProducto, RegistroEnvase
@@ -64,6 +65,15 @@ class EnvasePalletTests(TestCase):
             pallet.estado == PalletProducto.Estado.PENDIENTE_CALIDAD
             for pallet in registro.pallets.all()
         ))
+        existencias = ExistenciaProductoTerminado.objects.filter(
+            pallet__envase=registro, activo=True,
+        )
+        self.assertEqual(existencias.count(), 2)
+        self.assertTrue(all(
+            existencia.ubicacion.tipo == Ubicacion.Tipo.CUARENTENA
+            for existencia in existencias.select_related("ubicacion")
+        ))
+        self.assertEqual(MovimientoProductoTerminado.objects.count(), 2)
 
     def test_clave_idempotente_no_duplica_pallets(self):
         clave = uuid.uuid4()
@@ -73,6 +83,8 @@ class EnvasePalletTests(TestCase):
         self.assertEqual(primero.pk, segundo.pk)
         self.assertEqual(RegistroEnvase.objects.count(), 1)
         self.assertEqual(PalletProducto.objects.count(), 2)
+        self.assertEqual(ExistenciaProductoTerminado.objects.count(), 2)
+        self.assertEqual(MovimientoProductoTerminado.objects.count(), 2)
 
     def test_no_permite_envasar_mas_de_lo_producido(self):
         with self.assertRaises(ValidationError):

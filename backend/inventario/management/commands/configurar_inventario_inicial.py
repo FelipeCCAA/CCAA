@@ -35,6 +35,10 @@ class Command(BaseCommand):
             bodega, _ = Bodega.objects.get_or_create(
                 sucursal=sucursal, codigo="BEM", defaults={"nombre": "Bodega de embalaje", "area": "bodega"}
             )
+            bodega_producto, _ = Bodega.objects.get_or_create(
+                sucursal=sucursal, codigo="BPT",
+                defaults={"nombre": "Bodega de producto terminado", "area": "bodega"},
+            )
             for codigo, nombre, categoria, area, unidad, calidad, certificado in materiales:
                 Insumo.objects.get_or_create(
                     empresa=empresa, codigo=codigo,
@@ -49,9 +53,16 @@ class Command(BaseCommand):
                 ("EMB-DISP", "disponible", "Material liberado para producción"),
                 ("EMB-CUAR", "cuarentena", "Material pendiente de decisión de Calidad"),
                 ("EMB-RECH", "rechazado", "Material rechazado o bloqueado"),
-                ("PT-DISP", "disponible", "Producto terminado liberado"),
             ]:
                 Ubicacion.objects.get_or_create(
                     bodega=bodega, codigo=codigo, defaults={"tipo": tipo, "descripcion": descripcion}
+                )
+            for codigo, tipo, descripcion in [
+                ("PT-CUAR", "cuarentena", "Producto terminado pendiente de Calidad"),
+                ("PT-DISP", "disponible", "Producto terminado liberado"),
+            ]:
+                Ubicacion.objects.get_or_create(
+                    bodega=bodega_producto, codigo=codigo,
+                    defaults={"tipo": tipo, "descripcion": descripcion},
                 )
         self.stdout.write(self.style.SUCCESS("Catálogo de embalaje y ubicaciones operativas configurados."))

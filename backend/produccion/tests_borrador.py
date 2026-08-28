@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from estandarizacion.models import ValeEstandarizacion
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso
 from recepcion.models import MovimientoSilo
 
 from .models import Lote
@@ -78,12 +79,15 @@ class BorradorLoteTests(BaseApertura):
 
     def test_confirmar_convierte_el_mismo_registro_y_descuenta_una_vez(self):
         borrador = self.crear_borrador(observacion="Inicio")
+        datos = self.datos_completos()
+        datos.pop("producto")
         guardado = self.cliente.patch(
             f"/api/produccion/lotes/{borrador['id']}/guardar-borrador/",
-            self.datos_completos(),
+            datos,
             format="json",
         )
         self.assertEqual(guardado.status_code, 200, guardado.json())
+        self.assertEqual(guardado.json()["producto"], self.vale.producto_id)
 
         respuesta = self.cliente.post(
             f"/api/produccion/lotes/{borrador['id']}/confirmar-borrador/"
@@ -105,4 +109,24 @@ class BorradorLoteTests(BaseApertura):
         )
         self.assertEqual(respuesta.status_code, 200, respuesta.json())
         self.assertEqual(respuesta.json()["producto"], self.polvo.id)
+
+    def test_no_confirma_si_la_maquina_esta_ocupada(self):
+        proceso = Proceso.objects.create(codigo="secado-prueba", nombre="Secado prueba")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="secado", nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        EjecucionProceso.objects.create(
+            codigo="EJ-OCUPADA", etapa=etapa, sucursal=self.sucursal,
+            equipo=self.equipo, estado=EjecucionProceso.Estado.EJECUCION,
+        )
+        borrador = self.crear_borrador(**self.datos_completos())
+
+        respuesta = self.cliente.post(
+            f"/api/produccion/lotes/{borrador['id']}/confirmar-borrador/"
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("ocupado", str(respuesta.json()).lower())
+        self.assertEqual(MovimientoSilo.objects.count(), 0)
 

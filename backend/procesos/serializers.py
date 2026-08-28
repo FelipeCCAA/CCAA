@@ -23,6 +23,7 @@ class CorridaCondensacionSerializer(serializers.ModelSerializer):
     orden_codigo = serializers.CharField(source="orden.codigo", read_only=True)
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)
+    equipo_id = serializers.IntegerField(source="ejecucion.equipo_id", read_only=True)
     silo_origen_codigo = serializers.CharField(source="silo_origen.codigo", read_only=True)
     silo_destino_codigo = serializers.CharField(source="silo_destino.codigo", read_only=True)
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
