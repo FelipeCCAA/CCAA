@@ -19,6 +19,8 @@ import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 import FormularioAnalisis from "./FormularioAnalisis";
 import PanelInocuidad from "./PanelInocuidad";
 import PanelAsignacion from "./PanelAsignacion";
+import FormularioEnvase from "./FormularioEnvase";
+import { consumirRecetaProduccion } from "../../services/inventario.service";
 
 
 /*
@@ -154,6 +156,7 @@ function DetalleLote({
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [consumiendo, setConsumiendo] = useState(false);
   const [confirmando, setConfirmando] = useState<EstadoLote | null>(null);
   const [motivoAnulacion, setMotivoAnulacion] = useState("");
 
@@ -284,6 +287,21 @@ function DetalleLote({
 
   const escribir = (clave: keyof Borrador) => (valor: string) =>
     setBorrador((previo) => (previo ? { ...previo, [clave]: valor } : previo));
+
+  const consumirMateriales = async () => {
+    setConsumiendo(true);
+    setError("");
+    try {
+      await consumirRecetaProduccion(loteId);
+      await cargar();
+      alCambiar();
+    } catch (e) {
+      const datos = axios.isAxiosError(e) ? e.response?.data : null;
+      setError(datos ? Object.values(datos as Record<string, string | string[]>).flat().join(" ") : "No se pudieron descontar los materiales.");
+    } finally {
+      setConsumiendo(false);
+    }
+  };
 
   const siguientes = lote ? TRANSICIONES[lote.estado] : [];
   const esFinal = lote !== null && siguientes.length === 0;
@@ -425,7 +443,9 @@ function DetalleLote({
                     saldo de bodega está más alto de lo que corresponde. */}
                 {lote.consumo_inventario?.pendiente && (
 
-                  <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+
+                    <p>
 
                     <span className="font-medium">
                       El material de este lote no se descontó de bodega.
@@ -434,8 +454,20 @@ function DetalleLote({
                     material esté aprobado y con stock. Hasta entonces, el
                     saldo de bodega no refleja lo que esta corrida consumió.
 
-                  </p>
+                    </p>
 
+                  <button type="button" disabled={consumiendo} onClick={() => void consumirMateriales()} className="mt-3 rounded-lg bg-amber-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+                    {consumiendo ? "Descontando…" : "Consumir envases y materiales ahora"}
+                  </button>
+
+                  </div>
+
+                )}
+
+                {lote.consumo_inventario?.registrado && (
+                  <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                    Materiales descontados de Inventario para {lote.consumo_inventario.kg_base} kg.
+                  </p>
                 )}
 
                 {esFinal && puedeEditar && (
@@ -644,6 +676,10 @@ function DetalleLote({
               puedeEditar={puedeEditar}
               alCambiar={alCambiar}
             />
+
+            {(lote.estado === "producido" || lote.estado === "cerrado") && puedeEditar && (
+              <FormularioEnvase loteId={lote.id} alGuardar={() => { void cargar(); alCambiar(); }} />
+            )}
 
             {/* Análisis */}
 

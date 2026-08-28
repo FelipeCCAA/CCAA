@@ -30,7 +30,10 @@ class PalletProductoSerializer(serializers.ModelSerializer):
 class PalletEntradaSerializer(serializers.Serializer):
     codigo = serializers.CharField(max_length=80, trim_whitespace=True)
     unidades = serializers.IntegerField(min_value=1)
-    kg_neto = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
+    kg_neto = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0.001"),
+        max_value=Decimal("500"),
+    )
 
 
 class RegistroEnvaseSerializer(serializers.ModelSerializer):

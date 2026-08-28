@@ -98,14 +98,17 @@ def ingresar_pallet(pallet, ubicacion, usuario, *, operacion=None):
     existencia, creada = ExistenciaProductoTerminado.objects.select_for_update().get_or_create(
         pallet=pallet, defaults={"ubicacion": ubicacion, "activo": True}
     )
-    if not creada and existencia.activo:
+    # El envasado ya crea existencia física en cuarentena. Tras la liberación,
+    # ingresar mueve ese mismo pallet a la ubicación disponible elegida.
+    if not creada and existencia.activo and existencia.ubicacion_id == ubicacion.id:
         raise ValidationError("El pallet ya está en inventario.")
+    origen = None if creada else existencia.ubicacion
     existencia.ubicacion = ubicacion
     existencia.activo = True
     existencia.save(update_fields=["ubicacion", "activo", "actualizado_en"])
     MovimientoProductoTerminado.objects.create(
         operacion=operacion or uuid4(), pallet=pallet, tipo=MovimientoProductoTerminado.Tipo.INGRESO,
-        destino=ubicacion, registrado_por=usuario,
+        origen=origen, destino=ubicacion, registrado_por=usuario,
     )
     pallet.estado = PalletProducto.Estado.EN_INVENTARIO
     pallet.save(update_fields=["estado"])

@@ -270,6 +270,28 @@ export interface ValeDisponible {
   silo_destino_codigo: string;
 }
 
+export interface RegistroEnvaseCreado {
+  id: number;
+  lote: number;
+  formato_kg: string;
+  unidades: number;
+  kg_envasados: string;
+  pallets: PalletProducto[];
+}
+
+export async function registrarEnvase(datos: {
+  lote: number;
+  equipo: number;
+  formato_kg: number;
+  inicio: string;
+  termino: string;
+  observacion?: string;
+  pallets_datos: Array<{ codigo: string; unidades: number; kg_neto: number }>;
+}): Promise<RegistroEnvaseCreado> {
+  const { data } = await api.post<RegistroEnvaseCreado>("produccion/envases/", datos);
+  return data;
+}
+
 export interface EquipoInicioProduccion extends Equipo {
   habilitado: boolean;
   motivo_no_habilitado: string;

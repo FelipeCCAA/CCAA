@@ -393,6 +393,7 @@ class ExistenciaSerializer(serializers.ModelSerializer):
     insumo_nombre = serializers.CharField(source="lote.insumo.nombre", read_only=True)
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
     ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
+    ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
     estado_calidad = serializers.CharField(source="lote.estado_calidad", read_only=True)
     cantidad_disponible = serializers.DecimalField(max_digits=16, decimal_places=3, read_only=True)
 

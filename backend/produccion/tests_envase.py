@@ -7,8 +7,12 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
-from maestros.models import Equipo, Mandante, Producto
-from inventario.models import ExistenciaProductoTerminado, MovimientoProductoTerminado, Ubicacion
+from maestros.models import Equipo, Mandante, Producto, Receta, RecetaComponente
+from inventario.models import (
+    Bodega, Existencia, ExistenciaProductoTerminado, Insumo, LoteInventario,
+    MovimientoInventario, MovimientoProductoTerminado, Ubicacion,
+)
+from inventario.servicios import consumir_receta_produccion, registrar_entrada
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import Lote, PalletProducto, RegistroEnvase
@@ -29,11 +33,11 @@ class EnvasePalletTests(TestCase):
         mandante = Mandante.objects.create(
             empresa=empresa, nombre="Mandante envase", codigo_cliente="env"
         )
-        producto = Producto.objects.create(
+        self.producto = Producto.objects.create(
             mandante=mandante, nombre="Leche en polvo", unidad_base="kg"
         )
         self.lote = Lote.objects.create(
-            sucursal=self.planta, codigo_lote="L-ENV-1", producto=producto,
+            sucursal=self.planta, codigo_lote="L-ENV-1", producto=self.producto,
             fecha=date(2026, 8, 17), estado=Lote.Estado.PRODUCIDO,
             kg_producidos=Decimal("1000"),
         )
@@ -94,3 +98,60 @@ class EnvasePalletTests(TestCase):
 
         self.assertEqual(RegistroEnvase.objects.count(), 0)
         self.assertEqual(PalletProducto.objects.count(), 0)
+
+    def test_simulacion_pallet_25kg_consume_envases_y_respeta_500kg(self):
+        """20 sacos + 1 pallet físico producen exactamente un pallet de 500 kg."""
+        bolsa = Insumo.objects.create(
+            empresa=self.planta.empresa, codigo="ENV-SACO-25", nombre="Saco 25 kg",
+            categoria=Insumo.Categoria.EMPAQUE, area=PerfilUsuario.Area.ENVASE,
+            unidad=Insumo.Unidad.UN, requiere_calidad=False,
+        )
+        base = Insumo.objects.create(
+            empresa=self.planta.empresa, codigo="ENV-PALLET-500", nombre="Pallet base 500 kg",
+            categoria=Insumo.Categoria.EMPAQUE, area=PerfilUsuario.Area.ENVASE,
+            unidad=Insumo.Unidad.UN, requiere_calidad=False,
+        )
+        receta = Receta.objects.create(
+            producto=self.producto, version=1, cantidad_base=Decimal("500"),
+            vigente_desde=date(2026, 1, 1), fuente="Simulación pallet 25 kg",
+        )
+        RecetaComponente.objects.create(
+            receta=receta, insumo=bolsa, cantidad=Decimal("20"), unidad="un",
+        )
+        RecetaComponente.objects.create(
+            receta=receta, insumo=base, cantidad=Decimal("1"), unidad="un",
+        )
+        bodega = Bodega.objects.create(
+            sucursal=self.planta, codigo="B-ENV", nombre="Envases",
+            area=PerfilUsuario.Area.BODEGA,
+        )
+        disponible = Ubicacion.objects.create(
+            bodega=bodega, codigo="ENV-DISP", tipo=Ubicacion.Tipo.DISPONIBLE,
+        )
+        for insumo, cantidad in ((bolsa, 20), (base, 1)):
+            lote_material = LoteInventario.objects.create(
+                sucursal=self.planta, insumo=insumo, codigo=f"SIM-{insumo.codigo}",
+                estado_calidad=LoteInventario.EstadoCalidad.NO_REQUIERE,
+            )
+            registrar_entrada(
+                lote=lote_material, ubicacion=disponible, cantidad=cantidad,
+                usuario=self.usuario, documento_tipo="simulacion", documento_id=insumo.pk,
+            )
+
+        self.lote.kg_producidos = Decimal("500")
+        self.lote.save(update_fields=["kg_producidos"])
+        consumo, movimientos = consumir_receta_produccion(
+            lote_produccion=self.lote, usuario=self.usuario,
+        )
+        registro = self.registrar(pallets=[
+            {"codigo": "PAL-SIM-25KG", "unidades": 20, "kg_neto": "500"}
+        ])
+
+        pallet = registro.pallets.get()
+        self.assertEqual((pallet.unidades, pallet.kg_neto), (20, Decimal("500")))
+        self.assertEqual(consumo.kg_base, Decimal("500"))
+        self.assertEqual(
+            sorted(m.cantidad for m in movimientos), [Decimal("1.000"), Decimal("20.000")]
+        )
+        self.assertTrue(all(e.cantidad_fisica == 0 for e in Existencia.objects.all()))
+        self.assertEqual(MovimientoInventario.objects.filter(tipo="consumo").count(), 2)

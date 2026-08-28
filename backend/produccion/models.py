@@ -669,7 +669,23 @@ class PalletProducto(models.Model):
             models.CheckConstraint(
                 condition=models.Q(kg_neto__gt=0), name="pallet_kg_positivos"
             ),
+            models.CheckConstraint(
+                condition=models.Q(kg_neto__lte=500), name="pallet_kg_maximo_500"
+            ),
         ]
+
+    def clean(self):
+        if self.kg_neto and self.kg_neto > 500:
+            raise ValidationError({"kg_neto": "Un pallet no puede superar 500 kg netos."})
+        if self.envase_id and self.unidades and self.kg_neto:
+            esperado = self.envase.formato_kg * self.unidades
+            if self.kg_neto != esperado:
+                raise ValidationError({
+                    "kg_neto": (
+                        f"El peso debe ser {esperado} kg: {self.unidades} envases "
+                        f"de {self.envase.formato_kg} kg."
+                    )
+                })
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Un pallet físico no se elimina; se anula con motivo.")
