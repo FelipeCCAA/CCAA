@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from maestros import recetas
 from maestros.models import Equipo, Especificacion, Producto, Receta, Silo
 from recepcion.models import MovimientoSilo
-from usuarios.permisos import EscribeProduccion
+from usuarios.permisos import EscribeAnalisisCalidad, EscribeProduccion
 from usuarios.tenancy import (
     QuerysetTenantMixin,
     RelacionesTenantMixin,
@@ -967,7 +967,7 @@ class AnalisisViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     tenant_lookup_empresa = "lote__sucursal__empresa_id"
     queryset = Analisis.objects.select_related("lote")
     serializer_class = AnalisisSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [EscribeAnalisisCalidad]
 
     def get_queryset(self):
         consulta = super().get_queryset()

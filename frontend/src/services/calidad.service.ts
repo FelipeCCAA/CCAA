@@ -163,6 +163,43 @@ export interface FilaExpediente {
   bloqueos: string[];
 }
 
+export interface AnalisisResultadoProceso {
+  id: number;
+  tomado_en: string;
+  ph: string | null;
+  acidez: string | null;
+  grasa: string | null;
+  sng: string | null;
+  proteina: string | null;
+  densidad: string | null;
+}
+
+export interface ResultadoProcesoCalidad {
+  id: number;
+  tipo: string;
+  corrida_codigo: string;
+  lote_codigo: string;
+  producto_nombre: string;
+  equipo_nombre: string;
+  silo_destino_codigo: string;
+  cantidad: string;
+  unidad: string;
+  estado: "pendiente" | "liberado" | "rechazado";
+  observacion: string;
+  decidida_en: string | null;
+  analisis_seleccionado: number | null;
+  analisis_disponibles: AnalisisResultadoProceso[];
+}
+
+export interface RespuestaExpedientes {
+  resultados: FilaExpediente[];
+  procesos: ResultadoProcesoCalidad[];
+  total: number;
+  pagina: number;
+  limite: number;
+  hay_mas: boolean;
+}
+
 
 export interface Expediente {
   lote: LoteResumen;
@@ -177,6 +214,26 @@ export interface Expediente {
   /* Por id de documento. */
   discrepancias: Record<string, Discrepancia[]>;
   prellenado: Record<string, Record<string, unknown>>;
+  especificacion: {
+    id: number;
+    version: number;
+    fuente: string;
+    parametros: {
+      clave: string;
+      etiqueta: string;
+      unidad: string;
+      min: number | null;
+      max: number | null;
+      obligatorio: boolean;
+    }[];
+  } | null;
+  analisis: {
+    id: number;
+    fecha: string;
+    muestra: string;
+    valores: Record<string, number>;
+    observacion: string;
+  }[];
 }
 
 
@@ -204,14 +261,9 @@ export async function buscarExpedientes(
     desde?: string;
     hasta?: string;
     pagina?: number;
+    incluir_procesos?: boolean;
   } = {},
-): Promise<{
-  resultados: FilaExpediente[];
-  total: number;
-  pagina: number;
-  limite: number;
-  hay_mas: boolean;
-}> {
+): Promise<RespuestaExpedientes> {
 
   const { data } = await api.get("calidad/expedientes/", {
     params: {
@@ -219,10 +271,26 @@ export async function buscarExpedientes(
       desde: filtros.desde || undefined,
       hasta: filtros.hasta || undefined,
       pagina: filtros.pagina && filtros.pagina > 1 ? filtros.pagina : undefined,
+      incluir_procesos: filtros.incluir_procesos ? 1 : undefined,
     },
   });
 
   return data;
+}
+
+export async function liberarResultadoProceso(
+  corridaId: number, analisisId: number, observacion = "",
+): Promise<void> {
+  await api.post(`calidad/resultados-proceso/${corridaId}/liberar/`, {
+    analisis_id: analisisId,
+    observacion,
+  });
+}
+
+export async function rechazarResultadoProceso(
+  corridaId: number, motivo: string,
+): Promise<void> {
+  await api.post(`calidad/resultados-proceso/${corridaId}/rechazar/`, { motivo });
 }
 
 

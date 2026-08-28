@@ -157,6 +157,30 @@ export async function obtenerCondensaciones(): Promise<Pagina<CorridaCondensacio
   return data;
 }
 
+export interface SalidaIntermediaDisponible {
+  id: number;
+  corrida_codigo: string;
+  resultado: string;
+  silo_id: number;
+  silo_codigo: string;
+  cantidad_total: string;
+  cantidad_consumida: string;
+  cantidad_disponible: string;
+  unidad: string;
+  etapas_siguientes: {
+    id: number;
+    nombre: string;
+    tipo: string;
+    orden: number;
+    equipos: {
+      id: number;
+      nombre: string;
+      tipo: string;
+      ocupado_por: string | null;
+    }[];
+  }[];
+}
+
 export async function iniciarCondensacion(id: number): Promise<CorridaCondensacion> {
   const { data } = await api.post<CorridaCondensacion>(`procesos/condensaciones/${id}/iniciar/`);
   return data;
@@ -181,6 +205,22 @@ export async function crearEjecucion(datos: {
 
 export async function obtenerDescremaciones(): Promise<Pagina<CorridaDescremacion>> {
   const { data } = await api.get<Pagina<CorridaDescremacion>>("procesos/descremaciones/");
+  return data;
+}
+
+export async function obtenerSalidasIntermediasDisponibles(): Promise<SalidaIntermediaDisponible[]> {
+  const { data } = await api.get<SalidaIntermediaDisponible[]>("procesos/salidas/disponibles/");
+  return data;
+}
+
+export async function prepararContinuacion(
+  salidaId: number,
+  datos: { etapa: number; equipo: number; cantidad: number },
+): Promise<EjecucionProceso> {
+  const { data } = await api.post<EjecucionProceso>(
+    `procesos/salidas/${salidaId}/preparar-continuacion/`,
+    datos,
+  );
   return data;
 }
 

@@ -110,6 +110,36 @@ class BaseAPI(TestCase):
 
 
 class ExpedienteTests(BaseAPI):
+    def test_calidad_puede_corregir_un_analisis_existente_desde_el_expediente(self):
+        analisis = Analisis.objects.create(
+            lote=self.lote, fecha=self.lote.fecha, muestra="M-ERR",
+            valores={"mg": 4.0},
+        )
+        expediente = self._expediente()
+        self.assertEqual(expediente["analisis"][0]["id"], analisis.pk)
+
+        respuesta = self.cliente.patch(
+            f"/api/produccion/analisis/{analisis.pk}/",
+            {"valores": {"mg": 28.0}},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        analisis.refresh_from_db()
+        self.assertEqual(analisis.valores, {"mg": 28.0})
+
+    def test_el_expediente_trae_los_rangos_del_producto_para_el_analisis(self):
+        datos = self._expediente()
+
+        self.assertEqual(datos["especificacion"]["version"], 1)
+        self.assertEqual(
+            datos["especificacion"]["parametros"],
+            [{
+                "clave": "mg", "etiqueta": "Materia grasa", "unidad": "%",
+                "min": 26.0, "max": 30.0, "obligatorio": True,
+            }],
+        )
+
     def test_el_expediente_trae_los_documentos_exigibles_con_su_plantilla(self):
         """La pantalla dibuja el formulario desde esto: sin plantilla no hay qué dibujar."""
         datos = self._expediente()

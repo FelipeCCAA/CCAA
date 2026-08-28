@@ -24,6 +24,7 @@ import { kilos } from "../../services/produccion.service";
 import { puedeEscribir } from "../../services/sesion";
 
 import FormularioDinamico from "./FormularioDinamico";
+import FormularioAnalisis from "../Produccion/FormularioAnalisis";
 
 
 /*
@@ -176,7 +177,9 @@ function Expediente({ loteId, alVolver }: Props) {
     );
   }
 
-  const { lote, decision, liberacion, discrepancias, prellenado } = expediente;
+  const {
+    lote, decision, liberacion, discrepancias, prellenado, especificacion, analisis,
+  } = expediente;
   const avance = decision.avance;
   const calidad = decision.calidad;
 
@@ -277,7 +280,41 @@ function Expediente({ loteId, alVolver }: Props) {
 
           {calidad?.resultado === "sin_analisis" && (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-              Falta el análisis del lote. Regístralo desde Producción antes de completar la liberación; el checklist no reemplaza el control de calidad.
+              Falta el análisis del lote. Registra los valores medidos antes de completar la liberación; el checklist no reemplaza el control de calidad.
+            </p>
+          )}
+
+          {puedeFirmar && !liberacion?.liberado && especificacion && (
+            <div className="mt-3 space-y-2">
+              {analisis.map((item) => (
+                <FormularioAnalisis
+                  key={item.id}
+                  loteId={lote.id}
+                  fechaLote={lote.fecha}
+                  analisisInicial={item}
+                  alGuardar={() => void cargar()}
+                  referencias={especificacion.parametros}
+                />
+              ))}
+              {analisis.length < 2 ? (
+                <FormularioAnalisis
+                  loteId={lote.id}
+                  fechaLote={lote.fecha}
+                  alGuardar={() => void cargar()}
+                  referencias={especificacion.parametros}
+                />
+              ) : (
+                <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  Máximo alcanzado: este lote admite hasta 2 análisis. Puedes corregir los existentes.
+                </p>
+              )}
+            </div>
+          )}
+
+          {especificacion && (
+            <p className="mt-2 text-xs text-slate-500">
+              Especificación v{especificacion.version}
+              {especificacion.fuente ? ` · ${especificacion.fuente}` : ""}
             </p>
           )}
 

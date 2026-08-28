@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.db.models import Sum
 from rest_framework import serializers
 
 from .models import (
@@ -175,6 +177,9 @@ class RutaProductoSerializer(serializers.ModelSerializer):
 class EntradaProcesoSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
+    salida_origen_codigo = serializers.CharField(
+        source="salida_origen.ejecucion.codigo", read_only=True
+    )
 
     class Meta:
         model = EntradaProceso
@@ -184,6 +189,26 @@ class EntradaProcesoSerializer(serializers.ModelSerializer):
         instancia = EntradaProceso(**attrs)
         instancia.clean()
         return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        salida = validated_data.get("salida_origen")
+        if salida is not None:
+            salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
+                "ejecucion__etapa", "silo"
+            ).get(pk=salida.pk)
+            usado = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
+            cantidad = validated_data["cantidad"]
+            if usado + cantidad > salida.cantidad:
+                raise serializers.ValidationError({
+                    "cantidad": (
+                        f"La salida tiene {salida.cantidad - usado} {salida.unidad} disponibles."
+                    )
+                })
+            validated_data["salida_origen"] = salida
+            candidato = EntradaProceso(**validated_data)
+            candidato.clean()
+        return super().create(validated_data)
 
 
 class SalidaProcesoSerializer(serializers.ModelSerializer):

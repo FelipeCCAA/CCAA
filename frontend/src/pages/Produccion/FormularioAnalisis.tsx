@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import axios from "axios";
 
 import {
+  actualizarAnalisis,
   crearAnalisis,
   obtenerParametros,
   type Parametro,
@@ -26,17 +27,37 @@ interface Props {
   loteId: number;
   fechaLote: string;
   alGuardar: () => void;
+  referencias?: (Parametro & {
+    min: number | null;
+    max: number | null;
+    obligatorio: boolean;
+  })[];
+  analisisInicial?: {
+    id: number;
+    fecha: string;
+    muestra: string;
+    valores: Record<string, number>;
+  };
 }
 
 
-function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
+function FormularioAnalisis({
+  loteId, fechaLote, alGuardar, referencias, analisisInicial,
+}: Props) {
 
   const [abierto, setAbierto] = useState(false);
-  const [parametros, setParametros] = useState<Parametro[] | null>(null);
+  const [parametros, setParametros] = useState<(
+    Parametro & { min?: number | null; max?: number | null; obligatorio?: boolean }
+  )[] | null>(referencias ?? null);
   const [cargandoParametros, setCargandoParametros] = useState(false);
-  const [fecha, setFecha] = useState(fechaLote);
-  const [muestra, setMuestra] = useState("");
-  const [medidos, setMedidos] = useState<Record<string, string>>({});
+  const valoresIniciales = () => Object.fromEntries(
+    Object.entries(analisisInicial?.valores ?? {}).map(
+      ([clave, valor]) => [clave, String(valor)],
+    ),
+  );
+  const [fecha, setFecha] = useState(analisisInicial?.fecha ?? fechaLote);
+  const [muestra, setMuestra] = useState(analisisInicial?.muestra ?? "");
+  const [medidos, setMedidos] = useState<Record<string, string>>(valoresIniciales);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
@@ -45,13 +66,16 @@ function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
 
   const cerrar = () => {
     setAbierto(false);
-    setMedidos({});
-    setMuestra("");
+    setMedidos(valoresIniciales());
+    setMuestra(analisisInicial?.muestra ?? "");
+    setFecha(analisisInicial?.fecha ?? fechaLote);
     setError("");
   };
 
   const abrir = async () => {
-    if (parametros === null) {
+    if (referencias) {
+      setParametros(referencias);
+    } else if (parametros === null) {
       setCargandoParametros(true);
       setError("");
       try {
@@ -82,11 +106,23 @@ function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
       return;
     }
 
+    const faltantes = (parametros ?? []).filter(
+      (parametro) => parametro.obligatorio && (medidos[parametro.clave] ?? "").trim() === "",
+    );
+    if (faltantes.length > 0) {
+      setError(`Faltan parámetros obligatorios: ${faltantes.map((item) => item.etiqueta).join(", ")}.`);
+      return;
+    }
+
     setGuardando(true);
     setError("");
 
     try {
-      await crearAnalisis(loteId, fecha, valores, muestra);
+      if (analisisInicial) {
+        await actualizarAnalisis(analisisInicial.id, fecha, valores, muestra);
+      } else {
+        await crearAnalisis(loteId, fecha, valores, muestra);
+      }
       cerrar();
       alGuardar();
     } catch (e) {
@@ -114,7 +150,11 @@ function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
           className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
           <Plus className="h-4 w-4" />
-          {cargandoParametros ? "Preparando…" : "Agregar análisis"}
+          {cargandoParametros
+            ? "Preparando…"
+            : analisisInicial
+              ? `Editar análisis${analisisInicial.muestra ? ` · ${analisisInicial.muestra}` : ""}`
+              : "Agregar análisis"}
         </button>
         {error && (
           <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -173,6 +213,8 @@ function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
 
               {parametro.etiqueta}
 
+              {parametro.obligatorio && <span className="ml-1 text-red-600">*</span>}
+
               {parametro.unidad && (
                 <span className="ml-1 font-normal text-slate-600">
                   ({parametro.unidad})
@@ -188,6 +230,11 @@ function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
               value={medidos[parametro.clave] ?? ""}
               onChange={(e) => escribir(parametro.clave, e.target.value)}
             />
+
+            <p className="mt-1 text-xs text-slate-500">
+              Referencia: {parametro.min ?? "sin mínimo"} a {parametro.max ?? "sin máximo"}{parametro.unidad ? ` ${parametro.unidad}` : ""}
+              {parametro.obligatorio ? " · obligatorio" : " · opcional"}
+            </p>
 
           </div>
 
@@ -209,7 +256,9 @@ function FormularioAnalisis({ loteId, fechaLote, alGuardar }: Props) {
           onClick={() => void guardar()}
           className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
         >
-          {guardando ? "Registrando…" : "Registrar análisis"}
+          {guardando
+            ? "Guardando…"
+            : analisisInicial ? "Guardar corrección" : "Registrar análisis"}
         </button>
 
         <button

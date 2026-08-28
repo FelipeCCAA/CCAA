@@ -1,7 +1,13 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ClipboardCheck, FlaskConical, ShieldAlert, Sparkles } from "lucide-react";
 
-import { buscarExpedientes, type FilaExpediente } from "../../services/calidad.service";
+import {
+  buscarExpedientes,
+  liberarResultadoProceso,
+  rechazarResultadoProceso,
+  type FilaExpediente,
+} from "../../services/calidad.service";
 import { decidirInspeccion, obtenerInspecciones } from "../../services/inventario.service";
 import { obtenerAseos } from "../../services/aseos.service";
 import { obtenerSesion } from "../../services/sesion";
@@ -15,14 +21,18 @@ function CentroCalidad() {
   // Tres lecturas independientes y acotadas: el centro carga únicamente lo
   // que Calidad necesita, no todas las tablas de Inventario ni el histórico
   // completo de Producción.
-  const expedientes = useCarga(async () => (await buscarExpedientes({ pagina: 1 })).resultados);
+  const expedientes = useCarga(async () => buscarExpedientes({ pagina: 1, incluir_procesos: true }));
   const inspecciones = useCarga(obtenerInspecciones);
   const aseos = useCarga(obtenerAseos);
   const sesion = obtenerSesion();
   const puedeDecidir = ["calidad", "admin"].includes(sesion?.usuario.rol ?? "")
     || sesion?.usuario.perfil?.area === "calidad";
 
-  const lotes = (expedientes.datos ?? []) as FilaExpediente[];
+  const [analisisElegido, setAnalisisElegido] = useState<Record<number, string>>({});
+  const [errorProceso, setErrorProceso] = useState("");
+  const lotes = (expedientes.datos?.resultados ?? []) as FilaExpediente[];
+  const resultadosProceso = expedientes.datos?.procesos ?? [];
+  const procesosPendientes = resultadosProceso.filter((item) => item.estado === "pendiente");
   const porRevisar = lotes.filter((fila) => !LIBERACIONES_CERRADAS.includes(fila.liberacion?.estado ?? "pendiente"));
   const liberados = lotes.filter((fila) => fila.liberacion?.estado === "liberado" || fila.liberacion?.estado === "liberado_concesion");
   const rechazados = lotes.filter((fila) => fila.liberacion?.estado === "rechazado");
@@ -35,6 +45,30 @@ function CentroCalidad() {
     await inspecciones.recargar();
   };
 
+  const liberarProceso = async (id: number) => {
+    const analisisId = Number(analisisElegido[id]);
+    if (!analisisId) return;
+    try {
+      setErrorProceso("");
+      await liberarResultadoProceso(id, analisisId);
+      await expedientes.recargar();
+    } catch {
+      setErrorProceso("No se pudo liberar el resultado intermedio.");
+    }
+  };
+
+  const rechazarProceso = async (id: number) => {
+    const motivo = window.prompt("Motivo del rechazo:")?.trim();
+    if (!motivo) return;
+    try {
+      setErrorProceso("");
+      await rechazarResultadoProceso(id, motivo);
+      await expedientes.recargar();
+    } catch {
+      setErrorProceso("No se pudo rechazar el resultado intermedio.");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-7 px-8 py-10">
       <header>
@@ -44,11 +78,53 @@ function CentroCalidad() {
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Indicador etiqueta="Lotes por revisar" valor={porRevisar.length} Icono={FlaskConical} tono={porRevisar.length ? "alerta" : "normal"} />
+        <Indicador etiqueta="Resultados por revisar" valor={porRevisar.length + procesosPendientes.length} Icono={FlaskConical} tono={porRevisar.length + procesosPendientes.length ? "alerta" : "normal"} />
         <Indicador etiqueta="Materiales en cuarentena" valor={materialesPendientes.length} Icono={ShieldAlert} tono={materialesPendientes.length ? "alerta" : "normal"} />
         <Indicador etiqueta="Lotes liberados" valor={liberados.length} Icono={ClipboardCheck} />
         <Indicador etiqueta="Aseos por verificar" valor={aseosPendientes.length} Icono={Sparkles} tono={aseosPendientes.length ? "alerta" : "normal"} />
       </section>
+
+      <Tarjeta titulo="Resultados intermedios de proceso" descripcion="Precondensados y condensados quedan bloqueados en su silo hasta que Calidad seleccione un análisis confirmado y tome una decisión.">
+        {errorProceso && <Aviso>{errorProceso}</Aviso>}
+        {expedientes.error ? <Aviso>No se pudo cargar la cola de procesos.</Aviso> : procesosPendientes.length === 0 ? <Vacio>No hay resultados intermedios pendientes.</Vacio> : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {procesosPendientes.map((item) => (
+              <div key={item.id} className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-800">{item.tipo} · {item.corrida_codigo}</p>
+                    <p className="text-sm text-slate-600">{item.producto_nombre} · {item.cantidad} {item.unidad}</p>
+                    <p className="text-xs text-slate-500">{item.equipo_nombre} → {item.silo_destino_codigo}</p>
+                  </div>
+                  <Estado valor={item.estado} />
+                </div>
+                {item.analisis_disponibles.length === 0 ? (
+                  <p className="mt-3 text-sm text-amber-800">Falta un análisis confirmado tomado después de finalizar la corrida.</p>
+                ) : (
+                  <select
+                    value={analisisElegido[item.id] ?? ""}
+                    onChange={(evento) => setAnalisisElegido((actual) => ({ ...actual, [item.id]: evento.target.value }))}
+                    className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">Selecciona el análisis correspondiente…</option>
+                    {item.analisis_disponibles.map((analisis) => (
+                      <option key={analisis.id} value={analisis.id}>
+                        {new Date(analisis.tomado_en).toLocaleString("es-CL")} · grasa {analisis.grasa ?? "—"} · SNG {analisis.sng ?? "—"}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {puedeDecidir && (
+                  <div className="mt-3 flex gap-2">
+                    <button disabled={!analisisElegido[item.id]} onClick={() => void liberarProceso(item.id)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Liberar etapa</button>
+                    <button onClick={() => void rechazarProceso(item.id)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">Rechazar</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Tarjeta>
 
       <section className="grid items-start gap-7 xl:grid-cols-3">
       <Tarjeta titulo="Productos que requieren aprobación" descripcion="Cada lote toma automáticamente su checklist por familia y fase. Abre el expediente para analizar, verificar y liberar o rechazar.">

@@ -158,12 +158,20 @@ function Silos({ soloPrincipales = false }: SilosProps) {
     return <p className="py-10 text-center text-sm text-slate-600">Cargando…</p>;
   }
 
-  const silos = soloPrincipales ? ocupacion.silos.slice(0, 8) : ocupacion.silos;
+  const silos = soloPrincipales
+    ? [
+        ...ocupacion.silos.filter((s) => s.tipo === "silo").slice(0, 8),
+        ...ocupacion.silos.filter((s) => s.tipo !== "silo"),
+      ]
+    : ocupacion.silos;
   const descuadrados = silos.filter((s) => s.negativo || s.excedido);
   const conLeche = silos.filter((s) => !s.negativo && !s.excedido && s.litros > 0);
   const vacios = silos.filter((s) => !s.negativo && !s.excedido && s.litros <= 0);
   const silosConLeche = conLeche.filter((s) => s.tipo === "silo");
-  const tanquesProceso = silos.filter((s) => !s.negativo && !s.excedido && s.tipo !== "silo");
+  // Un TK excedido o negativo también debe conservar su tarjeta operable. La
+  // alerta superior lo destaca, pero ocultarlo impedía abrir Tk01 para revisar
+  // su muestra, movimientos y despacho.
+  const tanquesProceso = silos.filter((s) => s.tipo !== "silo");
   const faltaTkCrema = !silos.some((s) => s.tipo === "tk_crema");
 
   const capacidadTotal = silos.reduce((suma, s) => suma + s.capacidad, 0);
@@ -178,7 +186,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
         <header>
           <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Recepción de leche</p>
           <h1 className="mt-1 text-3xl font-bold text-slate-900">Silos principales</h1>
-          <p className="mt-2 text-sm text-slate-600">Vista rápida de los ocho silos de recepción. Selecciona uno para operar su flujo.</p>
+          <p className="mt-2 text-sm text-slate-600">Vista de los ocho silos de recepción y todos los TK de proceso. Selecciona uno para operar su flujo.</p>
         </header>
       )}
 

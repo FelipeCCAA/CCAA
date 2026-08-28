@@ -102,6 +102,15 @@ class EscribeProduccion(PermisoPorRol):
     mensaje_escritura = "Solo Producción puede registrar o modificar lotes."
 
 
+class EscribeAnalisisCalidad(PermisoPorRol):
+    """Mediciones del producto: las registran Producción o Calidad."""
+
+    roles_escritura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    mensaje_escritura = (
+        "Solo Producción, Calidad o Administración pueden registrar análisis."
+    )
+
+
 class EscribeRecepcion(PermisoPorRol):
     """Recepciones de leche y movimientos de silo. Aún sin módulo."""
 

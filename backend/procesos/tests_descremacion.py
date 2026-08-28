@@ -4,10 +4,11 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Silo
 from recepcion.models import AnalisisSilo, MovimientoSilo
-from usuarios.models import Empresa, Sucursal
+from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .dominio import calcular_balance_descremacion
 from .models import (
@@ -29,6 +30,7 @@ class CierreDescremacionTests(TestCase):
     def setUp(self):
         empresa = Empresa.objects.create(rut="76.999.111-2", nombre="Descremación")
         sucursal = Sucursal.objects.create(empresa=empresa, codigo="DES", nombre="Planta")
+        self.sucursal = sucursal
         self.usuario = User.objects.create_user("operador-descremacion")
         self.origen = Silo.objects.create(
             sucursal=sucursal, codigo="ENTERA-D", tipo=Silo.Tipo.SILO, capacidad_l=5000
@@ -66,6 +68,7 @@ class CierreDescremacionTests(TestCase):
             codigo="EJ-DES-1", etapa=etapa, sucursal=sucursal,
             equipo=equipo, responsable=self.usuario,
         )
+        self.ejecucion = ejecucion
         self.corrida = CorridaDescremacion.objects.create(
             ejecucion=ejecucion, silo_entera=self.origen, analisis_entrada=analisis,
             litros_entrada=1000, grasa_entrada=Decimal("4.000"),
@@ -91,3 +94,130 @@ class CierreDescremacionTests(TestCase):
             2,
         )
         self.assertTrue(resultado.controles["avisos_balance"])
+
+    def test_calidad_decide_descremada_y_crema_por_separado(self):
+        self.ejecucion.etapa.requiere_calidad = True
+        self.ejecucion.etapa.save(update_fields=["requiere_calidad"])
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa, sucursal=self.sucursal,
+            rol=Rol.PRODUCCION, area=PerfilUsuario.Area.CONDENSACION,
+        )
+        etapa_siguiente = EtapaProceso.objects.create(
+            proceso=self.ejecucion.etapa.proceso, codigo="continuar",
+            nombre="Secado", tipo=EtapaProceso.Tipo.SECADO, orden=2,
+        )
+        torre = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="TORRE-D", nombre="Torre de secado",
+            tipo=Equipo.Tipo.TORRE,
+        )
+        ejecucion_siguiente = EjecucionProceso.objects.create(
+            codigo="EJ-DES-SIG", etapa=etapa_siguiente, sucursal=self.sucursal,
+            responsable=self.usuario,
+        )
+        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        cerrar_descremacion(
+            corrida_id=self.corrida.pk, usuario=self.usuario,
+            litros_descremada=900, grasa_descremada="0.1",
+            litros_crema=90, grasa_crema="40",
+        )
+        self.ejecucion.refresh_from_db()
+        self.descremada.refresh_from_db()
+        self.crema.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.PENDIENTE_CONTROL)
+        self.assertEqual(self.descremada.estado, Silo.Estado.BLOQUEADO_CALIDAD)
+        self.assertEqual(self.crema.estado, Silo.Estado.BLOQUEADO_CALIDAD)
+
+        analisis = {}
+        for silo, grasa, sng in (
+            (self.descremada, "0.10", "8.70"),
+            (self.crema, "40.00", "5.00"),
+        ):
+            analisis[silo.pk] = AnalisisSilo.objects.create(
+                silo=silo, tomado_en=timezone.now(), grasa=grasa, sng=sng,
+                inhibidores_resultado="negativo", metodo="snap",
+                hora_lectura=timezone.localtime().time(),
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+                analista=self.usuario, visualizado_por=self.usuario,
+            )
+        calidad = User.objects.create_user("calidad-descremacion")
+        PerfilUsuario.objects.create(
+            usuario=calidad, empresa=self.sucursal.empresa, sucursal=self.sucursal,
+            rol=Rol.CALIDAD, area=PerfilUsuario.Area.CALIDAD,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(calidad)
+        salidas = {salida.silo_id: salida for salida in self.ejecucion.salidas.all()}
+        produccion = APIClient()
+        produccion.force_authenticate(self.usuario)
+        bloqueada = produccion.post(
+            "/api/procesos/entradas/",
+            {
+                "ejecucion": ejecucion_siguiente.pk,
+                "silo": self.descremada.pk,
+                "salida_origen": salidas[self.descremada.pk].pk,
+                "cantidad": "400",
+                "unidad": "L",
+            },
+            format="json",
+        )
+        self.assertEqual(bloqueada.status_code, 400)
+        cola = cliente.get(
+            "/api/calidad/expedientes/", {"incluir_procesos": "1"}
+        )
+        self.assertEqual(cola.status_code, 200, cola.data)
+        self.assertEqual(
+            {item["producto_nombre"] for item in cola.data["procesos"]},
+            {"Leche descremada", "Crema"},
+        )
+
+        primera = cliente.post(
+            f"/api/calidad/resultados-proceso/{salidas[self.descremada.pk].pk}/liberar/",
+            {"analisis_id": analisis[self.descremada.pk].pk}, format="json",
+        )
+        self.assertEqual(primera.status_code, 200, primera.data)
+        self.ejecucion.refresh_from_db()
+        self.crema.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.PENDIENTE_CONTROL)
+        self.assertEqual(self.crema.estado, Silo.Estado.BLOQUEADO_CALIDAD)
+        entrada = produccion.post(
+            "/api/procesos/entradas/",
+            {
+                "ejecucion": ejecucion_siguiente.pk,
+                "silo": self.descremada.pk,
+                "salida_origen": salidas[self.descremada.pk].pk,
+                "cantidad": "400",
+                "unidad": "L",
+            },
+            format="json",
+        )
+        self.assertEqual(entrada.status_code, 201, entrada.data)
+
+        segunda = cliente.post(
+            f"/api/calidad/resultados-proceso/{salidas[self.crema.pk].pk}/liberar/",
+            {"analisis_id": analisis[self.crema.pk].pk}, format="json",
+        )
+        self.assertEqual(segunda.status_code, 200, segunda.data)
+        self.ejecucion.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.CERRADA)
+        disponibles = produccion.get("/api/procesos/salidas/disponibles/")
+        self.assertEqual(disponibles.status_code, 200, disponibles.data)
+        descremada = next(
+            item for item in disponibles.data if item["id"] == salidas[self.descremada.pk].pk
+        )
+        self.assertEqual(descremada["cantidad_disponible"], Decimal("500"))
+        self.assertEqual(
+            descremada["etapas_siguientes"][0]["equipos"][0]["id"], torre.pk
+        )
+        continuacion = produccion.post(
+            f"/api/procesos/salidas/{salidas[self.descremada.pk].pk}/preparar-continuacion/",
+            {"etapa": etapa_siguiente.pk, "equipo": torre.pk, "cantidad": "200"},
+            format="json",
+        )
+        self.assertEqual(continuacion.status_code, 201, continuacion.data)
+        self.assertEqual(
+            continuacion.data["estado"], EjecucionProceso.Estado.PREPARACION
+        )
+        self.assertEqual(
+            continuacion.data["entradas"][0]["salida_origen"],
+            salidas[self.descremada.pk].pk,
+        )

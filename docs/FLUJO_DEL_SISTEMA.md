@@ -49,6 +49,7 @@ flowchart TD
     end
 
     subgraph CAL["🔬 calidad"]
+        CI["resultado intermedio<br/><i>análisis de silo + decisión</i>"]
         C1["checklist del expediente"]
         C2["veredicto<br/><i>se recalcula, no se guarda</i>"]
         C3["firmar liberación"]
@@ -63,6 +64,8 @@ flowchart TD
     SILO --> E2
     E2 --> SILOE
     SILOE --> P1
+    P1 -->|"condensación"| CI
+    CI -->|"liberado"| P2
     P3 --> C1
     C3 --> DESP
 
@@ -87,6 +90,24 @@ que desde 2026-08-17 solo avisa y deja seguir.
 | `decidir` | El RC medido contra el objetivo — **no recibe la decisión** | `estandarizacion/servicios.py` |
 | abrir lote | Vale **liberado**, producto heredado del vale, máquina habilitada y no más litros de los preparados | `produccion/dominio.py`, `produccion/servicios.py` |
 | firmar liberación | Checklist, análisis, PCC y PPRO — con bloqueo de fila | `calidad/dominio.py` |
+
+Los resultados líquidos intermedios se deciden por **salida de proceso**, no
+por ejecución completa. Esto es necesario en descremación: leche descremada y
+crema son dos salidas trazables y pueden recibir decisiones distintas. Cada
+silo queda bloqueado hasta que Calidad seleccione un análisis confirmado de su
+contenido; la ejecución solo cierra cuando todas sus salidas exigibles están
+liberadas.
+
+Desde Producción, los resultados liberados se consultan **bajo demanda**. Cada
+entrada posterior puede apuntar a la `SalidaProceso` exacta que consume, además
+del silo físico. El saldo se calcula como `cantidad de salida - entradas
+vinculadas`, admite consumos parciales y se bloquea con transacción para impedir
+que dos operadores gasten simultáneamente los mismos litros. Solo se ofrecen
+etapas activas posteriores del mismo proceso configurado. La acción **Preparar
+etapa siguiente** reserva el volumen, crea la ejecución en `PREPARACION` y exige
+una máquina activa compatible; no arranca el equipo ni mueve físicamente leche.
+El inicio sigue pasando por las compuertas de ocupación y aseo existentes, y
+nunca se crea una ruta distinta ni se salta una etapa automáticamente.
 
 ---
 

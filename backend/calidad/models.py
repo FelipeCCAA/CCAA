@@ -235,6 +235,42 @@ class Liberacion(models.Model):
         return estado in self.TRANSICIONES.get(self.estado, [])
 
 
+class LiberacionProceso(models.Model):
+    """Decisión de Calidad sobre una salida intermedia almacenada en silo."""
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        LIBERADO = "liberado", "Liberado"
+        RECHAZADO = "rechazado", "Rechazado"
+
+    salida = models.OneToOneField(
+        "procesos.SalidaProceso", on_delete=models.PROTECT,
+        related_name="liberacion_calidad",
+    )
+    analisis_silo = models.ForeignKey(
+        "recepcion.AnalisisSilo", on_delete=models.PROTECT,
+        related_name="liberaciones_proceso", null=True, blank=True,
+    )
+    estado = models.CharField(
+        max_length=20, choices=Estado.choices, default=Estado.PENDIENTE,
+        db_index=True,
+    )
+    decidida_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="liberaciones_proceso", null=True, blank=True,
+    )
+    decidida_en = models.DateTimeField(null=True, blank=True)
+    observacion = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Liberación de resultado de proceso"
+        verbose_name_plural = "Liberaciones de resultados de proceso"
+        ordering = ["-decidida_en", "-id"]
+
+    def __str__(self):
+        return f"{self.salida.ejecucion.codigo} · {self.get_estado_display()}"
+
+
 class RegistroEquipo(models.Model):
     """
     Un formulario de planta que **no pertenece a un lote sino a un equipo y a

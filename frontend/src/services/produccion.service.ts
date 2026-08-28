@@ -451,6 +451,19 @@ export async function crearAnalisis(
   });
 }
 
+export async function actualizarAnalisis(
+  analisisId: number,
+  fecha: string,
+  valores: Record<string, number>,
+  muestra = "",
+): Promise<void> {
+  await api.patch(`produccion/analisis/${analisisId}/`, {
+    fecha,
+    muestra,
+    valores,
+  });
+}
+
 
 export async function obtenerLote(id: number): Promise<LoteDetalle> {
   const { data } = await api.get<LoteDetalle>(`produccion/lotes/${id}/`);

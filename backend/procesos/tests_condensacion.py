@@ -5,10 +5,11 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Mandante, Producto, Silo
 from produccion.models import Lote, OrdenProduccion
-from recepcion.models import MovimientoSilo
+from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
@@ -107,6 +108,53 @@ class FlujoCondensacionTests(TestCase):
         self.assertEqual(ingreso.litros, Decimal("250"))
         self.assertEqual(self.ejecucion.entradas.get().cantidad, Decimal("600"))
         self.assertEqual(self.ejecucion.salidas.get().cantidad, Decimal("250"))
+
+    def test_calidad_libera_precondensado_con_analisis_confirmado(self):
+        self.ejecucion.etapa.requiere_calidad = True
+        self.ejecucion.etapa.save(update_fields=["requiere_calidad"])
+        AnalisisSilo.objects.create(
+            silo=self.origen, tomado_en=timezone.now(),
+            grasa=Decimal("3.60"), sng=Decimal("8.60"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+        )
+        iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        cerrar_condensacion(
+            corrida_id=self.corrida.pk, usuario=self.usuario,
+            litros_precondensado="250", controles={"densidad_salida": "1.180"},
+        )
+        self.destino.refresh_from_db()
+        self.assertEqual(self.destino.estado, Silo.Estado.BLOQUEADO_CALIDAD)
+        analisis = AnalisisSilo.objects.create(
+            silo=self.destino, tomado_en=timezone.now(),
+            grasa=Decimal("7.00"), sng=Decimal("42.00"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+        )
+        calidad = User.objects.create_user("calidad-condensacion")
+        PerfilUsuario.objects.create(
+            usuario=calidad, empresa=self.planta.empresa, sucursal=self.planta,
+            rol=Rol.CALIDAD, area=PerfilUsuario.Area.CALIDAD,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(calidad)
+
+        respuesta = cliente.post(
+            f"/api/calidad/resultados-proceso/{self.ejecucion.salidas.get().pk}/liberar/",
+            {"analisis_id": analisis.pk}, format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.corrida.refresh_from_db()
+        self.ejecucion.refresh_from_db()
+        self.destino.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaCondensacion.Estado.CERRADA)
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.CERRADA)
+        self.assertEqual(self.destino.estado, Silo.Estado.DISPONIBLE)
 
     def test_no_inicia_con_saldo_insuficiente_o_silo_bloqueado(self):
         self.corrida.litros_entrada = Decimal("1600")

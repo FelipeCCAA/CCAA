@@ -11,6 +11,8 @@ from .views import (
     expediente,
     expedientes,
     liberar,
+    liberar_resultado_proceso,
+    rechazar_resultado_proceso,
     revisar,
 )
 
@@ -31,5 +33,7 @@ urlpatterns = [
     path("expedientes/<int:lote_id>/conceder/", conceder, name="conceder"),
     path("expedientes/<int:lote_id>/bloquear/", bloquear, name="bloquear"),
     path("expedientes/<int:lote_id>/revisar/", revisar, name="revisar"),
+    path("resultados-proceso/<int:salida_id>/liberar/", liberar_resultado_proceso),
+    path("resultados-proceso/<int:salida_id>/rechazar/", rechazar_resultado_proceso),
     path("", include(router.urls)),
 ]

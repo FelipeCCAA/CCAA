@@ -302,6 +302,66 @@ class EdicionDeLoteTests(BaseAPI):
 
 
 class LotesAPITests(BaseAPI):
+    def test_calidad_puede_registrar_el_analisis_del_lote(self):
+        lote = self._lote()
+        usuario = User.objects.create_user(username="calidad-analisis", password="x")
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            rol=Rol.CALIDAD,
+            area=PerfilUsuario.Area.CALIDAD,
+            empresa=self.empresa,
+            sucursal=self.sucursal,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+        )
+        cliente = APIClient()
+        cliente.credentials(HTTP_AUTHORIZATION=f"Token {credencial_sesion(usuario)}")
+
+        respuesta = cliente.post(
+            "/api/produccion/analisis/",
+            {
+                "lote": lote.pk,
+                "fecha": "2026-07-20",
+                "muestra": "M-CAL-01",
+                "valores": {"humedad": 3.0, "mg": 27.0},
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertTrue(Analisis.objects.filter(lote=lote, muestra="M-CAL-01").exists())
+
+    def test_calidad_recibe_los_parametros_que_faltan_en_un_analisis(self):
+        lote = self._lote()
+
+        respuesta = self.cliente.post(
+            "/api/produccion/analisis/",
+            {"lote": lote.pk, "fecha": "2026-07-20", "valores": {"humedad": 3.0}},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("mg", str(respuesta.data["valores"]))
+
+    def test_un_lote_no_admite_mas_de_dos_analisis(self):
+        lote = self._lote()
+        for numero in range(2):
+            Analisis.objects.create(
+                lote=lote, fecha=lote.fecha, muestra=f"M-{numero + 1}",
+                valores={"humedad": 3.0, "mg": 27.0},
+            )
+
+        respuesta = self.cliente.post(
+            "/api/produccion/analisis/",
+            {
+                "lote": lote.pk, "fecha": "2026-07-20", "muestra": "M-3",
+                "valores": {"humedad": 3.0, "mg": 27.0},
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("máximo de 2", str(respuesta.data["lote"]))
+
     def test_el_listado_trae_el_resultado_de_calidad_calculado(self):
         lote = self._lote()
         Analisis.objects.create(

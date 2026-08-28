@@ -468,6 +468,11 @@ class EntradaProceso(models.Model):
         "maestros.Silo", on_delete=models.PROTECT, related_name="entradas_proceso",
         null=True, blank=True, verbose_name="Silo de origen",
     )
+    salida_origen = models.ForeignKey(
+        "procesos.SalidaProceso", on_delete=models.PROTECT,
+        related_name="usos_como_origen", null=True, blank=True,
+        help_text="Resultado intermedio liberado que aporta esta entrada.",
+    )
     tipo = models.CharField(max_length=20, choices=Tipo.choices, default=Tipo.PRINCIPAL)
     cantidad = models.DecimalField(max_digits=14, decimal_places=3)
     unidad = models.CharField(max_length=20, default="kg")
@@ -505,6 +510,32 @@ class EntradaProceso(models.Model):
 
         if self.silo_id and self.silo.sucursal_id != self.ejecucion.sucursal_id:
             raise ValidationError({"silo": "El silo debe pertenecer a la sucursal de la ejecución."})
+
+        if self.salida_origen_id:
+            if not self.silo_id or self.salida_origen.silo_id != self.silo_id:
+                raise ValidationError({
+                    "salida_origen": "La salida debe corresponder al silo físico seleccionado."
+                })
+            if self.salida_origen.ejecucion_id == self.ejecucion_id:
+                raise ValidationError({"salida_origen": "Una ejecución no puede consumirse a sí misma."})
+            if self.salida_origen.unidad.lower() != self.unidad.lower():
+                raise ValidationError({"unidad": "La unidad debe coincidir con la salida de origen."})
+            from calidad.models import LiberacionProceso
+            if not LiberacionProceso.objects.filter(
+                salida_id=self.salida_origen_id,
+                estado=LiberacionProceso.Estado.LIBERADO,
+            ).exists():
+                raise ValidationError({
+                    "salida_origen": "El resultado todavía no está liberado por Calidad."
+                })
+            origen = self.salida_origen.ejecucion.etapa
+            destino = self.ejecucion.etapa
+            if origen.proceso_id != destino.proceso_id or destino.orden <= origen.orden:
+                raise ValidationError({
+                    "salida_origen": (
+                        "La etapa destino debe ser una etapa posterior del proceso configurado."
+                    )
+                })
 
         self._validar_autorizacion_de_reproceso()
 

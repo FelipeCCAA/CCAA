@@ -23,6 +23,7 @@ import {
 
 import { obtenerSesion, puedeEscribir } from "../../services/sesion";
 import EvaporadoresProduccion from "./EvaporadoresProduccion";
+import SalidasIntermedias from "./SalidasIntermedias";
 
 const DetalleLote = lazy(() => import("./DetalleLote"));
 const FormularioLote = lazy(() => import("./FormularioLote"));
@@ -230,6 +231,8 @@ function Produccion() {
           <div><b>3. Producción</b><br /><span className="text-slate-600">Producto, máquina compatible y lote trazable.</span></div>
           <div><b>4. Calidad e Inventario</b><br /><span className="text-slate-600">Análisis, liberación, pallet y ubicación de bodega.</span></div>
         </section>
+
+        <SalidasIntermedias />
 
         {veCondensacion && <EvaporadoresProduccion />}
 

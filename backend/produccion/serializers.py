@@ -160,6 +160,36 @@ class AnalisisSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"especificacion": "La especificación debe corresponder al producto del lote."}
             )
+
+        if lote is not None:
+            if self.instance is None and lote.analisis.count() >= 2:
+                raise serializers.ValidationError({
+                    "lote": "El lote ya tiene el máximo de 2 análisis permitidos."
+                })
+            vigente = dominio.especificacion_vigente(
+                Especificacion.objects.filter(producto_id=lote.producto_id),
+                lote.producto_id,
+                lote.fecha,
+            )
+            if vigente is None:
+                raise serializers.ValidationError({
+                    "especificacion": (
+                        "El producto no tiene una especificación vigente para la fecha del lote."
+                    )
+                })
+            valores = datos.get("valores", getattr(self.instance, "valores", {})) or {}
+            faltantes = [
+                clave
+                for clave, rango in (vigente.rangos or {}).items()
+                if rango.get("obligatorio") and valores.get(clave) is None
+            ]
+            if faltantes:
+                raise serializers.ValidationError({
+                    "valores": (
+                        "Faltan parámetros obligatorios: " + ", ".join(faltantes) + "."
+                    )
+                })
+            datos["especificacion"] = vigente
         return datos
 
     def validate_valores(self, valores):

@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, Sum
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
@@ -26,7 +26,7 @@ from .serializers import (
 from .servicios import (
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, genealogia_lote,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
-    transicionar_ejecucion,
+    preparar_continuacion, tipos_equipo_para_etapa, transicionar_ejecucion,
 )
 
 
@@ -274,8 +274,13 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
     tenant_relation_fields = {
         "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
         "lote": ("sucursal_id", "sucursal__empresa_id"),
+        "salida_origen": (
+            "ejecucion__sucursal_id", "ejecucion__sucursal__empresa_id"
+        ),
     }
-    queryset = EntradaProceso.objects.select_related("ejecucion", "lote__producto")
+    queryset = EntradaProceso.objects.select_related(
+        "ejecucion", "lote__producto", "silo", "salida_origen__ejecucion"
+    )
     serializer_class = EntradaProcesoSerializer
     permission_classes = [EscribeProduccion]
     http_method_names = ["get", "post", "head", "options"]
@@ -292,6 +297,116 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
     serializer_class = SalidaProcesoSerializer
     permission_classes = [EscribeProduccion]
     http_method_names = ["get", "post", "head", "options"]
+
+    @action(detail=False, methods=["get"], url_path="disponibles")
+    def disponibles(self, request):
+        """Resultados liberados, con saldo y próximas etapas configuradas."""
+        from calidad.models import LiberacionProceso
+
+        salidas = filtrar_por_scope(
+            SalidaProceso.objects.filter(
+                liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
+                silo__isnull=False,
+            ).exclude(
+                naturaleza=SalidaProceso.Naturaleza.MERMA
+            ).select_related(
+                "ejecucion__etapa__proceso", "ejecucion__equipo", "silo",
+                "liberacion_calidad",
+            ).annotate(consumido=Sum("usos_como_origen__cantidad")),
+            request.user,
+            campo_sucursal="ejecucion__sucursal_id",
+            campo_empresa="ejecucion__sucursal__empresa_id",
+        )
+        salidas = [
+            salida for salida in salidas
+            if salida.cantidad - (salida.consumido or 0) > 0
+        ]
+        procesos_ids = {salida.ejecucion.etapa.proceso_id for salida in salidas}
+        sucursales_ids = {salida.ejecucion.sucursal_id for salida in salidas}
+        etapas_por_proceso = {}
+        for etapa in EtapaProceso.objects.filter(
+            proceso_id__in=procesos_ids, activa=True
+        ).order_by("proceso_id", "orden"):
+            etapas_por_proceso.setdefault(etapa.proceso_id, []).append(etapa)
+
+        from maestros.models import Equipo
+        equipos = Equipo.objects.filter(
+            sucursal_id__in=sucursales_ids, activo=True
+        ).order_by("orden", "nombre")
+        ocupaciones = {
+            ejecucion.equipo_id: ejecucion.codigo
+            for ejecucion in EjecucionProceso.objects.filter(
+                sucursal_id__in=sucursales_ids,
+                estado=EjecucionProceso.Estado.EJECUCION,
+                equipo_id__isnull=False,
+            ).only("equipo_id", "codigo")
+        }
+
+        return Response([
+            {
+                "id": salida.id,
+                "corrida_codigo": salida.ejecucion.codigo,
+                "resultado": (
+                    "Crema"
+                    if salida.naturaleza == SalidaProceso.Naturaleza.COPRODUCTO
+                    else salida.ejecucion.etapa.nombre
+                ),
+                "silo_id": salida.silo_id,
+                "silo_codigo": salida.silo.codigo,
+                "cantidad_total": salida.cantidad,
+                "cantidad_consumida": salida.consumido or 0,
+                "cantidad_disponible": salida.cantidad - (salida.consumido or 0),
+                "unidad": salida.unidad,
+                "etapas_siguientes": [
+                    {
+                        "id": etapa.id,
+                        "nombre": etapa.nombre,
+                        "tipo": etapa.tipo,
+                        "orden": etapa.orden,
+                        "equipos": [
+                            {
+                                "id": equipo.id,
+                                "nombre": equipo.nombre,
+                                "tipo": equipo.tipo,
+                                "ocupado_por": ocupaciones.get(equipo.id),
+                            }
+                            for equipo in equipos
+                            if (
+                                equipo.sucursal_id == salida.ejecucion.sucursal_id
+                                and equipo.tipo in tipos_equipo_para_etapa(etapa.tipo)
+                            )
+                        ],
+                    }
+                    for etapa in etapas_por_proceso.get(
+                        salida.ejecucion.etapa.proceso_id, []
+                    )
+                    if etapa.orden > salida.ejecucion.etapa.orden
+                ],
+            }
+            for salida in salidas
+        ])
+
+    @action(detail=True, methods=["post"], url_path="preparar-continuacion")
+    def preparar_continuacion(self, request, pk=None):
+        salida = self.get_object()
+        try:
+            ejecucion = preparar_continuacion(
+                salida_id=salida.pk,
+                etapa_id=request.data.get("etapa"),
+                equipo_id=request.data.get("equipo"),
+                cantidad=request.data.get("cantidad"),
+                usuario=request.user,
+            )
+        except (DjangoValidationError, ValueError, TypeError) as error:
+            mensajes = getattr(error, "messages", None)
+            return Response(
+                {"error": mensajes[0] if mensajes else "Datos de continuación inválidos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            EjecucionProcesoSerializer(ejecucion).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 @api_view(["GET"])

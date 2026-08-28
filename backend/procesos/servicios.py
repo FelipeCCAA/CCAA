@@ -1,4 +1,5 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -7,8 +8,101 @@ from django.utils import timezone
 
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
-    EjecucionProceso, EventoProceso,
+    EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
 )
+
+
+def tipos_equipo_para_etapa(tipo_etapa):
+    """Tipos físicos válidos para una etapa configurable del proceso."""
+    from maestros.models import Equipo
+
+    return {
+        EtapaProceso.Tipo.DESCREMACION: {Equipo.Tipo.OTRO},
+        EtapaProceso.Tipo.EVAPORACION: {Equipo.Tipo.EVAPORADOR},
+        EtapaProceso.Tipo.CONDENSACION: {Equipo.Tipo.EVAPORADOR},
+        EtapaProceso.Tipo.SECADO: {Equipo.Tipo.TORRE},
+        EtapaProceso.Tipo.ENVASADO: {Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA},
+        EtapaProceso.Tipo.MANTEQUILLA: {Equipo.Tipo.OTRO},
+        EtapaProceso.Tipo.TRANSFERENCIA: {Equipo.Tipo.CARGA},
+        EtapaProceso.Tipo.OTRO: {Equipo.Tipo.OTRO},
+    }.get(tipo_etapa, set())
+
+
+@transaction.atomic
+def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
+    """Reserva parte de una salida liberada y prepara su próxima ejecución."""
+    from maestros.models import Equipo
+
+    salida = (
+        SalidaProceso.objects.select_for_update(of=("self",))
+        .select_related("ejecucion__etapa", "ejecucion__sucursal", "silo")
+        .get(pk=salida_id)
+    )
+    try:
+        etapa = EtapaProceso.objects.select_related("proceso").get(
+            pk=etapa_id, activa=True
+        )
+    except (EtapaProceso.DoesNotExist, TypeError, ValueError) as error:
+        raise ValidationError("La etapa seleccionada no existe o está inactiva.") from error
+    origen = salida.ejecucion.etapa
+    if etapa.proceso_id != origen.proceso_id or etapa.orden <= origen.orden:
+        raise ValidationError(
+            "La etapa elegida debe ser posterior y pertenecer al mismo proceso."
+        )
+
+    try:
+        equipo = Equipo.objects.get(
+            pk=equipo_id, sucursal_id=salida.ejecucion.sucursal_id, activo=True
+        )
+    except (Equipo.DoesNotExist, TypeError, ValueError) as error:
+        raise ValidationError("La máquina seleccionada no está activa en esta planta.") from error
+    compatibles = tipos_equipo_para_etapa(etapa.tipo)
+    if not compatibles:
+        raise ValidationError(
+            f"La etapa {etapa.nombre} todavía no tiene un tipo de máquina configurado."
+        )
+    if equipo.tipo not in compatibles:
+        raise ValidationError(
+            f"{equipo.nombre} no es compatible con la etapa {etapa.nombre}."
+        )
+
+    try:
+        cantidad = Decimal(str(cantidad))
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise ValidationError("Ingresa una cantidad válida.") from error
+    if cantidad <= 0:
+        raise ValidationError("La cantidad debe ser mayor que cero.")
+    consumido = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
+    disponible = salida.cantidad - consumido
+    if cantidad > disponible:
+        raise ValidationError(
+            f"La salida tiene {disponible} {salida.unidad} disponibles."
+        )
+
+    ejecucion = EjecucionProceso(
+        codigo=f"CONT-{salida.pk}-{uuid.uuid4().hex[:8].upper()}",
+        etapa=etapa,
+        sucursal=salida.ejecucion.sucursal,
+        equipo=equipo,
+        responsable=usuario,
+    )
+    ejecucion.full_clean()
+    ejecucion.save()
+    entrada = EntradaProceso(
+        ejecucion=ejecucion,
+        silo=salida.silo,
+        salida_origen=salida,
+        cantidad=cantidad,
+        unidad=salida.unidad,
+    )
+    entrada.full_clean()
+    entrada.save()
+    return transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk,
+        estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+        usuario=usuario,
+        motivo=f"Continuación de {salida.ejecucion.codigo}",
+    )
 
 
 @transaction.atomic
@@ -462,6 +556,8 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     )
     if corrida.ejecucion.etapa.requiere_calidad:
         corrida.estado = CorridaCondensacion.Estado.PENDIENTE_CALIDAD
+        destino.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        destino.save(update_fields=["estado"])
     else:
         transicionar_ejecucion(
             ejecucion_id=corrida.ejecucion_id,
@@ -614,10 +710,15 @@ def cerrar_descremacion(
         ejecucion_id=corrida.ejecucion_id,
         estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
     )
-    transicionar_ejecucion(
-        ejecucion_id=corrida.ejecucion_id,
-        estado_nuevo=EjecucionProceso.Estado.CERRADA, usuario=usuario,
-    )
+    if corrida.ejecucion.etapa.requiere_calidad:
+        Silo.objects.filter(pk__in=[destino_d.pk, destino_c.pk]).update(
+            estado=Silo.Estado.BLOQUEADO_CALIDAD
+        )
+    else:
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id,
+            estado_nuevo=EjecucionProceso.Estado.CERRADA, usuario=usuario,
+        )
     return corrida
 
 
