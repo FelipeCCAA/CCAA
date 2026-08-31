@@ -234,6 +234,7 @@ export interface FiltrosLotes {
   calidad?: string;
   buscar?: string;
   pagina?: number;
+  estado?: EstadoLote;
 }
 
 
@@ -283,6 +284,9 @@ export interface RegistroEnvaseCreado {
   unidades: number;
   kg_envasados: string;
   pallets: PalletProducto[];
+  lote_codigo?: string;
+  equipo_nombre?: string;
+  creado_en?: string;
 }
 
 export async function registrarEnvase(datos: {
@@ -295,6 +299,11 @@ export async function registrarEnvase(datos: {
   pallets_datos: Array<{ codigo: string; unidades: number; kg_neto: number }>;
 }): Promise<RegistroEnvaseCreado> {
   const { data } = await api.post<RegistroEnvaseCreado>("produccion/envases/", datos);
+  return data;
+}
+
+export async function obtenerRegistrosEnvase(): Promise<Pagina<RegistroEnvaseCreado>> {
+  const { data } = await api.get<Pagina<RegistroEnvaseCreado>>("produccion/envases/");
   return data;
 }
 
@@ -387,6 +396,7 @@ export async function buscarLotes(
       producto: filtros.producto || undefined,
       calidad: filtros.calidad || undefined,
       buscar: filtros.buscar || undefined,
+      estado: filtros.estado || undefined,
       page: filtros.pagina && filtros.pagina > 1 ? filtros.pagina : undefined,
     },
   });

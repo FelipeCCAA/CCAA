@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { ArrowRightLeft, Boxes, LogOut, PackagePlus, Truck, X } from "lucide-react";
 import { crearDespacho, ingresarMaterial, ingresarPallet, obtenerClientesDespacho, obtenerExistencias, obtenerInsumos, obtenerProductoTerminado, obtenerUbicaciones, registrarSalida, trasladarExistencia, type ClienteDespacho, type Existencia, type ExistenciaProductoTerminado, type Insumo, type UbicacionInventario } from "../../services/inventario.service";
+import { esAdministradorGlobal } from "../../services/access-control";
+import { obtenerSesion } from "../../services/sesion";
 
 type Operacion = "entrada" | "pallet" | "traslado" | "salida" | "despacho";
 const campo = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm";
 const vacio = { insumo: "", lote: "", existencia: "", ubicacion: "", cantidad: "", motivo: "", cliente: "", numero: "", pallet: "" };
 
 export default function OperacionesBodega({ onCambio }: { onCambio: () => void }) {
+  const usuario = obtenerSesion()?.usuario;
+  const area = usuario?.perfil?.area;
   const [operacion, setOperacion] = useState<Operacion | null>(null);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [ubicaciones, setUbicaciones] = useState<UbicacionInventario[]>([]);
@@ -45,9 +49,16 @@ export default function OperacionesBodega({ onCambio }: { onCambio: () => void }
     } finally { setGuardando(false); }
   }
 
-  const botones: Array<[Operacion, string, typeof PackagePlus]> = [
+  const todosLosBotones: Array<[Operacion, string, typeof PackagePlus]> = [
     ["entrada", "Ingresar envases/materiales", PackagePlus], ["pallet", "Recibir pallet liberado", Boxes], ["traslado", "Mover stock", ArrowRightLeft], ["salida", "Salida de bodega", LogOut], ["despacho", "Despachar producto", Truck],
   ];
+  const operacionesBodega: Operacion[] = ["entrada", "pallet", "traslado", "salida"];
+  const puedeDespachar = Boolean(
+    usuario && (esAdministradorGlobal(usuario) || area === "despacho" || usuario.capacidades.includes("despacho_crear"))
+  );
+  const botones = todosLosBotones.filter(([id]) =>
+    esAdministradorGlobal(usuario) || (area === "bodega" && operacionesBodega.includes(id)) || (id === "despacho" && puedeDespachar)
+  );
   const palletsLiberados = productos.filter((p) => p.estado_inventario === "disponible" && p.ubicacion_tipo === "cuarentena");
   const materialSeleccionado = insumos.find((item) => item.id === Number(datos.insumo));
   const ubicacionesEntrada = ubicaciones.filter((item) =>
@@ -57,7 +68,9 @@ export default function OperacionesBodega({ onCambio }: { onCambio: () => void }
   return <section className="rounded-2xl border border-slate-200 bg-white p-6">
     <h2 className="text-xl font-bold text-slate-900">Operaciones de bodega</h2>
     <p className="mt-2 text-sm text-slate-600">Cada entrada, consumo, traslado y despacho genera trazabilidad; el saldo nunca se edita directamente.</p>
-    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{botones.map(([id, texto, Icono]) => <button key={id} type="button" onClick={() => setOperacion(id)} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:border-emerald-400 hover:bg-emerald-50"><Icono className="h-5 w-5 text-emerald-700" />{texto}</button>)}</div>
+    {botones.length === 0
+      ? <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Tu área tiene acceso de consulta. Los movimientos los registra Bodega y los despachos requieren autorización específica.</p>
+      : <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{botones.map(([id, texto, Icono]) => <button key={id} type="button" onClick={() => setOperacion(id)} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:border-emerald-400 hover:bg-emerald-50"><Icono className="h-5 w-5 text-emerald-700" />{texto}</button>)}</div>}
     {operacion && <form onSubmit={guardar} className="mt-5 rounded-2xl bg-slate-50 p-5">
       <div className="flex items-center justify-between"><h3 className="font-bold text-slate-900">{botones.find(([id]) => id === operacion)?.[1]}</h3><button type="button" onClick={() => setOperacion(null)}><X className="h-5 w-5" /></button></div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">

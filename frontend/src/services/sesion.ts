@@ -45,6 +45,7 @@ export type Rol =
   | "recepcion"
   | "produccion"
   | "calidad"
+  | "operario"
   | "admin"
   | "lectura";
 
@@ -71,21 +72,22 @@ export interface Usuario {
   encontrará igual con el rechazo del servidor, que es donde el permiso se
   aplica de verdad.
 */
-const ESCRITURA: Record<string, Rol[]> = {
-  maestros: ["admin"],
-  produccion: ["produccion", "admin"],
-  recepcion: ["recepcion", "admin"],
-  calidad: ["calidad", "admin"],
-  // El vale nace en el área de silos —Recepción— y lo consume Condensación,
-  // que es Producción. Copia de `EscribeEstandarizacion`.
-  estandarizacion: ["recepcion", "produccion", "admin"],
+const ESCRITURA: Record<string, { areas: string[]; rolesLegados: Rol[] }> = {
+  maestros: { areas: ["administracion"], rolesLegados: ["admin"] },
+  produccion: { areas: ["condensacion", "secado"], rolesLegados: ["produccion", "admin"] },
+  envasado: { areas: ["envase"], rolesLegados: ["produccion", "admin"] },
+  recepcion: { areas: ["recepcion"], rolesLegados: ["recepcion", "admin"] },
+  calidad: { areas: ["calidad"], rolesLegados: ["calidad", "admin"] },
+  estandarizacion: { areas: ["recepcion", "condensacion"], rolesLegados: ["recepcion", "produccion", "admin"] },
 };
 
 
 export function puedeEscribir(modulo: keyof typeof ESCRITURA): boolean {
   const rol = obtenerSesion()?.usuario.rol;
-
-  return rol ? ESCRITURA[modulo].includes(rol) : false;
+  const perfil = obtenerSesion()?.usuario.perfil;
+  if (rol === "admin" || perfil?.area === "administracion") return true;
+  if (perfil?.area) return ESCRITURA[modulo].areas.includes(perfil.area);
+  return rol ? ESCRITURA[modulo].rolesLegados.includes(rol) : false;
 }
 
 

@@ -14,7 +14,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
@@ -1373,6 +1373,7 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
 
 
 @api_view(["GET"])
+@permission_classes([EscribeRecepcion])
 def ocupacion(request):
     """
     Ocupación de cada silo.
@@ -1707,6 +1708,7 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
 
 
 @api_view(["GET"])
+@permission_classes([EscribeRecepcion])
 def sugerencia_silos(request):
     """Silos ordenados por la leche utilizable más antigua."""
     try:

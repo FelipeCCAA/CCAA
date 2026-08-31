@@ -131,7 +131,7 @@ function CentroCalidad() {
         {expedientes.error ? <Aviso>No se pudo cargar la cola de productos.</Aviso> : porRevisar.length === 0 ? <Vacio>No hay lotes pendientes de Calidad.</Vacio> : (
           <div className="space-y-3">
             {porRevisar.map((fila) => (
-              <Link key={fila.lote.id} to={`/liberacion?lote=${fila.lote.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+              <Link key={fila.lote.id} to={`/calidad/expedientes?lote=${fila.lote.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
                 <div>
                   <p className="font-medium text-slate-800">{fila.lote.producto_nombre} · {fila.lote.codigo_lote}</p>
                   <p className="text-sm text-slate-600">Análisis: {fila.calidad?.etiqueta ?? "sin análisis"} · Checklist: {fila.avance.completados}/{fila.avance.total}</p>
@@ -158,7 +158,7 @@ function CentroCalidad() {
       </Tarjeta>
 
         <Tarjeta titulo="Aseos que requieren verificación" descripcion="No bloquean la operación por ahora, pero advierten antes de usar el silo o la máquina asociada.">
-          {aseos.error ? <Aviso>No se pudieron cargar los aseos.</Aviso> : aseosPendientes.length === 0 ? <Vacio>Sin aseos pendientes de verificación.</Vacio> : <div className="space-y-2">{aseosPendientes.slice(0, 12).map((aseo) => <Link key={aseo.id} to="/inocuidad/aseos" className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm hover:bg-slate-100"><span>{aseo.objetivo_nombre} · {aseo.tipo_aseo_etiqueta}</span><Estado valor={aseo.verificacion} /></Link>)}</div>}
+          {aseos.error ? <Aviso>No se pudieron cargar los aseos.</Aviso> : aseosPendientes.length === 0 ? <Vacio>Sin aseos pendientes de verificación.</Vacio> : <div className="space-y-2">{aseosPendientes.slice(0, 12).map((aseo) => <Link key={aseo.id} to="/calidad/inocuidad" className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm hover:bg-slate-100"><span>{aseo.objetivo_nombre} · {aseo.tipo_aseo_etiqueta}</span><Estado valor={aseo.verificacion} /></Link>)}</div>}
         </Tarjeta>
       </section>
 

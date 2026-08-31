@@ -1,8 +1,9 @@
 
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { User, Lock, Eye, EyeOff } from "lucide-react";
 import axios from "axios";
+import { destinoInicial } from "../../services/access-control";
 
 import { iniciarSesion } from "../../services/usuario.service";
 import { consumirMotivoCierre, guardarSesion } from "../../services/sesion";
@@ -19,12 +20,6 @@ function Login() {
   const [cargando, setCargando] = useState(false);
 
   const navegar = useNavigate();
-  const ubicacion = useLocation();
-
-  // Si RutaProtegida desvió al usuario hasta aquí, vuelve a donde iba.
-  const destino =
-    (ubicacion.state as { desde?: string } | null)?.desde || "/dashboard";
-
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -41,27 +36,7 @@ function Login() {
         return;
       }
 
-      // Administración tiene una portada propia. Los demás roles conservan
-      // el destino solicitado o entran al panel operativo general.
-      const area = sesion.usuario.perfil?.area;
-      const porArea: Record<string, string> = {
-        recepcion: "/recepcion",
-        condensacion: "/produccion",
-        secado: "/produccion",
-        envase: "/produccion",
-        calidad: "/liberacion",
-        bodega: "/abastecimiento",
-        compras: "/abastecimiento",
-        despacho: "/abastecimiento",
-      };
-      navegar(
-        sesion.usuario.perfil?.nivel === "admin" || sesion.usuario.rol === "admin"
-          ? "/administracion"
-          : (area && porArea[area]) || destino,
-        {
-        replace: true,
-        },
-      );
+      navegar(destinoInicial(sesion.usuario), { replace: true });
     } catch (error) {
       // El backend responde 400 si falta un campo, 401 si las credenciales no
       // son válidas y 403 si la cuenta está desactivada; en los tres casos

@@ -8,13 +8,14 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
 from usuarios.models import PerfilUsuario
 from usuarios.permisos import (
     EsAdministrador, EscribeBodega, EscribeCalidad, EscribeCompras,
     EscribeMRQ, EscribeRecepcionCompra,
+    PuedeVerInventario,
 )
 from usuarios.tenancy import (
     EmpresaTenantViewSetMixin, QuerysetTenantMixin, RelacionesTenantMixin,
@@ -71,7 +72,7 @@ def _tenant_get(modelo, usuario, pk, *, sucursal, empresa):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([PuedeVerInventario])
 def estado_operacional(request):
     """Resumen de bodega: stock físico y sus estados, sin procesos de planta."""
     from produccion.models import Lote, PalletProducto
@@ -238,7 +239,11 @@ def _areas_aseo_del_usuario(usuario):
     perfil = getattr(usuario, "perfil", None)
     if not perfil:
         return set()
-    if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
+    if perfil.area in {
+        PerfilUsuario.Area.ADMINISTRACION,
+        PerfilUsuario.Area.ASEO,
+        PerfilUsuario.Area.CALIDAD,
+    }:
         return None
     areas = {perfil.area} if perfil.area else set()
     areas.update(perfil.areas_adicionales.values_list("area", flat=True))

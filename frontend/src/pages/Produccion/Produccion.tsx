@@ -13,11 +13,9 @@ import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 import {
   buscarLotes,
   kilos,
-  obtenerPallets,
   obtenerProductos,
   RESULTADOS,
   type Lote,
-  type PalletProducto,
   type Producto,
 } from "../../services/produccion.service";
 
@@ -72,9 +70,6 @@ function Produccion() {
   const [pagina, setPagina] = useState(1);
 
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [pallets, setPallets] = useState<PalletProducto[] | null>(null);
-  const [cargandoPallets, setCargandoPallets] = useState(false);
-  const [errorPallets, setErrorPallets] = useState("");
 
   const [buscar, setBuscar] = useState("");
   const [filtroProducto, setFiltroProducto] = useState("");
@@ -128,30 +123,7 @@ function Produccion() {
       .catch((error) => console.error("Error cargando los productos:", error));
   }, []);
 
-  const cargarPallets = useCallback(async () => {
-    if (pallets !== null || cargandoPallets) return;
-    setCargandoPallets(true);
-    setErrorPallets("");
-    try {
-      const paginaPallets = await obtenerPallets();
-      setPallets(paginaPallets.results);
-    } catch {
-      setErrorPallets("No se pudieron cargar los pallets recientes.");
-    } finally {
-      setCargandoPallets(false);
-    }
-  }, [cargandoPallets, pallets]);
-
   const abrirLote = useCallback((id: number) => setLoteAbierto(id), []);
-
-  // Mantiene la sección automática, pero deja primero pasar las dos lecturas
-  // críticas (lotes y productos). Así entrar al módulo no dispara las tres
-  // consultas en la misma ráfaga.
-  useEffect(() => {
-    if (pallets !== null || cargandoPallets || errorPallets) return;
-    const temporizador = window.setTimeout(() => void cargarPallets(), 600);
-    return () => window.clearTimeout(temporizador);
-  }, [cargandoPallets, cargarPallets, errorPallets, pallets]);
 
   // Espera a que el usuario deje de escribir antes de consultar, para no
   // lanzar una petición por tecla.
@@ -371,64 +343,6 @@ function Produccion() {
 
           )}
 
-        </section>
-
-        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold text-slate-800">Envase y pallets recientes</h2>
-          <p className="mt-1 text-sm text-slate-600">Unidades físicas vinculadas al lote maestro y pendientes de su puerta de Calidad.</p>
-          {pallets === null ? (
-            errorPallets ? (
-              <div className="pt-5">
-                <p className="text-sm text-red-700">{errorPallets}</p>
-                <button
-                  type="button"
-                  onClick={() => void cargarPallets()}
-                  className="mt-3 rounded-xl border border-green-700 px-4 py-2 text-sm font-semibold text-green-700"
-                >
-                  Reintentar
-                </button>
-              </div>
-            ) : (
-              <p className="py-8 text-center text-sm text-slate-600">
-                Cargando pallets recientes…
-              </p>
-            )
-          ) : pallets.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-600">
-              Todavía no hay pallets registrados.
-            </p>
-          ) : (
-            <div className="mt-5 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-slate-600">
-                  <tr>
-                    <th className="px-4 py-3">Pallet</th>
-                    <th className="px-4 py-3">Unidades</th>
-                    <th className="px-4 py-3">Peso neto</th>
-                    <th className="px-4 py-3">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pallets.slice(0, 10).map((pallet) => (
-                    <tr key={pallet.id} className="border-t border-slate-100">
-                      <td className="px-4 py-3 font-semibold text-slate-800">
-                        {pallet.codigo}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {formato.format(pallet.unidades)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {kilos(pallet.kg_neto)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {pallet.estado_etiqueta}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </section>
 
         {/* Paginación */}

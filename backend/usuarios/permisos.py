@@ -63,16 +63,35 @@ class PermisoPorRol(BasePermission):
     """
 
     roles_escritura: tuple[str, ...] = ()
+    roles_lectura: tuple[str, ...] = ()
+    areas_lectura: tuple[str, ...] | None = None
+    areas_escritura: tuple[str, ...] | None = None
     mensaje_escritura = "Tu rol no permite modificar esta información."
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
 
-        if request.method in SAFE_METHODS:
-            return scope_de(request.user) is not None
+        perfil = getattr(request.user, "perfil", None)
+        area = getattr(perfil, "area", "")
+        rol = rol_de(request.user)
 
-        permitido = rol_de(request.user) in self.roles_escritura
+        if request.method in SAFE_METHODS:
+            if scope_de(request.user) is None:
+                return False
+            if rol == Rol.ADMIN or self.areas_lectura is None:
+                return True
+            return area in self.areas_lectura or (
+                not area and rol in self.roles_lectura
+            )
+
+        if rol == Rol.ADMIN:
+            return True
+        permitido = (
+            area in self.areas_escritura
+            if area and self.areas_escritura is not None
+            else rol in self.roles_escritura
+        )
 
         if not permitido:
             self.message = self.mensaje_escritura
@@ -99,6 +118,14 @@ class EscribeProduccion(PermisoPorRol):
     """Lotes y análisis: los registra Producción."""
 
     roles_escritura = (Rol.PRODUCCION, Rol.ADMIN)
+    roles_lectura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = (
+        PerfilUsuario.Area.CONDENSACION, PerfilUsuario.Area.SECADO,
+        PerfilUsuario.Area.ENVASE, PerfilUsuario.Area.CALIDAD,
+    )
+    areas_escritura = (
+        PerfilUsuario.Area.CONDENSACION, PerfilUsuario.Area.SECADO,
+    )
     mensaje_escritura = "Solo Producción puede registrar o modificar lotes."
 
 
@@ -106,6 +133,12 @@ class EscribeAnalisisCalidad(PermisoPorRol):
     """Mediciones del producto: las registran Producción o Calidad."""
 
     roles_escritura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    roles_lectura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = EscribeProduccion.areas_lectura
+    areas_escritura = (
+        PerfilUsuario.Area.CONDENSACION, PerfilUsuario.Area.SECADO,
+        PerfilUsuario.Area.CALIDAD,
+    )
     mensaje_escritura = (
         "Solo Producción, Calidad o Administración pueden registrar análisis."
     )
@@ -115,6 +148,12 @@ class EscribeRecepcion(PermisoPorRol):
     """Recepciones de leche y movimientos de silo. Aún sin módulo."""
 
     roles_escritura = (Rol.RECEPCION, Rol.ADMIN)
+    roles_lectura = (Rol.RECEPCION, Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = (
+        PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CONDENSACION,
+        PerfilUsuario.Area.SECADO, PerfilUsuario.Area.CALIDAD,
+    )
+    areas_escritura = (PerfilUsuario.Area.RECEPCION,)
     mensaje_escritura = "Solo Recepción puede registrar recepciones de leche."
 
 
@@ -122,6 +161,9 @@ class DecideCalidadRecepcion(PermisoPorRol):
     """La muestra puede decidirla Calidad o Recepción, según el turno."""
 
     roles_escritura = (Rol.RECEPCION, Rol.CALIDAD, Rol.ADMIN)
+    roles_lectura = EscribeRecepcion.roles_lectura
+    areas_lectura = EscribeRecepcion.areas_lectura
+    areas_escritura = (PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CALIDAD)
     mensaje_escritura = (
         "Solo Calidad, Recepción o Administración pueden decidir una muestra."
     )
@@ -139,6 +181,9 @@ class EscribePlanta(PermisoPorRol):
     """
 
     roles_escritura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    roles_lectura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = EscribeProduccion.areas_lectura
+    areas_escritura = EscribeProduccion.areas_lectura
     mensaje_escritura = (
         "Solo Producción, Calidad y Administración registran los formularios "
         "de máquina."
@@ -157,6 +202,14 @@ class EscribeEstandarizacion(PermisoPorRol):
     """
 
     roles_escritura = (Rol.RECEPCION, Rol.PRODUCCION, Rol.ADMIN)
+    roles_lectura = (Rol.RECEPCION, Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = (
+        PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CONDENSACION,
+        PerfilUsuario.Area.CALIDAD,
+    )
+    areas_escritura = (
+        PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CONDENSACION,
+    )
     mensaje_escritura = (
         "Solo Recepción, Producción o Administración registran vales de "
         "estandarización."
@@ -172,13 +225,44 @@ class EscribeCalidad(PermisoPorRol):
     """
 
     roles_escritura = (Rol.CALIDAD, Rol.ADMIN)
+    roles_lectura = (Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = (PerfilUsuario.Area.CALIDAD,)
+    areas_escritura = (PerfilUsuario.Area.CALIDAD,)
     mensaje_escritura = "Solo Calidad puede autorizar la liberación de un lote."
+
+
+class EscribeEnvasado(PermisoPorRol):
+    """Envases y pallets: Envase opera; Producción y Calidad consultan."""
+
+    roles_escritura = (Rol.PRODUCCION, Rol.ADMIN)
+    roles_lectura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = (
+        PerfilUsuario.Area.ENVASE, PerfilUsuario.Area.CONDENSACION,
+        PerfilUsuario.Area.SECADO, PerfilUsuario.Area.CALIDAD,
+    )
+    areas_escritura = (PerfilUsuario.Area.ENVASE,)
+    mensaje_escritura = "Solo el área de Envase puede registrar envases y pallets."
+
+
+class EscribeInocuidad(PermisoPorRol):
+    """PPRO y saneamiento: Operación registra y Calidad controla."""
+
+    roles_escritura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    roles_lectura = (Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    areas_lectura = (
+        PerfilUsuario.Area.ASEO, PerfilUsuario.Area.CONDENSACION,
+        PerfilUsuario.Area.SECADO, PerfilUsuario.Area.ENVASE,
+        PerfilUsuario.Area.CALIDAD,
+    )
+    areas_escritura = areas_lectura
+    mensaje_escritura = "Solo Operación, Aseo o Calidad pueden modificar controles de inocuidad."
 
 
 class PermisoPorArea(BasePermission):
     """Lectura autenticada; escritura para el área indicada o administración general."""
 
     areas_escritura: tuple[str, ...] = ()
+    areas_lectura: tuple[str, ...] | None = None
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
@@ -187,9 +271,15 @@ class PermisoPorArea(BasePermission):
             return True
         if scope_de(request.user) is None:
             return False
-        if request.method in SAFE_METHODS:
-            return True
         perfil = getattr(request.user, "perfil", None)
+        if request.method in SAFE_METHODS:
+            if self.areas_lectura is None:
+                return True
+            return bool(
+                perfil and perfil.area in (
+                    *self.areas_lectura, PerfilUsuario.Area.ADMINISTRACION,
+                )
+            )
         return bool(
             perfil
             and perfil.area
@@ -199,16 +289,25 @@ class PermisoPorArea(BasePermission):
 
 class EscribeBodega(PermisoPorArea):
     areas_escritura = (PerfilUsuario.Area.BODEGA,)
+    areas_lectura = (
+        PerfilUsuario.Area.BODEGA, PerfilUsuario.Area.COMPRAS,
+        PerfilUsuario.Area.DESPACHO, PerfilUsuario.Area.CALIDAD,
+    )
     message = "Solo Bodega puede mover, reservar o entregar inventario."
 
 
 class EscribeCompras(PermisoPorArea):
     areas_escritura = (PerfilUsuario.Area.COMPRAS,)
+    areas_lectura = (PerfilUsuario.Area.COMPRAS, PerfilUsuario.Area.BODEGA)
     message = "Solo Compras puede administrar solicitudes y órdenes de compra."
 
 
 class EscribeRecepcionCompra(PermisoPorArea):
     areas_escritura = (PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.BODEGA)
+    areas_lectura = (
+        PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.BODEGA,
+        PerfilUsuario.Area.COMPRAS, PerfilUsuario.Area.CALIDAD,
+    )
     message = "Solo Recepción o Bodega puede registrar compras recibidas."
 
 
@@ -222,6 +321,15 @@ class EscribeMRQ(PermisoPorArea):
         PerfilUsuario.Area.BODEGA,
     )
     message = "Tu área no puede crear o modificar solicitudes de materiales."
+    areas_lectura = areas_escritura
+
+
+class PuedeVerInventario(PermisoPorArea):
+    areas_lectura = (
+        PerfilUsuario.Area.BODEGA, PerfilUsuario.Area.COMPRAS,
+        PerfilUsuario.Area.DESPACHO, PerfilUsuario.Area.CALIDAD,
+    )
+    message = "Tu área no tiene acceso al módulo de Inventario."
 
 
 class PuedeVerAuditoria(BasePermission):

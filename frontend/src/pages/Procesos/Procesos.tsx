@@ -5,11 +5,13 @@ import { ArrowRight, Beaker, Factory, GitBranch, Search, Truck } from "lucide-re
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import StatusBadge from "../../components/ui/StatusBadge";
 import { obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type Genealogia, type RutaProducto } from "../../services/procesos.service";
+import { puedeEscribir } from "../../services/sesion";
 import ArbolGenealogia from "./ArbolGenealogia";
 import CierreDescremacion from "./CierreDescremacion";
 import FormularioDescremacion from "./FormularioDescremacion";
 
 export default function Procesos() {
+  const puedeOperar = puedeEscribir("produccion");
   const [parametros, setParametros] = useSearchParams();
   const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [rutas, setRutas] = useState<RutaProducto[]>([]);
@@ -132,8 +134,8 @@ export default function Procesos() {
 
         {error && <ErrorState mensaje={error} />}
 
-        {siloDescremacion !== null && <FormularioDescremacion siloOrigen={siloDescremacion} onCerrar={cerrarFormularioDescremacion} onCreada={async (corrida) => { await actualizarDescremacion(corrida); cerrarFormularioDescremacion(); }} />}
-        {cerrandoDescremacion && <CierreDescremacion corrida={cerrandoDescremacion} onCerrar={() => setCerrandoDescremacion(null)} onCerrada={async (corrida) => { await actualizarDescremacion(corrida); setCerrandoDescremacion(null); }} />}
+        {puedeOperar && siloDescremacion !== null && <FormularioDescremacion siloOrigen={siloDescremacion} onCerrar={cerrarFormularioDescremacion} onCreada={async (corrida) => { await actualizarDescremacion(corrida); cerrarFormularioDescremacion(); }} />}
+        {puedeOperar && cerrandoDescremacion && <CierreDescremacion corrida={cerrandoDescremacion} onCerrar={() => setCerrandoDescremacion(null)} onCerrada={async (corrida) => { await actualizarDescremacion(corrida); setCerrandoDescremacion(null); }} />}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Rutas configuradas por producto</h2></div>

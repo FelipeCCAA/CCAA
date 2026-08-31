@@ -7,7 +7,7 @@ audita escribe la acción correctiva—; el resto consulta.
 
 from rest_framework import viewsets
 
-from usuarios.permisos import EscribeProduccion
+from usuarios.permisos import EscribeInocuidad
 from usuarios.tenancy import QuerysetTenantMixin
 
 from .models import MonitoreoPPRO, PproLectura
@@ -23,7 +23,7 @@ class MonitoreoPPROViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         "lecturas"
     )
     serializer_class = MonitoreoPPROSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [EscribeInocuidad]
 
     def perform_create(self, serializer):
         serializer.save(operador=self.request.user)
@@ -55,7 +55,7 @@ class PproLecturaViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     tenant_lookup_empresa = "monitoreo__lote__sucursal__empresa_id"
     queryset = PproLectura.objects.select_related("monitoreo")
     serializer_class = PproLecturaSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [EscribeInocuidad]
 
     def get_queryset(self):
         consulta = super().get_queryset()

@@ -53,6 +53,4 @@ urlpatterns = [
 
     path("api/procesos/", include("procesos.urls")),
 
-    path("api/mantenimiento/", include("mantenimiento.urls")),
-
 ]

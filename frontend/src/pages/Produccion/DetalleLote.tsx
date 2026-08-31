@@ -19,7 +19,6 @@ import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 import FormularioAnalisis from "./FormularioAnalisis";
 import PanelInocuidad from "./PanelInocuidad";
 import PanelAsignacion from "./PanelAsignacion";
-import FormularioEnvase from "./FormularioEnvase";
 import { consumirRecetaProduccion } from "../../services/inventario.service";
 
 
@@ -698,10 +697,6 @@ function DetalleLote({
               puedeEditar={puedeEditar}
               alCambiar={alCambiar}
             />
-
-            {(lote.estado === "producido" || lote.estado === "cerrado") && puedeEditar && (
-              <FormularioEnvase loteId={lote.id} alGuardar={() => { void cargar(); alCambiar(); }} />
-            )}
 
             {/* Análisis */}
 

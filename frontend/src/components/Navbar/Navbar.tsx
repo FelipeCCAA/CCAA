@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PackageCheck,
   ShieldCheck,
   Truck,
   Users,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { cargoParaMostrar, cerrarSesion, nombreParaMostrar, obtenerSesion } from "../../services/sesion";
+import { puedeAccederModulo, type ModuloSistema } from "../../services/access-control";
 import { cerrarSesionEnServidor } from "../../services/usuario.service";
 import logo from "../../assets/logos/logo-campos-australes-normal.png";
 
@@ -29,7 +31,7 @@ interface Modulo {
   etiqueta: string;
   ruta: string;
   icono: LucideIcon;
-  areas?: string[];
+  permiso: ModuloSistema;
 }
 
 interface Grupo {
@@ -42,45 +44,56 @@ const gruposBase: Grupo[] = [
     etiqueta: "Inicio",
     modulos: [
       { etiqueta: "Panel general", ruta: "/dashboard", icono: LayoutDashboard },
-      { etiqueta: "Silos principales", ruta: "/silos", icono: Warehouse },
+    ].map((modulo) => ({ ...modulo, permiso: "dashboard" as const })),
+  },
+  {
+    etiqueta: "Recepción",
+    modulos: [
+      { etiqueta: "Recepción de leche", ruta: "/leche", icono: Truck, permiso: "recepcion" },
+      { etiqueta: "Silos principales", ruta: "/silos", icono: Warehouse, permiso: "recepcion" },
     ],
   },
   {
-    etiqueta: "Calidad",
+    etiqueta: "Estandarización",
     modulos: [
-      { etiqueta: "Centro de calidad", ruta: "/calidad", icono: ClipboardCheck },
-      { etiqueta: "Liberación de producto", ruta: "/liberacion", icono: FlaskConical },
+      { etiqueta: "Vales de estandarización", ruta: "/estandarizacion", icono: FlaskConical, permiso: "estandarizacion" },
     ],
   },
   {
-    etiqueta: "Operación",
+    etiqueta: "Producción",
     modulos: [
-      { etiqueta: "Recepción de leche", ruta: "/leche", icono: Truck },
-      { etiqueta: "Estandarización", ruta: "/estandarizacion", icono: FlaskConical },
-      { etiqueta: "Producción", ruta: "/produccion", icono: Factory },
-      { etiqueta: "Procesos y trazabilidad", ruta: "/procesos", icono: GitBranch, areas: ["condensacion", "secado", "envase", "administracion", "calidad", "despacho"] },
-      { etiqueta: "Registros operacionales", ruta: "/registros", icono: ClipboardList },
+      { etiqueta: "Producción", ruta: "/produccion", icono: Factory, permiso: "produccion" },
+      { etiqueta: "Procesos", ruta: "/procesos", icono: GitBranch, permiso: "procesos" },
+      { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange, permiso: "planificacion" },
     ],
   },
   {
-    etiqueta: "Planificación y control",
+    etiqueta: "Envasado",
     modulos: [
-      { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange },
-      { etiqueta: "Inocuidad · Aseos", ruta: "/inocuidad/aseos", icono: ShieldCheck },
+      { etiqueta: "Envase y pallets", ruta: "/envasado", icono: PackageCheck, permiso: "envasado" },
+    ],
+  },
+  {
+    etiqueta: "Calidad y control",
+    modulos: [
+      { etiqueta: "Centro de calidad", ruta: "/calidad", icono: ClipboardCheck, permiso: "calidad" },
+      { etiqueta: "Expedientes y liberación", ruta: "/calidad/expedientes", icono: FlaskConical, permiso: "calidad" },
+      { etiqueta: "Inocuidad · Aseos", ruta: "/calidad/inocuidad", icono: ShieldCheck, permiso: "inocuidad" },
+      { etiqueta: "Registros operacionales", ruta: "/calidad/registros", icono: ClipboardList, permiso: "registros" },
+      { etiqueta: "Auditoría", ruta: "/auditoria", icono: History, permiso: "auditoria" },
     ],
   },
   {
     etiqueta: "Inventario",
     modulos: [
-      { etiqueta: "Panel de inventario", ruta: "/inventario", icono: Warehouse },
+      { etiqueta: "Panel de inventario", ruta: "/inventario", icono: Warehouse, permiso: "inventario" },
     ],
   },
   {
     etiqueta: "Gestión",
     modulos: [
-      { etiqueta: "Maestros", ruta: "/maestros", icono: Database },
-      { etiqueta: "Auditoría", ruta: "/auditoria", icono: History },
-      { etiqueta: "Administración", ruta: "/administracion", icono: Users, areas: ["administracion"] },
+      { etiqueta: "Maestros", ruta: "/maestros", icono: Database, permiso: "maestros" },
+      { etiqueta: "Administración", ruta: "/administracion", icono: Users, permiso: "administracion" },
     ],
   },
 ];
@@ -92,16 +105,11 @@ function Navbar() {
   const [abierto, setAbierto] = useState(false);
   const navegar = useNavigate();
   const sesion = obtenerSesion();
-  const area = sesion?.usuario.perfil?.area;
-  const esAdmin = sesion?.usuario.rol === "admin" || sesion?.usuario.perfil?.nivel === "admin";
-
   const grupos = gruposBase
     .map((grupo) => ({
       ...grupo,
       modulos: grupo.modulos.filter((modulo) => {
-        if (!modulo.areas) return true;
-        if (modulo.ruta === "/inventario" || modulo.ruta === "/administracion") return esAdmin;
-        return esAdmin || Boolean(area && modulo.areas.includes(area));
+        return puedeAccederModulo(sesion?.usuario, modulo.permiso);
       }),
     }))
     .filter((grupo) => grupo.modulos.length > 0);

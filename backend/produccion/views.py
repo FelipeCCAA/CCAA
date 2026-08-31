@@ -10,13 +10,13 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import serializers, status, viewsets
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
 from maestros import recetas
 from maestros.models import Equipo, Especificacion, Producto, Receta, Silo
 from recepcion.models import MovimientoSilo
-from usuarios.permisos import EscribeAnalisisCalidad, EscribeProduccion
+from usuarios.permisos import EscribeAnalisisCalidad, EscribeEnvasado, EscribeInocuidad, EscribeProduccion
 from usuarios.tenancy import (
     QuerysetTenantMixin,
     RelacionesTenantMixin,
@@ -56,7 +56,7 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         "lote__producto", "equipo", "operador"
     ).prefetch_related("pallets")
     serializer_class = RegistroEnvaseSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [EscribeEnvasado]
     http_method_names = ["get", "post", "head", "options"]
 
 
@@ -67,7 +67,7 @@ class PalletProductoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
         "envase__lote__producto", "envase__equipo"
     )
     serializer_class = PalletProductoSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [EscribeEnvasado]
 
 
 class OrdenProduccionViewSet(
@@ -1005,6 +1005,7 @@ RESUMEN_DIAS = int(os.environ.get("RESUMEN_DIAS", "90"))
 
 
 @api_view(["GET"])
+@permission_classes([EscribeProduccion])
 def resumen(request):
     """
     Indicadores del panel general.
@@ -1168,6 +1169,7 @@ class ControlProcesoLecturaViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
 
 
 @api_view(["GET"])
+@permission_classes([EscribeInocuidad])
 def catalogos_inocuidad(request):
     """
     Opciones de los formularios de control de proceso y monitoreo PPRO.
