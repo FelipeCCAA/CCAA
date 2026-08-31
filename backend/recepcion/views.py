@@ -39,7 +39,8 @@ from .serializers import (
     MovimientoSiloSerializer, RecepcionSerializer, TransferenciaSiloSerializer,
 )
 from .servicios import (
-    ajustar_silo, despachar_leche, momento_leche_mas_antigua, motivos_silo_no_disponible,
+    ajustar_silo, despachar_leche, momento_leche_mas_antigua, momentos_leche_mas_antigua,
+    motivos_silo_no_disponible, motivos_silo_no_disponible_con_datos,
     reversar_despacho_leche,
     saldo_silo, transferir_silo,
 )
@@ -1382,7 +1383,7 @@ def ocupacion(request):
     Un saldo negativo se informa tal cual: significa que el registro está
     descuadrado, y ocultarlo haría que el error nunca se descubriera.
     """
-    silos = filtrar_por_scope(
+    silos = list(filtrar_por_scope(
         Silo.objects.filter(activo=True).select_related("producto_actual"), request.user,
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     ).annotate(
@@ -1396,17 +1397,38 @@ def ocupacion(request):
             output_field=DecimalField(max_digits=14, decimal_places=2),
         ),
         ultimo_movimiento=Max("movimientos__fecha_hora"),
-    )
-    from recepcion.servicios import momento_leche_mas_antigua, motivos_silo_no_disponible
+    ))
+    from inventario.models import CicloCIP
+
+    ids_silo = [silo.id for silo in silos]
+    analisis_por_silo = {}
+    for analisis in AnalisisSilo.objects.filter(
+        silo_id__in=ids_silo, estado=AnalisisSilo.Estado.CONFIRMADO,
+    ).order_by("silo_id", "-tomado_en", "-id"):
+        analisis_por_silo.setdefault(analisis.silo_id, analisis)
+    cip_por_silo = {}
+    for ciclo in CicloCIP.objects.filter(
+        silo_id__in=ids_silo,
+        tipo_objetivo=CicloCIP.TipoObjetivo.SILO,
+        estado=CicloCIP.Estado.EN_CURSO,
+    ).order_by("silo_id", "-inicio", "-id"):
+        cip_por_silo.setdefault(ciclo.silo_id, ciclo)
+    antiguedad_por_silo = momentos_leche_mas_antigua(silos)
+    ahora = timezone.now()
 
     ocupaciones = []
     for silo in silos:
-        analisis = AnalisisSilo.objects.filter(
-            silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
-        ).order_by("-tomado_en", "-id").first()
+        analisis = analisis_por_silo.get(silo.id)
         vigencia = analisis.vigencia if analisis else None
-        leche_mas_antigua_en = momento_leche_mas_antigua(silo)
-        motivos = motivos_silo_no_disponible(silo, para="proceso")
+        leche_mas_antigua_en = antiguedad_por_silo.get(silo.id)
+        motivos = motivos_silo_no_disponible_con_datos(
+            silo,
+            analisis=analisis,
+            ciclo_cip=cip_por_silo.get(silo.id),
+            leche_mas_antigua_en=leche_mas_antigua_en,
+            para="proceso",
+            ahora=ahora,
+        )
         porcentaje = (
             silo.litros_ocupados / silo.capacidad_l * 100
             if silo.capacidad_l
@@ -1427,7 +1449,7 @@ def ocupacion(request):
             "ultimo_movimiento": silo.ultimo_movimiento,
             "leche_mas_antigua_en": leche_mas_antigua_en,
             "antiguedad_horas": (
-                round((timezone.now() - leche_mas_antigua_en).total_seconds() / 3600, 1)
+                round((ahora - leche_mas_antigua_en).total_seconds() / 3600, 1)
                 if leche_mas_antigua_en else None
             ),
             "analisis": analisis.pk if analisis else None,

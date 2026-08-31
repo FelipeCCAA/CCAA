@@ -1,3 +1,4 @@
+from collections import defaultdict
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -75,6 +76,17 @@ def motivos_silo_no_disponible(silo, *, para, ahora=None):
     )
 
     leche_mas_antigua_en = momento_leche_mas_antigua(silo)
+    return motivos_silo_no_disponible_con_datos(
+        silo, analisis=analisis, ciclo_cip=ciclo_cip,
+        leche_mas_antigua_en=leche_mas_antigua_en, para=para, ahora=ahora,
+    )
+
+
+def motivos_silo_no_disponible_con_datos(
+    silo, *, analisis, ciclo_cip, leche_mas_antigua_en, para, ahora=None,
+):
+    """Evalúa la compuerta con datos ya agrupados, sin repetir consultas."""
+    ahora = ahora or timezone.now()
     datos_silo = {
         "activo": silo.activo,
         "estado": silo.estado,
@@ -99,6 +111,48 @@ def motivos_silo_no_disponible(silo, *, para, ahora=None):
     return dominio.motivos_silo_no_disponible(
         datos_silo, datos_analisis, ciclo_cip, ahora, para=para
     )
+
+
+def momentos_leche_mas_antigua(silos):
+    """Calcula FIFO para varios silos leyendo movimientos y atribuciones una vez."""
+    silos = list(silos)
+    movimientos = list(
+        MovimientoSilo.objects.filter(silo_id__in=[silo.id for silo in silos])
+        .order_by("silo_id", "fecha_hora", "id")
+    )
+    silo_por_movimiento = {movimiento.id: movimiento.silo_id for movimiento in movimientos}
+    atribuciones = list(
+        AtribucionRecepcion.objects.filter(movimiento_id__in=silo_por_movimiento)
+        .order_by("movimiento_id", "orden")
+    )
+    movimientos_por_silo = defaultdict(list)
+    atribuciones_por_silo = defaultdict(list)
+    for movimiento in movimientos:
+        movimientos_por_silo[movimiento.silo_id].append(movimiento)
+    for atribucion in atribuciones:
+        atribuciones_por_silo[silo_por_movimiento[atribucion.movimiento_id]].append(atribucion)
+
+    resultado = {}
+    for silo in silos:
+        suyos = movimientos_por_silo[silo.id]
+        capas = dominio.saldo_por_recepcion(suyos, atribuciones_por_silo[silo.id])
+        if not capas:
+            resultado[silo.id] = None
+            continue
+        recepcion_id = capas[0].recepcion_id
+        ingresos = [
+            movimiento for movimiento in suyos
+            if movimiento.tipo == MovimientoSilo.Tipo.INGRESO
+            and (
+                recepcion_id is None
+                or (
+                    movimiento.origen_tipo == MovimientoSilo.OrigenTipo.RECEPCION
+                    and movimiento.origen_id == recepcion_id
+                )
+            )
+        ]
+        resultado[silo.id] = ingresos[0].fecha_hora if ingresos else None
+    return resultado
 
 
 def momento_leche_mas_antigua(silo):
