@@ -152,6 +152,8 @@ class TransicionesDeEstadoTests(BaseAPI):
         datos = self._patch(lote, "producido").json()
 
         self.assertIn("analisis", datos)
+        self.assertIn("pallets_resumen", datos)
+        self.assertEqual(datos["pallets_resumen"]["total"], 0)
         self.assertEqual(len(datos["analisis"]), 1)
         self.assertEqual(datos["estado"], "producido")
 

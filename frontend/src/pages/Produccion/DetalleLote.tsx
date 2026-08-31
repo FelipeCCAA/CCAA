@@ -61,6 +61,17 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactN
   );
 }
 
+function PasoFlujo({ numero, titulo, detalle, estado }: {
+  numero: number; titulo: string; detalle: string; estado: "ok" | "alerta" | "pendiente";
+}) {
+  const estilo = estado === "ok"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : estado === "alerta"
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : "border-slate-200 bg-slate-50 text-slate-600";
+  return <div className={`rounded-xl border p-3 ${estilo}`}><p className="text-xs font-bold uppercase tracking-wide">{numero}. {titulo}</p><p className="mt-1 text-xs leading-5">{detalle}</p></div>;
+}
+
 
 const claseCampo =
   "w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 " +
@@ -367,6 +378,17 @@ function DetalleLote({
               )}
 
             </div>
+
+            <section>
+              <h3 className="mb-2 text-sm font-bold text-slate-800">Flujo operacional del producto</h3>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                <PasoFlujo numero={1} titulo="Leche" estado={lote.vale_codigo ? "ok" : "alerta"} detalle={lote.vale_codigo ? `${lote.vale_codigo} · ${lote.silo_estandarizado_codigo ?? "silo trazado"}` : "Sin vale estandarizado trazado."} />
+                <PasoFlujo numero={2} titulo="Aseo" estado={lote.observacion.includes("[ADVERTENCIA ASEO") ? "alerta" : "ok"} detalle={lote.observacion.includes("[ADVERTENCIA ASEO") ? "Advertencia registrada; no bloqueó la corrida." : "Sin advertencia de aseo registrada."} />
+                <PasoFlujo numero={3} titulo="Producción" estado={lote.estado === "en_proceso" ? "pendiente" : lote.estado === "anulado" ? "alerta" : "ok"} detalle={lote.estado === "en_proceso" ? "Corrida abierta; falta declarar kilos." : `${lote.estado_etiqueta} · ${kilos(lote.kg_producidos)}`} />
+                <PasoFlujo numero={4} titulo="Calidad" estado={lote.liberacion?.liberado ? "ok" : lote.liberacion?.estado === "rechazado" ? "alerta" : "pendiente"} detalle={lote.liberacion?.liberado ? lote.liberacion.estado_etiqueta : "Pendiente de análisis, checklist y firma."} />
+                <PasoFlujo numero={5} titulo="Inventario" estado={lote.pallets_resumen.total > 0 && lote.pallets_resumen.en_inventario === lote.pallets_resumen.total ? "ok" : lote.pallets_resumen.liberados > 0 ? "alerta" : "pendiente"} detalle={lote.pallets_resumen.total === 0 ? "Falta envasar y crear pallets." : lote.pallets_resumen.en_inventario === lote.pallets_resumen.total ? `${lote.pallets_resumen.en_inventario} pallet(s) en Bodega.` : lote.pallets_resumen.liberados > 0 ? `${lote.pallets_resumen.liberados} pallet(s) liberados por enviar.` : `${lote.pallets_resumen.pendientes_calidad} pallet(s) esperando Calidad.`} />
+              </div>
+            </section>
 
             {/* Datos del lote: lectura o edición */}
 

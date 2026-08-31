@@ -135,7 +135,7 @@ def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
         # Reglas de planta 3 y 15: no se produce en un equipo que está en CIP
         # ni en uno cuyo último aseo quedó observado. La primera es física
         # antes que informática — hay soda circulando por dentro.
-        from inventario.servicios import motivo_equipo_no_habilitado
+        from inventario.servicios import advertencia_aseo_equipo, motivo_equipo_no_habilitado
 
         # Ojo con el nombre: `motivo` es el parámetro de esta función —el
         # porqué de la transición, que va al evento—. Llamar igual a esta
@@ -144,6 +144,10 @@ def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
 
         if impedimento:
             raise ValidationError(impedimento)
+
+        advertencia_aseo = advertencia_aseo_equipo(ejecucion.equipo)
+        if advertencia_aseo and not motivo.strip():
+            motivo = f"Advertencia no bloqueante de aseo: {advertencia_aseo}"
 
         if ejecucion.inicio is None:
             ejecucion.inicio = timezone.now()

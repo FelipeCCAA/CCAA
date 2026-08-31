@@ -1,6 +1,7 @@
 from copy import copy
 from decimal import Decimal
 
+from django.db.models import Count, Q
 from rest_framework import serializers
 from maestros.catalogos import CLAVES_PARAMETROS
 from maestros.models import Equipo, Especificacion, Producto
@@ -761,6 +762,7 @@ class LoteDetalleSerializer(LoteSerializer):
     # se intentó: el saldo de bodega queda alto y nadie lo sabe.
     consumo_inventario = serializers.SerializerMethodField()
     recepciones_origen = serializers.SerializerMethodField()
+    pallets_resumen = serializers.SerializerMethodField()
 
     class Meta(LoteSerializer.Meta):
         fields = LoteSerializer.Meta.fields + [
@@ -768,6 +770,7 @@ class LoteDetalleSerializer(LoteSerializer):
             "liberacion",
             "consumo_inventario",
             "recepciones_origen",
+            "pallets_resumen",
         ]
 
     def get_liberacion(self, lote):
@@ -803,6 +806,18 @@ class LoteDetalleSerializer(LoteSerializer):
             "kg_base": consumo.kg_base if consumo else None,
             "pendiente": dominio.consumo_de_inventario_pendiente(lote, consumo),
         }
+
+    def get_pallets_resumen(self, lote):
+        return PalletProducto.objects.filter(envase__lote=lote).aggregate(
+            total=Count("id"),
+            pendientes_calidad=Count(
+                "id", filter=Q(estado=PalletProducto.Estado.PENDIENTE_CALIDAD)
+            ),
+            liberados=Count("id", filter=Q(estado=PalletProducto.Estado.LIBERADO)),
+            en_inventario=Count(
+                "id", filter=Q(estado=PalletProducto.Estado.EN_INVENTARIO)
+            ),
+        )
 
     def get_recepciones_origen(self, lote):
         """Camiones que aportaron al lote, incluidos saldos no atribuibles."""

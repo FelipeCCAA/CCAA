@@ -431,6 +431,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 ocupada=Exists(ocupada),
                 cip_en_curso=Exists(cip_en_curso),
                 aseo_verificacion=Subquery(ultimo_aseo.values("verificacion")[:1]),
+                aseo_estado=Subquery(ultimo_aseo.values("estado")[:1]),
             ),
             request.user,
             campo_sucursal="sucursal_id",
@@ -439,12 +440,17 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         opciones_equipos = []
         for equipo in equipos:
             motivo = ""
+            advertencia_aseo = ""
             if equipo.ocupada:
                 motivo = "Máquina ocupada por otra corrida."
             elif equipo.cip_en_curso:
                 motivo = "Máquina actualmente en CIP."
-            elif equipo.aseo_verificacion == CicloCIP.Verificacion.OBSERVADO:
-                motivo = "El último aseo quedó observado."
+            elif equipo.aseo_estado is None:
+                advertencia_aseo = f"{equipo.nombre} no tiene un aseo/CIP registrado. Verifica antes de operar."
+            elif equipo.aseo_estado == CicloCIP.Estado.OBSERVADO or equipo.aseo_verificacion == CicloCIP.Verificacion.OBSERVADO:
+                advertencia_aseo = f"El último aseo de {equipo.nombre} quedó observado. Producción puede continuar con advertencia."
+            elif equipo.aseo_verificacion != CicloCIP.Verificacion.CONFORME:
+                advertencia_aseo = f"El aseo de {equipo.nombre} aún no tiene verificación conforme de Calidad."
             opciones_equipos.append({
                 "id": equipo.id,
                 "codigo": equipo.codigo,
@@ -457,6 +463,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 "habilitado": not motivo,
                 "motivo_no_habilitado": motivo,
                 "aseo_verificacion": equipo.aseo_verificacion,
+                "advertencia_aseo": advertencia_aseo,
             })
         return Response({
             "entradas": self._vales_operativos(request),
@@ -489,6 +496,19 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         servicios_produccion.registrar_produccion(lote=lote)
 
         aviso = self._descontar_de_bodega(lote)
+
+        # Cerrar Producción alimenta la bandeja de Calidad y avisa al área;
+        # no hace falta volver a registrar el lote en otro módulo.
+        from inventario.servicios import _notificar_area
+        _notificar_area(
+            "calidad", tipo="producto_pendiente_calidad",
+            titulo="Producto terminado pendiente de Calidad",
+            mensaje=(
+                f"Lote {lote.codigo_lote} ({lote.producto.nombre}) terminado. "
+                "Revisa análisis y checklist para liberarlo."
+            ),
+            documento_tipo="lote_produccion", documento_id=lote.id,
+        )
 
         # Se vuelve a serializar después de descontar y no antes: la ficha
         # lleva el estado del consumo, y la que armó `super().update()` se

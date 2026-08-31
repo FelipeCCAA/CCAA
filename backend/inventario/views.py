@@ -74,7 +74,7 @@ def _tenant_get(modelo, usuario, pk, *, sucursal, empresa):
 @permission_classes([IsAuthenticated])
 def estado_operacional(request):
     """Resumen de bodega: stock físico y sus estados, sin procesos de planta."""
-    from produccion.models import PalletProducto
+    from produccion.models import Lote, PalletProducto
 
     decimal = DecimalField(max_digits=18, decimal_places=3)
     existencias = filtrar_por_scope(
@@ -102,8 +102,63 @@ def estado_operacional(request):
         pallets=Count("id"),
     )
 
+    lotes_activos = filtrar_por_scope(
+        Lote.objects.filter(estado__in=[Lote.Estado.EN_PROCESO, Lote.Estado.PRODUCIDO]),
+        request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ).values("producto_id", "producto__nombre").annotate(
+        lotes_en_proceso=Count("id", filter=Q(estado=Lote.Estado.EN_PROCESO)),
+        lotes_producidos=Count("id", filter=Q(estado=Lote.Estado.PRODUCIDO)),
+        kg_declarados=Coalesce(Sum("kg_producidos"), Value(0), output_field=decimal),
+    )
+    bodega_por_producto = existencias.values(
+        "pallet__envase__lote__producto_id",
+        "pallet__envase__lote__producto__nombre",
+    ).annotate(
+        kg_bodega=Coalesce(Sum("pallet__kg_neto"), Value(0), output_field=decimal),
+        kg_disponible=Coalesce(
+            Sum(
+                "pallet__kg_neto",
+                filter=Q(
+                    pallet__estado__in=estados_disponibles,
+                    ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+                ),
+            ),
+            Value(0), output_field=decimal,
+        ),
+        pallets_bodega=Count("id"),
+        pallets_cuarentena=Count(
+            "id", filter=Q(pallet__estado=PalletProducto.Estado.PENDIENTE_CALIDAD)
+        ),
+    )
+    productos = {}
+    for fila in lotes_activos:
+        productos[fila["producto_id"]] = {
+            "producto_id": fila["producto_id"],
+            "producto_nombre": fila["producto__nombre"],
+            "lotes_en_proceso": fila["lotes_en_proceso"],
+            "lotes_producidos": fila["lotes_producidos"],
+            "kg_declarados": fila["kg_declarados"],
+            "kg_bodega": Decimal("0"), "kg_disponible": Decimal("0"),
+            "pallets_bodega": 0, "pallets_cuarentena": 0,
+        }
+    for fila in bodega_por_producto:
+        producto_id = fila["pallet__envase__lote__producto_id"]
+        resumen = productos.setdefault(producto_id, {
+            "producto_id": producto_id,
+            "producto_nombre": fila["pallet__envase__lote__producto__nombre"],
+            "lotes_en_proceso": 0, "lotes_producidos": 0,
+            "kg_declarados": Decimal("0"),
+        })
+        resumen.update({
+            "kg_bodega": fila["kg_bodega"],
+            "kg_disponible": fila["kg_disponible"],
+            "pallets_bodega": fila["pallets_bodega"],
+            "pallets_cuarentena": fila["pallets_cuarentena"],
+        })
+
     return Response({
         "stock": stock,
+        "productos": sorted(productos.values(), key=lambda item: item["producto_nombre"]),
         "actualizado_en": timezone.now(),
     })
 
@@ -249,7 +304,7 @@ class UbicacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     tenant_lookup_sucursal = "bodega__sucursal_id"
     tenant_lookup_empresa = "bodega__sucursal__empresa_id"
     tenant_relation_fields = {"bodega": ("sucursal_id", "sucursal__empresa_id")}
-    queryset = Ubicacion.objects.select_related("bodega")
+    queryset = Ubicacion.objects.select_related("bodega").order_by("bodega_id", "codigo")
     serializer_class = UbicacionSerializer
     permission_classes = [EscribeBodega]
 

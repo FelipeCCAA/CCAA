@@ -304,6 +304,22 @@ class FirmaTests(BaseAPI):
         pallet.refresh_from_db()
         self.assertEqual(pallet.estado, PalletProducto.Estado.LIBERADO)
 
+        envio = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/enviar-bodega/"
+        )
+        repetido = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/enviar-bodega/"
+        )
+
+        self.assertEqual(envio.status_code, 200)
+        self.assertEqual(envio.json()["enviados"], 1)
+        self.assertEqual(repetido.json()["enviados"], 0)
+        self.assertEqual(ExistenciaProductoTerminado.objects.count(), 1)
+        existencia = ExistenciaProductoTerminado.objects.get(pallet=pallet)
+        self.assertEqual(existencia.ubicacion.tipo, Ubicacion.Tipo.DISPONIBLE)
+        pallet.refresh_from_db()
+        self.assertEqual(pallet.estado, PalletProducto.Estado.EN_INVENTARIO)
+
     def test_la_firma_la_estampa_el_servidor(self):
         """Quién firmó y cuándo no se aceptan del navegador: son la auditoría."""
         self._analisis()

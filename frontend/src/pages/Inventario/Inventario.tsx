@@ -46,6 +46,12 @@ export default function Inventario() {
     finally { setCargando(false); }
   }
 
+  function actualizarDespuesDeMovimiento() {
+    setProductos(null);
+    setMovimientos(null);
+    void cargarResumen(true);
+  }
+
   useEffect(() => { void cargarResumen(); }, []);
 
   useEffect(() => {
@@ -98,7 +104,30 @@ export default function Inventario() {
           {pestanas.map(([id, etiqueta]) => <button key={id} type="button" onClick={() => setPestana(id)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold ${pestana === id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{etiqueta}</button>)}
         </nav>
 
-        {pestana === "stock" && <OperacionesBodega onCambio={() => void cargarResumen(true)} />}
+        {pestana === "stock" && <div className="space-y-6">
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h2 className="font-bold text-slate-900">Productos: Producción → Calidad → Bodega</h2>
+              <p className="mt-1 text-xs text-slate-500">Un solo resumen: lotes activos, kilos físicos y pallets realmente registrados.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Producto</th><th className="px-5 py-3">En producción</th><th className="px-5 py-3">Producidos</th><th className="px-5 py-3">En bodega</th><th className="px-5 py-3">Disponible</th><th className="px-5 py-3">Pallets</th><th className="px-5 py-3">Calidad</th></tr></thead>
+                <tbody>{resumen.productos.map((item) => <tr key={item.producto_id} className="border-t border-slate-100">
+                  <td className="px-5 py-4 font-semibold text-slate-900">{item.producto_nombre}</td>
+                  <td className="px-5 py-4"><b>{item.lotes_en_proceso}</b> lotes</td>
+                  <td className="px-5 py-4"><b>{item.lotes_producidos}</b> · {valor(item.kg_declarados)} kg</td>
+                  <td className="px-5 py-4 font-semibold">{valor(item.kg_bodega)} kg</td>
+                  <td className="px-5 py-4 text-emerald-700">{valor(item.kg_disponible)} kg</td>
+                  <td className="px-5 py-4"><b>{item.pallets_bodega}</b></td>
+                  <td className="px-5 py-4">{item.pallets_cuarentena > 0 ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">{item.pallets_cuarentena} en cuarentena</span> : <span className="text-xs text-slate-500">Sin pendientes</span>}</td>
+                </tr>)}</tbody>
+              </table>
+              {resumen.productos.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-500">No hay lotes activos ni pallets en bodega.</p>}
+            </div>
+          </section>
+          <OperacionesBodega onCambio={actualizarDespuesDeMovimiento} />
+        </div>}
 
         {pestana === "productos" && <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{productos?.map((item) => <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex justify-between gap-3"><div><p className="font-bold text-slate-900">{item.pallet_codigo}</p><p className="text-sm text-slate-600">{item.producto_nombre}</p></div><span className="h-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{item.estado_inventario}</span></div><p className="mt-4 text-2xl font-bold text-slate-900">{valor(item.kg_neto)} kg</p><p className="mt-1 text-xs text-slate-500">Lote {item.lote_codigo} · {item.ubicacion_codigo}</p>{item.estado_inventario === "disponible" && item.ubicacion_tipo === "cuarentena" && <p className="mt-2 text-xs font-medium text-amber-700">Liberado por Calidad; pendiente de reubicación física.</p>}</article>)}{productos?.length === 0 && <p className="text-sm text-slate-500">No hay producto terminado físico.</p>}</section>}
 

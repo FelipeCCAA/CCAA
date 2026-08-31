@@ -14,7 +14,8 @@ from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
     Bodega, ClienteDespacho, Despacho, DetalleDespacho,
-    ExistenciaProductoTerminado, MovimientoProductoTerminado, Ubicacion,
+    ExistenciaProductoTerminado, Insumo, LoteInventario,
+    MovimientoProductoTerminado, Ubicacion,
 )
 from .servicios import autorizar_despacho, ejecutar_despacho, ingresar_pallet
 
@@ -61,12 +62,36 @@ class FlujoProductoTerminadoTests(TestCase):
         self.assertFalse(ExistenciaProductoTerminado.objects.exists())
 
     def test_ingreso_crea_existencia_y_movimiento(self):
+        cuarentena = Ubicacion.objects.create(
+            bodega=self.ubicacion.bodega, codigo="PT-CUAR", tipo=Ubicacion.Tipo.CUARENTENA,
+        )
+        existencia_cuarentena = ExistenciaProductoTerminado.objects.create(
+            pallet=self.pallet, ubicacion=cuarentena,
+        )
         self.liberar()
         existencia = ingresar_pallet(self.pallet, self.ubicacion, self.usuario)
         self.pallet.refresh_from_db()
         self.assertTrue(existencia.activo)
+        self.assertEqual(existencia.pk, existencia_cuarentena.pk)
+        self.assertEqual(existencia.ubicacion, self.ubicacion)
         self.assertEqual(self.pallet.estado, PalletProducto.Estado.EN_INVENTARIO)
         self.assertEqual(MovimientoProductoTerminado.objects.count(), 1)
+
+    def test_ingreso_manual_asigna_sucursal_del_destino(self):
+        material = Insumo.objects.create(
+            empresa=self.empresa, codigo="ENV-TEST", nombre="Envase test",
+            categoria=Insumo.Categoria.EMPAQUE, area=PerfilUsuario.Area.BODEGA,
+            unidad=Insumo.Unidad.UN, requiere_calidad=False,
+        )
+
+        respuesta = self.api.post("/api/inventario/movimientos/ingresar-material/", {
+            "insumo": material.pk, "codigo_lote": "PROV-ENV-1",
+            "ubicacion": self.ubicacion.pk, "cantidad": "20",
+        }, format="json")
+
+        self.assertEqual(respuesta.status_code, 201)
+        lote = LoteInventario.objects.get(insumo=material, codigo="PROV-ENV-1")
+        self.assertEqual(lote.sucursal, self.planta)
 
     def test_despacho_revalida_calidad_y_no_duplica_salida(self):
         self.liberar()
@@ -110,3 +135,7 @@ class FlujoProductoTerminadoTests(TestCase):
         self.assertEqual(Decimal(str(stock["disponible_kg"])), Decimal("500"))
         self.assertEqual(Decimal(str(stock["cuarentena_kg"])), Decimal("0"))
         self.assertEqual(stock["pallets"], 1)
+        producto = respuesta.data["productos"][0]
+        self.assertEqual(producto["producto_nombre"], "Polvo PT")
+        self.assertEqual(producto["pallets_bodega"], 1)
+        self.assertEqual(Decimal(str(producto["kg_bodega"])), Decimal("500"))

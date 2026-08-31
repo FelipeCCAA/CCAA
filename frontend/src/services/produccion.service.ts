@@ -180,6 +180,12 @@ export interface LoteDetalle extends Lote {
     kg_base: string | null;
     pendiente: boolean;
   };
+  pallets_resumen: {
+    total: number;
+    pendientes_calidad: number;
+    liberados: number;
+    en_inventario: number;
+  };
   /* Solo viene en la respuesta de un PATCH que cambió algo digno de avisar.
      No bloquean: informan. */
   avisos?: string[];
@@ -296,6 +302,7 @@ export interface EquipoInicioProduccion extends Equipo {
   habilitado: boolean;
   motivo_no_habilitado: string;
   aseo_verificacion: "pendiente" | "conforme" | "observado" | null;
+  advertencia_aseo: string;
 }
 
 export interface OpcionesInicioProduccion {

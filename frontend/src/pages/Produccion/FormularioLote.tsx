@@ -229,10 +229,10 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   };
   const ruta = valeSeleccionado ? rutaPorFamilia[valeSeleccionado.producto_familia] : null;
   const equiposCompatibles = equipos.filter(
-    (item) => item.activo && item.habilitado && (!ruta || ruta.tipos.includes(item.tipo)),
+    (item) => item.activo && (!ruta || ruta.tipos.includes(item.tipo)),
   );
   const equipoSeleccionado = equipos.find((item) => item.id === Number(equipo));
-  const advertenciaAseo = equipo && equipoSeleccionado?.aseo_verificacion !== "conforme";
+  const advertenciaAseo = equipoSeleccionado?.advertencia_aseo ?? "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
@@ -369,13 +369,13 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
               >
                 <option value="">Selecciona una máquina…</option>
                 {equiposCompatibles.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre} · {item.tipo_etiqueta}
+                  <option key={item.id} value={item.id} disabled={!item.habilitado}>
+                    {item.nombre} · {item.tipo_etiqueta}{item.motivo_no_habilitado ? ` · ${item.motivo_no_habilitado}` : ""}
                   </option>
                 ))}
               </select>
               {valeSeleccionado && equiposCompatibles.length === 0 && <p className="mt-1.5 text-xs text-amber-700">No hay una máquina activa configurada para esta familia. Revísala en Maestros.</p>}
-              {advertenciaAseo && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><strong>Advertencia de aseo:</strong> no hay un CIP/aseo conforme registrado para esta máquina. Puedes continuar por ahora, pero verifica el aseo antes de iniciar la corrida.</div>}
+              {advertenciaAseo && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><strong>Advertencia de aseo (no bloquea):</strong> {advertenciaAseo}</div>}
 
             </div>
 

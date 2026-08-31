@@ -909,6 +909,67 @@ def liberar(request, lote_id):
 
 @api_view(["POST"])
 @permission_classes([EscribeCalidad])
+def enviar_pallets_bodega(request, lote_id):
+    """Completa la entrega física de pallets liberados sin duplicar stock."""
+    from inventario.models import Bodega, Ubicacion
+    from inventario.servicios import ingresar_pallet
+
+    lote = get_object_or_404(
+        _lotes_permitidos(request).select_related("sucursal"), pk=lote_id
+    )
+    liberacion = Liberacion.objects.filter(lote=lote).first()
+    if not liberacion or not liberacion.liberado:
+        return Response(
+            {"detail": "Primero debes firmar la liberación de Calidad del lote."},
+            status=status.HTTP_409_CONFLICT,
+        )
+    pallets = list(
+        PalletProducto.objects.filter(envase__lote=lote).exclude(
+            estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
+        )
+    )
+    if not pallets:
+        return Response(
+            {"detail": "El lote todavía no tiene pallets envasados para enviar."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    with transaction.atomic():
+        bodega, _ = Bodega.objects.get_or_create(
+            sucursal=lote.sucursal, codigo="BPT",
+            defaults={"nombre": "Bodega de producto terminado", "area": "bodega"},
+        )
+        destino, _ = Ubicacion.objects.get_or_create(
+            bodega=bodega, codigo="PT-DISP",
+            defaults={
+                "tipo": Ubicacion.Tipo.DISPONIBLE,
+                "descripcion": "Producto terminado liberado por Calidad",
+            },
+        )
+        if destino.tipo != Ubicacion.Tipo.DISPONIBLE:
+            return Response(
+                {"detail": "La ubicación maestra BPT/PT-DISP debe ser Disponible."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        enviados = 0
+        for pallet in pallets:
+            if pallet.estado == PalletProducto.Estado.EN_INVENTARIO:
+                continue
+            ingresar_pallet(pallet, destino, request.user)
+            enviados += 1
+
+    return Response({
+        "lote": lote.id, "enviados": enviados, "pallets": len(pallets),
+        "ubicacion": f"{bodega.codigo}/{destino.codigo}",
+        "detail": (
+            f"{enviados} pallet(s) enviados a {bodega.codigo}/{destino.codigo}."
+            if enviados else "Los pallets ya estaban disponibles en Bodega."
+        ),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([EscribeCalidad])
 def revisar(request, lote_id):
     """
     Devuelve el expediente a revisión.

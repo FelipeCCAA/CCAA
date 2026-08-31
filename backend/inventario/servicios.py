@@ -93,6 +93,8 @@ def ingresar_pallet(pallet, ubicacion, usuario, *, operacion=None):
     _validar_pallet_liberado(pallet)
     if pallet.envase.lote.sucursal_id != ubicacion.bodega.sucursal_id:
         raise ValidationError("El pallet y la ubicación pertenecen a plantas distintas.")
+    if ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+        raise ValidationError("El destino del pallet debe ser una ubicación disponible de Bodega.")
     if pallet.estado not in {PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO}:
         raise ValidationError("El pallet no está disponible para ingresar a inventario.")
     existencia, creada = ExistenciaProductoTerminado.objects.select_for_update().get_or_create(
@@ -494,12 +496,16 @@ def ingresar_material_manual(*, insumo, codigo_lote, ubicacion, cantidad, usuari
         LoteInventario.EstadoCalidad.PENDIENTE
         if insumo.requiere_calidad else LoteInventario.EstadoCalidad.NO_REQUIERE
     )
+    sucursal = ubicacion.bodega.sucursal
+    if insumo.empresa_id != sucursal.empresa_id:
+        raise ValidationError("El material y la ubicación pertenecen a empresas distintas.")
+    codigo = codigo_lote or f"SIN-LOTE-{timezone.now():%Y%m%d%H%M%S}"
     lote = LoteInventario.objects.filter(
-        insumo=insumo, codigo=codigo_lote or f"SIN-LOTE-{timezone.now():%Y%m%d%H%M%S}", proveedor=None
+        sucursal=sucursal, insumo=insumo, codigo=codigo, proveedor=None
     ).first()
     if lote is None:
         lote = LoteInventario.objects.create(
-            insumo=insumo, codigo=codigo_lote or f"SIN-LOTE-{timezone.now():%Y%m%d%H%M%S}",
+            sucursal=sucursal, insumo=insumo, codigo=codigo,
             elaboracion=elaboracion or None, vencimiento=vencimiento or None,
             estado_calidad=estado,
         )
@@ -1461,19 +1467,9 @@ def motivo_equipo_no_habilitado(equipo):
     """
     Por qué este equipo no puede producir, o `None` si puede.
 
-    Aplica dos de las reglas de planta (`docs/REGLAS_DE_PLANTA.md` §5):
-
-    - **№ 15** — un equipo no puede estar produciendo y en CIP a la vez. Es
-      física antes que informática: hay soda circulando por dentro.
-    - **№ 3** — no se inicia producción con un equipo sin aseo aprobado. Aquí
-      se aplica la parte que el documento define sin ambigüedad (§18.5): un
-      aseo **observado** deja el equipo no habilitado hasta que otro lo
-      reemplace.
-
-    Lo que **no** se aplica es la caducidad del aseo —«el CIP del martes ya no
-    sirve el viernes»— porque cuánto dura un aseo lo decide Calidad y no está
-    escrito en ninguna parte. Inventar una ventana sería peor que no tenerla:
-    bloquearía producción con un número que nadie acordó.
+    Solo bloquea el conflicto físico: un CIP ejecutándose en ese momento.
+    La ausencia de aseo conforme o un resultado observado se informa mediante
+    ``advertencia_aseo_equipo`` y queda trazada, pero no detiene Producción.
 
     Devuelve el motivo y no un booleano, por lo mismo que `puede_liberar`: un
     «no» sin causa obliga a adivinar qué corregir.
@@ -1488,22 +1484,28 @@ def motivo_equipo_no_habilitado(equipo):
     ).exists():
         return f"{equipo.nombre} está en CIP: no puede producir mientras se asea."
 
-    # El último aseo con desenlace. Los programados no cuentan: todavía no
-    # ocurrieron, y tratarlos como resultado bloquearía por un aseo futuro.
+    return None
+
+
+def advertencia_aseo_equipo(equipo):
+    """Describe el último aseo como aviso; no detiene la producción."""
+    from .models import CicloCIP
+
+    if equipo is None:
+        return ""
     ultimo = (
         CicloCIP.objects.filter(equipo=equipo)
         .exclude(estado=CicloCIP.Estado.PROGRAMADO)
-        .order_by("-inicio")
+        .order_by("-inicio", "-id")
         .first()
     )
-
-    if ultimo is not None and ultimo.estado == CicloCIP.Estado.OBSERVADO:
-        return (
-            f"El último aseo de {equipo.nombre} quedó observado: el equipo no "
-            "está habilitado hasta que se repita y quede conforme."
-        )
-
-    return None
+    if ultimo is None:
+        return f"{equipo.nombre} no tiene un aseo/CIP registrado. Verifica antes de operar."
+    if ultimo.estado == CicloCIP.Estado.OBSERVADO or ultimo.verificacion == CicloCIP.Verificacion.OBSERVADO:
+        return f"El último aseo de {equipo.nombre} quedó observado. Producción puede continuar con advertencia."
+    if ultimo.verificacion != CicloCIP.Verificacion.CONFORME:
+        return f"El aseo de {equipo.nombre} aún no tiene verificación conforme de Calidad."
+    return ""
 
 
 def equipo_produciendo(equipo):

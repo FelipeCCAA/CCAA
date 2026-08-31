@@ -394,6 +394,7 @@ class ExistenciaSerializer(serializers.ModelSerializer):
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
     ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
     ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
+    ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
     estado_calidad = serializers.CharField(source="lote.estado_calidad", read_only=True)
     cantidad_disponible = serializers.DecimalField(max_digits=16, decimal_places=3, read_only=True)
 
@@ -722,7 +723,7 @@ class ClienteDespachoSerializer(serializers.ModelSerializer):
 
 class ExistenciaProductoTerminadoSerializer(serializers.ModelSerializer):
     pallet_codigo = serializers.CharField(source="pallet.codigo", read_only=True)
-    lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo", read_only=True)
+    lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo_lote", read_only=True)
     producto_nombre = serializers.CharField(source="pallet.envase.lote.producto.nombre", read_only=True)
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
     kg_neto = serializers.DecimalField(source="pallet.kg_neto", max_digits=14, decimal_places=3, read_only=True)

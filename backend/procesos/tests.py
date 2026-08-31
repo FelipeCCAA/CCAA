@@ -530,14 +530,19 @@ class EquipoHabilitadoPorAseoTests(TestCase):
             self._arrancar().estado, EjecucionProceso.Estado.EJECUCION
         )
 
-    def test_un_aseo_observado_deja_el_equipo_no_habilitado(self):
-        """§18.5: aseo crítico rechazado → equipo no habilitado."""
+    def test_un_aseo_observado_avisa_pero_no_bloquea(self):
+        """El observado queda trazado como advertencia y la corrida continúa."""
         from inventario.models import CicloCIP
 
         self._cip(CicloCIP.Estado.OBSERVADO)
 
-        with self.assertRaisesMessage(ValidationError, "quedó observado"):
-            self._arrancar()
+        ejecucion = self._arrancar()
+
+        self.assertEqual(ejecucion.estado, EjecucionProceso.Estado.EJECUCION)
+        self.assertIn(
+            "Advertencia no bloqueante de aseo",
+            ejecucion.eventos.get(estado_nuevo=EjecucionProceso.Estado.EJECUCION).motivo,
+        )
 
     def test_un_aseo_conforme_posterior_rehabilita(self):
         """El observado bloquea hasta que otro lo reemplace, no para siempre."""

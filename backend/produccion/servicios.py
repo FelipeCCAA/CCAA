@@ -90,7 +90,7 @@ def abrir_lote_desde_vale(
     # que un cliente antiguo o una llamada manual intente ocuparla.
     equipo = extra.get("equipo")
     if equipo is not None:
-        from inventario.servicios import motivo_equipo_no_habilitado
+        from inventario.servicios import advertencia_aseo_equipo, motivo_equipo_no_habilitado
         from maestros.models import Equipo
         from procesos.models import EjecucionProceso
 
@@ -100,6 +100,11 @@ def abrir_lote_desde_vale(
         impedimento = motivo_equipo_no_habilitado(equipo)
         if impedimento:
             raise ValidationError({"equipo": impedimento})
+        advertencia_aseo = advertencia_aseo_equipo(equipo)
+        if advertencia_aseo:
+            observacion = str(extra.get("observacion", "")).strip()
+            marca = f"[ADVERTENCIA ASEO AL INICIO] {advertencia_aseo}"
+            extra["observacion"] = "\n".join(parte for parte in (observacion, marca) if parte)
         ocupada = EjecucionProceso.objects.filter(
             equipo=equipo,
             estado=EjecucionProceso.Estado.EJECUCION,

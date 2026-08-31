@@ -8,6 +8,7 @@ import {
   FileWarning,
   Lock,
   ShieldCheck,
+  Warehouse,
 } from "lucide-react";
 import axios from "axios";
 
@@ -15,6 +16,7 @@ import {
   conceder,
   bloquearLote,
   liberar,
+  enviarPalletsBodega,
   obtenerExpediente,
   type EstadoDocumento,
   type Expediente as ExpedienteTipo,
@@ -85,6 +87,8 @@ function Expediente({ loteId, alVolver }: Props) {
   const [motivo, setMotivo] = useState("");
   const [pidiendoMotivo, setPidiendoMotivo] = useState(false);
   const [firmando, setFirmando] = useState(false);
+  const [enviandoBodega, setEnviandoBodega] = useState(false);
+  const [mensajeBodega, setMensajeBodega] = useState("");
 
   const puedeFirmar = puedeEscribir("calidad");
 
@@ -162,6 +166,25 @@ function Expediente({ loteId, alVolver }: Props) {
     }
   };
 
+  const enviarABodega = async () => {
+    setEnviandoBodega(true);
+    setMensajeBodega("");
+    setError("");
+    try {
+      const resultado = await enviarPalletsBodega(loteId);
+      setMensajeBodega(resultado.detail);
+      await cargar();
+    } catch (e) {
+      if (axios.isAxiosError(e)) {
+        setError((e.response?.data as { detail?: string })?.detail || "No se pudieron enviar los pallets a Bodega.");
+      } else {
+        setError("No se pudieron enviar los pallets a Bodega.");
+      }
+    } finally {
+      setEnviandoBodega(false);
+    }
+  };
+
   if (cargando) {
     return <p className="text-sm text-slate-600">Cargando expediente…</p>;
   }
@@ -231,6 +254,17 @@ function Expediente({ loteId, alVolver }: Props) {
                   {liberacion.motivo_concesion}
                 </p>
               )}
+
+              <button
+                type="button"
+                disabled={enviandoBodega}
+                onClick={() => void enviarABodega()}
+                className="mt-3 flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                <Warehouse className="h-4 w-4" />
+                {enviandoBodega ? "Enviando…" : "Enviar pallets a Bodega"}
+              </button>
+              {mensajeBodega && <p className="mt-2 max-w-xs text-xs font-medium text-emerald-700">{mensajeBodega}</p>}
 
             </div>
 

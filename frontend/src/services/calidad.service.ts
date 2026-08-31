@@ -342,6 +342,15 @@ export async function liberar(loteId: number, observacion = ""): Promise<Liberac
   return data;
 }
 
+export async function enviarPalletsBodega(loteId: number): Promise<{
+  lote: number; enviados: number; pallets: number; ubicacion: string; detail: string;
+}> {
+  const { data } = await api.post(
+    `calidad/expedientes/${loteId}/enviar-bodega/`,
+  );
+  return data;
+}
+
 
 /** Liberación bajo concesión: exige motivo escrito y deja marca permanente. */
 export async function conceder(

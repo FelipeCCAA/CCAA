@@ -92,6 +92,7 @@ class FlujoIntegradoApiTests(TestCase):
         self.assertEqual(respuesta.data["entradas"][0]["codigo"], self.vale.codigo)
         equipo = next(item for item in respuesta.data["equipos"] if item["id"] == self.equipo.id)
         self.assertTrue(equipo["habilitado"])
+        self.assertTrue(equipo["advertencia_aseo"])
 
     def test_abre_lote_y_ejecucion_sin_elegir_silo(self):
         respuesta = self._abrir()

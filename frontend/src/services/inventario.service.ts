@@ -306,6 +306,13 @@ export interface EstadoOperacionalInventario {
     fisico_kg: string | number; disponible_kg: string | number;
     cuarentena_kg: string | number; bloqueado_kg: string | number; pallets: number;
   };
+  productos: Array<{
+    producto_id: number; producto_nombre: string;
+    lotes_en_proceso: number; lotes_producidos: number;
+    kg_declarados: string | number; kg_bodega: string | number;
+    kg_disponible: string | number; pallets_bodega: number;
+    pallets_cuarentena: number;
+  }>;
   actualizado_en: string;
 }
 
