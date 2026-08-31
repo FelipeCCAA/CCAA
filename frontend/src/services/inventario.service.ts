@@ -313,6 +313,12 @@ export interface EstadoOperacionalInventario {
     kg_disponible: string | number; pallets_bodega: number;
     pallets_cuarentena: number;
   }>;
+  materiales: Array<{
+    insumo_id: number; codigo: string; nombre: string; unidad: string; categoria: string;
+    stock_minimo: string | number; fisico: string | number; disponible: string | number;
+    reservado: string | number; cuarentena: string | number; bloqueado: string | number;
+    ubicaciones: number;
+  }>;
   actualizado_en: string;
 }
 

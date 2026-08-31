@@ -93,6 +93,15 @@ class FlujoProductoTerminadoTests(TestCase):
         lote = LoteInventario.objects.get(insumo=material, codigo="PROV-ENV-1")
         self.assertEqual(lote.sucursal, self.planta)
 
+        resumen = self.api.get("/api/inventario/estado-operacional/")
+        self.assertEqual(resumen.status_code, 200)
+        stock_material = next(
+            item for item in resumen.data["materiales"] if item["insumo_id"] == material.pk
+        )
+        self.assertEqual(stock_material["fisico"], Decimal("20"))
+        self.assertEqual(stock_material["disponible"], Decimal("20"))
+        self.assertEqual(stock_material["reservado"], Decimal("0"))
+
     def test_despacho_revalida_calidad_y_no_duplica_salida(self):
         self.liberar()
         ingresar_pallet(self.pallet, self.ubicacion, self.usuario)

@@ -2,7 +2,7 @@ from decimal import Decimal
 from math import ceil
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count, DecimalField, Prefetch, Q, Sum, Value
+from django.db.models import Count, DecimalField, F, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -156,9 +156,66 @@ def estado_operacional(request):
             "pallets_cuarentena": fila["pallets_cuarentena"],
         })
 
+    existencias_material = filtrar_por_scope(
+        Existencia.objects.select_related("lote__insumo", "ubicacion"), request.user,
+        campo_sucursal="ubicacion__bodega__sucursal_id",
+        campo_empresa="ubicacion__bodega__sucursal__empresa_id",
+    )
+    estados_utilizables = [
+        LoteInventario.EstadoCalidad.NO_REQUIERE,
+        LoteInventario.EstadoCalidad.APROBADO,
+        LoteInventario.EstadoCalidad.OBSERVADO,
+    ]
+    estados_bloqueados = [
+        LoteInventario.EstadoCalidad.BLOQUEADO,
+        LoteInventario.EstadoCalidad.RECHAZADO,
+    ]
+    materiales_agrupados = existencias_material.values(
+        "lote__insumo_id", "lote__insumo__codigo", "lote__insumo__nombre",
+        "lote__insumo__unidad", "lote__insumo__categoria", "lote__insumo__stock_minimo",
+    ).annotate(
+        fisico=Coalesce(Sum("cantidad_fisica"), Value(0), output_field=decimal),
+        reservado=Coalesce(Sum("cantidad_reservada"), Value(0), output_field=decimal),
+        disponible=Coalesce(
+            Sum(
+                F("cantidad_fisica") - F("cantidad_reservada"),
+                filter=Q(
+                    ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+                    lote__activo=True,
+                    lote__estado_calidad__in=estados_utilizables,
+                ),
+            ),
+            Value(0), output_field=decimal,
+        ),
+        cuarentena=Coalesce(
+            Sum("cantidad_fisica", filter=Q(ubicacion__tipo=Ubicacion.Tipo.CUARENTENA)),
+            Value(0), output_field=decimal,
+        ),
+        bloqueado=Coalesce(
+            Sum("cantidad_fisica", filter=Q(lote__estado_calidad__in=estados_bloqueados)),
+            Value(0), output_field=decimal,
+        ),
+        ubicaciones=Count("ubicacion_id", distinct=True),
+    ).order_by("lote__insumo__nombre")
+    materiales = [{
+        "insumo_id": fila["lote__insumo_id"],
+        "codigo": fila["lote__insumo__codigo"],
+        "nombre": fila["lote__insumo__nombre"],
+        "unidad": fila["lote__insumo__unidad"],
+        "categoria": fila["lote__insumo__categoria"],
+        "stock_minimo": fila["lote__insumo__stock_minimo"],
+        "fisico": fila["fisico"],
+        "disponible": fila["disponible"],
+        "reservado": fila["reservado"],
+        "cuarentena": fila["cuarentena"],
+        "bloqueado": fila["bloqueado"],
+        "ubicaciones": fila["ubicaciones"],
+    } for fila in materiales_agrupados]
+
     return Response({
         "stock": stock,
         "productos": sorted(productos.values(), key=lambda item: item["producto_nombre"]),
+        "materiales": materiales,
         "actualizado_en": timezone.now(),
     })
 

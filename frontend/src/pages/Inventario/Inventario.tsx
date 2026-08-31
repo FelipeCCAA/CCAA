@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Boxes, History, PackageCheck, RefreshCw, ShieldAlert,
+  Boxes, History, PackageCheck, RefreshCw, Search, ShieldAlert,
   TestTube2, Warehouse,
 } from "lucide-react";
 
@@ -38,6 +38,7 @@ export default function Inventario() {
   const [movimientos, setMovimientos] = useState<MovimientoProductoTerminado[] | null>(null);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(true);
+  const [busquedaMaterial, setBusquedaMaterial] = useState("");
 
   async function cargarResumen(refrescar = false) {
     setCargando(true); setError("");
@@ -73,6 +74,14 @@ export default function Inventario() {
     return [...agrupados.entries()];
   }, [productos]);
 
+  const materialesFiltrados = useMemo(() => {
+    const termino = busquedaMaterial.trim().toLocaleLowerCase("es");
+    if (!termino) return resumen?.materiales ?? [];
+    return (resumen?.materiales ?? []).filter((item) =>
+      `${item.codigo} ${item.nombre} ${item.categoria}`.toLocaleLowerCase("es").includes(termino),
+    );
+  }, [busquedaMaterial, resumen]);
+
   const pestanas: Array<[Pestana, string]> = [
     ["stock", "Stock"], ["productos", "Productos"], ["lotes", "Lotes"],
     ["movimientos", "Movimientos"], ["historial", "Historial"],
@@ -105,6 +114,38 @@ export default function Inventario() {
         </nav>
 
         {pestana === "stock" && <div className="space-y-6">
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <div>
+                <h2 className="font-bold text-slate-900">Materiales, envases y pallets</h2>
+                <p className="mt-1 text-xs text-slate-500">Saldo físico y realmente utilizable por Bodega y Producción.</p>
+              </div>
+              <label className="flex min-w-64 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 focus-within:border-emerald-500">
+                <Search className="h-4 w-4" />
+                <input value={busquedaMaterial} onChange={(evento) => setBusquedaMaterial(evento.target.value)} placeholder="Buscar código o material" className="w-full bg-transparent outline-none" />
+              </label>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Material</th><th className="px-5 py-3">Físico</th><th className="px-5 py-3">Disponible</th><th className="px-5 py-3">Reservado</th><th className="px-5 py-3">Cuarentena</th><th className="px-5 py-3">Bloqueado</th><th className="px-5 py-3">Ubicaciones</th><th className="px-5 py-3">Estado</th></tr></thead>
+                <tbody>{materialesFiltrados.map((item) => {
+                  const bajoMinimo = Number(item.stock_minimo) > 0 && Number(item.disponible) <= Number(item.stock_minimo);
+                  const conRetencion = Number(item.cuarentena) > 0 || Number(item.bloqueado) > 0;
+                  return <tr key={item.insumo_id} className="border-t border-slate-100">
+                    <td className="px-5 py-4"><p className="font-semibold text-slate-900">{item.nombre}</p><p className="text-xs text-slate-500">{item.codigo} · {item.categoria.replaceAll("_", " ")}</p></td>
+                    <td className="px-5 py-4 font-semibold">{valor(item.fisico)} {item.unidad}</td>
+                    <td className="px-5 py-4 font-bold text-emerald-700">{valor(item.disponible)} {item.unidad}</td>
+                    <td className="px-5 py-4">{valor(item.reservado)} {item.unidad}</td>
+                    <td className="px-5 py-4 text-amber-700">{valor(item.cuarentena)} {item.unidad}</td>
+                    <td className="px-5 py-4 text-rose-700">{valor(item.bloqueado)} {item.unidad}</td>
+                    <td className="px-5 py-4">{item.ubicaciones}</td>
+                    <td className="px-5 py-4">{bajoMinimo ? <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">Bajo mínimo</span> : conRetencion ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">Revisar Calidad</span> : <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">Disponible</span>}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+              {materialesFiltrados.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-500">{busquedaMaterial ? "No hay materiales que coincidan con la búsqueda." : "No hay materiales con existencia física."}</p>}
+            </div>
+          </section>
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="font-bold text-slate-900">Productos: Producción → Calidad → Bodega</h2>
