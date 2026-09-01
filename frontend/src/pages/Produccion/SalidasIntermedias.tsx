@@ -100,7 +100,7 @@ export default function SalidasIntermedias() {
             <FlaskConical className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="font-bold text-slate-900">Resultados intermedios liberados</h2>
+            <h2 className="font-bold text-slate-900">Materiales intermedios liberados</h2>
             <p className="text-sm text-slate-600">
               Leche o crema aprobada por Calidad y disponible para la etapa siguiente.
             </p>
@@ -135,16 +135,19 @@ export default function SalidasIntermedias() {
                 <div>
                   <p className="font-semibold text-slate-900">{salida.resultado}</p>
                   <p className="text-xs text-slate-500">
+                    {salida.lote_codigo ? `Lote ${salida.lote_codigo} · ` : ""}
                     {salida.corrida_codigo} · {salida.silo_codigo}
                   </p>
                 </div>
                 <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
-                  Liberado
+                  {salida.estado_material_etiqueta}
                 </span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-sm">
                 <div><span className="text-slate-500">Disponible</span><br /><b>{numero.format(Number(salida.cantidad_disponible))} {salida.unidad}</b></div>
                 <div><span className="text-slate-500">Consumido</span><br /><b>{numero.format(Number(salida.cantidad_consumida))} {salida.unidad}</b></div>
+                {salida.cantidad_trazable_kg !== null && <div><span className="text-slate-500">Saldo de lote</span><br /><b>{numero.format(Number(salida.cantidad_disponible_kg))} kg</b></div>}
+                {salida.densidad_kg_m3 !== null && <div><span className="text-slate-500">Densidad aprobada</span><br /><b>{numero.format(Number(salida.densidad_kg_m3))} kg/m³</b></div>}
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <div className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600">

@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 
 import { mensajeDe } from "../../components/seccion/utilidades";
-import { obtenerEquipos, obtenerSilosMaestros, type Equipo, type Silo } from "../../services/maestros.service";
+import {
+  obtenerEquipos, obtenerProductosMaestros, obtenerSilosMaestros,
+  type Equipo, type ProductoMaestro, type Silo,
+} from "../../services/maestros.service";
 import {
   crearDescremacion, crearEjecucion, iniciarDescremacion, obtenerEtapas,
   type CorridaDescremacion, type EtapaProceso,
@@ -21,6 +24,7 @@ export default function FormularioDescremacion({
   const [etapas, setEtapas] = useState<EtapaProceso[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [silos, setSilos] = useState<Silo[]>([]);
+  const [productos, setProductos] = useState<ProductoMaestro[]>([]);
   const [analisis, setAnalisis] = useState<AnalisisSilo[]>([]);
   const [ocupado, setOcupado] = useState(true);
   const [error, setError] = useState("");
@@ -28,24 +32,33 @@ export default function FormularioDescremacion({
     codigo: `DES-${new Date().toISOString().replace(/\D/g, "").slice(0, 12)}`,
     etapa: "", equipo: "", analisis: "", litros: "",
     silo_descremada: "", estanque_crema: "",
+    producto_descremada: "", producto_crema: "",
   });
 
   useEffect(() => {
     let vigente = true;
     Promise.all([
       obtenerEtapas(), obtenerEquipos(), obtenerSilosMaestros(), listarAnalisisSilo(siloOrigen),
-    ]).then(([paginaEtapas, maquinas, estanques, muestras]) => {
+      obtenerProductosMaestros(),
+    ]).then(([paginaEtapas, maquinas, estanques, muestras, catalogoProductos]) => {
       if (!vigente) return;
       const etapasDes = paginaEtapas.results.filter((item) => item.tipo === "descremacion" && item.activa);
       const validos = muestras.filter((item) => item.estado === "confirmado" && item.vigente);
       setEtapas(etapasDes);
       setEquipos(maquinas.filter((item) => item.activo));
       setSilos(estanques.filter((item) => item.activo));
+      setProductos(catalogoProductos.filter((item) => item.activo));
       setAnalisis(validos);
       setDatos((actual) => ({
         ...actual,
         etapa: etapasDes[0] ? String(etapasDes[0].id) : "",
         analisis: validos[0] ? String(validos[0].id) : "",
+        producto_descremada: String(
+          catalogoProductos.find((item) => item.activo && item.tipo === "descremada")?.id ?? "",
+        ),
+        producto_crema: String(
+          catalogoProductos.find((item) => item.activo && item.familia === "crema")?.id ?? "",
+        ),
       }));
     }).catch((e) => setError(mensajeDe(e, "No se pudieron cargar los datos de descremación.")))
       .finally(() => { if (vigente) setOcupado(false); });
@@ -61,6 +74,8 @@ export default function FormularioDescremacion({
     () => silos.filter((item) => item.tipo === "tk_crema" && item.id !== siloOrigen),
     [silos, siloOrigen],
   );
+  const productosDescremada = productos.filter((item) => item.tipo === "descremada");
+  const productosCrema = productos.filter((item) => item.familia === "crema");
 
   const guardar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +92,8 @@ export default function FormularioDescremacion({
         grasa_entrada: Number(muestra.grasa), sng_entrada: Number(muestra.sng),
         silo_descremada: Number(datos.silo_descremada),
         estanque_crema: Number(datos.estanque_crema),
+        producto_descremada: Number(datos.producto_descremada),
+        producto_crema: Number(datos.producto_crema),
       });
       await onCreada(await iniciarDescremacion(corrida.id));
     } catch (e) {
@@ -98,6 +115,8 @@ export default function FormularioDescremacion({
           <Campo texto="Litros de entrada"><input required type="number" min="0.01" step="0.01" value={datos.litros} onChange={(e) => setDatos({ ...datos, litros: e.target.value })} className={control} /></Campo>
           <Campo texto="Destino leche descremada"><select required value={datos.silo_descremada} onChange={(e) => setDatos({ ...datos, silo_descremada: e.target.value })} className={control}><option value="">Seleccionar…</option>{destinoDescremada.map((item) => <option key={item.id} value={item.id}>{item.codigo}</option>)}</select></Campo>
           <Campo texto="Destino crema"><select required value={datos.estanque_crema} onChange={(e) => setDatos({ ...datos, estanque_crema: e.target.value })} className={control}><option value="">Seleccionar…</option>{destinosCrema.map((item) => <option key={item.id} value={item.id}>{item.codigo}</option>)}</select></Campo>
+          <Campo texto="Producto intermedio · descremada"><select required value={datos.producto_descremada} onChange={(e) => setDatos({ ...datos, producto_descremada: e.target.value })} className={control}><option value="">Seleccionar…</option>{productosDescremada.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></Campo>
+          <Campo texto="Producto intermedio · crema"><select required value={datos.producto_crema} onChange={(e) => setDatos({ ...datos, producto_crema: e.target.value })} className={control}><option value="">Seleccionar…</option>{productosCrema.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></Campo>
           <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600"><span className="block text-xs">Composición congelada</span>{muestra ? `${muestra.grasa}% MG · ${muestra.sng}% SNG` : "Selecciona un análisis"}</div>
         </div>
         {etapas.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Falta configurar una etapa activa de tipo Descremación.</p>}

@@ -87,6 +87,12 @@ class CorridaDescremacionSerializer(serializers.ModelSerializer):
     silo_descremada_codigo = serializers.CharField(source="silo_descremada.codigo", read_only=True)
     estanque_crema_codigo = serializers.CharField(source="estanque_crema.codigo", read_only=True)
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    iniciada_por_nombre = serializers.CharField(source="iniciada_por.get_full_name", read_only=True)
+    finalizada_por_nombre = serializers.CharField(source="finalizada_por.get_full_name", read_only=True)
+    producto_descremada_nombre = serializers.CharField(source="producto_descremada.nombre", read_only=True)
+    producto_crema_nombre = serializers.CharField(source="producto_crema.nombre", read_only=True)
+    iniciada_por_nombre = serializers.CharField(source="iniciada_por.get_full_name", read_only=True)
+    finalizada_por_nombre = serializers.CharField(source="finalizada_por.get_full_name", read_only=True)
 
     class Meta:
         model = CorridaDescremacion
@@ -102,13 +108,24 @@ class CorridaDescremacionSerializer(serializers.ModelSerializer):
             **{
                 campo: getattr(self.instance, campo, None)
                 for campo in (
-                    "ejecucion", "orden", "silo_entera", "analisis_entrada",
+                    "ejecucion", "orden", "producto_descremada", "producto_crema",
+                    "silo_entera", "analisis_entrada",
                     "litros_entrada", "grasa_entrada", "sng_entrada",
                     "silo_descremada", "estanque_crema",
                 )
             },
             **attrs,
         })
+        if self.instance is None:
+            faltantes = [
+                campo for campo in ("producto_descremada", "producto_crema")
+                if attrs.get(campo) is None
+            ]
+            if faltantes:
+                raise serializers.ValidationError({
+                    campo: "Selecciona el producto intermedio generado."
+                    for campo in faltantes
+                })
         candidato.clean()
         return attrs
 
@@ -127,6 +144,8 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
     mantequilla_codigo = serializers.CharField(source="lote_mantequilla.codigo_lote", read_only=True)
     equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    iniciada_por_nombre = serializers.CharField(source="iniciada_por.get_full_name", read_only=True)
+    finalizada_por_nombre = serializers.CharField(source="finalizada_por.get_full_name", read_only=True)
 
     class Meta:
         model = CorridaMantequilla

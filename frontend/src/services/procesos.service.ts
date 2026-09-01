@@ -59,8 +59,16 @@ export interface CorridaCondensacion {
   litros_precondensado: string | null;
   densidad_salida: string | null;
   solidos_salida: string | null;
+  flujo_promedio: string | null;
+  temperatura_salida: string | null;
+  vacio_promedio: string | null;
+  presion_promedio: string | null;
   estado: string;
   estado_etiqueta: string;
+  iniciada_por_nombre: string | null;
+  iniciada_en: string | null;
+  finalizada_por_nombre: string | null;
+  finalizada_en: string | null;
 }
 
 export interface CorridaMantequilla {
@@ -74,8 +82,13 @@ export interface CorridaMantequilla {
   kg_mantequilla: string | null;
   kg_suero: string;
   kg_merma: string;
+  controles: Record<string, unknown>;
   estado: string;
   estado_etiqueta: string;
+  iniciada_por_nombre: string | null;
+  iniciada_en: string | null;
+  finalizada_por_nombre: string | null;
+  finalizada_en: string | null;
 }
 
 export interface EtapaProceso {
@@ -96,6 +109,10 @@ export interface CorridaDescremacion {
   silo_descremada_codigo: string;
   estanque_crema: number;
   estanque_crema_codigo: string;
+  producto_descremada: number;
+  producto_crema: number;
+  producto_descremada_nombre: string | null;
+  producto_crema_nombre: string | null;
   analisis_entrada: number;
   litros_entrada: string;
   grasa_entrada: string;
@@ -107,6 +124,10 @@ export interface CorridaDescremacion {
   controles: Record<string, unknown>;
   estado: string;
   estado_etiqueta: string;
+  iniciada_por_nombre: string | null;
+  iniciada_en: string | null;
+  finalizada_por_nombre: string | null;
+  finalizada_en: string | null;
 }
 
 export interface NodoGenealogia {
@@ -209,6 +230,16 @@ export interface SalidaIntermediaDisponible {
   id: number;
   corrida_codigo: string;
   resultado: string;
+  lote_id: number | null;
+  lote_codigo: string | null;
+  producto_id: number | null;
+  producto_nombre: string | null;
+  estado_material: string;
+  estado_material_etiqueta: string;
+  densidad_kg_m3: string | null;
+  cantidad_trazable_kg: string | null;
+  cantidad_consumida_kg: string | null;
+  cantidad_disponible_kg: string | null;
   silo_id: number;
   silo_codigo: string;
   cantidad_total: string;
@@ -232,6 +263,18 @@ export interface SalidaIntermediaDisponible {
       ocupado_por: string | null;
     }[];
   }[];
+}
+
+export interface ReworkDisponible {
+  id: number;
+  lote_id: number;
+  lote_codigo: string;
+  producto_nombre: string;
+  origen: string;
+  motivo: string;
+  cantidad_autorizada_kg: string;
+  cantidad_consumida_kg: string;
+  cantidad_disponible_kg: string;
 }
 
 export async function iniciarCondensacion(id: number): Promise<CorridaCondensacion> {
@@ -323,6 +366,22 @@ export async function obtenerSalidasIntermediasDisponibles(): Promise<SalidaInte
   return data;
 }
 
+export async function obtenerReworkDisponible(): Promise<ReworkDisponible[]> {
+  const { data } = await api.get<ReworkDisponible[]>("procesos/entradas/opciones-rework/");
+  return data;
+}
+
+export async function consumirRework(datos: {
+  ejecucion: number;
+  lote: number;
+  cantidad: number;
+  motivo: string;
+}): Promise<void> {
+  await api.post("procesos/entradas/", {
+    ...datos, tipo: "reproceso", unidad: "kg",
+  });
+}
+
 export async function prepararContinuacion(
   salidaId: number,
   datos: { etapa: number; equipo: number; cantidad: number },
@@ -345,6 +404,7 @@ export async function crearDescremacion(datos: {
   ejecucion: number; silo_entera: number; analisis_entrada: number;
   litros_entrada: number; grasa_entrada: number; sng_entrada: number;
   silo_descremada: number; estanque_crema: number;
+  producto_descremada: number; producto_crema: number;
 }): Promise<CorridaDescremacion> {
   const { data } = await api.post<CorridaDescremacion>("procesos/descremaciones/", datos);
   return data;

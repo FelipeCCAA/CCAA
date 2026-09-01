@@ -7,13 +7,14 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from maestros.models import Equipo, Mandante, Producto, Silo
+from maestros.models import Equipo, Especificacion, Mandante, Producto, Silo
 from produccion.models import Lote, OrdenProduccion
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
     CorridaCondensacion, EjecucionProceso, EntradaProceso, EtapaProceso, Proceso,
+    RutaProducto, SalidaProceso,
 )
 from .servicios import cerrar_condensacion, crear_condensacion_guiada, iniciar_condensacion
 
@@ -75,6 +76,18 @@ class FlujoCondensacionTests(TestCase):
             litros_entrada=Decimal("600"),
         )
 
+    def _crear_especificacion_precondensado(self, rangos=None):
+        return Especificacion.objects.create(
+            producto=self.lote.producto,
+            version=1,
+            vigente_desde=date(2026, 1, 1),
+            rangos=rangos or {
+                "mg": {"min": 6.5, "max": 7.5, "obligatorio": True},
+                "st": {"min": 48.0, "max": 50.0, "obligatorio": True},
+            },
+            fuente="Especificación de prueba de precondensado",
+        )
+
     def test_inicio_consume_saldo_real_y_activa_orden_ejecucion(self):
         iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
 
@@ -109,7 +122,63 @@ class FlujoCondensacionTests(TestCase):
         self.assertEqual(self.ejecucion.entradas.get().cantidad, Decimal("600"))
         self.assertEqual(self.ejecucion.salidas.get().cantidad, Decimal("250"))
 
+    def test_precondensado_finaliza_en_calidad_y_despacho_directo(self):
+        self._crear_especificacion_precondensado()
+        AnalisisSilo.objects.create(
+            silo=self.origen, tomado_en=timezone.now(),
+            grasa=Decimal("3.60"), sng=Decimal("8.60"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+        )
+        RutaProducto.objects.create(
+            sucursal=self.planta, producto=self.lote.producto,
+            proceso=self.ejecucion.etapa.proceso,
+            destino="Despacho directo",
+        )
+        iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        cerrar_condensacion(
+            corrida_id=self.corrida.pk, usuario=self.usuario,
+            litros_precondensado="250", controles={"densidad_salida": "1.180"},
+        )
+
+        salida = SalidaProceso.objects.get(ejecucion=self.ejecucion)
+        self.orden.refresh_from_db()
+        self.assertEqual(salida.lote, self.lote)
+        self.assertEqual(salida.clasificacion, SalidaProceso.Clasificacion.GRANEL)
+        self.assertEqual(salida.destino, SalidaProceso.Destino.DESPACHO_DIRECTO)
+        self.assertEqual(self.orden.estado, OrdenProduccion.Estado.PENDIENTE_CALIDAD)
+        self.ejecucion.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.PENDIENTE_CONTROL)
+
+        analisis = AnalisisSilo.objects.create(
+            silo=self.destino, tomado_en=timezone.now(),
+            grasa=Decimal("7.00"), sng=Decimal("42.00"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+        )
+        calidad = User.objects.create_user("calidad-despacho-directo")
+        PerfilUsuario.objects.create(
+            usuario=calidad, empresa=self.planta.empresa, sucursal=self.planta,
+            rol=Rol.CALIDAD, area=PerfilUsuario.Area.CALIDAD,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(calidad)
+        respuesta = cliente.post(
+            f"/api/calidad/resultados-proceso/{salida.pk}/liberar/",
+            {"analisis_id": analisis.pk}, format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenProduccion.Estado.LIBERADA)
+
     def test_calidad_libera_precondensado_con_analisis_confirmado(self):
+        self._crear_especificacion_precondensado()
         self.ejecucion.etapa.requiere_calidad = True
         self.ejecucion.etapa.save(update_fields=["requiere_calidad"])
         AnalisisSilo.objects.create(
@@ -143,6 +212,15 @@ class FlujoCondensacionTests(TestCase):
         cliente = APIClient()
         cliente.force_authenticate(calidad)
 
+        cola = cliente.get("/api/calidad/expedientes/", {"incluir_procesos": "1"})
+        self.assertEqual(cola.status_code, 200, cola.data)
+        pendiente = next(
+            item for item in cola.data["procesos"]
+            if item["id"] == self.ejecucion.salidas.get().pk
+        )
+        self.assertEqual(pendiente["especificacion"]["version"], 1)
+        self.assertEqual(pendiente["analisis_disponibles"][0]["resultado"], "conforme")
+
         respuesta = cliente.post(
             f"/api/calidad/resultados-proceso/{self.ejecucion.salidas.get().pk}/liberar/",
             {"analisis_id": analisis.pk}, format="json",
@@ -155,6 +233,62 @@ class FlujoCondensacionTests(TestCase):
         self.assertEqual(self.corrida.estado, CorridaCondensacion.Estado.CERRADA)
         self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.CERRADA)
         self.assertEqual(self.destino.estado, Silo.Estado.DISPONIBLE)
+
+    def test_calidad_no_libera_precondensado_fuera_de_especificacion(self):
+        self.ejecucion.etapa.requiere_calidad = True
+        self.ejecucion.etapa.save(update_fields=["requiere_calidad"])
+        AnalisisSilo.objects.create(
+            silo=self.origen, tomado_en=timezone.now(),
+            grasa=Decimal("3.60"), sng=Decimal("8.60"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+        )
+        iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        cerrar_condensacion(
+            corrida_id=self.corrida.pk, usuario=self.usuario,
+            litros_precondensado="250", controles={"densidad_salida": "1.180"},
+        )
+        analisis = AnalisisSilo.objects.create(
+            silo=self.destino, tomado_en=timezone.now(),
+            grasa=Decimal("5.00"), sng=Decimal("40.00"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+        )
+        calidad = User.objects.create_user("calidad-fuera-especificacion")
+        PerfilUsuario.objects.create(
+            usuario=calidad, empresa=self.planta.empresa, sucursal=self.planta,
+            rol=Rol.CALIDAD, area=PerfilUsuario.Area.CALIDAD,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(calidad)
+
+        sin_especificacion = cliente.post(
+            f"/api/calidad/resultados-proceso/{self.ejecucion.salidas.get().pk}/liberar/",
+            {"analisis_id": analisis.pk}, format="json",
+        )
+        self.assertEqual(sin_especificacion.status_code, 409, sin_especificacion.data)
+        self.assertEqual(sin_especificacion.data["resultado"], "sin_especificacion")
+
+        self._crear_especificacion_precondensado()
+        respuesta = cliente.post(
+            f"/api/calidad/resultados-proceso/{self.ejecucion.salidas.get().pk}/liberar/",
+            {"analisis_id": analisis.pk}, format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 409, respuesta.data)
+        self.assertEqual(respuesta.data["resultado"], "no_conforme")
+        self.assertEqual(
+            {item["parametro"] for item in respuesta.data["desviaciones"]},
+            {"mg", "st"},
+        )
+        self.ejecucion.refresh_from_db()
+        self.destino.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.PENDIENTE_CONTROL)
+        self.assertEqual(self.destino.estado, Silo.Estado.BLOQUEADO_CALIDAD)
 
     def test_no_inicia_con_saldo_insuficiente_o_silo_bloqueado(self):
         self.corrida.litros_entrada = Decimal("1600")

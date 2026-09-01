@@ -146,6 +146,14 @@ function Dashboard() {
           <Kpi etiqueta="Producto registrado" valor={datos.produccion ? numero.format(datos.produccion.kg_producidos) : cargando ? "…" : "—"} unidad="kg" detalle={`${datos.produccion?.lotes ?? 0} lotes, sin incluir anulados`} icono={PackageCheck} tono="amber" />
         </section>
 
+        {datos.produccion && (
+          <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm sm:grid-cols-3">
+            <div><p className="text-xs font-semibold uppercase text-slate-500">Calidad primera pasada</p><p className="mt-1 text-xl font-bold text-slate-900">{datos.produccion.calidad.primera_pasada == null ? "—" : `${porcentaje.format(datos.produccion.calidad.primera_pasada)}%`}</p></div>
+            <div><p className="text-xs font-semibold uppercase text-slate-500">Lotes bloqueados</p><p className="mt-1 text-xl font-bold text-rose-700">{numero.format(datos.produccion.calidad.bloqueados)}</p></div>
+            <div><p className="text-xs font-semibold uppercase text-slate-500">Rework identificado</p><p className="mt-1 text-xl font-bold text-amber-700">{numero.format(datos.produccion.rework.kg)} kg <span className="text-sm font-medium text-slate-500">· {datos.produccion.rework.lotes} lote(s)</span></p></div>
+          </section>
+        )}
+
         <section className="grid gap-5 xl:grid-cols-[1.4fr_0.8fr]">
           <article className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Planificación vs realidad</p><h2 className="mt-1 text-lg font-semibold text-slate-900">Resultado de la semana operacional</h2></div><Link to="/planificacion" className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-700 hover:text-emerald-800">Ver planificación <ChevronRight className="h-4 w-4" /></Link></div>

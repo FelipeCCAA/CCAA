@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import DecimalField, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
@@ -217,13 +219,17 @@ class CorridaDescremacionViewSet(
     tenant_relation_fields = {
         "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
         "orden": ("sucursal_id", "sucursal__empresa_id"),
+        "producto_descremada": (None, "mandante__empresa_id"),
+        "producto_crema": (None, "mandante__empresa_id"),
         "silo_entera": ("sucursal_id", "sucursal__empresa_id"),
         "silo_descremada": ("sucursal_id", "sucursal__empresa_id"),
         "estanque_crema": ("sucursal_id", "sucursal__empresa_id"),
     }
     queryset = CorridaDescremacion.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "analisis_entrada",
+        "producto_descremada", "producto_crema",
         "silo_entera", "silo_descremada", "estanque_crema",
+        "iniciada_por", "finalizada_por",
     )
     serializer_class = CorridaDescremacionSerializer
     permission_classes = [EscribeProduccion]
@@ -273,6 +279,7 @@ class CorridaMantequillaViewSet(
     queryset = CorridaMantequilla.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden",
         "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
+        "iniciada_por", "finalizada_por",
     )
     serializer_class = CorridaMantequillaSerializer
     permission_classes = [EscribeProduccion]
@@ -493,6 +500,46 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
     permission_classes = [EscribeProduccion]
     http_method_names = ["get", "post", "head", "options"]
 
+    @action(detail=False, methods=["get"], url_path="opciones-rework")
+    def opciones_rework(self, request):
+        """Rework aprobado con saldo; consulta acotada para el formulario operativo."""
+        from .models import AutorizacionReproceso
+
+        decimal = DecimalField(max_digits=14, decimal_places=3)
+        autorizaciones = filtrar_por_scope(
+            AutorizacionReproceso.objects.filter(
+                estado=AutorizacionReproceso.Estado.APROBADO,
+            ).select_related("lote__producto").annotate(
+                consumido=Coalesce(
+                    Sum(
+                        "lote__entradas_proceso__cantidad",
+                        filter=Q(lote__entradas_proceso__tipo=EntradaProceso.Tipo.REPROCESO),
+                    ),
+                    Value(0), output_field=decimal,
+                )
+            ),
+            request.user,
+            campo_sucursal="lote__sucursal_id",
+            campo_empresa="lote__sucursal__empresa_id",
+        )
+        resultado = []
+        for autorizacion in autorizaciones:
+            disponible = autorizacion.cantidad_kg - autorizacion.consumido
+            if disponible <= 0:
+                continue
+            resultado.append({
+                "id": autorizacion.id,
+                "lote_id": autorizacion.lote_id,
+                "lote_codigo": autorizacion.lote.codigo_lote,
+                "producto_nombre": autorizacion.lote.producto.nombre,
+                "origen": autorizacion.origen,
+                "motivo": autorizacion.motivo,
+                "cantidad_autorizada_kg": autorizacion.cantidad_kg,
+                "cantidad_consumida_kg": autorizacion.consumido,
+                "cantidad_disponible_kg": disponible,
+            })
+        return Response(resultado)
+
 
 class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "ejecucion__sucursal_id"
@@ -510,6 +557,7 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
     def disponibles(self, request):
         """Resultados liberados, con saldo y próximas etapas configuradas."""
         from calidad.models import LiberacionProceso
+        from recepcion.models import MovimientoSilo
 
         salidas = filtrar_por_scope(
             SalidaProceso.objects.filter(
@@ -523,15 +571,50 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                 naturaleza=SalidaProceso.Naturaleza.MERMA
             ).select_related(
                 "ejecucion__etapa__proceso", "ejecucion__equipo", "silo",
-                "liberacion_calidad",
+                "lote__producto", "liberacion_calidad__analisis_silo",
             ).annotate(consumido=Sum("usos_como_origen__cantidad")),
             request.user,
             campo_sucursal="ejecucion__sucursal_id",
             campo_empresa="ejecucion__sucursal__empresa_id",
         )
+        salidas = list(salidas)
+        claves_material = {
+            (salida.lote_id, salida.silo_id)
+            for salida in salidas if salida.lote_id
+        }
+        consumos_fisicos = {
+            (fila["lote_id"], fila["silo_id"]): fila["total"]
+            for fila in MovimientoSilo.objects.filter(
+                lote_id__in={clave[0] for clave in claves_material},
+                silo_id__in={clave[1] for clave in claves_material},
+                tipo=MovimientoSilo.Tipo.SALIDA,
+            ).values("lote_id", "silo_id").annotate(total=Sum("litros"))
+        }
+        consumos_kg = {
+            fila["lote_id"]: fila["total"]
+            for fila in EntradaProceso.objects.filter(
+                lote_id__in={clave[0] for clave in claves_material},
+                unidad__iexact="kg",
+            ).values("lote_id").annotate(total=Sum("cantidad"))
+        }
+        for salida in salidas:
+            salida.consumido_trazable = (
+                (salida.consumido or 0)
+                + consumos_fisicos.get((salida.lote_id, salida.silo_id), 0)
+            )
+            salida.consumido_kg_trazable = consumos_kg.get(salida.lote_id, 0)
+            analisis = getattr(salida.liberacion_calidad, "analisis_silo", None)
+            if (
+                salida.lote_id and salida.unidad.lower() == "l"
+                and salida.consumido and analisis and analisis.densidad
+            ):
+                salida.consumido_kg_trazable += (
+                    Decimal(str(salida.consumido))
+                    * Decimal(str(analisis.densidad)) / Decimal("1000")
+                )
         salidas = [
             salida for salida in salidas
-            if salida.cantidad - (salida.consumido or 0) > 0
+            if salida.cantidad - salida.consumido_trazable > 0
         ]
         procesos_ids = {salida.ejecucion.etapa.proceso_id for salida in salidas}
         sucursales_ids = {salida.ejecucion.sucursal_id for salida in salidas}
@@ -559,15 +642,42 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                 "id": salida.id,
                 "corrida_codigo": salida.ejecucion.codigo,
                 "resultado": (
-                    "Crema"
-                    if salida.naturaleza == SalidaProceso.Naturaleza.COPRODUCTO
+                    salida.lote.producto.nombre
+                    if salida.lote_id and salida.lote.producto_id
                     else salida.ejecucion.etapa.nombre
+                ),
+                "lote_id": salida.lote_id,
+                "lote_codigo": salida.lote.codigo_lote if salida.lote_id else None,
+                "producto_id": salida.lote.producto_id if salida.lote_id else None,
+                "producto_nombre": (
+                    salida.lote.producto.nombre if salida.lote_id else None
+                ),
+                "estado_material": "liberado",
+                "estado_material_etiqueta": "Liberado por Calidad",
+                "densidad_kg_m3": (
+                    salida.liberacion_calidad.analisis_silo.densidad
+                    if salida.liberacion_calidad.analisis_silo_id else None
+                ),
+                "cantidad_trazable_kg": (
+                    salida.lote.kg_producidos if salida.lote_id else None
+                ),
+                "cantidad_consumida_kg": (
+                    salida.consumido_kg_trazable if salida.lote_id else None
+                ),
+                "cantidad_disponible_kg": (
+                    max(
+                        (salida.lote.kg_producidos or 0)
+                        - salida.consumido_kg_trazable,
+                        0,
+                    )
+                    if salida.lote_id and salida.lote.kg_producidos is not None
+                    else None
                 ),
                 "silo_id": salida.silo_id,
                 "silo_codigo": salida.silo.codigo,
                 "cantidad_total": salida.cantidad,
-                "cantidad_consumida": salida.consumido or 0,
-                "cantidad_disponible": salida.cantidad - (salida.consumido or 0),
+                "cantidad_consumida": salida.consumido_trazable,
+                "cantidad_disponible": salida.cantidad - salida.consumido_trazable,
                 "unidad": salida.unidad,
                 "clasificacion": salida.clasificacion,
                 "clasificacion_etiqueta": salida.get_clasificacion_display(),

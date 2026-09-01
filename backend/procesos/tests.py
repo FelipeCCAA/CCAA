@@ -201,6 +201,49 @@ class ProcesosIndustrialesTests(TestCase):
                 equipo_id=self.equipo.pk, cantidad=100, usuario=self.usuario,
             )
 
+    def test_continuar_a_secado_mueve_el_lote_a_la_torre_sin_perder_origen(self):
+        from calidad.models import LiberacionProceso
+
+        proceso = Proceso.objects.create(codigo="polvo-lineal", nombre="Polvo lineal")
+        evaporacion = EtapaProceso.objects.create(
+            proceso=proceso, codigo="ev", nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=1,
+        )
+        secado = EtapaProceso.objects.create(
+            proceso=proceso, codigo="sec", nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO, orden=2,
+        )
+        torre = Equipo.objects.create(
+            sucursal=self.ejecucion.sucursal, codigo="torre-lineal",
+            nombre="Torre lineal", tipo=Equipo.Tipo.TORRE,
+        )
+        silo = Silo.objects.create(
+            sucursal=self.ejecucion.sucursal, codigo="CONC-LINEAL",
+            tipo=Silo.Tipo.SILO, capacidad_l=5000,
+        )
+        origen = EjecucionProceso.objects.create(
+            codigo="EJ-EV-LINEAL", etapa=evaporacion,
+            sucursal=self.ejecucion.sucursal, equipo=self.equipo,
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=origen, lote=self.lote_origen, silo=silo,
+            cantidad=500, unidad="L",
+            destino=SalidaProceso.Destino.SIGUIENTE_PROCESO,
+        )
+        LiberacionProceso.objects.create(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
+        )
+
+        ejecucion = preparar_continuacion(
+            salida_id=salida.pk, etapa_id=secado.pk,
+            equipo_id=torre.pk, cantidad=500, usuario=self.usuario,
+        )
+
+        self.lote_origen.refresh_from_db()
+        self.assertEqual(self.lote_origen.ejecucion, ejecucion)
+        self.assertEqual(self.lote_origen.equipo, torre)
+        self.assertEqual(ejecucion.entradas.get().salida_origen, salida)
+
 
 class TrazabilidadPorCodigoTests(TestCase):
     """
@@ -804,3 +847,44 @@ class ReworkAutorizadoTests(TestCase):
         libera lo que sale.
         """
         self.assertEqual(self._entrada(self.normal, "principal").status_code, 201)
+
+    def test_autorizacion_rework_limita_la_cantidad_aprobada(self):
+        from procesos.models import AutorizacionReproceso
+
+        AutorizacionReproceso.objects.create(
+            lote=self.rework,
+            origen=AutorizacionReproceso.Origen.RECHAZO,
+            estado=AutorizacionReproceso.Estado.APROBADO,
+            cantidad_kg=Decimal("150"),
+            motivo="Recuperable bajo mezcla controlada",
+        )
+        primera = self.cliente.post(
+            "/api/procesos/entradas/",
+            {
+                "ejecucion": self.ejecucion.id, "lote": self.rework.id,
+                "tipo": "reproceso", "cantidad": "100",
+                "motivo": "Primera mezcla controlada",
+            },
+            format="json",
+        )
+        self.assertEqual(primera.status_code, 201, primera.data)
+
+        otra = EjecucionProceso.objects.create(
+            codigo="EJ-RW-2", etapa=self.ejecucion.etapa,
+        )
+        respuesta = self.cliente.post(
+            "/api/procesos/entradas/",
+            {
+                "ejecucion": otra.id, "lote": self.rework.id,
+                "tipo": "reproceso", "cantidad": "60",
+                "motivo": "Segunda mezcla controlada",
+            },
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("Calidad autorizó 150", str(respuesta.data))
+
+        opciones = self.cliente.get("/api/procesos/entradas/opciones-rework/")
+        self.assertEqual(opciones.status_code, 200, opciones.data)
+        self.assertEqual(opciones.data[0]["lote_codigo"], self.rework.codigo_lote)
+        self.assertEqual(opciones.data[0]["cantidad_disponible_kg"], Decimal("50"))

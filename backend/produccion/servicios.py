@@ -292,9 +292,23 @@ def registrar_envasado(
         existente = RegistroEnvase.objects.filter(operacion_id=operacion_id).first()
         if existente:
             return existente
-    lote = Lote.objects.select_for_update().select_related("sucursal").get(pk=lote_id)
+    lote = (
+        Lote.objects.select_for_update(of=("self",))
+        .select_related("sucursal", "producto")
+        .get(pk=lote_id)
+    )
     if lote.estado not in {Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO}:
         raise ValidationError("El lote debe estar producido antes de envasarse.")
+    from procesos.models import SalidaProceso
+    salidas_productivas = SalidaProceso.objects.filter(
+        lote=lote, naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+    )
+    if salidas_productivas.exists() and not salidas_productivas.filter(
+        destino=SalidaProceso.Destino.ENVASADO,
+    ).exists():
+        raise ValidationError(
+            "El flujo del lote no tiene Envasado como destino; revisa su etapa productiva."
+        )
     impedimento = motivo_equipo_no_habilitado(equipo)
     if impedimento:
         raise ValidationError(impedimento)

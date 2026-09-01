@@ -161,6 +161,18 @@ export interface FilaExpediente {
   permitido: boolean;
   via_concesion: boolean;
   bloqueos: string[];
+  rework: {
+    id: number;
+    origen: string;
+    estado: "pendiente" | "aprobado" | "bloqueado" | "destruido";
+    cantidad_kg: string;
+    motivo: string;
+    observacion_calidad: string;
+    solicitado_por: string | null;
+    solicitado_en: string;
+    decidido_por: string | null;
+    decidido_en: string | null;
+  } | null;
 }
 
 export interface AnalisisResultadoProceso {
@@ -172,6 +184,14 @@ export interface AnalisisResultadoProceso {
   sng: string | null;
   proteina: string | null;
   densidad: string | null;
+  resultado: "conforme" | "no_conforme" | "sin_analisis" | "sin_especificacion" | null;
+  faltantes: string[];
+  desviaciones: Array<{
+    parametro: string;
+    valor: number | null;
+    min: number | null;
+    max: number | null;
+  }>;
 }
 
 export interface ResultadoProcesoCalidad {
@@ -190,6 +210,10 @@ export interface ResultadoProcesoCalidad {
   observacion: string;
   decidida_en: string | null;
   analisis_seleccionado: number | null;
+  especificacion: {
+    version: number;
+    rangos: Record<string, { min?: number; max?: number; obligatorio?: boolean }>;
+  } | null;
   analisis_disponibles: AnalisisResultadoProceso[];
 }
 
@@ -374,4 +398,17 @@ export async function bloquearLote(loteId: number, motivo: string): Promise<Libe
     `calidad/expedientes/${loteId}/bloquear/`, { motivo },
   );
   return data;
+}
+
+export async function decidirRework(
+  loteId: number,
+  datos: {
+    estado: "aprobado" | "bloqueado" | "destruido";
+    origen: "rechazo" | "saco_danado" | "excedente" | "recuperable";
+    cantidad_kg: number;
+    motivo: string;
+    observacion_calidad?: string;
+  },
+): Promise<void> {
+  await api.post(`calidad/expedientes/${loteId}/rework/`, datos);
 }

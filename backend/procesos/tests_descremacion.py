@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from maestros.models import Equipo, Silo
+from maestros.models import Equipo, Especificacion, Mandante, Producto, Silo
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
@@ -32,6 +32,19 @@ class CierreDescremacionTests(TestCase):
         sucursal = Sucursal.objects.create(empresa=empresa, codigo="DES", nombre="Planta")
         self.sucursal = sucursal
         self.usuario = User.objects.create_user("operador-descremacion")
+        mandante = Mandante.objects.create(
+            empresa=empresa, nombre="Productos intermedios", codigo_cliente="des"
+        )
+        self.producto_descremada = Producto.objects.create(
+            mandante=mandante, nombre="Leche descremada intermedia",
+            familia=Producto.Familia.LIQUIDO, naturaleza=Producto.Naturaleza.INTERMEDIO,
+            tipo=Producto.TipoProducto.DESCREMADA, unidad_base=Producto.Unidad.L,
+        )
+        self.producto_crema = Producto.objects.create(
+            mandante=mandante, nombre="Crema intermedia para mantequilla",
+            familia=Producto.Familia.CREMA, naturaleza=Producto.Naturaleza.INTERMEDIO,
+            categoria=Producto.Categoria.CREMA, unidad_base=Producto.Unidad.KG,
+        )
         self.origen = Silo.objects.create(
             sucursal=sucursal, codigo="ENTERA-D", tipo=Silo.Tipo.SILO, capacidad_l=5000
         )
@@ -74,6 +87,8 @@ class CierreDescremacionTests(TestCase):
             litros_entrada=1000, grasa_entrada=Decimal("4.000"),
             sng_entrada=Decimal("8.700"), silo_descremada=self.descremada,
             estanque_crema=self.crema,
+            producto_descremada=self.producto_descremada,
+            producto_crema=self.producto_crema,
         )
 
     def test_cierre_genera_dos_saldos_y_hereda_fifo_en_una_operacion(self):
@@ -100,6 +115,16 @@ class CierreDescremacionTests(TestCase):
         self.assertTrue(resultado.controles["avisos_balance"])
 
     def test_calidad_decide_descremada_y_crema_por_separado(self):
+        Especificacion.objects.create(
+            producto=self.producto_descremada, version=1,
+            vigente_desde=timezone.localdate() - timedelta(days=1),
+            rangos={"mg": {"min": 0, "max": 0.2, "obligatorio": True}},
+        )
+        Especificacion.objects.create(
+            producto=self.producto_crema, version=1,
+            vigente_desde=timezone.localdate() - timedelta(days=1),
+            rangos={"mg": {"min": 35, "max": 45, "obligatorio": True}},
+        )
         self.ejecucion.etapa.requiere_calidad = True
         self.ejecucion.etapa.save(update_fields=["requiere_calidad"])
         PerfilUsuario.objects.create(
@@ -138,6 +163,7 @@ class CierreDescremacionTests(TestCase):
         ):
             analisis[silo.pk] = AnalisisSilo.objects.create(
                 silo=silo, tomado_en=timezone.now(), grasa=grasa, sng=sng,
+                densidad=Decimal("1020") if silo == self.crema else Decimal("1032"),
                 inhibidores_resultado="negativo", metodo="snap",
                 hora_lectura=timezone.localtime().time(),
                 estado=AnalisisSilo.Estado.CONFIRMADO,
@@ -201,6 +227,14 @@ class CierreDescremacionTests(TestCase):
             {"analisis_id": analisis[self.crema.pk].pk}, format="json",
         )
         self.assertEqual(segunda.status_code, 200, segunda.data)
+        lote_crema = salidas[self.crema.pk].lote
+        lote_crema.refresh_from_db()
+        self.assertEqual(lote_crema.estado, lote_crema.Estado.PRODUCIDO)
+        self.assertEqual(lote_crema.kg_producidos, Decimal("91.80"))
+        lote_descremada = salidas[self.descremada.pk].lote
+        lote_descremada.refresh_from_db()
+        self.assertEqual(lote_descremada.estado, lote_descremada.Estado.PRODUCIDO)
+        self.assertEqual(lote_descremada.kg_producidos, Decimal("928.80"))
         self.ejecucion.refresh_from_db()
         self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.CERRADA)
         disponibles = produccion.get("/api/procesos/salidas/disponibles/")
@@ -209,6 +243,12 @@ class CierreDescremacionTests(TestCase):
             item for item in disponibles.data if item["id"] == salidas[self.descremada.pk].pk
         )
         self.assertEqual(descremada["cantidad_disponible"], Decimal("500"))
+        self.assertEqual(descremada["lote_codigo"], lote_descremada.codigo_lote)
+        self.assertEqual(descremada["producto_nombre"], "Leche descremada intermedia")
+        self.assertEqual(descremada["estado_material"], "liberado")
+        self.assertEqual(descremada["densidad_kg_m3"], Decimal("1032.000"))
+        self.assertEqual(descremada["cantidad_consumida_kg"], Decimal("412.800"))
+        self.assertEqual(descremada["cantidad_disponible_kg"], Decimal("516.000"))
         self.assertEqual(
             descremada["etapas_siguientes"][0]["equipos"][0]["id"], torre.pk
         )
@@ -225,3 +265,9 @@ class CierreDescremacionTests(TestCase):
             continuacion.data["entradas"][0]["salida_origen"],
             salidas[self.descremada.pk].pk,
         )
+        listado = produccion.get("/api/procesos/descremaciones/")
+        self.assertEqual(listado.status_code, 200, listado.data)
+        corrida = listado.data["results"][0]
+        self.assertEqual(corrida["producto_descremada_nombre"], "Leche descremada intermedia")
+        self.assertEqual(corrida["producto_crema_nombre"], "Crema intermedia para mantequilla")
+        self.assertIn("iniciada_por_nombre", corrida)

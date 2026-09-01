@@ -9,6 +9,7 @@ from django.utils import timezone
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
+    RutaProducto,
 )
 
 
@@ -48,6 +49,26 @@ def etapa_para_producto(*, producto, sucursal, tipo):
         .order_by("proceso__version", "orden")
         .last()
     )
+
+
+def destino_salida_de_ruta(*, producto, sucursal, etapa):
+    """Decide si el resultado continúa o termina en su destino real."""
+    siguiente = EtapaProceso.objects.filter(
+        proceso=etapa.proceso, activa=True, orden__gt=etapa.orden,
+    ).order_by("orden").first()
+    if siguiente is not None:
+        if siguiente.tipo == EtapaProceso.Tipo.ENVASADO:
+            return SalidaProceso.Destino.ENVASADO
+        return SalidaProceso.Destino.SIGUIENTE_PROCESO
+    ruta = RutaProducto.objects.filter(
+        producto=producto, sucursal=sucursal, proceso=etapa.proceso, activa=True,
+    ).order_by("prioridad").first()
+    destino = (ruta.destino if ruta else "").strip().lower()
+    if "despacho" in destino:
+        return SalidaProceso.Destino.DESPACHO_DIRECTO
+    if "inventario" in destino:
+        return SalidaProceso.Destino.INVENTARIO
+    return SalidaProceso.Destino.PENDIENTE
 
 
 @transaction.atomic
@@ -145,6 +166,8 @@ def crear_mantequilla_guiada(
     )
     ejecucion.full_clean()
     ejecucion.save()
+    lote_salida.ejecucion = ejecucion
+    lote_salida.save(update_fields=["ejecucion"])
     corrida = CorridaMantequilla(
         ejecucion=ejecucion, orden=orden, lote_crema=crema,
         lote_mantequilla=lote_salida, lote_suero=suero,
@@ -241,6 +264,11 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     )
     entrada.full_clean()
     entrada.save()
+    if salida.lote_id:
+        lote = salida.lote
+        lote.ejecucion = ejecucion
+        lote.equipo = equipo
+        lote.save(update_fields=["ejecucion", "equipo"])
     if salida.destino == SalidaProceso.Destino.PENDIENTE:
         salida.destino = SalidaProceso.Destino.SIGUIENTE_PROCESO
         salida.save(update_fields=["destino"])
@@ -696,11 +724,20 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
             "La condensación no tiene un consumo de silo del cual heredar trazabilidad."
         )
     heredar_atribuciones(ingreso, [consumo])
+    destino_operativo = destino_salida_de_ruta(
+        producto=corrida.lote.producto,
+        sucursal=corrida.ejecucion.sucursal,
+        etapa=corrida.ejecucion.etapa,
+    )
     SalidaProceso.objects.create(
-        ejecucion=corrida.ejecucion, silo=destino,
+        ejecucion=corrida.ejecucion, lote=corrida.lote, silo=destino,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
-        clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
-        destino=SalidaProceso.Destino.PENDIENTE,
+        clasificacion=(
+            SalidaProceso.Clasificacion.GRANEL
+            if destino_operativo == SalidaProceso.Destino.DESPACHO_DIRECTO
+            else SalidaProceso.Clasificacion.INTERMEDIO
+        ),
+        destino=destino_operativo,
         cantidad=cantidad, unidad="L",
     )
     transicionar_ejecucion(
@@ -708,7 +745,10 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL,
         usuario=usuario,
     )
-    if corrida.ejecucion.etapa.requiere_calidad:
+    if (
+        corrida.ejecucion.etapa.requiere_calidad
+        or destino_operativo == SalidaProceso.Destino.DESPACHO_DIRECTO
+    ):
         corrida.estado = CorridaCondensacion.Estado.PENDIENTE_CALIDAD
         destino.estado = Silo.Estado.BLOQUEADO_CALIDAD
         destino.save(update_fields=["estado"])
@@ -722,6 +762,11 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     corrida.finalizada_por = usuario
     corrida.finalizada_en = timezone.now()
     corrida.save()
+    if destino_operativo == SalidaProceso.Destino.DESPACHO_DIRECTO:
+        from produccion.models import OrdenProduccion
+        if corrida.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
+            corrida.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
+            corrida.orden.save(update_fields=["estado"])
     return corrida
 
 
@@ -783,6 +828,7 @@ def cerrar_descremacion(
     litros_crema, grasa_crema, controles=None,
 ):
     from maestros.models import Silo
+    from produccion.models import Lote
     from recepcion.models import MovimientoSilo
     from recepcion.servicios import heredar_atribuciones, motivos_silo_no_disponible, saldo_silo
     from .dominio import calcular_balance_descremacion
@@ -790,7 +836,7 @@ def cerrar_descremacion(
 
     corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "silo_entera",
-        "silo_descremada", "estanque_crema",
+        "silo_descremada", "estanque_crema", "producto_descremada", "producto_crema",
     ).get(pk=corrida_id)
     if corrida.estado != CorridaDescremacion.Estado.EN_CURSO:
         raise ValidationError("Solo una descremación en curso puede cerrarse.")
@@ -841,17 +887,41 @@ def cerrar_descremacion(
         )
         heredar_atribuciones(ingreso, [consumo])
         ingresos.append(ingreso)
+    lotes = {}
+    for clave, producto in (
+        ("descremada", corrida.producto_descremada),
+        ("crema", corrida.producto_crema),
+    ):
+        if producto is None:
+            continue
+        codigo = f"INT-DES-{corrida.pk}-{'LD' if clave == 'descremada' else 'CR'}"
+        lote = Lote(
+            sucursal=corrida.ejecucion.sucursal,
+            codigo_lote=codigo,
+            codigo_lote_propuesto=codigo,
+            producto=producto,
+            equipo=corrida.ejecucion.equipo,
+            fecha=timezone.localdate(ahora),
+            estado=Lote.Estado.EN_PROCESO,
+            observacion=(
+                f"Intermedio generado por {corrida.ejecucion.codigo}; "
+                "los kilos se determinan al liberar con la densidad analizada."
+            ),
+        )
+        lote.full_clean()
+        lote.save()
+        lotes[clave] = lote
     SalidaProceso.objects.create(
-        ejecucion=corrida.ejecucion, silo=destino_d,
+        ejecucion=corrida.ejecucion, lote=lotes.get("descremada"), silo=destino_d,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
         clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
         destino=SalidaProceso.Destino.PENDIENTE,
         cantidad=ld, unidad="L",
     )
     SalidaProceso.objects.create(
-        ejecucion=corrida.ejecucion, silo=destino_c,
+        ejecucion=corrida.ejecucion, lote=lotes.get("crema"), silo=destino_c,
         naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
-        clasificacion=SalidaProceso.Clasificacion.SUBPRODUCTO,
+        clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
         destino=SalidaProceso.Destino.PENDIENTE,
         cantidad=lc, unidad="L",
     )
@@ -896,8 +966,12 @@ def cerrar_descremacion(
 @transaction.atomic
 def iniciar_mantequilla(*, corrida_id, usuario):
     from inventario.servicios import motivo_equipo_no_habilitado
+    from calidad.models import LiberacionProceso
+    from maestros.models import Silo
     from produccion.models import OrdenProduccion
-    from .models import EntradaProceso
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+    from .models import EntradaProceso, SalidaProceso
 
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden",
@@ -919,6 +993,45 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     disponible = Decimal(str(corrida.lote_crema.kg_producidos or 0)) - utilizado
     if corrida.kg_crema > disponible:
         raise ValidationError(f"El lote de crema solo tiene {disponible} kg disponibles.")
+    fuente_tk = (
+        SalidaProceso.objects.select_for_update(of=("self",))
+        .select_related("silo", "liberacion_calidad__analisis_silo")
+        .filter(lote=corrida.lote_crema, silo__isnull=False)
+        .order_by("registrada_en")
+        .first()
+    )
+    if fuente_tk is not None:
+        liberacion = getattr(fuente_tk, "liberacion_calidad", None)
+        if not liberacion or liberacion.estado != LiberacionProceso.Estado.LIBERADO:
+            raise ValidationError("El lote de crema todavía no está liberado por Calidad.")
+        densidad = liberacion.analisis_silo.densidad if liberacion.analisis_silo_id else None
+        if densidad is None or densidad <= 0:
+            raise ValidationError("El análisis de la crema no tiene una densidad válida.")
+        litros_consumidos = (
+            Decimal(str(corrida.kg_crema)) * Decimal("1000") / Decimal(str(densidad))
+        ).quantize(Decimal("0.01"))
+        tk_crema = Silo.objects.select_for_update().get(pk=fuente_tk.silo_id)
+        motivos_tk = motivos_silo_no_disponible(tk_crema, para="proceso")
+        if motivos_tk:
+            raise ValidationError(f"{tk_crema.codigo}: " + " ".join(motivos_tk))
+        if saldo_silo(tk_crema) < litros_consumidos:
+            raise ValidationError(
+                f"{tk_crema.codigo} no tiene los {litros_consumidos} L equivalentes "
+                "a la crema solicitada."
+            )
+        MovimientoSilo.objects.create(
+            silo=tk_crema,
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=litros_consumidos,
+            fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+            origen_id=corrida.pk,
+            operacion_id=corrida.operacion_id,
+            lote=corrida.lote_crema,
+            producto=corrida.lote_crema.producto,
+            equipo=corrida.ejecucion.equipo,
+            usuario=usuario,
+        )
     EntradaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=corrida.lote_crema,
         cantidad=corrida.kg_crema, unidad="kg",
@@ -949,7 +1062,7 @@ def cerrar_mantequilla(
     from .models import SalidaProceso
 
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
-        "ejecucion__etapa", "lote_mantequilla", "lote_suero"
+        "ejecucion__etapa", "lote_mantequilla__producto", "lote_suero", "orden"
     ).get(pk=corrida_id)
     if corrida.estado != CorridaMantequilla.Estado.EN_PROCESO:
         raise ValidationError("Solo una corrida en proceso puede cerrarse.")
@@ -988,4 +1101,33 @@ def cerrar_mantequilla(
     corrida.finalizada_por = usuario
     corrida.finalizada_en = timezone.now()
     corrida.save()
+    corrida.lote_mantequilla.kg_producidos = corrida.kg_mantequilla
+    corrida.lote_mantequilla.estado = corrida.lote_mantequilla.Estado.PRODUCIDO
+    corrida.lote_mantequilla.save(update_fields=["kg_producidos", "estado"])
+    from produccion.models import OrdenProduccion
+    if corrida.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
+        corrida.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
+        corrida.orden.save(update_fields=["estado"])
+    try:
+        from inventario.servicios import consumir_receta_produccion
+        consumir_receta_produccion(
+            lote_produccion=corrida.lote_mantequilla, usuario=usuario
+        )
+    except ValidationError as error:
+        EventoProceso.objects.create(
+            ejecucion=corrida.ejecucion, usuario=usuario,
+            tipo="consumo_materiales_pendiente",
+            motivo=" ".join(error.messages),
+        )
+    from inventario.servicios import _notificar_area
+    _notificar_area(
+        "calidad", tipo="producto_pendiente_calidad",
+        titulo="Mantequilla pendiente de Calidad",
+        mensaje=(
+            f"Lote {corrida.lote_mantequilla.codigo_lote} terminado y "
+            "pendiente de liberación."
+        ),
+        documento_tipo="lote_produccion",
+        documento_id=corrida.lote_mantequilla_id,
+    )
     return corrida

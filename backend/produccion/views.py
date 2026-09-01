@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import DecimalField, Exists, OuterRef, Subquery, Sum
+from django.db.models import Count, DecimalField, Exists, OuterRef, Subquery, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -192,6 +192,10 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         mandante = parametros.get("mandante")
         if mandante:
             consulta = consulta.filter(producto__mandante_id=mandante)
+
+        naturaleza = parametros.get("naturaleza")
+        if naturaleza:
+            consulta = consulta.filter(producto__naturaleza=naturaleza)
 
         estado = parametros.get("estado")
         if estado:
@@ -517,6 +521,10 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         # El mismo cambio de estado completa la salida de la ejecución. Así
         # Procesos ve la corrida cerrada con su lote, sin una carga manual.
         servicios_produccion.registrar_produccion(lote=lote)
+
+        if lote.orden_id and lote.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
+            lote.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
+            lote.orden.save(update_fields=["estado"])
 
         aviso = self._descontar_de_bodega(lote)
 
@@ -1073,14 +1081,20 @@ def resumen(request):
     )
 
     por_resultado = Counter()
+    primera_pasada = Counter()
     kg_por_producto = defaultdict(float)
     kg_por_mandante = defaultdict(float)
 
     for lote in lotes:
+        analisis_lote = list(lote.analisis.all())
         resultado = dominio.resultado_calidad_lote(
-            lote, list(lote.analisis.all()), especificaciones
+            lote, analisis_lote, especificaciones
         )
         por_resultado[resultado.resultado] += 1
+        resultado_inicial = dominio.resultado_calidad_lote(
+            lote, analisis_lote[:1], especificaciones
+        )
+        primera_pasada[resultado_inicial.resultado] += 1
 
         # Un lote en proceso todavía no declaró kilos. Suma cero: no es que
         # haya producido nada, es que aún no se sabe.
@@ -1089,6 +1103,16 @@ def resumen(request):
         kg_por_mandante[lote.producto.mandante.nombre] += kilos
 
     evaluados = por_resultado[dominio.CONFORME] + por_resultado[dominio.NO_CONFORME]
+    evaluados_primera = (
+        primera_pasada[dominio.CONFORME] + primera_pasada[dominio.NO_CONFORME]
+    )
+    ids_lotes = [lote.id for lote in lotes]
+    from calidad.models import Liberacion
+    from procesos.models import AutorizacionReproceso
+
+    rework = AutorizacionReproceso.objects.filter(lote_id__in=ids_lotes).aggregate(
+        kg=Sum("cantidad_kg"), total=Count("id")
+    )
 
     return Response(
         {
@@ -1098,7 +1122,7 @@ def resumen(request):
             "periodo": {"desde": desde, "hasta": hasta},
             "lotes": len(lotes),
             "kg_producidos": float(
-                Lote.objects.filter(id__in=[l.id for l in lotes]).aggregate(
+                Lote.objects.filter(id__in=ids_lotes).aggregate(
                     total=Sum("kg_producidos")
                 )["total"]
                 or 0
@@ -1116,6 +1140,20 @@ def resumen(request):
                     if evaluados
                     else None
                 ),
+                "primera_pasada": (
+                    round(
+                        primera_pasada[dominio.CONFORME]
+                        / evaluados_primera * 100, 1
+                    )
+                    if evaluados_primera else None
+                ),
+                "bloqueados": Liberacion.objects.filter(
+                    lote_id__in=ids_lotes, estado=Liberacion.Estado.RECHAZADO,
+                ).count(),
+            },
+            "rework": {
+                "lotes": rework["total"],
+                "kg": float(rework["kg"] or 0),
             },
             "kg_por_producto": [
                 {"nombre": nombre, "kg": kg}

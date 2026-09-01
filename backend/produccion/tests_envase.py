@@ -17,6 +17,7 @@ from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import Lote, PalletProducto, RegistroEnvase
 from .servicios import registrar_envasado
+from .serializers import RegistroEnvaseSerializer
 
 
 class EnvasePalletTests(TestCase):
@@ -78,6 +79,9 @@ class EnvasePalletTests(TestCase):
             for existencia in existencias.select_related("ubicacion")
         ))
         self.assertEqual(MovimientoProductoTerminado.objects.count(), 2)
+        datos = RegistroEnvaseSerializer(registro).data
+        self.assertIn("operador_nombre", datos)
+        self.assertTrue(datos["inicio"])
 
     def test_clave_idempotente_no_duplica_pallets(self):
         clave = uuid.uuid4()
@@ -98,6 +102,17 @@ class EnvasePalletTests(TestCase):
 
         self.assertEqual(RegistroEnvase.objects.count(), 0)
         self.assertEqual(PalletProducto.objects.count(), 0)
+
+    def test_un_producto_intermedio_no_aparece_como_producto_envasable(self):
+        self.producto.naturaleza = Producto.Naturaleza.INTERMEDIO
+        self.producto.save(update_fields=["naturaleza"])
+
+        with self.assertRaises(ValidationError):
+            self.registrar(pallets=[
+                {"codigo": "PAL-INTERMEDIO", "unidades": 20, "kg_neto": "500"}
+            ])
+
+        self.assertEqual(RegistroEnvase.objects.count(), 0)
 
     def test_simulacion_pallet_25kg_consume_envases_y_respeta_500kg(self):
         """20 sacos + 1 pallet físico producen exactamente un pallet de 500 kg."""

@@ -109,6 +109,41 @@ class BaseAPI(TestCase):
         return self.cliente.get(f"/api/calidad/expedientes/{self.lote.id}/").json()
 
 
+class DecisionReworkTests(BaseAPI):
+    def test_calidad_aprueba_una_cantidad_trazable_sin_guardar_intentos_invalidos(self):
+        from procesos.models import AutorizacionReproceso
+
+        invalida = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/rework/",
+            {
+                "estado": "aprobado", "origen": "rechazo",
+                "cantidad_kg": "20000", "motivo": "Excede el lote",
+            },
+            format="json",
+        )
+        self.assertEqual(invalida.status_code, 400)
+        self.assertFalse(AutorizacionReproceso.objects.filter(lote=self.lote).exists())
+
+        respuesta = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/rework/",
+            {
+                "estado": "aprobado", "origen": "rechazo",
+                "cantidad_kg": "250", "motivo": "Mezcla controlada",
+            },
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data["estado"], "aprobado")
+        self.assertEqual(
+            AutorizacionReproceso.objects.get(lote=self.lote).cantidad_kg,
+            Decimal("250"),
+        )
+        listado = self.cliente.get("/api/calidad/expedientes/")
+        fila = next(item for item in listado.data["resultados"] if item["lote"]["id"] == self.lote.id)
+        self.assertEqual(fila["rework"]["decidido_por"], "M. Rivas")
+        self.assertIsNotNone(fila["rework"]["decidido_en"])
+
+
 class ExpedienteTests(BaseAPI):
     def test_calidad_puede_corregir_un_analisis_existente_desde_el_expediente(self):
         analisis = Analisis.objects.create(

@@ -622,6 +622,10 @@ class RegistroEnvase(models.Model):
     def clean(self):
         if self.lote_id and self.lote.estado == Lote.Estado.ANULADO:
             raise ValidationError({"lote": "No se puede envasar un lote anulado."})
+        if self.lote_id and self.lote.producto.naturaleza != self.lote.producto.Naturaleza.TERMINADO:
+            raise ValidationError({
+                "lote": "Envasado solo recibe productos finales; el intermedio debe continuar su proceso."
+            })
         if self.equipo_id and self.lote_id:
             if self.equipo.sucursal_id != self.lote.sucursal_id:
                 raise ValidationError({"equipo": "La envasadora pertenece a otra planta."})

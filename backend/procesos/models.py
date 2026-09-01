@@ -214,6 +214,16 @@ class CorridaDescremacion(models.Model):
         "produccion.OrdenProduccion", on_delete=models.PROTECT,
         related_name="corridas_descremacion", null=True, blank=True,
     )
+    producto_descremada = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT,
+        related_name="corridas_como_descremada", null=True, blank=True,
+        help_text="Identidad del intermedio que queda en el TK de descremada.",
+    )
+    producto_crema = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT,
+        related_name="corridas_como_crema", null=True, blank=True,
+        help_text="Identidad del intermedio que queda en el TK de crema.",
+    )
     silo_entera = models.ForeignKey(
         "maestros.Silo", on_delete=models.PROTECT, related_name="descremaciones_origen"
     )
@@ -280,7 +290,20 @@ class CorridaDescremacion(models.Model):
         if self.analisis_entrada_id and self.silo_entera_id:
             if self.analisis_entrada.silo_id != self.silo_entera_id:
                 raise ValidationError({"analisis_entrada": "El análisis no pertenece al silo de leche entera."})
+        if self.producto_descremada_id and self.producto_descremada.tipo != "descremada":
+            raise ValidationError({
+                "producto_descremada": "Selecciona un producto de tipo descremada."
+            })
+        if self.producto_crema_id and self.producto_crema.familia != "crema":
+            raise ValidationError({"producto_crema": "Selecciona un producto de familia crema."})
         if self.ejecucion_id:
+            for campo in ("producto_descremada", "producto_crema"):
+                producto = getattr(self, campo, None)
+                if (
+                    producto
+                    and producto.mandante.empresa_id != self.ejecucion.sucursal.empresa_id
+                ):
+                    raise ValidationError({campo: "El producto pertenece a otra organización."})
             for campo in ("silo_entera", "silo_descremada", "estanque_crema"):
                 silo = getattr(self, campo, None)
                 if silo and silo.sucursal_id != self.ejecucion.sucursal_id:
@@ -322,6 +345,7 @@ class CorridaMantequilla(models.Model):
     kg_suero = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     kg_merma = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     controles = models.JSONField(default=dict, blank=True)
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     estado = models.CharField(
         max_length=25, choices=Estado.choices, default=Estado.BORRADOR, db_index=True
     )
@@ -576,6 +600,24 @@ class EntradaProceso(models.Model):
 
         from calidad.models import Liberacion
 
+        autorizacion = getattr(self.lote, "autorizacion_reproceso", None)
+        if autorizacion is not None:
+            if autorizacion.estado != AutorizacionReproceso.Estado.APROBADO:
+                raise ValidationError({
+                    "lote": "El rework está pendiente, bloqueado o destruido por Calidad."
+                })
+            ya_consumido = EntradaProceso.objects.filter(
+                lote_id=self.lote_id, tipo=self.Tipo.REPROCESO,
+            ).exclude(pk=self.pk).aggregate(total=models.Sum("cantidad"))["total"] or Decimal("0")
+            if ya_consumido + self.cantidad > autorizacion.cantidad_kg:
+                raise ValidationError({
+                    "cantidad": (
+                        f"Calidad autorizó {autorizacion.cantidad_kg} kg y ya se "
+                        f"consumieron {ya_consumido} kg."
+                    )
+                })
+            return
+
         autorizado = Liberacion.objects.filter(
             lote_id=self.lote_id,
             estado__in=[Liberacion.Estado.LIBERADO, Liberacion.Estado.CONCESION],
@@ -666,10 +708,9 @@ class SalidaProceso(models.Model):
             raise ValidationError({
                 "lote": "Toda salida inventariable debe identificar un lote o un silo."
             })
-        if self.lote_id and self.silo_id:
-            raise ValidationError(
-                "Una salida va a un lote o a un silo, no a los dos."
-            )
+        # Un intermedio líquido puede tener identidad de lote y ubicación
+        # física en silo al mismo tiempo. Son dimensiones complementarias:
+        # «qué material es» y «dónde está».
         if self.naturaleza == self.Naturaleza.MERMA and not self.motivo.strip():
             raise ValidationError({"motivo": "Toda merma requiere un motivo."})
         if self.naturaleza == self.Naturaleza.MERMA:
@@ -781,3 +822,56 @@ class EventoProceso(models.Model):
         if self.pk:
             raise ValidationError("Los eventos de proceso son inmutables.")
         return super().save(*args, **kwargs)
+
+
+class AutorizacionReproceso(models.Model):
+    """Decisión independiente de Calidad sobre material que volverá al proceso."""
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de Calidad"
+        APROBADO = "aprobado", "Rework aprobado"
+        BLOQUEADO = "bloqueado", "Rework bloqueado"
+        DESTRUIDO = "destruido", "Material destruido"
+
+    class Origen(models.TextChoices):
+        RECHAZO = "rechazo", "Producto rechazado"
+        SACO_DANADO = "saco_danado", "Saco dañado"
+        EXCEDENTE = "excedente", "Excedente de proceso"
+        RECUPERABLE = "recuperable", "Material recuperable"
+
+    lote = models.OneToOneField(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="autorizacion_reproceso",
+    )
+    origen = models.CharField(max_length=20, choices=Origen.choices)
+    estado = models.CharField(
+        max_length=20, choices=Estado.choices, default=Estado.PENDIENTE,
+        db_index=True,
+    )
+    cantidad_kg = models.DecimalField(max_digits=14, decimal_places=3)
+    motivo = models.TextField()
+    observacion_calidad = models.TextField(blank=True)
+    solicitado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="reprocesos_solicitados", null=True, blank=True,
+    )
+    solicitado_en = models.DateTimeField(auto_now_add=True)
+    decidido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="reprocesos_decididos", null=True, blank=True,
+    )
+    decidido_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-solicitado_en", "-id"]
+
+    def clean(self):
+        if self.cantidad_kg is None or self.cantidad_kg <= 0:
+            raise ValidationError({"cantidad_kg": "La cantidad de rework debe ser mayor que cero."})
+        producido = self.lote.kg_producidos
+        if producido is not None and self.cantidad_kg > producido:
+            raise ValidationError({
+                "cantidad_kg": f"El lote solo contiene {producido} kg trazables."
+            })
+        if not self.motivo.strip():
+            raise ValidationError({"motivo": "Debes indicar por qué el material será evaluado."})

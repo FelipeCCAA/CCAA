@@ -7,6 +7,7 @@ consulta por lote.
 """
 
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 
 from django.contrib.auth.models import User
@@ -644,7 +645,25 @@ class ResumenAPITests(BaseAPI):
         self.assertEqual(datos["calidad"]["sin_analisis"], 2)
         self.assertEqual(datos["calidad"]["evaluados"], 1)
         self.assertEqual(datos["calidad"]["cumplimiento"], 100.0)
+        self.assertEqual(datos["calidad"]["primera_pasada"], 100.0)
         self.assertAlmostEqual(datos["calidad"]["cobertura"], 33.3)
+
+    def test_el_resumen_informa_bloqueos_y_rework_sin_otra_consulta_frontend(self):
+        from calidad.models import Liberacion
+        from procesos.models import AutorizacionReproceso
+
+        lote = self._lote(codigo="L-RW")
+        Liberacion.objects.create(lote=lote, estado=Liberacion.Estado.RECHAZADO)
+        AutorizacionReproceso.objects.create(
+            lote=lote, origen=AutorizacionReproceso.Origen.RECHAZO,
+            estado=AutorizacionReproceso.Estado.APROBADO,
+            cantidad_kg=Decimal("250"), motivo="Recuperación controlada",
+        )
+
+        datos = self.cliente.get("/api/produccion/resumen/").json()
+
+        self.assertEqual(datos["calidad"]["bloqueados"], 1)
+        self.assertEqual(datos["rework"], {"lotes": 1, "kg": 250.0})
 
     def test_el_resumen_agrupa_kilos_por_producto_y_mandante(self):
         crema = Producto.objects.create(

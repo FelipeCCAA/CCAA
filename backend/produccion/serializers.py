@@ -42,6 +42,7 @@ class RegistroEnvaseSerializer(serializers.ModelSerializer):
     pallets_datos = PalletEntradaSerializer(many=True, write_only=True)
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
+    operador_nombre = serializers.CharField(source="operador.get_full_name", read_only=True)
     operacion_id = serializers.UUIDField(required=False)
 
     class Meta:
@@ -50,6 +51,7 @@ class RegistroEnvaseSerializer(serializers.ModelSerializer):
             "id", "lote", "lote_codigo", "equipo", "equipo_nombre", "formato_kg",
             "unidades", "kg_envasados", "controles", "operador", "inicio", "termino",
             "observacion", "operacion_id", "creado_en", "pallets", "pallets_datos",
+            "operador_nombre",
         ]
         read_only_fields = ["unidades", "kg_envasados", "operador", "creado_en"]
 

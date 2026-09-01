@@ -204,7 +204,10 @@ export interface Resumen {
     /* null cuando no hay lotes: el backend no inventa porcentajes. */
     cobertura: number | null;
     cumplimiento: number | null;
+    primera_pasada: number | null;
+    bloqueados: number;
   };
+  rework: { lotes: number; kg: number };
   kg_por_producto: { nombre: string; kg: number }[];
   kg_por_mandante: { nombre: string; kg: number }[];
 }
@@ -235,6 +238,7 @@ export interface FiltrosLotes {
   buscar?: string;
   pagina?: number;
   estado?: EstadoLote;
+  naturaleza?: "materia_prima" | "intermedio" | "terminado";
 }
 
 
@@ -287,6 +291,12 @@ export interface RegistroEnvaseCreado {
   lote_codigo?: string;
   equipo_nombre?: string;
   creado_en?: string;
+  operador: number;
+  operador_nombre: string;
+  inicio: string;
+  termino: string;
+  observacion: string;
+  controles: Record<string, string | boolean | number>;
 }
 
 export async function registrarEnvase(datos: {
@@ -296,6 +306,7 @@ export async function registrarEnvase(datos: {
   inicio: string;
   termino: string;
   observacion?: string;
+  controles?: Record<string, string | boolean | number>;
   pallets_datos: Array<{ codigo: string; unidades: number; kg_neto: number }>;
 }): Promise<RegistroEnvaseCreado> {
   const { data } = await api.post<RegistroEnvaseCreado>("produccion/envases/", datos);
@@ -401,6 +412,7 @@ export async function buscarLotes(
       calidad: filtros.calidad || undefined,
       buscar: filtros.buscar || undefined,
       estado: filtros.estado || undefined,
+      naturaleza: filtros.naturaleza || undefined,
       page: filtros.pagina && filtros.pagina > 1 ? filtros.pagina : undefined,
     },
   });
