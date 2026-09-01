@@ -53,6 +53,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   const [codigoLote, setCodigoLote] = useState("");
   const [fecha, setFecha] = useState(hoy());
   const [op, setOp] = useState("");
+  const [orden, setOrden] = useState("");
   const [linea, setLinea] = useState("");
   const [equipo, setEquipo] = useState("");
   const [turno, setTurno] = useState("");
@@ -67,6 +68,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   const [vale, setVale] = useState("");
   const [litros, setLitros] = useState("");
   const [equipos, setEquipos] = useState<EquipoInicioProduccion[]>([]);
+  const [ordenes, setOrdenes] = useState<Awaited<ReturnType<typeof obtenerOpcionesInicioProduccion>>["ordenes"]>([]);
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -78,6 +80,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     vale: numeroONull(vale),
     litros_estandarizados_borrador: numeroONull(litros),
     equipo: numeroONull(equipo),
+    orden: numeroONull(orden),
     fecha,
     op,
     linea,
@@ -109,6 +112,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
           ? "" : String(guardado.litros_estandarizados_borrador)
       );
       setEquipo(guardado.equipo == null ? "" : String(guardado.equipo));
+      setOrden(guardado.orden == null ? "" : String(guardado.orden));
       setFecha(guardado.fecha);
       setOp(guardado.op);
       setLinea(guardado.linea);
@@ -126,10 +130,12 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
       .then((opciones) => {
         setVales(opciones.entradas);
         setEquipos(opciones.equipos);
+        setOrdenes(opciones.ordenes);
       })
       .catch(() => {
         setVales([]);
         setEquipos([]);
+        setOrdenes([]);
       });
   }, []);
 
@@ -208,8 +214,8 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   const rutaPorFamilia: Record<string, { ruta: string; tipos: string[]; ayuda: string }> = {
     polvo: {
       ruta: "Leche estandarizada → Evaporación → Torre Egron → Envasado 25 kg",
-      tipos: ["torre"],
-      ayuda: "Esta apertura corresponde a la fase de secado; selecciona solo una torre Egron.",
+      tipos: ["evaporador"],
+      ayuda: "Esta apertura inicia la evaporación. La torre Egron aparecerá después, únicamente cuando Calidad libere el concentrado.",
     },
     liquido: {
       ruta: "Leche estandarizada → Evaporación / concentración → Producto a granel",
@@ -232,6 +238,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     (item) => item.activo && (!ruta || ruta.tipos.includes(item.tipo)),
   );
   const equipoSeleccionado = equipos.find((item) => item.id === Number(equipo));
+  const ordenesCompatibles = ordenes.filter((item) => item.producto === valeSeleccionado?.producto);
   const advertenciaAseo = equipoSeleccionado?.advertencia_aseo ?? "";
 
   return (
@@ -290,6 +297,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                   const elegido = vales.find((item) => item.id === Number(id));
                   setVale(id);
                   setEquipo("");
+                  setOrden("");
                   setLitros(elegido?.litros_disponibles ?? "");
                 }}
                 required
@@ -425,13 +433,26 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
             <div className="sm:col-span-2">
 
-              <label className={etiquetaCampo}>OP</label>
+              <label className={etiquetaCampo}>Orden de producción *</label>
 
-              <input
+              <select
                 className={campo}
-                value={op}
-                onChange={(e) => setOp(e.target.value)}
-              />
+                value={orden}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const elegida = ordenes.find((item) => item.id === Number(id));
+                  setOrden(id);
+                  setOp(elegida?.codigo ?? "");
+                }}
+                required
+                disabled={!valeSeleccionado}
+              >
+                <option value="">Selecciona una OP compatible…</option>
+                {ordenesCompatibles.map((item) => <option key={item.id} value={item.id}>
+                  {item.codigo} · {item.estado} · {Number(item.cantidad_planificada).toLocaleString("es-CL")} {item.unidad}
+                </option>)}
+              </select>
+              {valeSeleccionado && ordenesCompatibles.length === 0 && <p className="mt-1.5 text-xs text-amber-700">No hay una OP programada para este producto. Créala o prográmala antes de abrir el lote.</p>}
 
             </div>
 

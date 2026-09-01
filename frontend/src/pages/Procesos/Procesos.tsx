@@ -4,11 +4,15 @@ import { ArrowRight, Beaker, Factory, GitBranch, Search, Truck } from "lucide-re
 
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import StatusBadge from "../../components/ui/StatusBadge";
-import { obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type Genealogia, type RutaProducto } from "../../services/procesos.service";
+import { iniciarCondensacion, iniciarMantequilla, obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type Genealogia, type RutaProducto } from "../../services/procesos.service";
 import { puedeEscribir } from "../../services/sesion";
 import ArbolGenealogia from "./ArbolGenealogia";
+import CierreCondensacion from "./CierreCondensacion";
 import CierreDescremacion from "./CierreDescremacion";
+import CierreMantequilla from "./CierreMantequilla";
 import FormularioDescremacion from "./FormularioDescremacion";
+import NuevaCondensacion from "./NuevaCondensacion";
+import NuevaMantequilla from "./NuevaMantequilla";
 
 export default function Procesos() {
   const puedeOperar = puedeEscribir("produccion");
@@ -23,6 +27,11 @@ export default function Procesos() {
   const [descremaciones, setDescremaciones] = useState<CorridaDescremacion[]>([]);
   const [descremacionesCargadas, setDescremacionesCargadas] = useState(false);
   const [cerrandoDescremacion, setCerrandoDescremacion] = useState<CorridaDescremacion | null>(null);
+  const [cerrandoCondensacion, setCerrandoCondensacion] = useState<CorridaCondensacion | null>(null);
+  const [cerrandoMantequilla, setCerrandoMantequilla] = useState<CorridaMantequilla | null>(null);
+  const [accionandoCorrida, setAccionandoCorrida] = useState<number | null>(null);
+  const [nuevaCondensacion, setNuevaCondensacion] = useState(false);
+  const [nuevaMantequilla, setNuevaMantequilla] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [lote, setLote] = useState("");
@@ -81,6 +90,29 @@ export default function Procesos() {
   const actualizarDescremacion = async (corrida: CorridaDescremacion) => {
     setDescremacionesCargadas(true);
     setDescremaciones((actuales) => [corrida, ...actuales.filter((item) => item.id !== corrida.id)]);
+  };
+
+  const actualizarCondensacion = (corrida: CorridaCondensacion) => {
+    setCondensaciones((actuales) => actuales.map((item) => item.id === corrida.id ? corrida : item));
+  };
+
+  const actualizarMantequilla = (corrida: CorridaMantequilla) => {
+    setMantequillas((actuales) => actuales.map((item) => item.id === corrida.id ? corrida : item));
+  };
+
+  const iniciarCorrida = async (tipo: "condensacion" | "mantequilla", id: number) => {
+    setAccionandoCorrida(id); setError("");
+    try {
+      if (tipo === "condensacion") actualizarCondensacion(await iniciarCondensacion(id));
+      else actualizarMantequilla(await iniciarMantequilla(id));
+      setEjecuciones(await obtenerEjecucionesOperativas());
+    } catch (errorPeticion: unknown) {
+      const datos = (errorPeticion as { response?: { data?: unknown } }).response?.data;
+      const detalle = datos && typeof datos === "object"
+        ? Object.values(datos as Record<string, unknown>).flat().map(String).join(" ")
+        : "";
+      setError(detalle || "No se pudo iniciar la corrida. Revisa equipo, aseo, saldo y estado de la orden.");
+    } finally { setAccionandoCorrida(null); }
   };
 
   const cargarRutas = async () => {
@@ -145,6 +177,10 @@ export default function Procesos() {
 
         {puedeOperar && siloDescremacion !== null && <FormularioDescremacion siloOrigen={siloDescremacion} onCerrar={cerrarFormularioDescremacion} onCreada={async (corrida) => { await actualizarDescremacion(corrida); cerrarFormularioDescremacion(); }} />}
         {puedeOperar && cerrandoDescremacion && <CierreDescremacion corrida={cerrandoDescremacion} onCerrar={() => setCerrandoDescremacion(null)} onCerrada={async (corrida) => { await actualizarDescremacion(corrida); setCerrandoDescremacion(null); }} />}
+        {puedeOperar && cerrandoCondensacion && <CierreCondensacion corrida={cerrandoCondensacion} onCerrar={() => setCerrandoCondensacion(null)} onCerrada={async (corrida) => { actualizarCondensacion(corrida); setCerrandoCondensacion(null); setEjecuciones(await obtenerEjecucionesOperativas()); }} />}
+        {puedeOperar && cerrandoMantequilla && <CierreMantequilla corrida={cerrandoMantequilla} onCerrar={() => setCerrandoMantequilla(null)} onCerrada={async (corrida) => { actualizarMantequilla(corrida); setCerrandoMantequilla(null); setEjecuciones(await obtenerEjecucionesOperativas()); }} />}
+        {puedeOperar && nuevaCondensacion && <NuevaCondensacion onCerrar={() => setNuevaCondensacion(false)} onCreada={(corrida) => { setCondensacionesCargadas(true); setCondensaciones((actuales) => [corrida, ...actuales]); setNuevaCondensacion(false); }} />}
+        {puedeOperar && nuevaMantequilla && <NuevaMantequilla onCerrar={() => setNuevaMantequilla(false)} onCreada={(corrida) => { setMantequillasCargadas(true); setMantequillas((actuales) => [corrida, ...actuales]); setNuevaMantequilla(false); }} />}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Rutas configuradas por producto</h2></div>
@@ -158,13 +194,14 @@ export default function Procesos() {
         </section>
 
         <section id="proceso-condensacion" className="scroll-mt-6">
-          <h2 className="mb-4 text-xl font-semibold text-slate-800">Condensación y precondensado</h2>
-          {!condensacionesCargadas ? <button type="button" onClick={cargarCondensaciones} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : condensaciones.length === 0 ? <EmptyState titulo="Sin corridas de condensación" detalle="Las corridas aparecerán aquí vinculadas a su orden, lote, evaporador y silos." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">Orden / lote</th><th className="px-5 py-3">Evaporador</th><th className="px-5 py-3">Flujo físico</th><th className="px-5 py-3">Resultado</th><th className="px-5 py-3">Estado</th></tr></thead><tbody>{condensaciones.map((corrida) => <tr key={corrida.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{corrida.orden_codigo}<span className="block text-xs font-normal text-slate-600">{corrida.lote_codigo} · {corrida.ejecucion_codigo}</span></td><td className="px-5 py-4">{corrida.equipo_nombre || "—"}</td><td className="px-5 py-4">{corrida.silo_origen_codigo} · {Number(corrida.litros_entrada).toLocaleString("es-CL")} L <ArrowRight className="mx-1 inline h-3.5 w-3.5" /> {corrida.silo_destino_codigo}</td><td className="px-5 py-4">{corrida.litros_precondensado ? `${Number(corrida.litros_precondensado).toLocaleString("es-CL")} L` : "Pendiente"}<span className="block text-xs text-slate-600">{corrida.solidos_salida ? `${corrida.solidos_salida}% sólidos` : "sin control final"}</span></td><td className="px-5 py-4"><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></td></tr>)}</tbody></table></div>}
+          <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold text-slate-800">Evaporación / precondensado</h2>{puedeOperar && <button type="button" onClick={() => setNuevaCondensacion(true)} className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Nueva evaporación</button>}</div>
+          <p className="mb-4 mt-1 text-sm text-slate-600">Vale estandarizado → evaporador → concentrado. El cierre registra controles y lo envía a Calidad.</p>
+          {!condensacionesCargadas ? <button type="button" onClick={cargarCondensaciones} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : condensaciones.length === 0 ? <EmptyState titulo="Sin corridas de evaporación" detalle="No hay corridas vinculadas a una orden, lote, evaporador y silos." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full min-w-[980px] text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">Orden / lote</th><th className="px-5 py-3">Evaporador</th><th className="px-5 py-3">Flujo físico</th><th className="px-5 py-3">Resultado</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Operación</th></tr></thead><tbody>{condensaciones.map((corrida) => <tr key={corrida.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{corrida.orden_codigo}<span className="block text-xs font-normal text-slate-600">{corrida.lote_codigo} · {corrida.ejecucion_codigo}</span></td><td className="px-5 py-4">{corrida.equipo_nombre || "—"}</td><td className="px-5 py-4">{corrida.silo_origen_codigo} · {Number(corrida.litros_entrada).toLocaleString("es-CL")} L <ArrowRight className="mx-1 inline h-3.5 w-3.5" /> {corrida.silo_destino_codigo}</td><td className="px-5 py-4">{corrida.litros_precondensado ? `${Number(corrida.litros_precondensado).toLocaleString("es-CL")} L` : "Pendiente"}<span className="block text-xs text-slate-600">{corrida.solidos_salida ? `${corrida.solidos_salida}% sólidos` : "sin control final"}</span></td><td className="px-5 py-4"><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></td><td className="px-5 py-4">{puedeOperar && corrida.estado === "borrador" ? <button type="button" disabled={accionandoCorrida === corrida.id} onClick={() => void iniciarCorrida("condensacion", corrida.id)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{accionandoCorrida === corrida.id ? "Iniciando…" : "Iniciar evaporación"}</button> : puedeOperar && corrida.estado === "en_proceso" ? <button type="button" onClick={() => setCerrandoCondensacion(corrida)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Registrar salida</button> : <span className="text-xs text-slate-500">Sin acción pendiente</span>}</td></tr>)}</tbody></table></div>}
         </section>
 
         <section id="proceso-mantequilla" className="scroll-mt-6">
-          <h2 className="mb-4 text-xl font-semibold text-slate-800">Línea de mantequilla</h2>
-          {!mantequillasCargadas ? <button type="button" onClick={cargarMantequillas} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : mantequillas.length === 0 ? <EmptyState titulo="Sin corridas de mantequilla" detalle="Las corridas conservarán la relación crema → mantequilla, suero y merma." /> : <div className="grid gap-4 lg:grid-cols-2">{mantequillas.map((corrida) => <article key={corrida.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{corrida.orden_codigo} · {corrida.mantequilla_codigo}</p><p className="mt-1 text-xs text-slate-600">{corrida.equipo_nombre || "Sin línea"} · {corrida.ejecucion_codigo}</p></div><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p className="rounded-xl bg-amber-50 p-3 text-amber-900"><span className="block text-xs text-amber-700">Crema utilizada</span>{Number(corrida.kg_crema).toLocaleString("es-CL")} kg · {corrida.crema_codigo}</p><p className="rounded-xl bg-green-50 p-3 text-green-900"><span className="block text-xs text-green-700">Mantequilla</span>{corrida.kg_mantequilla ? `${Number(corrida.kg_mantequilla).toLocaleString("es-CL")} kg` : "Pendiente"}</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Suero</span>{Number(corrida.kg_suero).toLocaleString("es-CL")} kg</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Merma</span>{Number(corrida.kg_merma).toLocaleString("es-CL")} kg</p></div></article>)}</div>}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold text-slate-800">Línea de mantequilla</h2>{puedeOperar && <button type="button" onClick={() => setNuevaMantequilla(true)} className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white">Nueva corrida</button>}</div>
+          {!mantequillasCargadas ? <button type="button" onClick={cargarMantequillas} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : mantequillas.length === 0 ? <EmptyState titulo="Sin corridas de mantequilla" detalle="Las corridas conservarán la relación crema → mantequilla, suero y merma." /> : <div className="grid gap-4 lg:grid-cols-2">{mantequillas.map((corrida) => <article key={corrida.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{corrida.orden_codigo} · {corrida.mantequilla_codigo}</p><p className="mt-1 text-xs text-slate-600">{corrida.equipo_nombre || "Sin línea"} · {corrida.ejecucion_codigo}</p></div><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p className="rounded-xl bg-amber-50 p-3 text-amber-900"><span className="block text-xs text-amber-700">Crema utilizada</span>{Number(corrida.kg_crema).toLocaleString("es-CL")} kg · {corrida.crema_codigo}</p><p className="rounded-xl bg-green-50 p-3 text-green-900"><span className="block text-xs text-green-700">Mantequilla</span>{corrida.kg_mantequilla ? `${Number(corrida.kg_mantequilla).toLocaleString("es-CL")} kg` : "Pendiente"}</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Suero</span>{Number(corrida.kg_suero).toLocaleString("es-CL")} kg</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Merma</span>{Number(corrida.kg_merma).toLocaleString("es-CL")} kg</p></div>{puedeOperar && corrida.estado === "borrador" && <button type="button" disabled={accionandoCorrida === corrida.id} onClick={() => void iniciarCorrida("mantequilla", corrida.id)} className="mt-4 rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{accionandoCorrida === corrida.id ? "Iniciando…" : "Iniciar con esta crema"}</button>}{puedeOperar && corrida.estado === "en_proceso" && <button type="button" onClick={() => setCerrandoMantequilla(corrida)} className="mt-4 rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white">Registrar balance y cerrar</button>}{corrida.estado === "pendiente_calidad" && <p className="mt-4 rounded-xl bg-violet-50 px-3 py-2 text-xs font-medium text-violet-800">Producción cerrada; Calidad debe revisar antes de Envasado.</p>}</article>)}</div>}
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6">

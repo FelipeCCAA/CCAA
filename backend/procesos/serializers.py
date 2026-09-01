@@ -20,6 +20,20 @@ class CierreCondensacionSerializer(serializers.Serializer):
     presion_promedio = serializers.DecimalField(max_digits=8, decimal_places=2, required=False)
 
 
+class CrearCondensacionGuiadaSerializer(serializers.Serializer):
+    lote = serializers.IntegerField(min_value=1)
+    silo_destino = serializers.IntegerField(min_value=1)
+
+
+class CrearMantequillaGuiadaSerializer(serializers.Serializer):
+    orden = serializers.IntegerField(min_value=1)
+    lote_crema = serializers.IntegerField(min_value=1)
+    equipo = serializers.IntegerField(min_value=1)
+    codigo_lote_mantequilla = serializers.CharField(max_length=60)
+    lote_suero = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    kg_crema = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=1)
+
+
 class CorridaCondensacionSerializer(serializers.ModelSerializer):
     ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
     orden_codigo = serializers.CharField(source="orden.codigo", read_only=True)

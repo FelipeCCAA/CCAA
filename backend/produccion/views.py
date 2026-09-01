@@ -437,6 +437,17 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
         )
+        ordenes = filtrar_por_scope(
+            OrdenProduccion.objects.filter(
+                estado__in=[
+                    OrdenProduccion.Estado.PROGRAMADA,
+                    OrdenProduccion.Estado.EN_PROCESO,
+                ]
+            ).select_related("producto"),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
         opciones_equipos = []
         for equipo in equipos:
             motivo = ""
@@ -468,6 +479,18 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         return Response({
             "entradas": self._vales_operativos(request),
             "equipos": opciones_equipos,
+            "ordenes": [
+                {
+                    "id": orden.pk,
+                    "codigo": orden.codigo,
+                    "producto": orden.producto_id,
+                    "producto_nombre": orden.producto.nombre,
+                    "cantidad_planificada": orden.cantidad_planificada,
+                    "unidad": orden.unidad,
+                    "estado": orden.get_estado_display(),
+                }
+                for orden in ordenes
+            ],
         })
 
     def update(self, request, *args, **kwargs):

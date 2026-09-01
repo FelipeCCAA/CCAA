@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Mandante, Producto
 from produccion.models import Lote, OrdenProduccion
@@ -12,7 +13,10 @@ from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 from .models import (
     CorridaMantequilla, EjecucionProceso, EtapaProceso, Proceso,
 )
-from .servicios import cerrar_mantequilla, genealogia_lote, iniciar_mantequilla
+from .servicios import (
+    cerrar_mantequilla, crear_mantequilla_guiada,
+    genealogia_lote, iniciar_mantequilla,
+)
 
 
 class MantequillaTests(TestCase):
@@ -92,3 +96,29 @@ class MantequillaTests(TestCase):
 
         with self.assertRaises(ValidationError):
             iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+    def test_alta_guiada_crea_lote_ejecucion_y_corrida_atomicos(self):
+        orden = self.corrida.orden
+        equipo = self.corrida.ejecucion.equipo
+        self.corrida.delete()
+
+        corrida = crear_mantequilla_guiada(
+            orden_id=orden.pk, lote_crema_id=self.lote_crema.pk,
+            equipo_id=equipo.pk, codigo_lote_mantequilla="MANT-GUIADA-1",
+            kg_crema="400", usuario=self.usuario,
+        )
+
+        self.assertEqual(corrida.lote_mantequilla.codigo_lote, "MANT-GUIADA-1")
+        self.assertEqual(corrida.ejecucion.etapa.tipo, EtapaProceso.Tipo.MANTEQUILLA)
+        self.assertEqual(corrida.kg_crema, Decimal("400"))
+
+    def test_opciones_alta_muestran_op_crema_y_linea_validas(self):
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get("/api/procesos/mantequillas/opciones-alta/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertIn(self.corrida.orden_id, [item["id"] for item in respuesta.data["ordenes"]])
+        self.assertIn(self.lote_crema.pk, [item["id"] for item in respuesta.data["cremas"]])
+        self.assertIn(self.corrida.ejecucion.equipo_id, [item["id"] for item in respuesta.data["equipos"]])

@@ -15,7 +15,7 @@ from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 from .models import (
     CorridaCondensacion, EjecucionProceso, EntradaProceso, EtapaProceso, Proceso,
 )
-from .servicios import cerrar_condensacion, iniciar_condensacion
+from .servicios import cerrar_condensacion, crear_condensacion_guiada, iniciar_condensacion
 
 
 class FlujoCondensacionTests(TestCase):
@@ -206,6 +206,41 @@ class FlujoCondensacionTests(TestCase):
             1,
         )
         self.assertEqual(self.ejecucion.entradas.count(), 1)
+
+    def test_alta_guiada_reutiliza_lote_ejecucion_entrada_y_orden(self):
+        self.corrida.delete()
+        self.lote.ejecucion = self.ejecucion
+        self.lote.save(update_fields=["ejecucion"])
+        EntradaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=self.origen,
+            cantidad=Decimal("600"), unidad="L",
+        )
+
+        corrida = crear_condensacion_guiada(
+            lote_id=self.lote.pk, silo_destino_id=self.destino.pk,
+            usuario=self.usuario,
+        )
+
+        self.assertEqual(corrida.ejecucion, self.ejecucion)
+        self.assertEqual(corrida.orden, self.orden)
+        self.assertEqual(corrida.silo_origen, self.origen)
+        self.assertEqual(corrida.litros_entrada, Decimal("600"))
+
+    def test_opciones_alta_solo_exponen_lote_evaporador_preparado(self):
+        self.corrida.delete()
+        self.lote.ejecucion = self.ejecucion
+        self.lote.save(update_fields=["ejecucion"])
+        EntradaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=self.origen,
+            cantidad=Decimal("600"), unidad="L",
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get("/api/procesos/condensaciones/opciones-alta/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual([item["id"] for item in respuesta.data["lotes"]], [self.lote.pk])
 
     def test_no_adopta_una_ejecucion_activa_sin_consumo(self):
         self.lote.ejecucion = self.ejecucion

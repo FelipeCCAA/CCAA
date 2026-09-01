@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Prefetch, Q, Sum
+from django.db.models import DecimalField, Prefetch, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
@@ -17,7 +18,8 @@ from .models import (
 )
 from .serializers import (
     CierreCondensacionSerializer, CierreDescremacionSerializer,
-    CierreMantequillaSerializer, CorridaCondensacionSerializer,
+    CierreMantequillaSerializer, CrearCondensacionGuiadaSerializer,
+    CrearMantequillaGuiadaSerializer, CorridaCondensacionSerializer,
     CorridaDescremacionSerializer, CorridaMantequillaSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     ProcesoSerializer, SalidaProcesoSerializer,
@@ -25,6 +27,7 @@ from .serializers import (
 )
 from .servicios import (
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, genealogia_lote,
+    crear_condensacion_guiada, crear_mantequilla_guiada,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     preparar_continuacion, tipos_equipo_para_etapa, transicionar_ejecucion,
 )
@@ -87,6 +90,97 @@ class CorridaCondensacionViewSet(
     def _respuesta_error(error):
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
         return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["get"], url_path="opciones-alta")
+    def opciones_alta(self, request):
+        from maestros.models import Silo
+        from produccion.models import Lote, OrdenProduccion
+
+        lotes = filtrar_por_scope(
+            Lote.objects.filter(
+                estado=Lote.Estado.EN_PROCESO,
+                orden__estado__in=[
+                    OrdenProduccion.Estado.PROGRAMADA,
+                    OrdenProduccion.Estado.EN_PROCESO,
+                ],
+                ejecucion__etapa__tipo__in=[
+                    EtapaProceso.Tipo.EVAPORACION, EtapaProceso.Tipo.CONDENSACION,
+                ],
+                ejecucion__corrida_condensacion__isnull=True,
+            ).select_related(
+                "orden", "producto", "ejecucion__equipo"
+            ).prefetch_related("ejecucion__entradas__silo"),
+            request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        silos = filtrar_por_scope(
+            Silo.objects.filter(activo=True).annotate(
+                ingresos=Coalesce(
+                    Sum("movimientos__litros", filter=Q(movimientos__tipo="ingreso")),
+                    Value(0), output_field=DecimalField(),
+                ),
+                salidas=Coalesce(
+                    Sum("movimientos__litros", filter=Q(movimientos__tipo="salida")),
+                    Value(0), output_field=DecimalField(),
+                ),
+                ajustes=Coalesce(
+                    Sum("movimientos__litros", filter=Q(movimientos__tipo="ajuste")),
+                    Value(0), output_field=DecimalField(),
+                ),
+            ),
+            request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        return Response({
+            "lotes": [
+                {
+                    "id": lote.pk, "codigo": lote.codigo_lote,
+                    "producto": lote.producto.nombre, "orden": lote.orden.codigo,
+                    "ejecucion": lote.ejecucion.codigo,
+                    "equipo": lote.ejecucion.equipo.nombre if lote.ejecucion.equipo else None,
+                    "origen": entrada.silo.codigo if entrada and entrada.silo else None,
+                    "litros": entrada.cantidad if entrada else None,
+                }
+                for lote in lotes
+                for entrada in [next(iter(lote.ejecucion.entradas.all()), None)]
+                if entrada and entrada.silo_id and entrada.unidad.lower() == "l"
+            ],
+            "silos": [
+                {
+                    "id": silo.pk, "codigo": silo.codigo,
+                    "estado": silo.get_estado_display(), "capacidad_l": silo.capacidad_l,
+                    "saldo_l": silo.ingresos - silo.salidas + silo.ajustes,
+                }
+                for silo in silos
+            ],
+        })
+
+    @action(detail=False, methods=["post"], url_path="crear-guiada")
+    def crear_guiada(self, request):
+        from maestros.models import Silo
+        from produccion.models import Lote
+
+        entrada = CrearCondensacionGuiadaSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        lotes = filtrar_por_scope(
+            Lote.objects.all(), request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        silos = filtrar_por_scope(
+            Silo.objects.all(), request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        if not lotes.filter(pk=datos["lote"]).exists() or not silos.filter(pk=datos["silo_destino"]).exists():
+            return Response({"error": "El lote o silo no pertenece a tu alcance."}, status=403)
+        try:
+            corrida = crear_condensacion_guiada(
+                lote_id=datos["lote"], silo_destino_id=datos["silo_destino"],
+                usuario=request.user,
+            )
+        except DjangoValidationError as error:
+            return self._respuesta_error(error)
+        return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
     def iniciar(self, request, pk=None):
@@ -183,6 +277,82 @@ class CorridaMantequillaViewSet(
     serializer_class = CorridaMantequillaSerializer
     permission_classes = [EscribeProduccion]
     http_method_names = ["get", "post", "head", "options"]
+
+    @action(detail=False, methods=["get"], url_path="opciones-alta")
+    def opciones_alta(self, request):
+        from maestros.models import Equipo
+        from produccion.models import Lote, OrdenProduccion
+
+        ordenes = filtrar_por_scope(
+            OrdenProduccion.objects.filter(
+                producto__categoria="mantequilla",
+                estado__in=[OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO],
+            ).select_related("producto"), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        lotes = filtrar_por_scope(
+            Lote.objects.filter(
+                estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
+                kg_producidos__isnull=False,
+            ).select_related("producto").annotate(
+                kg_usados=Coalesce(
+                    Sum("entradas_proceso__cantidad", filter=Q(entradas_proceso__unidad__iexact="kg")),
+                    Value(0), output_field=DecimalField(),
+                )
+            ), request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        equipos = filtrar_por_scope(
+            Equipo.objects.filter(activo=True, tipo__in=[Equipo.Tipo.LINEA, Equipo.Tipo.OTRO]),
+            request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        return Response({
+            "ordenes": [{"id": item.pk, "codigo": item.codigo, "producto": item.producto.nombre} for item in ordenes],
+            "cremas": [
+                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre,
+                 "disponible_kg": item.kg_producidos - item.kg_usados}
+                for item in lotes if item.producto.familia == "crema" and item.kg_producidos > item.kg_usados
+            ],
+            "sueros": [
+                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre}
+                for item in lotes if "suero" in item.producto.nombre.lower()
+            ],
+            "equipos": [{"id": item.pk, "nombre": item.nombre, "tipo": item.tipo} for item in equipos],
+        })
+
+    @action(detail=False, methods=["post"], url_path="crear-guiada")
+    def crear_guiada(self, request):
+        from maestros.models import Equipo
+        from produccion.models import Lote, OrdenProduccion
+
+        entrada = CrearMantequillaGuiadaSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        alcance = {
+            "orden": filtrar_por_scope(OrdenProduccion.objects.all(), request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id"),
+            "lote": filtrar_por_scope(Lote.objects.all(), request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id"),
+            "equipo": filtrar_por_scope(Equipo.objects.all(), request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id"),
+        }
+        ids_validos = (
+            alcance["orden"].filter(pk=datos["orden"]).exists()
+            and alcance["lote"].filter(pk=datos["lote_crema"]).exists()
+            and alcance["equipo"].filter(pk=datos["equipo"]).exists()
+            and (not datos.get("lote_suero") or alcance["lote"].filter(pk=datos["lote_suero"]).exists())
+        )
+        if not ids_validos:
+            return Response({"error": "Alguna selección no pertenece a tu alcance."}, status=403)
+        try:
+            corrida = crear_mantequilla_guiada(
+                orden_id=datos["orden"], lote_crema_id=datos["lote_crema"],
+                equipo_id=datos["equipo"],
+                codigo_lote_mantequilla=datos["codigo_lote_mantequilla"],
+                lote_suero_id=datos.get("lote_suero"), kg_crema=datos["kg_crema"],
+                usuario=request.user,
+            )
+        except DjangoValidationError as error:
+            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
     def iniciar(self, request, pk=None):

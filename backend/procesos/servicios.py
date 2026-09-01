@@ -22,7 +22,7 @@ def tipos_equipo_para_etapa(tipo_etapa):
         EtapaProceso.Tipo.CONDENSACION: {Equipo.Tipo.EVAPORADOR},
         EtapaProceso.Tipo.SECADO: {Equipo.Tipo.TORRE},
         EtapaProceso.Tipo.ENVASADO: {Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA},
-        EtapaProceso.Tipo.MANTEQUILLA: {Equipo.Tipo.OTRO},
+        EtapaProceso.Tipo.MANTEQUILLA: {Equipo.Tipo.LINEA, Equipo.Tipo.OTRO},
         EtapaProceso.Tipo.TRANSFERENCIA: {Equipo.Tipo.CARGA},
         EtapaProceso.Tipo.OTRO: {Equipo.Tipo.OTRO},
     }.get(tipo_etapa, set())
@@ -48,6 +48,111 @@ def etapa_para_producto(*, producto, sucursal, tipo):
         .order_by("proceso__version", "orden")
         .last()
     )
+
+
+@transaction.atomic
+def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
+    """Especializa la ejecución de evaporación ya abierta por el lote."""
+    from maestros.models import Silo
+    from produccion.models import Lote, OrdenProduccion
+
+    lote = Lote.objects.select_for_update(of=("self",)).select_related(
+        "orden", "producto", "ejecucion__etapa", "ejecucion__equipo", "sucursal"
+    ).get(pk=lote_id)
+    if not lote.orden_id:
+        raise ValidationError({"lote": "El lote debe pertenecer a una orden estructurada."})
+    if lote.orden.estado not in {
+        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
+    }:
+        raise ValidationError({"lote": "La orden del lote no está programada o en proceso."})
+    ejecucion = lote.ejecucion
+    if ejecucion is None or ejecucion.etapa.tipo not in {
+        EtapaProceso.Tipo.EVAPORACION, EtapaProceso.Tipo.CONDENSACION,
+    }:
+        raise ValidationError({"lote": "El lote no tiene una ejecución de evaporación."})
+    if hasattr(ejecucion, "corrida_condensacion"):
+        raise ValidationError({"lote": "La ejecución ya tiene una corrida de evaporación."})
+    entrada = ejecucion.entradas.select_related("silo").filter(
+        silo__isnull=False, unidad__iexact="L"
+    ).order_by("pk").first()
+    if entrada is None:
+        raise ValidationError({"lote": "La ejecución no tiene una entrada trazable en litros."})
+    destino = Silo.objects.select_for_update().get(pk=silo_destino_id)
+    if destino.sucursal_id != lote.sucursal_id:
+        raise ValidationError({"silo_destino": "El destino pertenece a otra planta."})
+    corrida = CorridaCondensacion(
+        ejecucion=ejecucion, orden=lote.orden, lote=lote,
+        silo_origen=entrada.silo, silo_destino=destino,
+        litros_entrada=entrada.cantidad.quantize(Decimal("0.01")),
+    )
+    corrida.full_clean()
+    corrida.save()
+    EventoProceso.objects.create(
+        ejecucion=ejecucion, usuario=usuario, tipo="corrida_configurada",
+        estado_anterior=ejecucion.estado, estado_nuevo=ejecucion.estado,
+        motivo=f"Evaporación configurada hacia {destino.codigo}",
+    )
+    return corrida
+
+
+@transaction.atomic
+def crear_mantequilla_guiada(
+    *, orden_id, lote_crema_id, equipo_id, codigo_lote_mantequilla,
+    kg_crema, usuario, lote_suero_id=None,
+):
+    """Crea ejecución, lote de salida y corrida sin pasos parciales huérfanos."""
+    from maestros.models import Equipo
+    from produccion.models import Lote, OrdenProduccion
+
+    orden = OrdenProduccion.objects.select_for_update(of=("self",)).select_related(
+        "producto", "sucursal"
+    ).get(pk=orden_id)
+    crema = Lote.objects.select_for_update(of=("self",)).select_related("producto").get(pk=lote_crema_id)
+    equipo = Equipo.objects.select_for_update().get(pk=equipo_id)
+    suero = Lote.objects.select_for_update().get(pk=lote_suero_id) if lote_suero_id else None
+    if orden.producto.categoria != "mantequilla":
+        raise ValidationError({"orden": "La orden no corresponde a mantequilla."})
+    if orden.estado not in {OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO}:
+        raise ValidationError({"orden": "La orden no está programada o en proceso."})
+    if crema.sucursal_id != orden.sucursal_id or crema.producto.familia != "crema":
+        raise ValidationError({"lote_crema": "Selecciona un lote de crema de esta planta."})
+    if equipo.sucursal_id != orden.sucursal_id or not equipo.activo:
+        raise ValidationError({"equipo": "La línea no está activa en esta planta."})
+    if equipo.tipo not in {Equipo.Tipo.LINEA, Equipo.Tipo.OTRO}:
+        raise ValidationError({"equipo": "El equipo no corresponde a la línea de mantequilla."})
+    if suero and suero.sucursal_id != orden.sucursal_id:
+        raise ValidationError({"lote_suero": "El lote de suero pertenece a otra planta."})
+    etapa = etapa_para_producto(
+        producto=orden.producto, sucursal=orden.sucursal,
+        tipo=EtapaProceso.Tipo.MANTEQUILLA,
+    )
+    if etapa is None:
+        raise ValidationError({"orden": "El producto no tiene una etapa de mantequilla activa."})
+    codigo = str(codigo_lote_mantequilla).strip()
+    if not codigo:
+        raise ValidationError({"codigo_lote_mantequilla": "Ingresa el código del lote de salida."})
+    lote_salida = Lote(
+        sucursal=orden.sucursal, codigo_lote=codigo,
+        codigo_lote_propuesto=codigo, op=orden.codigo, orden=orden,
+        producto=orden.producto, equipo=equipo, fecha=timezone.localdate(),
+        estado=Lote.Estado.EN_PROCESO,
+    )
+    lote_salida.full_clean()
+    lote_salida.save()
+    ejecucion = EjecucionProceso(
+        codigo=f"EJ-MANT-{lote_salida.pk}", etapa=etapa,
+        sucursal=orden.sucursal, equipo=equipo, responsable=usuario,
+    )
+    ejecucion.full_clean()
+    ejecucion.save()
+    corrida = CorridaMantequilla(
+        ejecucion=ejecucion, orden=orden, lote_crema=crema,
+        lote_mantequilla=lote_salida, lote_suero=suero,
+        kg_crema=Decimal(str(kg_crema)),
+    )
+    corrida.full_clean()
+    corrida.save()
+    return corrida
 
 
 @transaction.atomic

@@ -161,6 +161,18 @@ export interface Genealogia {
   } | null;
 }
 
+export interface OpcionesAltaCondensacion {
+  lotes: { id: number; codigo: string; producto: string; orden: string; ejecucion: string; equipo: string | null; origen: string; litros: string }[];
+  silos: { id: number; codigo: string; estado: string; capacidad_l: string; saldo_l: string }[];
+}
+
+export interface OpcionesAltaMantequilla {
+  ordenes: { id: number; codigo: string; producto: string }[];
+  cremas: { id: number; codigo: string; producto: string; disponible_kg: string }[];
+  sueros: { id: number; codigo: string; producto: string }[];
+  equipos: { id: number; nombre: string; tipo: string }[];
+}
+
 export async function obtenerEjecuciones(): Promise<Pagina<EjecucionProceso>> {
   const { data } = await api.get<Pagina<EjecucionProceso>>("procesos/ejecuciones/");
   return data;
@@ -227,6 +239,33 @@ export async function iniciarCondensacion(id: number): Promise<CorridaCondensaci
   return data;
 }
 
+export async function cerrarCondensacion(id: number, datos: {
+  litros_precondensado: number;
+  flujo_promedio?: number;
+  densidad_salida?: number;
+  solidos_salida?: number;
+  temperatura_salida?: number;
+  vacio_promedio?: number;
+  presion_promedio?: number;
+}): Promise<CorridaCondensacion> {
+  const { data } = await api.post<CorridaCondensacion>(
+    `procesos/condensaciones/${id}/cerrar/`, datos,
+  );
+  return data;
+}
+
+export async function obtenerOpcionesAltaCondensacion(): Promise<OpcionesAltaCondensacion> {
+  const { data } = await api.get<OpcionesAltaCondensacion>("procesos/condensaciones/opciones-alta/");
+  return data;
+}
+
+export async function crearCondensacionGuiada(datos: {
+  lote: number; silo_destino: number;
+}): Promise<CorridaCondensacion> {
+  const { data } = await api.post<CorridaCondensacion>("procesos/condensaciones/crear-guiada/", datos);
+  return data;
+}
+
 export async function obtenerMantequillas(): Promise<Pagina<CorridaMantequilla>> {
   const { data } = await api.get<Pagina<CorridaMantequilla>>("procesos/mantequillas/");
   return data;
@@ -246,6 +285,36 @@ export async function crearEjecucion(datos: {
 
 export async function obtenerDescremaciones(): Promise<Pagina<CorridaDescremacion>> {
   const { data } = await api.get<Pagina<CorridaDescremacion>>("procesos/descremaciones/");
+  return data;
+}
+
+export async function iniciarMantequilla(id: number): Promise<CorridaMantequilla> {
+  const { data } = await api.post<CorridaMantequilla>(`procesos/mantequillas/${id}/iniciar/`);
+  return data;
+}
+
+export async function cerrarMantequilla(id: number, datos: {
+  kg_mantequilla: number;
+  kg_suero?: number;
+  kg_merma?: number;
+  controles?: Record<string, unknown>;
+}): Promise<CorridaMantequilla> {
+  const { data } = await api.post<CorridaMantequilla>(
+    `procesos/mantequillas/${id}/cerrar/`, datos,
+  );
+  return data;
+}
+
+export async function obtenerOpcionesAltaMantequilla(): Promise<OpcionesAltaMantequilla> {
+  const { data } = await api.get<OpcionesAltaMantequilla>("procesos/mantequillas/opciones-alta/");
+  return data;
+}
+
+export async function crearMantequillaGuiada(datos: {
+  orden: number; lote_crema: number; equipo: number;
+  codigo_lote_mantequilla: string; lote_suero?: number; kg_crema: number;
+}): Promise<CorridaMantequilla> {
+  const { data } = await api.post<CorridaMantequilla>("procesos/mantequillas/crear-guiada/", datos);
   return data;
 }
 

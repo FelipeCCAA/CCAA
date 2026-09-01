@@ -32,6 +32,24 @@ Calidad. Nunca se corrige el saldo del lote original para simularlo.
 - **Inventario > Despachos** autoriza y confirma pallets o granel liberado. El granel no crea un
   pallet ni una existencia ficticia de producto terminado.
 
+## Operación de las etapas
+
+- Evaporación permite iniciar una corrida preparada y cerrarla registrando litros de
+  precondensado, sólidos, densidad, temperatura, flujo, vacío y presión. El cierre deja la
+  salida pendiente de Calidad cuando la etapa lo exige.
+- Mantequilla permite iniciar exclusivamente con su lote de crema ya asignado. El cierre
+  separa mantequilla, suero y merma, muestra el balance antes de guardar y envía el resultado
+  principal a Calidad antes de Envasado.
+- Secado conserva como documento operativo el lote de producción existente: allí se declaran
+  los kilos reales y se genera la salida a granel destinada a Envasado. No se creó un segundo
+  formulario ni un lote duplicado.
+
+Las altas también son guiadas. Una nueva evaporación solo puede elegirse desde un lote
+abierto con vale, OP estructurada, entrada en litros y evaporador ya trazados; el operador
+solo define el silo de concentrado con capacidad suficiente. Una nueva corrida de mantequilla
+solo muestra OP de mantequilla programadas, lotes de crema producidos con saldo en kg y líneas
+compatibles. La ejecución, el lote de mantequilla y la corrida se crean en una transacción.
+
 ## Reglas de balance
 
 Las cantidades se conservan con su unidad. Sólo se comparan directamente entradas y salidas en la

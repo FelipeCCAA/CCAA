@@ -317,6 +317,10 @@ export interface EquipoInicioProduccion extends Equipo {
 export interface OpcionesInicioProduccion {
   entradas: ValeDisponible[];
   equipos: EquipoInicioProduccion[];
+  ordenes: {
+    id: number; codigo: string; producto: number; producto_nombre: string;
+    cantidad_planificada: string; unidad: string; estado: string;
+  }[];
 }
 
 export async function obtenerOpcionesInicioProduccion(): Promise<OpcionesInicioProduccion> {
@@ -431,6 +435,7 @@ export interface DatosBorradorLote {
   vale: number | null;
   litros_estandarizados_borrador: number | null;
   equipo: number | null;
+  orden: number | null;
   fecha: string;
   op: string;
   linea: string;
