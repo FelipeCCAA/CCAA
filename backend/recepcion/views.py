@@ -303,7 +303,27 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             )
         return super().update(request, *args, **kwargs)
 
-    def _borrador_del_usuario(self, request, pk=None):
+    def _borrador_del_usuario(self, request, pk=None, *, bloquear=False):
+        """
+        El borrador abierto de esta persona, o `None`.
+
+        `bloquear` toma el candado de fila (`SELECT … FOR UPDATE`) y **solo
+        vale dentro de una transacción**. Lo piden las tres acciones que
+        escriben, por una carrera real:
+
+        el formulario autoguarda con dos segundos de retardo, así que al pulsar
+        «Confirmar» puede quedar un `guardar-borrador` en vuelo. Sin candado,
+        ese PATCH lee la fila antes de que la confirmación se comprometa, y
+        `serializer.save()` reescribe **todas** las columnas —incluida
+        `estado`—, devolviendo a borrador un documento ya confirmado. El
+        servidor responde 200 a las dos peticiones y el operador ve el mensaje
+        de éxito; lo que falla aparece mucho después y en otra pantalla —«el
+        silo no tiene un análisis confirmado vigente»—, sin nada que apunte a
+        la confirmación perdida.
+
+        Con el candado las dos se serializan: la que llega segunda relee, ve
+        que ya no es borrador y responde 409, que es la verdad.
+        """
         consulta = filtrar_por_scope(
             Recepcion.objects.select_related("vehiculo", "silo").prefetch_related(
                 "modulos", "controles_inhibidores__busquedas"
@@ -314,6 +334,8 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         ).filter(estado=Recepcion.Estado.BORRADOR, abierto_por=request.user)
         if pk is not None:
             consulta = consulta.filter(pk=pk)
+        if bloquear:
+            consulta = consulta.select_for_update(of=("self",))
         return consulta.order_by("-actualizado_en", "-id").first()
 
     @action(detail=False, methods=["get"], url_path="mi-borrador")
@@ -382,8 +404,9 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         ])
 
     @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    @transaction.atomic
     def guardar_borrador(self, request, pk=None):
-        recepcion = self._borrador_del_usuario(request, pk)
+        recepcion = self._borrador_del_usuario(request, pk, bloquear=True)
         if recepcion is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -392,15 +415,15 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         datos = {clave: valor for clave, valor in request.data.items() if clave != "modulos"}
         serializer = self.get_serializer(recepcion, data=datos, partial=True)
         serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            recepcion = serializer.save()
-            if "modulos" in request.data:
-                self._guardar_modulos_borrador(recepcion, request.data["modulos"])
+        recepcion = serializer.save()
+        if "modulos" in request.data:
+            self._guardar_modulos_borrador(recepcion, request.data["modulos"])
         return Response(self.get_serializer(recepcion).data)
 
     @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    @transaction.atomic
     def confirmar_borrador(self, request, pk=None):
-        recepcion = self._borrador_del_usuario(request, pk)
+        recepcion = self._borrador_del_usuario(request, pk, bloquear=True)
         if recepcion is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -422,8 +445,9 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         return Response(self.get_serializer(recepcion).data)
 
     @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    @transaction.atomic
     def descartar_borrador(self, request, pk=None):
-        recepcion = self._borrador_del_usuario(request, pk)
+        recepcion = self._borrador_del_usuario(request, pk, bloquear=True)
         if recepcion is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
         recepcion.estado = Recepcion.Estado.ANULADA
@@ -1629,7 +1653,15 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         analisis.save(update_fields=["visualizado_por", "visualizado_en"])
         return Response(self.get_serializer(analisis).data)
 
-    def _borrador_del_usuario(self, request, pk=None):
+    def _borrador_del_usuario(self, request, pk=None, *, bloquear=False):
+        """
+        El borrador abierto de esta persona, o `None`.
+
+        `bloquear` toma el candado de fila y solo vale dentro de una
+        transacción; lo piden las acciones que escriben. El porqué está en
+        `recepcion.views.RecepcionViewSet._borrador_del_usuario`: sin él, un
+        autoguardado en vuelo pisa la confirmación y la deja en borrador.
+        """
         consulta = filtrar_por_scope(
             AnalisisSilo.objects.select_related("silo", "analista"),
             request.user,
@@ -1641,6 +1673,8 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
             consulta = consulta.filter(silo_id=silo)
         if pk is not None:
             consulta = consulta.filter(pk=pk)
+        if bloquear:
+            consulta = consulta.select_for_update(of=("self",))
         return consulta.order_by("-actualizado_en", "-id").first()
 
     @action(detail=False, methods=["get"], url_path="mi-borrador")
@@ -1671,8 +1705,9 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         return Response(self.get_serializer(analisis).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    @transaction.atomic
     def guardar_borrador(self, request, pk=None):
-        analisis = self._borrador_del_usuario(request, pk)
+        analisis = self._borrador_del_usuario(request, pk, bloquear=True)
         if analisis is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -1684,8 +1719,9 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    @transaction.atomic
     def confirmar_borrador(self, request, pk=None):
-        analisis = self._borrador_del_usuario(request, pk)
+        analisis = self._borrador_del_usuario(request, pk, bloquear=True)
         if analisis is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -1698,8 +1734,9 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         return Response(self.get_serializer(analisis).data)
 
     @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    @transaction.atomic
     def descartar_borrador(self, request, pk=None):
-        analisis = self._borrador_del_usuario(request, pk)
+        analisis = self._borrador_del_usuario(request, pk, bloquear=True)
         if analisis is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
         analisis.estado = AnalisisSilo.Estado.ANULADO

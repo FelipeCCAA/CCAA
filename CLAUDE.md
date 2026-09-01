@@ -87,6 +87,8 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
 - **No reescribas archivos con acentos usando `Get-Content | … | Set-Content`**: PowerShell 5.1 lee en ANSI y escribe en UTF-8, así que un reemplazo masivo convierte cada `ó` en `Ã³` en todo el archivo. Usa Edit, o restaura con `git checkout --` y reaplica a mano.
 - Un **`default` de campo que lanza una excepción rompe la página «Añadir» del admin**, no solo el guardado: Django pide el `default` de cada campo al construir el modelo vacío del formulario. Los defaults de tenant (`empresa_predeterminada_pruebas`, `sucursal_predeterminada_pruebas`, en dos docenas de campos) lanzaban `ImproperlyConfigured` fuera de pruebas y dejaban **22 de 72 modelos** con «Añadir» en error 500. Ahora devuelven `None` fuera de pruebas: no se inventa tenant y el campo obligatorio lo exige el formulario. `usuarios.tests_admin_alta` recorre el registro entero del admin —no una lista de 22— y corre con `@override_settings(DJANGO_ENV="development")`, porque **bajo `test` el defecto no existe** y la prueba pasaría sin comprobar nada.
 - Dentro de `transaction.atomic()`, **salir con `return` confirma la transacción**: solo una excepción revierte. Un `return Response(...)` de validación a mitad de un lote de escrituras deja media operación guardada.
+- **Un autoguardado en vuelo pisaba la confirmación** (corregido el 2026-08-31). Los cuatro formularios con borrador —recepción, análisis de silo, vale y lote— guardan solos cada dos segundos y confirman aparte, así que al pulsar «Confirmar» puede quedar un `guardar-borrador` en camino. Si ese PATCH leía la fila antes de que la confirmación se comprometiera, `serializer.save()` reescribía **todas** las columnas —incluida `estado`— y devolvía a borrador un documento ya confirmado. Las dos peticiones respondían 200 y el operador veía el mensaje de éxito; el fallo aparecía dos pantallas después, al transferir un vale, con «el silo no tiene un análisis confirmado vigente» y sin nada que apuntara a la confirmación perdida. Ahora `_borrador_del_usuario(..., bloquear=True)` toma el candado de fila y las tres acciones que escriben corren en transacción: la que llega segunda relee, ve que ya no es borrador y responde 409. `recepcion.tests_borrador_carrera` lo fija atravesando la vista real —verificado por mutación: sin `bloquear=True` vuelve a rojo—.
+- **`select_for_update` sobre una consulta con `select_related` bloquea también las filas unidas.** Los borradores traen silo, vehículo y producto por `select_related`, así que un candado sin acotar dejaría el silo entero bloqueado mientras alguien confirma su análisis. `of=("self",)` lo limita a la fila del documento, que es lo único en disputa.
 - Los archivos del Instructivo (`Fabricación/2026/Instructivo/`) están **abiertos por
   OneDrive**: leerlos con `ZipFile::OpenRead` falla con «está siendo utilizado en otro
   proceso». Hay que copiarlos a un directorio temporal primero.
@@ -159,6 +161,78 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
   además `settings.DJANGO_ENV`; la migración solo `os.getenv("DJANGO_ENV")`—. Ya no importa,
   porque ambos caminos convergen en la misma organización, pero si alguien vuelve a apoyar
   una decisión en esa detección, que sepa que discrepan.
+
+## El circuito de producción, de punta a punta
+
+`frontend/e2e/circuito-polvo.spec.ts` (desde 2026-08-31) recorre **por pantalla** el turno
+completo de leche en polvo: dos camiones —entera y descremada—, decisión de Calidad, descarga,
+análisis de los dos estanques, vale de estandarización, lote, kilos y pallet. Se corre con
+`npm run circuito` y **escribe** en la base a la que apunta; por eso tiene proyecto propio y
+`npm run auditoria` ya no lo incluye. Detalle en `frontend/e2e/README.md`.
+
+Existe porque la cadena ya estaba cubierta por API (`sembrar_flujo_demo`) y por unidad, y ninguna
+de las dos comprueba que **alguien pueda recorrerla**: un desplegable vacío o un botón
+deshabilitado dejan el backend impecable y la planta detenida. Encontró tres cosas que no se veían
+de otro modo: la carrera del autoguardado contra la confirmación (arriba, en las trampas), que el
+desplegable de responsables del muestreo salía vacío por perfiles sin área, y que el vale
+**no hereda** la composición del `AnalisisSilo` —hay que teclear grasa y SNG que el sistema ya
+tiene medidos—.
+
+**Prerrequisitos como configuración, no como sembrado de la prueba:**
+`manage.py preparar_circuito_polvo --aplicar` deja las áreas de perfil, la receta del producto y
+existencia de embalaje en una ubicación **disponible** —el descuento por FEFO no ve la cuarentena—.
+No los crea la prueba a propósito: son configuración de planta, y fabricarlos en cada corrida
+escondería justo el caso de que en producción falten. Hacen falta **dos cuentas**
+(`crear_usuario_e2e` y `crear_usuario_e2e --usuario e2e_segunda_firma`) porque el análisis de silo
+exige dos firmas de personas distintas.
+
+**Consume capacidad de verdad.** Cada corrida mete 25.000 L en un silo y 8.000 en un TK, y deja en
+el destino lo que el lote no se lleva. Los estanques se eligen al arrancar entre los que tienen
+sitio; cuando no quede, la prueba lo dice con esas palabras y se libera despachando la leche o con
+`limpiar_transaccional --aplicar` si la base es de pruebas.
+
+## El flujo de evaporación
+
+`frontend/e2e/evaporacion.spec.ts` (desde 2026-09-01, `npm run evaporacion`) recorre por pantalla
+lo que Producción hace con la leche que la estandarización dejó en el silo: abre el lote sobre un
+evaporador, prepara la corrida, la inicia y la cierra declarando el precondensado. Los ayudantes
+que comparte con el circuito viven en `frontend/e2e/ayudantes.ts`.
+
+**Abrir el lote es iniciar la evaporación**, no son dos cosas. Para la familia `polvo` el
+formulario de lote solo ofrece evaporadores —la torre aparece después, cuando Calidad libere el
+concentrado— y `_encadenar_con_la_estandarizacion` deduce la etapa del **tipo de máquina**:
+evaporador → evaporación, torre → secado. Elegir la máquina equivocada no da error: el lote nace
+en otra etapa y no aparece nunca en «Nueva evaporación».
+
+**El silo de origen se analiza después de abrir el lote.** `iniciar_condensacion` exige análisis
+confirmado, vigente y con las dos firmas —la misma puerta que la transferencia del vale—. Abrir el
+lote genera una **salida**, que no invalida la muestra; un ingreso sí. Analizar antes lo dejaría
+vencido si algún vale descargara ahí entremedio.
+
+**Una OP sin leche bloquea igual que ninguna.** El formulario filtra las órdenes por el producto
+del vale, así que `preparar_circuito_polvo` programa la OP mirando **qué vales tienen saldo**, y
+solo de familias que van a evaporador: una OP de crema deja el desplegable de órdenes lleno y el
+de máquinas sin evaporadores, que es el mismo bloqueo movido de sitio.
+
+### La pantalla ofrece lo que el backend va a rechazar
+
+Tres casos del mismo patrón, encontrados por esta prueba. Cuestan caro porque el rechazo llega al
+final del formulario —o de la corrida—, cuando ya no dice nada sobre qué elegir distinto:
+
+1. **Vales sin saldo real** (corregido 2026-09-01). El desplegable contaba el consumo uniendo por
+   `movimiento.lote`; `litros_ya_tomados` —la regla que bloquea— lo cuenta por `origen_id` y
+   acotando al silo del vale. Con un movimiento que tiene `origen_id` y no `lote` —los hay en la
+   base— la pantalla ofrecía 20.000 L libres y el formulario, ya completo, respondía «quedan
+   0,00 L y se piden 20.000». `_vales_operativos` usa ahora la misma función que la regla: **una
+   cantidad, una consulta**.
+2. **Silos bloqueados por Calidad como destino del concentrado** (abierto).
+   `procesos.opciones_alta` ofrece todos los silos activos sin mirar `estado`; escribe «Bloqueado
+   por Calidad» en la opción pero no la deshabilita. El rechazo llega al **cerrar** la corrida,
+   con el evaporador ya trabajado.
+3. **Máquinas ocupadas por lotes anulados** (abierto). Anular un lote **no cierra su
+   `EjecucionProceso`** —solo lo hace declararlo producido—, así que el evaporador queda ocupado
+   indefinidamente. Con tres evaporadores, tres corridas abandonadas dejan la planta sin ninguno,
+   y el único síntoma es «Máquina ocupada por otra corrida» sobre una máquina que nadie usa.
 
 ## Tarea de integración en curso
 

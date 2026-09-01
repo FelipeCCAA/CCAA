@@ -76,6 +76,29 @@ export default defineConfig({
         storageState: RUTA_ESTADO,
       },
     },
+    {
+      /* Los recorridos que **operan** la planta. No entran en
+         `npm run auditoria` porque escriben: dejan recepciones, vales, lotes,
+         corridas y pallets en la base contra la que corren. La auditoría solo
+         mira, y mezclarlas convertiría un `npm run auditoria` en una corrida
+         de planta. */
+      name: "circuito",
+      testMatch: /circuito-polvo\.spec\.ts/,
+      dependencies: ["sesion"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: RUTA_ESTADO,
+      },
+    },
+    {
+      name: "evaporacion",
+      testMatch: /evaporacion\.spec\.ts/,
+      dependencies: ["sesion"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: RUTA_ESTADO,
+      },
+    },
   ],
 
   webServer: [

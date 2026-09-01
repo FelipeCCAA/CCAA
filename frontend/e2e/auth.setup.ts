@@ -19,7 +19,7 @@
   explica por qué aquí no se toca el que la aplicación mira primero.
 */
 
-import { test as setup, expect } from "@playwright/test";
+import { test as setup, expect, type APIRequestContext } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -30,15 +30,59 @@ const CLAVE_SESION = "ccaa.sesion";
 const usuario = process.env.E2E_USUARIO;
 const clave = process.env.E2E_CLAVE;
 
+/*
+  Cierra la sesión que dejó abierta la corrida anterior.
+
+  El backend permite **una sesión activa por usuario** y responde 409 a la
+  segunda. Como el token solo se invalida llamando a `logout/`, y una corrida
+  que termina no llama a nada, la segunda ejecución de la auditoría fallaba
+  siempre en este paso con «El login rechazó a…», que suena a contraseña
+  equivocada y no lo es. El token de la corrida anterior está en el propio
+  `storageState`: se usa para cerrarla antes de pedir una nueva.
+
+  Los errores se ignoran a propósito. Si el archivo no existe, si el token ya
+  caducó o si el servidor lo rechaza, el estado deseado —sin sesión abierta—
+  ya se cumple, y hacer fallar el setup por eso impediría precisamente lo que
+  esta función viene a permitir.
+*/
+async function cerrarSesionAnterior(request: APIRequestContext) {
+  try {
+    const guardado = JSON.parse(fs.readFileSync(RUTA_ESTADO, "utf8"));
+    const entrada = guardado.origins?.[0]?.localStorage?.find(
+      (item: { name: string }) => item.name === CLAVE_SESION,
+    );
+    const token = entrada && JSON.parse(entrada.value).token;
+
+    if (token) {
+      await request.post(`${API}/api/usuarios/logout/`, {
+        headers: { Authorization: `Token ${token}` },
+      });
+    }
+  } catch {
+    /* No había sesión anterior que cerrar. */
+  }
+}
+
 setup("obtiene una sesión para auditar las pantallas internas", async ({ request }) => {
   expect(
     usuario && clave,
     "Faltan credenciales. Define E2E_USUARIO y E2E_CLAVE antes de correr la auditoría.",
   ).toBeTruthy();
 
+  await cerrarSesionAnterior(request);
+
   const respuesta = await request.post(`${API}/api/usuarios/login/`, {
     data: { username: usuario, password: clave },
   });
+
+  /* 409 es «ya hay una sesión activa», no una credencial mala. Se nombra
+     aparte porque el mensaje genérico manda a revisar la contraseña, que es
+     justo donde no está el problema. */
+  expect(
+    respuesta.status(),
+    "El usuario ya tiene una sesión activa en otro equipo y no se pudo cerrar " +
+      "desde aquí. Ciérrala en Administración › Sesiones, o espera a que caduque.",
+  ).not.toBe(409);
 
   /* El backend responde 401 con el mismo mensaje exista o no la cuenta, así
      que aquí no se puede distinguir «usuario mal escrito» de «contraseña
