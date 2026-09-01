@@ -180,10 +180,12 @@ export interface ResultadoProcesoCalidad {
   corrida_codigo: string;
   lote_codigo: string;
   producto_nombre: string;
-  equipo_nombre: string;
+  equipo_nombre: string | null;
   silo_destino_codigo: string;
   cantidad: string;
   unidad: string;
+  clasificacion: string;
+  destino: string;
   estado: "pendiente" | "liberado" | "rechazado";
   observacion: string;
   decidida_en: string | null;

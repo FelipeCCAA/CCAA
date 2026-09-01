@@ -420,7 +420,9 @@ class MovimientoProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyM
 class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
-    queryset = Despacho.objects.select_related("cliente", "creado_por", "autorizado_por").prefetch_related("detalles__pallet__envase__lote")
+    queryset = Despacho.objects.select_related("cliente", "creado_por", "autorizado_por").prefetch_related(
+        "detalles__pallet__envase__lote", "detalles_granel__salida__ejecucion"
+    )
     serializer_class = DespachoSerializer
     permission_classes = [PuedeCrearDespacho]
     http_method_names = ["get", "post", "head", "options"]
@@ -428,13 +430,67 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         sucursal = sucursal_para_escritura(self.request.user, serializer.validated_data, "sucursal")
         cliente = serializer.validated_data["cliente"]
-        pallets = serializer.validated_data["pallets_solicitados"]
+        pallets = serializer.validated_data.get("pallets_solicitados", [])
+        graneles = serializer.validated_data.get("graneles", [])
         if cliente.empresa_id != sucursal.empresa_id:
             raise ValidationError({"cliente": "El cliente pertenece a otra empresa."})
         ajenos = [p.codigo for p in pallets if p.envase.lote.sucursal_id != sucursal.id]
         if ajenos:
             raise ValidationError({"pallet_ids": f"Hay pallets de otra planta: {', '.join(ajenos)}"})
+        from procesos.models import SalidaProceso
+        salidas = filtrar_por_scope(
+            SalidaProceso.objects.filter(pk__in=[item.get("salida") for item in graneles]),
+            self.request.user,
+            campo_sucursal="ejecucion__sucursal_id",
+            campo_empresa="ejecucion__sucursal__empresa_id",
+        )
+        if salidas.count() != len(graneles) or salidas.exclude(
+            ejecucion__sucursal_id=sucursal.id
+        ).exists():
+            raise ValidationError({"graneles": "Hay salidas que no pertenecen a esta planta."})
         serializer.save(creado_por=self.request.user, sucursal=sucursal)
+
+    @action(detail=False, methods=["get"], url_path="granel-disponible")
+    def granel_disponible(self, request):
+        """Precondensados u otros graneles liberados, sin convertirlos en pallets."""
+        from calidad.models import LiberacionProceso
+        from procesos.models import SalidaProceso
+
+        salidas = filtrar_por_scope(
+            SalidaProceso.objects.filter(
+                destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+                liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
+            ).select_related("ejecucion__etapa", "silo").annotate(
+                comprometido=Coalesce(
+                    Sum(
+                        "detalles_despacho_granel__cantidad",
+                        filter=Q(
+                            detalles_despacho_granel__despacho__estado__in=[
+                                Despacho.Estado.AUTORIZADO,
+                                Despacho.Estado.DESPACHADO,
+                            ]
+                        ),
+                    ),
+                    Value(Decimal("0")),
+                    output_field=DecimalField(max_digits=14, decimal_places=3),
+                )
+            ),
+            request.user,
+            campo_sucursal="ejecucion__sucursal_id",
+            campo_empresa="ejecucion__sucursal__empresa_id",
+        )
+        return Response([
+            {
+                "id": salida.id,
+                "corrida_codigo": salida.ejecucion.codigo,
+                "producto": salida.ejecucion.etapa.nombre,
+                "silo_codigo": salida.silo.codigo if salida.silo_id else None,
+                "cantidad_disponible": salida.cantidad - salida.comprometido,
+                "unidad": salida.unidad,
+            }
+            for salida in salidas
+            if salida.cantidad - salida.comprometido > 0
+        ])
 
     @action(detail=True, methods=["post"])
     def autorizar(self, request, pk=None):

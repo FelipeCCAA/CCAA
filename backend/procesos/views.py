@@ -345,6 +345,10 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
             SalidaProceso.objects.filter(
                 liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
                 silo__isnull=False,
+                destino__in=[
+                    SalidaProceso.Destino.PENDIENTE,
+                    SalidaProceso.Destino.SIGUIENTE_PROCESO,
+                ],
             ).exclude(
                 naturaleza=SalidaProceso.Naturaleza.MERMA
             ).select_related(
@@ -395,6 +399,14 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                 "cantidad_consumida": salida.consumido or 0,
                 "cantidad_disponible": salida.cantidad - (salida.consumido or 0),
                 "unidad": salida.unidad,
+                "clasificacion": salida.clasificacion,
+                "clasificacion_etiqueta": salida.get_clasificacion_display(),
+                "destino": salida.destino,
+                "destino_etiqueta": salida.get_destino_display(),
+                "destinos_permitidos": [
+                    {"valor": valor, "etiqueta": dict(SalidaProceso.Destino.choices)[valor]}
+                    for valor in sorted(salida.destinos_permitidos())
+                ],
                 "etapas_siguientes": [
                     {
                         "id": etapa.id,
@@ -418,7 +430,16 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                     for etapa in etapas_por_proceso.get(
                         salida.ejecucion.etapa.proceso_id, []
                     )
-                    if etapa.orden > salida.ejecucion.etapa.orden
+                    if etapa.orden == min(
+                        (
+                            candidata.orden
+                            for candidata in etapas_por_proceso.get(
+                                salida.ejecucion.etapa.proceso_id, []
+                            )
+                            if candidata.orden > salida.ejecucion.etapa.orden
+                        ),
+                        default=-1,
+                    )
                 ],
             }
             for salida in salidas
@@ -445,6 +466,31 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
             EjecucionProcesoSerializer(ejecucion).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["post"], url_path="definir-destino")
+    def definir_destino(self, request, pk=None):
+        salida = self.get_object()
+        destino = request.data.get("destino", "")
+        if destino not in salida.destinos_permitidos():
+            return Response(
+                {"error": "El destino no es compatible con este producto intermedio."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if salida.usos_como_origen.exists() and destino != SalidaProceso.Destino.SIGUIENTE_PROCESO:
+            return Response(
+                {"error": "La salida ya fue consumida por otro proceso y no puede cambiar de destino."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if salida.detalles_despacho_granel.exclude(
+            despacho__estado="cancelado"
+        ).exists() and destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
+            return Response(
+                {"error": "La salida ya forma parte de un despacho y no puede cambiar de destino."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        salida.destino = destino
+        salida.save(update_fields=["destino"])
+        return Response(self.get_serializer(salida).data)
 
 
 @api_view(["GET"])
@@ -607,6 +653,58 @@ def _flujo_completo(lote):
                 "cliente": detalle.despacho.cliente.nombre if detalle else None,
             })
     liberacion = getattr(lote, "liberacion", None)
+
+    visitadas = set()
+    cadena = []
+
+    def agregar_ejecucion(ejecucion):
+        if ejecucion is None or ejecucion.pk in visitadas:
+            return
+        visitadas.add(ejecucion.pk)
+        entradas = list(
+            ejecucion.entradas.select_related(
+                "salida_origen__ejecucion__etapa", "lote", "silo"
+            )
+        )
+        for entrada in entradas:
+            if entrada.salida_origen_id:
+                agregar_ejecucion(entrada.salida_origen.ejecucion)
+        cadena.append({
+            "id": ejecucion.pk,
+            "codigo": ejecucion.codigo,
+            "etapa": ejecucion.etapa.nombre,
+            "tipo": ejecucion.etapa.tipo,
+            "estado": ejecucion.get_estado_display(),
+            "equipo": ejecucion.equipo.nombre if ejecucion.equipo_id else None,
+            "entradas": [
+                {
+                    "origen": (
+                        entrada.salida_origen.ejecucion.codigo
+                        if entrada.salida_origen_id
+                        else entrada.lote.codigo_lote
+                        if entrada.lote_id
+                        else entrada.silo.codigo
+                    ),
+                    "cantidad": entrada.cantidad,
+                    "unidad": entrada.unidad,
+                    "tipo": entrada.get_tipo_display(),
+                }
+                for entrada in entradas
+            ],
+            "salidas": [
+                {
+                    "id": salida.pk,
+                    "clase": salida.get_clasificacion_display(),
+                    "destino": salida.get_destino_display(),
+                    "cantidad": salida.cantidad,
+                    "unidad": salida.unidad,
+                }
+                for salida in ejecucion.salidas.all()
+            ],
+        })
+
+    agregar_ejecucion(ejecucion_prod)
+    agregar_ejecucion(ejecucion_est)
     return {
         "recepciones": recepciones,
         "nota_recepciones": (
@@ -648,4 +746,5 @@ def _flujo_completo(lote):
             "autorizada_en": liberacion.autorizada_en if liberacion else None,
         },
         "pallets": pallets,
+        "cadena_procesos": cadena,
     }

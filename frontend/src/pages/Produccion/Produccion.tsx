@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { Plus, Search } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 
@@ -164,8 +165,8 @@ function Produccion() {
 
             <p className="mt-2 text-slate-600">
 
-              Lotes de polvo y crema. El resultado de calidad se evalúa contra
-              la especificación vigente a la fecha de cada lote.
+              Procesos separados por su entrada, transformación y destino.
+              Los lotes comienzan desde un vale o intermedio trazable.
 
             </p>
 
@@ -181,7 +182,7 @@ function Produccion() {
 
               <Plus className="h-5 w-5" />
 
-              Abrir proceso
+              Iniciar lote desde vale
 
             </button>
 
@@ -197,18 +198,28 @@ function Produccion() {
 
         </header>
 
-        <section className="mb-8 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-4">
-          <div><b>1. Recepción</b><br /><span className="text-slate-600">Leche analizada y descargada a silo.</span></div>
-          <div><b>2. Estandarización</b><br /><span className="text-slate-600">Vale liberado y leche disponible en silo destino.</span></div>
-          <div><b>3. Producción</b><br /><span className="text-slate-600">Producto, máquina compatible y lote trazable.</span></div>
-          <div><b>4. Calidad e Inventario</b><br /><span className="text-slate-600">Análisis, liberación, pallet y ubicación de bodega.</span></div>
+        <section className="mb-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Flujo por proceso</p>
+          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
+            <Link to="/procesos?seccion=descremacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">1. Descremación<span className="mt-1 block text-xs font-normal text-slate-500">Leche → descremada + crema</span></Link>
+            <Link to="/estandarizacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">2. Estandarización<span className="mt-1 block text-xs font-normal text-slate-500">Mezcla → vale intermedio</span></Link>
+            <a href="#evaporacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-blue-400">3. Evaporación<span className="mt-1 block text-xs font-normal text-slate-500">Vale → concentrado</span></a>
+            <a href="#secado" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-amber-400">4. Secado<span className="mt-1 block text-xs font-normal text-slate-500">Concentrado → polvo granel</span></a>
+            <Link to="/procesos?seccion=mantequilla" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-yellow-400">Mantequilla<span className="mt-1 block text-xs font-normal text-slate-500">Crema → mantequilla granel</span></Link>
+            <Link to="/procesos" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-violet-400">Seguimiento<span className="mt-1 block text-xs font-normal text-slate-500">Activos y trazabilidad</span></Link>
+          </div>
         </section>
 
-        <SalidasIntermedias />
+        <div id="secado"><SalidasIntermedias /></div>
 
-        {veCondensacion && <EvaporadoresProduccion />}
+        {veCondensacion && <div id="evaporacion"><EvaporadoresProduccion /></div>}
 
         {/* Filtros */}
+
+        <section className="mb-3">
+          <h2 className="text-xl font-bold text-slate-900">Lotes productivos</h2>
+          <p className="text-sm text-slate-600">Cada lote conserva su vale, corrida, calidad y destino. Envasado continúa en su módulo independiente.</p>
+        </section>
 
         <section className="mb-6 flex flex-wrap items-center gap-3">
 

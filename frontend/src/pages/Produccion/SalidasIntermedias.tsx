@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowRight, FlaskConical, RefreshCw } from "lucide-react";
 
 import {
+  definirDestinoSalida,
   obtenerSalidasIntermediasDisponibles,
   prepararContinuacion,
   type SalidaIntermediaDisponible,
@@ -19,6 +20,7 @@ export default function SalidasIntermedias() {
   const [equipoId, setEquipoId] = useState(0);
   const [cantidad, setCantidad] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [definiendo, setDefiniendo] = useState<number | null>(null);
 
   const cargar = async () => {
     if (cargando) return;
@@ -75,6 +77,21 @@ export default function SalidasIntermedias() {
     }
   };
 
+  const cambiarDestino = async (salida: SalidaIntermediaDisponible, destino: string) => {
+    setDefiniendo(salida.id);
+    setError("");
+    try {
+      await definirDestinoSalida(salida.id, destino);
+      setMensaje(`Destino de ${salida.corrida_codigo}: ${salida.destinos_permitidos.find((item) => item.valor === destino)?.etiqueta ?? destino}.`);
+      await cargar();
+    } catch (errorPeticion: unknown) {
+      const respuesta = errorPeticion as { response?: { data?: { error?: string } } };
+      setError(respuesta.response?.data?.error || "No se pudo definir el destino de la salida.");
+    } finally {
+      setDefiniendo(null);
+    }
+  };
+
   return (
     <section className="mb-8 overflow-hidden rounded-2xl border border-emerald-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 bg-emerald-50 px-5 py-4">
@@ -128,6 +145,25 @@ export default function SalidasIntermedias() {
               <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-sm">
                 <div><span className="text-slate-500">Disponible</span><br /><b>{numero.format(Number(salida.cantidad_disponible))} {salida.unidad}</b></div>
                 <div><span className="text-slate-500">Consumido</span><br /><b>{numero.format(Number(salida.cantidad_consumida))} {salida.unidad}</b></div>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600">
+                  Clase<br /><b className="text-slate-800">{salida.clasificacion_etiqueta}</b>
+                </div>
+                <label className="text-xs font-semibold text-slate-600">
+                  Destino operativo
+                  <select
+                    value={salida.destino}
+                    disabled={definiendo === salida.id}
+                    onChange={(evento) => void cambiarDestino(salida, evento.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-normal text-slate-800"
+                  >
+                    {salida.destino === "pendiente" && <option value="pendiente">Definir destino…</option>}
+                    {salida.destinos_permitidos.map((destino) => (
+                      <option key={destino.valor} value={destino.valor}>{destino.etiqueta}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
               <div className="mt-3">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Rutas siguientes</p>

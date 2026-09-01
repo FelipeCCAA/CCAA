@@ -152,6 +152,12 @@ export interface Genealogia {
       id: number; codigo: string; unidades: number; kg_neto: string; estado: string;
       ubicacion: string | null; despacho: string | null; cliente: string | null;
     }[];
+    cadena_procesos: {
+      id: number; codigo: string; etapa: string; tipo: string; estado: string;
+      equipo: string | null;
+      entradas: { origen: string; cantidad: string; unidad: string; tipo: string }[];
+      salidas: { id: number; clase: string; destino: string; cantidad: string; unidad: string }[];
+    }[];
   } | null;
 }
 
@@ -197,6 +203,11 @@ export interface SalidaIntermediaDisponible {
   cantidad_consumida: string;
   cantidad_disponible: string;
   unidad: string;
+  clasificacion: string;
+  clasificacion_etiqueta: string;
+  destino: string;
+  destino_etiqueta: string;
+  destinos_permitidos: { valor: string; etiqueta: string }[];
   etapas_siguientes: {
     id: number;
     nombre: string;
@@ -252,6 +263,13 @@ export async function prepararContinuacion(
     datos,
   );
   return data;
+}
+
+export async function definirDestinoSalida(
+  salidaId: number,
+  destino: string,
+): Promise<void> {
+  await api.post(`procesos/salidas/${salidaId}/definir-destino/`, { destino });
 }
 
 export async function crearDescremacion(datos: {

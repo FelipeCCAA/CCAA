@@ -3,7 +3,7 @@ from copy import copy
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
-from decimal import Decimal, ROUND_CEILING
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 
 from maestros.models import Silo
 from produccion.models import PalletProducto
@@ -17,7 +17,8 @@ from .models import (
     LiberacionExcepcionalMaterial, NoConformidadMaterial, OrdenCompra,
     PlantillaInspeccion, Proveedor, RecepcionCompra, ResultadoMRP,
     SolicitudCompra, SolicitudMaterial, Ubicacion,
-    ClienteDespacho, Despacho, DetalleDespacho, ExistenciaProductoTerminado,
+    ClienteDespacho, Despacho, DetalleDespacho, DetalleDespachoGranel,
+    ExistenciaProductoTerminado,
     MovimientoProductoTerminado,
 )
 
@@ -769,11 +770,30 @@ class DetalleDespachoSerializer(serializers.ModelSerializer):
         read_only_fields = ["despacho"]
 
 
+class DetalleDespachoGranelSerializer(serializers.ModelSerializer):
+    corrida_codigo = serializers.CharField(
+        source="salida.ejecucion.codigo", read_only=True
+    )
+    destino_etiqueta = serializers.CharField(
+        source="salida.get_destino_display", read_only=True
+    )
+
+    class Meta:
+        model = DetalleDespachoGranel
+        fields = "__all__"
+        read_only_fields = ["despacho"]
+
+
 class DespachoSerializer(serializers.ModelSerializer):
     detalles = DetalleDespachoSerializer(many=True, read_only=True)
+    detalles_granel = DetalleDespachoGranelSerializer(many=True, read_only=True)
     pallet_ids = serializers.PrimaryKeyRelatedField(
         source="pallets_solicitados", queryset=PalletProducto.objects.all(),
-        many=True, write_only=True,
+        many=True, write_only=True, required=False,
+    )
+    graneles = serializers.ListField(
+        child=serializers.DictField(), write_only=True, required=False,
+        help_text="Salidas a despacho directo: [{salida, cantidad}].",
     )
     cliente_nombre = serializers.CharField(source="cliente.nombre", read_only=True)
 
@@ -786,12 +806,44 @@ class DespachoSerializer(serializers.ModelSerializer):
         ids = [p.pk for p in pallets]
         if len(ids) != len(set(ids)):
             raise serializers.ValidationError("Un pallet no puede repetirse en el mismo despacho.")
-        if not ids:
-            raise serializers.ValidationError("Selecciona al menos un pallet.")
         return pallets
 
+    def validate(self, attrs):
+        pallets = attrs.get("pallets_solicitados", [])
+        graneles = attrs.get("graneles", [])
+        if not pallets and not graneles:
+            raise serializers.ValidationError(
+                "Selecciona al menos un pallet o una salida liberada a granel."
+            )
+        ids = [item.get("salida") for item in graneles]
+        if any(not valor for valor in ids) or len(ids) != len(set(ids)):
+            raise serializers.ValidationError({
+                "graneles": "Cada salida a granel debe identificarse una sola vez."
+            })
+        return attrs
+
+    @transaction.atomic
     def create(self, validated_data):
-        pallets = validated_data.pop("pallets_solicitados")
+        from procesos.models import SalidaProceso
+
+        pallets = validated_data.pop("pallets_solicitados", [])
+        graneles = validated_data.pop("graneles", [])
         despacho = super().create(validated_data)
         DetalleDespacho.objects.bulk_create([DetalleDespacho(despacho=despacho, pallet=p) for p in pallets])
+        for item in graneles:
+            try:
+                salida = SalidaProceso.objects.select_related("ejecucion__etapa").get(
+                    pk=item.get("salida")
+                )
+                cantidad = Decimal(str(item.get("cantidad")))
+            except (SalidaProceso.DoesNotExist, InvalidOperation, TypeError, ValueError) as error:
+                raise serializers.ValidationError({
+                    "graneles": "La salida o su cantidad no son válidas."
+                }) from error
+            detalle = DetalleDespachoGranel(
+                despacho=despacho, salida=salida,
+                cantidad=cantidad, unidad=salida.unidad,
+            )
+            detalle.full_clean()
+            detalle.save()
         return despacho

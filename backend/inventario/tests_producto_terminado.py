@@ -2,18 +2,20 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from calidad.models import Liberacion
-from maestros.models import Equipo, Mandante, Producto
+from calidad.models import Liberacion, LiberacionProceso
+from maestros.models import Equipo, Mandante, Producto, Silo
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from produccion.models import Lote, PalletProducto, RegistroEnvase
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
-    Bodega, ClienteDespacho, Despacho, DetalleDespacho,
+    Bodega, ClienteDespacho, Despacho, DetalleDespacho, DetalleDespachoGranel,
     ExistenciaProductoTerminado, Insumo, LoteInventario,
     MovimientoProductoTerminado, Ubicacion,
 )
@@ -131,6 +133,83 @@ class FlujoProductoTerminadoTests(TestCase):
         with self.assertRaises(ValidationError):
             ejecutar_despacho(despacho, self.usuario)
         self.assertTrue(ExistenciaProductoTerminado.objects.get(pallet=self.pallet).activo)
+
+    def test_precondensado_liberado_se_despacha_sin_crear_pallet(self):
+        proceso = Proceso.objects.create(codigo="precond", nombre="Precondensado")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="evaporar", nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=1, requiere_calidad=True,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EV-GRANEL-1", etapa=etapa, sucursal=self.planta,
+        )
+        silo = Silo.objects.create(
+            sucursal=self.planta, codigo="PC-01", tipo=Silo.Tipo.SILO,
+            capacidad_l=Decimal("20000"),
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=ejecucion, silo=silo, cantidad=Decimal("10000"), unidad="L",
+            clasificacion=SalidaProceso.Clasificacion.GRANEL,
+            destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+        )
+        LiberacionProceso.objects.create(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
+            decidida_por=self.usuario, decidida_en=timezone.now(),
+        )
+        despacho = Despacho.objects.create(
+            sucursal=self.planta, numero="D-GRANEL-1", cliente=self.cliente,
+            creado_por=self.usuario,
+        )
+        DetalleDespachoGranel.objects.create(
+            despacho=despacho, salida=salida, cantidad=Decimal("8000"), unidad="L",
+        )
+
+        autorizado = autorizar_despacho(despacho, self.usuario)
+        ejecutado = ejecutar_despacho(autorizado, self.usuario)
+
+        self.assertEqual(ejecutado.estado, Despacho.Estado.DESPACHADO)
+        self.assertEqual(ejecutado.detalles.count(), 0)
+        self.assertEqual(ejecutado.detalles_granel.get().cantidad, Decimal("8000"))
+
+    def test_api_crea_un_despacho_granel_sin_exigir_pallet(self):
+        self.usuario.user_permissions.add(
+            Permission.objects.get(codename="despacho_crear")
+        )
+        proceso = Proceso.objects.create(codigo="precond-api", nombre="Precondensado API")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="evaporar", nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=1, requiere_calidad=True,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EV-GRANEL-API", etapa=etapa, sucursal=self.planta,
+        )
+        silo = Silo.objects.create(
+            sucursal=self.planta, codigo="PC-API", tipo=Silo.Tipo.SILO,
+            capacidad_l=Decimal("12000"),
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=ejecucion, silo=silo, cantidad=Decimal("9000"), unidad="L",
+            clasificacion=SalidaProceso.Clasificacion.GRANEL,
+            destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+        )
+        LiberacionProceso.objects.create(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
+            decidida_por=self.usuario, decidida_en=timezone.now(),
+        )
+
+        respuesta = self.api.post(
+            "/api/inventario/despachos/",
+            {
+                "numero": "D-GRANEL-API",
+                "cliente": self.cliente.pk,
+                "graneles": [{"salida": salida.pk, "cantidad": "7000"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.data["detalles"], [])
+        self.assertEqual(respuesta.data["detalles_granel"][0]["cantidad"], "7000.000")
 
     def test_resumen_operacional_refleja_stock_sin_duplicarlo(self):
         self.liberar()

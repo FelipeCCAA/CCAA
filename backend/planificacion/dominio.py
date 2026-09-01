@@ -15,6 +15,7 @@ acoplamiento es la razón de ser de la herramienta.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, time, timedelta
 from typing import Any, Iterable
 
 
@@ -118,7 +119,20 @@ def consumo_dia(
     acumulado = {categoria: 0.0 for categoria in CATEGORIAS}
 
     for bloque in bloques:
-        if bloque.dia != dia:
+        horas = None
+        inicio_dt = getattr(bloque, "fecha_hora_inicio", None)
+        fin_dt = getattr(bloque, "fecha_hora_fin", None)
+        semana = getattr(bloque, "semana", None)
+        if inicio_dt and fin_dt and semana:
+            tz = inicio_dt.tzinfo
+            desde = datetime.combine(semana.fecha_del_dia(dia), time.min, tzinfo=tz)
+            hasta = desde + timedelta(days=1)
+            solape_inicio = max(inicio_dt, desde)
+            solape_fin = min(fin_dt, hasta)
+            if solape_fin <= solape_inicio:
+                continue
+            horas = (solape_fin - solape_inicio).total_seconds() / 3600
+        elif bloque.dia != dia:
             continue
         # Quién consume leche lo dice el propio equipo del bloque. Antes era
         # una tupla de códigos repetida aquí para no importar los modelos;
@@ -132,8 +146,10 @@ def consumo_dia(
         if codigo is None:
             continue
 
-        horas = _numero(bloque.hora_fin) - _numero(bloque.hora_inicio)
-        litros = horas * _numero(codigo.rendimiento_lh)
+        if horas is None:
+            horas = _numero(bloque.hora_fin) - _numero(bloque.hora_inicio)
+        capacidad = _numero(getattr(bloque, "capacidad_hora", None)) or _numero(codigo.rendimiento_lh)
+        litros = horas * capacidad
 
         if codigo.categoria in acumulado:
             acumulado[codigo.categoria] += litros
@@ -239,7 +255,14 @@ def se_solapan(a: Any, b: Any) -> bool:
     Dos bloques contiguos —uno termina a las 14 y el otro empieza a las 14—
     NO se solapan: es la programación normal de un turno tras otro.
     """
-    if a.equipo != b.equipo or a.dia != b.dia:
+    if a.equipo != b.equipo:
+        return False
+
+    inicio_dt_a, fin_dt_a = getattr(a, "fecha_hora_inicio", None), getattr(a, "fecha_hora_fin", None)
+    inicio_dt_b, fin_dt_b = getattr(b, "fecha_hora_inicio", None), getattr(b, "fecha_hora_fin", None)
+    if inicio_dt_a and fin_dt_a and inicio_dt_b and fin_dt_b:
+        return inicio_dt_a < fin_dt_b and inicio_dt_b < fin_dt_a
+    if a.dia != b.dia:
         return False
 
     inicio_a, fin_a = _numero(a.hora_inicio), _numero(a.hora_fin)
@@ -252,13 +275,18 @@ def validar_bloque(bloque: Any, existentes: Iterable[Any] = ()) -> Validacion:
     """Comprueba un bloque antes de guardarlo. Devuelve motivos, no un booleano."""
     bloqueos: list[str] = []
 
+    inicio_dt = getattr(bloque, "fecha_hora_inicio", None)
+    fin_dt = getattr(bloque, "fecha_hora_fin", None)
     inicio = _numero(bloque.hora_inicio)
     fin = _numero(bloque.hora_fin)
 
-    if fin <= inicio:
+    if inicio_dt and fin_dt:
+        if fin_dt <= inicio_dt:
+            bloqueos.append("La fecha y hora de término debe ser posterior al inicio.")
+    elif fin <= inicio:
         bloqueos.append("La hora de término debe ser posterior a la de inicio.")
 
-    if not (0 <= inicio <= 24) or not (0 <= fin <= 24):
+    if not inicio_dt and (not (0 <= inicio <= 24) or not (0 <= fin <= 24)):
         bloqueos.append("Las horas deben estar entre 0 y 24.")
 
     if bloque.tipo == "produccion" and bloque.codigo_id is None:
@@ -279,6 +307,116 @@ def validar_bloque(bloque: Any, existentes: Iterable[Any] = ()) -> Validacion:
             break
 
     return Validacion(permitido=not bloqueos, bloqueos=bloqueos)
+
+
+def alertas_actividades(bloques: Iterable[Any]) -> list[dict[str, Any]]:
+    """Advertencias accionables que no bloquean el trabajo en borrador."""
+    alertas = []
+    for bloque in bloques:
+        tipo = getattr(getattr(bloque, "tipo_actividad", None), "codigo", None)
+        faltan = []
+        if tipo == "produccion" or bloque.tipo == "produccion":
+            if not getattr(bloque, "producto_id", None) and not getattr(bloque, "codigo_id", None):
+                faltan.append("producto")
+            if not getattr(bloque, "origen_leche_id", None) and not getattr(getattr(bloque, "codigo", None), "mandante_id", None):
+                faltan.append("origen")
+            if _numero(getattr(bloque, "capacidad_hora", None)) <= 0 and _numero(getattr(getattr(bloque, "codigo", None), "rendimiento_lh", None)) <= 0:
+                faltan.append("capacidad")
+        if faltan:
+            alertas.append({"tipo": "datos_incompletos", "actividad": bloque.id, "mensaje": f"Actividad {bloque.id}: falta {', '.join(faltan)}."})
+    return alertas
+
+
+def balance_por_movimientos(
+    semana: Any,
+    bloques: Iterable[Any],
+    movimientos: Iterable[Any],
+    stocks_seguridad: dict[int, float] | None = None,
+) -> dict[str, Any]:
+    """Proyección explicable por propietario usando únicamente movimientos visibles."""
+    bloques = list(bloques)
+    movimientos = list(movimientos)
+    seguridad = stocks_seguridad or {}
+    propietarios: dict[int, str] = {}
+    for movimiento in movimientos:
+        propietarios[movimiento.propietario_id] = str(movimiento.propietario)
+    for bloque in bloques:
+        propietario = getattr(bloque, "origen_leche", None) or getattr(getattr(bloque, "codigo", None), "mandante", None)
+        if propietario:
+            propietarios[propietario.id] = str(propietario)
+
+    saldos = {propietario_id: 0.0 for propietario_id in propietarios}
+    dias = []
+    alertas = alertas_actividades(bloques)
+    signos = {
+        "recepcion": 1, "trasvasije_entrada": 1,
+        "despacho": -1, "trasvasije_salida": -1,
+    }
+
+    for dia in range(DIAS):
+        fecha = semana.fecha_del_dia(dia)
+        detalle = []
+        inicial = dict(saldos)
+        for movimiento in movimientos:
+            if movimiento.fecha_hora.date() != fecha:
+                continue
+            propietario_id = movimiento.propietario_id
+            saldos.setdefault(propietario_id, 0.0)
+            cantidad = _numero(movimiento.cantidad)
+            if movimiento.tipo == "stock_inicial":
+                saldos[propietario_id] = cantidad
+                efecto = cantidad - inicial.get(propietario_id, 0.0)
+            elif movimiento.tipo == "ajuste":
+                efecto = cantidad
+                saldos[propietario_id] += efecto
+            else:
+                efecto = cantidad * signos.get(movimiento.tipo, 0)
+                saldos[propietario_id] += efecto
+            detalle.append({
+                "id": movimiento.id, "tipo": movimiento.tipo,
+                "propietario": propietario_id, "cantidad": cantidad,
+                "efecto": efecto, "documento": movimiento.documento,
+                "observacion": movimiento.observacion,
+            })
+
+        consumo_total = 0.0
+        consumo_por_propietario = {propietario_id: 0.0 for propietario_id in propietarios}
+        for bloque in bloques:
+            if not getattr(bloque, "consume_leche", False):
+                continue
+            propietario = getattr(bloque, "origen_leche", None) or getattr(getattr(bloque, "codigo", None), "mandante", None)
+            if propietario is None:
+                continue
+            consumo = consumo_dia([bloque], [bloque.codigo] if bloque.codigo_id else [], dia).total
+            consumo_por_propietario[propietario.id] = consumo_por_propietario.get(propietario.id, 0.0) + consumo
+            saldos[propietario.id] = saldos.get(propietario.id, 0.0) - consumo
+            consumo_total += consumo
+
+        for propietario_id, saldo in saldos.items():
+            minimo = _numero(seguridad.get(propietario_id))
+            if saldo < 0:
+                alertas.append({"tipo": "stock_negativo", "dia": dia, "propietario": propietario_id, "mensaje": f"{propietarios.get(propietario_id, propietario_id)} queda con {saldo:,.0f} L."})
+            elif saldo < minimo:
+                alertas.append({"tipo": "stock_seguridad", "dia": dia, "propietario": propietario_id, "mensaje": f"{propietarios.get(propietario_id, propietario_id)} queda bajo su stock de seguridad ({minimo:,.0f} L)."})
+
+        dias.append({
+            "dia": dia, "fecha": fecha, "stock_inicial": inicial,
+            "movimientos": detalle, "consumo_por_propietario": consumo_por_propietario,
+            "consumo": consumo_total, "stock_final": dict(saldos),
+        })
+
+    horas_por_equipo: dict[int, float] = {}
+    for bloque in bloques:
+        horas_por_equipo[bloque.equipo_id] = horas_por_equipo.get(bloque.equipo_id, 0.0) + bloque.horas
+    utilizacion = {equipo_id: min(100.0, horas / (DIAS * 24) * 100) for equipo_id, horas in horas_por_equipo.items()}
+    return {
+        "propietarios": [{"id": id_, "nombre": nombre} for id_, nombre in propietarios.items()],
+        "dias": dias,
+        "alertas": alertas,
+        "consumo_total": sum(dia["consumo"] for dia in dias),
+        "stock_final_total": sum(saldos.values()),
+        "utilizacion_por_equipo": utilizacion,
+    }
 
 
 def puede_publicar(

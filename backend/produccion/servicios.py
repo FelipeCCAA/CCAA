@@ -181,6 +181,7 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     """
     from maestros.models import Equipo
     from procesos.models import EjecucionProceso, EntradaProceso, EtapaProceso
+    from procesos.servicios import etapa_para_producto
 
     tipo_etapa = {
         Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
@@ -189,10 +190,10 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
         Equipo.Tipo.LINEA: EtapaProceso.Tipo.ENVASADO,
     }.get(lote.equipo.tipo if lote.equipo else None, EtapaProceso.Tipo.SECADO)
 
-    etapa = (
-        EtapaProceso.objects.filter(tipo=tipo_etapa, activa=True)
-        .order_by("proceso__version", "orden")
-        .last()
+    etapa = etapa_para_producto(
+        producto=lote.producto,
+        sucursal=lote.sucursal,
+        tipo=tipo_etapa,
     )
 
     if etapa is None:
@@ -261,6 +262,8 @@ def registrar_produccion(*, lote):
         lote=lote,
         defaults={
             "naturaleza": SalidaProceso.Naturaleza.PRINCIPAL,
+            "clasificacion": SalidaProceso.Clasificacion.GRANEL,
+            "destino": SalidaProceso.Destino.ENVASADO,
             "cantidad": Decimal(str(lote.kg_producidos)),
             "unidad": "kg",
         },

@@ -476,6 +476,11 @@ class EntradaProceso(models.Model):
     tipo = models.CharField(max_length=20, choices=Tipo.choices, default=Tipo.PRINCIPAL)
     cantidad = models.DecimalField(max_digits=14, decimal_places=3)
     unidad = models.CharField(max_length=20, default="kg")
+    motivo = models.CharField(
+        max_length=250,
+        blank=True,
+        help_text="Obligatorio cuando la entrada corresponde a reproceso.",
+    )
     registrada_en = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -557,8 +562,17 @@ class EntradaProceso(models.Model):
         La concesión sí autoriza: es Calidad diciendo «úsalo bajo estas
         condiciones», que es precisamente una autorización.
         """
-        if self.tipo != self.Tipo.REPROCESO or not self.lote_id:
+        if self.tipo != self.Tipo.REPROCESO:
             return
+
+        if not self.motivo.strip():
+            raise ValidationError({
+                "motivo": "Un reproceso debe indicar por qué el material vuelve al proceso."
+            })
+        if not self.lote_id:
+            raise ValidationError({
+                "lote": "Un reproceso debe identificar explícitamente su lote de origen."
+            })
 
         from calidad.models import Liberacion
 
@@ -585,6 +599,23 @@ class SalidaProceso(models.Model):
         MERMA = "merma", "Merma"
         REPROCESO = "reproceso", "Destinado a reproceso"
 
+    class Clasificacion(models.TextChoices):
+        INTERMEDIO = "intermedio", "Producto intermedio"
+        GRANEL = "granel", "Producto a granel"
+        SUBPRODUCTO = "subproducto", "Subproducto"
+        TERMINADO = "terminado", "Producto terminado"
+        MERMA = "merma", "Merma"
+
+    class Destino(models.TextChoices):
+        PENDIENTE = "pendiente", "Destino por definir"
+        SIGUIENTE_PROCESO = "siguiente_proceso", "Siguiente proceso"
+        ESTANDARIZACION = "estandarizacion", "Estandarización"
+        ENVASADO = "envasado", "Envasado"
+        INVENTARIO = "inventario", "Inventario"
+        DESPACHO_DIRECTO = "despacho_directo", "Despacho directo"
+        REPROCESO = "reproceso", "Reproceso"
+        OTRO = "otro", "Otro destino controlado"
+
     ejecucion = models.ForeignKey(
         EjecucionProceso, on_delete=models.PROTECT, related_name="salidas"
     )
@@ -601,6 +632,18 @@ class SalidaProceso(models.Model):
     )
     naturaleza = models.CharField(
         max_length=20, choices=Naturaleza.choices, default=Naturaleza.PRINCIPAL
+    )
+    clasificacion = models.CharField(
+        max_length=20,
+        choices=Clasificacion.choices,
+        default=Clasificacion.INTERMEDIO,
+        db_index=True,
+    )
+    destino = models.CharField(
+        max_length=25,
+        choices=Destino.choices,
+        default=Destino.PENDIENTE,
+        db_index=True,
     )
     cantidad = models.DecimalField(max_digits=14, decimal_places=3)
     unidad = models.CharField(max_length=20, default="kg")
@@ -629,10 +672,48 @@ class SalidaProceso(models.Model):
             )
         if self.naturaleza == self.Naturaleza.MERMA and not self.motivo.strip():
             raise ValidationError({"motivo": "Toda merma requiere un motivo."})
+        if self.naturaleza == self.Naturaleza.MERMA:
+            self.clasificacion = self.Clasificacion.MERMA
+        if self.clasificacion == self.Clasificacion.TERMINADO and self.destino not in {
+            self.Destino.INVENTARIO,
+            self.Destino.DESPACHO_DIRECTO,
+        }:
+            raise ValidationError({
+                "destino": "Un producto terminado debe ir a Inventario o a despacho directo."
+            })
+        if self.clasificacion != self.Clasificacion.TERMINADO and self.destino == self.Destino.INVENTARIO:
+            raise ValidationError({
+                "destino": "Solo un producto terminado puede destinarse a Inventario."
+            })
 
         if self.lote_id and self.lote.sucursal_id != self.ejecucion.sucursal_id:
             raise ValidationError({"lote": "El lote debe pertenecer a la sucursal de la ejecución."})
         self._validar_balance()
+
+    def destinos_permitidos(self):
+        """Destinos compatibles con el hecho fisico que produjo esta salida."""
+        if self.naturaleza == self.Naturaleza.MERMA:
+            return {self.Destino.OTRO}
+        tipo = self.ejecucion.etapa.tipo
+        if tipo == EtapaProceso.Tipo.DESCREMACION:
+            return {
+                self.Destino.SIGUIENTE_PROCESO,
+                self.Destino.ESTANDARIZACION,
+                self.Destino.REPROCESO,
+            }
+        if tipo == EtapaProceso.Tipo.ESTANDARIZACION:
+            return {self.Destino.SIGUIENTE_PROCESO}
+        if tipo in {EtapaProceso.Tipo.EVAPORACION, EtapaProceso.Tipo.CONDENSACION}:
+            return {
+                self.Destino.SIGUIENTE_PROCESO,
+                self.Destino.DESPACHO_DIRECTO,
+                self.Destino.REPROCESO,
+            }
+        if tipo in {EtapaProceso.Tipo.SECADO, EtapaProceso.Tipo.MANTEQUILLA}:
+            return {self.Destino.ENVASADO, self.Destino.REPROCESO}
+        if tipo == EtapaProceso.Tipo.ENVASADO:
+            return {self.Destino.INVENTARIO}
+        return {self.Destino.SIGUIENTE_PROCESO, self.Destino.OTRO}
 
     def _validar_balance(self):
         """

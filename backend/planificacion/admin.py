@@ -1,6 +1,9 @@
 from django.contrib import admin
 
-from .models import BalanceDia, BloquePlan, CodigoProduccion, SemanaPlan
+from .models import (
+    BalanceDia, BloquePlan, CapacidadProceso, CodigoProduccion, MovimientoPlan,
+    SemanaPlan, StockSeguridadPlan, TipoActividadPlan, VersionSemanaPlan,
+)
 
 
 class BloquePlanInline(admin.TabularInline):
@@ -100,3 +103,10 @@ class BalanceDiaAdmin(admin.ModelAdmin):
         "trasvasije",
     ]
     list_filter = ["semana"]
+
+
+admin.site.register(TipoActividadPlan)
+admin.site.register(CapacidadProceso)
+admin.site.register(MovimientoPlan)
+admin.site.register(StockSeguridadPlan)
+admin.site.register(VersionSemanaPlan)

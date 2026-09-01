@@ -345,10 +345,14 @@ def _resultados_intermedios(request):
             "corrida_codigo": salida.ejecucion.codigo,
             "lote_codigo": lote_codigo,
             "producto_nombre": producto,
-            "equipo_nombre": salida.ejecucion.equipo.nombre,
+            "equipo_nombre": (
+                salida.ejecucion.equipo.nombre if salida.ejecucion.equipo_id else None
+            ),
             "silo_destino_codigo": salida.silo.codigo,
             "cantidad": salida.cantidad,
             "unidad": salida.unidad,
+            "clasificacion": salida.get_clasificacion_display(),
+            "destino": salida.get_destino_display(),
             "estado": decision.estado if decision else LiberacionProceso.Estado.PENDIENTE,
             "observacion": decision.observacion if decision else "",
             "decidida_en": decision.decidida_en if decision else None,

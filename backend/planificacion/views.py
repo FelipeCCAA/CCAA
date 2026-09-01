@@ -12,12 +12,17 @@ Publicar es lo único que cambia el estado del mundo, y por eso es lo único
 que va en una transacción y comprueba la regla antes.
 """
 
+import json
+from datetime import timedelta
+
 from django.db import transaction
+from django.db.models import Max
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.renderers import JSONRenderer
 
 from produccion.models import Lote
 from recepcion.models import MovimientoSilo, Recepcion
@@ -29,12 +34,20 @@ from usuarios.tenancy import (
 
 from . import contraste as contraste_dominio
 from . import dominio
-from .models import BalanceDia, BloquePlan, CodigoProduccion, SemanaPlan
+from .models import (
+    BalanceDia, BloquePlan, CapacidadProceso, CodigoProduccion, MovimientoPlan,
+    SemanaPlan, StockSeguridadPlan, TipoActividadPlan, VersionSemanaPlan,
+)
 from .serializers import (
     BalanceDiaSerializer,
     BloquePlanSerializer,
+    CapacidadProcesoSerializer,
     CodigoProduccionSerializer,
+    MovimientoPlanSerializer,
     SemanaPlanSerializer,
+    StockSeguridadPlanSerializer,
+    TipoActividadPlanSerializer,
+    VersionSemanaPlanSerializer,
     serializar_balance,
     serializar_contraste,
     serializar_desviacion,
@@ -144,10 +157,50 @@ class SemanaPlanViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                     hora_inicio=item.hora_inicio, hora_fin=item.hora_fin,
                     tipo=item.tipo, codigo=item.codigo,
                     estado_equipo=item.estado_equipo, cantidad_kg=item.cantidad_kg,
-                    observacion=item.observacion,
+                    observacion=item.observacion, tipo_actividad=item.tipo_actividad,
+                    fecha_hora_inicio=(item.fecha_hora_inicio + timedelta(days=(copia.fecha_inicio - origen.fecha_inicio).days)) if item.fecha_hora_inicio else None,
+                    fecha_hora_fin=(item.fecha_hora_fin + timedelta(days=(copia.fecha_inicio - origen.fecha_inicio).days)) if item.fecha_hora_fin else None,
+                    producto=item.producto, orden_produccion=None,
+                    origen_leche=item.origen_leche, cliente=item.cliente,
+                    capacidad_hora=item.capacidad_hora, color=item.color,
+                    creado_por=request.user,
                 ) for item in origen.bloques.all()
             ])
+            MovimientoPlan.objects.bulk_create([
+                MovimientoPlan(
+                    semana=copia,
+                    fecha_hora=item.fecha_hora + timedelta(days=(copia.fecha_inicio - origen.fecha_inicio).days),
+                    propietario=item.propietario, tipo=item.tipo, cantidad=item.cantidad,
+                    documento=item.documento, observacion=item.observacion,
+                    creado_por=request.user,
+                ) for item in origen.movimientos_plan.all()
+            ])
         return Response(self.get_serializer(copia).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path="comparar-versiones")
+    def comparar_versiones(self, request, pk=None):
+        semana = self.get_object()
+        try:
+            desde = semana.versiones.get(numero=int(request.query_params.get("desde", 0)))
+            hasta = semana.versiones.get(numero=int(request.query_params.get("hasta", 0)))
+        except (ValueError, VersionSemanaPlan.DoesNotExist):
+            return Response({"detail": "Indica dos versiones existentes."}, status=400)
+
+        def indexar(version, clave):
+            return {str(item["id"]): item for item in version.instantanea.get(clave, [])}
+
+        resultado = {}
+        for clave in ("actividades", "movimientos"):
+            anterior, nuevo = indexar(desde, clave), indexar(hasta, clave)
+            resultado[clave] = {
+                "agregados": [nuevo[id_] for id_ in nuevo.keys() - anterior.keys()],
+                "eliminados": [anterior[id_] for id_ in anterior.keys() - nuevo.keys()],
+                "modificados": [
+                    {"id": id_, "anterior": anterior[id_], "nuevo": nuevo[id_]}
+                    for id_ in anterior.keys() & nuevo.keys() if anterior[id_] != nuevo[id_]
+                ],
+            }
+        return Response({"desde": desde.numero, "hasta": hasta.numero, **resultado})
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -171,11 +224,18 @@ class BloquePlanViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mod
         "semana": ("sucursal_id", "sucursal__empresa_id"),
         "equipo": ("sucursal_id", "sucursal__empresa_id"),
         "codigo": (None, "producto__mandante__empresa_id"),
+        "producto": (None, "mandante__empresa_id"),
+        "orden_produccion": ("sucursal_id", "sucursal__empresa_id"),
+        "origen_leche": (None, "empresa_id"),
+        "cliente": (None, "empresa_id"),
     }
     # `equipo` va en el select_related porque el balance consulta
     # `bloque.equipo.consume_leche` por cada bloque: sin esto, una consulta
     # por fila.
-    queryset = BloquePlan.objects.select_related("codigo", "equipo")
+    queryset = BloquePlan.objects.select_related(
+        "semana", "codigo", "codigo__producto", "codigo__mandante", "equipo",
+        "tipo_actividad", "producto", "orden_produccion", "origen_leche", "cliente",
+    )
     serializer_class = BloquePlanSerializer
     permission_classes = [EscribeProduccion]
 
@@ -193,6 +253,65 @@ class BloquePlanViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mod
             consulta = consulta.filter(equipo__codigo=equipo)
 
         return consulta
+
+
+class TipoActividadPlanViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = TipoActividadPlan.objects.filter(activo=True)
+    serializer_class = TipoActividadPlanSerializer
+    permission_classes = [EscribeProduccion]
+    pagination_class = None
+
+
+class CapacidadProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "equipo__sucursal_id"
+    tenant_lookup_empresa = "equipo__sucursal__empresa_id"
+    tenant_relation_fields = {"equipo": ("sucursal_id", "sucursal__empresa_id")}
+    queryset = CapacidadProceso.objects.select_related("equipo")
+    serializer_class = CapacidadProcesoSerializer
+    permission_classes = [EscribeProduccion]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        equipo = self.request.query_params.get("equipo")
+        return consulta.filter(equipo_id=equipo) if equipo else consulta
+
+
+class MovimientoPlanViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "semana__sucursal_id"
+    tenant_lookup_empresa = "semana__sucursal__empresa_id"
+    tenant_relation_fields = {
+        "semana": ("sucursal_id", "sucursal__empresa_id"),
+        "propietario": (None, "empresa_id"),
+    }
+    queryset = MovimientoPlan.objects.select_related("semana", "propietario", "actividad")
+    serializer_class = MovimientoPlanSerializer
+    permission_classes = [EscribeProduccion]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        semana = self.request.query_params.get("semana")
+        return consulta.filter(semana_id=semana) if semana else consulta
+
+
+class StockSeguridadPlanViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_empresa = "propietario__empresa_id"
+    tenant_relation_fields = {"propietario": (None, "empresa_id")}
+    queryset = StockSeguridadPlan.objects.select_related("propietario")
+    serializer_class = StockSeguridadPlanSerializer
+    permission_classes = [EscribeProduccion]
+
+
+class VersionSemanaPlanViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "semana__sucursal_id"
+    tenant_lookup_empresa = "semana__sucursal__empresa_id"
+    queryset = VersionSemanaPlan.objects.select_related("semana", "publicada_por")
+    serializer_class = VersionSemanaPlanSerializer
+    permission_classes = [EscribeProduccion]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        semana = self.request.query_params.get("semana")
+        return consulta.filter(semana_id=semana) if semana else consulta
 
 
 class BalanceDiaViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
@@ -232,6 +351,40 @@ def _contexto(semana):
     )
 
 
+def _movimientos_y_seguridad(semana):
+    movimientos = list(
+        MovimientoPlan.objects.filter(semana=semana).select_related("propietario")
+    )
+    seguridad = {}
+    for item in StockSeguridadPlan.objects.filter(
+        propietario__empresa_id=semana.sucursal.empresa_id,
+        vigente_desde__lte=semana.fecha_inicio,
+    ).order_by("propietario_id", "-vigente_desde"):
+        seguridad.setdefault(item.propietario_id, float(item.cantidad))
+    return movimientos, seguridad
+
+
+def _indicadores(semana, bloques):
+    movimientos, seguridad = _movimientos_y_seguridad(semana)
+    return dominio.balance_por_movimientos(semana, bloques, movimientos, seguridad), movimientos
+
+
+def _crear_version(semana, usuario, bloques, codigos, balances):
+    indicadores, movimientos = _indicadores(semana, bloques)
+    payload = {
+        "semana": SemanaPlanSerializer(semana).data,
+        "actividades": BloquePlanSerializer(bloques, many=True).data,
+        "movimientos": MovimientoPlanSerializer(movimientos, many=True).data,
+        "balance_legacy": [serializar_balance(f) for f in dominio.balance_semana(bloques, codigos, balances)],
+        "indicadores": indicadores,
+    }
+    instantanea = json.loads(JSONRenderer().render(payload))
+    numero = (semana.versiones.aggregate(maximo=Max("numero"))["maximo"] or 0) + 1
+    return VersionSemanaPlan.objects.create(
+        semana=semana, numero=numero, instantanea=instantanea, publicada_por=usuario
+    )
+
+
 def _semanas_permitidas(request):
     return filtrar_por_scope(
         SemanaPlan.objects.all(), request.user,
@@ -255,6 +408,7 @@ def programa(request, semana_id):
 
     filas = dominio.balance_semana(bloques, codigos, balances)
     validacion = dominio.puede_publicar(semana, bloques, codigos, balances)
+    indicadores, movimientos = _indicadores(semana, bloques)
 
     return Response(
         {
@@ -264,6 +418,12 @@ def programa(request, semana_id):
             "fechas": [semana.fecha_del_dia(d) for d in range(7)],
             "publicable": validacion.permitido,
             "bloqueos": validacion.bloqueos,
+            "movimientos": MovimientoPlanSerializer(movimientos, many=True).data,
+            "indicadores": indicadores,
+            "alertas": indicadores["alertas"],
+            "versiones": VersionSemanaPlanSerializer(
+                semana.versiones.select_related("publicada_por"), many=True
+            ).data,
         }
     )
 
@@ -298,6 +458,7 @@ def publicar(request, semana_id):
         semana.publicada_por = request.user
         semana.publicada_en = timezone.now()
         semana.save()
+        _crear_version(semana, request.user, bloques, codigos, balances)
 
     return Response(SemanaPlanSerializer(semana).data)
 

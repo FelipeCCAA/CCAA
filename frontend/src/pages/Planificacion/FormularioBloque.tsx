@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import axios from "axios";
 
 import {
   crearBloque,
-  ESTADO_EQUIPO,
+  obtenerOrdenesPlan,
   type CodigoProduccion,
+  type OrdenProduccionPlan,
+  type TipoActividadPlan,
 } from "../../services/planificacion.service";
 
-import type { Equipo } from "../../services/maestros.service";
+import type { Equipo, Mandante } from "../../services/maestros.service";
+import { obtenerClientesDespacho, type ClienteDespacho } from "../../services/inventario.service";
 
 
 /*
@@ -30,6 +33,8 @@ interface Props {
   dia: number;
   horaInicio: number;
   codigos: CodigoProduccion[];
+  tiposActividad: TipoActividadPlan[];
+  mandantes: Mandante[];
   alCerrar: () => void;
   alGuardar: () => void;
 }
@@ -47,23 +52,38 @@ function FormularioBloque({
   dia,
   horaInicio,
   codigos,
+  tiposActividad,
+  mandantes,
   alCerrar,
   alGuardar,
 }: Props) {
 
-  const [tipo, setTipo] = useState<"produccion" | "estado">("produccion");
+  const produccion = tiposActividad.find((item) => item.codigo === "produccion");
+  const [tipoActividad, setTipoActividad] = useState<number | null>(produccion?.id ?? tiposActividad[0]?.id ?? null);
   const [inicio, setInicio] = useState(String(horaInicio));
   const [fin, setFin] = useState(String(Math.min(horaInicio + 4, 24)));
   const [codigo, setCodigo] = useState<string>("");
-  const [estado, setEstado] = useState("A");
   const [kg, setKg] = useState("");
   const [observacion, setObservacion] = useState("");
+  const [origen, setOrigen] = useState("");
+  const [orden, setOrden] = useState("");
+  const [cliente, setCliente] = useState("");
+  const [ordenes, setOrdenes] = useState<OrdenProduccionPlan[]>([]);
+  const [clientes, setClientes] = useState<ClienteDespacho[]>([]);
+  const actividad = tiposActividad.find((item) => item.id === tipoActividad);
+  const esProduccion = actividad?.codigo === "produccion";
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
   const suyo = equipos.find((e) => e.id === equipo);
   const nombreEquipo = suyo?.nombre ?? "Equipo";
+
+  useEffect(() => {
+    void Promise.all([obtenerOrdenesPlan(), obtenerClientesDespacho()])
+      .then(([ordenesCargadas, clientesCargados]) => { setOrdenes(ordenesCargadas); setClientes(clientesCargados); })
+      .catch(() => undefined);
+  }, []);
 
   const guardar = async () => {
 
@@ -78,10 +98,14 @@ function FormularioBloque({
         dia,
         hora_inicio: Number(inicio),
         hora_fin: Number(fin),
-        tipo,
-        codigo: tipo === "produccion" ? Number(codigo) || null : null,
-        estado_equipo: tipo === "estado" ? estado : "",
+        tipo: esProduccion ? "produccion" : "estado",
+        tipo_actividad: tipoActividad,
+        codigo: esProduccion ? Number(codigo) || null : null,
+        estado_equipo: esProduccion ? "" : "X",
         cantidad_kg: kg ? Number(kg) : null,
+        origen_leche: origen ? Number(origen) : null,
+        orden_produccion: orden ? Number(orden) : null,
+        cliente: cliente ? Number(cliente) : null,
         observacion,
       });
 
@@ -103,7 +127,7 @@ function FormularioBloque({
 
   const listo =
     Number(fin) > Number(inicio) &&
-    (tipo === "estado" || Boolean(codigo));
+    Boolean(tipoActividad) && (!esProduccion || Boolean(codigo));
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
@@ -132,21 +156,12 @@ function FormularioBloque({
 
         <div className="space-y-4 px-6 py-5">
 
-          <div className="flex gap-2">
-            {(["produccion", "estado"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTipo(t)}
-                className={`flex-1 rounded-xl border px-4 py-2 text-sm font-medium ${
-                  tipo === t
-                    ? "border-green-500 bg-green-50 text-green-700"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {t === "produccion" ? "Producción" : "Estado del equipo"}
-              </button>
-            ))}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Tipo de actividad</label>
+            <select value={tipoActividad ?? ""} onChange={(e) => setTipoActividad(Number(e.target.value))} className={claseCampo}>
+              <option value="">Elegir…</option>
+              {tiposActividad.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -183,7 +198,7 @@ function FormularioBloque({
 
           </div>
 
-          {tipo === "produccion" ? (
+          {esProduccion ? (
             <>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
@@ -191,7 +206,11 @@ function FormularioBloque({
                 </label>
                 <select
                   value={codigo}
-                  onChange={(e) => setCodigo(e.target.value)}
+                  onChange={(e) => {
+                    setCodigo(e.target.value);
+                    const seleccionado = codigos.find((item) => item.id === Number(e.target.value));
+                    if (seleccionado?.mandante) setOrigen(String(seleccionado.mandante));
+                  }}
                   className={claseCampo}
                 >
                   <option value="">Elegir…</option>
@@ -210,6 +229,11 @@ function FormularioBloque({
               </div>
 
               <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Orden de producción <span className="font-normal">opcional</span></label>
+                <select value={orden} onChange={(e) => setOrden(e.target.value)} className={claseCampo}><option value="">Sin orden asociada</option>{ordenes.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto_nombre}</option>)}</select>
+              </div>
+
+              <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
                   Kilos objetivo
                   <span className="ml-1 font-normal text-slate-600">opcional</span>
@@ -223,24 +247,11 @@ function FormularioBloque({
                 />
               </div>
             </>
-          ) : (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">
-                Qué pasa en el equipo
-              </label>
-              <select
-                value={estado}
-                onChange={(e) => setEstado(e.target.value)}
-                className={claseCampo}
-              >
-                {Object.entries(ESTADO_EQUIPO).map(([clave, meta]) => (
-                  <option key={clave} value={clave}>
-                    {clave} · {meta.etiqueta}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          ) : actividad && <p className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-600">Se programará <strong style={{ color: actividad.color }}>{actividad.nombre}</strong> como intervalo auditable del recurso.</p>}
+
+          {(actividad?.requiere_origen || esProduccion) && <div><label className="mb-1 block text-xs font-medium text-slate-600">Origen / propietario de la leche</label><select required={actividad?.requiere_origen} value={origen} onChange={(e) => setOrigen(e.target.value)} className={claseCampo}><option value="">Derivar del producto</option>{mandantes.filter((item) => item.activo).map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></div>}
+
+          {actividad?.codigo === "despacho" && <div><label className="mb-1 block text-xs font-medium text-slate-600">Cliente</label><select value={cliente} onChange={(e) => setCliente(e.target.value)} className={claseCampo}><option value="">Sin cliente asociado</option>{clientes.filter((item) => item.activo).map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.nombre}</option>)}</select></div>}
 
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">
@@ -254,7 +265,7 @@ function FormularioBloque({
             />
           </div>
 
-          {tipo === "produccion" && (
+          {esProduccion && (
             <p className="text-xs text-slate-600">
               Solo los evaporadores restan del balance de leche. Un bloque en
               una línea se programa igual, pero su leche ya la contó el

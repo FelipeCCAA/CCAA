@@ -5,8 +5,13 @@ from .catalogos_vista import catalogos
 from .views import (
     BalanceDiaViewSet,
     BloquePlanViewSet,
+    CapacidadProcesoViewSet,
     CodigoProduccionViewSet,
+    MovimientoPlanViewSet,
     SemanaPlanViewSet,
+    StockSeguridadPlanViewSet,
+    TipoActividadPlanViewSet,
+    VersionSemanaPlanViewSet,
     cerrar,
     contraste,
     programa,
@@ -19,6 +24,11 @@ router.register("codigos", CodigoProduccionViewSet)
 router.register("semanas", SemanaPlanViewSet)
 router.register("bloques", BloquePlanViewSet)
 router.register("balances", BalanceDiaViewSet)
+router.register("tipos-actividad", TipoActividadPlanViewSet, basename="tipo-actividad-plan")
+router.register("capacidades", CapacidadProcesoViewSet)
+router.register("movimientos", MovimientoPlanViewSet)
+router.register("stocks-seguridad", StockSeguridadPlanViewSet)
+router.register("versiones", VersionSemanaPlanViewSet)
 
 urlpatterns = [
     path("catalogos/", catalogos, name="planificacion-catalogos"),

@@ -28,6 +28,28 @@ def tipos_equipo_para_etapa(tipo_etapa):
     }.get(tipo_etapa, set())
 
 
+def etapa_para_producto(*, producto, sucursal, tipo):
+    """Obtiene la etapa desde la ruta del producto; conserva fallback histórico."""
+    etapa = (
+        EtapaProceso.objects.filter(
+            proceso__rutas_producto__producto=producto,
+            proceso__rutas_producto__sucursal=sucursal,
+            proceso__rutas_producto__activa=True,
+            tipo=tipo,
+            activa=True,
+        )
+        .order_by("proceso__rutas_producto__prioridad", "orden")
+        .first()
+    )
+    if etapa is not None:
+        return etapa
+    return (
+        EtapaProceso.objects.filter(tipo=tipo, activa=True)
+        .order_by("proceso__version", "orden")
+        .last()
+    )
+
+
 @transaction.atomic
 def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     """Reserva parte de una salida liberada y prepara su próxima ejecución."""
@@ -45,9 +67,26 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     except (EtapaProceso.DoesNotExist, TypeError, ValueError) as error:
         raise ValidationError("La etapa seleccionada no existe o está inactiva.") from error
     origen = salida.ejecucion.etapa
-    if etapa.proceso_id != origen.proceso_id or etapa.orden <= origen.orden:
+    siguiente_orden = (
+        EtapaProceso.objects.filter(
+            proceso_id=origen.proceso_id,
+            activa=True,
+            orden__gt=origen.orden,
+        )
+        .order_by("orden")
+        .values_list("orden", flat=True)
+        .first()
+    )
+    if etapa.proceso_id != origen.proceso_id or etapa.orden != siguiente_orden:
         raise ValidationError(
-            "La etapa elegida debe ser posterior y pertenecer al mismo proceso."
+            "La etapa elegida debe ser la siguiente etapa activa de la ruta; no se pueden saltar procesos."
+        )
+    if salida.destino not in {
+        SalidaProceso.Destino.PENDIENTE,
+        SalidaProceso.Destino.SIGUIENTE_PROCESO,
+    }:
+        raise ValidationError(
+            f"La salida fue destinada a {salida.get_destino_display()} y no puede consumirse como continuación."
         )
 
     try:
@@ -97,6 +136,9 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     )
     entrada.full_clean()
     entrada.save()
+    if salida.destino == SalidaProceso.Destino.PENDIENTE:
+        salida.destino = SalidaProceso.Destino.SIGUIENTE_PROCESO
+        salida.save(update_fields=["destino"])
     return transicionar_ejecucion(
         ejecucion_id=ejecucion.pk,
         estado_nuevo=EjecucionProceso.Estado.PREPARACION,
@@ -290,12 +332,10 @@ def registrar_estandarizacion(*, vale):
     if existente is not None:
         return existente
 
-    etapa = (
-        EtapaProceso.objects.filter(
-            tipo=EtapaProceso.Tipo.ESTANDARIZACION, activa=True
-        )
-        .order_by("proceso__version", "orden")
-        .last()
+    etapa = etapa_para_producto(
+        producto=vale.producto,
+        sucursal=vale.silo_destino.sucursal,
+        tipo=EtapaProceso.Tipo.ESTANDARIZACION,
     )
 
     if etapa is None:
@@ -343,6 +383,8 @@ def registrar_estandarizacion(*, vale):
         ejecucion=ejecucion,
         silo=vale.silo_destino,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+        clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
+        destino=SalidaProceso.Destino.SIGUIENTE_PROCESO,
         cantidad=vale.volumen,
         unidad="L",
     )
@@ -551,7 +593,10 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     heredar_atribuciones(ingreso, [consumo])
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, silo=destino,
-        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL, cantidad=cantidad, unidad="L",
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+        clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
+        destino=SalidaProceso.Destino.PENDIENTE,
+        cantidad=cantidad, unidad="L",
     )
     transicionar_ejecucion(
         ejecucion_id=corrida.ejecucion_id,
@@ -693,12 +738,29 @@ def cerrar_descremacion(
         ingresos.append(ingreso)
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, silo=destino_d,
-        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL, cantidad=ld, unidad="L",
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+        clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
+        destino=SalidaProceso.Destino.PENDIENTE,
+        cantidad=ld, unidad="L",
     )
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, silo=destino_c,
-        naturaleza=SalidaProceso.Naturaleza.COPRODUCTO, cantidad=lc, unidad="L",
+        naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
+        clasificacion=SalidaProceso.Clasificacion.SUBPRODUCTO,
+        destino=SalidaProceso.Destino.PENDIENTE,
+        cantidad=lc, unidad="L",
     )
+    merma = corrida.litros_entrada - ld - lc
+    if merma > 0:
+        SalidaProceso.objects.create(
+            ejecucion=corrida.ejecucion,
+            naturaleza=SalidaProceso.Naturaleza.MERMA,
+            clasificacion=SalidaProceso.Clasificacion.MERMA,
+            destino=SalidaProceso.Destino.OTRO,
+            cantidad=merma,
+            unidad="L",
+            motivo="Diferencia medida en el balance de descremación",
+        )
     balance = calcular_balance_descremacion(
         corrida.litros_entrada, corrida.grasa_entrada, corrida.sng_entrada, gd, gc,
         litros_descremada=ld, litros_crema=lc,
@@ -794,17 +856,23 @@ def cerrar_mantequilla(
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=corrida.lote_mantequilla,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+        clasificacion=SalidaProceso.Clasificacion.GRANEL,
+        destino=SalidaProceso.Destino.ENVASADO,
         cantidad=corrida.kg_mantequilla, unidad="kg",
     )
     if corrida.kg_suero:
         SalidaProceso.objects.create(
             ejecucion=corrida.ejecucion, lote=corrida.lote_suero,
             naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
+            clasificacion=SalidaProceso.Clasificacion.SUBPRODUCTO,
+            destino=SalidaProceso.Destino.PENDIENTE,
             cantidad=corrida.kg_suero, unidad="kg",
         )
     if corrida.kg_merma:
         SalidaProceso.objects.create(
             ejecucion=corrida.ejecucion, naturaleza=SalidaProceso.Naturaleza.MERMA,
+            clasificacion=SalidaProceso.Clasificacion.MERMA,
+            destino=SalidaProceso.Destino.OTRO,
             cantidad=corrida.kg_merma, unidad="kg", motivo="Merma de mantequilla",
         )
     transicionar_ejecucion(

@@ -18,6 +18,7 @@ cuanto alguien corriera un bloque media hora (mismo principio que
 MODELO_DATOS.md §2.2).
 """
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from usuarios.tenancy import sucursal_predeterminada_pruebas
@@ -245,6 +246,38 @@ class BloquePlan(models.Model):
         "Kilos objetivo", max_digits=12, decimal_places=2, null=True, blank=True
     )
     observacion = models.TextField("Observación", blank=True)
+    tipo_actividad = models.ForeignKey(
+        "TipoActividadPlan", on_delete=models.PROTECT, related_name="actividades",
+        null=True, blank=True,
+    )
+    fecha_hora_inicio = models.DateTimeField(null=True, blank=True, db_index=True)
+    fecha_hora_fin = models.DateTimeField(null=True, blank=True)
+    producto = models.ForeignKey(
+        Producto, on_delete=models.PROTECT, related_name="actividades_planificadas",
+        null=True, blank=True,
+    )
+    orden_produccion = models.ForeignKey(
+        "produccion.OrdenProduccion", on_delete=models.PROTECT,
+        related_name="actividades_planificadas", null=True, blank=True,
+    )
+    origen_leche = models.ForeignKey(
+        Mandante, on_delete=models.PROTECT, related_name="actividades_origen",
+        null=True, blank=True,
+    )
+    cliente = models.ForeignKey(
+        "inventario.ClienteDespacho", on_delete=models.PROTECT,
+        related_name="actividades_planificadas", null=True, blank=True,
+    )
+    capacidad_hora = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text="Capacidad vigente copiada al programar; conserva el cálculo histórico.",
+    )
+    color = models.CharField(max_length=7, blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="actividades_planificadas_creadas", null=True, blank=True,
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Bloque de programa"
@@ -275,6 +308,8 @@ class BloquePlan(models.Model):
 
     @property
     def horas(self) -> float:
+        if self.fecha_hora_inicio and self.fecha_hora_fin:
+            return (self.fecha_hora_fin - self.fecha_hora_inicio).total_seconds() / 3600
         return float(self.hora_fin) - float(self.hora_inicio)
 
     @property
@@ -315,6 +350,18 @@ class BloquePlan(models.Model):
         if self.codigo_id and self.codigo.producto_id:
             if self.codigo.producto.mandante.empresa_id != self.semana.sucursal.empresa_id:
                 raise ValidationError({"codigo": "El código debe pertenecer a la empresa de la semana."})
+        if bool(self.fecha_hora_inicio) != bool(self.fecha_hora_fin):
+            raise ValidationError("Inicio y término deben informarse juntos.")
+        if self.fecha_hora_inicio and self.fecha_hora_fin:
+            if self.fecha_hora_fin <= self.fecha_hora_inicio:
+                raise ValidationError({"fecha_hora_fin": "Debe ser posterior al inicio."})
+            if self.semana_id:
+                desde = self.semana.fecha_inicio
+                hasta = self.semana.fecha_del_dia(6)
+                if not (desde <= self.fecha_hora_inicio.date() <= hasta):
+                    raise ValidationError({"fecha_hora_inicio": "Debe pertenecer a la semana."})
+                if not (desde <= self.fecha_hora_fin.date() <= self.semana.fecha_del_dia(7)):
+                    raise ValidationError({"fecha_hora_fin": "Debe terminar dentro de la semana."})
 
 
 class BalanceDia(models.Model):
@@ -422,3 +469,136 @@ class BalanceDia(models.Model):
                 raise ValidationError(
                     {"ajustes": f"El ajuste de '{origen}' debe ser numérico."}
                 )
+
+
+class TipoActividadPlan(models.Model):
+    """Catálogo auditable; evita códigos libres y colores inventados en la UI."""
+
+    codigo = models.SlugField(max_length=30, unique=True)
+    nombre = models.CharField(max_length=80)
+    color = models.CharField(max_length=7)
+    requiere_producto = models.BooleanField(default=False)
+    requiere_origen = models.BooleanField(default=False)
+    requiere_capacidad = models.BooleanField(default=False)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
+class CapacidadProceso(models.Model):
+    """Capacidad de un recurso con vigencia; nunca reescribe semanas pasadas."""
+
+    equipo = models.ForeignKey(
+        Equipo, on_delete=models.PROTECT, related_name="capacidades_planificacion"
+    )
+    vigente_desde = models.DateField(db_index=True)
+    capacidad_hora = models.DecimalField(max_digits=14, decimal_places=2)
+    unidad = models.CharField(max_length=20, default="L/h")
+    observacion = models.CharField(max_length=250, blank=True)
+
+    class Meta:
+        ordering = ["equipo", "-vigente_desde"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["equipo", "vigente_desde"], name="capacidad_equipo_vigencia_unica"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(capacidad_hora__gt=0), name="capacidad_proceso_positiva"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.equipo} · {self.capacidad_hora} {self.unidad}"
+
+
+class MovimientoPlan(models.Model):
+    """Entrada o salida explicable del balance; reemplaza ajustes ocultos."""
+
+    class Tipo(models.TextChoices):
+        STOCK_INICIAL = "stock_inicial", "Stock inicial"
+        RECEPCION = "recepcion", "Recepción"
+        DESPACHO = "despacho", "Despacho"
+        TRASVASIJE_SALIDA = "trasvasije_salida", "Trasvasije salida"
+        TRASVASIJE_ENTRADA = "trasvasije_entrada", "Trasvasije entrada"
+        AJUSTE = "ajuste", "Ajuste identificado"
+
+    semana = models.ForeignKey(
+        SemanaPlan, on_delete=models.CASCADE, related_name="movimientos_plan"
+    )
+    fecha_hora = models.DateTimeField(db_index=True)
+    propietario = models.ForeignKey(
+        Mandante, on_delete=models.PROTECT, related_name="movimientos_plan"
+    )
+    tipo = models.CharField(max_length=25, choices=Tipo.choices)
+    cantidad = models.DecimalField(
+        max_digits=14, decimal_places=2,
+        help_text="Positiva para entradas; un ajuste puede ser positivo o negativo.",
+    )
+    actividad = models.ForeignKey(
+        BloquePlan, on_delete=models.SET_NULL, related_name="movimientos",
+        null=True, blank=True,
+    )
+    documento = models.CharField(max_length=80, blank=True)
+    observacion = models.TextField(blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="movimientos_plan_creados", null=True, blank=True,
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["fecha_hora", "id"]
+
+    def clean(self):
+        if self.tipo != self.Tipo.AJUSTE and self.cantidad <= 0:
+            raise ValidationError({"cantidad": "Debe ser mayor que cero."})
+        if self.tipo == self.Tipo.AJUSTE and not self.observacion.strip():
+            raise ValidationError({"observacion": "Todo ajuste debe explicar su motivo."})
+        if self.semana_id and not (
+            self.semana.fecha_inicio <= self.fecha_hora.date() <= self.semana.fecha_del_dia(6)
+        ):
+            raise ValidationError({"fecha_hora": "El movimiento debe pertenecer a la semana."})
+
+
+class StockSeguridadPlan(models.Model):
+    propietario = models.ForeignKey(
+        Mandante, on_delete=models.PROTECT, related_name="stocks_seguridad_plan"
+    )
+    vigente_desde = models.DateField(db_index=True)
+    cantidad = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        ordering = ["propietario", "-vigente_desde"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["propietario", "vigente_desde"], name="stock_seguridad_vigencia_unica"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gte=0), name="stock_seguridad_no_negativo"
+            ),
+        ]
+
+
+class VersionSemanaPlan(models.Model):
+    semana = models.ForeignKey(
+        SemanaPlan, on_delete=models.PROTECT, related_name="versiones"
+    )
+    numero = models.PositiveIntegerField()
+    instantanea = models.JSONField()
+    publicada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="versiones_plan_publicadas",
+    )
+    publicada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["semana", "-numero"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["semana", "numero"], name="version_semana_numero_unico"
+            )
+        ]

@@ -6,11 +6,14 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from maestros.models import Equipo, Mandante, Producto
+from maestros.models import Equipo, Mandante, Producto, Silo
 from produccion.models import Lote
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
-from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, SalidaProceso
-from .servicios import genealogia_lote, transicionar_ejecucion
+from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, RutaProducto, SalidaProceso
+from .servicios import (
+    etapa_para_producto, genealogia_lote, preparar_continuacion,
+    transicionar_ejecucion,
+)
 
 
 class ProcesosIndustrialesTests(TestCase):
@@ -119,6 +122,84 @@ class ProcesosIndustrialesTests(TestCase):
     def test_api_no_permite_borrado_fisico_de_ejecucion(self):
         respuesta = self.cliente.delete(f"/api/procesos/ejecuciones/{self.ejecucion.id}/")
         self.assertEqual(respuesta.status_code, 405)
+
+    def test_un_intermedio_no_puede_destinarse_a_inventario_terminado(self):
+        salida = SalidaProceso(
+            ejecucion=self.ejecucion,
+            lote=self.lote_descremada,
+            cantidad=Decimal("100"),
+            clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
+            destino=SalidaProceso.Destino.INVENTARIO,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "Solo un producto terminado"):
+            salida.full_clean()
+
+    def test_crema_de_descremacion_admite_estandarizacion_o_siguiente_proceso(self):
+        salida = SalidaProceso(
+            ejecucion=self.ejecucion,
+            lote=self.lote_crema,
+            naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
+            cantidad=Decimal("100"),
+        )
+
+        self.assertIn(SalidaProceso.Destino.ESTANDARIZACION, salida.destinos_permitidos())
+        self.assertIn(SalidaProceso.Destino.SIGUIENTE_PROCESO, salida.destinos_permitidos())
+        self.assertNotIn(SalidaProceso.Destino.INVENTARIO, salida.destinos_permitidos())
+
+    def test_reproceso_exige_motivo_explicito(self):
+        entrada = EntradaProceso(
+            ejecucion=self.ejecucion,
+            lote=self.lote_origen,
+            tipo=EntradaProceso.Tipo.REPROCESO,
+            cantidad=Decimal("10"),
+        )
+
+        with self.assertRaisesMessage(ValidationError, "debe indicar por qué"):
+            entrada.full_clean()
+
+    def test_la_etapa_se_resuelve_desde_la_ruta_del_producto(self):
+        ruta = Proceso.objects.create(codigo="ruta-leche-test", nombre="Ruta específica")
+        etapa_ruta = EtapaProceso.objects.create(
+            proceso=ruta, codigo="secar", nombre="Secado específico",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        RutaProducto.objects.create(
+            sucursal=self.ejecucion.sucursal,
+            producto=self.leche,
+            proceso=ruta,
+        )
+
+        encontrada = etapa_para_producto(
+            producto=self.leche,
+            sucursal=self.ejecucion.sucursal,
+            tipo=EtapaProceso.Tipo.SECADO,
+        )
+
+        self.assertEqual(encontrada, etapa_ruta)
+
+    def test_una_continuacion_no_puede_saltarse_una_etapa(self):
+        EtapaProceso.objects.create(
+            proceso=self.proceso, codigo="control", nombre="Control intermedio",
+            tipo=EtapaProceso.Tipo.OTRO, orden=2,
+        )
+        etapa_tres = EtapaProceso.objects.create(
+            proceso=self.proceso, codigo="secar", nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO, orden=3,
+        )
+        silo = Silo.objects.create(
+            sucursal=self.ejecucion.sucursal, codigo="INT-TEST",
+            tipo=Silo.Tipo.SILO, capacidad_l=Decimal("5000"),
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=silo, cantidad=Decimal("1000"), unidad="L",
+        )
+
+        with self.assertRaisesMessage(ValidationError, "no se pueden saltar procesos"):
+            preparar_continuacion(
+                salida_id=salida.pk, etapa_id=etapa_tres.pk,
+                equipo_id=self.equipo.pk, cantidad=100, usuario=self.usuario,
+            )
 
 
 class TrazabilidadPorCodigoTests(TestCase):

@@ -1024,6 +1024,42 @@ class DetalleDespacho(models.Model):
         constraints = [models.UniqueConstraint(fields=["despacho", "pallet"], name="despacho_pallet_unico")]
 
 
+class DetalleDespachoGranel(models.Model):
+    """Salida a granel liberada que se despacha sin fingir que es un pallet."""
+
+    despacho = models.ForeignKey(
+        Despacho, on_delete=models.PROTECT, related_name="detalles_granel"
+    )
+    salida = models.ForeignKey(
+        "procesos.SalidaProceso", on_delete=models.PROTECT,
+        related_name="detalles_despacho_granel",
+    )
+    cantidad = models.DecimalField(max_digits=14, decimal_places=3)
+    unidad = models.CharField(max_length=20)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["despacho", "salida"], name="despacho_salida_granel_unica"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0), name="despacho_granel_cantidad_positiva"
+            ),
+        ]
+
+    def clean(self):
+        from procesos.models import SalidaProceso
+
+        if self.salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
+            raise ValidationError({
+                "salida": "La salida no fue destinada a despacho directo."
+            })
+        if self.unidad and self.unidad.lower() != self.salida.unidad.lower():
+            raise ValidationError({"unidad": "La unidad debe coincidir con la salida."})
+        if self.cantidad is not None and self.cantidad <= 0:
+            raise ValidationError({"cantidad": "La cantidad debe ser mayor que cero."})
+
+
 class MovimientoProductoTerminado(models.Model):
     class Tipo(models.TextChoices):
         INGRESO = "ingreso", "Ingreso"

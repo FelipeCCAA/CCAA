@@ -94,7 +94,8 @@ function CentroCalidad() {
                   <div>
                     <p className="font-semibold text-slate-800">{item.tipo} · {item.corrida_codigo}</p>
                     <p className="text-sm text-slate-600">{item.producto_nombre} · {item.cantidad} {item.unidad}</p>
-                    <p className="text-xs text-slate-500">{item.equipo_nombre} → {item.silo_destino_codigo}</p>
+                    <p className="text-xs text-slate-500">{item.equipo_nombre || "Sin equipo"} → {item.silo_destino_codigo}</p>
+                    <p className="mt-1 text-xs font-medium text-amber-800">{item.clasificacion} · destino: {item.destino}</p>
                   </div>
                   <Estado valor={item.estado} />
                 </div>

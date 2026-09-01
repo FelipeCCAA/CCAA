@@ -158,6 +158,74 @@ export interface Bloque {
   observacion: string;
   /* Solo los evaporadores restan del balance. */
   consume_leche: boolean;
+  tipo_actividad: number | null;
+  tipo_actividad_nombre: string | null;
+  fecha_hora_inicio: string | null;
+  fecha_hora_fin: string | null;
+  producto: number | null;
+  producto_nombre: string | null;
+  orden_produccion: number | null;
+  orden_codigo: string | null;
+  origen_leche: number | null;
+  origen_leche_nombre: string | null;
+  cliente: number | null;
+  cliente_nombre: string | null;
+  capacidad_hora: string | null;
+  color: string;
+  actualizado_en: string;
+}
+
+export interface OrdenProduccionPlan {
+  id: number; codigo: string; producto: number; producto_nombre: string;
+  cantidad_planificada: string; unidad: string; estado: string;
+}
+
+export interface TipoActividadPlan {
+  id: number;
+  codigo: string;
+  nombre: string;
+  color: string;
+  requiere_producto: boolean;
+  requiere_origen: boolean;
+  requiere_capacidad: boolean;
+}
+
+export interface CapacidadProceso {
+  id: number; equipo: number; equipo_nombre: string; vigente_desde: string;
+  capacidad_hora: string; unidad: string; observacion: string;
+}
+
+export interface MovimientoPlan {
+  id: number;
+  semana: number;
+  fecha_hora: string;
+  propietario: number;
+  propietario_nombre: string;
+  tipo: "stock_inicial" | "recepcion" | "despacho" | "trasvasije_salida" | "trasvasije_entrada" | "ajuste";
+  tipo_etiqueta: string;
+  cantidad: string;
+  documento: string;
+  observacion: string;
+}
+
+export interface IndicadoresPlan {
+  propietarios: { id: number; nombre: string }[];
+  dias: Array<{
+    dia: number; fecha: string; stock_inicial: Record<string, number>;
+    movimientos: Array<{ id: number; tipo: string; propietario: number; cantidad: number; efecto: number; documento: string; observacion: string }>;
+    consumo_por_propietario: Record<string, number>; consumo: number;
+    stock_final: Record<string, number>;
+  }>;
+  alertas: Array<{ tipo: string; dia?: number; actividad?: number; propietario?: number; mensaje: string }>;
+  consumo_total: number;
+  stock_final_total: number;
+  utilizacion_por_equipo: Record<string, number>;
+}
+
+export interface ComparacionVersiones {
+  desde: number; hasta: number;
+  actividades: { agregados: Bloque[]; eliminados: Bloque[]; modificados: Array<{ id: string; anterior: Bloque; nuevo: Bloque }> };
+  movimientos: { agregados: MovimientoPlan[]; eliminados: MovimientoPlan[]; modificados: Array<{ id: string; anterior: MovimientoPlan; nuevo: MovimientoPlan }> };
 }
 
 export interface ConsumoDia {
@@ -187,6 +255,10 @@ export interface Programa {
   fechas: string[];
   publicable: boolean;
   bloqueos: string[];
+  movimientos: MovimientoPlan[];
+  indicadores: IndicadoresPlan;
+  alertas: IndicadoresPlan["alertas"];
+  versiones: Array<{ id: number; numero: number; publicada_por_nombre: string; publicada_en: string }>;
 }
 
 export interface Balance {
@@ -324,10 +396,63 @@ export async function crearBloque(bloque: {
   estado_equipo?: string;
   cantidad_kg?: number | null;
   observacion?: string;
+  tipo_actividad?: number | null;
+  producto?: number | null;
+  origen_leche?: number | null;
+  capacidad_hora?: number | null;
+  orden_produccion?: number | null;
+  cliente?: number | null;
 }): Promise<Bloque> {
 
   const { data } = await api.post<Bloque>("planificacion/bloques/", bloque);
 
+  return data;
+}
+
+export async function obtenerOrdenesPlan(): Promise<OrdenProduccionPlan[]> {
+  const { data } = await api.get<Pagina<OrdenProduccionPlan>>("produccion/ordenes/", { params: { estado: "programada" } });
+  return data.results;
+}
+
+export async function actualizarBloque(
+  id: number,
+  cambios: Partial<Bloque>,
+): Promise<Bloque> {
+  const { data } = await api.patch<Bloque>(`planificacion/bloques/${id}/`, cambios);
+  return data;
+}
+
+export async function obtenerTiposActividad(): Promise<TipoActividadPlan[]> {
+  const { data } = await api.get<TipoActividadPlan[]>("planificacion/tipos-actividad/");
+  return data;
+}
+
+export async function obtenerCapacidades(): Promise<CapacidadProceso[]> {
+  const { data } = await api.get<Pagina<CapacidadProceso>>("planificacion/capacidades/");
+  return data.results;
+}
+
+export async function crearCapacidad(datos: {
+  equipo: number; vigente_desde: string; capacidad_hora: number; unidad: string; observacion?: string;
+}): Promise<CapacidadProceso> {
+  const { data } = await api.post<CapacidadProceso>("planificacion/capacidades/", datos);
+  return data;
+}
+
+export async function crearMovimientoPlan(datos: {
+  semana: number; fecha_hora: string; propietario: number; tipo: MovimientoPlan["tipo"];
+  cantidad: number; documento?: string; observacion?: string;
+}): Promise<MovimientoPlan> {
+  const { data } = await api.post<MovimientoPlan>("planificacion/movimientos/", datos);
+  return data;
+}
+
+export async function borrarMovimientoPlan(id: number): Promise<void> {
+  await api.delete(`planificacion/movimientos/${id}/`);
+}
+
+export async function compararVersiones(semanaId: number, desde: number, hasta: number): Promise<ComparacionVersiones> {
+  const { data } = await api.get<ComparacionVersiones>(`planificacion/semanas/${semanaId}/comparar-versiones/`, { params: { desde, hasta } });
   return data;
 }
 

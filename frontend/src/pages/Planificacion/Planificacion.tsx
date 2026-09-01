@@ -11,14 +11,17 @@ import {
   obtenerCodigos,
   obtenerPrograma,
   obtenerSemanas,
+  obtenerTiposActividad,
   publicarSemana,
   reabrirSemana,
+  actualizarBloque,
   type CodigoProduccion,
   type Programa,
   type Semana,
+  type TipoActividadPlan,
 } from "../../services/planificacion.service";
 
-import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
+import { obtenerEquipos, obtenerMandantes, type Equipo, type Mandante } from "../../services/maestros.service";
 import {
   obtenerOcupacion,
   type Ocupacion,
@@ -29,6 +32,9 @@ import BalanceLeche from "./BalanceLeche";
 import Contraste from "./Contraste";
 import FormularioBloque from "./FormularioBloque";
 import Gantt from "./Gantt";
+import MovimientosPlan from "./MovimientosPlan";
+import CapacidadesPlan from "./CapacidadesPlan";
+import VersionesPlan from "./VersionesPlan";
 
 
 /*
@@ -65,6 +71,8 @@ function Planificacion() {
   const [programa, setPrograma] = useState<Programa | null>(null);
   const [codigos, setCodigos] = useState<CodigoProduccion[]>([]);
   const [ocupacion, setOcupacion] = useState<Ocupacion | null>(null);
+  const [tiposActividad, setTiposActividad] = useState<TipoActividadPlan[]>([]);
+  const [mandantes, setMandantes] = useState<Mandante[]>([]);
 
   const [vista, setVista] = useState<"programa" | "contraste">("programa");
 
@@ -125,6 +133,8 @@ function Planificacion() {
       // Sin equipos la Gantt no tiene filas que dibujar, pero la pantalla
       // sigue en pie y lo dice.
       void obtenerEquipos().then(setEquipos).catch(() => setEquipos([]));
+      void obtenerTiposActividad().then(setTiposActividad).catch(() => setTiposActividad([]));
+      void obtenerMandantes().then(setMandantes).catch(() => setMandantes([]));
     }, 0);
 
     return () => clearTimeout(t);
@@ -473,7 +483,18 @@ function Planificacion() {
                 </section>
               )}
 
+              <CapacidadesPlan equipos={equipos} editable={editable} />
+
               {/* Carta Gantt */}
+
+              <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+                <section className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4"><p className="text-xs font-semibold uppercase text-sky-700">Consumo planificado</p><p className="mt-2 text-2xl font-bold text-sky-950">{programa.indicadores.consumo_total.toLocaleString("es-CL")} L</p></div>
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-semibold uppercase text-emerald-700">Stock final</p><p className="mt-2 text-2xl font-bold text-emerald-950">{programa.indicadores.stock_final_total.toLocaleString("es-CL")} L</p></div>
+                  <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="text-xs font-semibold uppercase text-violet-700">Recursos utilizados</p><p className="mt-2 text-2xl font-bold text-violet-950">{Object.keys(programa.indicadores.utilizacion_por_equipo).length}</p></div>
+                </section>
+                <aside className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><h2 className="font-semibold text-amber-950">Conflictos y alertas ({programa.alertas.length})</h2>{programa.alertas.length === 0 ? <p className="mt-2 text-sm text-amber-800">Sin alertas en la proyección explícita.</p> : <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto text-xs text-amber-900">{programa.alertas.map((alerta, indice) => <li key={`${alerta.tipo}-${indice}`}>• {alerta.mensaje}</li>)}</ul>}</aside>
+              </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
 
@@ -497,6 +518,21 @@ function Planificacion() {
                     await borrarBloque(bloque.id);
                     await cargarPrograma();
                   }}
+                  alMover={async (bloque, inicio, fin) => {
+                    const convertir = (horas: number) => {
+                      const fecha = new Date(`${semana.fecha_inicio}T00:00:00`);
+                      fecha.setMinutes(fecha.getMinutes() + horas * 60);
+                      return fecha.toISOString();
+                    };
+                    try {
+                      await actualizarBloque(bloque.id, { fecha_hora_inicio: convertir(inicio), fecha_hora_fin: convertir(fin) });
+                      await cargarPrograma();
+                    } catch (e) {
+                      const detalle = axios.isAxiosError(e) ? e.response?.data?.bloqueos?.join(" ") : "";
+                      setError(detalle || "No se pudo mover la actividad; revisa solapamientos y límites de la semana.");
+                      await cargarPrograma();
+                    }
+                  }}
                 />
 
                 {!editable && puedeEditar && (
@@ -508,6 +544,9 @@ function Planificacion() {
                 )}
 
               </div>
+
+              <MovimientosPlan semanaId={semana.id} fechaInicio={semana.fecha_inicio} movimientos={programa.movimientos} mandantes={mandantes} editable={editable} alCambiar={cargarPrograma} />
+              <VersionesPlan semanaId={semana.id} versiones={programa.versiones} />
 
               {/* Balance */}
 
@@ -543,6 +582,8 @@ function Planificacion() {
           horaInicio={nuevoBloque.hora}
           dia={nuevoBloque.dia}
           codigos={codigos}
+          tiposActividad={tiposActividad}
+          mandantes={mandantes}
           alCerrar={() => setNuevoBloque(null)}
           alGuardar={() => {
             setNuevoBloque(null);

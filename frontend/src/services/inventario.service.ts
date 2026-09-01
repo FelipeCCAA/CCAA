@@ -348,12 +348,22 @@ export interface DetalleDespacho {
   id: number; pallet: number; pallet_codigo: string; lote_codigo: string; kg_neto: string;
 }
 
+export interface DetalleDespachoGranel {
+  id: number; salida: number; corrida_codigo: string; cantidad: string;
+  unidad: string; destino_etiqueta: string;
+}
+
+export interface GranelDisponible {
+  id: number; corrida_codigo: string; producto: string; silo_codigo: string | null;
+  cantidad_disponible: string; unidad: string;
+}
+
 export interface Despacho {
   id: number; numero: string; cliente: number; cliente_nombre: string;
   estado: "borrador" | "autorizado" | "despachado" | "cancelado";
   guia_despacho: string; transportista: string; patente: string;
   creado_en: string; autorizado_en: string | null; despachado_en: string | null;
-  detalles: DetalleDespacho[];
+  detalles: DetalleDespacho[]; detalles_granel: DetalleDespachoGranel[];
 }
 
 export const obtenerProductoTerminado = () =>
@@ -361,6 +371,10 @@ export const obtenerProductoTerminado = () =>
 export const obtenerClientesDespacho = () =>
   lista<ClienteDespacho>("inventario/clientes-despacho/");
 export const obtenerDespachos = () => lista<Despacho>("inventario/despachos/");
+export async function obtenerGranelDisponible(): Promise<GranelDisponible[]> {
+  const { data } = await api.get<GranelDisponible[]>("inventario/despachos/granel-disponible/");
+  return data;
+}
 
 export async function ingresarPallet(pallet: number, ubicacion: number) {
   const { data } = await api.post<ExistenciaProductoTerminado>(
@@ -377,7 +391,8 @@ export async function transferirPallet(id: number, destino: number, motivo: stri
 }
 
 export async function crearDespacho(datos: {
-  numero: string; cliente: number; pallet_ids: number[]; guia_despacho?: string;
+  numero: string; cliente: number; pallet_ids?: number[];
+  graneles?: { salida: number; cantidad: number }[]; guia_despacho?: string;
   transportista?: string; patente?: string; observacion?: string;
 }) {
   const { data } = await api.post<Despacho>("inventario/despachos/", datos);

@@ -32,6 +32,15 @@ export default function Procesos() {
   const siloParametro = Number(parametros.get("silo"));
   const siloDescremacion = parametros.get("accion") === "descremar" && Number.isInteger(siloParametro) && siloParametro > 0
     ? siloParametro : null;
+  const seccionSolicitada = parametros.get("seccion");
+
+  useEffect(() => {
+    if (!seccionSolicitada) return;
+    const temporizador = window.setTimeout(() => {
+      document.getElementById(`proceso-${seccionSolicitada}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(temporizador);
+  }, [seccionSolicitada]);
 
   useEffect(() => {
     obtenerEjecucionesOperativas()
@@ -143,17 +152,17 @@ export default function Procesos() {
           {!rutasCargadas ? <button type="button" onClick={cargarRutas} className="mt-5 rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar rutas</button> : rutas.length === 0 ? <p className="mt-5 text-sm text-slate-600">No hay rutas activas configuradas.</p> : <div className="mt-5 grid gap-4 lg:grid-cols-2">{rutas.map((ruta) => <article key={ruta.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{ruta.producto_nombre}</p><p className="mt-1 text-sm text-green-700">{ruta.proceso_nombre}{ruta.destino ? ` → ${ruta.destino}` : ""}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Prioridad {ruta.prioridad}</span></div><div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">{ruta.etapas.sort((a, b) => a.orden - b.orden).map((etapa, indice) => <span key={etapa.id} className="inline-flex items-center gap-2"><span className="rounded-lg bg-slate-50 px-2 py-1">{etapa.nombre}</span>{indice < ruta.etapas.length - 1 && <ArrowRight className="h-3 w-3" />}</span>)}</div></article>)}</div>}
         </section>
 
-        <section>
+        <section id="proceso-descremacion" className="scroll-mt-6">
           <h2 className="mb-4 text-xl font-semibold text-slate-800">Descremación</h2>
           {!descremacionesCargadas ? <button type="button" onClick={cargarDescremaciones} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas de descremación</button> : descremaciones.length === 0 ? <EmptyState titulo="Sin corridas de descremación" detalle="Inicia una desde la acción Descremar disponible en el detalle de un silo." /> : <div className="grid gap-4 lg:grid-cols-2">{descremaciones.map((corrida) => <article key={corrida.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{corrida.ejecucion_codigo}</p><p className="mt-1 text-xs text-slate-600">{corrida.equipo_nombre || "Sin equipo"}</p></div><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></div><div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><span className="font-semibold">{corrida.silo_entera_codigo}</span> · {Number(corrida.litros_entrada).toLocaleString("es-CL")} L <ArrowRight className="mx-1 inline h-3.5 w-3.5" /> {corrida.silo_descremada_codigo} + {corrida.estanque_crema_codigo}</div>{corrida.estado === "en_curso" && <button type="button" onClick={() => setCerrandoDescremacion(corrida)} className="mt-4 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Registrar salidas y cerrar</button>}{corrida.estado === "cerrada" && <p className="mt-3 text-xs text-slate-600">Salida: {Number(corrida.litros_descremada).toLocaleString("es-CL")} L descremada + {Number(corrida.litros_crema).toLocaleString("es-CL")} L crema.</p>}</article>)}</div>}
         </section>
 
-        <section>
+        <section id="proceso-condensacion" className="scroll-mt-6">
           <h2 className="mb-4 text-xl font-semibold text-slate-800">Condensación y precondensado</h2>
           {!condensacionesCargadas ? <button type="button" onClick={cargarCondensaciones} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : condensaciones.length === 0 ? <EmptyState titulo="Sin corridas de condensación" detalle="Las corridas aparecerán aquí vinculadas a su orden, lote, evaporador y silos." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">Orden / lote</th><th className="px-5 py-3">Evaporador</th><th className="px-5 py-3">Flujo físico</th><th className="px-5 py-3">Resultado</th><th className="px-5 py-3">Estado</th></tr></thead><tbody>{condensaciones.map((corrida) => <tr key={corrida.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{corrida.orden_codigo}<span className="block text-xs font-normal text-slate-600">{corrida.lote_codigo} · {corrida.ejecucion_codigo}</span></td><td className="px-5 py-4">{corrida.equipo_nombre || "—"}</td><td className="px-5 py-4">{corrida.silo_origen_codigo} · {Number(corrida.litros_entrada).toLocaleString("es-CL")} L <ArrowRight className="mx-1 inline h-3.5 w-3.5" /> {corrida.silo_destino_codigo}</td><td className="px-5 py-4">{corrida.litros_precondensado ? `${Number(corrida.litros_precondensado).toLocaleString("es-CL")} L` : "Pendiente"}<span className="block text-xs text-slate-600">{corrida.solidos_salida ? `${corrida.solidos_salida}% sólidos` : "sin control final"}</span></td><td className="px-5 py-4"><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></td></tr>)}</tbody></table></div>}
         </section>
 
-        <section>
+        <section id="proceso-mantequilla" className="scroll-mt-6">
           <h2 className="mb-4 text-xl font-semibold text-slate-800">Línea de mantequilla</h2>
           {!mantequillasCargadas ? <button type="button" onClick={cargarMantequillas} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : mantequillas.length === 0 ? <EmptyState titulo="Sin corridas de mantequilla" detalle="Las corridas conservarán la relación crema → mantequilla, suero y merma." /> : <div className="grid gap-4 lg:grid-cols-2">{mantequillas.map((corrida) => <article key={corrida.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{corrida.orden_codigo} · {corrida.mantequilla_codigo}</p><p className="mt-1 text-xs text-slate-600">{corrida.equipo_nombre || "Sin línea"} · {corrida.ejecucion_codigo}</p></div><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p className="rounded-xl bg-amber-50 p-3 text-amber-900"><span className="block text-xs text-amber-700">Crema utilizada</span>{Number(corrida.kg_crema).toLocaleString("es-CL")} kg · {corrida.crema_codigo}</p><p className="rounded-xl bg-green-50 p-3 text-green-900"><span className="block text-xs text-green-700">Mantequilla</span>{corrida.kg_mantequilla ? `${Number(corrida.kg_mantequilla).toLocaleString("es-CL")} kg` : "Pendiente"}</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Suero</span>{Number(corrida.kg_suero).toLocaleString("es-CL")} kg</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Merma</span>{Number(corrida.kg_merma).toLocaleString("es-CL")} kg</p></div></article>)}</div>}
         </section>
@@ -215,6 +224,28 @@ export default function Procesos() {
                   </p>
                 </div>
               </div>
+              {genealogia.flujo.cadena_procesos.length > 0 && (
+                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+                  <p className="text-sm font-semibold text-violet-950">Transformaciones relacionadas</p>
+                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                    {genealogia.flujo.cadena_procesos.map((ejecucion, indice) => (
+                      <div key={ejecucion.id} className="flex shrink-0 items-center gap-2">
+                        {indice > 0 && <ArrowRight className="h-4 w-4 text-violet-300" />}
+                        <article className="w-56 rounded-lg border border-violet-200 bg-white p-3 text-xs">
+                          <p className="font-bold text-slate-900">{ejecucion.etapa}</p>
+                          <p className="mt-1 text-violet-700">{ejecucion.codigo}</p>
+                          <p className="mt-1 text-slate-500">{ejecucion.equipo || "Sin equipo"} · {ejecucion.estado}</p>
+                          {ejecucion.salidas.map((salida) => (
+                            <p key={salida.id} className="mt-2 rounded bg-slate-50 px-2 py-1 text-slate-600">
+                              {Number(salida.cantidad).toLocaleString("es-CL")} {salida.unidad} · {salida.clase} → {salida.destino}
+                            </p>
+                          ))}
+                        </article>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
                 <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4">
                   <p className="text-sm font-semibold text-sky-900">Calidad · {genealogia.flujo.calidad.estado}</p>

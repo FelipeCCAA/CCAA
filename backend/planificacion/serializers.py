@@ -1,7 +1,14 @@
+from datetime import datetime, time, timedelta
+from decimal import Decimal
+
+from django.utils import timezone
 from rest_framework import serializers
 
 from . import dominio
-from .models import BalanceDia, BloquePlan, CodigoProduccion, SemanaPlan
+from .models import (
+    BalanceDia, BloquePlan, CapacidadProceso, CodigoProduccion, MovimientoPlan,
+    SemanaPlan, StockSeguridadPlan, TipoActividadPlan, VersionSemanaPlan,
+)
 
 
 class CodigoProduccionSerializer(serializers.ModelSerializer):
@@ -36,6 +43,11 @@ class BloquePlanSerializer(serializers.ModelSerializer):
     equipo_codigo = serializers.CharField(source="equipo.codigo", read_only=True)
     horas = serializers.FloatField(read_only=True)
     consume_leche = serializers.BooleanField(read_only=True)
+    tipo_actividad_nombre = serializers.CharField(source="tipo_actividad.nombre", read_only=True)
+    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    origen_leche_nombre = serializers.CharField(source="origen_leche.nombre", read_only=True)
+    cliente_nombre = serializers.CharField(source="cliente.nombre", read_only=True)
+    orden_codigo = serializers.CharField(source="orden_produccion.codigo", read_only=True)
 
     class Meta:
         model = BloquePlan
@@ -57,7 +69,12 @@ class BloquePlanSerializer(serializers.ModelSerializer):
             "cantidad_kg",
             "observacion",
             "consume_leche",
+            "tipo_actividad", "tipo_actividad_nombre", "fecha_hora_inicio",
+            "fecha_hora_fin", "producto", "producto_nombre", "orden_produccion",
+            "orden_codigo", "origen_leche", "origen_leche_nombre", "cliente",
+            "cliente_nombre", "capacidad_hora", "color", "creado_por", "actualizado_en",
         ]
+        read_only_fields = ["creado_por", "actualizado_en"]
 
     def validate(self, datos):
         """
@@ -67,21 +84,102 @@ class BloquePlanSerializer(serializers.ModelSerializer):
         cosa que ni el modelo ni una restricción de base pueden hacer: un
         solapamiento no es un duplicado, es un intervalo que pisa a otro.
         """
+        semana = datos.get("semana", getattr(self.instance, "semana", None))
+        if semana and semana.estado != SemanaPlan.Estado.BORRADOR:
+            raise serializers.ValidationError(
+                {"semana": "Solo se editan actividades de una semana en borrador."}
+            )
+
+        inicio = datos.get("fecha_hora_inicio", getattr(self.instance, "fecha_hora_inicio", None))
+        fin = datos.get("fecha_hora_fin", getattr(self.instance, "fecha_hora_fin", None))
+        if inicio or fin:
+            if not inicio or not fin:
+                raise serializers.ValidationError("Inicio y término deben informarse juntos.")
+            inicio_local = timezone.localtime(inicio)
+            fin_local = timezone.localtime(fin)
+            dia = (inicio_local.date() - semana.fecha_inicio).days
+            if not 0 <= dia <= 6 or fin_local > timezone.make_aware(
+                datetime.combine(semana.fecha_del_dia(7), time.min)
+            ):
+                raise serializers.ValidationError("La actividad debe quedar dentro de lunes 00:00 y domingo 24:00.")
+            datos["dia"] = dia
+            datos["hora_inicio"] = Decimal(inicio_local.hour) + Decimal(inicio_local.minute) / 60
+            datos["hora_fin"] = (
+                Decimal("24") if fin_local.date() > inicio_local.date()
+                else Decimal(fin_local.hour) + Decimal(fin_local.minute) / 60
+            )
+        elif semana and all(campo in datos for campo in ("dia", "hora_inicio", "hora_fin")):
+            fecha = semana.fecha_del_dia(datos["dia"])
+            def momento(hora):
+                valor = float(hora)
+                if valor == 24:
+                    return timezone.make_aware(datetime.combine(fecha + timedelta(days=1), time.min))
+                horas = int(valor)
+                return timezone.make_aware(datetime.combine(fecha, time(horas, round((valor - horas) * 60))))
+            datos["fecha_hora_inicio"] = momento(datos["hora_inicio"])
+            datos["fecha_hora_fin"] = momento(datos["hora_fin"])
+
+        codigo = datos.get("codigo", getattr(self.instance, "codigo", None))
+        tipo_actividad = datos.get("tipo_actividad", getattr(self.instance, "tipo_actividad", None))
+        if tipo_actividad is None:
+            clave = "produccion" if datos.get("tipo", getattr(self.instance, "tipo", None)) == "produccion" else {
+                "A": "aseo", "P": "pnp", "M": "mantenimiento", "X": "preparacion", "AP": "atraso_partida"
+            }.get(datos.get("estado_equipo", getattr(self.instance, "estado_equipo", "")), "preparacion")
+            tipo_actividad = TipoActividadPlan.objects.filter(codigo=clave).first()
+            datos["tipo_actividad"] = tipo_actividad
+        if tipo_actividad:
+            if tipo_actividad.codigo == "produccion":
+                datos["tipo"] = BloquePlan.Tipo.PRODUCCION
+            else:
+                datos["tipo"] = BloquePlan.Tipo.ESTADO
+                datos["estado_equipo"] = {
+                    "aseo": "A", "pnp": "P", "mantenimiento": "M",
+                    "preparacion": "X", "atraso_partida": "AP",
+                }.get(tipo_actividad.codigo, "X")
+                datos["codigo"] = None
+            datos.setdefault("color", getattr(self.instance, "color", "") or tipo_actividad.color)
+
+        if codigo:
+            datos.setdefault("producto", codigo.producto)
+            datos.setdefault("origen_leche", codigo.mandante)
+        orden = datos.get("orden_produccion", getattr(self.instance, "orden_produccion", None))
+        if orden:
+            datos.setdefault("producto", orden.producto)
+            if semana and orden.semana_id and orden.semana_id != semana.id:
+                raise serializers.ValidationError({"orden_produccion": "La orden pertenece a otra semana."})
+            producto = datos.get("producto", getattr(self.instance, "producto", None))
+            if producto and producto.id != orden.producto_id:
+                raise serializers.ValidationError({"producto": "El producto no coincide con la orden."})
+        equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
+        if (
+            datos.get("capacidad_hora") is None and equipo and inicio
+            and (self.instance is None or self.instance.capacidad_hora is None)
+        ):
+            capacidad = CapacidadProceso.objects.filter(
+                equipo=equipo, vigente_desde__lte=timezone.localdate(inicio)
+            ).order_by("-vigente_desde").first()
+            datos["capacidad_hora"] = capacidad.capacidad_hora if capacidad else (
+                codigo.rendimiento_lh if codigo else None
+            )
+
         propuesto = BloquePlan(
             **{
                 **{
                     campo: getattr(self.instance, campo, None)
-                    for campo in ("semana", "equipo", "dia", "hora_inicio", "hora_fin",
-                                  "tipo", "codigo", "estado_equipo")
+                    for campo in (
+                        "semana", "equipo", "dia", "hora_inicio", "hora_fin",
+                        "tipo", "codigo", "estado_equipo", "tipo_actividad",
+                        "fecha_hora_inicio", "fecha_hora_fin", "producto",
+                        "orden_produccion", "origen_leche", "cliente",
+                        "capacidad_hora", "color",
+                    )
                 },
                 **{k: v for k, v in datos.items()},
             }
         )
         propuesto.pk = getattr(self.instance, "pk", None)
 
-        hermanos = BloquePlan.objects.filter(
-            semana=propuesto.semana, equipo=propuesto.equipo, dia=propuesto.dia
-        )
+        hermanos = BloquePlan.objects.filter(semana=propuesto.semana, equipo=propuesto.equipo)
 
         validacion = dominio.validar_bloque(propuesto, list(hermanos))
 
@@ -100,6 +198,65 @@ class BloquePlanSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"bloqueos": validacion.bloqueos})
 
         return datos
+
+    def create(self, validated_data):
+        validated_data["creado_por"] = self.context["request"].user
+        return super().create(validated_data)
+
+
+class TipoActividadPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TipoActividadPlan
+        fields = "__all__"
+
+
+class CapacidadProcesoSerializer(serializers.ModelSerializer):
+    equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
+
+    class Meta:
+        model = CapacidadProceso
+        fields = ["id", "equipo", "equipo_nombre", "vigente_desde", "capacidad_hora", "unidad", "observacion"]
+
+
+class MovimientoPlanSerializer(serializers.ModelSerializer):
+    propietario_nombre = serializers.CharField(source="propietario.nombre", read_only=True)
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+
+    class Meta:
+        model = MovimientoPlan
+        fields = ["id", "semana", "fecha_hora", "propietario", "propietario_nombre", "tipo", "tipo_etiqueta", "cantidad", "actividad", "documento", "observacion", "creado_por", "creado_en"]
+        read_only_fields = ["creado_por", "creado_en"]
+
+    def validate(self, datos):
+        semana = datos.get("semana", getattr(self.instance, "semana", None))
+        if semana and semana.estado != SemanaPlan.Estado.BORRADOR:
+            raise serializers.ValidationError({"semana": "Solo se modifica una semana en borrador."})
+        if datos.get("tipo", getattr(self.instance, "tipo", None)) == MovimientoPlan.Tipo.AJUSTE and not datos.get("observacion", getattr(self.instance, "observacion", "")).strip():
+            raise serializers.ValidationError({"observacion": "Todo ajuste debe explicar su motivo."})
+        cantidad = datos.get("cantidad", getattr(self.instance, "cantidad", None))
+        if datos.get("tipo", getattr(self.instance, "tipo", None)) != MovimientoPlan.Tipo.AJUSTE and cantidad is not None and cantidad <= 0:
+            raise serializers.ValidationError({"cantidad": "Debe ser mayor que cero."})
+        return datos
+
+    def create(self, validated_data):
+        validated_data["creado_por"] = self.context["request"].user
+        return super().create(validated_data)
+
+
+class StockSeguridadPlanSerializer(serializers.ModelSerializer):
+    propietario_nombre = serializers.CharField(source="propietario.nombre", read_only=True)
+
+    class Meta:
+        model = StockSeguridadPlan
+        fields = ["id", "propietario", "propietario_nombre", "vigente_desde", "cantidad"]
+
+
+class VersionSemanaPlanSerializer(serializers.ModelSerializer):
+    publicada_por_nombre = serializers.CharField(source="publicada_por.get_full_name", read_only=True)
+
+    class Meta:
+        model = VersionSemanaPlan
+        fields = ["id", "semana", "numero", "publicada_por", "publicada_por_nombre", "publicada_en"]
 
 
 class BalanceDiaSerializer(serializers.ModelSerializer):

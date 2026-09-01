@@ -15,7 +15,7 @@ from django.utils import timezone
 from .models import (
     Aprobacion, Bodega, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
     InspeccionMaterial, LoteInventario, MovimientoInventario, Notificacion,
-    ReservaInventario, Ubicacion, Despacho, DetalleDespacho,
+    ReservaInventario, Ubicacion, Despacho, DetalleDespacho, DetalleDespachoGranel,
     ExistenciaProductoTerminado, MovimientoProductoTerminado,
 )
 
@@ -144,8 +144,13 @@ def autorizar_despacho(despacho, usuario):
     if despacho.estado != Despacho.Estado.BORRADOR:
         raise ValidationError("Solo un despacho en borrador puede autorizarse.")
     detalles = list(despacho.detalles.select_related("pallet__envase__lote").select_for_update())
-    if not detalles:
-        raise ValidationError("El despacho debe contener al menos un pallet.")
+    graneles = list(
+        despacho.detalles_granel.select_related(
+            "salida__ejecucion__sucursal"
+        ).select_for_update()
+    )
+    if not detalles and not graneles:
+        raise ValidationError("El despacho debe contener pallets o producto a granel.")
     for detalle in detalles:
         _validar_pallet_liberado(detalle.pallet)
         comprometido = DetalleDespacho.objects.filter(
@@ -156,6 +161,33 @@ def autorizar_despacho(despacho, usuario):
             raise ValidationError(f"El pallet {detalle.pallet.codigo} ya está comprometido en otro despacho.")
         if not ExistenciaProductoTerminado.objects.filter(pallet=detalle.pallet, activo=True).exists():
             raise ValidationError(f"El pallet {detalle.pallet.codigo} no está disponible en inventario.")
+    from calidad.models import LiberacionProceso
+    from procesos.models import SalidaProceso
+    for detalle in graneles:
+        salida = SalidaProceso.objects.select_for_update().select_related(
+            "ejecucion__sucursal"
+        ).get(pk=detalle.salida_id)
+        if salida.ejecucion.sucursal_id != despacho.sucursal_id:
+            raise ValidationError("La salida a granel pertenece a otra planta.")
+        if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
+            raise ValidationError(
+                f"{salida.ejecucion.codigo} no está destinada a despacho directo."
+            )
+        if not LiberacionProceso.objects.filter(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO
+        ).exists():
+            raise ValidationError(
+                f"{salida.ejecucion.codigo} todavía no está liberada por Calidad."
+            )
+        comprometido = DetalleDespachoGranel.objects.filter(
+            salida=salida,
+            despacho__estado__in=[Despacho.Estado.AUTORIZADO, Despacho.Estado.DESPACHADO],
+        ).exclude(despacho=despacho).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+        disponible = salida.cantidad - comprometido
+        if detalle.cantidad > disponible:
+            raise ValidationError(
+                f"{salida.ejecucion.codigo} tiene {disponible} {salida.unidad} disponibles."
+            )
     despacho.estado = Despacho.Estado.AUTORIZADO
     despacho.autorizado_por = usuario
     despacho.autorizado_en = timezone.now()
@@ -166,12 +198,15 @@ def autorizar_despacho(despacho, usuario):
 @transaction.atomic
 def ejecutar_despacho(despacho, usuario):
     from produccion.models import PalletProducto
+    from calidad.models import LiberacionProceso
+    from procesos.models import SalidaProceso
     despacho = Despacho.objects.select_for_update().get(pk=despacho.pk)
     if despacho.estado == Despacho.Estado.DESPACHADO:
         return despacho
     if despacho.estado != Despacho.Estado.AUTORIZADO:
         raise ValidationError("El despacho debe estar autorizado.")
     detalles = list(despacho.detalles.select_related("pallet__envase__lote").select_for_update())
+    graneles = list(despacho.detalles_granel.select_related("salida").select_for_update())
     for detalle in detalles:
         _validar_pallet_liberado(detalle.pallet)
         existencia = ExistenciaProductoTerminado.objects.select_for_update().select_related("ubicacion").get(
@@ -185,6 +220,18 @@ def ejecutar_despacho(despacho, usuario):
         )
         detalle.pallet.estado = PalletProducto.Estado.DESPACHADO
         detalle.pallet.save(update_fields=["estado"])
+    for detalle in graneles:
+        salida = SalidaProceso.objects.select_for_update().get(pk=detalle.salida_id)
+        if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
+            raise ValidationError(
+                f"{salida.ejecucion.codigo} ya no está destinada a despacho directo."
+            )
+        if not LiberacionProceso.objects.filter(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO
+        ).exists():
+            raise ValidationError(
+                f"{salida.ejecucion.codigo} fue bloqueada por Calidad antes del despacho."
+            )
     despacho.estado = Despacho.Estado.DESPACHADO
     despacho.despachado_en = timezone.now()
     despacho.save(update_fields=["estado", "despachado_en"])

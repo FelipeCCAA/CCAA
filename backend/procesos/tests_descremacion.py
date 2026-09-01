@@ -12,7 +12,7 @@ from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .dominio import calcular_balance_descremacion
 from .models import (
-    CorridaDescremacion, EjecucionProceso, EtapaProceso, Proceso,
+    CorridaDescremacion, EjecucionProceso, EtapaProceso, Proceso, SalidaProceso,
 )
 from .servicios import cerrar_descremacion, iniciar_descremacion
 
@@ -88,7 +88,11 @@ class CierreDescremacionTests(TestCase):
         movimientos = MovimientoSilo.objects.filter(operacion_id=self.corrida.operacion_id)
         self.assertEqual(movimientos.count(), 3)
         self.assertEqual(resultado.estado, CorridaDescremacion.Estado.CERRADA)
-        self.assertEqual(resultado.ejecucion.salidas.count(), 2)
+        self.assertEqual(resultado.ejecucion.salidas.count(), 3)
+        merma = resultado.ejecucion.salidas.get(
+            naturaleza=SalidaProceso.Naturaleza.MERMA
+        )
+        self.assertEqual(merma.cantidad, Decimal("10"))
         self.assertEqual(
             sum(m.atribuciones_recepcion.count() for m in movimientos.filter(tipo="ingreso")),
             2,
