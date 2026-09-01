@@ -76,7 +76,15 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
 
     # --------------------------------------------------------- borradores
 
-    def _borrador_del_usuario(self, request, pk=None):
+    def _borrador_del_usuario(self, request, pk=None, *, bloquear=False):
+        """
+        El borrador abierto de esta persona, o `None`.
+
+        `bloquear` toma el candado de fila y solo vale dentro de una
+        transacción; lo piden las acciones que escriben. El porqué está en
+        `recepcion.views.RecepcionViewSet._borrador_del_usuario`: sin él, un
+        autoguardado en vuelo pisa la confirmación y la deja en borrador.
+        """
         consulta = ValeEstandarizacion.objects.select_related(
             "producto", "silo_entera", "silo_descremada", "silo_crema", "silo_destino",
             "responsable",
@@ -86,6 +94,8 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         )
         if pk is not None:
             consulta = consulta.filter(pk=pk)
+        if bloquear:
+            consulta = consulta.select_for_update(of=("self",))
         return consulta.order_by("-actualizado_en", "-id").first()
 
     @action(detail=False, methods=["get"], url_path="mi-borrador")
@@ -121,8 +131,9 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         return Response(self.get_serializer(vale).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    @transaction.atomic
     def guardar_borrador(self, request, pk=None):
-        vale = self._borrador_del_usuario(request, pk)
+        vale = self._borrador_del_usuario(request, pk, bloquear=True)
         if vale is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -136,8 +147,9 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    @transaction.atomic
     def confirmar_borrador(self, request, pk=None):
-        vale = self._borrador_del_usuario(request, pk)
+        vale = self._borrador_del_usuario(request, pk, bloquear=True)
         if vale is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -149,8 +161,9 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         return Response(self.get_serializer(vale).data)
 
     @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    @transaction.atomic
     def descartar_borrador(self, request, pk=None):
-        vale = self._borrador_del_usuario(request, pk)
+        vale = self._borrador_del_usuario(request, pk, bloquear=True)
         if vale is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
         vale.estado = ValeEstandarizacion.Estado.ANULADO

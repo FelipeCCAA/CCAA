@@ -228,12 +228,22 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
     # --------------------------------------------------------- borradores
 
-    def _borrador_del_usuario(self, request, pk=None):
+    def _borrador_del_usuario(self, request, pk=None, *, bloquear=False):
+        """
+        El borrador abierto de esta persona, o `None`.
+
+        `bloquear` toma el candado de fila y solo vale dentro de una
+        transacción; lo piden las acciones que escriben. El porqué está en
+        `recepcion.views.RecepcionViewSet._borrador_del_usuario`: sin él, un
+        autoguardado en vuelo pisa la confirmación y la deja en borrador.
+        """
         consulta = self.queryset.filter(
             estado=Lote.Estado.BORRADOR, abierto_por=request.user
         )
         if pk is not None:
             consulta = consulta.filter(pk=pk)
+        if bloquear:
+            consulta = consulta.select_for_update(of=("self",))
         return consulta.order_by("-actualizado_en", "-id").first()
 
     @action(detail=False, methods=["get"], url_path="mi-borrador")
@@ -274,8 +284,9 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(lote).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["patch"], url_path="guardar-borrador")
+    @transaction.atomic
     def guardar_borrador(self, request, pk=None):
-        lote = self._borrador_del_usuario(request, pk)
+        lote = self._borrador_del_usuario(request, pk, bloquear=True)
         if lote is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -290,8 +301,9 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="confirmar-borrador")
+    @transaction.atomic
     def confirmar_borrador(self, request, pk=None):
-        lote = self._borrador_del_usuario(request, pk)
+        lote = self._borrador_del_usuario(request, pk, bloquear=True)
         if lote is None:
             return Response(
                 {"detail": "El borrador no existe o ya fue confirmado."},
@@ -323,8 +335,9 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(confirmado).data)
 
     @action(detail=True, methods=["post"], url_path="descartar-borrador")
+    @transaction.atomic
     def descartar_borrador(self, request, pk=None):
-        lote = self._borrador_del_usuario(request, pk)
+        lote = self._borrador_del_usuario(request, pk, bloquear=True)
         if lote is not None:
             lote.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -373,17 +386,20 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             vales = vales.filter(producto_id=producto)
 
         vales = list(vales)
-        consumos = {
-            fila["lote__vale_id"]: fila["total"]
-            for fila in MovimientoSilo.objects.filter(
-                tipo=MovimientoSilo.Tipo.SALIDA,
-                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
-                lote__vale_id__in=[vale.pk for vale in vales],
-            ).values("lote__vale_id").annotate(total=Sum("litros"))
-        }
+
+        # El saldo lo calcula `litros_ya_tomados`, la **misma** función que usa
+        # `abrir_lote_desde_vale` para decidir si el lote cabe.
+        #
+        # Antes esta pantalla lo contaba aparte, uniendo por `movimiento.lote`
+        # mientras la regla une por `origen_id` y además acota al silo de
+        # destino. Las dos cuentas discrepan en cuanto existe un movimiento con
+        # `origen_id` puesto y `lote` nulo —los hay en la base—: el desplegable
+        # ofrecía un vale con veinte mil litros libres y el formulario, ya
+        # completo, respondía «quedan 0,00 L y se piden 20.000». El operador no
+        # tenía forma de saber cuál de los dos números era el bueno.
         resultado = []
         for vale in vales:
-            usados = consumos.get(vale.pk, Decimal("0"))
+            usados = servicios_produccion.litros_ya_tomados(vale)
             disponibles = vale.volumen - usados
             if disponibles <= 0:
                 continue
