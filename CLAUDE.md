@@ -234,6 +234,32 @@ final del formulario —o de la corrida—, cuando ya no dice nada sobre qué el
    indefinidamente. Con tres evaporadores, tres corridas abandonadas dejan la planta sin ninguno,
    y el único síntoma es «Máquina ocupada por otra corrida» sobre una máquina que nadie usa.
 
+- **Declarar un lote producido es una sola cola** (desde 2026-09-02,
+  `produccion.servicios.cerrar_lote_producido`). Después de que `registrar_produccion` cierra la
+  ejecución con sus kilos vienen tres cosas que van siempre juntas: la orden pasa a pendiente de
+  Calidad, se descuenta el material de bodega y se avisa al área. Había **tres** caminos que
+  declaraban un lote producido —el `PATCH` del lote, `cerrar_mantequilla` y `cerrar_secado`— y cada
+  uno traía su propia copia de esa cola. Secado se quedó sin las dos últimas partes, así que el
+  polvo salía de la torre **sin descontar sus sacos y sin llegar a la bandeja de Calidad**; y como
+  el descuento no fallaba sino que no ocurría, el saldo quedaba alto sin que nada lo delatara.
+  Mantequilla adopta solo la cola y no `registrar_produccion`: crea coproductos y merma a mano y
+  transiciona a `pendiente_control`, no a `cerrada`; unificar eso sería reescribirlo. Fijado en
+  `procesos.tests_secado.CierreSecadoDescuentaMaterialTests`, verificado por mutación.
+- **El aviso a un área no llega si nadie tiene esa área cargada.** `_notificar_area` busca
+  destinatarios por `PerfilUsuario.area` y crea una fila por persona: sin nadie en Calidad no se
+  crea ninguna, y no hay error. Es el hueco 4 de `docs/FLUJO_DEL_SISTEMA.md`. Una prueba que mida
+  el aviso tiene que crear el destinatario explícitamente, o estará midiendo la falta de personal.
+- **Una corrida cae en una sola bandeja.** `bandejaDeSecado` decide, y la pantalla no vuelve a
+  decidir por su cuenta. Había un segundo clasificador para «historial» que rehacía la regla con
+  una lista de estados escrita a mano y no coincidía: una corrida `cerrada` aparecía en
+  «Terminadas» **y** en «Historial», y los contadores de las tarjetas la sumaban dos veces.
+- **El cálculo del cliente nunca es la autoridad.** `calcularBalanceSecado` existe para dibujar el
+  balance mientras se teclea, sin viajar al servidor por cada tecla; `rendimiento_recuperacion_pct`
+  y `CorridaSecado.clean()` son los que deciden si el cierre se acepta. Lo mismo con el bloqueo de
+  envasado: lo informa `lote.bloqueo_envasado`, calculado en el backend **antes** del intento.
+  Adivinarlo con un `includes` contra el texto del error —que es lo que había— es una segunda
+  fuente para el mismo hecho, y la frágil de las dos.
+
 ## Tarea de integración en curso
 
 Integrar el delta del levantamiento (`LEVANTAMIENTO_PLANTA.md` §2–§5) siguiendo el backlog
@@ -452,7 +478,9 @@ desempatar los SKU y `generar_sku` ya lo admite; falta la decisión, no el mecan
 1. ~~Unificar `equipo` en el maestro~~ — hecho.
 2. ~~Unificar la receta~~ — hecho.
 3. ~~Enganchar el consumo de inventario al ciclo del lote~~ — hecho.
-4. Borrar `Insumo.stock_actual`: saldo huérfano, visible en el admin, que ya no lee nadie.
+4. ~~Borrar `Insumo.stock_actual`~~ — hecho: lo quitó la migración
+   `inventario.0012_remove_insumo_stock_actual`, y `inventario/models.py` deja la nota de que el
+   saldo se calcula desde `Existencia`. Esta entrada siguió aquí semanas después de estar resuelta.
 5. ~~Las plantillas de `Sec.FORM.003` y `Sec.FORM.024`~~ — hecho: la primera cargada, la segunda
    revisada y deliberadamente sin plantilla (ver arriba).
 6. ~~Cargar el maestro de productos completo~~ — hecho (23/23). Quedan las decisiones del SKU,

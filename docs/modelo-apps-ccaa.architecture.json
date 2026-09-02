@@ -1,0 +1,401 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CCAA — Apps y tablas del backend",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/FelipeCCAA/CCAA",
+      "revision": "f34447fd5f9ab5abdb96a6810b5fb2f24749f31c"
+    },
+    "views": [
+      {
+        "id": "cadena-leche",
+        "label": "Cadena de la leche",
+        "focus": [
+          "recoleccion",
+          "recepcion",
+          "estandarizacion",
+          "procesos",
+          "produccion"
+        ],
+        "note": "Del predio al lote: cada eslabón referencia al anterior por clave foránea."
+      },
+      {
+        "id": "control",
+        "label": "Calidad e inocuidad",
+        "focus": [
+          "calidad",
+          "inocuidad",
+          "produccion"
+        ],
+        "note": "Las dos barreras que bloquean la liberación cuelgan del lote."
+      },
+      {
+        "id": "capa-compartida",
+        "label": "Capa compartida",
+        "focus": [
+          "maestros",
+          "usuarios",
+          "recepcion",
+          "produccion",
+          "planificacion"
+        ],
+        "note": "10 apps referencian maestros; 8 arrastran Empresa y Sucursal."
+      },
+      {
+        "id": "materiales",
+        "label": "Materiales y plan",
+        "focus": [
+          "inventario",
+          "planificacion",
+          "produccion",
+          "maestros"
+        ],
+        "note": "Bodega y el plan semanal entran por el lote y por el maestro."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "recoleccion",
+      "type": "backend",
+      "label": "recoleccion",
+      "sublabel": "Recoleccion · CargaModulo",
+      "tag": "4 tablas",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/recoleccion/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "recepcion",
+      "type": "backend",
+      "label": "recepcion",
+      "sublabel": "Recepcion · AnalisisSilo",
+      "tag": "10 tablas",
+      "pos": [
+        390,
+        40
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/recepcion/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "estandarizacion",
+      "type": "backend",
+      "label": "estandarizacion",
+      "sublabel": "ValeEstandarizacion",
+      "tag": "2 tablas",
+      "pos": [
+        740,
+        40
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/estandarizacion/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "procesos",
+      "type": "backend",
+      "label": "procesos",
+      "sublabel": "EjecucionProceso · Etapas",
+      "tag": "12 tablas",
+      "pos": [
+        1090,
+        40
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/procesos/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "planificacion",
+      "type": "backend",
+      "label": "planificacion",
+      "sublabel": "SemanaPlan · BloquePlan",
+      "tag": "11 tablas",
+      "pos": [
+        40,
+        225
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/planificacion/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "produccion",
+      "type": "backend",
+      "label": "produccion",
+      "sublabel": "Lote · Analisis · Control",
+      "tag": "8 tablas",
+      "pos": [
+        740,
+        225
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/produccion/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "calidad",
+      "type": "backend",
+      "label": "calidad",
+      "sublabel": "Liberacion · Registros",
+      "tag": "4 tablas",
+      "pos": [
+        1090,
+        225
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/calidad/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "usuarios",
+      "type": "security",
+      "label": "usuarios",
+      "sublabel": "Empresa · Sucursal · Rol",
+      "tag": "8 tablas",
+      "pos": [
+        40,
+        410
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/usuarios/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "maestros",
+      "type": "database",
+      "label": "maestros",
+      "sublabel": "Producto · Equipo · Silo",
+      "tag": "9 tablas",
+      "pos": [
+        390,
+        410
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/maestros/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "inventario",
+      "type": "backend",
+      "label": "inventario",
+      "sublabel": "Existencia · EjecucionMRP",
+      "tag": "40 tablas",
+      "pos": [
+        740,
+        410
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/inventario/models.py",
+          "label": "models.py"
+        }
+      ]
+    },
+    {
+      "id": "inocuidad",
+      "type": "backend",
+      "label": "inocuidad",
+      "sublabel": "MonitoreoPPRO · Lecturas",
+      "tag": "2 tablas",
+      "pos": [
+        1090,
+        410
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "backend/inocuidad/models.py",
+          "label": "models.py"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "rec-recol",
+      "from": "recepcion",
+      "to": "recoleccion",
+      "label": "CargaModulo"
+    },
+    {
+      "id": "est-rec",
+      "from": "estandarizacion",
+      "to": "recepcion",
+      "label": "AnalisisSilo"
+    },
+    {
+      "id": "proc-est",
+      "from": "procesos",
+      "to": "estandarizacion",
+      "label": "ValeEstandarizacion"
+    },
+    {
+      "id": "proc-prod",
+      "from": "procesos",
+      "to": "produccion",
+      "label": "OrdenProduccion · Lote · 12 FK",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cal-prod",
+      "from": "calidad",
+      "to": "produccion",
+      "label": "Lote · Analisis",
+      "labelDy": 15
+    },
+    {
+      "id": "inoc-prod",
+      "from": "inocuidad",
+      "to": "produccion",
+      "label": "Lote"
+    },
+    {
+      "id": "rec-maestros",
+      "from": "recepcion",
+      "to": "maestros",
+      "label": "Vehiculo · Silo · Producto · 9 FK",
+      "variant": "emphasis",
+      "labelDy": 160
+    },
+    {
+      "id": "prod-maestros",
+      "from": "produccion",
+      "to": "maestros",
+      "label": "Producto · Equipo · Especificacion",
+      "variant": "emphasis"
+    },
+    {
+      "id": "plan-maestros",
+      "from": "planificacion",
+      "to": "maestros",
+      "label": "Producto · Mandante · Equipo"
+    },
+    {
+      "id": "inv-maestros",
+      "from": "inventario",
+      "to": "maestros",
+      "label": "Equipo · Silo",
+      "labelDy": 30
+    },
+    {
+      "id": "inv-prod",
+      "from": "inventario",
+      "to": "produccion",
+      "label": "Lote · PalletProducto"
+    },
+    {
+      "id": "maestros-usuarios",
+      "from": "maestros",
+      "to": "usuarios",
+      "label": "Empresa · Sucursal",
+      "variant": "security",
+      "labelDy": 30
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Cómo leer las flechas",
+      "items": [
+        "La flecha va del que referencia al referenciado: procesos → produccion significa que procesos.models tiene 12 claves foráneas a OrdenProduccion y Lote.",
+        "El grafo se extrajo de backend/*/models.py en el commit fijado: 115 tablas en 14 apps y 38 relaciones entre apps."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "maestros es la capa compartida",
+      "items": [
+        "10 apps la referencian con 51 claves foráneas: procesos 11, recepcion 9, planificacion 8, produccion 7, estandarizacion 6, calidad 3, mantenimiento 3, inventario 2, inocuidad 1, recoleccion 1.",
+        "Por eso una sola representación de «equipo» (maestros.Equipo) importa: cinco vocabularios paralelos harían incomparables el criterio del checklist y el registro."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Tenancy y lo que no está dibujado",
+      "items": [
+        "8 apps arrastran Empresa y Sucursal con 28 claves foráneas; inventario sola pone 14. La sucursal ya no es dimensión del negocio, pero las columnas siguen por compatibilidad.",
+        "auditoria (1 tabla) no aparece: no se engancha por clave foránea sino por señales pre_save/post_save.",
+        "mantenimiento (4 tablas) referencia maestros.Equipo e inventario.Insumo, pero ninguna URL lo monta; observabilidad no tiene modelos."
+      ]
+    }
+  ]
+}

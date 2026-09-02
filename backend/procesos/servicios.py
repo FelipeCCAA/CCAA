@@ -223,9 +223,9 @@ def etapa_para_producto(*, producto, sucursal, tipo):
 
 
 def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=None):
-    """Resuelve, por ruta y prioridad, dÃ³nde puede comenzar una operaciÃ³n.
+    """Resuelve, por ruta y prioridad, dónde puede comenzar una operación.
 
-    Cuando la operaciÃ³n nace desde un hecho previo conocido (por ejemplo, un
+    Cuando la operación nace desde un hecho previo conocido (por ejemplo, un
     vale ya estandarizado), la etapa inicial es la primera etapa activa
     posterior a ese hecho. Si la ruta no contiene esa etapa previa, comienza
     en su primera etapa activa.
@@ -276,7 +276,7 @@ def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=Non
 
 
 def etapas_iniciales_para_producto(*, producto, sucursal, etapa_previa_tipo=None):
-    """Etapas iniciales vÃ¡lidas de todas las rutas activas del producto."""
+    """Etapas iniciales válidas de todas las rutas activas del producto."""
     return etapas_iniciales_por_producto(
         productos_sucursales=[(producto.pk, sucursal.pk)],
         etapa_previa_tipo=etapa_previa_tipo,
@@ -1388,32 +1388,27 @@ def cerrar_mantequilla(
     corrida.lote_mantequilla.kg_producidos = corrida.kg_mantequilla
     corrida.lote_mantequilla.estado = corrida.lote_mantequilla.Estado.PRODUCIDO
     corrida.lote_mantequilla.save(update_fields=["kg_producidos", "estado"])
-    from produccion.models import OrdenProduccion
-    if corrida.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
-        corrida.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
-        corrida.orden.save(update_fields=["estado"])
-    try:
-        from inventario.servicios import consumir_receta_produccion
-        consumir_receta_produccion(
-            lote_produccion=corrida.lote_mantequilla, usuario=usuario
-        )
-    except ValidationError as error:
-        EventoProceso.objects.create(
-            ejecucion=corrida.ejecucion, usuario=usuario,
-            tipo="consumo_materiales_pendiente",
-            motivo=" ".join(error.messages),
-        )
-    from inventario.servicios import _notificar_area
-    _notificar_area(
-        "calidad", tipo="producto_pendiente_calidad",
+    # Adopta la cola común, no `registrar_produccion`: mantequilla crea sus
+    # coproductos y su merma a mano y transiciona a `pendiente_control`, no a
+    # `cerrada`. Unificar eso sería reescribirlo, no simplificarlo.
+    from produccion.servicios import cerrar_lote_producido
+
+    aviso_bodega = cerrar_lote_producido(
+        lote=corrida.lote_mantequilla,
+        usuario=usuario,
         titulo="Mantequilla pendiente de Calidad",
         mensaje=(
             f"Lote {corrida.lote_mantequilla.codigo_lote} terminado y "
             "pendiente de liberación."
         ),
-        documento_tipo="lote_produccion",
-        documento_id=corrida.lote_mantequilla_id,
     )
+
+    if aviso_bodega:
+        EventoProceso.objects.create(
+            ejecucion=corrida.ejecucion, usuario=usuario,
+            tipo="consumo_materiales_pendiente", motivo=aviso_bodega,
+        )
+
     return corrida
 
 
@@ -1425,7 +1420,7 @@ def cerrar_secado(
     """Cierra torre, balance y lote como un solo hecho transaccional."""
     from calidad.models import LiberacionProceso
     from produccion.models import Lote, OrdenProduccion
-    from produccion.servicios import registrar_produccion
+    from produccion.servicios import cerrar_lote_producido, registrar_produccion
     from .models import CorridaSecado
 
     corrida = (
@@ -1479,9 +1474,19 @@ def cerrar_secado(
     if requiere_calidad:
         LiberacionProceso.objects.get_or_create(salida=salida)
 
-    if corrida.orden_id and corrida.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
-        corrida.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
-        corrida.orden.save(update_fields=["estado"])
+    # La misma cola que el `PATCH` del lote y que Mantequilla: orden a
+    # pendiente de Calidad, descuento de bodega y aviso al área. Cerrar la
+    # corrida aquí dejaba las dos últimas sin hacer, así que el polvo salía de
+    # la torre sin descontar sus sacos y sin llegar a la bandeja de Calidad —
+    # y como el descuento no falla sino que no ocurre, nada lo delataba.
+    aviso_bodega = cerrar_lote_producido(lote=lote, usuario=usuario)
+
+    if aviso_bodega:
+        EventoProceso.objects.create(
+            ejecucion=corrida.ejecucion, usuario=usuario,
+            tipo="consumo_materiales_pendiente", motivo=aviso_bodega,
+        )
+
     EventoProceso.objects.create(
         ejecucion=corrida.ejecucion,
         tipo="cierre_secado",

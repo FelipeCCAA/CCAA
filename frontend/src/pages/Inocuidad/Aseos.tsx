@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import axios from "axios";
 import {
   AlertTriangle, Beaker, CalendarClock, CheckCircle2, ClipboardCheck,
   Droplets, Factory, Play, Plus, Save, ShieldCheck, X,
 } from "lucide-react";
+import { mensajeErrorProceso } from "../../services/errores-proceso";
 
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import StatusBadge from "../../components/ui/StatusBadge";
@@ -22,18 +22,6 @@ const formatoFecha = new Intl.DateTimeFormat("es-CL", {
   timeStyle: "short",
 });
 
-function mensajeDe(error: unknown): string {
-  if (!axios.isAxiosError(error)) return "No se pudo guardar el aseo.";
-  const data = error.response?.data;
-  if (typeof data === "string") return data;
-  if (data && typeof data === "object") {
-    const primero = Object.values(data as Record<string, unknown>)[0];
-    if (Array.isArray(primero)) return String(primero[0]);
-    if (typeof primero === "string") return primero;
-    if ("detail" in data) return String((data as { detail: unknown }).detail);
-  }
-  return "No se pudo guardar el aseo.";
-}
 
 function fechaLocal(iso: string): string {
   return formatoFecha.format(new Date(iso));
@@ -94,7 +82,7 @@ function FormularioPlan({ catalogos, equipos, silos, alCerrar, alCrear }: {
         etapas: datos.tipo_aseo === "cip" ? etapasIniciales() : [],
       });
       alCrear(aseo);
-    } catch (e) { setError(mensajeDe(e)); } finally { setGuardando(false); }
+    } catch (e) { setError(mensajeErrorProceso(e, "No se pudo guardar el aseo.")); } finally { setGuardando(false); }
   };
 
   return <form onSubmit={enviar} className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">
@@ -130,7 +118,7 @@ function ControlAseo({ aseo, catalogos, alCambiar, alCerrar }: { aseo: AseoCip; 
       setEtapas(actualizado.etapas); setPh(actualizado.ph_final ?? ""); setObservaciones(actualizado.observaciones);
       alCambiar(actualizado);
     }
-    catch (e) { setError(mensajeDe(e)); } finally { setGuardando(false); }
+    catch (e) { setError(mensajeErrorProceso(e, "No se pudo guardar el aseo.")); } finally { setGuardando(false); }
   };
 
   return <section className="rounded-2xl border border-slate-200 bg-white p-5">

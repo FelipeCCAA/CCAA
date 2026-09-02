@@ -58,6 +58,16 @@ export function siguienteAccionSecado(
   return "Consultar el historial de la corrida";
 }
 
+/*
+  El balance que la pantalla dibuja **mientras se teclea**, para que el operador
+  vea si la corrida cierra antes de enviarla.
+
+  No es la autoridad: `rendimientoRecuperacionPct` y `esPosible` tienen su
+  gemelo en el backend —el campo `rendimiento_recuperacion_pct` y la regla de
+  `CorridaSecado.clean()`—, y es ese el que decide si el cierre se acepta. Esto
+  existe solo para no hacer viajar cada tecla al servidor. Si los dos
+  discreparan, manda el de allá.
+*/
 export function calcularBalanceSecado(valores: ValoresBalanceSecado): BalanceSecado {
   const kgRecuperados = valores.kgPolvo + valores.kgFinos;
   const kgSalidas = kgRecuperados + valores.kgMerma;

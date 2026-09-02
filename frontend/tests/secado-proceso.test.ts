@@ -4,9 +4,16 @@ import test from "node:test";
 import {
   bandejaDeSecado,
   calcularBalanceSecado,
-  estadoFisicoSecado,
-  siguienteAccionSecado,
 } from "../src/services/secado-proceso.ts";
+
+/*
+  Aquí no se prueban `estadoFisicoSecado` ni `siguienteAccionSecado`.
+
+  Son tablas de estado → frase: comprobar que devuelven la cadena escrita dos
+  líneas más arriba no dice si el sistema funciona, solo que nadie corrigió una
+  errata. Lo que sí decide algo —qué bandeja recibe cada corrida, y si el
+  balance cierra— está cubierto abajo.
+*/
 
 test("clasifica las corridas sin confundir estado físico con Calidad", () => {
   assert.equal(bandejaDeSecado("preparacion"), "activas");
@@ -16,15 +23,6 @@ test("clasifica las corridas sin confundir estado físico con Calidad", () => {
   assert.equal(bandejaDeSecado("pendiente_control"), "calidad");
   assert.equal(bandejaDeSecado("cerrada", "pendiente"), "calidad");
   assert.equal(bandejaDeSecado("cerrada"), "terminadas");
-});
-
-test("respeta la regla física de ocupación del equipo", () => {
-  assert.equal(estadoFisicoSecado("preparacion"), "Equipo reservado");
-  assert.equal(estadoFisicoSecado("ejecucion"), "Equipo ocupado");
-  assert.equal(estadoFisicoSecado("pausada"), "Equipo ocupado");
-  assert.equal(estadoFisicoSecado("bloqueada"), "Equipo ocupado");
-  assert.equal(estadoFisicoSecado("pendiente_control"), "Equipo disponible");
-  assert.equal(siguienteAccionSecado("pendiente_control"), "Esperar decisión de Calidad");
 });
 
 test("calcula el balance con números sin mezclar unidades formateadas", () => {

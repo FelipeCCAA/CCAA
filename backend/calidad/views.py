@@ -298,7 +298,7 @@ def _filtro_resultados_de_proceso():
 
 
 def _ejecucion_admite_decision_de_calidad(salida):
-    """Calidad decide material; no reabre una ejecuciÃ³n fÃ­sica de Secado."""
+    """Calidad decide material; no reabre una ejecución física de Secado."""
     from procesos.models import EjecucionProceso, EtapaProceso
 
     if salida.ejecucion.estado in {

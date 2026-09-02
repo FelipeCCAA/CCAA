@@ -220,3 +220,98 @@ class CierreSecadoTests(TestCase):
         self.assertEqual(self.corrida.lote.estado, Lote.Estado.EN_PROCESO)
         self.assertEqual(self.corrida.ejecucion.estado, EjecucionProceso.Estado.EJECUCION)
         self.assertFalse(SalidaProceso.objects.filter(ejecucion=self.corrida.ejecucion).exists())
+
+
+class CierreSecadoDescuentaMaterialTests(CierreSecadoTests):
+    """
+    Cerrar la torre tiene que descontar el material y avisar a Calidad.
+
+    Había **tres** caminos para declarar un lote producido —el `PATCH` del
+    lote, `cerrar_mantequilla` y este— y cada uno traía su propia copia de la
+    cola. Secado se quedó sin las dos últimas partes: el polvo salía de la
+    torre sin descontar sus sacos de bodega y sin llegar a la bandeja de
+    Calidad.
+
+    Lo peligroso era que **no fallaba**. El descuento no daba error: no
+    ocurría. El saldo de bodega quedaba alto y el lote no aparecía en Calidad,
+    sin nada que lo delatara, hasta que alguien contara los sacos.
+
+    Esta prueba mira la consecuencia —hay consumo registrado— y no que se haya
+    llamado a tal función: si mañana el descuento se hace de otra forma, la
+    prueba sigue diciendo la verdad.
+    """
+
+    def test_cerrar_la_torre_descuenta_el_material_del_lote(self):
+        from inventario.models import ConsumoLoteProduccion
+
+        respuesta = self.cliente.post(
+            f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
+            {
+                "kg_alimentacion": "600.000",
+                "solidos_entrada_pct": "48.00",
+                "kg_polvo": "280.000",
+                "kg_finos": "5.000",
+                "kg_merma": "3.000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.corrida.refresh_from_db()
+
+        # Sin receta cargada el consumo queda pendiente y se anota como evento;
+        # lo que no puede pasar es que nadie lo haya intentado.
+        from .models import EventoProceso
+
+        intentado = (
+            ConsumoLoteProduccion.objects.filter(
+                lote_produccion=self.corrida.lote
+            ).exists()
+            or EventoProceso.objects.filter(
+                ejecucion=self.corrida.ejecucion,
+                tipo="consumo_materiales_pendiente",
+            ).exists()
+        )
+        self.assertTrue(
+            intentado,
+            "Cerrar Secado no intentó descontar el material: ni hay consumo "
+            "registrado ni quedó el evento que dice por qué no se pudo.",
+        )
+
+    def test_cerrar_la_torre_avisa_a_calidad(self):
+        from inventario.models import Notificacion
+
+        # El aviso se dirige **por área**, así que sin nadie en Calidad no hay
+        # destinatarios y no se crea ninguna fila. No es un detalle de la
+        # prueba: es el hueco 4 de `docs/FLUJO_DEL_SISTEMA.md` —«las
+        # notificaciones no llegan a nadie»— y por eso el destinatario se crea
+        # aquí explícitamente, para medir el aviso y no la falta de personal.
+        calidad = User.objects.create_user("jefa-calidad")
+        PerfilUsuario.objects.create(
+            usuario=calidad,
+            empresa=self.corrida.lote.sucursal.empresa,
+            sucursal=self.corrida.lote.sucursal,
+            rol=Rol.CALIDAD,
+            area=PerfilUsuario.Area.CALIDAD,
+        )
+
+        self.cliente.post(
+            f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
+            {
+                "kg_alimentacion": "600.000",
+                "solidos_entrada_pct": "48.00",
+                "kg_polvo": "280.000",
+                "kg_finos": "5.000",
+                "kg_merma": "3.000",
+            },
+            format="json",
+        )
+
+        self.assertTrue(
+            Notificacion.objects.filter(
+                tipo="producto_pendiente_calidad",
+                documento_tipo="lote_produccion",
+                documento_id=self.corrida.lote_id,
+            ).exists(),
+            "El lote terminado no llegó a la bandeja de Calidad.",
+        )

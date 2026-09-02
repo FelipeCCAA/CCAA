@@ -597,23 +597,13 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             )
             raise serializers.ValidationError(detalle) from error
 
-        if lote.orden_id and lote.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
-            lote.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
-            lote.orden.save(update_fields=["estado"])
-
-        aviso = self._descontar_de_bodega(lote)
-
-        # Cerrar Producción alimenta la bandeja de Calidad y avisa al área;
-        # no hace falta volver a registrar el lote en otro módulo.
-        from inventario.servicios import _notificar_area
-        _notificar_area(
-            "calidad", tipo="producto_pendiente_calidad",
-            titulo="Producto terminado pendiente de Calidad",
-            mensaje=(
-                f"Lote {lote.codigo_lote} ({lote.producto.nombre}) terminado. "
-                "Revisa análisis y checklist para liberarlo."
-            ),
-            documento_tipo="lote_produccion", documento_id=lote.id,
+        # La orden, el descuento de bodega y el aviso a Calidad son la misma
+        # cola para los tres caminos que declaran un lote producido. Vive en
+        # `produccion.servicios` para que Secado y Mantequilla no tengan que
+        # reimplementarla — Secado se quedó sin sus dos últimas partes cuando
+        # la tenía copiada.
+        aviso = servicios_produccion.cerrar_lote_producido(
+            lote=lote, usuario=request.user
         )
 
         # Se vuelve a serializar después de descontar y no antes: la ficha
@@ -628,41 +618,6 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         respuesta.data = datos
 
         return respuesta
-
-    def _descontar_de_bodega(self, lote) -> str | None:
-        """
-        Intenta el descuento. Devuelve el motivo si no se pudo, o `None`.
-
-        **No bloquea.** Es el mismo criterio que la leche asignada: detener la
-        producción del día porque bodega todavía no cargó la receta o el
-        material sigue en cuarentena traslada a la línea un problema que no es
-        suyo. Lo que sí pasa es que el lote queda con el consumo pendiente y a
-        la vista —`consumo_inventario` en su ficha— para poder reintentarlo.
-
-        Atrapar la excepción es seguro porque `consumir_receta_produccion` es
-        `@transaction.atomic`: su fallo revierte hasta su propio punto de
-        retorno y no arrastra el guardado del lote, que ya ocurrió. Importa
-        que sea así — el servicio alcanza a crear la cabecera del consumo y a
-        sacar lo que sí había antes de darse cuenta de que falta, y sin esa
-        reversión el lote quedaría con un consumo «registrado» que descontó
-        una fracción de lo debido. Nadie volvería a mirarlo: ya figura hecho.
-
-        `test_sin_stock_el_lote_igual_se_declara_y_avisa` lo fija. Si alguien
-        quita ese decorador, la prueba falla ahí y no aquí.
-        """
-        from django.core.exceptions import ValidationError as ErrorDeModelo
-
-        from inventario.servicios import consumir_receta_produccion
-
-        try:
-            consumir_receta_produccion(lote_produccion=lote, usuario=self.request.user)
-        except ErrorDeModelo as error:
-            return (
-                "No se descontó el material de bodega: "
-                f"{' '.join(error.messages)} El consumo queda pendiente."
-            )
-
-        return None
 
     @action(detail=False, methods=["get"], url_path="codigo-sugerido")
     def codigo_sugerido(self, request):

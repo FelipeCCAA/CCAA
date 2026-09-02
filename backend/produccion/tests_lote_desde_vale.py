@@ -180,14 +180,14 @@ class AperturaTests(BaseValeLote):
         EtapaProceso.objects.create(
             proceso=self.ruta.proceso,
             codigo="estandarizacion",
-            nombre="EstandarizaciÃ³n",
+            nombre="Estandarización",
             tipo=EtapaProceso.Tipo.ESTANDARIZACION,
             orden=1,
         )
         evaporacion = EtapaProceso.objects.create(
             proceso=self.ruta.proceso,
             codigo="evaporacion",
-            nombre="EvaporaciÃ³n",
+            nombre="Evaporación",
             tipo=EtapaProceso.Tipo.EVAPORACION,
             orden=2,
         )

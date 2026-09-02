@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { X } from "lucide-react";
+import { mensajeErrorProceso } from "../../services/errores-proceso";
 
 import {
   cerrarCondensacion,
@@ -8,14 +9,6 @@ import {
 
 const campo = "mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-600";
 
-function mensajeDe(error: unknown) {
-  const datos = (error as { response?: { data?: unknown } }).response?.data;
-  if (typeof datos === "string") return datos;
-  if (datos && typeof datos === "object") {
-    return Object.values(datos as Record<string, unknown>).flat().map(String).join(" ");
-  }
-  return "No se pudo cerrar la evaporación.";
-}
 
 export default function CierreCondensacion({ corrida, onCerrar, onCerrada }: {
   corrida: CorridaCondensacion;
@@ -55,7 +48,7 @@ export default function CierreCondensacion({ corrida, onCerrar, onCerrada }: {
         ...opcionales,
       }));
     } catch (e) {
-      setError(mensajeDe(e));
+      setError(mensajeErrorProceso(e, "No se pudo cerrar la evaporación."));
     } finally {
       setOcupado(false);
     }

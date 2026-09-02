@@ -15,11 +15,9 @@ const fechaLocal = (fecha: Date) => {
 export default function FormularioEnvase({
   loteId,
   alGuardar,
-  alBloqueoCalidad,
 }: {
   loteId: number;
   alGuardar: () => void;
-  alBloqueoCalidad?: (mensaje: string) => void;
 }) {
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [equipo, setEquipo] = useState("");
@@ -60,11 +58,12 @@ export default function FormularioEnvase({
       setMensaje(`Pallet ${codigo.trim()} creado: ${unidades} sacos, ${kg} kg. Quedó en cuarentena de Calidad.`);
       setCodigo(""); setUnidades("20"); setObservacion(""); alGuardar();
     } catch (error) {
-      const detalle = mensajeErrorProceso(error, "No se pudo registrar el pallet.");
-      setMensaje(detalle);
-      if (detalle.includes("pendiente de aprobación de Calidad")) {
-        alBloqueoCalidad?.(detalle);
-      }
+      /* El bloqueo de Calidad lo informa `lote.bloqueo_envasado`, calculado
+         en el backend, **antes** de intentar el POST. Aquí solo se muestra lo
+         que el servidor respondió: adivinarlo con un `includes` contra el
+         texto del mensaje era una segunda fuente para el mismo hecho, y la
+         frágil de las dos. */
+      setMensaje(mensajeErrorProceso(error, "No se pudo registrar el pallet."));
     } finally { setGuardando(false); }
   }
 

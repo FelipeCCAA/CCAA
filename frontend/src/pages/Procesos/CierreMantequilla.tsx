@@ -1,16 +1,11 @@
 import { useMemo, useState } from "react";
 import { X } from "lucide-react";
+import { mensajeErrorProceso } from "../../services/errores-proceso";
 
 import { cerrarMantequilla, type CorridaMantequilla } from "../../services/procesos.service";
 
 const campo = "mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-amber-600";
 
-function mensajeDe(error: unknown) {
-  const datos = (error as { response?: { data?: unknown } }).response?.data;
-  if (typeof datos === "string") return datos;
-  if (datos && typeof datos === "object") return Object.values(datos as Record<string, unknown>).flat().map(String).join(" ");
-  return "No se pudo cerrar la corrida de mantequilla.";
-}
 
 export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
   corrida: CorridaMantequilla;
@@ -36,7 +31,7 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
         kg_merma: Number(datos.merma || 0),
         controles: datos.humedad ? { humedad: Number(datos.humedad) } : {},
       }));
-    } catch (e) { setError(mensajeDe(e)); }
+    } catch (e) { setError(mensajeErrorProceso(e, "No se pudo cerrar la corrida de mantequilla.")); }
     finally { setOcupado(false); }
   };
 

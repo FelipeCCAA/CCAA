@@ -16,13 +16,20 @@ const bandejas: { id: BandejaSecado; etiqueta: string; detalle: string }[] = [
   { id: "activas", etiqueta: "Corridas activas", detalle: "Torres reservadas u ocupadas" },
   { id: "calidad", etiqueta: "Esperando Calidad", detalle: "Equipo físicamente disponible" },
   { id: "terminadas", etiqueta: "Terminadas", detalle: "Cierres productivos registrados" },
-  { id: "historial", etiqueta: "Historial", detalle: "Corridas cerradas o canceladas" },
+  { id: "historial", etiqueta: "Historial", detalle: "Corridas canceladas" },
 ];
 
+/*
+  Una corrida cae en **una** bandeja, la que diga `bandejaDeSecado`.
+
+  Antes había un segundo clasificador para «historial» que rehacía la
+  decisión con una lista de estados escrita a mano, y no coincidía con el
+  primero: una corrida `cerrada` salía a la vez en «Terminadas» y en
+  «Historial», así que los contadores de las tarjetas la sumaban dos veces.
+  Dos verdades sobre lo mismo, y ninguna forma de saber cuál miraba el
+  operador.
+*/
 function pertenece(corrida: CorridaSecado, bandeja: BandejaSecado) {
-  if (bandeja === "historial") {
-    return !["preparacion", "ejecucion", "pausada", "bloqueada", "pendiente_control"].includes(corrida.estado);
-  }
   return bandejaDeSecado(corrida.estado, corrida.estado_calidad) === bandeja;
 }
 

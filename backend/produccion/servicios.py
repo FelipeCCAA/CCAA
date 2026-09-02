@@ -289,6 +289,73 @@ def registrar_produccion(*, lote, destino_salida=None):
     return ejecucion
 
 
+def cerrar_lote_producido(*, lote, usuario, titulo=None, mensaje=None) -> str | None:
+    """
+    Lo que pasa **después** de declarar un lote producido, en un solo sitio.
+
+    `registrar_produccion` cierra la ejecución con sus kilos; esto es la cola:
+    la orden pasa a pendiente de Calidad, se descuenta el material de bodega y
+    se avisa al área. Devuelve el motivo si el descuento no se pudo hacer, o
+    `None`.
+
+    Por qué está aquí y no repetido en cada camino
+    ----------------------------------------------
+    Había **tres** formas de declarar un lote producido —el `PATCH` del lote,
+    `cerrar_mantequilla` y `cerrar_secado`— y cada una traía su propio
+    subconjunto de esta cola. Secado se quedó sin las dos últimas partes: un
+    lote cerrado desde su pantalla no descontaba su material ni llegaba a la
+    bandeja de Calidad, y como el saldo de bodega quedaba alto sin que nada
+    fallara, nadie se enteraba. Tres escritores del mismo hecho con reglas
+    distintas es como se produce eso.
+
+    **El descuento no bloquea.** Mismo criterio que la leche asignada: detener
+    la producción del día porque bodega no cargó la receta o el material sigue
+    en cuarentena traslada a la línea un problema que no es suyo. Lo que sí
+    ocurre es que el consumo queda pendiente y a la vista —`consumo_inventario`
+    en la ficha— para reintentarlo.
+
+    Atrapar la excepción es seguro **solo porque `consumir_receta_produccion`
+    es `@transaction.atomic`**: el servicio alcanza a crear la cabecera y a
+    sacar lo que sí había antes de detectar que falta, y sin esa reversión el
+    lote quedaría con un consumo «registrado» que descontó una fracción. Nadie
+    volvería a mirarlo: ya figura hecho. `test_sin_stock_el_lote_igual_se_
+    declara_y_avisa` lo fija; si alguien quita ese decorador, falla ahí.
+
+    `titulo` y `mensaje` permiten que cada línea nombre su producto en el
+    aviso. Lo que no se puede elegir es si el aviso se manda.
+    """
+    from inventario.servicios import _notificar_area, consumir_receta_produccion
+
+    from .models import OrdenProduccion
+
+    if lote.orden_id and lote.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
+        lote.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
+        lote.orden.save(update_fields=["estado"])
+
+    aviso = None
+    try:
+        consumir_receta_produccion(lote_produccion=lote, usuario=usuario)
+    except ValidationError as error:
+        aviso = (
+            "No se descontó el material de bodega: "
+            f"{' '.join(error.messages)} El consumo queda pendiente."
+        )
+
+    _notificar_area(
+        "calidad",
+        tipo="producto_pendiente_calidad",
+        titulo=titulo or "Producto terminado pendiente de Calidad",
+        mensaje=mensaje or (
+            f"Lote {lote.codigo_lote} ({lote.producto.nombre}) terminado. "
+            "Revisa análisis y checklist para liberarlo."
+        ),
+        documento_tipo="lote_produccion",
+        documento_id=lote.id,
+    )
+
+    return aviso
+
+
 @transaction.atomic
 def registrar_envasado(
     *, lote_id, equipo, formato_kg, inicio, termino, pallets, usuario,

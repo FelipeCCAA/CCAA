@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CCAA — Gestión Productiva de Planta",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/FelipeCCAA/CCAA",
+      "revision": "f34447fd5f9ab5abdb96a6810b5fb2f24749f31c"
+    },
+    "views": [
+      {
+        "id": "camino-peticion",
+        "label": "Camino de la petición",
+        "focus": [
+          "operarios",
+          "spa",
+          "nginx",
+          "api",
+          "dominio",
+          "postgres"
+        ],
+        "note": "Del navegador del operario hasta la fila en PostgreSQL."
+      },
+      {
+        "id": "identidad-limites",
+        "label": "Identidad y límites",
+        "focus": [
+          "auth",
+          "cache",
+          "api"
+        ],
+        "note": "Token con scope de perfil y el conteo de throttling compartido."
+      },
+      {
+        "id": "trabajo-asincrono",
+        "label": "Trabajo asíncrono",
+        "focus": [
+          "api",
+          "broker",
+          "celery",
+          "postgres"
+        ],
+        "note": "MRP y alertas fuera de la petición; sin broker corre eager."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operarios",
+      "type": "external",
+      "label": "Planta CCAA",
+      "sublabel": "Operarios de turno",
+      "pos": [
+        50,
+        40
+      ],
+      "size": [
+        190,
+        68
+      ]
+    },
+    {
+      "id": "spa",
+      "type": "frontend",
+      "label": "SPA React + TS",
+      "sublabel": "Vite · 20 páginas",
+      "pos": [
+        50,
+        205
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/app/App.tsx",
+          "label": "App.tsx"
+        },
+        {
+          "path": "frontend/src/services/api.ts",
+          "label": "api.ts"
+        }
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Token + scope",
+      "sublabel": "usuarios.authentication",
+      "pos": [
+        730,
+        40
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "tag": "login 15/h",
+      "sources": [
+        {
+          "path": "backend/usuarios/authentication.py",
+          "label": "authentication.py"
+        },
+        {
+          "path": "backend/config/settings.py",
+          "line": 357,
+          "label": "REST_FRAMEWORK"
+        }
+      ]
+    },
+    {
+      "id": "cache",
+      "type": "database",
+      "label": "Redis caché",
+      "sublabel": "throttling compartido",
+      "pos": [
+        1070,
+        40
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "backend/config/settings.py",
+          "line": 441,
+          "label": "CACHES"
+        }
+      ]
+    },
+    {
+      "id": "nginx",
+      "type": "cloud",
+      "label": "Nginx",
+      "sublabel": "TLS :8443 · sirve dist/",
+      "pos": [
+        390,
+        205
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "infra/nginx/nginx.production.conf",
+          "line": 95,
+          "label": "location /api|/admin"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Django REST",
+      "sublabel": "Gunicorn :8000",
+      "pos": [
+        730,
+        205
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "backend/config/urls.py",
+          "label": "config/urls.py"
+        },
+        {
+          "path": "backend/config/gunicorn.conf.py",
+          "label": "gunicorn.conf.py"
+        }
+      ]
+    },
+    {
+      "id": "dominio",
+      "type": "backend",
+      "label": "14 apps de dominio",
+      "sublabel": "models · dominio · views",
+      "pos": [
+        1070,
+        205
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "tag": "auditoría por señales",
+      "sources": [
+        {
+          "path": "backend/config/settings.py",
+          "line": 41,
+          "label": "INSTALLED_APPS"
+        },
+        {
+          "path": "backend/auditoria/registro.py",
+          "label": "auditoria/registro.py"
+        }
+      ]
+    },
+    {
+      "id": "broker",
+      "type": "messagebus",
+      "label": "Redis broker",
+      "sublabel": "cola de tareas",
+      "pos": [
+        390,
+        370
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "compose.yml",
+          "line": 87,
+          "label": "servicio redis"
+        }
+      ]
+    },
+    {
+      "id": "celery",
+      "type": "backend",
+      "label": "Celery worker + beat",
+      "sublabel": "MRP · alertas cada hora",
+      "pos": [
+        730,
+        370
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "tag": "límite 1200 s",
+      "sources": [
+        {
+          "path": "compose.yml",
+          "line": 222,
+          "label": "servicio celery"
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL 17",
+      "sublabel": "motor exigido · :5432",
+      "pos": [
+        1070,
+        370
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "tag": "check calidad.E001",
+      "sources": [
+        {
+          "path": "backend/config/settings.py",
+          "line": 231,
+          "label": "exigir_postgresql"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Docker Compose · red private (internal: true)",
+      "wraps": [
+        "auth",
+        "cache",
+        "nginx",
+        "api",
+        "dominio",
+        "broker",
+        "celery",
+        "postgres"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "red edge · único servicio publicado",
+      "wraps": [
+        "nginx"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "operario-navega",
+      "from": "operarios",
+      "to": "spa",
+      "label": "navegador",
+      "variant": "emphasis",
+      "labelDy": 62
+    },
+    {
+      "id": "spa-https",
+      "from": "spa",
+      "to": "nginx",
+      "label": "HTTPS :8443",
+      "variant": "emphasis"
+    },
+    {
+      "id": "nginx-proxy",
+      "from": "nginx",
+      "to": "api",
+      "label": "/api/ y /admin/",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-dominio",
+      "from": "api",
+      "to": "dominio",
+      "label": "DRF viewsets",
+      "variant": "emphasis"
+    },
+    {
+      "id": "auth-token",
+      "from": "auth",
+      "to": "api",
+      "label": "valida Token y permisos",
+      "variant": "security",
+      "labelDy": 62
+    },
+    {
+      "id": "auth-throttle",
+      "from": "auth",
+      "to": "cache",
+      "label": "intentos de login"
+    },
+    {
+      "id": "dominio-sql",
+      "from": "dominio",
+      "to": "postgres",
+      "label": "ORM · select_for_update",
+      "variant": "emphasis",
+      "labelDy": 58
+    },
+    {
+      "id": "api-encola",
+      "from": "api",
+      "to": "broker",
+      "label": "encola MRP",
+      "variant": "dashed"
+    },
+    {
+      "id": "broker-consume",
+      "from": "broker",
+      "to": "celery",
+      "label": "consume tareas",
+      "labelDy": 25
+    },
+    {
+      "id": "celery-escribe",
+      "from": "celery",
+      "to": "postgres",
+      "label": "EjecucionMRP"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Borde y cliente",
+      "items": [
+        "Nginx es el único servicio publicado: sirve frontend/dist y proxea /api/ y /admin/ a Gunicorn.",
+        "Un service de frontend por módulo; los catálogos de opciones los sirve el backend, no se copian."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Backend",
+      "items": [
+        "12 apps exponen rutas /api/; observabilidad entra como middleware y mantenimiento no está montado en ninguna URL.",
+        "Cada app separa models.py (esquema), dominio.py (reglas puras) y views.py (API)."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Garantías",
+      "items": [
+        "PostgreSQL es obligatorio: en SQLite el select_for_update de la firma de liberación no hace nada.",
+        "La auditoría se captura por señales pre_save/post_save, así cubre API, admin, scripts y shell.",
+        "Sin CELERY_BROKER_URL las tareas corren eager, dentro de la petición."
+      ]
+    }
+  ]
+}
