@@ -272,6 +272,24 @@ EXPEDIENTES_POR_PAGINA = 50
 EXPEDIENTES_MAXIMO = 200
 
 
+def _filtro_resultados_de_proceso():
+    """Resultados que Calidad debe decidir antes de que el flujo continúe."""
+    from procesos.models import EtapaProceso, SalidaProceso
+
+    intermedio_en_silo = Q(silo__isnull=False) & (
+        Q(ejecucion__etapa__requiere_calidad=True)
+        | Q(destino=SalidaProceso.Destino.DESPACHO_DIRECTO)
+    )
+    mantequilla_a_granel = Q(
+        silo__isnull=True,
+        lote__isnull=False,
+        ejecucion__etapa__tipo=EtapaProceso.Tipo.MANTEQUILLA,
+        ejecucion__etapa__requiere_calidad=True,
+        destino=SalidaProceso.Destino.ENVASADO,
+    )
+    return intermedio_en_silo | mantequilla_a_granel
+
+
 def _pagina_y_limite(parametros):
     """Lee la paginación de la petición, acotada y a prueba de basura."""
 
@@ -294,10 +312,7 @@ def _resultados_intermedios(request):
     from recepcion.models import AnalisisSilo
 
     salidas = filtrar_por_scope(
-        SalidaProceso.objects.filter(silo__isnull=False).filter(
-            Q(ejecucion__etapa__requiere_calidad=True)
-            | Q(destino=SalidaProceso.Destino.DESPACHO_DIRECTO)
-        ).filter(
+        SalidaProceso.objects.filter(_filtro_resultados_de_proceso()).filter(
             Q(ejecucion__estado__in=[
                 EjecucionProceso.Estado.PENDIENTE_CONTROL,
                 EjecucionProceso.Estado.BLOQUEADA,
@@ -305,7 +320,8 @@ def _resultados_intermedios(request):
             | Q(liberacion_calidad__isnull=False)
         ).select_related(
             "ejecucion__etapa", "ejecucion__equipo", "silo", "lote__producto",
-            "liberacion_calidad", "ejecucion__corrida_condensacion__lote__producto",
+            "liberacion_calidad", "liberacion_calidad__analisis_lote",
+            "ejecucion__corrida_condensacion__lote__producto",
             "ejecucion__corrida_descremacion",
         ).order_by("-registrada_en"),
         request.user,
@@ -320,6 +336,12 @@ def _resultados_intermedios(request):
     ).order_by("-tomado_en")
     for item in analisis:
         analisis_por_silo[item.silo_id].append(item)
+    analisis_por_lote = defaultdict(list)
+    from produccion.models import Analisis
+    for item in Analisis.objects.filter(
+        lote_id__in=[salida.lote_id for salida in salidas if salida.lote_id]
+    ).select_related("especificacion").order_by("-fecha", "-id"):
+        analisis_por_lote[item.lote_id].append(item)
     especificaciones = list(Especificacion.objects.filter(
         producto_id__in={
             salida.lote.producto_id
@@ -346,10 +368,14 @@ def _resultados_intermedios(request):
         else:
             producto = salida.ejecucion.etapa.nombre
             lote_codigo = salida.ejecucion.codigo
-        disponibles = [
+        disponibles_silo = [
             item for item in analisis_por_silo[salida.silo_id]
             if item.tomado_en >= salida.registrada_en
-        ]
+        ] if salida.silo_id else []
+        disponibles_lote = [
+            item for item in analisis_por_lote[salida.lote_id]
+            if item.fecha >= timezone.localdate(salida.registrada_en)
+        ] if salida.lote_id and not salida.silo_id else []
         especificacion = None
         if salida.lote_id and salida.lote.producto_id:
             especificacion = dominio_produccion.especificacion_vigente(
@@ -358,7 +384,7 @@ def _resultados_intermedios(request):
                 timezone.localdate(salida.registrada_en),
             )
 
-        def serializar_analisis(item):
+        def serializar_analisis_silo(item):
             evaluacion = dominio_produccion.evaluar_analisis(
                 _valores_calidad_de_silo(item), especificacion
             ) if salida.lote_id else None
@@ -383,6 +409,27 @@ def _resultados_intermedios(request):
                     for detalle in (evaluacion.desviaciones if evaluacion else [])
                 ],
             }
+        def serializar_analisis_lote(item):
+            evaluacion = dominio_produccion.evaluar_analisis(
+                item.valores, item.especificacion or especificacion
+            )
+            return {
+                "id": item.id,
+                "fecha": item.fecha,
+                "muestra": item.muestra,
+                "valores": item.valores,
+                "resultado": evaluacion.resultado,
+                "faltantes": evaluacion.faltantes,
+                "desviaciones": [
+                    {
+                        "parametro": detalle.parametro,
+                        "valor": detalle.valor,
+                        "min": detalle.minimo,
+                        "max": detalle.maximo,
+                    }
+                    for detalle in evaluacion.desviaciones
+                ],
+            }
         resultado.append({
             "id": salida.id,
             "tipo": salida.ejecucion.etapa.get_tipo_display(),
@@ -392,7 +439,7 @@ def _resultados_intermedios(request):
             "equipo_nombre": (
                 salida.ejecucion.equipo.nombre if salida.ejecucion.equipo_id else None
             ),
-            "silo_destino_codigo": salida.silo.codigo,
+            "silo_destino_codigo": salida.silo.codigo if salida.silo_id else None,
             "cantidad": salida.cantidad,
             "unidad": salida.unidad,
             "clasificacion": salida.get_clasificacion_display(),
@@ -400,12 +447,20 @@ def _resultados_intermedios(request):
             "estado": decision.estado if decision else LiberacionProceso.Estado.PENDIENTE,
             "observacion": decision.observacion if decision else "",
             "decidida_en": decision.decidida_en if decision else None,
-            "analisis_seleccionado": decision.analisis_silo_id if decision else None,
+            "analisis_tipo": "silo" if salida.silo_id else "lote",
+            "analisis_seleccionado": (
+                decision.analisis_silo_id if salida.silo_id
+                else decision.analisis_lote_id
+            ) if decision else None,
             "especificacion": {
                 "version": especificacion.version,
                 "rangos": especificacion.rangos,
             } if especificacion else None,
-            "analisis_disponibles": [serializar_analisis(item) for item in disponibles],
+            "analisis_disponibles": (
+                [serializar_analisis_silo(item) for item in disponibles_silo]
+                if salida.silo_id else
+                [serializar_analisis_lote(item) for item in disponibles_lote]
+            ),
         })
     return resultado
 
@@ -644,11 +699,9 @@ def expedientes(request):
 def _salida_intermedia_permitida(request, salida_id, bloquear=False):
     from procesos.models import SalidaProceso
     consulta = filtrar_por_scope(
-        SalidaProceso.objects.filter(silo__isnull=False).filter(
-            Q(ejecucion__etapa__requiere_calidad=True)
-            | Q(destino=SalidaProceso.Destino.DESPACHO_DIRECTO)
-        ).select_related(
+        SalidaProceso.objects.filter(_filtro_resultados_de_proceso()).select_related(
             "ejecucion__etapa", "silo", "lote__producto", "liberacion_calidad",
+            "liberacion_calidad__analisis_lote",
         ),
         request.user,
         campo_sucursal="ejecucion__sucursal_id",
@@ -743,6 +796,38 @@ def _bloqueo_especificacion_intermedia(salida, analisis):
     }
 
 
+def _bloqueo_especificacion_lote(salida, analisis):
+    """Valida el análisis del granel contra la especificación congelada."""
+    from produccion import dominio as dominio_produccion
+
+    especificacion = analisis.especificacion or dominio_produccion.especificacion_vigente(
+        Especificacion.objects.filter(producto_id=salida.lote.producto_id),
+        salida.lote.producto_id,
+        analisis.fecha,
+    )
+    evaluacion = dominio_produccion.evaluar_analisis(
+        analisis.valores, especificacion
+    )
+    if evaluacion.resultado == dominio_produccion.CONFORME:
+        return None
+    return {
+        "detail": "El análisis del lote no cumple la especificación vigente.",
+        "resultado": evaluacion.resultado,
+        "faltantes": evaluacion.faltantes,
+        "desviaciones": [
+            {
+                "parametro": item.parametro,
+                "valor": item.valor,
+                "min": item.minimo,
+                "max": item.maximo,
+                "desvio": item.desvio,
+            }
+            for item in evaluacion.desviaciones
+        ],
+        "especificacion_version": especificacion.version if especificacion else None,
+    }
+
+
 def _activar_lote_intermedio(salida, analisis):
     """Materializa en kg una salida de descremación usando densidad real."""
     if (
@@ -762,10 +847,12 @@ def _activar_lote_intermedio(salida, analisis):
 @api_view(["POST"])
 @permission_classes([EscribeCalidad])
 def liberar_resultado_proceso(request, salida_id):
-    """Libera una salida intermedia usando un análisis confirmado de su silo."""
+    """Libera una salida intermedia usando el análisis de silo o lote aplicable."""
     from maestros.models import Silo
-    from procesos.models import CorridaCondensacion, EjecucionProceso, SalidaProceso
-    from produccion.models import OrdenProduccion
+    from procesos.models import (
+        CorridaCondensacion, CorridaMantequilla, EjecucionProceso, SalidaProceso,
+    )
+    from produccion.models import Analisis, OrdenProduccion
     from procesos.servicios import transicionar_ejecucion
     from recepcion.models import AnalisisSilo
 
@@ -785,33 +872,54 @@ def liberar_resultado_proceso(request, salida_id):
                 {"detail": "La salida ya tiene una decisión de Calidad."},
                 status=status.HTTP_409_CONFLICT,
             )
-        analisis = get_object_or_404(
-            AnalisisSilo.objects.select_for_update(),
-            pk=request.data.get("analisis_id"),
-            silo_id=salida.silo_id,
-            estado=AnalisisSilo.Estado.CONFIRMADO,
-        )
-        if analisis.tomado_en < salida.registrada_en:
-            return Response(
-                {"analisis_id": "El análisis es anterior al resultado de la corrida."},
-                status=status.HTTP_400_BAD_REQUEST,
+        analisis_silo = None
+        analisis_lote = None
+        if salida.silo_id:
+            analisis_silo = get_object_or_404(
+                AnalisisSilo.objects.select_for_update(),
+                pk=request.data.get("analisis_id"),
+                silo_id=salida.silo_id,
+                estado=AnalisisSilo.Estado.CONFIRMADO,
             )
-        if not analisis.analista_id or not analisis.visualizado_por_id:
-            return Response(
-                {"analisis_id": "El análisis requiere firma de realización y visualización."},
-                status=status.HTTP_400_BAD_REQUEST,
+            if analisis_silo.tomado_en < salida.registrada_en:
+                return Response(
+                    {"analisis_id": "El análisis es anterior al resultado de la corrida."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not analisis_silo.analista_id or not analisis_silo.visualizado_por_id:
+                return Response(
+                    {"analisis_id": "El análisis requiere firma de realización y visualización."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if analisis_silo.inhibidores_resultado != "negativo":
+                return Response(
+                    {"analisis_id": "El resultado de inhibidores no permite liberar."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if not analisis_silo.vigente:
+                return Response(
+                    {"analisis_id": analisis_silo.motivo_vigencia},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            bloqueo_especificacion = _bloqueo_especificacion_intermedia(
+                salida, analisis_silo
             )
-        if analisis.inhibidores_resultado != "negativo":
-            return Response(
-                {"analisis_id": "El resultado de inhibidores no permite liberar."},
-                status=status.HTTP_409_CONFLICT,
+        else:
+            analisis_lote = get_object_or_404(
+                Analisis.objects.select_for_update(of=("self",)).select_related(
+                    "especificacion"
+                ),
+                pk=request.data.get("analisis_lote_id", request.data.get("analisis_id")),
+                lote_id=salida.lote_id,
             )
-        if not analisis.vigente:
-            return Response(
-                {"analisis_id": analisis.motivo_vigencia},
-                status=status.HTTP_409_CONFLICT,
+            if analisis_lote.fecha < timezone.localdate(salida.registrada_en):
+                return Response(
+                    {"analisis_lote_id": "El análisis es anterior al resultado de la corrida."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            bloqueo_especificacion = _bloqueo_especificacion_lote(
+                salida, analisis_lote
             )
-        bloqueo_especificacion = _bloqueo_especificacion_intermedia(salida, analisis)
         if bloqueo_especificacion:
             return Response(
                 bloqueo_especificacion,
@@ -821,17 +929,20 @@ def liberar_resultado_proceso(request, salida_id):
             salida=salida
         )
         decision.estado = LiberacionProceso.Estado.LIBERADO
-        decision.analisis_silo = analisis
+        decision.analisis_silo = analisis_silo
+        decision.analisis_lote = analisis_lote
         decision.decidida_por = request.user
         decision.decidida_en = ahora()
         decision.observacion = str(request.data.get("observacion", "")).strip()
+        decision.full_clean()
         decision.save()
-        _activar_lote_intermedio(salida, analisis)
-        Silo.objects.filter(pk=salida.silo_id).update(
-            estado=Silo.Estado.DISPONIBLE
-        )
+        if analisis_silo is not None:
+            _activar_lote_intermedio(salida, analisis_silo)
+            Silo.objects.filter(pk=salida.silo_id).update(
+                estado=Silo.Estado.DISPONIBLE
+            )
         faltan = SalidaProceso.objects.filter(
-            ejecucion=salida.ejecucion, silo__isnull=False,
+            _filtro_resultados_de_proceso(), ejecucion=salida.ejecucion,
         ).exclude(
             liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO
         ).exists()
@@ -846,6 +957,10 @@ def liberar_resultado_proceso(request, salida_id):
                 ejecucion_id=salida.ejecucion_id,
                 estado=CorridaCondensacion.Estado.PENDIENTE_CALIDAD,
             ).update(estado=CorridaCondensacion.Estado.CERRADA)
+            CorridaMantequilla.objects.filter(
+                ejecucion_id=salida.ejecucion_id,
+                estado=CorridaMantequilla.Estado.PENDIENTE_CALIDAD,
+            ).update(estado=CorridaMantequilla.Estado.CERRADA)
             if salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO:
                 corrida_final = CorridaCondensacion.objects.select_related("orden").filter(
                     ejecucion_id=salida.ejecucion_id,
@@ -893,9 +1008,10 @@ def rechazar_resultado_proceso(request, salida_id):
         decision.decidida_en = ahora()
         decision.observacion = motivo
         decision.save()
-        Silo.objects.filter(pk=salida.silo_id).update(
-            estado=Silo.Estado.BLOQUEADO_CALIDAD
-        )
+        if salida.silo_id:
+            Silo.objects.filter(pk=salida.silo_id).update(
+                estado=Silo.Estado.BLOQUEADO_CALIDAD
+            )
         if salida.ejecucion.estado != EjecucionProceso.Estado.BLOQUEADA:
             transicionar_ejecucion(
                 ejecucion_id=salida.ejecucion_id,

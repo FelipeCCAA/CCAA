@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 
 from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Equipo, Mandante, Producto, Silo
-from procesos.models import EjecucionProceso, SalidaProceso
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from recepcion.models import MovimientoSilo, Recepcion
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
@@ -93,6 +93,48 @@ class FlujoIntegradoApiTests(TestCase):
         equipo = next(item for item in respuesta.data["equipos"] if item["id"] == self.equipo.id)
         self.assertTrue(equipo["habilitado"])
         self.assertTrue(equipo["advertencia_aseo"])
+
+    def test_opciones_inicio_aplica_el_criterio_unico_de_ocupacion(self):
+        proceso = Proceso.objects.create(
+            codigo="ocupacion-opciones", nombre="Ocupacion opciones"
+        )
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="secado-opciones",
+            nombre="Secado opciones",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=1,
+        )
+        estados = {
+            EjecucionProceso.Estado.PREPARACION: True,
+            EjecucionProceso.Estado.EJECUCION: True,
+            EjecucionProceso.Estado.PAUSADA: True,
+            EjecucionProceso.Estado.BLOQUEADA: True,
+            EjecucionProceso.Estado.PENDIENTE_CONTROL: False,
+        }
+
+        for estado, ocupa in estados.items():
+            with self.subTest(estado=estado):
+                ejecucion = EjecucionProceso.objects.create(
+                    codigo=f"EJ-OCUPACION-{estado}",
+                    etapa=etapa,
+                    sucursal=self.planta,
+                    equipo=self.equipo,
+                    estado=estado,
+                )
+
+                respuesta = self.cliente.get(
+                    "/api/produccion/lotes/opciones-inicio/"
+                )
+
+                self.assertEqual(respuesta.status_code, 200, respuesta.data)
+                equipo = next(
+                    item for item in respuesta.data["equipos"]
+                    if item["id"] == self.equipo.id
+                )
+                self.assertEqual(equipo["habilitado"], not ocupa)
+                self.assertEqual(bool(equipo["motivo_no_habilitado"]), ocupa)
+                ejecucion.delete()
 
     def test_abre_lote_y_ejecucion_sin_elegir_silo(self):
         respuesta = self._abrir()

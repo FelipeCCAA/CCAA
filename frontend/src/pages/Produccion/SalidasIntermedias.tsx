@@ -3,15 +3,20 @@ import { ArrowRight, FlaskConical, RefreshCw } from "lucide-react";
 
 import {
   definirDestinoSalida,
+  obtenerEjecucionesOperativas,
   obtenerSalidasIntermediasDisponibles,
   prepararContinuacion,
   type SalidaIntermediaDisponible,
+  type EjecucionOperativa,
 } from "../../services/procesos.service";
+import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
+import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 });
 
 export default function SalidasIntermedias() {
   const [salidas, setSalidas] = useState<SalidaIntermediaDisponible[] | null>(null);
+  const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
   const [preparando, setPreparando] = useState<number | null>(null);
@@ -22,12 +27,17 @@ export default function SalidasIntermedias() {
   const [mensaje, setMensaje] = useState("");
   const [definiendo, setDefiniendo] = useState<number | null>(null);
 
-  const cargar = async () => {
+  const cargar = async (limpiarError = true) => {
     if (cargando) return;
     setCargando(true);
-    setError("");
+    if (limpiarError) setError("");
     try {
-      setSalidas(await obtenerSalidasIntermediasDisponibles());
+      const [resultados, operativas] = await Promise.all([
+        obtenerSalidasIntermediasDisponibles(),
+        obtenerEjecucionesOperativas(),
+      ]);
+      setSalidas(resultados);
+      setEjecuciones(operativas);
     } catch {
       setError("No se pudieron consultar los resultados liberados.");
     } finally {
@@ -35,12 +45,16 @@ export default function SalidasIntermedias() {
     }
   };
 
+  const ocupaciones = ocupacionesPorEquipo(ejecuciones);
+
   const abrirPreparacion = (salida: SalidaIntermediaDisponible) => {
-    const etapa = salida.etapas_siguientes.find((item) => item.equipos.length > 0);
+    const etapa = salida.etapas_siguientes.find((item) =>
+      item.equipos.some((equipo) => !ocupaciones.has(equipo.id)),
+    );
     if (!etapa) return;
     setPreparando(salida.id);
     setEtapaId(etapa.id);
-    setEquipoId(etapa.equipos[0].id);
+    setEquipoId(etapa.equipos.find((equipo) => !ocupaciones.has(equipo.id))?.id ?? 0);
     setCantidad(salida.cantidad_disponible);
     setError("");
     setMensaje("");
@@ -49,10 +63,11 @@ export default function SalidasIntermedias() {
   const seleccionarEtapa = (salida: SalidaIntermediaDisponible, id: number) => {
     const etapa = salida.etapas_siguientes.find((item) => item.id === id);
     setEtapaId(id);
-    setEquipoId(etapa?.equipos[0]?.id ?? 0);
+    setEquipoId(etapa?.equipos.find((equipo) => !ocupaciones.has(equipo.id))?.id ?? 0);
   };
 
   const guardarPreparacion = async (salida: SalidaIntermediaDisponible) => {
+    if (guardando) return;
     const valor = Number(cantidad);
     if (!etapaId || !equipoId || !Number.isFinite(valor) || valor <= 0) {
       setError("Selecciona etapa, máquina e ingresa una cantidad válida.");
@@ -70,14 +85,16 @@ export default function SalidasIntermedias() {
       setPreparando(null);
       await cargar();
     } catch (errorPeticion: unknown) {
-      const respuesta = errorPeticion as { response?: { data?: { error?: string } } };
-      setError(respuesta.response?.data?.error || "No se pudo preparar la etapa siguiente.");
+      const mensaje = mensajeErrorProceso(errorPeticion, "No se pudo preparar la etapa siguiente.");
+      if (esErrorDeEquipo(errorPeticion)) await cargar(false);
+      setError(mensaje);
     } finally {
       setGuardando(false);
     }
   };
 
   const cambiarDestino = async (salida: SalidaIntermediaDisponible, destino: string) => {
+    if (definiendo !== null) return;
     setDefiniendo(salida.id);
     setError("");
     try {
@@ -85,8 +102,7 @@ export default function SalidasIntermedias() {
       setMensaje(`Destino de ${salida.corrida_codigo}: ${salida.destinos_permitidos.find((item) => item.valor === destino)?.etiqueta ?? destino}.`);
       await cargar();
     } catch (errorPeticion: unknown) {
-      const respuesta = errorPeticion as { response?: { data?: { error?: string } } };
-      setError(respuesta.response?.data?.error || "No se pudo definir el destino de la salida.");
+      setError(mensajeErrorProceso(errorPeticion, "No se pudo definir el destino de la salida."));
     } finally {
       setDefiniendo(null);
     }
@@ -203,11 +219,12 @@ export default function SalidasIntermedias() {
                       onChange={(evento) => setEquipoId(Number(evento.target.value))}
                       className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                     >
-                      {salida.etapas_siguientes.find((item) => item.id === etapaId)?.equipos.map((equipo) => (
-                        <option key={equipo.id} value={equipo.id}>
-                          {equipo.nombre}{equipo.ocupado_por ? ` · ocupada por ${equipo.ocupado_por}` : " · disponible"}
+                      {salida.etapas_siguientes.find((item) => item.id === etapaId)?.equipos.map((equipo) => {
+                        const ocupacion = ocupaciones.get(equipo.id);
+                        return <option key={equipo.id} value={equipo.id} disabled={Boolean(ocupacion)}>
+                          {equipo.nombre}{ocupacion ? ` · ${ocupacion.disponibilidad} por ${ocupacion.ejecucion}` : " · disponible"}
                         </option>
-                      ))}
+                      })}
                     </select>
                   </label>
                   <label className="block text-xs font-semibold text-slate-700">
@@ -229,10 +246,12 @@ export default function SalidasIntermedias() {
                     </button>
                   </div>
                 </div>
-              ) : salida.etapas_siguientes.some((item) => item.equipos.length > 0) ? (
+              ) : salida.etapas_siguientes.some((item) => item.equipos.some((equipo) => !ocupaciones.has(equipo.id))) ? (
                 <button type="button" onClick={() => abrirPreparacion(salida)} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">
                   Preparar etapa siguiente <ArrowRight className="h-4 w-4" />
                 </button>
+              ) : salida.etapas_siguientes.some((item) => item.equipos.length > 0) ? (
+                <p className="mt-4 text-sm font-medium text-amber-800">Todos los equipos compatibles están reservados u ocupados.</p>
               ) : null}
             </article>
           ))}

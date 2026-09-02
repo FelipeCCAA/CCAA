@@ -3,13 +3,16 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowRight, Beaker, Factory, GitBranch, Search, Truck } from "lucide-react";
 
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
+import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import StatusBadge from "../../components/ui/StatusBadge";
 import { iniciarCondensacion, iniciarMantequilla, obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type Genealogia, type RutaProducto } from "../../services/procesos.service";
+import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { puedeEscribir } from "../../services/sesion";
 import ArbolGenealogia from "./ArbolGenealogia";
 import CierreCondensacion from "./CierreCondensacion";
 import CierreDescremacion from "./CierreDescremacion";
 import CierreMantequilla from "./CierreMantequilla";
+import DiagnosticoRutas from "./DiagnosticoRutas";
 import FormularioDescremacion from "./FormularioDescremacion";
 import NuevaCondensacion from "./NuevaCondensacion";
 import NuevaMantequilla from "./NuevaMantequilla";
@@ -61,15 +64,29 @@ export default function Procesos() {
       .finally(() => setCargando(false));
   }, []);
 
+  const refrescarEjecuciones = async () => {
+    try {
+      setEjecuciones(await obtenerEjecucionesOperativas());
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const moverEjecucion = async (id: number) => {
+    if (accionando !== null) return;
     setAccionando(id);
     setError("");
     try {
       await transicionarEjecucion(id, "ejecucion");
-      setEjecuciones(await obtenerEjecucionesOperativas());
+      if (!await refrescarEjecuciones()) {
+        setError("La operación se guardó, pero no se pudo actualizar la disponibilidad. Usa actualizar antes de otra acción.");
+      }
     } catch (errorPeticion: unknown) {
-      const respuesta = errorPeticion as { response?: { data?: { error?: string } } };
-      setError(respuesta.response?.data?.error || "No se pudo iniciar la ejecución.");
+      setError(mensajeErrorProceso(errorPeticion, "No se pudo iniciar la ejecución."));
+      if (esErrorDeEquipo(errorPeticion)) {
+        await refrescarEjecuciones();
+      }
     } finally {
       setAccionando(null);
     }
@@ -91,6 +108,7 @@ export default function Procesos() {
   const actualizarDescremacion = async (corrida: CorridaDescremacion) => {
     setDescremacionesCargadas(true);
     setDescremaciones((actuales) => [corrida, ...actuales.filter((item) => item.id !== corrida.id)]);
+    await refrescarEjecuciones();
   };
 
   const actualizarCondensacion = (corrida: CorridaCondensacion) => {
@@ -102,17 +120,22 @@ export default function Procesos() {
   };
 
   const iniciarCorrida = async (tipo: "condensacion" | "mantequilla", id: number) => {
+    if (accionandoCorrida !== null) return;
     setAccionandoCorrida(id); setError("");
     try {
       if (tipo === "condensacion") actualizarCondensacion(await iniciarCondensacion(id));
       else actualizarMantequilla(await iniciarMantequilla(id));
-      setEjecuciones(await obtenerEjecucionesOperativas());
+      if (!await refrescarEjecuciones()) {
+        setError("La corrida se inició, pero no se pudo actualizar la disponibilidad.");
+      }
     } catch (errorPeticion: unknown) {
-      const datos = (errorPeticion as { response?: { data?: unknown } }).response?.data;
-      const detalle = datos && typeof datos === "object"
-        ? Object.values(datos as Record<string, unknown>).flat().map(String).join(" ")
-        : "";
-      setError(detalle || "No se pudo iniciar la corrida. Revisa equipo, aseo, saldo y estado de la orden.");
+      setError(mensajeErrorProceso(
+        errorPeticion,
+        "No se pudo iniciar la corrida. Revisa equipo, aseo, saldo y estado de la orden.",
+      ));
+      if (esErrorDeEquipo(errorPeticion)) {
+        await refrescarEjecuciones();
+      }
     } finally { setAccionandoCorrida(null); }
   };
 
@@ -176,16 +199,17 @@ export default function Procesos() {
 
         {error && <ErrorState mensaje={error} />}
 
-        {puedeOperar && siloDescremacion !== null && <FormularioDescremacion siloOrigen={siloDescremacion} onCerrar={cerrarFormularioDescremacion} onCreada={async (corrida) => { await actualizarDescremacion(corrida); cerrarFormularioDescremacion(); }} />}
+        {puedeOperar && siloDescremacion !== null && <FormularioDescremacion siloOrigen={siloDescremacion} ejecuciones={ejecuciones} alConflictoEquipo={async () => { await refrescarEjecuciones(); }} onCerrar={cerrarFormularioDescremacion} onCreada={async (corrida) => { await actualizarDescremacion(corrida); cerrarFormularioDescremacion(); }} />}
         {puedeOperar && cerrandoDescremacion && <CierreDescremacion corrida={cerrandoDescremacion} onCerrar={() => setCerrandoDescremacion(null)} onCerrada={async (corrida) => { await actualizarDescremacion(corrida); setCerrandoDescremacion(null); }} />}
-        {puedeOperar && cerrandoCondensacion && <CierreCondensacion corrida={cerrandoCondensacion} onCerrar={() => setCerrandoCondensacion(null)} onCerrada={async (corrida) => { actualizarCondensacion(corrida); setCerrandoCondensacion(null); setEjecuciones(await obtenerEjecucionesOperativas()); }} />}
-        {puedeOperar && cerrandoMantequilla && <CierreMantequilla corrida={cerrandoMantequilla} onCerrar={() => setCerrandoMantequilla(null)} onCerrada={async (corrida) => { actualizarMantequilla(corrida); setCerrandoMantequilla(null); setEjecuciones(await obtenerEjecucionesOperativas()); }} />}
+        {puedeOperar && cerrandoCondensacion && <CierreCondensacion corrida={cerrandoCondensacion} onCerrar={() => setCerrandoCondensacion(null)} onCerrada={async (corrida) => { actualizarCondensacion(corrida); setCerrandoCondensacion(null); if (!await refrescarEjecuciones()) setError("La salida se registró, pero no se pudo actualizar la disponibilidad."); }} />}
+        {puedeOperar && cerrandoMantequilla && <CierreMantequilla corrida={cerrandoMantequilla} onCerrar={() => setCerrandoMantequilla(null)} onCerrada={async (corrida) => { actualizarMantequilla(corrida); setCerrandoMantequilla(null); if (!await refrescarEjecuciones()) setError("El cierre se registró, pero no se pudo actualizar la disponibilidad."); }} />}
         {puedeOperar && nuevaCondensacion && <NuevaCondensacion onCerrar={() => setNuevaCondensacion(false)} onCreada={(corrida) => { setCondensacionesCargadas(true); setCondensaciones((actuales) => [corrida, ...actuales]); setNuevaCondensacion(false); }} />}
-        {puedeOperar && nuevaMantequilla && <NuevaMantequilla onCerrar={() => setNuevaMantequilla(false)} onCreada={(corrida) => { setMantequillasCargadas(true); setMantequillas((actuales) => [corrida, ...actuales]); setNuevaMantequilla(false); }} />}
+        {puedeOperar && nuevaMantequilla && <NuevaMantequilla ejecuciones={ejecuciones} alConflictoEquipo={async () => { await refrescarEjecuciones(); }} onCerrar={() => setNuevaMantequilla(false)} onCreada={async (corrida) => { setMantequillasCargadas(true); setMantequillas((actuales) => [corrida, ...actuales]); await refrescarEjecuciones(); setNuevaMantequilla(false); }} />}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Rutas configuradas por producto</h2></div>
           <p className="mt-2 text-sm text-slate-600">La secuencia proviene del maestro de procesos; no está codificada en la interfaz.</p>
+          <DiagnosticoRutas />
           {!rutasCargadas ? <button type="button" onClick={cargarRutas} className="mt-5 rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar rutas</button> : rutas.length === 0 ? <p className="mt-5 text-sm text-slate-600">No hay rutas activas configuradas.</p> : <div className="mt-5 grid gap-4 lg:grid-cols-2">{rutas.map((ruta) => <article key={ruta.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{ruta.producto_nombre}</p><p className="mt-1 text-sm text-green-700">{ruta.proceso_nombre}{ruta.destino ? ` → ${ruta.destino}` : ""}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Prioridad {ruta.prioridad}</span></div><div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">{ruta.etapas.sort((a, b) => a.orden - b.orden).map((etapa, indice) => <span key={etapa.id} className="inline-flex items-center gap-2"><span className="rounded-lg bg-slate-50 px-2 py-1">{etapa.nombre}</span>{indice < ruta.etapas.length - 1 && <ArrowRight className="h-3 w-3" />}</span>)}</div></article>)}</div>}
         </section>
 
@@ -310,7 +334,7 @@ export default function Procesos() {
         <section>
           <h2 className="mb-1 text-xl font-semibold text-slate-800">Ejecuciones operativas</h2>
           <p className="mb-4 text-sm text-slate-600">Solo pendientes y en curso. El inicio valida nuevamente máquina, ocupación y aseo.</p>
-          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Sin trabajo operativo pendiente" detalle="Las ejecuciones cerradas no se cargan en esta bandeja." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">ID del proceso</th><th className="px-5 py-3">Etapa</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entrada</th><th className="px-5 py-3">Salida</th><th className="px-5 py-3">Acción</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4">{item.etapa_nombre}</td><td className="px-5 py-4">{item.equipo_nombre ?? "—"}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4 text-xs">{item.entradas.join(" + ") || "—"}</td><td className="px-5 py-4 text-xs">{item.salidas.join(" + ") || "—"}</td><td className="px-5 py-4">{item.acciones_permitidas.includes("ejecucion") ? <button type="button" disabled={accionando === item.id} onClick={() => void moverEjecucion(item.id)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{accionando === item.id ? "Validando…" : item.estado === "pausada" ? "Reanudar" : "Iniciar"}</button> : <span className="text-xs text-slate-500">Sin acción directa</span>}</td></tr>)}</tbody></table></div>}
+          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Sin trabajo operativo pendiente" detalle="Las ejecuciones cerradas no se cargan en esta bandeja." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">ID del proceso</th><th className="px-5 py-3">Etapa</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entrada</th><th className="px-5 py-3">Salida</th><th className="px-5 py-3">Acción</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4">{item.etapa_nombre}</td><td className="px-5 py-4"><span className="block">{item.equipo_nombre ?? "—"}</span>{item.equipo_nombre && <span className="mt-1.5 block"><EstadoEquipo estado={item.estado} ejecucion={item.codigo} /></span>}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4 text-xs">{item.entradas.join(" + ") || "—"}</td><td className="px-5 py-4 text-xs">{item.salidas.join(" + ") || "—"}</td><td className="px-5 py-4">{item.acciones_permitidas.includes("ejecucion") ? <button type="button" disabled={accionando !== null} onClick={() => void moverEjecucion(item.id)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{accionando === item.id ? "Validando…" : item.estado === "pausada" ? "Reanudar" : "Iniciar"}</button> : <span className="text-xs text-slate-500">Sin acción directa</span>}</td></tr>)}</tbody></table></div>}
         </section>
       </div>
     </main>

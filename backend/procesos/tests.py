@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -81,6 +82,8 @@ class ProcesosIndustrialesTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 200, respuesta.data)
         self.assertEqual([item["codigo"] for item in respuesta.data], ["EJ-001"])
+        self.assertEqual(respuesta.data[0]["equipo_id"], self.equipo.pk)
+        self.assertEqual(respuesta.data[0]["equipo_nombre"], self.equipo.nombre)
         self.assertIn("preparacion", respuesta.data[0]["acciones_permitidas"])
 
     def test_transicion_exige_entrada_equipo_y_registra_evento(self):
@@ -101,6 +104,35 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertEqual(resultado.estado, EjecucionProceso.Estado.EJECUCION)
         self.assertIsNotNone(resultado.inicio)
         self.assertEqual(resultado.eventos.count(), 2)
+
+    def test_preparacion_reserva_el_equipo_para_una_sola_ejecucion(self):
+        otra = EjecucionProceso.objects.create(
+            codigo="EJ-002", etapa=self.etapa, equipo=self.equipo,
+            responsable=self.usuario,
+        )
+        transicionar_ejecucion(
+            ejecucion_id=self.ejecucion.pk,
+            estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+            usuario=self.usuario,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "ocupado por EJ-001"):
+            transicionar_ejecucion(
+                ejecucion_id=otra.pk,
+                estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+                usuario=self.usuario,
+            )
+
+    def test_la_base_impide_dos_ocupaciones_del_mismo_equipo(self):
+        self.ejecucion.estado = EjecucionProceso.Estado.PAUSADA
+        self.ejecucion.save(update_fields=["estado"])
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            EjecucionProceso.objects.create(
+                codigo="EJ-DUPLICADA", etapa=self.etapa, equipo=self.equipo,
+                responsable=self.usuario,
+                estado=EjecucionProceso.Estado.BLOQUEADA,
+            )
 
     def test_trazabilidad_hacia_atras_encuentra_lote_origen(self):
         EntradaProceso.objects.create(
@@ -177,6 +209,33 @@ class ProcesosIndustrialesTests(TestCase):
         )
 
         self.assertEqual(encontrada, etapa_ruta)
+
+    def test_una_etapa_de_otro_proceso_no_es_fallback_de_escritura(self):
+        encontrada = etapa_para_producto(
+            producto=self.leche,
+            sucursal=self.ejecucion.sucursal,
+            tipo=EtapaProceso.Tipo.DESCREMACION,
+        )
+
+        self.assertIsNone(encontrada)
+
+    def test_diagnostico_informa_producto_elaborable_sin_ruta(self):
+        producto = Producto.objects.create(
+            nombre="Polvo sin ruta", familia=Producto.Familia.POLVO,
+            categoria=Producto.Categoria.LECHE_POLVO,
+            mandante=self.leche.mandante,
+        )
+
+        respuesta = self.cliente.get("/api/procesos/rutas-producto/diagnostico/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        hallazgo = next(
+            item for item in respuesta.data["productos"]
+            if item["producto"] == producto.pk
+            and item["sucursal"] == self.ejecucion.sucursal_id
+        )
+        self.assertFalse(hallazgo["configurada"])
+        self.assertGreaterEqual(respuesta.data["faltantes"], 1)
 
     def test_una_continuacion_no_puede_saltarse_una_etapa(self):
         EtapaProceso.objects.create(
@@ -785,6 +844,7 @@ class ReworkAutorizadoTests(TestCase):
         return Liberacion.objects.create(lote=lote, estado=estado)
 
     def _entrada(self, lote, tipo):
+        motivo = "Mezcla controlada autorizada" if tipo == "reproceso" else ""
         return self.cliente.post(
             "/api/procesos/entradas/",
             {
@@ -792,6 +852,7 @@ class ReworkAutorizadoTests(TestCase):
                 "lote": lote.id,
                 "tipo": tipo,
                 "cantidad": "100",
+                "motivo": motivo,
             },
             format="json",
         )

@@ -8,18 +8,22 @@ import {
 } from "../../services/maestros.service";
 import {
   crearDescremacion, crearEjecucion, iniciarDescremacion, obtenerEtapas,
-  type CorridaDescremacion, type EtapaProceso,
+  type CorridaDescremacion, type EjecucionOperativa, type EtapaProceso,
 } from "../../services/procesos.service";
+import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
+import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { listarAnalisisSilo, type AnalisisSilo } from "../../services/recepcion.service";
 
 const control = "mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5";
 
 export default function FormularioDescremacion({
-  siloOrigen, onCerrar, onCreada,
+  siloOrigen, ejecuciones, onCerrar, onCreada, alConflictoEquipo,
 }: {
   siloOrigen: number;
+  ejecuciones: EjecucionOperativa[];
   onCerrar: () => void;
   onCreada: (corrida: CorridaDescremacion) => Promise<void>;
+  alConflictoEquipo: () => Promise<void>;
 }) {
   const [etapas, setEtapas] = useState<EtapaProceso[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
@@ -76,9 +80,13 @@ export default function FormularioDescremacion({
   );
   const productosDescremada = productos.filter((item) => item.tipo === "descremada");
   const productosCrema = productos.filter((item) => item.familia === "crema");
+  const ocupaciones = ocupacionesPorEquipo(ejecuciones);
+  const equipoSeleccionado = equipos.find((item) => item.id === Number(datos.equipo));
+  const ocupacionSeleccionada = equipoSeleccionado ? ocupaciones.get(equipoSeleccionado.id) : undefined;
 
   const guardar = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (ocupado) return;
     if (!muestra?.grasa || !muestra.sng) return;
     setOcupado(true);
     setError("");
@@ -97,7 +105,9 @@ export default function FormularioDescremacion({
       });
       await onCreada(await iniciarDescremacion(corrida.id));
     } catch (e) {
-      setError(mensajeDe(e, "No se pudo crear e iniciar la descremación."));
+      const mensaje = mensajeErrorProceso(e, "No se pudo crear e iniciar la descremación.");
+      if (esErrorDeEquipo(e)) await alConflictoEquipo();
+      setError(mensaje);
     } finally {
       setOcupado(false);
     }
@@ -110,7 +120,7 @@ export default function FormularioDescremacion({
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <Campo texto="Código de ejecución"><input required value={datos.codigo} onChange={(e) => setDatos({ ...datos, codigo: e.target.value })} className={control} /></Campo>
           <Campo texto="Etapa de descremación"><select required value={datos.etapa} onChange={(e) => setDatos({ ...datos, etapa: e.target.value })} className={control}><option value="">Seleccionar…</option>{etapas.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></Campo>
-          <Campo texto="Equipo"><select required value={datos.equipo} onChange={(e) => setDatos({ ...datos, equipo: e.target.value })} className={control}><option value="">Seleccionar…</option>{equipos.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></Campo>
+          <Campo texto="Equipo"><select required value={datos.equipo} onChange={(e) => setDatos({ ...datos, equipo: e.target.value })} className={control}><option value="">Seleccionar…</option>{equipos.map((item) => { const ocupacion = ocupaciones.get(item.id); return <option key={item.id} value={item.id} disabled={Boolean(ocupacion)}>{item.nombre}{ocupacion ? ` · ${ocupacion.disponibilidad} por ${ocupacion.ejecucion}` : " · disponible"}</option>; })}</select></Campo>
           <Campo texto="Análisis vigente del origen"><select required value={datos.analisis} onChange={(e) => setDatos({ ...datos, analisis: e.target.value })} className={control}><option value="">Seleccionar…</option>{analisis.map((item) => <option key={item.id} value={item.id}>{new Date(item.tomado_en).toLocaleString("es-CL")} · {item.grasa}% MG</option>)}</select></Campo>
           <Campo texto="Litros de entrada"><input required type="number" min="0.01" step="0.01" value={datos.litros} onChange={(e) => setDatos({ ...datos, litros: e.target.value })} className={control} /></Campo>
           <Campo texto="Destino leche descremada"><select required value={datos.silo_descremada} onChange={(e) => setDatos({ ...datos, silo_descremada: e.target.value })} className={control}><option value="">Seleccionar…</option>{destinoDescremada.map((item) => <option key={item.id} value={item.id}>{item.codigo}</option>)}</select></Campo>
@@ -122,7 +132,7 @@ export default function FormularioDescremacion({
         {etapas.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Falta configurar una etapa activa de tipo Descremación.</p>}
         {analisis.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">El silo no tiene un análisis confirmado vigente.</p>}
         {error && <p className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
-        <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onCerrar} className="px-4 py-2.5 text-sm text-slate-600">Cancelar</button><button disabled={ocupado || !muestra || etapas.length === 0} className="rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{ocupado ? "Preparando…" : "Crear e iniciar"}</button></div>
+        <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onCerrar} className="px-4 py-2.5 text-sm text-slate-600">Cancelar</button><button disabled={ocupado || !muestra || etapas.length === 0 || Boolean(ocupacionSeleccionada)} className="rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{ocupado ? "Preparando…" : "Crear e iniciar"}</button></div>
       </form>
     </div>
   );

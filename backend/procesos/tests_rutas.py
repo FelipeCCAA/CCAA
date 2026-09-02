@@ -14,10 +14,10 @@ class RutasProductoTests(TestCase):
         self.planta = Sucursal.objects.create(
             empresa=self.empresa, codigo="RP", nombre="Planta rutas"
         )
-        self.usuario = User.objects.create_user("jefe-produccion")
+        self.usuario = User.objects.create_user("administrador-rutas")
         PerfilUsuario.objects.create(
             usuario=self.usuario, empresa=self.empresa, sucursal=self.planta,
-            rol=Rol.PRODUCCION, area=PerfilUsuario.Area.CONDENSACION,
+            rol=Rol.ADMIN, area=PerfilUsuario.Area.ADMINISTRACION,
         )
         self.cliente = APIClient()
         self.cliente.force_authenticate(self.usuario)
@@ -63,3 +63,22 @@ class RutasProductoTests(TestCase):
         )
 
         self.assertEqual(respuesta.status_code, 400)
+
+    def test_produccion_consulta_pero_no_configura_rutas(self):
+        operador = User.objects.create_user("operador-rutas")
+        PerfilUsuario.objects.create(
+            usuario=operador, empresa=self.empresa, sucursal=self.planta,
+            rol=Rol.PRODUCCION, area=PerfilUsuario.Area.CONDENSACION,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(operador)
+
+        self.assertEqual(cliente.get("/api/procesos/rutas-producto/").status_code, 200)
+        respuesta = cliente.post(
+            "/api/procesos/rutas-producto/",
+            {"producto": self.producto.pk, "proceso": self.proceso.pk, "prioridad": 1},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertIn("Administracion", respuesta.json()["detail"])

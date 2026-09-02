@@ -110,7 +110,7 @@ class BorradorLoteTests(BaseApertura):
         self.assertEqual(respuesta.status_code, 200, respuesta.json())
         self.assertEqual(respuesta.json()["producto"], self.polvo.id)
 
-    def test_no_confirma_si_la_maquina_esta_ocupada(self):
+    def test_no_confirma_si_la_maquina_esta_reservada_en_preparacion(self):
         proceso = Proceso.objects.create(codigo="secado-prueba", nombre="Secado prueba")
         etapa = EtapaProceso.objects.create(
             proceso=proceso, codigo="secado", nombre="Secado",
@@ -118,7 +118,7 @@ class BorradorLoteTests(BaseApertura):
         )
         EjecucionProceso.objects.create(
             codigo="EJ-OCUPADA", etapa=etapa, sucursal=self.sucursal,
-            equipo=self.equipo, estado=EjecucionProceso.Estado.EJECUCION,
+            equipo=self.equipo, estado=EjecucionProceso.Estado.PREPARACION,
         )
         borrador = self.crear_borrador(**self.datos_completos())
 

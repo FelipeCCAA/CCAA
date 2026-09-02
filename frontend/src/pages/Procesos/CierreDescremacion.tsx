@@ -17,6 +17,7 @@ export default function CierreDescremacion({ corrida, onCerrar, onCerrada }: {
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
+    if (ocupado) return;
     setOcupado(true);
     setError("");
     try {

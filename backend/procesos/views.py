@@ -5,31 +5,39 @@ from django.db.models import DecimalField, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
+from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.response import Response
 
-from usuarios.permisos import EscribeProduccion
+from usuarios.permisos import ConfiguraProcesos
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope, scope_de,
     sucursal_para_escritura,
 )
 from .models import (
-    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso,
     EtapaProceso, Proceso, RutaProducto,
     SalidaProceso,
 )
 from .serializers import (
     CierreCondensacionSerializer, CierreDescremacionSerializer,
+    CierreSecadoSerializer,
     CierreMantequillaSerializer, CrearCondensacionGuiadaSerializer,
-    CrearMantequillaGuiadaSerializer, CorridaCondensacionSerializer,
+    CrearDescremacionGuiadaSerializer, CrearMantequillaGuiadaSerializer,
+    CorridaCondensacionSerializer,
     CorridaDescremacionSerializer, CorridaMantequillaSerializer,
+    CorridaSecadoSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
-    ProcesoSerializer, SalidaProcesoSerializer,
+    IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
     RutaProductoSerializer,
 )
+from .permisos import OperaProcesoPorEtapa
 from .servicios import (
-    cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, genealogia_lote,
-    crear_condensacion_guiada, crear_mantequilla_guiada,
+    ESTADOS_QUE_OCUPAN_EQUIPO,
+    cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
+    genealogia_lote,
+    crear_condensacion_guiada, crear_descremacion_guiada,
+    crear_entrada_proceso, crear_mantequilla_guiada,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     preparar_continuacion, tipos_equipo_para_etapa, transicionar_ejecucion,
 )
@@ -38,14 +46,14 @@ from .servicios import (
 class ProcesoViewSet(viewsets.ModelViewSet):
     queryset = Proceso.objects.prefetch_related("etapas")
     serializer_class = ProcesoSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [ConfiguraProcesos]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
 
 class EtapaProcesoViewSet(viewsets.ModelViewSet):
     queryset = EtapaProceso.objects.select_related("proceso")
     serializer_class = EtapaProcesoSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [ConfiguraProcesos]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
 
@@ -59,13 +67,75 @@ class RutaProductoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         "sucursal", "producto", "proceso"
     ).prefetch_related("proceso__etapas")
     serializer_class = RutaProductoSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [ConfiguraProcesos]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def perform_create(self, serializer):
         serializer.save(sucursal=sucursal_para_escritura(
             self.request.user, serializer.validated_data
         ))
+
+    @action(detail=False, methods=["get"], url_path="diagnostico")
+    def diagnostico(self, request):
+        """Expone faltantes de configuración sin confundir insumos con productos."""
+        from maestros.models import Producto
+        from usuarios.models import Sucursal
+
+        categorias_productivas = {
+            Producto.Categoria.LECHE_POLVO,
+            Producto.Categoria.LP_INSTANTANEA,
+            Producto.Categoria.LP_CON_LECITINA,
+            Producto.Categoria.PRECONDENSADO,
+            Producto.Categoria.MANTEQUILLA,
+        }
+        productos = Producto.objects.filter(activo=True).filter(
+            Q(familia=Producto.Familia.POLVO)
+            | Q(categoria__in=categorias_productivas)
+        ).select_related("mandante__empresa")
+        sucursales = Sucursal.objects.filter(activa=True).select_related("empresa")
+        scope = scope_de(request.user, requerido=True)
+        if not scope.es_global:
+            productos = productos.filter(mandante__empresa_id=scope.empresa_id)
+            sucursales = sucursales.filter(empresa_id=scope.empresa_id)
+        if scope.es_sucursal:
+            sucursales = sucursales.filter(pk=scope.sucursal_id)
+
+        rutas = self.get_queryset().filter(activa=True, proceso__activo=True)
+        rutas_por_par = {}
+        for ruta in rutas:
+            rutas_por_par.setdefault((ruta.producto_id, ruta.sucursal_id), []).append(ruta)
+
+        resultado = []
+        for producto in productos:
+            plantas_producto = [
+                planta for planta in sucursales
+                if planta.empresa_id == producto.mandante.empresa_id
+            ]
+            for planta in plantas_producto:
+                configuradas = rutas_por_par.get((producto.pk, planta.pk), [])
+                resultado.append({
+                    "producto": producto.pk,
+                    "producto_nombre": producto.nombre,
+                    "sucursal": planta.pk,
+                    "sucursal_nombre": planta.nombre,
+                    "configurada": bool(configuradas),
+                    "rutas": [
+                        {
+                            "id": ruta.pk,
+                            "proceso": ruta.proceso_id,
+                            "proceso_nombre": ruta.proceso.nombre,
+                            "prioridad": ruta.prioridad,
+                        }
+                        for ruta in configuradas
+                    ],
+                })
+
+        faltantes = sum(not item["configurada"] for item in resultado)
+        return Response({
+            "completo": faltantes == 0,
+            "faltantes": faltantes,
+            "productos": resultado,
+        })
 
 
 class CorridaCondensacionViewSet(
@@ -85,8 +155,14 @@ class CorridaCondensacionViewSet(
         "silo_origen", "silo_destino", "iniciada_por", "finalizada_por",
     )
     serializer_class = CorridaCondensacionSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [OperaProcesoPorEtapa]
+    tipo_etapa_operacional = EtapaProceso.Tipo.CONDENSACION
     http_method_names = ["get", "post", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed(
+            "POST", detail="Usa crear-guiada para registrar una condensacion."
+        )
 
     @staticmethod
     def _respuesta_error(error):
@@ -222,6 +298,7 @@ class CorridaDescremacionViewSet(
         "producto_descremada": (None, "mandante__empresa_id"),
         "producto_crema": (None, "mandante__empresa_id"),
         "silo_entera": ("sucursal_id", "sucursal__empresa_id"),
+        "analisis_entrada": ("silo__sucursal_id", "silo__sucursal__empresa_id"),
         "silo_descremada": ("sucursal_id", "sucursal__empresa_id"),
         "estanque_crema": ("sucursal_id", "sucursal__empresa_id"),
     }
@@ -232,13 +309,68 @@ class CorridaDescremacionViewSet(
         "iniciada_por", "finalizada_por",
     )
     serializer_class = CorridaDescremacionSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [OperaProcesoPorEtapa]
+    tipo_etapa_operacional = EtapaProceso.Tipo.DESCREMACION
     http_method_names = ["get", "post", "head", "options"]
 
     @staticmethod
     def _error(error, codigo=status.HTTP_400_BAD_REQUEST):
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
         return Response(detalle, status=codigo)
+
+    @action(detail=False, methods=["post"], url_path="crear-guiada")
+    def crear_guiada(self, request):
+        from maestros.models import Equipo, Producto, Silo
+        from recepcion.models import AnalisisSilo
+
+        entrada = CrearDescremacionGuiadaSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        silos = filtrar_por_scope(
+            Silo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        equipos = filtrar_por_scope(
+            Equipo.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        productos = filtrar_por_scope(
+            Producto.objects.all(), request.user,
+            campo_sucursal=None, campo_empresa="mandante__empresa_id",
+        )
+        analisis = filtrar_por_scope(
+            AnalisisSilo.objects.all(), request.user,
+            campo_sucursal="silo__sucursal_id",
+            campo_empresa="silo__sucursal__empresa_id",
+        )
+        ids_validos = (
+            silos.filter(pk=datos["silo_entera"]).exists()
+            and silos.filter(pk=datos["silo_descremada"]).exists()
+            and silos.filter(pk=datos["estanque_crema"]).exists()
+            and equipos.filter(pk=datos["equipo"]).exists()
+            and productos.filter(pk=datos["producto_descremada"]).exists()
+            and productos.filter(pk=datos["producto_crema"]).exists()
+            and analisis.filter(pk=datos["analisis_entrada"]).exists()
+        )
+        if not ids_validos:
+            return Response(
+                {"error": "Alguna seleccion no pertenece a tu alcance."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            corrida = crear_descremacion_guiada(
+                codigo=datos["codigo"], etapa_id=datos["etapa"],
+                equipo_id=datos["equipo"], silo_entera_id=datos["silo_entera"],
+                analisis_entrada_id=datos["analisis_entrada"],
+                litros_entrada=datos["litros_entrada"],
+                silo_descremada_id=datos["silo_descremada"],
+                estanque_crema_id=datos["estanque_crema"],
+                producto_descremada_id=datos["producto_descremada"],
+                producto_crema_id=datos["producto_crema"], usuario=request.user,
+            )
+        except DjangoValidationError as error:
+            return self._error(error)
+        return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
     def iniciar(self, request, pk=None):
@@ -282,8 +414,14 @@ class CorridaMantequillaViewSet(
         "iniciada_por", "finalizada_por",
     )
     serializer_class = CorridaMantequillaSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [OperaProcesoPorEtapa]
+    tipo_etapa_operacional = EtapaProceso.Tipo.MANTEQUILLA
     http_method_names = ["get", "post", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed(
+            "POST", detail="Usa crear-guiada para registrar una corrida de mantequilla."
+        )
 
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):
@@ -313,6 +451,14 @@ class CorridaMantequillaViewSet(
             Equipo.objects.filter(activo=True, tipo__in=[Equipo.Tipo.LINEA, Equipo.Tipo.OTRO]),
             request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
+        ocupaciones = {
+            ejecucion.equipo_id: ejecucion.codigo
+            for ejecucion in EjecucionProceso.objects.filter(
+                sucursal_id__in={equipo.sucursal_id for equipo in equipos},
+                estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+                equipo_id__isnull=False,
+            ).only("equipo_id", "codigo")
+        }
         return Response({
             "ordenes": [{"id": item.pk, "codigo": item.codigo, "producto": item.producto.nombre} for item in ordenes],
             "cremas": [
@@ -324,7 +470,15 @@ class CorridaMantequillaViewSet(
                 {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre}
                 for item in lotes if "suero" in item.producto.nombre.lower()
             ],
-            "equipos": [{"id": item.pk, "nombre": item.nombre, "tipo": item.tipo} for item in equipos],
+            "equipos": [
+                {
+                    "id": item.pk,
+                    "nombre": item.nombre,
+                    "tipo": item.tipo,
+                    "ocupado_por": ocupaciones.get(item.pk),
+                }
+                for item in equipos
+            ],
         })
 
     @action(detail=False, methods=["post"], url_path="crear-guiada")
@@ -384,13 +538,64 @@ class CorridaMantequillaViewSet(
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(corrida).data)
 
+
+class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
+    queryset = CorridaSecado.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
+        "finalizada_por",
+    )
+    serializer_class = CorridaSecadoSerializer
+    permission_classes = [OperaProcesoPorEtapa]
+    tipo_etapa_operacional = EtapaProceso.Tipo.SECADO
+    http_method_names = ["get", "post", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed(
+            "POST",
+            detail="La corrida de Secado nace al abrir el lote desde su vale.",
+        )
+
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        entrada = CierreSecadoSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        try:
+            corrida = cerrar_secado(
+                corrida_id=self.get_object().pk,
+                usuario=request.user,
+                **entrada.validated_data,
+            )
+        except DjangoValidationError as error:
+            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(corrida).data)
+
+
 class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
+    modelo_operacional = EjecucionProceso
     tenant_relation_fields = {
         "equipo": ("sucursal_id", "sucursal__empresa_id"),
     }
     serializer_class = EjecucionProcesoSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [OperaProcesoPorEtapa]
     http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        tipo = EtapaProceso.objects.filter(
+            pk=request.data.get("etapa")
+        ).values_list("tipo", flat=True).first()
+        if tipo != EtapaProceso.Tipo.DESCREMACION:
+            raise MethodNotAllowed(
+                "POST",
+                detail=(
+                    "La ejecucion debe crearse desde la accion especializada "
+                    "del proceso. El alta generica solo conserva compatibilidad "
+                    "temporal con Descremacion."
+                ),
+            )
+        return super().create(request, *args, **kwargs)
 
     def get_queryset(self):
         queryset = EjecucionProceso.objects.select_related(
@@ -446,6 +651,7 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                 "estado_etiqueta": ejecucion.get_estado_display(),
                 "etapa_nombre": ejecucion.etapa.nombre,
                 "etapa_tipo": ejecucion.etapa.tipo,
+                "equipo_id": ejecucion.equipo_id,
                 "equipo_nombre": ejecucion.equipo.nombre if ejecucion.equipo else None,
                 "acciones_permitidas": sorted(
                     EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set())
@@ -482,6 +688,66 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             )
         return Response(self.get_serializer(ejecucion).data)
 
+    @action(detail=True, methods=["post"], url_path="incorporar-rework")
+    def incorporar_rework(self, request, pk=None):
+        ejecucion = self.get_object()
+        entrada = IncorporarReworkSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        from produccion.models import Lote
+
+        lotes = filtrar_por_scope(
+            Lote.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        try:
+            lote = lotes.get(pk=datos["lote"])
+            creada = crear_entrada_proceso(datos={
+                "ejecucion": ejecucion,
+                "lote": lote,
+                "tipo": EntradaProceso.Tipo.REPROCESO,
+                "cantidad": datos["cantidad"],
+                "unidad": "kg",
+                "motivo": datos["motivo"],
+            })
+        except Lote.DoesNotExist:
+            return Response(
+                {"lote": "El lote indicado no existe."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except DjangoValidationError as error:
+            detalle = (
+                error.message_dict
+                if hasattr(error, "message_dict")
+                else {"error": error.messages[0]}
+            )
+            return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            EntradaProcesoSerializer(creada).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="registrar-salida")
+    def registrar_salida(self, request, pk=None):
+        ejecucion = self.get_object()
+        entrada = SalidaProcesoSerializer(data={
+            **request.data, "ejecucion": ejecucion.pk,
+        })
+        for nombre, campo_sucursal, campo_empresa in (
+            ("ejecucion", "sucursal_id", "sucursal__empresa_id"),
+            ("lote", "sucursal_id", "sucursal__empresa_id"),
+            ("silo", "sucursal_id", "sucursal__empresa_id"),
+        ):
+            campo = entrada.fields.get(nombre)
+            if campo is not None and getattr(campo, "queryset", None) is not None:
+                campo.queryset = filtrar_por_scope(
+                    campo.queryset, request.user,
+                    campo_sucursal=campo_sucursal, campo_empresa=campo_empresa,
+                )
+        entrada.is_valid(raise_exception=True)
+        entrada.save()
+        return Response(entrada.data, status=status.HTTP_201_CREATED)
+
 
 class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "ejecucion__sucursal_id"
@@ -489,6 +755,7 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
     tenant_relation_fields = {
         "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
         "lote": ("sucursal_id", "sucursal__empresa_id"),
+        "silo": ("sucursal_id", "sucursal__empresa_id"),
         "salida_origen": (
             "ejecucion__sucursal_id", "ejecucion__sucursal__empresa_id"
         ),
@@ -497,7 +764,7 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
         "ejecucion", "lote__producto", "silo", "salida_origen__ejecucion"
     )
     serializer_class = EntradaProcesoSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [OperaProcesoPorEtapa]
     http_method_names = ["get", "post", "head", "options"]
 
     @action(detail=False, methods=["get"], url_path="opciones-rework")
@@ -547,10 +814,11 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
     tenant_relation_fields = {
         "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
         "lote": ("sucursal_id", "sucursal__empresa_id"),
+        "silo": ("sucursal_id", "sucursal__empresa_id"),
     }
     queryset = SalidaProceso.objects.select_related("ejecucion", "lote__producto")
     serializer_class = SalidaProcesoSerializer
-    permission_classes = [EscribeProduccion]
+    permission_classes = [OperaProcesoPorEtapa]
     http_method_names = ["get", "post", "head", "options"]
 
     @action(detail=False, methods=["get"], url_path="disponibles")
@@ -632,7 +900,7 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
             ejecucion.equipo_id: ejecucion.codigo
             for ejecucion in EjecucionProceso.objects.filter(
                 sucursal_id__in=sucursales_ids,
-                estado=EjecucionProceso.Estado.EJECUCION,
+                estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
                 equipo_id__isnull=False,
             ).only("equipo_id", "codigo")
         }

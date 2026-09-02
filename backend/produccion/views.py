@@ -433,6 +433,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         """Una sola carga liviana para abrir el asistente de Producción."""
         from inventario.models import CicloCIP
         from procesos.models import EjecucionProceso
+        from procesos.servicios import ESTADOS_QUE_OCUPAN_EQUIPO
 
         cip_en_curso = CicloCIP.objects.filter(
             equipo_id=OuterRef("pk"), estado=CicloCIP.Estado.EN_CURSO,
@@ -444,7 +445,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         )
         ocupada = EjecucionProceso.objects.filter(
             equipo_id=OuterRef("pk"),
-            estado=EjecucionProceso.Estado.EJECUCION,
+            estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
         )
         equipos = filtrar_por_scope(
             Equipo.objects.filter(activo=True).annotate(
@@ -513,6 +514,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             ],
         })
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         """
         Además de guardar, descuenta de bodega si el lote pasó a producido.
@@ -536,7 +538,15 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
         # El mismo cambio de estado completa la salida de la ejecución. Así
         # Procesos ve la corrida cerrada con su lote, sin una carga manual.
-        servicios_produccion.registrar_produccion(lote=lote)
+        try:
+            servicios_produccion.registrar_produccion(lote=lote)
+        except DjangoValidationError as error:
+            detalle = (
+                error.message_dict
+                if hasattr(error, "message_dict")
+                else {"detail": error.messages}
+            )
+            raise serializers.ValidationError(detalle) from error
 
         if lote.orden_id and lote.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
             lote.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD

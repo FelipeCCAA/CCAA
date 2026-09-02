@@ -1564,12 +1564,13 @@ def equipo_produciendo(equipo):
     se cumple o no según cuál de las dos acciones llegue primero.
     """
     from procesos.models import EjecucionProceso
+    from procesos.servicios import ESTADOS_QUE_OCUPAN_EQUIPO
 
     if equipo is None:
         return None
 
     corriendo = EjecucionProceso.objects.filter(
-        equipo=equipo, estado=EjecucionProceso.Estado.EJECUCION
+        equipo=equipo, estado__in=ESTADOS_QUE_OCUPAN_EQUIPO
     ).first()
 
     if corriendo is None:

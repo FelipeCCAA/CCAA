@@ -19,16 +19,17 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
 from estandarizacion import servicios as estandarizacion
 from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Mandante, Producto, Silo
-from procesos.models import EjecucionProceso, EtapaProceso, Proceso
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso, RutaProducto
 from procesos.servicios import genealogia_lote
 from produccion import servicios as produccion
-from recepcion.models import MovimientoSilo
+from recepcion.models import AnalisisSilo, ControlInhibidores, MovimientoSilo
 from usuarios.models import Empresa, Sucursal
 
 
@@ -74,8 +75,25 @@ class BaseCadena(TestCase):
             proceso=proceso, codigo="sec", nombre="Secado",
             tipo=EtapaProceso.Tipo.SECADO, orden=2,
         )
+        self.ruta = RutaProducto.objects.create(
+            sucursal=self.planta, producto=self.producto, proceso=proceso,
+        )
 
         self.operador = User.objects.create_user(username="op", password="x")
+        for silo in (self.entera, self.tanque):
+            AnalisisSilo.objects.create(
+                silo=silo,
+                tomado_en=timezone.now(),
+                grasa=Decimal("3.60"),
+                sng=Decimal("8.60"),
+                inhibidores_resultado=ControlInhibidores.Resultado.NEGATIVO,
+                metodo=ControlInhibidores.Metodo.DELVO_SP,
+                hora_lectura=timezone.localtime().time(),
+                analista=self.operador,
+                visualizado_por=self.operador,
+                visualizado_en=timezone.now(),
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+            )
 
     def _silo(self, codigo, tipo):
         return Silo.objects.create(
@@ -142,6 +160,19 @@ class ElValeEsUnaEjecucionTests(BaseCadena):
         registrar_estandarizacion(vale=vale)
 
         self.assertEqual(EjecucionProceso.objects.filter(vale=vale).count(), 1)
+
+    def test_sin_ruta_la_transferencia_completa_se_revierte(self):
+        vale = self._vale()
+        movimientos_antes = MovimientoSilo.objects.count()
+        self.ruta.delete()
+
+        with self.assertRaisesMessage(ValidationError, "no tiene una ruta activa"):
+            estandarizacion.transferir(vale_id=vale.pk, usuario=self.operador)
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.estado, ValeEstandarizacion.Estado.CALCULADO)
+        self.assertEqual(MovimientoSilo.objects.count(), movimientos_antes)
+        self.assertFalse(EjecucionProceso.objects.filter(vale=vale).exists())
 
     def test_el_rc_conforme_cierra_la_etapa(self):
         vale = self._vale()

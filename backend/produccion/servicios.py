@@ -92,9 +92,12 @@ def abrir_lote_desde_vale(
     if equipo is not None:
         from inventario.servicios import advertencia_aseo_equipo, motivo_equipo_no_habilitado
         from maestros.models import Equipo
-        from procesos.models import EjecucionProceso
+        from procesos.servicios import adquirir_equipo
 
-        equipo = Equipo.objects.select_for_update().get(pk=equipo.pk)
+        equipo = adquirir_equipo(
+            equipo_id=equipo.pk,
+            ejecucion_id=getattr(lote_borrador, "ejecucion_id", None),
+        )
         if not equipo.activo:
             raise ValidationError({"equipo": f"{equipo.nombre} está inactivo."})
         impedimento = motivo_equipo_no_habilitado(equipo)
@@ -105,15 +108,6 @@ def abrir_lote_desde_vale(
             observacion = str(extra.get("observacion", "")).strip()
             marca = f"[ADVERTENCIA ASEO AL INICIO] {advertencia_aseo}"
             extra["observacion"] = "\n".join(parte for parte in (observacion, marca) if parte)
-        ocupada = EjecucionProceso.objects.filter(
-            equipo=equipo,
-            estado=EjecucionProceso.Estado.EJECUCION,
-        ).first()
-        ejecucion_del_borrador = getattr(lote_borrador, "ejecucion_id", None)
-        if ocupada and ocupada.pk != ejecucion_del_borrador:
-            raise ValidationError({
-                "equipo": f"{equipo.nombre} está ocupado por {ocupada.codigo}."
-            })
         extra["equipo"] = equipo
 
     if lote_borrador is None:
@@ -175,13 +169,13 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     corrida saca de ese silo y devuelve un lote. Con las dos, `genealogia_lote`
     puede recorrer de un saco hacia atrás hasta los silos de origen.
 
-    Si el maestro no declara la etapa que corresponde a la máquina, no se registra
-    nada y la producción sigue: abrir un lote es una operación de planta y no
-    puede quedarse detenida porque falte un maestro.
+    La ruta es obligatoria para operaciones nuevas. Una configuración
+    incompleta se informa y la transacción revierte también lote y movimiento:
+    nunca se permite producción física sin su ejecución trazable.
     """
     from maestros.models import Equipo
     from procesos.models import EjecucionProceso, EntradaProceso, EtapaProceso
-    from procesos.servicios import etapa_para_producto
+    from procesos.servicios import exigir_etapa_para_producto
 
     tipo_etapa = {
         Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
@@ -190,14 +184,11 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
         Equipo.Tipo.LINEA: EtapaProceso.Tipo.ENVASADO,
     }.get(lote.equipo.tipo if lote.equipo else None, EtapaProceso.Tipo.SECADO)
 
-    etapa = etapa_para_producto(
+    etapa = exigir_etapa_para_producto(
         producto=lote.producto,
         sucursal=lote.sucursal,
         tipo=tipo_etapa,
     )
-
-    if etapa is None:
-        return None
 
     ejecucion = EjecucionProceso.objects.create(
         # El código de lote no es globalmente único. La identidad de la base
@@ -221,6 +212,14 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
         cantidad=Decimal(str(litros)),
         unidad="L",
     )
+
+    if tipo_etapa == EtapaProceso.Tipo.SECADO:
+        from procesos.models import CorridaSecado
+
+        CorridaSecado.objects.get_or_create(
+            ejecucion=ejecucion,
+            defaults={"orden": lote.orden, "lote": lote},
+        )
 
     # **Sin salida todavía.** Los kilos no se saben al abrir el lote: se
     # declaran al terminar la corrida, que es la misma razón por la que
@@ -252,7 +251,17 @@ def registrar_produccion(*, lote):
     ejecucion = lote.ejecucion
 
     if ejecucion is None:
-        return None
+        raise ValidationError({
+            "ruta_producto": (
+                "El lote no tiene una ejecución productiva trazable. "
+                "Revisa la ruta configurada antes de declararlo producido."
+            )
+        })
+
+    corrida_secado = getattr(ejecucion, "corrida_secado", None)
+    if corrida_secado is not None and corrida_secado.kg_polvo is None:
+        corrida_secado.kg_polvo = Decimal(str(lote.kg_producidos))
+        corrida_secado.save(update_fields=["kg_polvo"])
 
     # La salida va en kilos y la entrada en litros: el balance de masa no las
     # compara, y hace bien — secar no es trasvasar, y sin un factor de
@@ -308,6 +317,17 @@ def registrar_envasado(
     ).exists():
         raise ValidationError(
             "El flujo del lote no tiene Envasado como destino; revisa su etapa productiva."
+        )
+    from calidad.models import LiberacionProceso
+    pendientes_mantequilla = salidas_productivas.filter(
+        ejecucion__etapa__tipo="mantequilla",
+        ejecucion__etapa__requiere_calidad=True,
+    ).exclude(
+        liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
+    )
+    if pendientes_mantequilla.exists():
+        raise ValidationError(
+            "La mantequilla a granel está pendiente de aprobación de Calidad."
         )
     impedimento = motivo_equipo_no_habilitado(equipo)
     if impedimento:

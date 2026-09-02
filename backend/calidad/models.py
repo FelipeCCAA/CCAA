@@ -236,7 +236,7 @@ class Liberacion(models.Model):
 
 
 class LiberacionProceso(models.Model):
-    """Decisión de Calidad sobre una salida intermedia almacenada en silo."""
+    """Decisión de Calidad sobre una salida intermedia, en silo o por lote."""
 
     class Estado(models.TextChoices):
         PENDIENTE = "pendiente", "Pendiente"
@@ -249,6 +249,10 @@ class LiberacionProceso(models.Model):
     )
     analisis_silo = models.ForeignKey(
         "recepcion.AnalisisSilo", on_delete=models.PROTECT,
+        related_name="liberaciones_proceso", null=True, blank=True,
+    )
+    analisis_lote = models.ForeignKey(
+        "produccion.Analisis", on_delete=models.PROTECT,
         related_name="liberaciones_proceso", null=True, blank=True,
     )
     estado = models.CharField(
@@ -269,6 +273,21 @@ class LiberacionProceso(models.Model):
 
     def __str__(self):
         return f"{self.salida.ejecucion.codigo} · {self.get_estado_display()}"
+
+    def clean(self):
+        if self.analisis_silo_id and self.analisis_lote_id:
+            raise ValidationError(
+                "Selecciona un análisis de silo o de lote, no ambos."
+            )
+        if self.estado == self.Estado.LIBERADO:
+            if self.salida.silo_id and not self.analisis_silo_id:
+                raise ValidationError({
+                    "analisis_silo": "La salida en silo requiere su análisis confirmado."
+                })
+            if not self.salida.silo_id and not self.analisis_lote_id:
+                raise ValidationError({
+                    "analisis_lote": "La salida por lote requiere su análisis de calidad."
+                })
 
 
 class RegistroEquipo(models.Model):

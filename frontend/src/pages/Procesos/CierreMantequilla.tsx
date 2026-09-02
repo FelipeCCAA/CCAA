@@ -24,7 +24,9 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
   const diferencia = Number(corrida.kg_crema) - total;
 
   const guardar = async (evento: React.FormEvent) => {
-    evento.preventDefault(); setError("");
+    evento.preventDefault();
+    if (ocupado) return;
+    setError("");
     if (total > Number(corrida.kg_crema)) { setError("Mantequilla, suero y merma superan la crema utilizada."); return; }
     setOcupado(true);
     try {

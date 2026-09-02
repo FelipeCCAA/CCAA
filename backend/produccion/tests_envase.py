@@ -7,7 +7,11 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
-from maestros.models import Equipo, Mandante, Producto, Receta, RecetaComponente
+from calidad.models import LiberacionProceso
+from maestros.models import (
+    Equipo, Especificacion, Mandante, Producto, Receta, RecetaComponente,
+)
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from inventario.models import (
     Bodega, Existencia, ExistenciaProductoTerminado, Insumo, LoteInventario,
     MovimientoInventario, MovimientoProductoTerminado, Ubicacion,
@@ -15,7 +19,7 @@ from inventario.models import (
 from inventario.servicios import consumir_receta_produccion, registrar_entrada
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
-from .models import Lote, PalletProducto, RegistroEnvase
+from .models import Analisis, Lote, PalletProducto, RegistroEnvase
 from .servicios import registrar_envasado
 from .serializers import RegistroEnvaseSerializer
 
@@ -113,6 +117,46 @@ class EnvasePalletTests(TestCase):
             ])
 
         self.assertEqual(RegistroEnvase.objects.count(), 0)
+
+    def test_mantequilla_exige_liberacion_intermedia_antes_de_envasar(self):
+        proceso = Proceso.objects.create(codigo="ruta-mant-env", nombre="Mantequilla")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="batido", nombre="Batido",
+            tipo=EtapaProceso.Tipo.MANTEQUILLA, orden=1, requiere_calidad=True,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-MANT-ENV", etapa=etapa, sucursal=self.planta,
+            estado=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=ejecucion, lote=self.lote,
+            naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+            clasificacion=SalidaProceso.Clasificacion.GRANEL,
+            destino=SalidaProceso.Destino.ENVASADO,
+            cantidad=Decimal("1000"), unidad="kg",
+        )
+        decision = LiberacionProceso.objects.create(salida=salida)
+
+        with self.assertRaisesMessage(ValidationError, "pendiente de aprobación"):
+            self.registrar()
+
+        especificacion = Especificacion.objects.create(
+            producto=self.producto, version=1, vigente_desde=date(2026, 1, 1),
+            rangos={"humedad": {"min": 0, "max": 5, "obligatorio": True}},
+        )
+        analisis = Analisis.objects.create(
+            lote=self.lote, fecha=date(2026, 8, 17),
+            valores={"humedad": 3}, especificacion=especificacion,
+        )
+        decision.estado = LiberacionProceso.Estado.LIBERADO
+        decision.analisis_lote = analisis
+        decision.decidida_por = self.usuario
+        decision.decidida_en = timezone.now()
+        decision.full_clean()
+        decision.save()
+
+        registro = self.registrar()
+        self.assertEqual(registro.lote, self.lote)
 
     def test_simulacion_pallet_25kg_consume_envases_y_respeta_500kg(self):
         """20 sacos + 1 pallet físico producen exactamente un pallet de 500 kg."""

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, Beaker, Factory, X } from "lucide-react";
-import axios from "axios";
 
+import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import {
   confirmarBorradorLote,
   crearBorradorLote,
@@ -14,6 +14,9 @@ import {
   type EquipoInicioProduccion,
   type ValeDisponible,
 } from "../../services/produccion.service";
+import { obtenerEjecucionesOperativas, type EjecucionOperativa } from "../../services/procesos.service";
+import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
+import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { useBorrador } from "../../hooks/useBorrador";
 
 
@@ -68,6 +71,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   const [vale, setVale] = useState("");
   const [litros, setLitros] = useState("");
   const [equipos, setEquipos] = useState<EquipoInicioProduccion[]>([]);
+  const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [ordenes, setOrdenes] = useState<Awaited<ReturnType<typeof obtenerOpcionesInicioProduccion>>["ordenes"]>([]);
 
   const [guardando, setGuardando] = useState(false);
@@ -137,6 +141,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
         setEquipos([]);
         setOrdenes([]);
       });
+    obtenerEjecucionesOperativas().then(setEjecuciones).catch(() => setEjecuciones([]));
   }, []);
 
   const sugerir = useCallback(async () => {
@@ -163,6 +168,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
   const enviar = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (guardando) return;
 
     setError("");
     setGuardando(true);
@@ -179,28 +185,15 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
     } catch (error) {
 
-      if (axios.isAxiosError(error) && error.response) {
-
-        const datos = error.response.data;
-
-        // DRF devuelve {campo: [mensajes]}. Se muestran todos, porque el
-        // más común aquí es el de la clave natural duplicada.
-        const mensajes =
-          typeof datos === "object" && datos !== null
-            ? Object.entries(datos)
-                .map(([campo, errores]) =>
-                  campo === "non_field_errors" || campo === "detail"
-                    ? String(errores)
-                    : `${campo}: ${errores}`,
-                )
-                .join(" · ")
-            : "No se pudo abrir el proceso.";
-
-        setError(mensajes);
-
-      } else {
-        setError("No se pudo conectar con el servidor.");
+      const mensaje = mensajeErrorProceso(error, "No se pudo abrir el proceso o conectar con el servidor.");
+      if (esErrorDeEquipo(error)) {
+        try {
+          setEjecuciones(await obtenerEjecucionesOperativas());
+        } catch {
+          // Se conserva el rechazo original; la disponibilidad podrá actualizarse al reabrir.
+        }
       }
+      setError(mensaje);
 
       setGuardando(false);
 
@@ -237,7 +230,11 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   const equiposCompatibles = equipos.filter(
     (item) => item.activo && (!ruta || ruta.tipos.includes(item.tipo)),
   );
+  const ocupaciones = ocupacionesPorEquipo(ejecuciones);
   const equipoSeleccionado = equipos.find((item) => item.id === Number(equipo));
+  const ocupacionSeleccionada = equipoSeleccionado
+    ? ocupaciones.get(equipoSeleccionado.id)
+    : undefined;
   const ordenesCompatibles = ordenes.filter((item) => item.producto === valeSeleccionado?.producto);
   const advertenciaAseo = equipoSeleccionado?.advertencia_aseo ?? "";
 
@@ -377,11 +374,12 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
               >
                 <option value="">Selecciona una máquina…</option>
                 {equiposCompatibles.map((item) => (
-                  <option key={item.id} value={item.id} disabled={!item.habilitado}>
-                    {item.nombre} · {item.tipo_etiqueta}{item.motivo_no_habilitado ? ` · ${item.motivo_no_habilitado}` : ""}
+                  <option key={item.id} value={item.id} disabled={!item.habilitado || ocupaciones.has(item.id)}>
+                    {item.nombre} · {item.tipo_etiqueta}{ocupaciones.has(item.id) ? ` · ${ocupaciones.get(item.id)?.disponibilidad} por ${ocupaciones.get(item.id)?.ejecucion}` : item.motivo_no_habilitado ? ` · ${item.motivo_no_habilitado}` : " · disponible"}
                   </option>
                 ))}
               </select>
+              {equipoSeleccionado && <div className="mt-2"><EstadoEquipo estado={ocupacionSeleccionada?.estado} ejecucion={ocupacionSeleccionada?.ejecucion} /></div>}
               {valeSeleccionado && equiposCompatibles.length === 0 && <p className="mt-1.5 text-xs text-amber-700">No hay una máquina activa configurada para esta familia. Revísala en Maestros.</p>}
               {advertenciaAseo && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><strong>Advertencia de aseo (no bloquea):</strong> {advertenciaAseo}</div>}
 
@@ -562,7 +560,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
             <button
               type="submit"
-              disabled={guardando}
+              disabled={guardando || Boolean(ocupacionSeleccionada) || !equipoSeleccionado?.habilitado}
               className="rounded-xl bg-green-700 px-6 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-60"
             >
 

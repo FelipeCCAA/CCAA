@@ -37,6 +37,7 @@ export default function CierreCondensacion({ corrida, onCerrar, onCerrada }: {
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
+    if (ocupado) return;
     setError("");
     if (Number(datos.litros_precondensado) > Number(corrida.litros_entrada)) {
       setError("La salida no puede superar los litros de entrada.");

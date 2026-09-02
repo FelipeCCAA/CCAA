@@ -12,22 +12,13 @@ import {
 import { decidirInspeccion, obtenerInspecciones } from "../../services/inventario.service";
 import { obtenerAseos } from "../../services/aseos.service";
 import { obtenerSesion } from "../../services/sesion";
+import { mensajeErrorProceso } from "../../services/errores-proceso";
 import { Aviso, Estado, Indicador, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import { useCarga } from "../../components/seccion/utilidades";
+import ResultadoProcesoCalidadCard from "./ResultadoProcesoCalidadCard";
 
 const INSPECCIONES_CERRADAS = ["aprobada", "observada", "rechazada", "bloqueada"];
 const LIBERACIONES_CERRADAS = ["liberado", "liberado_concesion", "rechazado"];
-const ETIQUETAS_PARAMETRO: Record<string, string> = {
-  mg: "Grasa", sng: "SNG", st: "Sólidos totales", acidez: "Acidez",
-  ph: "pH", temperatura: "Temperatura", proteina: "Proteína", pesoEsp: "Densidad",
-};
-
-function mensajeError(error: unknown, respaldo: string) {
-  const respuesta = (error as { response?: { data?: { detail?: string; analisis_id?: string } } })
-    ?.response?.data;
-  return respuesta?.detail || respuesta?.analisis_id || respaldo;
-}
-
 function CentroCalidad() {
   // Tres lecturas independientes y acotadas: el centro carga únicamente lo
   // que Calidad necesita, no todas las tablas de Inventario ni el histórico
@@ -40,6 +31,13 @@ function CentroCalidad() {
     || sesion?.usuario.perfil?.area === "calidad";
 
   const [analisisElegido, setAnalisisElegido] = useState<Record<number, string>>({});
+  const [observacionesProceso, setObservacionesProceso] = useState<Record<number, string>>({});
+  const [motivosProceso, setMotivosProceso] = useState<Record<number, string>>({});
+  const [rechazoAbierto, setRechazoAbierto] = useState<number | null>(null);
+  const [accionandoProceso, setAccionandoProceso] = useState<{
+    id: number;
+    tipo: "liberar" | "rechazar";
+  } | null>(null);
   const [errorProceso, setErrorProceso] = useState("");
   const [errorRework, setErrorRework] = useState("");
   const [guardandoRework, setGuardandoRework] = useState(false);
@@ -55,6 +53,10 @@ function CentroCalidad() {
   const lotes = (expedientes.datos?.resultados ?? []) as FilaExpediente[];
   const resultadosProceso = expedientes.datos?.procesos ?? [];
   const procesosPendientes = resultadosProceso.filter((item) => item.estado === "pendiente");
+  const intermediosEnSilo = procesosPendientes.filter((item) => item.analisis_tipo === "silo");
+  const mantequillas = resultadosProceso.filter((item) => item.analisis_tipo === "lote");
+  const mantequillasPendientes = mantequillas.filter((item) => item.estado === "pendiente");
+  const mantequillasDecididas = mantequillas.filter((item) => item.estado !== "pendiente");
   const porRevisar = lotes.filter((fila) => !LIBERACIONES_CERRADAS.includes(fila.liberacion?.estado ?? "pendiente"));
   const liberados = lotes.filter((fila) => fila.liberacion?.estado === "liberado" || fila.liberacion?.estado === "liberado_concesion");
   const rechazados = lotes.filter((fila) => fila.liberacion?.estado === "rechazado");
@@ -68,27 +70,35 @@ function CentroCalidad() {
   };
 
   const liberarProceso = async (id: number) => {
+    if (accionandoProceso !== null) return;
+    const item = resultadosProceso.find((resultado) => resultado.id === id);
     const analisisId = Number(analisisElegido[id]);
-    if (!analisisId) return;
+    if (!item || !analisisId) return;
     try {
       setErrorProceso("");
-      await liberarResultadoProceso(id, analisisId);
+      setAccionandoProceso({ id, tipo: "liberar" });
+      const observacion = observacionesProceso[id]?.trim()
+        || (item.analisis_tipo === "lote" ? "Resultado conforme" : "");
+      await liberarResultadoProceso(id, item.analisis_tipo, analisisId, observacion);
       await expedientes.recargar();
     } catch (error) {
-      setErrorProceso(mensajeError(error, "No se pudo liberar el resultado intermedio."));
-    }
+      setErrorProceso(mensajeErrorProceso(error, "No se pudo liberar el resultado intermedio."));
+    } finally { setAccionandoProceso(null); }
   };
 
   const rechazarProceso = async (id: number) => {
-    const motivo = window.prompt("Motivo del rechazo:")?.trim();
+    if (accionandoProceso !== null) return;
+    const motivo = motivosProceso[id]?.trim();
     if (!motivo) return;
     try {
       setErrorProceso("");
+      setAccionandoProceso({ id, tipo: "rechazar" });
       await rechazarResultadoProceso(id, motivo);
       await expedientes.recargar();
-    } catch {
-      setErrorProceso("No se pudo rechazar el resultado intermedio.");
-    }
+      setRechazoAbierto(null);
+    } catch (error) {
+      setErrorProceso(mensajeErrorProceso(error, "No se pudo rechazar el resultado intermedio."));
+    } finally { setAccionandoProceso(null); }
   };
 
   const abrirRework = (
@@ -123,7 +133,7 @@ function CentroCalidad() {
       setReworkEditando(null);
       await expedientes.recargar();
     } catch (error) {
-      setErrorRework(mensajeError(error, "No se pudo registrar la decisión de rework."));
+      setErrorRework(mensajeErrorProceso(error, "No se pudo registrar la decisión de rework."));
     } finally { setGuardandoRework(false); }
   };
 
@@ -142,76 +152,82 @@ function CentroCalidad() {
         <Indicador etiqueta="Aseos por verificar" valor={aseosPendientes.length} Icono={Sparkles} tono={aseosPendientes.length ? "alerta" : "normal"} />
       </section>
 
-      <Tarjeta titulo="Resultados intermedios de proceso" descripcion="Precondensados y condensados quedan bloqueados en su silo hasta que Calidad seleccione un análisis confirmado y tome una decisión.">
-        {errorProceso && <Aviso>{errorProceso}</Aviso>}
-        {expedientes.error ? <Aviso>No se pudo cargar la cola de procesos.</Aviso> : procesosPendientes.length === 0 ? <Vacio>No hay resultados intermedios pendientes.</Vacio> : (
+      {errorProceso && <Aviso>{errorProceso}</Aviso>}
+
+      <Tarjeta titulo="Mantequilla a granel pendiente" descripcion="Calidad revisa el análisis del lote de mantequilla. No se solicita silo y la liberación habilita su paso a Envasado.">
+        {expedientes.error ? <Aviso>No se pudo cargar la bandeja de mantequilla.</Aviso> : mantequillasPendientes.length === 0 ? <Vacio>No hay mantequilla a granel esperando aprobación.</Vacio> : (
           <div className="grid gap-3 lg:grid-cols-2">
-            {procesosPendientes.map((item) => {
-              const seleccionado = item.analisis_disponibles.find(
-                (analisis) => analisis.id === Number(analisisElegido[item.id]),
-              );
-              const puedeLiberarAnalisis = seleccionado
-                && (seleccionado.resultado === null || seleccionado.resultado === "conforme");
-              return (
-              <div key={item.id} className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-800">{item.tipo} · {item.corrida_codigo}</p>
-                    <p className="text-sm text-slate-600">{item.producto_nombre} · {item.cantidad} {item.unidad}</p>
-                    <p className="text-xs text-slate-500">{item.equipo_nombre || "Sin equipo"} → {item.silo_destino_codigo}</p>
-                    <p className="mt-1 text-xs font-medium text-amber-800">{item.clasificacion} · destino: {item.destino}</p>
-                  </div>
-                  <Estado valor={item.estado} />
-                </div>
-                {item.especificacion ? (
-                  <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3">
-                    <p className="text-xs font-semibold text-emerald-800">Especificación vigente · v{item.especificacion.version}</p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {Object.entries(item.especificacion.rangos).map(([clave, rango]) => (
-                        <span key={clave} className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
-                          {ETIQUETAS_PARAMETRO[clave] ?? clave}: {rango.min ?? "—"} a {rango.max ?? "—"}{rango.obligatorio ? " · obligatorio" : ""}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : item.analisis_disponibles.some((analisis) => analisis.resultado === "sin_especificacion") ? (
-                  <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800">Falta una especificación vigente para este producto. No se puede liberar.</p>
-                ) : null}
-                {item.analisis_disponibles.length === 0 ? (
-                  <p className="mt-3 text-sm text-amber-800">Falta un análisis confirmado tomado después de finalizar la corrida.</p>
-                ) : (
-                  <select
-                    value={analisisElegido[item.id] ?? ""}
-                    onChange={(evento) => setAnalisisElegido((actual) => ({ ...actual, [item.id]: evento.target.value }))}
-                    className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                  >
-                    <option value="">Selecciona el análisis correspondiente…</option>
-                    {item.analisis_disponibles.map((analisis) => (
-                      <option key={analisis.id} value={analisis.id}>
-                        {new Date(analisis.tomado_en).toLocaleString("es-CL")} · grasa {analisis.grasa ?? "—"} · SNG {analisis.sng ?? "—"} · {analisis.resultado?.replaceAll("_", " ") ?? "control firmado"}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {seleccionado?.resultado === "sin_analisis" && (
-                  <p className="mt-2 text-sm text-red-700">Faltan parámetros obligatorios: {seleccionado.faltantes.map((clave) => ETIQUETAS_PARAMETRO[clave] ?? clave).join(", ")}.</p>
-                )}
-                {seleccionado?.resultado === "no_conforme" && (
-                  <div className="mt-2 text-sm text-red-700">
-                    {seleccionado.desviaciones.map((desvio) => (
-                      <p key={desvio.parametro}>{ETIQUETAS_PARAMETRO[desvio.parametro] ?? desvio.parametro}: {desvio.valor ?? "—"} fuera de {desvio.min ?? "—"} a {desvio.max ?? "—"}.</p>
-                    ))}
-                  </div>
-                )}
-                {puedeDecidir && (
-                  <div className="mt-3 flex gap-2">
-                    <button disabled={!puedeLiberarAnalisis} onClick={() => void liberarProceso(item.id)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">Liberar etapa</button>
-                    <button onClick={() => void rechazarProceso(item.id)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">Rechazar</button>
-                  </div>
-                )}
-              </div>
-              );
-            })}
+            {mantequillasPendientes.map((item) => (
+              <ResultadoProcesoCalidadCard
+                key={item.id}
+                item={item}
+                analisisId={analisisElegido[item.id] ?? ""}
+                observacion={observacionesProceso[item.id] ?? ""}
+                motivo={motivosProceso[item.id] ?? ""}
+                rechazando={rechazoAbierto === item.id}
+                accion={accionandoProceso?.id === item.id ? accionandoProceso.tipo : null}
+                puedeDecidir={puedeDecidir}
+                alElegirAnalisis={(valor) => setAnalisisElegido((actual) => ({ ...actual, [item.id]: valor }))}
+                alCambiarObservacion={(valor) => setObservacionesProceso((actual) => ({ ...actual, [item.id]: valor }))}
+                alCambiarMotivo={(valor) => setMotivosProceso((actual) => ({ ...actual, [item.id]: valor }))}
+                alAbrirRechazo={() => setRechazoAbierto(item.id)}
+                alCancelarRechazo={() => setRechazoAbierto(null)}
+                alLiberar={() => void liberarProceso(item.id)}
+                alRechazar={() => void rechazarProceso(item.id)}
+              />
+            ))}
+          </div>
+        )}
+        {mantequillasDecididas.length > 0 && (
+          <div className="mt-5 border-t border-slate-200 pt-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Decisiones recientes</p>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {mantequillasDecididas.slice(0, 8).map((item) => (
+                <ResultadoProcesoCalidadCard
+                  key={item.id}
+                  item={item}
+                  analisisId=""
+                  observacion=""
+                  motivo=""
+                  rechazando={false}
+                  accion={null}
+                  puedeDecidir={false}
+                  alElegirAnalisis={() => undefined}
+                  alCambiarObservacion={() => undefined}
+                  alCambiarMotivo={() => undefined}
+                  alAbrirRechazo={() => undefined}
+                  alCancelarRechazo={() => undefined}
+                  alLiberar={() => undefined}
+                  alRechazar={() => undefined}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </Tarjeta>
+
+      <Tarjeta titulo="Resultados intermedios en silo" descripcion="Precondensados y condensados utilizan exclusivamente análisis confirmados del silo de destino.">
+        {expedientes.error ? <Aviso>No se pudo cargar la cola de procesos.</Aviso> : intermediosEnSilo.length === 0 ? <Vacio>No hay resultados en silo pendientes.</Vacio> : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {intermediosEnSilo.map((item) => (
+              <ResultadoProcesoCalidadCard
+                key={item.id}
+                item={item}
+                analisisId={analisisElegido[item.id] ?? ""}
+                observacion=""
+                motivo={motivosProceso[item.id] ?? ""}
+                rechazando={rechazoAbierto === item.id}
+                accion={accionandoProceso?.id === item.id ? accionandoProceso.tipo : null}
+                puedeDecidir={puedeDecidir}
+                alElegirAnalisis={(valor) => setAnalisisElegido((actual) => ({ ...actual, [item.id]: valor }))}
+                alCambiarObservacion={() => undefined}
+                alCambiarMotivo={(valor) => setMotivosProceso((actual) => ({ ...actual, [item.id]: valor }))}
+                alAbrirRechazo={() => setRechazoAbierto(item.id)}
+                alCancelarRechazo={() => setRechazoAbierto(null)}
+                alLiberar={() => void liberarProceso(item.id)}
+                alRechazar={() => void rechazarProceso(item.id)}
+              />
+            ))}
           </div>
         )}
       </Tarjeta>

@@ -197,6 +197,96 @@ class CorridaCondensacion(models.Model):
         return f"Condensación {self.ejecucion.codigo}"
 
 
+class CorridaSecado(models.Model):
+    """Datos propios del secado; la secuencia y trazabilidad viven en Ejecucion."""
+
+    ejecucion = models.OneToOneField(
+        "procesos.EjecucionProceso", on_delete=models.PROTECT,
+        related_name="corrida_secado",
+    )
+    orden = models.ForeignKey(
+        "produccion.OrdenProduccion", on_delete=models.PROTECT,
+        related_name="corridas_secado", null=True, blank=True,
+    )
+    lote = models.OneToOneField(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="corrida_secado",
+    )
+    kg_alimentacion = models.DecimalField(
+        max_digits=14, decimal_places=3, null=True, blank=True,
+        help_text="Masa medida de precondensado alimentada a la torre.",
+    )
+    solidos_entrada_pct = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+    )
+    kg_polvo = models.DecimalField(
+        max_digits=14, decimal_places=3, null=True, blank=True,
+    )
+    kg_finos = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    kg_merma = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    controles = models.JSONField(default=dict, blank=True)
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    finalizada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="secados_finalizados", null=True, blank=True,
+    )
+    finalizada_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(kg_alimentacion__isnull=True)
+                | models.Q(kg_alimentacion__gt=0),
+                name="secado_alimentacion_positiva",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(solidos_entrada_pct__isnull=True)
+                | models.Q(solidos_entrada_pct__gt=0, solidos_entrada_pct__lte=100),
+                name="secado_solidos_entrada_validos",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kg_polvo__isnull=True) | models.Q(kg_polvo__gt=0),
+                name="secado_polvo_positivo",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kg_finos__gte=0, kg_merma__gte=0),
+                name="secado_finos_merma_no_negativos",
+            ),
+        ]
+
+    def clean(self):
+        if self.ejecucion_id and self.ejecucion.etapa.tipo != EtapaProceso.Tipo.SECADO:
+            raise ValidationError({"ejecucion": "La ejecución no corresponde a Secado."})
+        if self.lote_id and self.lote.ejecucion_id != self.ejecucion_id:
+            raise ValidationError({"lote": "El lote no pertenece a esta ejecución."})
+        if self.orden_id and self.lote_id and self.lote.orden_id != self.orden_id:
+            raise ValidationError({"orden": "La orden no corresponde al lote secado."})
+        if not isinstance(self.controles, dict):
+            raise ValidationError({"controles": "Debe ser un objeto de controles medidos."})
+        if self.kg_alimentacion is not None:
+            salidas = sum(
+                Decimal(str(valor or 0))
+                for valor in (self.kg_polvo, self.kg_finos, self.kg_merma)
+            )
+            if salidas > self.kg_alimentacion:
+                raise ValidationError(
+                    "Polvo, finos y merma no pueden superar la alimentación medida."
+                )
+
+    @property
+    def rendimiento_recuperacion_pct(self):
+        if not self.kg_alimentacion or not self.kg_polvo:
+            return None
+        recuperado = self.kg_polvo + self.kg_finos
+        return (recuperado * Decimal("100") / self.kg_alimentacion).quantize(
+            Decimal("0.01")
+        )
+
+    def __str__(self):
+        return f"Secado {self.ejecucion.codigo}"
+
+
 class CorridaDescremacion(models.Model):
     """Una pasada de descremadora: leche entera entra; descremada y crema salen."""
 
@@ -455,7 +545,17 @@ class EjecucionProceso(models.Model):
                 condition=models.Q(termino__isnull=True) | models.Q(inicio__isnull=True)
                 | models.Q(termino__gt=models.F("inicio")),
                 name="ejecucion_termino_posterior_inicio",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["equipo"],
+                condition=(
+                    models.Q(equipo__isnull=False)
+                    & models.Q(estado__in=[
+                        "preparacion", "ejecucion", "pausada", "bloqueada",
+                    ])
+                ),
+                name="ejecucion_equipo_ocupado_unico",
+            ),
         ]
 
     def __str__(self):

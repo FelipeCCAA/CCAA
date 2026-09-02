@@ -129,6 +129,17 @@ class EscribeProduccion(PermisoPorRol):
     mensaje_escritura = "Solo Producción puede registrar o modificar lotes."
 
 
+class ConfiguraProcesos(PermisoPorRol):
+    """Catalogo de rutas y etapas: lectura operativa, escritura administrativa."""
+
+    roles_escritura = (Rol.ADMIN,)
+    roles_lectura = EscribeProduccion.roles_lectura
+    areas_lectura = EscribeProduccion.areas_lectura
+    mensaje_escritura = (
+        "Solo Administracion puede configurar procesos, etapas y rutas de producto."
+    )
+
+
 class EscribeAnalisisCalidad(PermisoPorRol):
     """Mediciones del producto: las registran Producción o Calidad."""
 

@@ -1,4 +1,8 @@
 import api from "./api";
+import {
+  payloadLiberacionProceso,
+  type TipoAnalisisProceso,
+} from "./calidad-proceso";
 
 
 /*
@@ -175,15 +179,8 @@ export interface FilaExpediente {
   } | null;
 }
 
-export interface AnalisisResultadoProceso {
+interface EvaluacionAnalisisProceso {
   id: number;
-  tomado_en: string;
-  ph: string | null;
-  acidez: string | null;
-  grasa: string | null;
-  sng: string | null;
-  proteina: string | null;
-  densidad: string | null;
   resultado: "conforme" | "no_conforme" | "sin_analisis" | "sin_especificacion" | null;
   faltantes: string[];
   desviaciones: Array<{
@@ -194,14 +191,29 @@ export interface AnalisisResultadoProceso {
   }>;
 }
 
-export interface ResultadoProcesoCalidad {
+export interface AnalisisSiloResultadoProceso extends EvaluacionAnalisisProceso {
+  tomado_en: string;
+  ph: string | null;
+  acidez: string | null;
+  grasa: string | null;
+  sng: string | null;
+  proteina: string | null;
+  densidad: string | null;
+}
+
+export interface AnalisisLoteResultadoProceso extends EvaluacionAnalisisProceso {
+  fecha: string;
+  muestra: string;
+  valores: Record<string, number>;
+}
+
+interface ResultadoProcesoCalidadBase {
   id: number;
   tipo: string;
   corrida_codigo: string;
   lote_codigo: string;
   producto_nombre: string;
   equipo_nombre: string | null;
-  silo_destino_codigo: string;
   cantidad: string;
   unidad: string;
   clasificacion: string;
@@ -212,10 +224,22 @@ export interface ResultadoProcesoCalidad {
   analisis_seleccionado: number | null;
   especificacion: {
     version: number;
-    rangos: Record<string, { min?: number; max?: number; obligatorio?: boolean }>;
+    rangos: Record<string, unknown>;
   } | null;
-  analisis_disponibles: AnalisisResultadoProceso[];
 }
+
+export type ResultadoProcesoCalidad = ResultadoProcesoCalidadBase & (
+  | {
+    analisis_tipo: "silo";
+    silo_destino_codigo: string;
+    analisis_disponibles: AnalisisSiloResultadoProceso[];
+  }
+  | {
+    analisis_tipo: "lote";
+    silo_destino_codigo: null;
+    analisis_disponibles: AnalisisLoteResultadoProceso[];
+  }
+);
 
 export interface RespuestaExpedientes {
   resultados: FilaExpediente[];
@@ -305,12 +329,15 @@ export async function buscarExpedientes(
 }
 
 export async function liberarResultadoProceso(
-  corridaId: number, analisisId: number, observacion = "",
+  salidaId: number,
+  analisisTipo: TipoAnalisisProceso,
+  analisisId: number,
+  observacion = "",
 ): Promise<void> {
-  await api.post(`calidad/resultados-proceso/${corridaId}/liberar/`, {
-    analisis_id: analisisId,
-    observacion,
-  });
+  await api.post(
+    `calidad/resultados-proceso/${salidaId}/liberar/`,
+    payloadLiberacionProceso(analisisTipo, analisisId, observacion),
+  );
 }
 
 export async function rechazarResultadoProceso(

@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     CorridaCondensacionViewSet, CorridaDescremacionViewSet,
-    CorridaMantequillaViewSet, EjecucionProcesoViewSet,
+    CorridaMantequillaViewSet, CorridaSecadoViewSet, EjecucionProcesoViewSet,
     EntradaProcesoViewSet, EtapaProcesoViewSet,
     ProcesoViewSet, RutaProductoViewSet, SalidaProcesoViewSet, trazabilidad,
 )
@@ -15,6 +15,7 @@ router.register("rutas-producto", RutaProductoViewSet)
 router.register("condensaciones", CorridaCondensacionViewSet)
 router.register("descremaciones", CorridaDescremacionViewSet)
 router.register("mantequillas", CorridaMantequillaViewSet)
+router.register("secados", CorridaSecadoViewSet)
 router.register("ejecuciones", EjecucionProcesoViewSet, basename="ejecucion-proceso")
 router.register("entradas", EntradaProcesoViewSet)
 router.register("salidas", SalidaProcesoViewSet)

@@ -1,13 +1,23 @@
-from django.db import transaction
-from django.db.models import Sum
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import (
-    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso,
     EtapaProceso, EventoProceso, Proceso,
     RutaProducto, SalidaProceso,
 )
+
+
+def _error_de_dominio(error):
+    detalle = (
+        error.message_dict
+        if hasattr(error, "message_dict")
+        else {"non_field_errors": error.messages}
+    )
+    raise serializers.ValidationError(detalle) from error
 
 
 class CierreCondensacionSerializer(serializers.Serializer):
@@ -32,6 +42,41 @@ class CrearMantequillaGuiadaSerializer(serializers.Serializer):
     codigo_lote_mantequilla = serializers.CharField(max_length=60)
     lote_suero = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     kg_crema = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=1)
+
+
+class CrearDescremacionGuiadaSerializer(serializers.Serializer):
+    codigo = serializers.CharField(max_length=60)
+    etapa = serializers.IntegerField(min_value=1)
+    equipo = serializers.IntegerField(min_value=1)
+    silo_entera = serializers.IntegerField(min_value=1)
+    analisis_entrada = serializers.IntegerField(min_value=1)
+    litros_entrada = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=1)
+    silo_descremada = serializers.IntegerField(min_value=1)
+    estanque_crema = serializers.IntegerField(min_value=1)
+    producto_descremada = serializers.IntegerField(min_value=1)
+    producto_crema = serializers.IntegerField(min_value=1)
+
+
+class CierreSecadoSerializer(serializers.Serializer):
+    kg_alimentacion = serializers.DecimalField(max_digits=14, decimal_places=3)
+    solidos_entrada_pct = serializers.DecimalField(
+        max_digits=6, decimal_places=2,
+        min_value=Decimal("0.01"), max_value=Decimal("100"),
+    )
+    kg_polvo = serializers.DecimalField(max_digits=14, decimal_places=3)
+    kg_finos = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=0, required=False, default=0
+    )
+    kg_merma = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=0, required=False, default=0
+    )
+    controles = serializers.JSONField(required=False, default=dict)
+
+
+class IncorporarReworkSerializer(serializers.Serializer):
+    lote = serializers.IntegerField(min_value=1)
+    cantidad = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=1)
+    motivo = serializers.CharField(max_length=250, allow_blank=False)
 
 
 class CorridaCondensacionSerializer(serializers.ModelSerializer):
@@ -129,6 +174,14 @@ class CorridaDescremacionSerializer(serializers.ModelSerializer):
         candidato.clean()
         return attrs
 
+    def create(self, validated_data):
+        from .servicios import crear_corrida_descremacion
+
+        try:
+            return crear_corrida_descremacion(datos=validated_data)
+        except DjangoValidationError as error:
+            _error_de_dominio(error)
+
 
 class CierreMantequillaSerializer(serializers.Serializer):
     kg_mantequilla = serializers.DecimalField(max_digits=14, decimal_places=3)
@@ -223,25 +276,37 @@ class EntradaProcesoSerializer(serializers.ModelSerializer):
         instancia.clean()
         return attrs
 
-    @transaction.atomic
+
+class CorridaSecadoSerializer(serializers.ModelSerializer):
+    ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
+    estado = serializers.CharField(source="ejecucion.estado", read_only=True)
+    estado_etiqueta = serializers.CharField(
+        source="ejecucion.get_estado_display", read_only=True
+    )
+    equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)
+    lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
+    producto_nombre = serializers.CharField(source="lote.producto.nombre", read_only=True)
+    orden_codigo = serializers.CharField(source="orden.codigo", read_only=True)
+    rendimiento_recuperacion_pct = serializers.DecimalField(
+        max_digits=7, decimal_places=2, read_only=True
+    )
+
+    class Meta:
+        model = CorridaSecado
+        fields = "__all__"
+        read_only_fields = [
+            "ejecucion", "orden", "lote", "kg_alimentacion",
+            "solidos_entrada_pct", "kg_polvo", "kg_finos", "kg_merma",
+            "controles", "operacion_id", "finalizada_por", "finalizada_en",
+        ]
+
     def create(self, validated_data):
-        salida = validated_data.get("salida_origen")
-        if salida is not None:
-            salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
-                "ejecucion__etapa", "silo"
-            ).get(pk=salida.pk)
-            usado = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
-            cantidad = validated_data["cantidad"]
-            if usado + cantidad > salida.cantidad:
-                raise serializers.ValidationError({
-                    "cantidad": (
-                        f"La salida tiene {salida.cantidad - usado} {salida.unidad} disponibles."
-                    )
-                })
-            validated_data["salida_origen"] = salida
-            candidato = EntradaProceso(**validated_data)
-            candidato.clean()
-        return super().create(validated_data)
+        from .servicios import crear_entrada_proceso
+
+        try:
+            return crear_entrada_proceso(datos=validated_data)
+        except DjangoValidationError as error:
+            _error_de_dominio(error)
 
 
 class SalidaProcesoSerializer(serializers.ModelSerializer):
@@ -256,6 +321,14 @@ class SalidaProcesoSerializer(serializers.ModelSerializer):
         instancia = SalidaProceso(**attrs)
         instancia.clean()
         return attrs
+
+    def create(self, validated_data):
+        from .servicios import crear_salida_proceso
+
+        try:
+            return crear_salida_proceso(datos=validated_data)
+        except DjangoValidationError as error:
+            _error_de_dominio(error)
 
 
 class EventoProcesoSerializer(serializers.ModelSerializer):
@@ -291,6 +364,29 @@ class EjecucionProcesoSerializer(serializers.ModelSerializer):
 
     def get_acciones_permitidas(self, ejecucion):
         return sorted(EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set()))
+
+    def create(self, validated_data):
+        from .servicios import crear_ejecucion_proceso
+
+        try:
+            return crear_ejecucion_proceso(datos=validated_data)
+        except DjangoValidationError as error:
+            _error_de_dominio(error)
+
+    def validate(self, attrs):
+        if self.instance is not None and "etapa" in attrs:
+            raise serializers.ValidationError({
+                "etapa": "La etapa de una ejecucion existente no se puede reemplazar."
+            })
+        if (
+            self.instance is not None
+            and "equipo" in attrs
+            and self.instance.estado != EjecucionProceso.Estado.BORRADOR
+        ):
+            raise serializers.ValidationError({
+                "equipo": "El equipo solo puede cambiar mientras la ejecucion esta en borrador."
+            })
+        return attrs
 
     def get_balance(self, ejecucion):
         """

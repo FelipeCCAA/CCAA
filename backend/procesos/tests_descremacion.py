@@ -91,6 +91,39 @@ class CierreDescremacionTests(TestCase):
             producto_crema=self.producto_crema,
         )
 
+    def test_alta_guiada_crea_ejecucion_y_corrida_en_una_operacion(self):
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.post(
+            "/api/procesos/descremaciones/crear-guiada/",
+            {
+                "codigo": "EJ-DES-GUIADA",
+                "etapa": self.ejecucion.etapa_id,
+                "equipo": self.ejecucion.equipo_id,
+                "silo_entera": self.origen.pk,
+                "analisis_entrada": self.corrida.analisis_entrada_id,
+                "litros_entrada": "500",
+                "silo_descremada": self.descremada.pk,
+                "estanque_crema": self.crema.pk,
+                "producto_descremada": self.producto_descremada.pk,
+                "producto_crema": self.producto_crema.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        guiada = CorridaDescremacion.objects.get(pk=respuesta.data["id"])
+        self.assertEqual(guiada.ejecucion.codigo, "EJ-DES-GUIADA")
+        self.assertEqual(guiada.ejecucion.responsable, self.usuario)
+        self.assertEqual(guiada.grasa_entrada, self.corrida.analisis_entrada.grasa)
+        self.assertEqual(guiada.sng_entrada, self.corrida.analisis_entrada.sng)
+
     def test_cierre_genera_dos_saldos_y_hereda_fifo_en_una_operacion(self):
         iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
         resultado = cerrar_descremacion(

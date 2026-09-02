@@ -13,6 +13,183 @@ from .models import (
 )
 
 
+ESTADOS_QUE_OCUPAN_EQUIPO = frozenset({
+    EjecucionProceso.Estado.PREPARACION,
+    EjecucionProceso.Estado.EJECUCION,
+    EjecucionProceso.Estado.PAUSADA,
+    EjecucionProceso.Estado.BLOQUEADA,
+})
+
+
+def adquirir_equipo(*, equipo_id, ejecucion_id=None):
+    """Serializa la reserva del equipo y rechaza una segunda corrida activa."""
+    from maestros.models import Equipo
+
+    equipo = Equipo.objects.select_for_update().get(pk=equipo_id)
+    ocupadas = EjecucionProceso.objects.filter(
+        equipo_id=equipo.pk,
+        estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+    )
+    if ejecucion_id is not None:
+        ocupadas = ocupadas.exclude(pk=ejecucion_id)
+    ocupada = ocupadas.order_by("pk").first()
+    if ocupada is not None:
+        raise ValidationError({
+            "equipo": f"{equipo.nombre} está ocupado por {ocupada.codigo}."
+        })
+    return equipo
+
+
+@transaction.atomic
+def crear_ejecucion_proceso(*, datos):
+    """Crea un borrador operativo sin permitir escrituras directas al modelo."""
+    ejecucion = EjecucionProceso(**datos)
+    ejecucion.full_clean()
+    ejecucion.save()
+    return ejecucion
+
+
+@transaction.atomic
+def crear_corrida_descremacion(*, datos):
+    """Registra la corrida sobre una ejecucion bloqueada y aun disponible."""
+    datos = dict(datos)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update()
+        .select_related("etapa", "sucursal")
+        .get(pk=datos["ejecucion"].pk)
+    )
+    datos["ejecucion"] = ejecucion
+    corrida = CorridaDescremacion(**datos)
+    corrida.full_clean()
+    corrida.save()
+    return corrida
+
+
+@transaction.atomic
+def crear_entrada_proceso(*, datos):
+    """Agrega una entrada conservando saldo, autorizacion y trazabilidad."""
+    from produccion.models import Lote
+
+    datos = dict(datos)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update()
+        .select_related("etapa", "sucursal")
+        .get(pk=datos["ejecucion"].pk)
+    )
+    datos["ejecucion"] = ejecucion
+
+    lote = datos.get("lote")
+    if lote is not None:
+        datos["lote"] = Lote.objects.select_for_update(of=("self",)).get(pk=lote.pk)
+
+    salida = datos.get("salida_origen")
+    if salida is not None:
+        datos["salida_origen"] = (
+            SalidaProceso.objects.select_for_update(of=("self",))
+            .select_related("ejecucion__etapa", "silo")
+            .get(pk=salida.pk)
+        )
+
+    entrada = EntradaProceso(**datos)
+    entrada.full_clean()
+    entrada.save()
+    return entrada
+
+
+@transaction.atomic
+def crear_salida_proceso(*, datos):
+    """Registra una salida serializando el balance de masa de la ejecucion."""
+    datos = dict(datos)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update()
+        .select_related("etapa", "sucursal")
+        .get(pk=datos["ejecucion"].pk)
+    )
+    # El lock de la ejecucion evita que dos requests validen el mismo saldo.
+    datos["ejecucion"] = ejecucion
+    salida = SalidaProceso(**datos)
+    salida.full_clean()
+    salida.save()
+    return salida
+
+
+@transaction.atomic
+def crear_descremacion_guiada(
+    *, codigo, etapa_id, equipo_id, silo_entera_id, analisis_entrada_id,
+    litros_entrada, silo_descremada_id, estanque_crema_id,
+    producto_descremada_id, producto_crema_id, usuario,
+):
+    """Crea ejecucion y corrida de descremacion como una sola operacion."""
+    from maestros.models import Equipo, Producto, Silo
+    from recepcion.models import AnalisisSilo
+
+    try:
+        etapa = EtapaProceso.objects.select_related("proceso").get(
+            pk=etapa_id, activa=True, tipo=EtapaProceso.Tipo.DESCREMACION
+        )
+    except EtapaProceso.DoesNotExist as error:
+        raise ValidationError({"etapa": "Selecciona una etapa activa de descremacion."}) from error
+
+    try:
+        origen = Silo.objects.select_for_update().get(pk=silo_entera_id)
+    except Silo.DoesNotExist as error:
+        raise ValidationError({"silo_entera": "El silo de origen no existe."}) from error
+    destinos = {
+        silo.pk: silo
+        for silo in Silo.objects.select_for_update().filter(
+            pk__in=[silo_descremada_id, estanque_crema_id]
+        )
+    }
+    if len(destinos) != 2:
+        raise ValidationError("Selecciona los dos estanques de destino.")
+    try:
+        equipo = Equipo.objects.get(
+            pk=equipo_id, sucursal_id=origen.sucursal_id, activo=True
+        )
+    except Equipo.DoesNotExist as error:
+        raise ValidationError({"equipo": "El equipo no esta activo en la planta de origen."}) from error
+    if equipo.tipo not in tipos_equipo_para_etapa(etapa.tipo):
+        raise ValidationError({"equipo": "El equipo no es compatible con descremacion."})
+
+    try:
+        analisis = AnalisisSilo.objects.get(pk=analisis_entrada_id, silo=origen)
+    except AnalisisSilo.DoesNotExist as error:
+        raise ValidationError({"analisis_entrada": "El analisis no pertenece al silo de origen."}) from error
+    if analisis.estado != AnalisisSilo.Estado.CONFIRMADO or not analisis.vigente:
+        raise ValidationError({"analisis_entrada": "El analisis debe estar confirmado y vigente."})
+    if analisis.grasa is None or analisis.sng is None:
+        raise ValidationError({"analisis_entrada": "El analisis requiere grasa y SNG."})
+
+    productos = {
+        producto.pk: producto
+        for producto in Producto.objects.select_related("mandante").filter(
+            pk__in=[producto_descremada_id, producto_crema_id]
+        )
+    }
+    if len(productos) != 2:
+        raise ValidationError("Selecciona los dos productos intermedios.")
+
+    ejecucion = crear_ejecucion_proceso(datos={
+        "codigo": codigo,
+        "etapa": etapa,
+        "sucursal": origen.sucursal,
+        "equipo": equipo,
+        "responsable": usuario,
+    })
+    return crear_corrida_descremacion(datos={
+        "ejecucion": ejecucion,
+        "silo_entera": origen,
+        "analisis_entrada": analisis,
+        "litros_entrada": Decimal(str(litros_entrada)),
+        "grasa_entrada": analisis.grasa,
+        "sng_entrada": analisis.sng,
+        "silo_descremada": destinos[silo_descremada_id],
+        "estanque_crema": destinos[estanque_crema_id],
+        "producto_descremada": productos[producto_descremada_id],
+        "producto_crema": productos[producto_crema_id],
+    })
+
+
 def tipos_equipo_para_etapa(tipo_etapa):
     """Tipos físicos válidos para una etapa configurable del proceso."""
     from maestros.models import Equipo
@@ -30,25 +207,34 @@ def tipos_equipo_para_etapa(tipo_etapa):
 
 
 def etapa_para_producto(*, producto, sucursal, tipo):
-    """Obtiene la etapa desde la ruta del producto; conserva fallback histórico."""
-    etapa = (
+    """Obtiene una etapa solo desde la ruta activa del producto y la planta."""
+    return (
         EtapaProceso.objects.filter(
             proceso__rutas_producto__producto=producto,
             proceso__rutas_producto__sucursal=sucursal,
             proceso__rutas_producto__activa=True,
+            proceso__activo=True,
             tipo=tipo,
             activa=True,
         )
         .order_by("proceso__rutas_producto__prioridad", "orden")
         .first()
     )
-    if etapa is not None:
-        return etapa
-    return (
-        EtapaProceso.objects.filter(tipo=tipo, activa=True)
-        .order_by("proceso__version", "orden")
-        .last()
-    )
+
+
+def exigir_etapa_para_producto(*, producto, sucursal, tipo):
+    """Impide iniciar hechos de planta sin una ruta productiva trazable."""
+    etapa = etapa_para_producto(producto=producto, sucursal=sucursal, tipo=tipo)
+    if etapa is None:
+        etiqueta = dict(EtapaProceso.Tipo.choices).get(tipo, tipo)
+        raise ValidationError({
+            "ruta_producto": (
+                f"{producto.nombre} no tiene una ruta activa con la etapa "
+                f"{etiqueta} en {sucursal.nombre}. Configura la ruta antes "
+                "de continuar."
+            )
+        })
+    return etapa
 
 
 def destino_salida_de_ruta(*, producto, sucursal, etapa):
@@ -293,19 +479,26 @@ def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
             f"No se puede pasar de {ejecucion.get_estado_display()} a {estado_nuevo}."
         )
 
+    if estado_nuevo in ESTADOS_QUE_OCUPAN_EQUIPO and ejecucion.equipo_id:
+        if not usuario:
+            raise ValidationError(
+                "Para reservar o iniciar se requiere equipo y usuario responsable."
+            )
+        ejecucion.equipo = adquirir_equipo(
+            equipo_id=ejecucion.equipo_id,
+            ejecucion_id=ejecucion.pk,
+        )
+    elif estado_nuevo in {
+        EjecucionProceso.Estado.PREPARACION,
+        EjecucionProceso.Estado.EJECUCION,
+    }:
+        raise ValidationError(
+            "Para reservar o iniciar se requiere equipo y usuario responsable."
+        )
+
     if estado_nuevo == EjecucionProceso.Estado.EJECUCION:
-        if not ejecucion.equipo_id or not usuario:
-            raise ValidationError("Para iniciar se requiere equipo y usuario responsable.")
         if not ejecucion.entradas.exists():
             raise ValidationError("Para iniciar se requiere al menos una entrada de proceso.")
-        ocupada = EjecucionProceso.objects.select_for_update().filter(
-            equipo_id=ejecucion.equipo_id,
-            estado=EjecucionProceso.Estado.EJECUCION,
-        ).exclude(pk=ejecucion.pk).first()
-        if ocupada:
-            raise ValidationError(
-                f"{ejecucion.equipo.nombre} está ocupado por {ocupada.codigo}."
-            )
 
         # Reglas de planta 3 y 15: no se produce en un equipo que está en CIP
         # ni en uno cuyo último aseo quedó observado. La primera es física
@@ -465,17 +658,11 @@ def registrar_estandarizacion(*, vale):
     if existente is not None:
         return existente
 
-    etapa = etapa_para_producto(
+    etapa = exigir_etapa_para_producto(
         producto=vale.producto,
         sucursal=vale.silo_destino.sucursal,
         tipo=EtapaProceso.Tipo.ESTANDARIZACION,
     )
-
-    if etapa is None:
-        # No es un error del vale: es que nadie declaró el proceso. Se avisa y
-        # no se rompe la transferencia, que es una operación de planta y no
-        # puede depender de que el maestro esté completo.
-        return None
 
     ejecucion = EjecucionProceso.objects.create(
         codigo=f"EJ-{vale.codigo}",
@@ -1059,6 +1246,7 @@ def iniciar_mantequilla(*, corrida_id, usuario):
 def cerrar_mantequilla(
     *, corrida_id, usuario, kg_mantequilla, kg_suero=0, kg_merma=0, controles=None
 ):
+    from calidad.models import LiberacionProceso
     from .models import SalidaProceso
 
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
@@ -1071,13 +1259,15 @@ def cerrar_mantequilla(
     corrida.kg_merma = Decimal(str(kg_merma))
     corrida.controles = controles or {}
     corrida.clean()
-    SalidaProceso.objects.create(
+    salida_mantequilla = SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=corrida.lote_mantequilla,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
         clasificacion=SalidaProceso.Clasificacion.GRANEL,
         destino=SalidaProceso.Destino.ENVASADO,
         cantidad=corrida.kg_mantequilla, unidad="kg",
     )
+    if corrida.ejecucion.etapa.requiere_calidad:
+        LiberacionProceso.objects.get_or_create(salida=salida_mantequilla)
     if corrida.kg_suero:
         SalidaProceso.objects.create(
             ejecucion=corrida.ejecucion, lote=corrida.lote_suero,
@@ -1129,5 +1319,68 @@ def cerrar_mantequilla(
         ),
         documento_tipo="lote_produccion",
         documento_id=corrida.lote_mantequilla_id,
+    )
+    return corrida
+
+
+@transaction.atomic
+def cerrar_secado(
+    *, corrida_id, usuario, kg_alimentacion, solidos_entrada_pct,
+    kg_polvo, kg_finos=0, kg_merma=0, controles=None,
+):
+    """Cierra torre, balance y lote como un solo hecho transaccional."""
+    from produccion.models import Lote, OrdenProduccion
+    from produccion.servicios import registrar_produccion
+    from .models import CorridaSecado
+
+    corrida = (
+        CorridaSecado.objects.select_for_update(of=("self",))
+        .select_related("ejecucion__etapa", "ejecucion__equipo", "lote", "orden")
+        .get(pk=corrida_id)
+    )
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(
+        of=("self",)
+    ).select_related("etapa", "equipo").get(pk=corrida.ejecucion_id)
+    if corrida.ejecucion.estado not in {
+        EjecucionProceso.Estado.EJECUCION,
+        EjecucionProceso.Estado.PAUSADA,
+    }:
+        raise ValidationError("Solo una corrida de Secado activa puede cerrarse.")
+
+    corrida.kg_alimentacion = Decimal(str(kg_alimentacion))
+    corrida.solidos_entrada_pct = Decimal(str(solidos_entrada_pct))
+    corrida.kg_polvo = Decimal(str(kg_polvo))
+    corrida.kg_finos = Decimal(str(kg_finos))
+    corrida.kg_merma = Decimal(str(kg_merma))
+    corrida.controles = controles or {}
+    corrida.finalizada_por = usuario
+    corrida.finalizada_en = timezone.now()
+    corrida.full_clean()
+
+    lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
+    if lote.estado != Lote.Estado.EN_PROCESO:
+        raise ValidationError("El lote de Secado ya no está en proceso.")
+    lote.kg_producidos = corrida.kg_polvo
+    lote.estado = Lote.Estado.PRODUCIDO
+    lote.save(update_fields=["kg_producidos", "estado"])
+    corrida.lote = lote
+    corrida.save()
+    estado_anterior = corrida.ejecucion.estado
+    registrar_produccion(lote=lote)
+    corrida.ejecucion.refresh_from_db()
+
+    if corrida.orden_id and corrida.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
+        corrida.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
+        corrida.orden.save(update_fields=["estado"])
+    EventoProceso.objects.create(
+        ejecucion=corrida.ejecucion,
+        tipo="cierre_secado",
+        estado_anterior=estado_anterior,
+        estado_nuevo=EjecucionProceso.Estado.CERRADA,
+        motivo=(
+            f"Polvo {corrida.kg_polvo} kg; finos {corrida.kg_finos} kg; "
+            f"merma {corrida.kg_merma} kg."
+        ),
+        usuario=usuario,
     )
     return corrida

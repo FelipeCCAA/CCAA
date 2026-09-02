@@ -30,6 +30,7 @@ export interface EjecucionOperativa {
   estado_etiqueta: string;
   etapa_nombre: string;
   etapa_tipo: string;
+  equipo_id: number | null;
   equipo_nombre: string | null;
   acciones_permitidas: string[];
   entradas: string[];
@@ -89,6 +90,26 @@ export interface CorridaMantequilla {
   iniciada_en: string | null;
   finalizada_por_nombre: string | null;
   finalizada_en: string | null;
+}
+
+export interface DiagnosticoRutaProductoItem {
+  producto: number;
+  producto_nombre: string;
+  sucursal: number;
+  sucursal_nombre: string;
+  configurada: boolean;
+  rutas: {
+    id: number;
+    proceso: number;
+    proceso_nombre: string;
+    prioridad: number;
+  }[];
+}
+
+export interface DiagnosticoRutasProducto {
+  completo: boolean;
+  faltantes: number;
+  productos: DiagnosticoRutaProductoItem[];
 }
 
 export interface EtapaProceso {
@@ -223,6 +244,13 @@ export async function obtenerRutasProducto(): Promise<Pagina<RutaProducto>> {
 
 export async function obtenerCondensaciones(): Promise<Pagina<CorridaCondensacion>> {
   const { data } = await api.get<Pagina<CorridaCondensacion>>("procesos/condensaciones/");
+  return data;
+}
+
+export async function obtenerDiagnosticoRutasProducto(): Promise<DiagnosticoRutasProducto> {
+  const { data } = await api.get<DiagnosticoRutasProducto>(
+    "procesos/rutas-producto/diagnostico/",
+  );
   return data;
 }
 

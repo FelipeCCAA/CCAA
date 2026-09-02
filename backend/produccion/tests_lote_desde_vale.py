@@ -22,7 +22,8 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from estandarizacion.models import ValeEstandarizacion
-from maestros.models import Mandante, Producto, Silo
+from maestros.models import Equipo, Mandante, Producto, Silo
+from procesos.models import CorridaSecado, EtapaProceso, Proceso, RutaProducto
 from produccion import servicios
 from produccion.dominio import puede_abrir_lote_desde
 from produccion.models import Lote
@@ -52,6 +53,14 @@ class BaseValeLote(TestCase):
             capacidad_l=100000,
         )
         self.operador = User.objects.create_user(username="op", password="x")
+        proceso = Proceso.objects.create(codigo="ruta-prueba", nombre="Ruta prueba")
+        EtapaProceso.objects.create(
+            proceso=proceso, codigo="secado", nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        self.ruta = RutaProducto.objects.create(
+            sucursal=self.planta, producto=self.producto, proceso=proceso,
+        )
 
     def _vale(self, estado=ValeEstandarizacion.Estado.LIBERADO, volumen="20000.00"):
         return ValeEstandarizacion.objects.create(
@@ -79,6 +88,24 @@ class BaseValeLote(TestCase):
 
 
 class AperturaTests(BaseValeLote):
+
+    def test_abrir_en_torre_crea_la_corrida_especializada_de_secado(self):
+        torre = Equipo.objects.create(
+            sucursal=self.planta, codigo="TORRE-1", nombre="Torre 1",
+            tipo=Equipo.Tipo.TORRE,
+        )
+        vale = self._vale()
+
+        lote = servicios.abrir_lote_desde_vale(
+            vale=vale, producto=self.producto, codigo_lote="SEC-ESPECIALIZADO",
+            fecha=date(2026, 8, 12), litros=Decimal("1000.00"),
+            equipo=torre, usuario=self.operador,
+        )
+
+        corrida = CorridaSecado.objects.get(lote=lote)
+        self.assertEqual(corrida.ejecucion, lote.ejecucion)
+        self.assertEqual(corrida.ejecucion.equipo, torre)
+        self.assertIsNone(corrida.kg_polvo)
 
     def test_el_lote_queda_atado_al_vale_y_descuenta_su_silo(self):
         vale = self._vale()
@@ -134,6 +161,26 @@ class AperturaTests(BaseValeLote):
             self._abrir(vale, Decimal("9000.00"))
 
         self.assertFalse(MovimientoSilo.objects.exists())
+
+    def test_sin_ruta_no_quedan_lote_ni_movimiento_huerfanos(self):
+        vale = self._vale()
+        self.ruta.delete()
+
+        with self.assertRaisesMessage(ValidationError, "no tiene una ruta activa"):
+            self._abrir(vale, Decimal("1000.00"))
+
+        self.assertFalse(Lote.objects.exists())
+        self.assertFalse(MovimientoSilo.objects.exists())
+
+    def test_un_lote_sin_ejecucion_no_puede_cerrar_trazabilidad(self):
+        lote = Lote.objects.create(
+            sucursal=self.planta, producto=self.producto,
+            codigo_lote="LEGADO-SIN-EJECUCION", fecha=date(2026, 8, 12),
+            estado=Lote.Estado.PRODUCIDO, kg_producidos=Decimal("100.00"),
+        )
+
+        with self.assertRaisesMessage(ValidationError, "no tiene una ejecución"):
+            servicios.registrar_produccion(lote=lote)
 
 
 class DecisionSinBaseTests(TestCase):

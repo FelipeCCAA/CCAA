@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 
 import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
 import { registrarEnvase } from "../../services/produccion.service";
+import { mensajeErrorProceso } from "../../services/errores-proceso";
 
 const campo = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm";
 const FORMATO_KG = 25;
@@ -12,7 +12,15 @@ const fechaLocal = (fecha: Date) => {
   return desplazada.toISOString().slice(0, 16);
 };
 
-export default function FormularioEnvase({ loteId, alGuardar }: { loteId: number; alGuardar: () => void }) {
+export default function FormularioEnvase({
+  loteId,
+  alGuardar,
+  alBloqueoCalidad,
+}: {
+  loteId: number;
+  alGuardar: () => void;
+  alBloqueoCalidad?: (mensaje: string) => void;
+}) {
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [equipo, setEquipo] = useState("");
   const [codigo, setCodigo] = useState("");
@@ -52,8 +60,11 @@ export default function FormularioEnvase({ loteId, alGuardar }: { loteId: number
       setMensaje(`Pallet ${codigo.trim()} creado: ${unidades} sacos, ${kg} kg. Quedó en cuarentena de Calidad.`);
       setCodigo(""); setUnidades("20"); setObservacion(""); alGuardar();
     } catch (error) {
-      const datos = axios.isAxiosError(error) ? error.response?.data : null;
-      setMensaje(datos ? Object.values(datos as Record<string, string | string[]>).flat().join(" ") : "No se pudo registrar el pallet.");
+      const detalle = mensajeErrorProceso(error, "No se pudo registrar el pallet.");
+      setMensaje(detalle);
+      if (detalle.includes("pendiente de aprobación de Calidad")) {
+        alBloqueoCalidad?.(detalle);
+      }
     } finally { setGuardando(false); }
   }
 
