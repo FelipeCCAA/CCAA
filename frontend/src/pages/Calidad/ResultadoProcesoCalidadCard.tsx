@@ -81,10 +81,10 @@ export default function ResultadoProcesoCalidadCard({
   const puedeLiberar = seleccionado
     && (seleccionado.resultado === null || seleccionado.resultado === "conforme");
   const estado = ESTADOS[item.estado];
-  const esMantequilla = item.analisis_tipo === "lote";
+  const esAnalisisLote = item.analisis_tipo === "lote";
 
   return (
-    <article className={`rounded-xl border p-4 ${esMantequilla ? "border-violet-200 bg-violet-50/40" : "border-amber-200 bg-amber-50/40"}`}>
+    <article className={`rounded-xl border p-4 ${esAnalisisLote ? "border-violet-200 bg-violet-50/40" : "border-amber-200 bg-amber-50/40"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-semibold text-slate-900">{item.lote_codigo} · {item.corrida_codigo}</p>
@@ -120,7 +120,7 @@ export default function ResultadoProcesoCalidadCard({
 
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <p className="text-xs font-semibold text-slate-700">
-            {esMantequilla ? "Resultado del análisis de lote" : "Resultado del análisis de silo"}
+            {esAnalisisLote ? "Resultado del análisis de lote" : "Resultado del análisis de silo"}
           </p>
           {!seleccionado ? (
             <p className="mt-2 text-xs text-slate-500">Selecciona un análisis para ver sus resultados junto a los rangos.</p>
@@ -143,13 +143,13 @@ export default function ResultadoProcesoCalidadCard({
         <>
           {item.analisis_disponibles.length === 0 ? (
             <p className="mt-3 rounded-lg bg-amber-100 px-3 py-2 text-sm text-amber-900">
-              {esMantequilla
+              {esAnalisisLote
                 ? `Falta registrar un análisis de lote para ${item.lote_codigo}. No se solicita silo.`
                 : "Falta un análisis de silo confirmado y posterior al cierre de la corrida."}
             </p>
           ) : (
             <label className="mt-3 block text-sm font-medium text-slate-700">
-              {esMantequilla ? "Análisis del lote de mantequilla" : "Análisis confirmado del silo"}
+              {esAnalisisLote ? "Análisis confirmado del lote" : "Análisis confirmado del silo"}
               <select value={analisisId} onChange={(evento) => alElegirAnalisis(evento.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                 <option value="">Seleccionar análisis…</option>
                 {item.analisis_tipo === "lote"
@@ -180,7 +180,7 @@ export default function ResultadoProcesoCalidadCard({
 
           {puedeDecidir && !rechazando && (
             <div className="mt-3 space-y-3">
-              {esMantequilla && (
+              {esAnalisisLote && (
                 <label className="block text-xs font-semibold text-slate-600">
                   Observación de liberación
                   <input value={observacion} onChange={(evento) => alCambiarObservacion(evento.target.value)} placeholder="Resultado conforme" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal" />
@@ -188,7 +188,7 @@ export default function ResultadoProcesoCalidadCard({
               )}
               <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={!puedeLiberar || accion !== null} onClick={alLiberar} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
-                  {accion === "liberar" ? "Liberando…" : esMantequilla ? "Liberar para Envasado" : "Liberar etapa"}
+                  {accion === "liberar" ? "Liberando…" : esAnalisisLote ? "Liberar para Envasado" : "Liberar etapa"}
                 </button>
                 <button type="button" disabled={accion !== null} onClick={alAbrirRechazo} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-40">Rechazar</button>
               </div>

@@ -3,11 +3,11 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, Q, Sum
+from django.db.models import F, Prefetch, Q, Sum
 from django.utils import timezone
 
 from .models import (
-    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
     RutaProducto,
 )
@@ -220,6 +220,95 @@ def etapa_para_producto(*, producto, sucursal, tipo):
         .order_by("proceso__rutas_producto__prioridad", "orden")
         .first()
     )
+
+
+def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=None):
+    """Resuelve, por ruta y prioridad, dÃ³nde puede comenzar una operaciÃ³n.
+
+    Cuando la operaciÃ³n nace desde un hecho previo conocido (por ejemplo, un
+    vale ya estandarizado), la etapa inicial es la primera etapa activa
+    posterior a ese hecho. Si la ruta no contiene esa etapa previa, comienza
+    en su primera etapa activa.
+    """
+    pares = {(int(producto_id), int(sucursal_id)) for producto_id, sucursal_id in productos_sucursales}
+    if not pares:
+        return {}
+
+    rutas = (
+        RutaProducto.objects.filter(
+            producto_id__in={par[0] for par in pares},
+            sucursal_id__in={par[1] for par in pares},
+            activa=True,
+            proceso__activo=True,
+        )
+        .select_related("proceso")
+        .prefetch_related(Prefetch(
+            "proceso__etapas",
+            queryset=EtapaProceso.objects.order_by("orden", "pk"),
+            to_attr="etapas_para_inicio",
+        ))
+        .order_by("producto_id", "sucursal_id", "prioridad", "pk")
+    )
+    resultado = {par: [] for par in pares}
+    for ruta in rutas:
+        par = (ruta.producto_id, ruta.sucursal_id)
+        if par not in resultado:
+            continue
+        etapas = ruta.proceso.etapas_para_inicio
+        orden_previo = None
+        if etapa_previa_tipo is not None:
+            previa = next(
+                (etapa for etapa in etapas if etapa.tipo == etapa_previa_tipo),
+                None,
+            )
+            if previa is not None:
+                orden_previo = previa.orden
+        inicial = next(
+            (
+                etapa for etapa in etapas
+                if etapa.activa and (orden_previo is None or etapa.orden > orden_previo)
+            ),
+            None,
+        )
+        if inicial is not None:
+            resultado[par].append(inicial)
+    return resultado
+
+
+def etapas_iniciales_para_producto(*, producto, sucursal, etapa_previa_tipo=None):
+    """Etapas iniciales vÃ¡lidas de todas las rutas activas del producto."""
+    return etapas_iniciales_por_producto(
+        productos_sucursales=[(producto.pk, sucursal.pk)],
+        etapa_previa_tipo=etapa_previa_tipo,
+    ).get((producto.pk, sucursal.pk), [])
+
+
+def exigir_etapa_inicial_para_producto(
+    *, producto, sucursal, tipo, etapa_previa_tipo=None
+):
+    """Impide comenzar en una etapa posterior de una ruta productiva."""
+    iniciales = etapas_iniciales_para_producto(
+        producto=producto,
+        sucursal=sucursal,
+        etapa_previa_tipo=etapa_previa_tipo,
+    )
+    encontrada = next((etapa for etapa in iniciales if etapa.tipo == tipo), None)
+    if encontrada is not None:
+        return encontrada
+
+    etiqueta_solicitada = dict(EtapaProceso.Tipo.choices).get(tipo, tipo)
+    if iniciales:
+        permitidas = ", ".join(dict.fromkeys(etapa.nombre for etapa in iniciales))
+        detalle = (
+            f"La ruta de {producto.nombre} inicia en {permitidas}; no permite "
+            f"comenzar directamente en {etiqueta_solicitada}."
+        )
+    else:
+        detalle = (
+            f"{producto.nombre} no tiene una ruta activa con una etapa inicial "
+            f"disponible en {sucursal.nombre}. Configura la ruta antes de continuar."
+        )
+    raise ValidationError({"ruta_producto": detalle})
 
 
 def exigir_etapa_para_producto(*, producto, sucursal, tipo):
@@ -455,6 +544,11 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         lote.ejecucion = ejecucion
         lote.equipo = equipo
         lote.save(update_fields=["ejecucion", "equipo"])
+        if etapa.tipo == EtapaProceso.Tipo.SECADO:
+            CorridaSecado.objects.get_or_create(
+                ejecucion=ejecucion,
+                defaults={"orden": lote.orden, "lote": lote},
+            )
     if salida.destino == SalidaProceso.Destino.PENDIENTE:
         salida.destino = SalidaProceso.Destino.SIGUIENTE_PROCESO
         salida.save(update_fields=["destino"])
@@ -1329,6 +1423,7 @@ def cerrar_secado(
     kg_polvo, kg_finos=0, kg_merma=0, controles=None,
 ):
     """Cierra torre, balance y lote como un solo hecho transaccional."""
+    from calidad.models import LiberacionProceso
     from produccion.models import Lote, OrdenProduccion
     from produccion.servicios import registrar_produccion
     from .models import CorridaSecado
@@ -1366,8 +1461,23 @@ def cerrar_secado(
     corrida.lote = lote
     corrida.save()
     estado_anterior = corrida.ejecucion.estado
-    registrar_produccion(lote=lote)
+    requiere_calidad = corrida.ejecucion.etapa.requiere_calidad
+    registrar_produccion(
+        lote=lote,
+        destino_salida=(
+            SalidaProceso.Destino.PENDIENTE
+            if requiere_calidad
+            else SalidaProceso.Destino.ENVASADO
+        ),
+    )
     corrida.ejecucion.refresh_from_db()
+    salida = SalidaProceso.objects.get(
+        ejecucion=corrida.ejecucion,
+        lote=lote,
+        naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+    )
+    if requiere_calidad:
+        LiberacionProceso.objects.get_or_create(salida=salida)
 
     if corrida.orden_id and corrida.orden.estado == OrdenProduccion.Estado.EN_PROCESO:
         corrida.orden.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD

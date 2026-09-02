@@ -85,8 +85,10 @@ class VigentesHoy:
             hoy = timezone.localdate()
 
             ganadoras = {
-                especificacion_vigente(todas, producto_id, hoy)
-                for producto_id in {e.producto_id for e in todas}
+                especificacion_vigente(todas, producto_id, hoy, tipo_analisis)
+                for producto_id, tipo_analisis in {
+                    (e.producto_id, e.tipo_analisis) for e in todas
+                }
             }
 
             self._ids = {e.id for e in ganadoras if e is not None}
@@ -116,6 +118,10 @@ class EspecificacionViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         producto = self.request.query_params.get("producto")
         if producto:
             consulta = consulta.filter(producto_id=producto)
+
+        tipo_analisis = self.request.query_params.get("tipo_analisis")
+        if tipo_analisis:
+            consulta = consulta.filter(tipo_analisis=tipo_analisis)
 
         return consulta
 

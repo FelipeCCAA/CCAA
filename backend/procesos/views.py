@@ -545,7 +545,7 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     queryset = CorridaSecado.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
         "finalizada_por",
-    )
+    ).prefetch_related("ejecucion__salidas__liberacion_calidad")
     serializer_class = CorridaSecadoSerializer
     permission_classes = [OperaProcesoPorEtapa]
     tipo_etapa_operacional = EtapaProceso.Tipo.SECADO

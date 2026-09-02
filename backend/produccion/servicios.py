@@ -175,7 +175,7 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     """
     from maestros.models import Equipo
     from procesos.models import EjecucionProceso, EntradaProceso, EtapaProceso
-    from procesos.servicios import exigir_etapa_para_producto
+    from procesos.servicios import exigir_etapa_inicial_para_producto
 
     tipo_etapa = {
         Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
@@ -184,10 +184,11 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
         Equipo.Tipo.LINEA: EtapaProceso.Tipo.ENVASADO,
     }.get(lote.equipo.tipo if lote.equipo else None, EtapaProceso.Tipo.SECADO)
 
-    etapa = exigir_etapa_para_producto(
+    etapa = exigir_etapa_inicial_para_producto(
         producto=lote.producto,
         sucursal=lote.sucursal,
         tipo=tipo_etapa,
+        etapa_previa_tipo=EtapaProceso.Tipo.ESTANDARIZACION,
     )
 
     ejecucion = EjecucionProceso.objects.create(
@@ -229,7 +230,7 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
 
 
 @transaction.atomic
-def registrar_produccion(*, lote):
+def registrar_produccion(*, lote, destino_salida=None):
     """
     Cierra la ejecución productiva con los kilos que salieron.
 
@@ -266,13 +267,15 @@ def registrar_produccion(*, lote):
     # La salida va en kilos y la entrada en litros: el balance de masa no las
     # compara, y hace bien — secar no es trasvasar, y sin un factor de
     # conversión declarado cualquier comparación sería inventada.
+    if destino_salida is None:
+        destino_salida = SalidaProceso.Destino.ENVASADO
     SalidaProceso.objects.get_or_create(
         ejecucion=ejecucion,
         lote=lote,
         defaults={
             "naturaleza": SalidaProceso.Naturaleza.PRINCIPAL,
             "clasificacion": SalidaProceso.Clasificacion.GRANEL,
-            "destino": SalidaProceso.Destino.ENVASADO,
+            "destino": destino_salida,
             "cantidad": Decimal(str(lote.kg_producidos)),
             "unidad": "kg",
         },
@@ -304,6 +307,10 @@ def registrar_envasado(
     lote = (
         Lote.objects.select_for_update(of=("self",))
         .select_related("sucursal", "producto")
+        .prefetch_related(
+            "salidas_proceso__ejecucion__etapa",
+            "salidas_proceso__liberacion_calidad",
+        )
         .get(pk=lote_id)
     )
     if lote.estado not in {Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO}:
@@ -312,22 +319,14 @@ def registrar_envasado(
     salidas_productivas = SalidaProceso.objects.filter(
         lote=lote, naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
     )
+    bloqueo_calidad = bloqueo_calidad_para_envasado(lote)
+    if bloqueo_calidad:
+        raise ValidationError(bloqueo_calidad)
     if salidas_productivas.exists() and not salidas_productivas.filter(
         destino=SalidaProceso.Destino.ENVASADO,
     ).exists():
         raise ValidationError(
             "El flujo del lote no tiene Envasado como destino; revisa su etapa productiva."
-        )
-    from calidad.models import LiberacionProceso
-    pendientes_mantequilla = salidas_productivas.filter(
-        ejecucion__etapa__tipo="mantequilla",
-        ejecucion__etapa__requiere_calidad=True,
-    ).exclude(
-        liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
-    )
-    if pendientes_mantequilla.exists():
-        raise ValidationError(
-            "La mantequilla a granel está pendiente de aprobación de Calidad."
         )
     impedimento = motivo_equipo_no_habilitado(equipo)
     if impedimento:
@@ -363,3 +362,22 @@ def registrar_envasado(
     # vuelve a crear stock.
     registrar_pallets_producidos(creados, usuario)
     return registro
+
+
+def bloqueo_calidad_para_envasado(lote):
+    """Devuelve la puerta material previa a Envase, sin mezclarla con el lote."""
+    from calidad.models import LiberacionProceso
+    from procesos.models import SalidaProceso
+
+    for salida in lote.salidas_proceso.all():
+        if salida.naturaleza != SalidaProceso.Naturaleza.PRINCIPAL:
+            continue
+        if not salida.ejecucion.etapa.requiere_calidad:
+            continue
+        decision = getattr(salida, "liberacion_calidad", None)
+        if decision is None or decision.estado != LiberacionProceso.Estado.LIBERADO:
+            return (
+                f"{salida.ejecucion.etapa.get_tipo_display()} está pendiente "
+                "de aprobación de Calidad antes de Envasado."
+            )
+    return ""

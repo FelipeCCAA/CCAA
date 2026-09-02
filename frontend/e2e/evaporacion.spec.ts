@@ -32,11 +32,14 @@
 */
 
 import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   analizarSilo, campo, camposInvalidos, cerrarSegundaFirma, elegirOpcion, irA,
   rechazosInesperados, trasGuardar, vigilar,
 } from "./ayudantes";
+import { RUTA_FLUJO_POLVO } from "./constantes";
 
 const SELLO = Date.now().toString().slice(-6);
 
@@ -83,6 +86,7 @@ const LECHE_ESTANDARIZADA = { grasa: "2.61", sng: "8.70" };
 /* El silo del que sale la leche. Lo dice el formulario al elegir el lote, así
    que se descubre en el paso 2 y se usa en el 3. */
 let origen = "";
+let destino = "";
 
 
 test.describe.configure({ mode: "serial" });
@@ -311,7 +315,11 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
 
       Se toma el que dice «Disponible».
     */
-    await elegirOpcion(campo(page, "Silo de concentrado"), /· Disponible$/);
+    const destinoElegido = await elegirOpcion(
+      campo(page, "Silo de concentrado"),
+      /· Disponible$/,
+    );
+    destino = destinoElegido.split(" · ")[0].trim();
 
     await trasGuardar(page, "crear-guiada", async () => {
       await page.getByRole("button", { name: "Crear corrida preparada" }).click();
@@ -366,7 +374,9 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
       )
       .toBe(false);
 
-    const fila = page.getByRole("row", { name: new RegExp(LOTE.codigo) });
+    const fila = page
+      .getByRole("row", { name: new RegExp(LOTE.codigo) })
+      .filter({ has: page.getByRole("button", { name: "Iniciar evaporación" }) });
     await expect(
       fila,
       `La corrida del lote ${LOTE.codigo} no aparece en la tabla de evaporación.`,
@@ -378,7 +388,9 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
   });
 
   await test.step("5 · se declara el precondensado y pasa a Calidad", async () => {
-    const fila = page.getByRole("row", { name: new RegExp(LOTE.codigo) });
+    const fila = page
+      .getByRole("row", { name: new RegExp(LOTE.codigo) })
+      .filter({ has: page.getByRole("button", { name: "Registrar salida" }) });
     await fila.getByRole("button", { name: "Registrar salida" }).click();
 
     const cierre = page.locator("form").filter({ hasText: "Cerrar evaporación" });
@@ -400,7 +412,12 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
   });
 
   await test.step("6 · la corrida queda con su balance y a la espera de Calidad", async () => {
-    const fila = page.getByRole("row", { name: new RegExp(LOTE.codigo) });
+    /* El lote también aparece en el resumen general de ejecuciones. Acotamos
+       a la fila del proceso que expone la decisión de Calidad para comprobar
+       el balance correcto sin depender del orden de las tablas. */
+    const fila = page
+      .getByRole("row", { name: new RegExp(LOTE.codigo) })
+      .filter({ hasText: /Pendiente de [Cc]alidad/ });
     await expect(fila).toBeVisible({ timeout: 20_000 });
 
     /*
@@ -431,4 +448,11 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
     inesperados,
     `El servidor rechazó peticiones que nadie esperaba: ${inesperados.join(" ·· ")}`,
   ).toHaveLength(0);
+
+  fs.mkdirSync(path.dirname(RUTA_FLUJO_POLVO), { recursive: true });
+  fs.writeFileSync(RUTA_FLUJO_POLVO, JSON.stringify({
+    lote: LOTE.codigo,
+    silo_precondensado: destino,
+    litros_precondensado: corrida.salida,
+  }, null, 2));
 });

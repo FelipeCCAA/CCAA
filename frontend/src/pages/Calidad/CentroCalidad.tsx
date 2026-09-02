@@ -54,9 +54,9 @@ function CentroCalidad() {
   const resultadosProceso = expedientes.datos?.procesos ?? [];
   const procesosPendientes = resultadosProceso.filter((item) => item.estado === "pendiente");
   const intermediosEnSilo = procesosPendientes.filter((item) => item.analisis_tipo === "silo");
-  const mantequillas = resultadosProceso.filter((item) => item.analisis_tipo === "lote");
-  const mantequillasPendientes = mantequillas.filter((item) => item.estado === "pendiente");
-  const mantequillasDecididas = mantequillas.filter((item) => item.estado !== "pendiente");
+  const granelesConAnalisisLote = resultadosProceso.filter((item) => item.analisis_tipo === "lote");
+  const granelesPendientes = granelesConAnalisisLote.filter((item) => item.estado === "pendiente");
+  const granelesDecididos = granelesConAnalisisLote.filter((item) => item.estado !== "pendiente");
   const porRevisar = lotes.filter((fila) => !LIBERACIONES_CERRADAS.includes(fila.liberacion?.estado ?? "pendiente"));
   const liberados = lotes.filter((fila) => fila.liberacion?.estado === "liberado" || fila.liberacion?.estado === "liberado_concesion");
   const rechazados = lotes.filter((fila) => fila.liberacion?.estado === "rechazado");
@@ -154,10 +154,10 @@ function CentroCalidad() {
 
       {errorProceso && <Aviso>{errorProceso}</Aviso>}
 
-      <Tarjeta titulo="Mantequilla a granel pendiente" descripcion="Calidad revisa el análisis del lote de mantequilla. No se solicita silo y la liberación habilita su paso a Envasado.">
-        {expedientes.error ? <Aviso>No se pudo cargar la bandeja de mantequilla.</Aviso> : mantequillasPendientes.length === 0 ? <Vacio>No hay mantequilla a granel esperando aprobación.</Vacio> : (
+      <Tarjeta titulo="Productos a granel pendientes" descripcion="Calidad revisa análisis de lote de polvo o mantequilla. No se solicita silo y la liberación habilita su paso a Envasado.">
+        {expedientes.error ? <Aviso>No se pudo cargar la bandeja de productos a granel.</Aviso> : granelesPendientes.length === 0 ? <Vacio>No hay productos a granel esperando aprobación.</Vacio> : (
           <div className="grid gap-3 lg:grid-cols-2">
-            {mantequillasPendientes.map((item) => (
+            {granelesPendientes.map((item) => (
               <ResultadoProcesoCalidadCard
                 key={item.id}
                 item={item}
@@ -178,11 +178,11 @@ function CentroCalidad() {
             ))}
           </div>
         )}
-        {mantequillasDecididas.length > 0 && (
+        {granelesDecididos.length > 0 && (
           <div className="mt-5 border-t border-slate-200 pt-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Decisiones recientes</p>
             <div className="grid gap-3 lg:grid-cols-2">
-              {mantequillasDecididas.slice(0, 8).map((item) => (
+              {granelesDecididos.slice(0, 8).map((item) => (
                 <ResultadoProcesoCalidadCard
                   key={item.id}
                   item={item}

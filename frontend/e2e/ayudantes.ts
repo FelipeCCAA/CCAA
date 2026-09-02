@@ -13,7 +13,7 @@
 
 import { expect, request as peticion, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
-import { API } from "./constantes";
+import { API, ORIGEN } from "./constantes";
 
 
 /*
@@ -170,6 +170,64 @@ export async function descartarPendiente(pagina: Page, scope: Page | Locator = p
   respuesta: es ahí donde el motivo real resulta útil, no cinco pasos después.
 */
 export const rechazos: string[] = [];
+
+const sesionesArea: Array<{
+  usuario: string;
+  valor: string;
+  contexto: APIRequestContext;
+  cabeceras: Record<string, string>;
+}> = [];
+
+/** Cambia la sesión visible por una cuenta operacional real del área. */
+export async function usarSesionArea(
+  pagina: Page,
+  usuario: string,
+  clave = process.env.E2E_CLAVE_AREAS ?? "flujo-e2e-ccaa",
+) {
+  if (!pagina.url().startsWith(ORIGEN)) {
+    await pagina.goto(ORIGEN);
+  }
+  const existente = sesionesArea.find((sesion) => sesion.usuario === usuario);
+  if (existente) {
+    await pagina.evaluate((contenido) => {
+      window.localStorage.setItem("ccaa.sesion", contenido);
+      window.sessionStorage.setItem("ccaa.sesion", contenido);
+    }, existente.valor);
+    await pagina.reload();
+    return;
+  }
+  const contexto = await peticion.newContext();
+  const respuesta = await contexto.post(`${API}/api/usuarios/login/`, {
+    data: { username: usuario, password: clave },
+  });
+  if (respuesta.status() !== 200) {
+    throw new Error(
+      `No se pudo iniciar la sesión operacional ${usuario}: ` +
+      `${respuesta.status()} ${(await respuesta.text()).slice(0, 300)}`,
+    );
+  }
+  const sesion = await respuesta.json();
+  const valor = JSON.stringify({ token: sesion.token, usuario: sesion.usuario });
+  await pagina.evaluate((contenido) => {
+    window.localStorage.setItem("ccaa.sesion", contenido);
+    window.sessionStorage.setItem("ccaa.sesion", contenido);
+  }, valor);
+  sesionesArea.push({
+    usuario,
+    valor,
+    contexto,
+    cabeceras: { Authorization: `Token ${sesion.token}` },
+  });
+  await pagina.reload();
+  return sesion.usuario;
+}
+
+export async function cerrarSesionesArea() {
+  await Promise.all(sesionesArea.splice(0).map(async ({ contexto, cabeceras }) => {
+    await contexto.post(`${API}/api/usuarios/logout/`, { headers: cabeceras }).catch(() => undefined);
+    await contexto.dispose();
+  }));
+}
 
 
 /** Espera a que una petición del circuito termine antes de seguir. */
@@ -392,7 +450,14 @@ export async function analizarSilo(
     "La pantalla de silos no cargó ningún estanque.",
   ).toBeVisible({ timeout: 15_000 });
 
-  const boton = pagina.getByRole("button", { name: new RegExp(estanque) }).first();
+  /* La API conserva algunos códigos maestros históricos con espacios dobles
+     (por ejemplo, `Silo  3`), mientras el nombre accesible del navegador
+     colapsa esos espacios. El operador ve el mismo código; el localizador no
+     debe depender de esa diferencia de representación. */
+  const nombreVisible = estanque.trim().split(/\s+/).join("\\s+");
+  const boton = pagina
+    .getByRole("button", { name: new RegExp(nombreVisible, "i") })
+    .first();
 
   if (!(await boton.isVisible())) {
     const desplegar = pagina.getByRole("button", { name: /Ver los \d+ silos vacíos/ });

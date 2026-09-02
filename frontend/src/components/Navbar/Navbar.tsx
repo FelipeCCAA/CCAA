@@ -17,6 +17,7 @@ import {
   Truck,
   Users,
   Warehouse,
+  Wind,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -63,6 +64,7 @@ const gruposBase: Grupo[] = [
     etiqueta: "Producción",
     modulos: [
       { etiqueta: "Producción", ruta: "/produccion", icono: Factory, permiso: "produccion" },
+      { etiqueta: "Secado", ruta: "/secado", icono: Wind, permiso: "secado" },
       { etiqueta: "Procesos", ruta: "/procesos", icono: GitBranch, permiso: "procesos" },
       { etiqueta: "Planificación", ruta: "/planificacion", icono: CalendarRange, permiso: "planificacion" },
     ],

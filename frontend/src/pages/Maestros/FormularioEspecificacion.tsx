@@ -110,6 +110,9 @@ function FormularioEspecificacion({
   onCerrar: () => void;
 }) {
   const [producto, setProducto] = useState(String(inicial?.producto ?? ""));
+  const [tipoAnalisis, setTipoAnalisis] = useState<"lote" | "silo">(
+    inicial?.tipo_analisis ?? "lote",
+  );
   const [version, setVersion] = useState(
     String(modo === "version" ? (inicial?.version ?? 0) + 1 : inicial?.version ?? 1),
   );
@@ -168,6 +171,7 @@ function FormularioEspecificacion({
     try {
       await onGuardar(modo === "editar" ? inicial?.id ?? null : null, {
         producto: Number(producto),
+        tipo_analisis: tipoAnalisis,
         version: Number(version),
         vigente_desde: desde,
         vigente_hasta: hasta || null,
@@ -242,6 +246,19 @@ function FormularioEspecificacion({
               {productos.map((p) => (
                 <option key={p.id} value={p.id}>{p.nombre}</option>
               ))}
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-600">
+            Aplicación
+            <select
+              value={tipoAnalisis}
+              onChange={(e) => setTipoAnalisis(e.target.value as "lote" | "silo")}
+              disabled={modo !== "nueva"}
+              className={`mt-1 ${campo} bg-white disabled:bg-slate-50 disabled:text-slate-500`}
+            >
+              <option value="lote">Producto / lote final</option>
+              <option value="silo">Intermedio en silo</option>
             </select>
           </label>
 

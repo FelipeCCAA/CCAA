@@ -59,6 +59,29 @@ class BaseCalidad(TestCase):
 
 
 class EspecificacionVigenteTests(BaseCalidad):
+    def test_separa_la_especificacion_del_lote_y_del_intermedio_en_silo(self):
+        intermedia = Especificacion.objects.create(
+            producto=self.producto,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
+            version=1,
+            vigente_desde=date(2026, 1, 1),
+            rangos={"st": {"min": 40.0, "max": 55.0, "obligatorio": True}},
+        )
+        todas = list(Especificacion.objects.all())
+
+        self.assertEqual(
+            dominio.especificacion_vigente(
+                todas, self.producto.id, date(2026, 7, 20), "lote"
+            ),
+            self.spec,
+        )
+        self.assertEqual(
+            dominio.especificacion_vigente(
+                todas, self.producto.id, date(2026, 7, 20), "silo"
+            ),
+            intermedia,
+        )
+
     def test_un_lote_se_evalua_con_la_especificacion_vigente_en_su_fecha(self):
         """Un lote de mayo se audita contra la spec de mayo, no contra la actual."""
         self.spec.vigente_hasta = date(2026, 5, 31)

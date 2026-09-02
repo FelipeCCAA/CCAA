@@ -135,7 +135,11 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             "sucursal", "producto", "producto__mandante", "vale",
             "vale__silo_destino", "equipo", "ejecucion", "orden",
         )
-        .prefetch_related("analisis")
+        .prefetch_related(
+            "analisis",
+            "salidas_proceso__ejecucion__etapa",
+            "salidas_proceso__liberacion_calidad",
+        )
         .annotate(
             litros_procesados_anotados=Subquery(
                 salida_del_lote.values("litros")[:1],
@@ -372,6 +376,11 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     @staticmethod
     def _vales_operativos(request):
         from estandarizacion.models import ValeEstandarizacion
+        from procesos.models import EtapaProceso
+        from procesos.servicios import (
+            etapas_iniciales_por_producto,
+            tipos_equipo_para_etapa,
+        )
 
         vales = filtrar_por_scope(
             ValeEstandarizacion.objects.filter(
@@ -390,6 +399,13 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             vales = vales.filter(producto_id=producto)
 
         vales = list(vales)
+        etapas_por_producto = etapas_iniciales_por_producto(
+            productos_sucursales={
+                (vale.producto_id, vale.silo_destino.sucursal_id)
+                for vale in vales
+            },
+            etapa_previa_tipo=EtapaProceso.Tipo.ESTANDARIZACION,
+        )
 
         # El saldo lo calcula `litros_ya_tomados`, la **misma** función que usa
         # `abrir_lote_desde_vale` para decidir si el lote cabe.
@@ -407,6 +423,9 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             disponibles = vale.volumen - usados
             if disponibles <= 0:
                 continue
+            etapas_iniciales = etapas_por_producto.get(
+                (vale.producto_id, vale.silo_destino.sucursal_id), []
+            )
             resultado.append({
                 "id": vale.id,
                 "codigo": vale.codigo,
@@ -425,6 +444,17 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                     vale.silo_descremada.codigo if vale.silo_descremada else None
                 ),
                 "silo_destino_codigo": vale.silo_destino.codigo,
+                "etapas_iniciales": [
+                    {
+                        "id": etapa.pk,
+                        "nombre": etapa.nombre,
+                        "tipo": etapa.tipo,
+                        "orden": etapa.orden,
+                        "proceso": etapa.proceso_id,
+                        "tipos_equipo": sorted(tipos_equipo_para_etapa(etapa.tipo)),
+                    }
+                    for etapa in etapas_iniciales
+                ],
             })
         return resultado
 
@@ -434,6 +464,14 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         from inventario.models import CicloCIP
         from procesos.models import EjecucionProceso
         from procesos.servicios import ESTADOS_QUE_OCUPAN_EQUIPO
+
+        entradas = self._vales_operativos(request)
+        tipos_iniciales = {
+            tipo
+            for entrada in entradas
+            for etapa in entrada["etapas_iniciales"]
+            for tipo in etapa["tipos_equipo"]
+        }
 
         cip_en_curso = CicloCIP.objects.filter(
             equipo_id=OuterRef("pk"), estado=CicloCIP.Estado.EN_CURSO,
@@ -448,7 +486,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
         )
         equipos = filtrar_por_scope(
-            Equipo.objects.filter(activo=True).annotate(
+            Equipo.objects.filter(activo=True, tipo__in=tipos_iniciales).annotate(
                 ocupada=Exists(ocupada),
                 cip_en_curso=Exists(cip_en_curso),
                 aseo_verificacion=Subquery(ultimo_aseo.values("verificacion")[:1]),
@@ -497,8 +535,19 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 "aseo_verificacion": equipo.aseo_verificacion,
                 "advertencia_aseo": advertencia_aseo,
             })
+        for entrada in entradas:
+            tipos_compatibles = {
+                tipo
+                for etapa in entrada["etapas_iniciales"]
+                for tipo in etapa["tipos_equipo"]
+            }
+            entrada["equipos_compatibles"] = [
+                equipo["id"]
+                for equipo in opciones_equipos
+                if equipo["tipo"] in tipos_compatibles
+            ]
         return Response({
-            "entradas": self._vales_operativos(request),
+            "entradas": entradas,
             "equipos": opciones_equipos,
             "ordenes": [
                 {

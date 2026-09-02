@@ -302,6 +302,8 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertEqual(self.lote_origen.ejecucion, ejecucion)
         self.assertEqual(self.lote_origen.equipo, torre)
         self.assertEqual(ejecucion.entradas.get().salida_origen, salida)
+        self.assertEqual(ejecucion.corrida_secado.lote, self.lote_origen)
+        self.assertEqual(ejecucion.corrida_secado.orden, self.lote_origen.orden)
 
 
 class TrazabilidadPorCodigoTests(TestCase):

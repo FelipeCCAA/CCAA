@@ -16,6 +16,7 @@ from django.test import TestCase
 from maestros.models import Silo
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from recepcion.tests import BaseAPIRecepcion
+from usuarios.models import PerfilUsuario, Rol
 
 
 class AnalisisSiloModeloTests(TestCase):
@@ -181,6 +182,32 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(respuesta.data["analista_nombre"], "op")
+
+    def test_calidad_puede_registrar_analisis_sin_crear_recepciones(self):
+        usuario = User.objects.create_user(username="calidad_silo", password="x")
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            rol=Rol.CALIDAD,
+            area=PerfilUsuario.Area.CALIDAD,
+        )
+        self.cliente.force_authenticate(usuario)
+
+        respuesta = self.cliente.post(
+            "/api/recepcion/analisis-silo/",
+            {
+                "silo": self.silo.id,
+                "tomado_en": "2026-07-15T09:40:00Z",
+                "grasa": "4.35",
+                "sng": "8.90",
+                "inhibidores_resultado": "negativo",
+                "metodo": "delvo_sp",
+                "hora_lectura": "10:15",
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.data["analista_nombre"], "calidad_silo")
 
     def test_quien_realiza_no_puede_poner_la_segunda_firma(self):
         analisis = AnalisisSilo.objects.create(

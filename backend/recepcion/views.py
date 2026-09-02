@@ -1597,7 +1597,10 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
 
 
     serializer_class = AnalisisSiloSerializer
-    permission_classes = [EscribeRecepcion]
+    # Es un registro de Calidad sobre material almacenado, no una escritura de
+    # la recepción del camión. Recepción conserva acceso por operación y
+    # Calidad puede generar la evidencia que luego usa para liberar el silo.
+    permission_classes = [DecideCalidadRecepcion]
 
     def get_queryset(self):
         consulta = super().get_queryset().exclude(

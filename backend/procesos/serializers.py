@@ -283,13 +283,33 @@ class CorridaSecadoSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(
         source="ejecucion.get_estado_display", read_only=True
     )
+    equipo_id = serializers.IntegerField(source="ejecucion.equipo_id", read_only=True)
     equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)
+    iniciada_en = serializers.DateTimeField(source="ejecucion.inicio", read_only=True)
+    requiere_calidad = serializers.BooleanField(
+        source="ejecucion.etapa.requiere_calidad", read_only=True
+    )
+    estado_calidad = serializers.SerializerMethodField()
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     producto_nombre = serializers.CharField(source="lote.producto.nombre", read_only=True)
     orden_codigo = serializers.CharField(source="orden.codigo", read_only=True)
     rendimiento_recuperacion_pct = serializers.DecimalField(
         max_digits=7, decimal_places=2, read_only=True
     )
+
+    def get_estado_calidad(self, corrida):
+        if not corrida.ejecucion.etapa.requiere_calidad:
+            return "no_requerida"
+        salida = next(
+            (
+                salida for salida in corrida.ejecucion.salidas.all()
+                if salida.lote_id == corrida.lote_id
+                and salida.naturaleza == SalidaProceso.Naturaleza.PRINCIPAL
+            ),
+            None,
+        )
+        decision = getattr(salida, "liberacion_calidad", None) if salida else None
+        return decision.estado if decision else "pendiente"
 
     class Meta:
         model = CorridaSecado

@@ -344,6 +344,7 @@ export interface Especificacion {
   id: number;
   producto: number;
   producto_nombre: string;
+  tipo_analisis: "lote" | "silo";
   version: number;
   vigente_desde: string;
   vigente_hasta: string | null;

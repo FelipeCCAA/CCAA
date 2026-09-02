@@ -79,6 +79,7 @@ class FlujoCondensacionTests(TestCase):
     def _crear_especificacion_precondensado(self, rangos=None):
         return Especificacion.objects.create(
             producto=self.lote.producto,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
             version=1,
             vigente_desde=date(2026, 1, 1),
             rangos=rangos or {

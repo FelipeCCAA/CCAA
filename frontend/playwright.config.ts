@@ -99,6 +99,15 @@ export default defineConfig({
         storageState: RUTA_ESTADO,
       },
     },
+    {
+      name: "flujo-polvo",
+      testMatch: /flujo-polvo-continuacion\.spec\.ts/,
+      dependencies: ["evaporacion"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: RUTA_ESTADO,
+      },
+    },
   ],
 
   webServer: [

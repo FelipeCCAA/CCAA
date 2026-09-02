@@ -142,6 +142,8 @@ export interface Lote {
   estado_etiqueta: string;
   observacion: string;
   calidad: CalidadLote;
+  habilitado_envasado: boolean;
+  bloqueo_envasado: string;
 }
 
 export interface PalletProducto {

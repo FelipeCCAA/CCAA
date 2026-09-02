@@ -547,11 +547,25 @@ class Especificacion(models.Model):
     una auditoría que pregunte por qué se liberó un lote de hace seis meses.
     """
 
+    class TipoAnalisis(models.TextChoices):
+        LOTE = "lote", "Producto / lote"
+        SILO = "silo", "Intermedio en silo"
+
     producto = models.ForeignKey(
         Producto,
         on_delete=models.PROTECT,
         related_name="especificaciones",
         verbose_name="Producto",
+    )
+    tipo_analisis = models.CharField(
+        "Tipo de análisis",
+        max_length=10,
+        choices=TipoAnalisis.choices,
+        default=TipoAnalisis.LOTE,
+        help_text=(
+            "Separa los rangos del producto terminado de los controles "
+            "fisicoquímicos aplicables a una salida intermedia en silo."
+        ),
     )
     version = models.PositiveIntegerField("Versión", default=1)
     vigente_desde = models.DateField("Vigente desde")
@@ -579,13 +593,13 @@ class Especificacion(models.Model):
         ordering = ["producto__nombre", "-version"]
         constraints = [
             models.UniqueConstraint(
-                fields=["producto", "version"],
-                name="especificacion_version_unica_por_producto",
+                fields=["producto", "tipo_analisis", "version"],
+                name="especificacion_version_unica_por_producto_y_tipo",
             )
         ]
 
     def __str__(self):
-        return f"{self.producto} · v{self.version}"
+        return f"{self.producto} · {self.get_tipo_analisis_display()} · v{self.version}"
 
     def clean(self):
         """Valida la forma de `rangos`, que por ser JSON la base no valida."""

@@ -42,7 +42,9 @@ export default function Envasado() {
     return () => clearTimeout(pendiente);
   }, [cargar]);
   const lote = lotes.find((item) => item.id === seleccionado) ?? null;
-  const bloqueoCalidad = lote ? bloqueosCalidad.get(lote.id) : undefined;
+  const bloqueoCalidad = lote
+    ? lote.bloqueo_envasado || bloqueosCalidad.get(lote.id)
+    : undefined;
   const palletPorLote = useMemo(() => {
     const conteo = new Map<string, number>();
     pallets.forEach((pallet) => conteo.set(pallet.lote_codigo ?? "", (conteo.get(pallet.lote_codigo ?? "") ?? 0) + 1));

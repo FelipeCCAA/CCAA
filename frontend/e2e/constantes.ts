@@ -19,6 +19,9 @@ export const RUTA_ESTADO = "e2e/.auth/estado.json";
 /** Informe legible que deja la auditoría al terminar. */
 export const RUTA_INFORME = "e2e/informe-accesibilidad.md";
 
+/** Identificadores producidos por Evaporación y consumidos por su continuación. */
+export const RUTA_FLUJO_POLVO = "e2e/.registro/flujo-polvo.json";
+
 /*
   Registro crudo (JSONL) que las pruebas van escribiendo mientras corren.
 

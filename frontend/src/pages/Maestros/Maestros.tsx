@@ -456,7 +456,9 @@ function Maestros() {
   */
   const conVigente = useMemo(
     () => new Set(
-      especificaciones.filter((e) => e.es_vigente).map((e) => e.producto),
+      especificaciones
+        .filter((e) => e.es_vigente && e.tipo_analisis === "lote")
+        .map((e) => e.producto),
     ),
     [especificaciones],
   );
@@ -861,6 +863,7 @@ function Maestros() {
                       <thead className="bg-slate-50">
                         <tr>
                           <th className={encabezado}>Producto</th>
+                          <th className={encabezado}>Aplicación</th>
                           <th className={encabezado}>Versión</th>
                           <th className={encabezado}>Vigencia</th>
                           <th className={encabezado}>Parámetros</th>
@@ -874,7 +877,7 @@ function Maestros() {
                         {especificaciones.length === 0 && (
                           <tr>
                             <td
-                              colSpan={6}
+                              colSpan={7}
                               className="px-6 py-10 text-center text-sm text-slate-600"
                             >
                               Todavía no hay especificaciones cargadas.
@@ -888,6 +891,10 @@ function Maestros() {
 
                             <td className={`${celda} font-medium text-slate-800`}>
                               {e.producto_nombre}
+                            </td>
+
+                            <td className={`${celda} text-slate-600`}>
+                              {e.tipo_analisis === "silo" ? "Intermedio en silo" : "Producto / lote final"}
                             </td>
 
                             <td className={celda}>

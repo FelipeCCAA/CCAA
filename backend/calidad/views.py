@@ -287,7 +287,29 @@ def _filtro_resultados_de_proceso():
         ejecucion__etapa__requiere_calidad=True,
         destino=SalidaProceso.Destino.ENVASADO,
     )
-    return intermedio_en_silo | mantequilla_a_granel
+    secado_a_granel = Q(
+        silo__isnull=True,
+        lote__isnull=False,
+        ejecucion__etapa__tipo=EtapaProceso.Tipo.SECADO,
+        ejecucion__etapa__requiere_calidad=True,
+        destino=SalidaProceso.Destino.PENDIENTE,
+    )
+    return intermedio_en_silo | mantequilla_a_granel | secado_a_granel
+
+
+def _ejecucion_admite_decision_de_calidad(salida):
+    """Calidad decide material; no reabre una ejecuciÃ³n fÃ­sica de Secado."""
+    from procesos.models import EjecucionProceso, EtapaProceso
+
+    if salida.ejecucion.estado in {
+        EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        EjecucionProceso.Estado.BLOQUEADA,
+    }:
+        return True
+    return (
+        salida.ejecucion.etapa.tipo == EtapaProceso.Tipo.SECADO
+        and salida.ejecucion.estado == EjecucionProceso.Estado.CERRADA
+    )
 
 
 def _pagina_y_limite(parametros):
@@ -355,9 +377,9 @@ def _resultados_intermedios(request):
         decision = getattr(salida, "liberacion_calidad", None)
         condensacion = getattr(salida.ejecucion, "corrida_condensacion", None)
         descremacion = getattr(salida.ejecucion, "corrida_descremacion", None)
-        if condensacion is not None:
-            producto = condensacion.lote.producto.nombre
-            lote_codigo = condensacion.lote.codigo_lote
+        if salida.lote_id:
+            producto = salida.lote.producto.nombre
+            lote_codigo = salida.lote.codigo_lote
         elif descremacion is not None:
             producto = (
                 "Leche descremada"
@@ -382,6 +404,11 @@ def _resultados_intermedios(request):
                 especificaciones,
                 salida.lote.producto_id,
                 timezone.localdate(salida.registrada_en),
+                (
+                    Especificacion.TipoAnalisis.SILO
+                    if salida.silo_id
+                    else Especificacion.TipoAnalisis.LOTE
+                ),
             )
 
         def serializar_analisis_silo(item):
@@ -433,6 +460,7 @@ def _resultados_intermedios(request):
         resultado.append({
             "id": salida.id,
             "tipo": salida.ejecucion.etapa.get_tipo_display(),
+            "etapa_tipo": salida.ejecucion.etapa.tipo,
             "corrida_codigo": salida.ejecucion.codigo,
             "lote_codigo": lote_codigo,
             "producto_nombre": producto,
@@ -744,6 +772,7 @@ def _bloqueo_especificacion_intermedia(salida, analisis):
         Especificacion.objects.filter(producto_id=salida.lote.producto_id),
         salida.lote.producto_id,
         fecha,
+        Especificacion.TipoAnalisis.SILO,
     )
     evaluacion = dominio_produccion.evaluar_analisis(
         _valores_calidad_de_silo(analisis), especificacion
@@ -804,6 +833,7 @@ def _bloqueo_especificacion_lote(salida, analisis):
         Especificacion.objects.filter(producto_id=salida.lote.producto_id),
         salida.lote.producto_id,
         analisis.fecha,
+        Especificacion.TipoAnalisis.LOTE,
     )
     evaluacion = dominio_produccion.evaluar_analisis(
         analisis.valores, especificacion
@@ -858,10 +888,7 @@ def liberar_resultado_proceso(request, salida_id):
 
     with transaction.atomic():
         salida = _salida_intermedia_permitida(request, salida_id, bloquear=True)
-        if salida.ejecucion.estado not in {
-            EjecucionProceso.Estado.PENDIENTE_CONTROL,
-            EjecucionProceso.Estado.BLOQUEADA,
-        }:
+        if not _ejecucion_admite_decision_de_calidad(salida):
             return Response(
                 {"detail": "La salida no está pendiente de Calidad."},
                 status=status.HTTP_409_CONFLICT,
@@ -936,6 +963,18 @@ def liberar_resultado_proceso(request, salida_id):
         decision.observacion = str(request.data.get("observacion", "")).strip()
         decision.full_clean()
         decision.save()
+        if (
+            salida.ejecucion.etapa.tipo == "secado"
+            and salida.destino == SalidaProceso.Destino.PENDIENTE
+        ):
+            from procesos.servicios import destino_salida_de_ruta
+
+            salida.destino = destino_salida_de_ruta(
+                producto=salida.lote.producto,
+                sucursal=salida.ejecucion.sucursal,
+                etapa=salida.ejecucion.etapa,
+            )
+            salida.save(update_fields=["destino"])
         if analisis_silo is not None:
             _activar_lote_intermedio(salida, analisis_silo)
             Silo.objects.filter(pk=salida.silo_id).update(
@@ -985,10 +1024,7 @@ def rechazar_resultado_proceso(request, salida_id):
         return Response({"motivo": "Indica el motivo del rechazo."}, status=400)
     with transaction.atomic():
         salida = _salida_intermedia_permitida(request, salida_id, bloquear=True)
-        if salida.ejecucion.estado not in {
-            EjecucionProceso.Estado.PENDIENTE_CONTROL,
-            EjecucionProceso.Estado.BLOQUEADA,
-        }:
+        if not _ejecucion_admite_decision_de_calidad(salida):
             return Response(
                 {"detail": "La salida no está pendiente de Calidad."},
                 status=status.HTTP_409_CONFLICT,
@@ -1012,7 +1048,10 @@ def rechazar_resultado_proceso(request, salida_id):
             Silo.objects.filter(pk=salida.silo_id).update(
                 estado=Silo.Estado.BLOQUEADO_CALIDAD
             )
-        if salida.ejecucion.estado != EjecucionProceso.Estado.BLOQUEADA:
+        if salida.ejecucion.estado not in {
+            EjecucionProceso.Estado.BLOQUEADA,
+            EjecucionProceso.Estado.CERRADA,
+        }:
             transicionar_ejecucion(
                 ejecucion_id=salida.ejecucion_id,
                 estado_nuevo=EjecucionProceso.Estado.BLOQUEADA,

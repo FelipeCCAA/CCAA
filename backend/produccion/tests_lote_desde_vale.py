@@ -20,6 +20,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Equipo, Mandante, Producto, Silo
@@ -28,7 +29,7 @@ from produccion import servicios
 from produccion.dominio import puede_abrir_lote_desde
 from produccion.models import Lote
 from recepcion.models import MovimientoSilo
-from usuarios.models import Empresa, Sucursal
+from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 
 class BaseValeLote(TestCase):
@@ -171,6 +172,76 @@ class AperturaTests(BaseValeLote):
 
         self.assertFalse(Lote.objects.exists())
         self.assertFalse(MovimientoSilo.objects.exists())
+
+    def test_no_permite_saltar_la_etapa_inicial_posterior_al_vale(self):
+        secado = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.SECADO)
+        secado.orden = 3
+        secado.save(update_fields=["orden"])
+        EtapaProceso.objects.create(
+            proceso=self.ruta.proceso,
+            codigo="estandarizacion",
+            nombre="EstandarizaciÃ³n",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION,
+            orden=1,
+        )
+        evaporacion = EtapaProceso.objects.create(
+            proceso=self.ruta.proceso,
+            codigo="evaporacion",
+            nombre="EvaporaciÃ³n",
+            tipo=EtapaProceso.Tipo.EVAPORACION,
+            orden=2,
+        )
+        evaporador = Equipo.objects.create(
+            sucursal=self.planta,
+            codigo="EV-1",
+            nombre="Evaporador 1",
+            tipo=Equipo.Tipo.EVAPORADOR,
+        )
+        torre = Equipo.objects.create(
+            sucursal=self.planta,
+            codigo="TORRE-SALTO",
+            nombre="Torre no inicial",
+            tipo=Equipo.Tipo.TORRE,
+        )
+        vale = self._vale()
+
+        with self.assertRaisesMessage(ValidationError, "no permite comenzar directamente"):
+            servicios.abrir_lote_desde_vale(
+                vale=vale,
+                producto=self.producto,
+                codigo_lote="SALTO-SECADO",
+                fecha=date(2026, 8, 12),
+                litros=Decimal("1000"),
+                equipo=torre,
+                usuario=self.operador,
+            )
+
+        self.assertFalse(Lote.objects.filter(codigo_lote="SALTO-SECADO").exists())
+        self.assertFalse(MovimientoSilo.objects.filter(origen_tipo="lote").exists())
+
+        PerfilUsuario.objects.create(
+            usuario=self.operador,
+            empresa=self.empresa,
+            sucursal=self.planta,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+            rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.operador)
+        respuesta = cliente.get("/api/produccion/lotes/opciones-inicio/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        entrada = respuesta.data["entradas"][0]
+        self.assertEqual(
+            [etapa["id"] for etapa in entrada["etapas_iniciales"]],
+            [evaporacion.pk],
+        )
+        self.assertEqual(entrada["equipos_compatibles"], [evaporador.pk])
+        self.assertEqual(
+            [equipo["id"] for equipo in respuesta.data["equipos"]],
+            [evaporador.pk],
+        )
 
     def test_un_lote_sin_ejecucion_no_puede_cerrar_trazabilidad(self):
         lote = Lote.objects.create(

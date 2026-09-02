@@ -210,6 +210,7 @@ export interface AnalisisLoteResultadoProceso extends EvaluacionAnalisisProceso 
 interface ResultadoProcesoCalidadBase {
   id: number;
   tipo: string;
+  etapa_tipo: string;
   corrida_codigo: string;
   lote_codigo: string;
   producto_nombre: string;

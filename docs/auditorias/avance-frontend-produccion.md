@@ -118,6 +118,43 @@ Verificación
 - git diff --check: aprobado.
 - No se ejecutó la suite completa.
 
+## Bloque 4 - puesto independiente de Secado
+
+Bloque 4 terminado únicamente en React. Django no fue modificado.
+
+Cambios principales:
+
+- Nueva ruta y entrada de navegación `/secado`, cargada de forma diferida.
+- Acceso de seguimiento para Secado y Calidad; las acciones quedan visibles solo para el área Secado y Administración según el permiso actual.
+- Una sola consulta `GET /api/procesos/secados/` al entrar, sin polling ni cargas de Producción, Calidad, rutas o lotes.
+- Bandejas locales para corridas activas, esperando Calidad, terminadas e historial.
+- Formulario de cierre con alimentación, sólidos, polvo, finos, merma y temperatura de salida.
+- Resumen numérico previo con sólidos estimados, recuperación, diferencia y rendimiento.
+- Protección contra doble submit, sin reintento automático del POST.
+- Después del cierre se reemplaza solamente la corrida usando la respuesta de `POST /api/procesos/secados/{id}/cerrar/`.
+- Estados físicos respetados: preparación reserva; ejecución, pausa y bloqueo ocupan; pendiente de control libera físicamente el equipo.
+
+Contratos verificados:
+
+- `GET /api/procesos/secados/`: disponible y utilizado.
+- `GET /api/procesos/secados/{id}/`: disponible; no fue necesario agregar otra consulta para el flujo actual.
+- `POST /api/procesos/secados/{id}/cerrar/`: disponible y utilizado.
+- `POST /api/procesos/secados/`: correctamente rechazado por backend; la corrida nace al abrir el lote en la torre.
+
+Incompatibilidades backend detectadas:
+
+- El serializer de Secado no entrega `equipo_id`; solo `equipo_nombre`. React no relaciona por nombre, pero tampoco puede mostrar la identidad técnica del equipo hasta que el contrato la exponga.
+- No entrega la hora de inicio de la ejecución; la tarjeta muestra la hora de finalización cuando existe.
+- El cierre deja la ejecución en `cerrada` y el serializer no expone un estado explícito de Calidad. La bandeja “Esperando Calidad” solo se completa si backend entrega `pendiente_control`; React no infiere ni libera Calidad.
+
+Verificación:
+
+- 4 pruebas específicas de clasificación, ocupación y balance: aprobadas.
+- TypeScript: aprobado.
+- ESLint sobre archivos modificados: aprobado.
+- `git diff --check`: aprobado; solo advertencias normales LF/CRLF.
+- No se ejecutó la suite completa.
+
 Edited 15 files+469-135Review changesUndoReview
 
 frontend/src/pages/Calidad/CentroCalidad.tsxfrontend/src/pages/Calidad/CentroCalidad.tsx+105-89

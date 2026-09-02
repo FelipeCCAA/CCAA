@@ -246,6 +246,8 @@ class LoteSerializer(serializers.ModelSerializer):
         max_digits=12, decimal_places=2, write_only=True, required=False
     )
     litros_procesados = serializers.SerializerMethodField()
+    habilitado_envasado = serializers.SerializerMethodField()
+    bloqueo_envasado = serializers.SerializerMethodField()
 
     # El resultado de calidad se calcula, nunca se lee de la base
     # (MODELO_DATOS.md §2.2).
@@ -269,6 +271,8 @@ class LoteSerializer(serializers.ModelSerializer):
             "litros_estandarizados",
             "litros_estandarizados_borrador",
             "litros_procesados",
+            "habilitado_envasado",
+            "bloqueo_envasado",
             "equipo",
             "equipo_nombre",
             "ejecucion",
@@ -312,6 +316,14 @@ class LoteSerializer(serializers.ModelSerializer):
                 ),
             )
         ]"""
+
+    def get_bloqueo_envasado(self, lote):
+        from .servicios import bloqueo_calidad_para_envasado
+
+        return bloqueo_calidad_para_envasado(lote)
+
+    def get_habilitado_envasado(self, lote):
+        return not self.get_bloqueo_envasado(lote)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

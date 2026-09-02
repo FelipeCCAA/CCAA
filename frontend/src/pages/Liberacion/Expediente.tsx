@@ -546,7 +546,7 @@ function Expediente({ loteId, alVolver }: Props) {
 
         )}
 
-        {puedeFirmar && !pidiendoMotivo && (
+        {puedeFirmar && !liberacion?.liberado && !pidiendoMotivo && (
 
           <div className="mt-4 flex flex-wrap gap-2">
 

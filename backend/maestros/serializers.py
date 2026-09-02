@@ -265,6 +265,7 @@ class EspecificacionSerializer(serializers.ModelSerializer):
             "id",
             "producto",
             "producto_nombre",
+            "tipo_analisis",
             "version",
             "vigente_desde",
             "vigente_hasta",

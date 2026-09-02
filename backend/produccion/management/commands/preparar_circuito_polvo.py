@@ -45,7 +45,7 @@ from django.db import transaction
 
 from inventario.models import Bodega, Insumo, LoteInventario, Ubicacion
 from inventario.servicios import registrar_entrada
-from maestros.models import Producto, Receta, RecetaComponente
+from maestros.models import Especificacion, Producto, Receta, RecetaComponente
 from produccion.models import OrdenProduccion
 from usuarios.areas import usuarios_del_area
 from usuarios.models import PerfilUsuario, Rol, Sucursal
@@ -134,6 +134,7 @@ class Command(BaseCommand):
         return [
             *self._areas(),
             *self._orden(sucursal, usuario),
+            *self._especificacion_intermedia(),
             *self._receta(sucursal),
             *self._existencia(sucursal, usuario),
         ]
@@ -207,21 +208,23 @@ class Command(BaseCommand):
             )
 
         hoy = date.today()
-        codigo = f"OP-CIRCUITO-{hoy:%Y%m%d}-{objetivo.pk}"
-        orden, creada = OrdenProduccion.objects.get_or_create(
+        base_codigo = f"OP-CIRCUITO-{hoy:%Y%m%d}-{objetivo.pk}"
+        codigo = base_codigo
+        correlativo = 2
+        while OrdenProduccion.objects.filter(sucursal=sucursal, codigo=codigo).exists():
+            codigo = f"{base_codigo}-{correlativo}"
+            correlativo += 1
+        orden = OrdenProduccion.objects.create(
             sucursal=sucursal,
             codigo=codigo,
-            defaults={
-                "producto": objetivo,
-                "cantidad_planificada": Decimal("20000"),
-                "unidad": "l",
-                "estado": OrdenProduccion.Estado.PROGRAMADA,
-                "creada_por": usuario,
-            },
+            producto=objetivo,
+            cantidad_planificada=Decimal("20000"),
+            unidad="l",
+            estado=OrdenProduccion.Estado.PROGRAMADA,
+            creada_por=usuario,
         )
         return [
-            f"Orden: {orden.codigo} {'programada' if creada else 'ya existía'} "
-            f"para {objetivo.nombre}."
+            f"Orden: {orden.codigo} programada para {objetivo.nombre}."
         ]
 
     # -- 1. Áreas -----------------------------------------------------------
@@ -267,6 +270,37 @@ class Command(BaseCommand):
             )
 
         return lineas
+
+    def _especificacion_intermedia(self):
+        """Prepara únicamente el control líquido requerido por el circuito E2E."""
+        producto = Producto.objects.filter(nombre=PRODUCTO).first()
+        if producto is None:
+            raise CommandError(f"No existe el producto «{PRODUCTO}».")
+        existente = producto.especificaciones.filter(
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
+        ).order_by("-version").first()
+        if existente:
+            return [
+                f"Especificación intermedia: {producto.nombre} v{existente.version} ya existe."
+            ]
+        especificacion = Especificacion.objects.create(
+            producto=producto,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
+            version=1,
+            vigente_desde=date.today(),
+            rangos={
+                "mg": {"min": 5.0, "max": 9.0, "obligatorio": True},
+                "st": {"min": 40.0, "max": 55.0, "obligatorio": True},
+                "ph": {"min": 6.2, "max": 6.9, "obligatorio": True},
+            },
+            fuente=(
+                "Circuito E2E de precondensado: rangos provisorios; "
+                "Calidad debe reemplazarlos antes de operación comercial."
+            ),
+        )
+        return [
+            f"Especificación intermedia: {producto.nombre} v{especificacion.version} creada."
+        ]
 
     # -- 2. Receta ----------------------------------------------------------
 

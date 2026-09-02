@@ -2,7 +2,7 @@ import type { Usuario } from "./sesion";
 
 export type ModuloSistema =
   | "dashboard" | "recepcion" | "estandarizacion" | "produccion"
-  | "envasado" | "procesos" | "planificacion" | "inventario"
+  | "secado" | "envasado" | "procesos" | "planificacion" | "inventario"
   | "calidad" | "inocuidad" | "registros" | "auditoria"
   | "maestros" | "administracion";
 
@@ -11,6 +11,7 @@ const AREAS: Record<ModuloSistema, string[]> = {
   recepcion: ["recepcion", "calidad"],
   estandarizacion: ["recepcion", "condensacion", "calidad"],
   produccion: ["condensacion", "secado", "calidad"],
+  secado: ["secado", "calidad"],
   envasado: ["envase", "calidad"],
   procesos: ["condensacion", "secado", "calidad"],
   planificacion: ["condensacion", "secado", "calidad"],
@@ -25,7 +26,7 @@ const AREAS: Record<ModuloSistema, string[]> = {
 
 const LEGADO: Record<string, ModuloSistema[]> = {
   recepcion: ["recepcion", "estandarizacion"],
-  produccion: ["estandarizacion", "produccion", "envasado", "procesos", "planificacion", "registros"],
+  produccion: ["estandarizacion", "produccion", "secado", "envasado", "procesos", "planificacion", "registros"],
   calidad: ["recepcion", "estandarizacion", "produccion", "envasado", "procesos", "planificacion", "inventario", "calidad", "inocuidad", "registros", "auditoria"],
 };
 
@@ -46,7 +47,7 @@ export function destinoInicial(usuario: Usuario): string {
   if (esAdministradorGlobal(usuario)) return "/dashboard";
   if (usuario.perfil?.nivel === "admin") return "/administracion";
   const porArea: Record<string, string> = {
-    recepcion: "/leche", condensacion: "/produccion", secado: "/produccion",
+    recepcion: "/leche", condensacion: "/produccion", secado: "/secado",
     envase: "/envasado", calidad: "/calidad", aseo: "/calidad/inocuidad",
     bodega: "/inventario", compras: "/inventario", despacho: "/inventario",
   };

@@ -133,8 +133,8 @@ class VehiculoAdmin(OrganizacionInternaAdminMixin, admin.ModelAdmin):
 
 @admin.register(Especificacion)
 class EspecificacionAdmin(admin.ModelAdmin):
-    list_display = ["producto", "version", "vigente_desde", "vigente_hasta", "fuente"]
-    list_filter = ["producto__familia", "producto__mandante"]
+    list_display = ["producto", "tipo_analisis", "version", "vigente_desde", "vigente_hasta", "fuente"]
+    list_filter = ["tipo_analisis", "producto__familia", "producto__mandante"]
     search_fields = ["producto__nombre", "fuente"]
     autocomplete_fields = ["producto"]
 

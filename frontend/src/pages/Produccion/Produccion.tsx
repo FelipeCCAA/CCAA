@@ -204,13 +204,13 @@ function Produccion() {
             <Link to="/procesos?seccion=descremacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">1. Descremación<span className="mt-1 block text-xs font-normal text-slate-500">Leche → descremada + crema</span></Link>
             <Link to="/estandarizacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">2. Estandarización<span className="mt-1 block text-xs font-normal text-slate-500">Mezcla → vale intermedio</span></Link>
             <a href="#evaporacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-blue-400">3. Evaporación<span className="mt-1 block text-xs font-normal text-slate-500">Vale → concentrado</span></a>
-            <a href="#secado" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-amber-400">4. Secado<span className="mt-1 block text-xs font-normal text-slate-500">Concentrado → polvo granel</span></a>
+            <Link to="/secado" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-amber-400">4. Secado<span className="mt-1 block text-xs font-normal text-slate-500">Concentrado → polvo granel</span></Link>
             <Link to="/procesos?seccion=mantequilla" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-yellow-400">Mantequilla<span className="mt-1 block text-xs font-normal text-slate-500">Crema → mantequilla granel</span></Link>
             <Link to="/procesos" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-violet-400">Seguimiento<span className="mt-1 block text-xs font-normal text-slate-500">Activos y trazabilidad</span></Link>
           </div>
         </section>
 
-        <div id="secado"><SalidasIntermedias /></div>
+        <div id="continuidad"><SalidasIntermedias /></div>
 
         {veCondensacion && <div id="evaporacion"><EvaporadoresProduccion /></div>}
 

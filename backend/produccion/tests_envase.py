@@ -158,6 +158,28 @@ class EnvasePalletTests(TestCase):
         registro = self.registrar()
         self.assertEqual(registro.lote, self.lote)
 
+    def test_secado_exige_liberacion_intermedia_antes_de_envasar(self):
+        proceso = Proceso.objects.create(codigo="ruta-sec-env", nombre="Polvo")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="secado", nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1, requiere_calidad=True,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-SEC-ENV", etapa=etapa, sucursal=self.planta,
+            estado=EjecucionProceso.Estado.CERRADA,
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=ejecucion, lote=self.lote,
+            naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+            clasificacion=SalidaProceso.Clasificacion.GRANEL,
+            destino=SalidaProceso.Destino.PENDIENTE,
+            cantidad=Decimal("1000"), unidad="kg",
+        )
+        LiberacionProceso.objects.create(salida=salida)
+
+        with self.assertRaisesMessage(ValidationError, "Secado está pendiente"):
+            self.registrar()
+
     def test_simulacion_pallet_25kg_consume_envases_y_respeta_500kg(self):
         """20 sacos + 1 pallet físico producen exactamente un pallet de 500 kg."""
         bolsa = Insumo.objects.create(

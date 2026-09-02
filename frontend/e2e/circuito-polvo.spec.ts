@@ -464,7 +464,7 @@ test("de la leche cruda al pallet, por pantalla", async ({ page }) => {
 
   await test.step("6 · se abre el lote desde el vale liberado", async () => {
     await irA(page, "/produccion");
-    await page.getByRole("button", { name: "Abrir proceso" }).first().click();
+    await page.getByRole("button", { name: "Iniciar lote desde vale" }).click();
 
     await elegirOpcion(campo(page, "Vale estandarizado liberado *"), new RegExp(VALE.codigo));
     await campo(page, "Fecha *").fill(HOY);

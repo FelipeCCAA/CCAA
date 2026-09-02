@@ -105,6 +105,7 @@ def especificacion_vigente(
     especificaciones: Iterable[Any],
     producto_id: int,
     fecha: date,
+    tipo_analisis: str = "lote",
 ) -> Any | None:
     """
     Especificación vigente para un producto en una fecha dada.
@@ -119,6 +120,7 @@ def especificacion_vigente(
         e
         for e in (especificaciones or [])
         if e.producto_id == producto_id
+        and getattr(e, "tipo_analisis", "lote") == tipo_analisis
         and e.vigente_desde <= fecha
         and (e.vigente_hasta is None or e.vigente_hasta >= fecha)
     ]
