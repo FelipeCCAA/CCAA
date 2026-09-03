@@ -6,7 +6,7 @@
       "localStorage": [
         {
           "name": "ccaa.sesion",
-          "value": "{\"token\":\"zhodFRONgDqOxjYxMDz2w9fWS2L8rqZ8g9R7ZZRgsFs\",\"usuario\":{\"id\":7,\"username\":\"e2e_auditoria\",\"nombre\":\"Auditoría\",\"apellido\":\"Accesibilidad\",\"email\":\"\",\"rol\":\"admin\",\"capacidades\":[],\"perfil\":{\"cargo\":\"Auditoría automática\",\"area\":\"administracion\",\"area_etiqueta\":\"Administración general\",\"turno\":\"\",\"rol\":\"admin\",\"rol_etiqueta\":\"Administrador\",\"nivel\":\"admin\",\"nivel_etiqueta\":\"Administrador de área\",\"empresa\":1,\"debe_cambiar_password\":false}}}"
+          "value": "{\"token\":\"GArFc1EoX0a3ON1PlhWBF7HIi-sV3k_sjY4Rq70Smxw\",\"usuario\":{\"id\":7,\"username\":\"e2e_auditoria\",\"nombre\":\"Auditoría\",\"apellido\":\"Accesibilidad\",\"email\":\"\",\"rol\":\"admin\",\"capacidades\":[],\"perfil\":{\"cargo\":\"Auditoría automática\",\"area\":\"administracion\",\"area_etiqueta\":\"Administración general\",\"turno\":\"\",\"rol\":\"admin\",\"rol_etiqueta\":\"Administrador\",\"nivel\":\"admin\",\"nivel_etiqueta\":\"Administrador de área\",\"empresa\":1,\"debe_cambiar_password\":false}}}"
         }
       ]
     }

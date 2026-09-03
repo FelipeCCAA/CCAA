@@ -7,6 +7,7 @@ from .views import (
     EspecificacionViewSet,
     MandanteViewSet,
     ProductoViewSet,
+    RecetaViewSet,
     SiloViewSet,
     VehiculoViewSet,
     catalogos,
@@ -16,6 +17,7 @@ from .views import (
 router = DefaultRouter()
 router.register("mandantes", MandanteViewSet)
 router.register("productos", ProductoViewSet)
+router.register("recetas", RecetaViewSet)
 router.register("especificaciones", EspecificacionViewSet)
 router.register("equipos", EquipoViewSet)
 router.register("silos", SiloViewSet)

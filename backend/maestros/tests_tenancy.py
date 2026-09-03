@@ -97,6 +97,25 @@ class TenancyMaestrosTests(TestCase):
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a1.id)
 
+    def test_api_guarda_reglas_de_consumo_del_equipo(self):
+        cliente = self.admin("admin-reglas", self.empresa_a, self.a1)
+
+        respuesta = cliente.post(
+            "/api/maestros/equipos/",
+            {
+                "codigo": "ENV-REGLAS",
+                "nombre": "Envasadora reglas",
+                "tipo": Equipo.Tipo.ENVASADORA,
+                "consume_leche": False,
+                "consume_materiales": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertTrue(respuesta.data["consume_materiales"])
+        self.assertTrue(Equipo.objects.get(codigo="ENV-REGLAS").consume_materiales)
+
     def test_admin_empresa_usa_la_configuracion_canonica(self):
         cliente = self.admin(
             "admin-empresa", self.empresa_a, None, PerfilUsuario.Alcance.EMPRESA

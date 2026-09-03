@@ -1,6 +1,6 @@
 # Resultado E2E del flujo de leche en polvo
 
-Fecha de ejecución: 2 de septiembre de 2026.
+Fecha de ultima ejecucion: 3 de septiembre de 2026.
 
 ## Recorrido verificado
 
@@ -12,10 +12,10 @@ liberación final → Bodega/Inventario.
 La cadena final ejecutada por pantalla terminó correctamente. La evidencia
 creada fue:
 
-- lote: `CCAA-EVA-057404`;
+- lote: `CCAA-EVA-058849`;
 - producto: Leche entera en polvo;
 - producción declarada: 500 kg;
-- pallet: `PAL-057404`;
+- pallet: `PAL-058849`;
 - peso del pallet: 500 kg (20 sacos de 25 kg);
 - liberación final: liberado;
 - estado del pallet: en inventario;
@@ -35,6 +35,9 @@ creada fue:
 - El preparador E2E crea una OP nueva cuando la anterior ya fue consumida.
 - El recorrido Playwright permite reanudar desde una fase confirmada sin
   repetir escrituras de las etapas anteriores.
+- El tramo inicial ya no intenta abrir Secado directamente: termina con el vale
+  liberado, Evaporacion genera el precondensado y la continuidad usa la accion
+  contractual `Continuar a Secado`.
 
 ## Validaciones ejecutadas
 

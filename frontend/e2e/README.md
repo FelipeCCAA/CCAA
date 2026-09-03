@@ -82,10 +82,11 @@ como red de regresión: un botón nuevo sin etiqueta vuelve a ponerlo en rojo.
 
 # Circuito de producción de leche en polvo
 
-`circuito-polvo.spec.ts` recorre **por pantalla** lo que hace un turno completo:
-llegan dos camiones —entera y descremada—, Calidad los decide, se descargan en
-sus estanques, Recepción analiza los dos, se compone y libera un vale de
-estandarización, se abre el lote, se declaran los kilos y se arma el pallet.
+El recorrido completo esta separado por puestos: `circuito-polvo.spec.ts`
+recibe los camiones y termina con el vale de Estandarizacion liberado;
+`evaporacion.spec.ts` abre el lote y produce precondensado; finalmente,
+`flujo-polvo-continuacion.spec.ts` recorre Calidad, Secado, Envasado,
+liberacion comercial y Bodega/Inventario.
 
 Vive en el mismo directorio que la auditoría pero es otra cosa: **escribe**.
 Cada corrida deja recepciones, análisis, un vale, un lote y un pallet en la base
@@ -124,6 +125,35 @@ cd frontend
 $env:E2E_USUARIO = "e2e_auditoria"
 $env:E2E_CLAVE = "auditoria-e2e-ccaa"
 npm run circuito
+npm run evaporacion
+npx playwright test --project=flujo-polvo --no-deps
+```
+
+Cada comando se ejecuta solo cuando el anterior termina correctamente. El
+`--no-deps` del ultimo evita volver a ejecutar Evaporacion, porque esa etapa ya
+dejo el traspaso trazable en `e2e/.registro/flujo-polvo.json`.
+
+## Precondensado para despacho directo
+
+Los maestros sin pantalla se preparan una sola vez:
+
+```powershell
+cd backend
+.venv\Scripts\python.exe manage.py preparar_circuito_precondensado --aplicar
+.venv\Scripts\python.exe manage.py crear_usuarios_flujo_e2e
+```
+
+El recorrido reutiliza las etapas comunes, pero fija el producto y conserva su
+propio registro de traspaso. Despues se ejecuta solamente la continuacion de
+Despacho:
+
+```powershell
+cd frontend
+$env:E2E_PRODUCTO = "Precondensado Entero NE Granel"
+$env:E2E_REGISTRO = "e2e/.registro/flujo-precondensado.json"
+npm run circuito
+npm run evaporacion
+npx playwright test --project=flujo-precondensado
 ```
 
 ## Por qué hacen falta dos cuentas
@@ -132,6 +162,29 @@ El análisis de silo exige **dos firmas de personas distintas** —quien realiza
 quien visualiza— y el backend rechaza con 409 que las ponga la misma. Es el
 control de cuatro ojos del formato, no un capricho: sin la segunda cuenta el
 circuito no pasa de la transferencia del vale.
+
+## Descremado con dos ramas
+
+Primero prepara los maestros provisionales y las cuentas locales:
+
+```powershell
+cd backend
+.venv\Scripts\python.exe manage.py preparar_circuito_descremado --aplicar
+.venv\Scripts\python.exe manage.py crear_usuarios_flujo_e2e
+```
+
+Luego ejecuta únicamente su proyecto:
+
+```powershell
+cd frontend
+$env:E2E_USUARIO = "e2e_auditoria"
+$env:E2E_CLAVE = "auditoria-e2e-ccaa"
+npx playwright test --project=flujo-descremado
+```
+
+El recorrido consume 1.000 L del silo de entrada. Los TK pueden cambiarse con
+`E2E_TK_DESCREMADA` y `E2E_TK_CREMA`; no debe repetirse contra una planta real
+sin revisar primero capacidad, contenido y estado de Calidad.
 
 ## Lo que el circuito consume
 

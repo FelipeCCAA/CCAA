@@ -108,6 +108,33 @@ export default defineConfig({
         storageState: RUTA_ESTADO,
       },
     },
+    {
+      name: "flujo-precondensado",
+      testMatch: /flujo-precondensado-despacho\.spec\.ts/,
+      dependencies: ["sesion"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: RUTA_ESTADO,
+      },
+    },
+    {
+      name: "flujo-descremado",
+      testMatch: /flujo-descremado\.spec\.ts/,
+      dependencies: ["sesion"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: RUTA_ESTADO,
+      },
+    },
+    {
+      name: "flujo-mantequilla",
+      testMatch: /flujo-mantequilla\.spec\.ts/,
+      dependencies: ["sesion"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: RUTA_ESTADO,
+      },
+    },
   ],
 
   webServer: [

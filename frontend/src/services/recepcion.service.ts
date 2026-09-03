@@ -56,6 +56,16 @@ export interface OcupacionSilo {
   /* Saldo negativo: imposible físicamente, señal de que el registro está
      descuadrado. Se informa, no se oculta. */
   negativo: boolean;
+  reservas_activas: {
+    id: number;
+    ejecucion_id: number;
+    ejecucion_codigo: string;
+    tipo: "origen" | "destino";
+    tipo_etiqueta: string;
+    cantidad_planificada: string;
+    producto_id: number | null;
+    producto_nombre: string | null;
+  }[];
 }
 
 

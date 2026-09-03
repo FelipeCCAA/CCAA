@@ -186,7 +186,7 @@ class RecetaComponenteInline(admin.TabularInline):
 
     model = RecetaComponente
     extra = 1
-    fields = ["producto", "insumo", "cantidad", "unidad", "merma"]
+    fields = ["producto", "insumo", "fase", "cantidad", "unidad", "merma"]
     autocomplete_fields = ["producto", "insumo"]
 
 

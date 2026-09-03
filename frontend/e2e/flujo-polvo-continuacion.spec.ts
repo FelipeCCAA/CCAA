@@ -56,7 +56,7 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
     await expect(tarjeta).toBeVisible({ timeout: 20_000 });
     await expect(tarjeta).toContainText("Secado");
-    await tarjeta.getByRole("button", { name: /Preparar etapa siguiente/ }).click();
+    await tarjeta.getByRole("button", { name: /Continuar a Secado/ }).click();
     await expect(tarjeta.getByRole("combobox", { name: "Máquina" })).toContainText(/disponible/i);
     const respuesta = await trasGuardar(page, "/preparar-continuacion/", async () => {
       await tarjeta.getByRole("button", { name: "Confirmar preparación" }).click();

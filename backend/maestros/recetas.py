@@ -128,6 +128,7 @@ def _arbol(
     cantidad: float,
     fecha: date,
     visitados: tuple[int, ...] = (),
+    fase: str | None = None,
 ) -> Nodo:
     """
     Árbol de necesidades para obtener `cantidad` de un producto.
@@ -165,6 +166,8 @@ def _arbol(
     factor = nodo.cantidad / base
 
     for componente in receta.componentes.all():
+        if fase is not None and getattr(componente, "fase", "proceso") != fase:
+            continue
         merma = _numero(componente.merma)
         # La merma aumenta lo que hay que meter para sacar lo mismo.
         necesario = _numero(componente.cantidad) * factor * (1 + merma / 100)
@@ -193,6 +196,7 @@ def _arbol(
             necesario,
             fecha,
             visitados + (producto_id,),
+            fase,
         )
         hijo.merma = merma
         nodo.hijos.append(hijo)
@@ -233,6 +237,7 @@ def explosionar(
     producto_id: int,
     cantidad: float,
     fecha: date,
+    fase: str | None = None,
 ) -> Explosion:
     """
     Todo lo que hace falta para producir `cantidad` de un producto.
@@ -242,7 +247,7 @@ def explosionar(
     """
     indice = {p.id: p for p in productos}
 
-    raiz = _arbol(indice, recetas, producto_id, cantidad, fecha)
+    raiz = _arbol(indice, recetas, producto_id, cantidad, fecha, fase=fase)
 
     explosion = Explosion(arbol=raiz)
     _acumular(raiz, explosion)

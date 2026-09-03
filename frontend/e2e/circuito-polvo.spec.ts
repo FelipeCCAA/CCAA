@@ -3,8 +3,8 @@
 
   Recorre lo que hace un turno entero: llegan dos camiones —entera y
   descremada—, Calidad los decide, se descargan en sus estanques, se analiza el
-  silo, se compone y libera un vale de estandarización, se abre el lote, se
-  declaran los kilos y se arma el pallet.
+  silo y se compone y libera un vale de estandarización. Evaporación, Secado,
+  Envasado e Inventario continúan en sus pruebas especializadas.
 
   Por qué por pantalla y no por API
   ---------------------------------
@@ -41,7 +41,9 @@ import { API } from "./constantes";
 /* Cada corrida escribe códigos nuevos. Reutilizarlos chocaría con la unicidad
    de guía, vale, lote y pallet a la segunda vuelta, y el fallo parecería del
    circuito en vez del sembrado. */
-const SELLO = Date.now().toString().slice(-6);
+const SELLO = process.env.E2E_SELLO ?? Date.now().toString().slice(-6);
+const REANUDAR_DESDE = Number(process.env.E2E_CIRCUITO_DESDE ?? 0);
+const PRODUCTO = process.env.E2E_PRODUCTO ?? "Leche entera en polvo";
 
 const HOY = new Date().toISOString().slice(0, 10);
 
@@ -89,7 +91,11 @@ const VALE = {
   Se piden los tres con sitio de sobra al arrancar, que además es lo que hace
   el operador: mira la ocupación y elige.
 */
-const ESTANQUES = { entera: "", descremada: "", destino: "" };
+const ESTANQUES = {
+  entera: process.env.E2E_SILO_ENTERA ?? "",
+  descremada: process.env.E2E_SILO_DESCREMADA ?? "",
+  destino: process.env.E2E_SILO_DESTINO ?? "",
+};
 
 /*
   La muestra tras agitar. `decidir` no acepta una decisión: compara el RC medido
@@ -98,18 +104,6 @@ const ESTANQUES = { entera: "", descremada: "", destino: "" };
   «corrigiendo», que es correcto pero no es el camino que esta prueba recorre.
 */
 const MUESTRA = { grasa: "2.61", sng: "8.70" };
-
-const LOTE = { codigo: `CCAA-CIR-${SELLO}`, litros: "6000", kg: "500" };
-
-const PALLET = { codigo: `PAL-${SELLO}`, sacos: "20" };
-
-
-
-
-
-
-
-
 
 
 /*
@@ -302,45 +296,26 @@ async function reservarEstanques(pagina: Page) {
 
 
 
-/**
- * Abre la ficha del lote del circuito desde la tabla de Producción.
- *
- * Se busca por código en vez de recorrer la tabla: son cincuenta lotes por
- * página y el del circuito no tiene por qué caer en la primera. El buscador
- * consulta a la base, así que encuentra el lote esté donde esté.
- */
-async function abrirLote(pagina: Page) {
-  await pagina.getByPlaceholder("Buscar por código…").fill(LOTE.codigo);
-
-  const fila = pagina.getByRole("row", { name: new RegExp(LOTE.codigo) });
-  await expect(
-    fila,
-    `El lote ${LOTE.codigo} no aparece en la tabla de Producción.`,
-  ).toBeVisible({ timeout: 20_000 });
-  await fila.click();
-}
-
-
 test.describe.configure({ mode: "serial" });
 
 test.afterAll(cerrarSegundaFirma);
 
-test("de la leche cruda al pallet, por pantalla", async ({ page }) => {
+test("de la leche cruda a leche estandarizada liberada, por pantalla", async ({ page }) => {
   test.setTimeout(240_000);
   const erroresJs = vigilar(page);
 
-  await test.step("0 · se reservan estanques vacíos", async () => {
+  if (REANUDAR_DESDE <= 0) await test.step("0 · se reservan estanques vacíos", async () => {
     /* Hay que cargar la aplicación antes: `localStorage` es por origen, y en
        una página en blanco está vacío. */
     await irA(page, "/dashboard");
     await reservarEstanques(page);
   });
 
-  await test.step(`1 · llega un camión de leche entera y se descarga en ${ESTANQUES.entera}`, async () => {
+  if (REANUDAR_DESDE <= 1) await test.step(`1 · llega un camión de leche entera y se descarga en ${ESTANQUES.entera}`, async () => {
     await recibirCamion(page, ENTERA, "Entera", ESTANQUES.entera);
   });
 
-  await test.step(`2 · llega un camión de leche descremada y se descarga en ${ESTANQUES.descremada}`, async () => {
+  if (REANUDAR_DESDE <= 2) await test.step(`2 · llega un camión de leche descremada y se descarga en ${ESTANQUES.descremada}`, async () => {
     await recibirCamion(page, DESCREMADA, "Descremada", ESTANQUES.descremada);
   });
 
@@ -348,7 +323,7 @@ test("de la leche cruda al pallet, por pantalla", async ({ page }) => {
      sobre cada estanque que el vale consume, no solo sobre el de entera. Es
      correcto —la mezcla la determinan las dos leches— y es fácil de olvidar,
      porque el mensaje solo nombra el estanque que falta. */
-  await test.step(`3 · Recepción analiza ${ESTANQUES.entera} y ${ESTANQUES.descremada}`, async () => {
+  if (REANUDAR_DESDE <= 3) await test.step(`3 · Recepción analiza ${ESTANQUES.entera} y ${ESTANQUES.descremada}`, async () => {
     await analizarSilo(page, ESTANQUES.entera, ENTERA);
     await analizarSilo(page, ESTANQUES.descremada, DESCREMADA);
   });
@@ -359,7 +334,7 @@ test("de la leche cruda al pallet, por pantalla", async ({ page }) => {
 
     await campo(page, "Código de vale").fill(VALE.codigo);
     await campo(page, "Fecha").fill(HOY);
-    await elegirOpcion(campo(page, "Producto"), /Leche entera en polvo/);
+    await elegirOpcion(campo(page, "Producto"), new RegExp(PRODUCTO));
     await campo(page, "RC objetivo").fill(VALE.rcObjetivo);
     /*
       Se espera la sugerencia FIFO, que el formulario pide al escribir el
@@ -386,13 +361,12 @@ test("de la leche cruda al pallet, por pantalla", async ({ page }) => {
     await campo(page, "Volumen a preparar (L)").fill(VALE.volumen);
     await sugerencia;
 
-    await elegirOpcion(campo(page, "Silo de destino"), new RegExp(`^${ESTANQUES.destino} `));
-
     /* «Silo» a secas es la etiqueta del bloque de leche entera y solo aparece
        una vez: los otros dos estanques se llaman «Estanque». No hace falta
        acotar el bloque, y acotarlo por su título fallaba porque el `div` que
        contiene el texto «Leche entera» no es el que contiene el desplegable. */
     await elegirOpcion(campo(page, "Silo"), new RegExp(`^${ESTANQUES.entera} `));
+    await elegirOpcion(campo(page, "Silo de destino"), new RegExp(`^${ESTANQUES.destino} `));
 
     /* Los porcentajes se teclean aunque el silo tenga análisis: hoy el vale no
        los hereda de `AnalisisSilo`, solo guarda su procedencia. Es el punto
@@ -460,63 +434,6 @@ test("de la leche cruda al pallet, por pantalla", async ({ page }) => {
     await trasGuardar(page, "decidir", async () => {
       await page.getByRole("button", { name: "Decidir" }).click();
     });
-  });
-
-  await test.step("6 · se abre el lote desde el vale liberado", async () => {
-    await irA(page, "/produccion");
-    await page.getByRole("button", { name: "Iniciar lote desde vale" }).click();
-
-    await elegirOpcion(campo(page, "Vale estandarizado liberado *"), new RegExp(VALE.codigo));
-    await campo(page, "Fecha *").fill(HOY);
-    await campo(page, "Línea *").selectOption("E1");
-    await elegirOpcion(campo(page, "Máquina / equipo *"), /Egron 1/);
-    await campo(page, "Código de lote *").fill(LOTE.codigo);
-
-    await trasGuardar(page, "confirmar-borrador", async () => {
-      await page.getByRole("button", { name: "Abrir proceso" }).last().click();
-    });
-  });
-
-  await test.step("7 · se declaran los kilos producidos", async () => {
-    await irA(page, "/produccion");
-    /* El lote es una fila con `onClick`, no un botón: se abre pulsando la fila.
-       Ese `<tr>` clicable tampoco llega por teclado, que es harina de otro
-       costal y del informe de accesibilidad. */
-    await abrirLote(page);
-
-    await page.getByRole("button", { name: /Marcar como producido/i }).click();
-    await page.getByPlaceholder("Kilos").fill(LOTE.kg);
-
-    await trasGuardar(page, "/api/produccion/lotes", async () => {
-      await page.getByRole("button", { name: "Cerrar producción" }).click();
-    });
-  });
-
-  await test.step("8 · se arma el pallet y entra a cuarentena de Bodega", async () => {
-    const envase = page.locator("form").filter({ hasText: "Envasar en pallet" });
-    await expect(
-      envase,
-      "El formulario de envase no apareció: el lote no quedó en «producido».",
-    ).toBeVisible({ timeout: 15_000 });
-
-    await elegirOpcion(envase.getByRole("combobox"), /Rovema 3/);
-    await envase.getByPlaceholder("Código pallet").fill(PALLET.codigo);
-    await envase.getByRole("spinbutton").fill(PALLET.sacos);
-
-    await trasGuardar(page, "/api/produccion/envases", async () => {
-      await envase.getByRole("button", { name: "Crear pallet" }).click();
-    });
-
-    await expect(page.getByText(new RegExp(`Pallet ${PALLET.codigo}`))).toBeVisible();
-  });
-
-  await test.step("9 · el lote cuenta su pallet y su consumo de material", async () => {
-    await irA(page, "/produccion");
-    await abrirLote(page);
-
-    /* El paso 5 del semáforo del lote es Inventario: cuenta los pallets. Que
-       diga «Falta envasar» después de envasar sería el pallet sin registrar. */
-    await expect(page.getByText(/pallet\(s\)/)).toBeVisible({ timeout: 15_000 });
   });
 
   expect(erroresJs, `Errores de JavaScript durante el circuito:\n${erroresJs.join("\n")}`)

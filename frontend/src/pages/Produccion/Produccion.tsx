@@ -6,7 +6,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { Plus, Search } from "lucide-react";
+import { AlertTriangle, Factory, FlaskConical, Gauge, PackageCheck, Plus, Search, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
@@ -21,6 +21,10 @@ import {
 } from "../../services/produccion.service";
 
 import { obtenerSesion, puedeEscribir } from "../../services/sesion";
+import {
+  obtenerResumenOperacional,
+  type ResumenOperacionalProduccion,
+} from "../../services/procesos.service";
 import EvaporadoresProduccion from "./EvaporadoresProduccion";
 import SalidasIntermedias from "./SalidasIntermedias";
 
@@ -80,6 +84,8 @@ function Produccion() {
   const [error, setError] = useState("");
   const [formularioAbierto, setFormularioAbierto] = useState(false);
   const [loteAbierto, setLoteAbierto] = useState<number | null>(null);
+  const [resumenOperacional, setResumenOperacional] = useState<ResumenOperacionalProduccion | null>(null);
+  const [resumenNoDisponible, setResumenNoDisponible] = useState(false);
 
   // Solo Producción y Administración registran lotes. El resto consulta.
   const puedeEditar = puedeEscribir("produccion");
@@ -124,6 +130,20 @@ function Produccion() {
       .catch((error) => console.error("Error cargando los productos:", error));
   }, []);
 
+  const cargarResumenOperacional = useCallback(() => {
+    void obtenerResumenOperacional()
+      .then((datos) => {
+        setResumenOperacional(datos);
+        setResumenNoDisponible(false);
+      })
+      .catch(() => {
+        setResumenOperacional(null);
+        setResumenNoDisponible(true);
+      });
+  }, []);
+
+  useEffect(cargarResumenOperacional, [cargarResumenOperacional]);
+
   const abrirLote = useCallback((id: number) => setLoteAbierto(id), []);
 
   // Espera a que el usuario deje de escribir antes de consultar, para no
@@ -145,6 +165,18 @@ function Produccion() {
 
   const control =
     "rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-green-600";
+  const indicadores: {
+    etiqueta: string;
+    valor: number | undefined;
+    Icono: LucideIcon;
+    tono: string;
+  }[] = [
+    { etiqueta: "Procesos activos", valor: resumenOperacional?.procesos_activos, Icono: Factory, tono: "text-sky-700" },
+    { etiqueta: "Esperando Calidad", valor: resumenOperacional?.esperando_calidad, Icono: FlaskConical, tono: "text-violet-700" },
+    { etiqueta: "Materiales listos", valor: resumenOperacional?.materiales_listos, Icono: PackageCheck, tono: "text-emerald-700" },
+    { etiqueta: "Equipos ocupados", valor: resumenOperacional?.equipos_ocupados, Icono: Gauge, tono: "text-amber-700" },
+    { etiqueta: "Bloqueos", valor: resumenOperacional?.bloqueos, Icono: AlertTriangle, tono: "text-rose-700" },
+  ];
 
   return (
     <div className="px-8 py-10">
@@ -198,6 +230,20 @@ function Produccion() {
 
         </header>
 
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Resumen operacional">
+          {indicadores.map(({ etiqueta, valor, Icono, tono }) => (
+            <article key={etiqueta} className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{etiqueta}</p>
+                <Icono className={`h-5 w-5 ${tono}`} aria-hidden="true" />
+              </div>
+              <p className="mt-3 text-3xl font-bold text-slate-900">
+                {valor ?? (resumenNoDisponible ? "—" : "…")}
+              </p>
+            </article>
+          ))}
+        </section>
+
         <section className="mb-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Flujo por proceso</p>
           <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
@@ -210,7 +256,7 @@ function Produccion() {
           </div>
         </section>
 
-        <div id="continuidad"><SalidasIntermedias /></div>
+        <div id="continuidad"><SalidasIntermedias onCambio={cargarResumenOperacional} /></div>
 
         {veCondensacion && <div id="evaporacion"><EvaporadoresProduccion /></div>}
 

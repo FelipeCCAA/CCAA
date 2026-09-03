@@ -36,6 +36,42 @@ export interface CatalogosSku {
   familia: OpcionCatalogo[];
   naturaleza: OpcionCatalogo[];
   unidad_base: OpcionCatalogo[];
+  fase_receta: OpcionCatalogo[];
+}
+
+export interface ComponenteReceta {
+  id: number;
+  producto: number | null;
+  producto_nombre: string | null;
+  insumo: number | null;
+  insumo_nombre: string | null;
+  fase: "proceso" | "envasado";
+  fase_etiqueta: string;
+  cantidad: string;
+  unidad: string;
+  merma: string;
+}
+
+export interface RecetaMaestro {
+  id: number;
+  producto: number;
+  producto_nombre: string;
+  version: number;
+  cantidad_base: string;
+  vigente_desde: string;
+  vigente_hasta: string | null;
+  fuente: string;
+  componentes: ComponenteReceta[];
+}
+
+export async function obtenerRecetas(): Promise<RecetaMaestro[]> {
+  const { data } = await api.get<Pagina<RecetaMaestro>>("maestros/recetas/");
+  return data.results;
+}
+
+export async function crearReceta(datos: Record<string, unknown>): Promise<RecetaMaestro> {
+  const { data } = await api.post<RecetaMaestro>("maestros/recetas/", datos);
+  return data;
 }
 
 
@@ -102,6 +138,8 @@ export interface Equipo {
      Marcarlo en una línea que recibe lo que el evaporador ya produjo restaría
      la misma leche dos veces. */
   consume_leche: boolean;
+  /* El equipo final que descuenta sacos/cajas/pallets del MRP. */
+  consume_materiales: boolean;
   orden: number;
   activo: boolean;
 }

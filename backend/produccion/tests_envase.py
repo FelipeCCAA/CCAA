@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from calidad.models import LiberacionProceso
 from maestros.models import (
@@ -13,7 +14,8 @@ from maestros.models import (
 )
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from inventario.models import (
-    Bodega, Existencia, ExistenciaProductoTerminado, Insumo, LoteInventario,
+    Bodega, ConsumoLoteProduccion, Existencia, ExistenciaProductoTerminado,
+    Insumo, LoteInventario,
     MovimientoInventario, MovimientoProductoTerminado, Ubicacion,
 )
 from inventario.servicios import consumir_receta_produccion, registrar_entrada
@@ -39,7 +41,9 @@ class EnvasePalletTests(TestCase):
             empresa=empresa, nombre="Mandante envase", codigo_cliente="env"
         )
         self.producto = Producto.objects.create(
-            mandante=mandante, nombre="Leche en polvo", unidad_base="kg"
+            mandante=mandante, nombre="Leche en polvo", unidad_base="kg",
+            categoria=Producto.Categoria.LECHE_POLVO,
+            formato=Producto.Formato.SACO_25KG,
         )
         self.lote = Lote.objects.create(
             sucursal=self.planta, codigo_lote="L-ENV-1", producto=self.producto,
@@ -158,6 +162,37 @@ class EnvasePalletTests(TestCase):
         registro = self.registrar()
         self.assertEqual(registro.lote, self.lote)
 
+    def test_endpoint_entrega_solo_material_liberado_con_formato(self):
+        proceso = Proceso.objects.create(codigo="ruta-env-lista", nombre="Ruta envase")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="secar-listo", nombre="Secado listo",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1, requiere_calidad=True,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-ENV-LISTA", etapa=etapa, sucursal=self.planta,
+            estado=EjecucionProceso.Estado.CERRADA,
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=ejecucion, lote=self.lote, producto=self.producto,
+            naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+            clasificacion=SalidaProceso.Clasificacion.GRANEL,
+            destino=SalidaProceso.Destino.ENVASADO,
+            cantidad=Decimal("1000"), unidad="kg",
+        )
+        LiberacionProceso.objects.create(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get("/api/produccion/envases/materiales-habilitados/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(len(respuesta.data), 1)
+        self.assertEqual(respuesta.data[0]["lote_id"], self.lote.pk)
+        self.assertEqual(respuesta.data[0]["formato"], Producto.Formato.SACO_25KG)
+        self.assertEqual(respuesta.data[0]["formato_kg"], Decimal("25"))
+
     def test_secado_exige_liberacion_intermedia_antes_de_envasar(self):
         proceso = Proceso.objects.create(codigo="ruta-sec-env", nombre="Polvo")
         etapa = EtapaProceso.objects.create(
@@ -198,9 +233,11 @@ class EnvasePalletTests(TestCase):
         )
         RecetaComponente.objects.create(
             receta=receta, insumo=bolsa, cantidad=Decimal("20"), unidad="un",
+            fase=RecetaComponente.Fase.ENVASADO,
         )
         RecetaComponente.objects.create(
             receta=receta, insumo=base, cantidad=Decimal("1"), unidad="un",
+            fase=RecetaComponente.Fase.ENVASADO,
         )
         bodega = Bodega.objects.create(
             sucursal=self.planta, codigo="B-ENV", nombre="Envases",
@@ -221,16 +258,28 @@ class EnvasePalletTests(TestCase):
 
         self.lote.kg_producidos = Decimal("500")
         self.lote.save(update_fields=["kg_producidos"])
-        consumo, movimientos = consumir_receta_produccion(
-            lote_produccion=self.lote, usuario=self.usuario,
+        consumo_proceso, movimientos_proceso = consumir_receta_produccion(
+            lote_produccion=self.lote,
+            usuario=self.usuario,
+            permitir_vacio=True,
         )
+        self.assertEqual(consumo_proceso.fase, ConsumoLoteProduccion.Fase.PROCESO)
+        self.assertEqual(movimientos_proceso, [])
+        self.assertTrue(all(e.cantidad_fisica > 0 for e in Existencia.objects.all()))
+
         registro = self.registrar(pallets=[
             {"codigo": "PAL-SIM-25KG", "unidades": 20, "kg_neto": "500"}
         ])
 
         pallet = registro.pallets.get()
+        consumo = ConsumoLoteProduccion.objects.get(
+            lote_produccion=self.lote,
+            fase=ConsumoLoteProduccion.Fase.ENVASADO,
+        )
+        movimientos = MovimientoInventario.objects.filter(tipo="consumo")
         self.assertEqual((pallet.unidades, pallet.kg_neto), (20, Decimal("500")))
         self.assertEqual(consumo.kg_base, Decimal("500"))
+        self.assertEqual(consumo.operacion_id, registro.operacion_id)
         self.assertEqual(
             sorted(m.cantidad for m in movimientos), [Decimal("1.000"), Decimal("20.000")]
         )

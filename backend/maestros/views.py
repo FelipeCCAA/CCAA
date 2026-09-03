@@ -1,5 +1,5 @@
 from django.utils import timezone
-from rest_framework import viewsets
+from rest_framework import mixins, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -17,6 +17,8 @@ from .models import (
     Especificacion,
     Mandante,
     Producto,
+    Receta,
+    RecetaComponente,
     Silo,
     Vehiculo,
 )
@@ -27,6 +29,7 @@ from .serializers import (
     MandanteSerializer,
     ParametroSerializer,
     ProductoSerializer,
+    RecetaSerializer,
     SiloSerializer,
     VehiculoSerializer,
 )
@@ -57,6 +60,28 @@ class ProductoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             consulta = consulta.filter(mandante_id=mandante)
 
         return consulta
+
+
+class RecetaViewSet(
+    QuerysetTenantMixin,
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Recetas versionadas: se crean versiones; las anteriores no se reescriben."""
+
+    queryset = Receta.objects.select_related("producto").prefetch_related(
+        "componentes__producto", "componentes__insumo"
+    )
+    serializer_class = RecetaSerializer
+    permission_classes = [EscribeCalidad]
+    tenant_lookup_empresa = "producto__mandante__empresa_id"
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        producto = self.request.query_params.get("producto")
+        return consulta.filter(producto_id=producto) if producto else consulta
 
 
 class VigentesHoy:
@@ -244,5 +269,6 @@ def catalogos(request):
             "familia": opciones(Producto.Familia.choices),
             "naturaleza": opciones(Producto.Naturaleza.choices),
             "unidad_base": opciones(Producto.Unidad.choices),
+            "fase_receta": opciones(RecetaComponente.Fase.choices),
         }
     )

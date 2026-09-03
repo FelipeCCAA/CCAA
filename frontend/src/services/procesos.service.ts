@@ -39,10 +39,13 @@ export interface EjecucionOperativa {
 
 export interface RutaProducto {
   id: number;
+  producto: number;
+  proceso: number;
   producto_nombre: string;
   proceso_nombre: string;
   prioridad: number;
   destino: string;
+  destino_final: "siguiente_proceso" | "envasado" | "despacho_directo" | "inventario";
   activa: boolean;
   etapas: { id: number; nombre: string; tipo: string; orden: number }[];
 }
@@ -57,6 +60,11 @@ export interface CorridaCondensacion {
   silo_origen_codigo: string;
   silo_destino_codigo: string;
   litros_entrada: string;
+  litros_descremada_plan: string | null;
+  litros_crema_plan: string | null;
+  fuente_plan: Record<string, unknown>;
+  plan_confirmado_por: number | null;
+  plan_confirmado_en: string | null;
   litros_precondensado: string | null;
   densidad_salida: string | null;
   solidos_salida: string | null;
@@ -90,6 +98,14 @@ export interface CorridaMantequilla {
   iniciada_en: string | null;
   finalizada_por_nombre: string | null;
   finalizada_en: string | null;
+}
+
+export interface ProcesoMaestro {
+  id: number;
+  codigo: string;
+  nombre: string;
+  activo: boolean;
+  etapas: (EtapaProceso & { orden: number })[];
 }
 
 export interface DiagnosticoRutaProductoItem {
@@ -134,6 +150,10 @@ export interface CorridaDescremacion {
   producto_crema: number;
   producto_descremada_nombre: string | null;
   producto_crema_nombre: string | null;
+  ruta_descremada: number | null;
+  ruta_crema: number | null;
+  destino_descremada: string;
+  destino_crema: string;
   analisis_entrada: number;
   litros_entrada: string;
   grasa_entrada: string;
@@ -175,9 +195,12 @@ export interface Genealogia {
   flujo: {
     recepciones: {
       id: number; fecha: string; guia: string; litros: string;
+      litros_atribuidos: string | null;
       vehiculo: string | null; silo_codigo: string;
+      trazabilidad: "confirmada" | "inferida";
     }[];
     nota_recepciones: string;
+    litros_no_atribuibles: string;
     estandarizacion: {
       vale_id: number; vale_codigo: string; ejecucion_id: number | null;
       ejecucion_codigo: string | null;
@@ -211,8 +234,34 @@ export interface OpcionesAltaCondensacion {
 export interface OpcionesAltaMantequilla {
   ordenes: { id: number; codigo: string; producto: string }[];
   cremas: { id: number; codigo: string; producto: string; disponible_kg: string }[];
+  cremas_pendientes_calidad: {
+    id: number;
+    codigo: string;
+    producto: string;
+    estado_calidad: "pendiente" | "rechazado" | "trazabilidad_incompleta";
+    etapa_origen: string;
+  }[];
   sueros: { id: number; codigo: string; producto: string }[];
-  equipos: { id: number; nombre: string; tipo: string }[];
+  equipos: { id: number; nombre: string; tipo: string; ocupado_por: string | null }[];
+}
+
+export interface OpcionesAltaDescremacion {
+  etapas: EtapaProceso[];
+  equipos: { id: number; nombre: string; tipo: string; ocupado_por: string | null }[];
+  silos_descremada: { id: number; codigo: string; tipo: string; activo: boolean }[];
+  estanques_crema: { id: number; codigo: string; tipo: string; activo: boolean }[];
+  productos_descremada: {
+    id: number;
+    nombre: string;
+    tiene_especificacion_silo_vigente: boolean;
+  }[];
+  productos_crema: {
+    id: number;
+    nombre: string;
+    tiene_especificacion_silo_vigente: boolean;
+  }[];
+  rutas: RutaProducto[];
+  bloqueos: { codigo: string; mensaje: string }[];
 }
 
 export async function obtenerEjecuciones(): Promise<Pagina<EjecucionProceso>> {
@@ -222,6 +271,21 @@ export async function obtenerEjecuciones(): Promise<Pagina<EjecucionProceso>> {
 
 export async function obtenerEjecucionesOperativas(): Promise<EjecucionOperativa[]> {
   const { data } = await api.get<EjecucionOperativa[]>("procesos/ejecuciones/operativas/");
+  return data;
+}
+
+export interface ResumenOperacionalProduccion {
+  procesos_activos: number;
+  esperando_calidad: number;
+  materiales_listos: number;
+  equipos_ocupados: number;
+  bloqueos: number;
+}
+
+export async function obtenerResumenOperacional(): Promise<ResumenOperacionalProduccion> {
+  const { data } = await api.get<ResumenOperacionalProduccion>(
+    "procesos/ejecuciones/resumen-operacional/",
+  );
   return data;
 }
 
@@ -244,6 +308,23 @@ export async function obtenerRutasProducto(): Promise<Pagina<RutaProducto>> {
 
 export async function obtenerCondensaciones(): Promise<Pagina<CorridaCondensacion>> {
   const { data } = await api.get<Pagina<CorridaCondensacion>>("procesos/condensaciones/");
+  return data;
+}
+
+export async function obtenerProcesosMaestros(): Promise<Pagina<ProcesoMaestro>> {
+  const { data } = await api.get<Pagina<ProcesoMaestro>>("procesos/procesos/");
+  return data;
+}
+
+export async function crearRutaProducto(datos: {
+  producto: number;
+  proceso: number;
+  prioridad: number;
+  destino_final: RutaProducto["destino_final"];
+  destino?: string;
+  observaciones?: string;
+}): Promise<RutaProducto> {
+  const { data } = await api.post<RutaProducto>("procesos/rutas-producto/", datos);
   return data;
 }
 
@@ -279,6 +360,7 @@ export interface SalidaIntermediaDisponible {
   destino: string;
   destino_etiqueta: string;
   destinos_permitidos: { valor: string; etiqueta: string }[];
+  acciones_permitidas: { codigo: string; etiqueta: string }[];
   etapas_siguientes: {
     id: number;
     nombre: string;
@@ -359,6 +441,13 @@ export async function obtenerDescremaciones(): Promise<Pagina<CorridaDescremacio
   return data;
 }
 
+export async function obtenerOpcionesAltaDescremacion(): Promise<OpcionesAltaDescremacion> {
+  const { data } = await api.get<OpcionesAltaDescremacion>(
+    "procesos/descremaciones/opciones-alta/",
+  );
+  return data;
+}
+
 export async function iniciarMantequilla(id: number): Promise<CorridaMantequilla> {
   const { data } = await api.post<CorridaMantequilla>(`procesos/mantequillas/${id}/iniciar/`);
   return data;
@@ -389,8 +478,13 @@ export async function crearMantequillaGuiada(datos: {
   return data;
 }
 
-export async function obtenerSalidasIntermediasDisponibles(): Promise<SalidaIntermediaDisponible[]> {
-  const { data } = await api.get<SalidaIntermediaDisponible[]>("procesos/salidas/disponibles/");
+export async function obtenerSalidasIntermediasDisponibles(
+  siloId?: number,
+): Promise<SalidaIntermediaDisponible[]> {
+  const { data } = await api.get<SalidaIntermediaDisponible[]>(
+    "procesos/salidas/disponibles/",
+    { params: { silo: siloId } },
+  );
   return data;
 }
 
@@ -435,6 +529,46 @@ export async function crearDescremacion(datos: {
   producto_descremada: number; producto_crema: number;
 }): Promise<CorridaDescremacion> {
   const { data } = await api.post<CorridaDescremacion>("procesos/descremaciones/", datos);
+  return data;
+}
+
+export async function crearDescremacionGuiada(datos: {
+  codigo: string; etapa: number; equipo: number; silo_entera: number;
+  analisis_entrada: number; litros_entrada: number;
+  silo_descremada: number; estanque_crema: number;
+  producto_descremada: number; producto_crema: number;
+  litros_descremada_plan: number; litros_crema_plan: number;
+  plan_confirmado: true;
+  ruta_descremada: number; ruta_crema: number;
+  destino_descremada: "estandarizacion";
+  destino_crema: "siguiente_proceso" | "estandarizacion" | "despacho_directo";
+}): Promise<CorridaDescremacion> {
+  const { data } = await api.post<CorridaDescremacion>(
+    "procesos/descremaciones/crear-guiada/",
+    datos,
+  );
+  return data;
+}
+
+export interface SugerenciaDescremacion {
+  litros_descremada_sugeridos: string;
+  litros_crema_sugeridos: string;
+  grasa_descremada_objetivo: string;
+  grasa_crema_objetivo: string;
+  fuente_plan: Record<string, unknown>;
+  avisos: string[];
+  requiere_confirmacion_operador: true;
+}
+
+export async function sugerirBalanceDescremacion(datos: {
+  analisis_entrada: number;
+  litros_entrada: number;
+  producto_descremada: number;
+  producto_crema: number;
+}): Promise<SugerenciaDescremacion> {
+  const { data } = await api.post<SugerenciaDescremacion>(
+    "procesos/descremaciones/sugerir-balance/", datos,
+  );
   return data;
 }
 

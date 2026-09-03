@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowRight, Beaker, Factory, GitBranch, Search, Truck } from "lucide-react";
+import { ArrowRight, Beaker, Factory, GitBranch, Plus, Search, Truck } from "lucide-react";
 
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
@@ -16,10 +16,12 @@ import DiagnosticoRutas from "./DiagnosticoRutas";
 import FormularioDescremacion from "./FormularioDescremacion";
 import NuevaCondensacion from "./NuevaCondensacion";
 import NuevaMantequilla from "./NuevaMantequilla";
+import NuevaRutaProducto from "./NuevaRutaProducto";
 import ReworkProduccion from "./ReworkProduccion";
 
 export default function Procesos() {
   const puedeOperar = puedeEscribir("produccion");
+  const puedeConfigurar = puedeEscribir("maestros");
   const [parametros, setParametros] = useSearchParams();
   const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [rutas, setRutas] = useState<RutaProducto[]>([]);
@@ -36,6 +38,7 @@ export default function Procesos() {
   const [accionandoCorrida, setAccionandoCorrida] = useState<number | null>(null);
   const [nuevaCondensacion, setNuevaCondensacion] = useState(false);
   const [nuevaMantequilla, setNuevaMantequilla] = useState(false);
+  const [nuevaRuta, setNuevaRuta] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [lote, setLote] = useState("");
@@ -205,9 +208,10 @@ export default function Procesos() {
         {puedeOperar && cerrandoMantequilla && <CierreMantequilla corrida={cerrandoMantequilla} onCerrar={() => setCerrandoMantequilla(null)} onCerrada={async (corrida) => { actualizarMantequilla(corrida); setCerrandoMantequilla(null); if (!await refrescarEjecuciones()) setError("El cierre se registró, pero no se pudo actualizar la disponibilidad."); }} />}
         {puedeOperar && nuevaCondensacion && <NuevaCondensacion onCerrar={() => setNuevaCondensacion(false)} onCreada={(corrida) => { setCondensacionesCargadas(true); setCondensaciones((actuales) => [corrida, ...actuales]); setNuevaCondensacion(false); }} />}
         {puedeOperar && nuevaMantequilla && <NuevaMantequilla ejecuciones={ejecuciones} alConflictoEquipo={async () => { await refrescarEjecuciones(); }} onCerrar={() => setNuevaMantequilla(false)} onCreada={async (corrida) => { setMantequillasCargadas(true); setMantequillas((actuales) => [corrida, ...actuales]); await refrescarEjecuciones(); setNuevaMantequilla(false); }} />}
+        {puedeConfigurar && nuevaRuta && <NuevaRutaProducto onCerrar={() => setNuevaRuta(false)} onCreada={(ruta) => { setRutasCargadas(true); setRutas((actuales) => [...actuales, ruta]); setNuevaRuta(false); }} />}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
-          <div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Rutas configuradas por producto</h2></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Rutas configuradas por producto</h2></div>{puedeConfigurar && <button type="button" onClick={() => setNuevaRuta(true)} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Nueva ruta</button>}</div>
           <p className="mt-2 text-sm text-slate-600">La secuencia proviene del maestro de procesos; no está codificada en la interfaz.</p>
           <DiagnosticoRutas />
           {!rutasCargadas ? <button type="button" onClick={cargarRutas} className="mt-5 rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar rutas</button> : rutas.length === 0 ? <p className="mt-5 text-sm text-slate-600">No hay rutas activas configuradas.</p> : <div className="mt-5 grid gap-4 lg:grid-cols-2">{rutas.map((ruta) => <article key={ruta.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{ruta.producto_nombre}</p><p className="mt-1 text-sm text-green-700">{ruta.proceso_nombre}{ruta.destino ? ` → ${ruta.destino}` : ""}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Prioridad {ruta.prioridad}</span></div><div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">{ruta.etapas.sort((a, b) => a.orden - b.orden).map((etapa, indice) => <span key={etapa.id} className="inline-flex items-center gap-2"><span className="rounded-lg bg-slate-50 px-2 py-1">{etapa.nombre}</span>{indice < ruta.etapas.length - 1 && <ArrowRight className="h-3 w-3" />}</span>)}</div></article>)}</div>}
@@ -255,16 +259,23 @@ export default function Procesos() {
                     <Truck className="h-4 w-4 text-green-700" /> Recepción
                   </div>
                   <p className="mt-2 text-sm text-slate-600">
-                    {genealogia.flujo.recepciones.length} recepción(es) candidata(s)
+                    {genealogia.flujo.recepciones.length} origen(es) de recepción
                   </p>
                   <ul className="mt-2 space-y-1 text-xs text-slate-600">
                     {genealogia.flujo.recepciones.slice(0, 4).map((item) => (
                       <li key={`${item.id}-${item.silo_codigo}`}>
                         {item.fecha} · guía {item.guia || "—"} · {item.silo_codigo}
+                        {item.litros_atribuidos !== null && ` · ${Number(item.litros_atribuidos).toLocaleString("es-CL")} L atribuidos`}
+                        {` · ${item.trazabilidad === "confirmada" ? "Confirmado FIFO" : "Inferido"}`}
                       </li>
                     ))}
                   </ul>
                   <p className="mt-2 text-xs text-slate-600">{genealogia.flujo.nota_recepciones}</p>
+                  {Number(genealogia.flujo.litros_no_atribuibles) > 0 && (
+                    <p className="mt-2 text-xs font-semibold text-amber-700">
+                      {Number(genealogia.flujo.litros_no_atribuibles).toLocaleString("es-CL")} L sin recepción histórica atribuible
+                    </p>
+                  )}
                 </div>
                 <ArrowRight className="m-auto hidden h-5 w-5 text-slate-300 lg:block" />
                 <div className="rounded-xl border border-green-200 bg-green-50/50 p-4">

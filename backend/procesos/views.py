@@ -1,8 +1,9 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import DecimalField, Prefetch, Q, Sum, Value
+from django.db.models import Count, DecimalField, F, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import MethodNotAllowed
@@ -29,7 +30,7 @@ from .serializers import (
     CorridaSecadoSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
-    RutaProductoSerializer,
+    RutaProductoSerializer, SugerirDescremacionSerializer,
 )
 from .permisos import OperaProcesoPorEtapa
 from .servicios import (
@@ -39,7 +40,9 @@ from .servicios import (
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
-    preparar_continuacion, tipos_equipo_para_etapa, transicionar_ejecucion,
+    preparar_continuacion, siguiente_etapa_para_salida,
+    sugerir_plan_descremacion,
+    tipos_equipo_para_etapa, transicionar_ejecucion,
 )
 
 
@@ -318,6 +321,193 @@ class CorridaDescremacionViewSet(
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
         return Response(detalle, status=codigo)
 
+    @action(detail=False, methods=["get"], url_path="opciones-alta")
+    def opciones_alta(self, request):
+        """Catálogos operacionales mínimos y faltantes para iniciar descremación."""
+        from maestros.models import Equipo, Especificacion, Producto, Silo
+
+        etapas = EtapaProceso.objects.filter(
+            tipo=EtapaProceso.Tipo.DESCREMACION,
+            activa=True,
+            proceso__activo=True,
+        ).select_related("proceso")
+        equipos = filtrar_por_scope(
+            Equipo.objects.filter(
+                activo=True,
+                tipo__in=tipos_equipo_para_etapa(EtapaProceso.Tipo.DESCREMACION),
+            ),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        silos = filtrar_por_scope(
+            Silo.objects.filter(activo=True),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        productos = filtrar_por_scope(
+            Producto.objects.filter(activo=True).select_related("mandante"),
+            request.user,
+            campo_sucursal=None,
+            campo_empresa="mandante__empresa_id",
+        )
+        productos_descremada = productos.filter(
+            tipo=Producto.TipoProducto.DESCREMADA,
+            familia=Producto.Familia.LIQUIDO,
+            naturaleza=Producto.Naturaleza.INTERMEDIO,
+            unidad_base=Producto.Unidad.L,
+        )
+        productos_crema = productos.filter(
+            familia=Producto.Familia.CREMA,
+            naturaleza=Producto.Naturaleza.INTERMEDIO,
+        )
+        ids_productos = [
+            *productos_descremada.values_list("pk", flat=True),
+            *productos_crema.values_list("pk", flat=True),
+        ]
+        hoy = timezone.localdate()
+        productos_con_especificacion_silo = set(
+            Especificacion.objects.filter(
+                producto_id__in=ids_productos,
+                tipo_analisis=Especificacion.TipoAnalisis.SILO,
+                vigente_desde__lte=hoy,
+            ).filter(
+                Q(vigente_hasta__isnull=True) | Q(vigente_hasta__gte=hoy),
+            ).values_list("producto_id", flat=True)
+        )
+        rutas = filtrar_por_scope(
+            RutaProducto.objects.filter(
+                activa=True,
+                proceso__activo=True,
+                producto_id__in=ids_productos,
+            ).select_related("producto", "proceso").prefetch_related("proceso__etapas"),
+            request.user,
+            campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        ocupaciones = {
+            ejecucion.equipo_id: ejecucion.codigo
+            for ejecucion in EjecucionProceso.objects.filter(
+                sucursal_id__in={equipo.sucursal_id for equipo in equipos},
+                estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+                equipo_id__isnull=False,
+            ).only("equipo_id", "codigo")
+        }
+        silos_descremada = silos.filter(tipo=Silo.Tipo.TK_LD)
+        estanques_crema = silos.filter(tipo=Silo.Tipo.TK_CREMA)
+
+        bloqueos = []
+        condiciones = (
+            ("etapa", etapas.exists(), "Falta una etapa activa de Descremación."),
+            ("equipo", equipos.exists(), "Falta configurar una descremadora activa para la planta."),
+            (
+                "producto_descremada",
+                productos_descremada.exists(),
+                "Falta leche descremada líquida como producto intermedio medido en litros.",
+            ),
+            ("producto_crema", productos_crema.exists(), "Falta configurar una crema intermedia."),
+            ("silo_descremada", silos_descremada.exists(), "Falta un TK de leche descremada activo."),
+            ("estanque_crema", estanques_crema.exists(), "Falta un TK de crema activo."),
+        )
+        bloqueos.extend(
+            {"codigo": codigo, "mensaje": mensaje}
+            for codigo, disponible, mensaje in condiciones
+            if not disponible
+        )
+
+        return Response({
+            "etapas": [
+                {"id": item.pk, "nombre": item.nombre, "tipo": item.tipo, "activa": item.activa}
+                for item in etapas
+            ],
+            "equipos": [
+                {
+                    "id": item.pk,
+                    "nombre": item.nombre,
+                    "tipo": item.tipo,
+                    "ocupado_por": ocupaciones.get(item.pk),
+                }
+                for item in equipos
+            ],
+            "silos_descremada": [
+                {"id": item.pk, "codigo": item.codigo, "tipo": item.tipo, "activo": item.activo}
+                for item in silos_descremada
+            ],
+            "estanques_crema": [
+                {"id": item.pk, "codigo": item.codigo, "tipo": item.tipo, "activo": item.activo}
+                for item in estanques_crema
+            ],
+            "productos_descremada": [
+                {
+                    "id": item.pk,
+                    "nombre": item.nombre,
+                    "tiene_especificacion_silo_vigente": (
+                        item.pk in productos_con_especificacion_silo
+                    ),
+                }
+                for item in productos_descremada
+            ],
+            "productos_crema": [
+                {
+                    "id": item.pk,
+                    "nombre": item.nombre,
+                    "tiene_especificacion_silo_vigente": (
+                        item.pk in productos_con_especificacion_silo
+                    ),
+                }
+                for item in productos_crema
+            ],
+            "rutas": [RutaProductoSerializer(item).data for item in rutas],
+            "bloqueos": bloqueos,
+        })
+
+    @action(detail=False, methods=["post"], url_path="sugerir-balance")
+    def sugerir_balance(self, request):
+        from maestros.models import Producto
+        from recepcion.models import AnalisisSilo
+
+        entrada = SugerirDescremacionSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        analisis_qs = filtrar_por_scope(
+            AnalisisSilo.objects.select_related("silo"), request.user,
+            campo_sucursal="silo__sucursal_id",
+            campo_empresa="silo__sucursal__empresa_id",
+        )
+        productos_qs = filtrar_por_scope(
+            Producto.objects.select_related("mandante"), request.user,
+            campo_sucursal=None, campo_empresa="mandante__empresa_id",
+        )
+        try:
+            analisis = analisis_qs.get(pk=datos["analisis_entrada"])
+            producto_descremada = productos_qs.get(pk=datos["producto_descremada"])
+            producto_crema = productos_qs.get(pk=datos["producto_crema"])
+        except (AnalisisSilo.DoesNotExist, Producto.DoesNotExist):
+            return Response(
+                {"error": "El análisis o producto no pertenece a tu alcance."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if (
+            analisis.estado != AnalisisSilo.Estado.CONFIRMADO
+            or not analisis.vigente
+            or analisis.grasa is None
+            or analisis.sng is None
+        ):
+            return Response(
+                {"analisis_entrada": "Selecciona un análisis confirmado y vigente con MG y SNG."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            sugerencia = sugerir_plan_descremacion(
+                analisis=analisis, litros_entrada=datos["litros_entrada"],
+                producto_descremada=producto_descremada,
+                producto_crema=producto_crema,
+            )
+        except DjangoValidationError as error:
+            return self._error(error, status.HTTP_409_CONFLICT)
+        return Response(sugerencia)
+
     @action(detail=False, methods=["post"], url_path="crear-guiada")
     def crear_guiada(self, request):
         from maestros.models import Equipo, Producto, Silo
@@ -338,6 +528,10 @@ class CorridaDescremacionViewSet(
             Producto.objects.all(), request.user,
             campo_sucursal=None, campo_empresa="mandante__empresa_id",
         )
+        rutas = filtrar_por_scope(
+            RutaProducto.objects.filter(activa=True), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
         analisis = filtrar_por_scope(
             AnalisisSilo.objects.all(), request.user,
             campo_sucursal="silo__sucursal_id",
@@ -351,6 +545,14 @@ class CorridaDescremacionViewSet(
             and productos.filter(pk=datos["producto_descremada"]).exists()
             and productos.filter(pk=datos["producto_crema"]).exists()
             and analisis.filter(pk=datos["analisis_entrada"]).exists()
+            and (
+                not datos.get("ruta_descremada")
+                or rutas.filter(pk=datos["ruta_descremada"]).exists()
+            )
+            and (
+                not datos.get("ruta_crema")
+                or rutas.filter(pk=datos["ruta_crema"]).exists()
+            )
         )
         if not ids_validos:
             return Response(
@@ -366,7 +568,14 @@ class CorridaDescremacionViewSet(
                 silo_descremada_id=datos["silo_descremada"],
                 estanque_crema_id=datos["estanque_crema"],
                 producto_descremada_id=datos["producto_descremada"],
-                producto_crema_id=datos["producto_crema"], usuario=request.user,
+                producto_crema_id=datos["producto_crema"],
+                ruta_descremada_id=datos.get("ruta_descremada"),
+                ruta_crema_id=datos.get("ruta_crema"),
+                destino_descremada=datos["destino_descremada"],
+                destino_crema=datos["destino_crema"],
+                litros_descremada_plan=datos["litros_descremada_plan"],
+                litros_crema_plan=datos["litros_crema_plan"],
+                usuario=request.user,
             )
         except DjangoValidationError as error:
             return self._error(error)
@@ -435,17 +644,38 @@ class CorridaMantequillaViewSet(
             ).select_related("producto"), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
-        lotes = filtrar_por_scope(
+        lotes_crema = filtrar_por_scope(
             Lote.objects.filter(
                 estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
                 kg_producidos__isnull=False,
-            ).select_related("producto").annotate(
+                producto__familia="crema",
+            ).select_related("producto"), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        lotes = lotes_crema.filter(
+            salidas_proceso__liberacion_calidad__estado="liberado",
+        ).annotate(
                 kg_usados=Coalesce(
                     Sum("entradas_proceso__cantidad", filter=Q(entradas_proceso__unidad__iexact="kg")),
                     Value(0), output_field=DecimalField(),
                 )
-            ), request.user, campo_sucursal="sucursal_id",
-            campo_empresa="sucursal__empresa_id",
+            ).distinct()
+        pendientes_calidad = lotes_crema.filter(
+            salidas_proceso__isnull=False,
+        ).exclude(
+            pk__in=lotes.values("pk"),
+        ).prefetch_related(
+            "salidas_proceso__liberacion_calidad",
+            "salidas_proceso__ejecucion__etapa",
+        ).distinct()
+        lotes_suero = filtrar_por_scope(
+            Lote.objects.filter(
+                producto__categoria="suero",
+                estado__in=[Lote.Estado.BORRADOR, Lote.Estado.EN_PROCESO],
+                kg_producidos__isnull=True,
+                corridas_como_suero_mantequilla__isnull=True,
+            ).select_related("producto"), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
         equipos = filtrar_por_scope(
             Equipo.objects.filter(activo=True, tipo__in=[Equipo.Tipo.LINEA, Equipo.Tipo.OTRO]),
@@ -459,16 +689,45 @@ class CorridaMantequillaViewSet(
                 equipo_id__isnull=False,
             ).only("equipo_id", "codigo")
         }
+
+        def estado_calidad_crema(lote):
+            decisiones = [
+                getattr(salida, "liberacion_calidad", None)
+                for salida in lote.salidas_proceso.all()
+            ]
+            estados = {decision.estado for decision in decisiones if decision}
+            if "rechazado" in estados:
+                return "rechazado"
+            if "pendiente" in estados:
+                return "pendiente"
+            return "trazabilidad_incompleta"
+
         return Response({
             "ordenes": [{"id": item.pk, "codigo": item.codigo, "producto": item.producto.nombre} for item in ordenes],
             "cremas": [
                 {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre,
                  "disponible_kg": item.kg_producidos - item.kg_usados}
-                for item in lotes if item.producto.familia == "crema" and item.kg_producidos > item.kg_usados
+                for item in lotes if item.kg_producidos > item.kg_usados
+            ],
+            "cremas_pendientes_calidad": [
+                {
+                    "id": item.pk,
+                    "codigo": item.codigo_lote,
+                    "producto": item.producto.nombre,
+                    "estado_calidad": estado_calidad_crema(item),
+                    "etapa_origen": next(
+                        (
+                            salida.ejecucion.etapa.get_tipo_display()
+                            for salida in item.salidas_proceso.all()
+                        ),
+                        "Sin proceso de origen",
+                    ),
+                }
+                for item in pendientes_calidad
             ],
             "sueros": [
                 {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre}
-                for item in lotes if "suero" in item.producto.nombre.lower()
+                for item in lotes_suero
             ],
             "equipos": [
                 {
@@ -669,6 +928,81 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             for ejecucion in queryset
         ])
 
+    @action(detail=False, methods=["get"], url_path="resumen-operacional")
+    def resumen_operacional(self, request):
+        """Cinco indicadores de puesto sin serializar las bandejas completas."""
+        from calidad.models import LiberacionProceso
+        from inventario.models import Despacho
+
+        ejecuciones = filtrar_por_scope(
+            EjecucionProceso.objects.all(), request.user,
+            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        indicadores = ejecuciones.aggregate(
+            procesos_activos=Count(
+                "id", filter=Q(estado__in=[
+                    EjecucionProceso.Estado.PREPARACION,
+                    EjecucionProceso.Estado.EJECUCION,
+                    EjecucionProceso.Estado.PAUSADA,
+                ])
+            ),
+            esperando_calidad=Count(
+                "id", filter=Q(estado=EjecucionProceso.Estado.PENDIENTE_CONTROL)
+            ),
+            equipos_ocupados=Count(
+                "equipo_id", distinct=True,
+                filter=Q(
+                    equipo_id__isnull=False,
+                    estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+                ),
+            ),
+            bloqueos=Count(
+                "id", filter=Q(estado=EjecucionProceso.Estado.BLOQUEADA)
+            ),
+        )
+        salidas = filtrar_por_scope(
+            SalidaProceso.objects.filter(
+                liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
+            ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA),
+            request.user,
+            campo_sucursal="ejecucion__sucursal_id",
+            campo_empresa="ejecucion__sucursal__empresa_id",
+        )
+        cero = Value(Decimal("0"))
+        decimal = DecimalField(max_digits=14, decimal_places=3)
+        continuables = salidas.filter(destino__in=[
+            SalidaProceso.Destino.PENDIENTE,
+            SalidaProceso.Destino.SIGUIENTE_PROCESO,
+            SalidaProceso.Destino.ESTANDARIZACION,
+        ]).annotate(
+            comprometido=Coalesce(Sum("usos_como_origen__cantidad"), cero, output_field=decimal)
+        ).filter(cantidad__gt=F("comprometido")).count()
+        despachables = salidas.filter(
+            destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+        ).annotate(
+            comprometido=Coalesce(
+                Sum(
+                    "detalles_despacho_granel__cantidad",
+                    filter=Q(detalles_despacho_granel__despacho__estado__in=[
+                        Despacho.Estado.AUTORIZADO, Despacho.Estado.DESPACHADO,
+                    ]),
+                ),
+                cero,
+                output_field=decimal,
+            )
+        ).filter(cantidad__gt=F("comprometido")).count()
+        envasables = salidas.filter(
+            destino=SalidaProceso.Destino.ENVASADO,
+            lote__isnull=False,
+        ).annotate(
+            comprometido=Coalesce(
+                Sum("lote__registros_envase__kg_envasados"), cero,
+                output_field=decimal,
+            )
+        ).filter(cantidad__gt=F("comprometido")).count()
+        indicadores["materiales_listos"] = continuables + despachables + envasables
+        return Response(indicadores)
+
     @action(detail=True, methods=["post"])
     def transicionar(self, request, pk=None):
         try:
@@ -834,17 +1168,30 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                 destino__in=[
                     SalidaProceso.Destino.PENDIENTE,
                     SalidaProceso.Destino.SIGUIENTE_PROCESO,
+                    SalidaProceso.Destino.ESTANDARIZACION,
+                    SalidaProceso.Destino.DESPACHO_DIRECTO,
                 ],
             ).exclude(
                 naturaleza=SalidaProceso.Naturaleza.MERMA
             ).select_related(
                 "ejecucion__etapa__proceso", "ejecucion__equipo", "silo",
                 "lote__producto", "liberacion_calidad__analisis_silo",
+                "ruta_producto__proceso",
             ).annotate(consumido=Sum("usos_como_origen__cantidad")),
             request.user,
             campo_sucursal="ejecucion__sucursal_id",
             campo_empresa="ejecucion__sucursal__empresa_id",
         )
+        silo_id = request.query_params.get("silo")
+        if silo_id:
+            try:
+                silo_id = int(silo_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {"silo": "El identificador del silo no es valido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            salidas = salidas.filter(silo_id=silo_id)
         salidas = list(salidas)
         claves_material = {
             (salida.lote_id, salida.silo_id)
@@ -884,7 +1231,11 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
             salida for salida in salidas
             if salida.cantidad - salida.consumido_trazable > 0
         ]
-        procesos_ids = {salida.ejecucion.etapa.proceso_id for salida in salidas}
+        procesos_ids = {
+            salida.ruta_producto.proceso_id
+            if salida.ruta_producto_id else salida.ejecucion.etapa.proceso_id
+            for salida in salidas
+        }
         sucursales_ids = {salida.ejecucion.sucursal_id for salida in salidas}
         etapas_por_proceso = {}
         for etapa in EtapaProceso.objects.filter(
@@ -904,6 +1255,37 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                 equipo_id__isnull=False,
             ).only("equipo_id", "codigo")
         }
+
+        def etapas_siguientes(salida):
+            siguiente = siguiente_etapa_para_salida(
+                salida=salida, etapas_por_proceso=etapas_por_proceso
+            )
+            return [siguiente] if siguiente is not None else []
+
+        def acciones_permitidas(salida):
+            if salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO:
+                return [{"codigo": "preparar_despacho", "etiqueta": "Preparar despacho"}]
+            siguiente = siguiente_etapa_para_salida(
+                salida=salida, etapas_por_proceso=etapas_por_proceso
+            )
+            if siguiente is None:
+                return []
+            codigos = {
+                EtapaProceso.Tipo.ESTANDARIZACION: "enviar_estandarizacion",
+                EtapaProceso.Tipo.MANTEQUILLA: "iniciar_mantequilla",
+                EtapaProceso.Tipo.SECADO: "continuar_secado",
+            }
+            etiquetas = {
+                EtapaProceso.Tipo.ESTANDARIZACION: "Enviar a Estandarizacion",
+                EtapaProceso.Tipo.MANTEQUILLA: "Iniciar Mantequilla",
+                EtapaProceso.Tipo.SECADO: "Continuar a Secado",
+            }
+            return [{
+                "codigo": codigos.get(siguiente.tipo, "continuar_proceso"),
+                "etiqueta": etiquetas.get(
+                    siguiente.tipo, f"Continuar a {siguiente.nombre}"
+                ),
+            }]
 
         return Response([
             {
@@ -955,6 +1337,7 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                     {"valor": valor, "etiqueta": dict(SalidaProceso.Destino.choices)[valor]}
                     for valor in sorted(salida.destinos_permitidos())
                 ],
+                "acciones_permitidas": acciones_permitidas(salida),
                 "etapas_siguientes": [
                     {
                         "id": etapa.id,
@@ -975,19 +1358,7 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                             )
                         ],
                     }
-                    for etapa in etapas_por_proceso.get(
-                        salida.ejecucion.etapa.proceso_id, []
-                    )
-                    if etapa.orden == min(
-                        (
-                            candidata.orden
-                            for candidata in etapas_por_proceso.get(
-                                salida.ejecucion.etapa.proceso_id, []
-                            )
-                            if candidata.orden > salida.ejecucion.etapa.orden
-                        ),
-                        default=-1,
-                    )
+                    for etapa in etapas_siguientes(salida)
                 ],
             }
             for salida in salidas
@@ -1106,7 +1477,7 @@ def _flujo_completo(lote):
     """Recepción → estandarización → producción para una corrida concreta."""
     from inventario.models import DetalleDespacho
     from produccion.models import PalletProducto
-    from recepcion.models import MovimientoSilo, Recepcion
+    from recepcion.models import AtribucionRecepcion, MovimientoSilo, Recepcion
 
     vale = lote.vale
     if vale is None:
@@ -1117,15 +1488,43 @@ def _flujo_completo(lote):
             tipo=MovimientoSilo.Tipo.SALIDA,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.pk,
-        ).select_related("silo")
+        ).select_related("silo").prefetch_related(
+            Prefetch(
+                "atribuciones_recepcion",
+                queryset=AtribucionRecepcion.objects.select_related(
+                    "recepcion__vehiculo"
+                ).order_by("orden"),
+                to_attr="atribuciones_fifo",
+            )
+        )
     )
 
-    # Todos los ingresos candidatos se consultan juntos. Antes cada consumo
-    # de estandarización hacía una consulta por ids y otra por recepciones.
-    # Se conserva el corte temporal propio de cada consumo al agruparlos en
-    # memoria.
-    filtro_ingresos = Q(pk__in=[])
+    # Las atribuciones FIFO congeladas son la fuente primaria. Solo movimientos
+    # historicos sin atribucion recurren a candidatos temporales, y la respuesta
+    # los marca como inferidos para no presentar una suposicion como un hecho.
+    exactas = {}
+    consumos_sin_atribucion = []
+    litros_no_atribuibles = Decimal("0")
     for consumo in consumos_estandarizacion:
+        atribuciones = consumo.atribuciones_fifo
+        if not atribuciones:
+            consumos_sin_atribucion.append(consumo)
+            continue
+        for atribucion in atribuciones:
+            if not atribucion.recepcion_id:
+                litros_no_atribuibles += atribucion.litros
+                continue
+            clave = (atribucion.recepcion_id, consumo.silo_id)
+            if clave not in exactas:
+                exactas[clave] = {
+                    "recepcion": atribucion.recepcion,
+                    "silo_codigo": consumo.silo.codigo,
+                    "litros_atribuidos": Decimal("0"),
+                }
+            exactas[clave]["litros_atribuidos"] += atribucion.litros
+
+    filtro_ingresos = Q(pk__in=[])
+    for consumo in consumos_sin_atribucion:
         filtro_ingresos |= Q(
             silo_id=consumo.silo_id, fecha_hora__lte=consumo.fecha_hora
         )
@@ -1135,16 +1534,31 @@ def _flujo_completo(lote):
             tipo=MovimientoSilo.Tipo.INGRESO,
             origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
         ).only("silo_id", "origen_id", "fecha_hora")
-    ) if consumos_estandarizacion else []
+    ) if consumos_sin_atribucion else []
     recepciones_por_orden = list(
         Recepcion.objects.filter(
             pk__in={ingreso.origen_id for ingreso in ingresos}
         ).select_related("vehiculo")
     )
 
-    recepciones = []
-    vistos = set()
-    for consumo in consumos_estandarizacion:
+    recepciones = [
+        {
+            "id": dato["recepcion"].pk,
+            "fecha": dato["recepcion"].fecha,
+            "guia": dato["recepcion"].guia,
+            "litros": dato["recepcion"].litros,
+            "litros_atribuidos": dato["litros_atribuidos"],
+            "vehiculo": (
+                dato["recepcion"].vehiculo.placa
+                if dato["recepcion"].vehiculo else None
+            ),
+            "silo_codigo": dato["silo_codigo"],
+            "trazabilidad": "confirmada",
+        }
+        for dato in exactas.values()
+    ]
+    vistos = set(exactas)
+    for consumo in consumos_sin_atribucion:
         ids = {
             ingreso.origen_id
             for ingreso in ingresos
@@ -1163,8 +1577,10 @@ def _flujo_completo(lote):
                 "fecha": recepcion.fecha,
                 "guia": recepcion.guia,
                 "litros": recepcion.litros,
+                "litros_atribuidos": None,
                 "vehiculo": recepcion.vehiculo.placa if recepcion.vehiculo else None,
                 "silo_codigo": consumo.silo.codigo,
+                "trazabilidad": "inferida",
             })
 
     ejecucion_est = getattr(vale, "ejecucion", None)
@@ -1256,9 +1672,20 @@ def _flujo_completo(lote):
     return {
         "recepciones": recepciones,
         "nota_recepciones": (
-            "Son recepciones candidatas: dentro del silo la leche se mezcla "
-            "y no existe una relación uno a uno."
+            "Las cantidades confirmadas provienen de las atribuciones FIFO "
+            "guardadas al retirar leche del silo."
+            if not consumos_sin_atribucion and litros_no_atribuibles == 0
+            else (
+                "Las filas inferidas pertenecen a movimientos historicos sin "
+                "atribucion FIFO; no deben interpretarse como una relacion exacta."
+                if consumos_sin_atribucion
+                else (
+                    "Parte del volumen proviene de saldo historico sin una "
+                    "recepcion atribuible."
+                )
+            )
         ),
+        "litros_no_atribuibles": litros_no_atribuibles,
         "estandarizacion": {
             "vale_id": vale.pk,
             "vale_codigo": vale.codigo,

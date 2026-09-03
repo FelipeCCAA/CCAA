@@ -1426,6 +1426,21 @@ def ocupacion(request):
     from inventario.models import CicloCIP
 
     ids_silo = [silo.id for silo in silos]
+    from procesos.models import ReservaSiloProceso
+    reservas_por_silo = {silo_id: [] for silo_id in ids_silo}
+    for reserva in ReservaSiloProceso.objects.filter(
+        silo_id__in=ids_silo, estado=ReservaSiloProceso.Estado.ACTIVA,
+    ).select_related("ejecucion", "producto").order_by("silo_id", "tipo", "id"):
+        reservas_por_silo[reserva.silo_id].append({
+            "id": reserva.pk,
+            "ejecucion_id": reserva.ejecucion_id,
+            "ejecucion_codigo": reserva.ejecucion.codigo,
+            "tipo": reserva.tipo,
+            "tipo_etiqueta": reserva.get_tipo_display(),
+            "cantidad_planificada": reserva.cantidad_planificada,
+            "producto_id": reserva.producto_id,
+            "producto_nombre": reserva.producto.nombre if reserva.producto_id else None,
+        })
     analisis_por_silo = {}
     for analisis in AnalisisSilo.objects.filter(
         silo_id__in=ids_silo, estado=AnalisisSilo.Estado.CONFIRMADO,
@@ -1484,6 +1499,7 @@ def ocupacion(request):
             "analisis_vigente": vigencia.vigente if vigencia else False,
             "motivo_vigencia": vigencia.motivo if vigencia else "Sin análisis confirmado.",
             "motivos_no_disponible": motivos,
+            "reservas_activas": reservas_por_silo[silo.id],
             "pct": round(porcentaje, 1),
             "excedido": silo.litros_ocupados > silo.capacidad_l,
             "negativo": silo.litros_ocupados < 0,

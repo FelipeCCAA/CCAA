@@ -12,6 +12,7 @@ from calidad.models import Liberacion, LiberacionProceso
 from maestros.models import Equipo, Mandante, Producto, Silo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from produccion.models import Lote, PalletProducto, RegistroEnvase
+from recepcion.models import MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
@@ -33,6 +34,7 @@ class FlujoProductoTerminadoTests(TestCase):
         )
         mandante = Mandante.objects.create(empresa=self.empresa, nombre="Mandante PT", codigo_cliente="pt")
         producto = Producto.objects.create(mandante=mandante, nombre="Polvo PT", unidad_base="kg")
+        self.producto = producto
         self.lote = Lote.objects.create(
             sucursal=self.planta, codigo_lote="L-PT", producto=producto,
             fecha=date(2026, 8, 17), estado=Lote.Estado.PRODUCIDO, kg_producidos=Decimal("500"),
@@ -152,6 +154,11 @@ class FlujoProductoTerminadoTests(TestCase):
             clasificacion=SalidaProceso.Clasificacion.GRANEL,
             destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
         )
+        MovimientoSilo.objects.create(
+            silo=silo, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("10000"), fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+        )
         LiberacionProceso.objects.create(
             salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
             decidida_por=self.usuario, decidida_en=timezone.now(),
@@ -170,6 +177,18 @@ class FlujoProductoTerminadoTests(TestCase):
         self.assertEqual(ejecutado.estado, Despacho.Estado.DESPACHADO)
         self.assertEqual(ejecutado.detalles.count(), 0)
         self.assertEqual(ejecutado.detalles_granel.get().cantidad, Decimal("8000"))
+        detalle = ejecutado.detalles_granel.get()
+        self.assertIsNotNone(detalle.movimiento_silo_id)
+        self.assertEqual(detalle.movimiento_silo.tipo, MovimientoSilo.Tipo.SALIDA)
+        self.assertEqual(detalle.movimiento_silo.litros, Decimal("8000"))
+        self.assertEqual(
+            ejecutar_despacho(ejecutado, self.usuario).pk,
+            ejecutado.pk,
+        )
+        self.assertEqual(
+            MovimientoSilo.objects.filter(operacion_id=detalle.operacion_id).count(),
+            1,
+        )
 
     def test_api_crea_un_despacho_granel_sin_exigir_pallet(self):
         self.usuario.user_permissions.add(
@@ -188,9 +207,14 @@ class FlujoProductoTerminadoTests(TestCase):
             capacidad_l=Decimal("12000"),
         )
         salida = SalidaProceso.objects.create(
-            ejecucion=ejecucion, silo=silo, cantidad=Decimal("9000"), unidad="L",
+            ejecucion=ejecucion, producto=self.producto, silo=silo,
+            cantidad=Decimal("9000"), unidad="L",
             clasificacion=SalidaProceso.Clasificacion.GRANEL,
             destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+        )
+        lote = Lote.objects.create(
+            sucursal=self.planta, codigo_lote="L-GRANEL-API",
+            producto=self.producto, fecha=date(2026, 8, 18), ejecucion=ejecucion,
         )
         LiberacionProceso.objects.create(
             salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
@@ -210,6 +234,18 @@ class FlujoProductoTerminadoTests(TestCase):
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertEqual(respuesta.data["detalles"], [])
         self.assertEqual(respuesta.data["detalles_granel"][0]["cantidad"], "7000.000")
+        self.assertEqual(
+            respuesta.data["detalles_granel"][0]["producto_nombre"], "Polvo PT"
+        )
+        self.assertEqual(
+            respuesta.data["detalles_granel"][0]["lote_codigo"], lote.codigo_lote
+        )
+
+        disponibles = self.api.get("/api/inventario/despachos/granel-disponible/")
+        self.assertEqual(disponibles.status_code, 200, disponibles.data)
+        self.assertEqual(disponibles.data[0]["producto_id"], self.producto.pk)
+        self.assertEqual(disponibles.data[0]["producto_nombre"], "Polvo PT")
+        self.assertEqual(disponibles.data[0]["lote_codigo"], lote.codigo_lote)
 
     def test_resumen_operacional_refleja_stock_sin_duplicarlo(self):
         self.liberar()

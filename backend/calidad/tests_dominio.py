@@ -377,6 +377,17 @@ class LiberacionTests(BaseLiberacion):
         self.assertTrue(decision.permitido, self._texto(decision.bloqueos))
         self.assertFalse(decision.via_concesion)
 
+    def test_producto_envasado_no_se_libera_comercialmente_antes_de_terminar_envase(self):
+        self._checklist_completo()
+        self._analisis({"mg": 28})
+        contexto = self._contexto()
+        contexto["envasado_completo"] = False
+
+        decision = dominio.puede_liberar(**contexto)
+
+        self.assertFalse(decision.permitido)
+        self.assertIn("terminar Envasado", self._texto(decision.bloqueos))
+
     def test_lote_no_conforme_con_checklist_completo_solo_por_concesion(self):
         self._checklist_completo()
         self._analisis({"mg": 35})

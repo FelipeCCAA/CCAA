@@ -49,6 +49,19 @@ class RutasProductoTests(TestCase):
         self.assertEqual(len(respuesta.json()["etapas"]), 2)
         self.assertEqual(RutaProducto.objects.get().sucursal, self.planta)
 
+    def test_catalogo_de_procesos_expone_la_secuencia_para_el_formulario(self):
+        respuesta = self.cliente.get("/api/procesos/procesos/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        proceso = next(
+            item for item in respuesta.data["results"]
+            if item["id"] == self.proceso.pk
+        )
+        self.assertEqual(
+            [(item["tipo"], item["orden"]) for item in proceso["etapas"]],
+            [(EtapaProceso.Tipo.CONDENSACION, 1), (EtapaProceso.Tipo.SECADO, 2)],
+        )
+
     def test_no_acepta_producto_de_otra_empresa(self):
         otra = Empresa.objects.create(rut="RUTA-2", nombre="Otra")
         mandante = Mandante.objects.create(

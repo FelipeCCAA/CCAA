@@ -2,19 +2,25 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from calidad.models import LiberacionProceso
 from maestros.models import Equipo, Especificacion, Mandante, Producto, Silo
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .dominio import calcular_balance_descremacion
 from .models import (
-    CorridaDescremacion, EjecucionProceso, EtapaProceso, Proceso, SalidaProceso,
+    CorridaDescremacion, EjecucionProceso, EtapaProceso, Proceso, RutaProducto,
+    ReservaSiloProceso, SalidaProceso,
 )
-from .servicios import cerrar_descremacion, iniciar_descremacion
+from .servicios import (
+    cerrar_descremacion, iniciar_descremacion, preparar_continuacion,
+    transicionar_ejecucion,
+)
 
 
 class BalanceDescremacionTests(TestCase):
@@ -70,7 +76,7 @@ class CierreDescremacionTests(TestCase):
         )
         equipo = Equipo.objects.create(
             sucursal=sucursal, codigo="DES-1", nombre="Descremadora 1",
-            tipo=Equipo.Tipo.OTRO,
+            tipo=Equipo.Tipo.DESCREMADORA,
         )
         proceso = Proceso.objects.create(codigo="descremar", nombre="Descremación")
         etapa = EtapaProceso.objects.create(
@@ -89,6 +95,11 @@ class CierreDescremacionTests(TestCase):
             estanque_crema=self.crema,
             producto_descremada=self.producto_descremada,
             producto_crema=self.producto_crema,
+            litros_descremada_plan=Decimal("900"),
+            litros_crema_plan=Decimal("90"),
+            fuente_plan={"metodo": "prueba"},
+            plan_confirmado_por=self.usuario,
+            plan_confirmado_en=timezone.now(),
         )
 
     def test_alta_guiada_crea_ejecucion_y_corrida_en_una_operacion(self):
@@ -99,6 +110,40 @@ class CierreDescremacionTests(TestCase):
         )
         cliente = APIClient()
         cliente.force_authenticate(self.usuario)
+        Especificacion.objects.create(
+            producto=self.producto_descremada,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
+            version=1, vigente_desde=timezone.localdate(),
+            rangos={"mg": {"min": 0, "max": 0.2}},
+        )
+        Especificacion.objects.create(
+            producto=self.producto_crema,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
+            version=1, vigente_desde=timezone.localdate(),
+            rangos={"mg": {"min": 35, "max": 45}},
+        )
+        proceso_descremada = Proceso.objects.create(
+            codigo="descremada-est", nombre="Descremada a estandarizacion"
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso_descremada, codigo="est", nombre="Estandarizar",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION, orden=1,
+        )
+        ruta_descremada = RutaProducto.objects.create(
+            sucursal=self.sucursal, producto=self.producto_descremada,
+            proceso=proceso_descremada,
+        )
+        proceso_crema = Proceso.objects.create(
+            codigo="crema-mant", nombre="Crema a mantequilla"
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso_crema, codigo="mant", nombre="Mantequilla",
+            tipo=EtapaProceso.Tipo.MANTEQUILLA, orden=1,
+        )
+        ruta_crema = RutaProducto.objects.create(
+            sucursal=self.sucursal, producto=self.producto_crema,
+            proceso=proceso_crema,
+        )
 
         respuesta = cliente.post(
             "/api/procesos/descremaciones/crear-guiada/",
@@ -113,6 +158,13 @@ class CierreDescremacionTests(TestCase):
                 "estanque_crema": self.crema.pk,
                 "producto_descremada": self.producto_descremada.pk,
                 "producto_crema": self.producto_crema.pk,
+                "litros_descremada_plan": "450",
+                "litros_crema_plan": "45",
+                "plan_confirmado": True,
+                "ruta_descremada": ruta_descremada.pk,
+                "ruta_crema": ruta_crema.pk,
+                "destino_descremada": "estandarizacion",
+                "destino_crema": "siguiente_proceso",
             },
             format="json",
         )
@@ -123,6 +175,253 @@ class CierreDescremacionTests(TestCase):
         self.assertEqual(guiada.ejecucion.responsable, self.usuario)
         self.assertEqual(guiada.grasa_entrada, self.corrida.analisis_entrada.grasa)
         self.assertEqual(guiada.sng_entrada, self.corrida.analisis_entrada.sng)
+        self.assertEqual(guiada.ruta_descremada, ruta_descremada)
+        self.assertEqual(guiada.ruta_crema, ruta_crema)
+        self.assertEqual(guiada.plan_confirmado_por, self.usuario)
+        self.assertEqual(guiada.fuente_plan["metodo"], "balance_materia_grasa")
+
+    def test_sugerencia_usa_especificaciones_y_exige_confirmacion_posterior(self):
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        for producto, minimo, maximo in (
+            (self.producto_descremada, 0, 0.2),
+            (self.producto_crema, 35, 45),
+        ):
+            Especificacion.objects.create(
+                producto=producto, tipo_analisis=Especificacion.TipoAnalisis.SILO,
+                version=1, vigente_desde=timezone.localdate(),
+                rangos={"mg": {"min": minimo, "max": maximo}},
+            )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.post(
+            "/api/procesos/descremaciones/sugerir-balance/",
+            {
+                "analisis_entrada": self.corrida.analisis_entrada_id,
+                "litros_entrada": "1000",
+                "producto_descremada": self.producto_descremada.pk,
+                "producto_crema": self.producto_crema.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data["grasa_descremada_objetivo"], Decimal("0.1"))
+        self.assertEqual(respuesta.data["grasa_crema_objetivo"], Decimal("40"))
+        self.assertTrue(respuesta.data["requiere_confirmacion_operador"])
+
+    def test_opciones_alta_entrega_solo_maestros_compatibles(self):
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        Equipo.objects.create(
+            sucursal=self.sucursal, codigo="EQ-NO-DES",
+            nombre="Equipo no compatible", tipo=Equipo.Tipo.EVAPORADOR,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get("/api/procesos/descremaciones/opciones-alta/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(
+            [item["id"] for item in respuesta.data["equipos"]],
+            [self.ejecucion.equipo_id],
+        )
+        self.assertEqual(
+            [item["id"] for item in respuesta.data["productos_descremada"]],
+            [self.producto_descremada.pk],
+        )
+        self.assertEqual(
+            [item["id"] for item in respuesta.data["silos_descremada"]],
+            [self.descremada.pk],
+        )
+        self.assertEqual(respuesta.data["bloqueos"], [])
+
+    def test_opciones_alta_informa_especificaciones_silo_vigentes(self):
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        Especificacion.objects.create(
+            producto=self.producto_descremada,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
+            version=1,
+            vigente_desde=timezone.localdate(),
+            rangos={"mg": {"min": 0, "max": 0.2}},
+        )
+        Especificacion.objects.create(
+            producto=self.producto_crema,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
+            version=1,
+            vigente_desde=timezone.localdate() - timedelta(days=10),
+            vigente_hasta=timezone.localdate() - timedelta(days=1),
+            rangos={"mg": {"min": 35, "max": 45}},
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get("/api/procesos/descremaciones/opciones-alta/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertTrue(
+            respuesta.data["productos_descremada"][0][
+                "tiene_especificacion_silo_vigente"
+            ]
+        )
+        self.assertFalse(
+            respuesta.data["productos_crema"][0][
+                "tiene_especificacion_silo_vigente"
+            ]
+        )
+
+    def test_ruta_de_otra_rama_no_puede_identificar_la_salida(self):
+        proceso = Proceso.objects.create(codigo="ruta-ajena", nombre="Ruta ajena")
+        EtapaProceso.objects.create(
+            proceso=proceso, codigo="est-ajena", nombre="Estandarizar",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION, orden=1,
+        )
+        ruta_de_crema = RutaProducto.objects.create(
+            sucursal=self.sucursal, producto=self.producto_crema, proceso=proceso,
+        )
+        self.corrida.ruta_descremada = ruta_de_crema
+        self.corrida.destino_descremada = CorridaDescremacion.DestinoRama.ESTANDARIZACION
+
+        with self.assertRaisesMessage(
+            ValidationError, "La ruta seleccionada no pertenece al producto de esta salida."
+        ):
+            self.corrida.full_clean()
+
+    def test_sugerencia_rechaza_producto_terminado_en_polvo(self):
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        polvo = Producto.objects.create(
+            mandante=self.producto_descremada.mandante,
+            nombre="Leche descremada en polvo 25 kg",
+            familia=Producto.Familia.POLVO,
+            naturaleza=Producto.Naturaleza.TERMINADO,
+            tipo=Producto.TipoProducto.DESCREMADA,
+            unidad_base=Producto.Unidad.KG,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.post(
+            "/api/procesos/descremaciones/sugerir-balance/",
+            {
+                "analisis_entrada": self.corrida.analisis_entrada_id,
+                "litros_entrada": "1000",
+                "producto_descremada": polvo.pk,
+                "producto_crema": self.producto_crema.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 409, respuesta.data)
+        self.assertIn("producto_descremada", respuesta.data)
+
+    def test_inicio_reserva_origen_y_capacidad_y_cierre_consume_reservas(self):
+        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        self.assertEqual(
+            ReservaSiloProceso.objects.filter(
+                ejecucion=self.ejecucion, estado=ReservaSiloProceso.Estado.ACTIVA,
+            ).count(),
+            3,
+        )
+
+        cerrar_descremacion(
+            corrida_id=self.corrida.pk, usuario=self.usuario,
+            litros_descremada=900, grasa_descremada="0.1",
+            litros_crema=90, grasa_crema="40",
+        )
+
+        reservas = ReservaSiloProceso.objects.filter(ejecucion=self.ejecucion)
+        self.assertFalse(reservas.filter(estado=ReservaSiloProceso.Estado.ACTIVA).exists())
+        self.assertEqual(
+            set(reservas.values_list("estado", flat=True)),
+            {ReservaSiloProceso.Estado.CONSUMIDA},
+        )
+
+    def test_cancelar_libera_las_reservas_de_tk(self):
+        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        transicionar_ejecucion(
+            ejecucion_id=self.ejecucion.pk,
+            estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.usuario,
+            motivo="Operación suspendida",
+        )
+
+        self.assertFalse(ReservaSiloProceso.objects.filter(
+            ejecucion=self.ejecucion, estado=ReservaSiloProceso.Estado.ACTIVA,
+        ).exists())
+        self.assertEqual(
+            set(ReservaSiloProceso.objects.filter(
+                ejecucion=self.ejecucion
+            ).values_list("estado", flat=True)),
+            {ReservaSiloProceso.Estado.LIBERADA},
+        )
+
+    def test_no_inicia_si_el_plan_supera_capacidad_del_tk(self):
+        self.crema.capacidad_l = Decimal("50")
+        self.crema.save(update_fields=["capacidad_l"])
+
+        with self.assertRaisesMessage(ValidationError, "no tiene capacidad"):
+            iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        self.assertFalse(ReservaSiloProceso.objects.filter(
+            ejecucion=self.ejecucion
+        ).exists())
+        self.assertFalse(self.ejecucion.entradas.exists())
+
+    def test_un_tk_con_reserva_activa_no_se_asigna_a_otra_corrida(self):
+        self.corrida.litros_entrada = Decimal("500")
+        self.corrida.litros_descremada_plan = Decimal("450")
+        self.corrida.litros_crema_plan = Decimal("45")
+        self.corrida.save(update_fields=[
+            "litros_entrada", "litros_descremada_plan", "litros_crema_plan",
+        ])
+        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        segundo_equipo = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="DES-2", nombre="Descremadora 2",
+            tipo=Equipo.Tipo.DESCREMADORA,
+        )
+        segunda_ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-DES-2", etapa=self.ejecucion.etapa,
+            sucursal=self.sucursal, equipo=segundo_equipo,
+            responsable=self.usuario,
+        )
+        segunda = CorridaDescremacion.objects.create(
+            ejecucion=segunda_ejecucion, silo_entera=self.origen,
+            analisis_entrada=self.corrida.analisis_entrada,
+            litros_entrada=Decimal("100"), grasa_entrada=Decimal("4"),
+            sng_entrada=Decimal("8.7"), silo_descremada=self.descremada,
+            estanque_crema=self.crema,
+            producto_descremada=self.producto_descremada,
+            producto_crema=self.producto_crema,
+            litros_descremada_plan=Decimal("90"),
+            litros_crema_plan=Decimal("9"),
+            fuente_plan={"metodo": "prueba"},
+            plan_confirmado_por=self.usuario,
+            plan_confirmado_en=timezone.now(),
+        )
+
+        with self.assertRaisesMessage(ValidationError, "ya está reservado"):
+            iniciar_descremacion(corrida_id=segunda.pk, usuario=self.usuario)
+
+        self.assertFalse(ReservaSiloProceso.objects.filter(
+            ejecucion=segunda_ejecucion
+        ).exists())
 
     def test_cierre_genera_dos_saldos_y_hereda_fifo_en_una_operacion(self):
         iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
@@ -146,6 +445,94 @@ class CierreDescremacionTests(TestCase):
             2,
         )
         self.assertTrue(resultado.controles["avisos_balance"])
+
+    def test_continuacion_usa_la_primera_etapa_de_la_ruta_de_la_rama(self):
+        proceso_secado = Proceso.objects.create(codigo="rama-sec", nombre="Rama secado")
+        etapa_secado = EtapaProceso.objects.create(
+            proceso=proceso_secado, codigo="secar-rama", nombre="Secar rama",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+        )
+        ruta = RutaProducto.objects.create(
+            sucursal=self.sucursal, producto=self.producto_descremada,
+            proceso=proceso_secado,
+        )
+        torre = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="TORRE-RAMA", nombre="Torre rama",
+            tipo=Equipo.Tipo.TORRE,
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=self.ejecucion, lote=None, silo=self.descremada,
+            producto=self.producto_descremada, ruta_producto=ruta,
+            destino=SalidaProceso.Destino.SIGUIENTE_PROCESO,
+            cantidad=Decimal("300"), unidad="L",
+        )
+        LiberacionProceso.objects.create(
+            salida=salida, analisis_silo=self.corrida.analisis_entrada,
+            estado=LiberacionProceso.Estado.LIBERADO,
+            decidida_por=self.usuario, decidida_en=timezone.now(),
+        )
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+        disponibles = cliente.get("/api/procesos/salidas/disponibles/")
+        self.assertEqual(disponibles.status_code, 200, disponibles.data)
+        material = next(item for item in disponibles.data if item["id"] == salida.pk)
+        self.assertEqual(material["etapas_siguientes"][0]["id"], etapa_secado.pk)
+        self.assertEqual(
+            material["acciones_permitidas"],
+            [{"codigo": "continuar_secado", "etiqueta": "Continuar a Secado"}],
+        )
+
+        ejecucion = preparar_continuacion(
+            salida_id=salida.pk, etapa_id=etapa_secado.pk,
+            equipo_id=torre.pk, cantidad="100", usuario=self.usuario,
+        )
+
+        self.assertEqual(ejecucion.etapa, etapa_secado)
+        self.assertEqual(ejecucion.ruta_producto, ruta)
+        self.assertEqual(ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+    def test_disponibles_puede_cargarse_solo_para_un_silo(self):
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.CONDENSACION,
+        )
+        salida_descremada = SalidaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=self.descremada,
+            producto=self.producto_descremada,
+            cantidad=Decimal("300"), unidad="L",
+        )
+        salida_crema = SalidaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=self.crema,
+            producto=self.producto_crema,
+            cantidad=Decimal("50"), unidad="L",
+        )
+        for salida in (salida_descremada, salida_crema):
+            LiberacionProceso.objects.create(
+                salida=salida,
+                analisis_silo=self.corrida.analisis_entrada,
+                estado=LiberacionProceso.Estado.LIBERADO,
+                decidida_por=self.usuario,
+                decidida_en=timezone.now(),
+            )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get(
+            "/api/procesos/salidas/disponibles/",
+            {"silo": self.descremada.pk},
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(
+            [item["id"] for item in respuesta.data],
+            [salida_descremada.pk],
+        )
 
     def test_calidad_decide_descremada_y_crema_por_separado(self):
         Especificacion.objects.create(

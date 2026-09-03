@@ -8,12 +8,14 @@ import {
   useState,
 } from "react";
 import { Database, Pencil, Plus } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 import {
   obtenerCatalogosSku,
   obtenerEquipos,
   obtenerMandantes,
   obtenerProductosMaestros,
+  obtenerRecetas,
   obtenerSilosMaestros,
   obtenerVehiculosMaestros,
   editarDocumento,
@@ -28,9 +30,11 @@ import {
   type Especificacion,
   type Mandante,
   type ProductoMaestro,
+  type RecetaMaestro,
   type Silo,
   type Vehiculo,
 } from "../../services/maestros.service";
+import { obtenerInsumos, type Insumo } from "../../services/inventario.service";
 
 import { obtenerParametros, type Parametro } from "../../services/produccion.service";
 
@@ -54,6 +58,7 @@ const FormularioEspecificacion = lazy(
 const FormularioMaestro = lazy(() => import("./FormularioMaestro"));
 const FormularioMandante = lazy(() => import("./FormularioMandante"));
 const FormularioProducto = lazy(() => import("./FormularioProducto"));
+const FormularioReceta = lazy(() => import("./FormularioReceta"));
 
 
 /*
@@ -79,6 +84,7 @@ const FormularioProducto = lazy(() => import("./FormularioProducto"));
 
 type Pestana =
   | "productos"
+  | "recetas"
   | "mandantes"
   | "especificaciones"
   | "equipos"
@@ -91,6 +97,7 @@ type EstadoCarga = "inactivo" | "cargando" | "listo" | "error";
 
 const ESTADO_INICIAL: Record<Pestana, EstadoCarga> = {
   productos: "inactivo",
+  recetas: "inactivo",
   mandantes: "inactivo",
   especificaciones: "inactivo",
   equipos: "inactivo",
@@ -102,6 +109,7 @@ const ESTADO_INICIAL: Record<Pestana, EstadoCarga> = {
 
 const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "productos", etiqueta: "Productos" },
+  { clave: "recetas", etiqueta: "Recetas" },
   { clave: "mandantes", etiqueta: "Mandantes" },
   { clave: "especificaciones", etiqueta: "Especificaciones" },
   { clave: "equipos", etiqueta: "Máquinas" },
@@ -110,6 +118,9 @@ const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "codigos", etiqueta: "Códigos de producción" },
   { clave: "documentos", etiqueta: "Documentos de liberación" },
 ];
+
+const esPestana = (valor: string | null): valor is Pestana =>
+  PESTANAS.some((pestana) => pestana.clave === valor);
 
 
 
@@ -231,10 +242,15 @@ const TITULO_SIMPLE = {
 
 
 function Maestros() {
-
-  const [pestana, setPestana] = useState<Pestana>("productos");
+  const [parametrosUrl, setParametrosUrl] = useSearchParams();
+  const seccionSolicitada = parametrosUrl.get("seccion");
+  const [pestana, setPestana] = useState<Pestana>(() =>
+    esPestana(seccionSolicitada) ? seccionSolicitada : "productos",
+  );
 
   const [productos, setProductos] = useState<ProductoMaestro[]>([]);
+  const [recetas, setRecetas] = useState<RecetaMaestro[]>([]);
+  const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [mandantes, setMandantes] = useState<Mandante[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [silos, setSilos] = useState<Silo[]>([]);
@@ -263,6 +279,7 @@ function Maestros() {
 
   const [editandoProducto, setEditandoProducto] = useState<ProductoMaestro | null>(null);
   const [nuevoProducto, setNuevoProducto] = useState(false);
+  const [nuevaReceta, setNuevaReceta] = useState(false);
   const [editandoMandante, setEditandoMandante] = useState<Mandante | null>(null);
   const [nuevoMandante, setNuevoMandante] = useState(false);
   const [editandoEquipo, setEditandoEquipo] = useState<Equipo | null>(null);
@@ -300,6 +317,26 @@ function Maestros() {
         case "productos":
           setProductos(await obtenerProductosMaestros());
           break;
+        case "recetas": {
+          const [listaRecetas, listaProductos, listaInsumos, listaCatalogos] = await Promise.all([
+            obtenerRecetas(),
+            cargadas.current.has("productos") ? Promise.resolve(null) : obtenerProductosMaestros(),
+            obtenerInsumos(),
+            catalogosRef.current ? Promise.resolve(null) : obtenerCatalogosSku(),
+          ]);
+          setRecetas(listaRecetas);
+          setInsumos(listaInsumos);
+          if (listaProductos) {
+            setProductos(listaProductos);
+            cargadas.current.add("productos");
+            setEstadoCarga((actual) => ({ ...actual, productos: "listo" }));
+          }
+          if (listaCatalogos) {
+            setCatalogos(listaCatalogos);
+            catalogosRef.current = listaCatalogos;
+          }
+          break;
+        }
         case "mandantes": {
           const necesitaProductos = !cargadas.current.has("productos");
           const [listaMandantes, listaProductos] = await Promise.all([
@@ -414,6 +451,13 @@ function Maestros() {
     return () => clearTimeout(temporizador);
   }, [cargarPestana, pestana]);
 
+  const seleccionarPestana = (siguiente: Pestana) => {
+    setPestana(siguiente);
+    const nuevosParametros = new URLSearchParams(parametrosUrl);
+    nuevosParametros.set("seccion", siguiente);
+    setParametrosUrl(nuevosParametros, { replace: true });
+  };
+
   /*
     Lo que decide sobre la calidad del producto lo escribe Calidad, no
     Administración: el checklist —el módulo promete que Calidad cambia un campo
@@ -511,6 +555,12 @@ function Maestros() {
     else setNuevoMandante(true);
   };
 
+  const abrirEquipo = async (equipo: Equipo | null) => {
+    if (!await asegurarCatalogos()) return;
+    if (equipo) setEditandoEquipo(equipo);
+    else setNuevoEquipo(true);
+  };
+
   const abrirSimple = async (
     entidad: "silo" | "camion" | "codigo",
     id: number | null,
@@ -574,7 +624,7 @@ function Maestros() {
             <button
               key={p.clave}
               type="button"
-              onClick={() => setPestana(p.clave)}
+              onClick={() => seleccionarPestana(p.clave)}
               className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium ${
                 pestana === p.clave
                   ? "border-green-700 text-green-800"
@@ -707,6 +757,40 @@ function Maestros() {
 
               </section>
 
+            )}
+
+            {/* Recetas versionadas */}
+
+            {pestana === "recetas" && (
+              <section className="rounded-2xl border border-slate-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm text-slate-600">
+                    Proceso se descuenta al cerrar el lote; Envasado al crear cada pallet.
+                  </p>
+                  {puedeEditarCalidad && (
+                    <button type="button" onClick={() => setNuevaReceta(true)} className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800">
+                      <Plus className="h-4 w-4" /> Nueva versión
+                    </button>
+                  )}
+                </div>
+                {recetas.length === 0 ? (
+                  <p className="px-6 py-10 text-center text-sm text-slate-600">Todavía no hay recetas versionadas.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50"><tr><th className={encabezado}>Producto</th><th className={encabezado}>Versión / vigencia</th><th className={encabezado}>Base</th><th className={encabezado}>Componentes</th></tr></thead>
+                      <tbody>{recetas.map((receta) => (
+                        <tr key={receta.id} className="border-t border-slate-100 align-top">
+                          <td className={`${celda} font-medium text-slate-800`}>{receta.producto_nombre}<p className="mt-1 text-xs font-normal text-slate-500">{receta.fuente || "Sin fuente informada"}</p></td>
+                          <td className={celda}>v{receta.version}<p className="text-xs text-slate-500">Desde {receta.vigente_desde}</p></td>
+                          <td className={`${celda} tabular-nums`}>{receta.cantidad_base}</td>
+                          <td className={celda}><div className="space-y-1">{receta.componentes.map((componente) => <p key={componente.id} className="text-xs"><span className={`mr-2 rounded-full px-2 py-0.5 font-semibold ${componente.fase === "envasado" ? "bg-sky-100 text-sky-800" : "bg-amber-100 text-amber-800"}`}>{componente.fase_etiqueta}</span>{componente.cantidad} {componente.unidad} · {componente.producto_nombre ?? componente.insumo_nombre}</p>)}</div></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             )}
 
             {/* Mandantes */}
@@ -990,7 +1074,7 @@ function Maestros() {
                   <div className="border-b border-slate-100 px-4 py-3">
                     <button
                       type="button"
-                      onClick={() => setNuevoEquipo(true)}
+                      onClick={() => { void abrirEquipo(null); }}
                       className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
                     >
                       <Plus className="h-4 w-4" />
@@ -1005,7 +1089,7 @@ function Maestros() {
                     <tr>
                       <th className={encabezado}>Máquina</th>
                       <th className={encabezado}>Tipo</th>
-                      <th className={encabezado}>Balance de leche</th>
+                      <th className={encabezado}>Reglas de consumo</th>
                       <th className={encabezado}>Bloques</th>
                       <th className={encabezado}></th>
                     </tr>
@@ -1031,7 +1115,7 @@ function Maestros() {
 
                         <td className={`${celda} text-slate-600`}>{e.tipo_etiqueta}</td>
 
-                        <td className={celda}>
+                        <td className={`${celda} space-y-1`}>
                           {e.consume_leche ? (
                             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
                               Resta leche
@@ -1039,6 +1123,15 @@ function Maestros() {
                           ) : (
                             <span className="text-slate-600">No resta</span>
                           )}
+                          <div>
+                            {e.consume_materiales ? (
+                              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">
+                                Consume envases
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-600">No consume envases</span>
+                            )}
+                          </div>
                         </td>
 
                         <td className={`${celda} text-slate-600`}>
@@ -1049,7 +1142,7 @@ function Maestros() {
                           {puedeEditar && (
                             <button
                               type="button"
-                              onClick={() => setEditandoEquipo(e)}
+                              onClick={() => { void abrirEquipo(e); }}
                               title="Editar"
                               className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                             >
@@ -1493,10 +1586,10 @@ function Maestros() {
         )}
 
         <p className="mt-6 text-xs text-slate-600">
-          Lo que decide sobre la calidad del producto —especificaciones y
-          checklist— lo escribe Calidad, no Administración. Del admin de Django
-          queda una cosa: la <strong>plantilla</strong> de cada documento de
-          liberación, que se construye contra el formato operacional.
+          Lo que decide sobre la calidad del producto —especificaciones,
+          recetas y checklist— lo escribe Calidad. La plantilla técnica de
+          cada documento de liberación continúa administrándose según su
+          formato operacional.
         </p>
 
       </div>
@@ -1524,7 +1617,7 @@ function Maestros() {
             alGuardar={() => {
               // El producto aparece por nombre en estas pestañas y también
               // cambia el conteo por mandante. Se refrescan solo al visitarlas.
-              invalidarPestanas(["mandantes", "especificaciones", "codigos"]);
+              invalidarPestanas(["mandantes", "recetas", "especificaciones", "codigos"]);
               void cargarPestana("productos", true);
             }}
           />
@@ -1558,9 +1651,10 @@ function Maestros() {
           />
         )}
 
-        {(nuevoEquipo || editandoEquipo) && (
+        {catalogos && (nuevoEquipo || editandoEquipo) && (
           <FormularioEquipo
             equipo={editandoEquipo}
+            catalogos={catalogos}
             alCerrar={() => {
               setNuevoEquipo(false);
               setEditandoEquipo(null);
@@ -1594,6 +1688,17 @@ function Maestros() {
             parametros={parametros}
             onGuardar={guardarSpec}
             onCerrar={() => setSpec(null)}
+          />
+        )}
+
+        {nuevaReceta && catalogos && (
+          <FormularioReceta
+            productos={productos}
+            insumos={insumos}
+            recetas={recetas}
+            fases={catalogos.fase_receta}
+            alCerrar={() => setNuevaReceta(false)}
+            alGuardar={() => { void cargarPestana("recetas", true); }}
           />
         )}
       </Suspense>

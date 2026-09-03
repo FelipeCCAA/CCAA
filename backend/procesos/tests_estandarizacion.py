@@ -28,8 +28,9 @@ from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Mandante, Producto, Silo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, RutaProducto
 from procesos.servicios import genealogia_lote
+from procesos.views import _flujo_completo
 from produccion import servicios as produccion
-from recepcion.models import AnalisisSilo, ControlInhibidores, MovimientoSilo
+from recepcion.models import AnalisisSilo, ControlInhibidores, MovimientoSilo, Recepcion
 from usuarios.models import Empresa, Sucursal
 
 
@@ -243,6 +244,35 @@ class CadenaCompletaTests(BaseCadena):
                 lote.pk, direccion, sucursal_id=self.planta.pk
             )
             self.assertEqual(len(resultado["nodos"]), 1)
+
+    def test_el_flujo_muestra_la_recepcion_fifo_y_su_cantidad_confirmada(self):
+        recepcion = Recepcion.objects.create(
+            sucursal=self.planta,
+            fecha=date(2026, 8, 12),
+            guia="GUIA-FIFO-1",
+            tipo_leche=Recepcion.TipoLeche.ENTERA,
+            litros=Decimal("25000"),
+            estado=Recepcion.Estado.DESCARGADA,
+        )
+        MovimientoSilo.objects.create(
+            silo=self.entera,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=recepcion.litros,
+            fecha_hora=timezone.now() - timedelta(days=1),
+            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+            origen_id=recepcion.pk,
+        )
+        _, lote = self._cadena()
+
+        flujo = _flujo_completo(lote)
+        origen = next(
+            item for item in flujo["recepciones"] if item["id"] == recepcion.pk
+        )
+
+        self.assertEqual(origen["trazabilidad"], "confirmada")
+        self.assertEqual(origen["litros_atribuidos"], Decimal("19128.10"))
+        self.assertIn("saldo historico", flujo["nota_recepciones"])
+        self.assertGreater(flujo["litros_no_atribuibles"], 0)
 
     def test_sin_kilos_no_se_cierra_la_corrida(self):
         """Un lote sin kilos declarados es uno que todavía está en la torre."""

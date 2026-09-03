@@ -24,7 +24,6 @@ export default function OperacionesBodega({ onCambio }: { onCambio: () => void }
 
   useEffect(() => {
     if (!operacion) return;
-    setMensaje("");
     const cargas = operacion === "despacho"
       ? [obtenerProductoTerminado().then(setProductos), obtenerClientesDespacho().then(setClientes), obtenerGranelDisponible().then(setGraneles)]
       : operacion === "pallet"
@@ -77,7 +76,7 @@ export default function OperacionesBodega({ onCambio }: { onCambio: () => void }
     <p className="mt-2 text-sm text-slate-600">Cada entrada, consumo, traslado y despacho genera trazabilidad; el saldo nunca se edita directamente.</p>
     {botones.length === 0
       ? <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Tu área tiene acceso de consulta. Los movimientos los registra Bodega y los despachos requieren autorización específica.</p>
-      : <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{botones.map(([id, texto, Icono]) => <button key={id} type="button" onClick={() => setOperacion(id)} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:border-emerald-400 hover:bg-emerald-50"><Icono className="h-5 w-5 text-emerald-700" />{texto}</button>)}</div>}
+      : <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{botones.map(([id, texto, Icono]) => <button key={id} type="button" onClick={() => { setMensaje(""); setOperacion(id); }} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:border-emerald-400 hover:bg-emerald-50"><Icono className="h-5 w-5 text-emerald-700" />{texto}</button>)}</div>}
     {operacion && <form onSubmit={guardar} className="mt-5 rounded-2xl bg-slate-50 p-5">
       <div className="flex items-center justify-between"><h3 className="font-bold text-slate-900">{botones.find(([id]) => id === operacion)?.[1]}</h3><button type="button" onClick={() => setOperacion(null)}><X className="h-5 w-5" /></button></div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -94,7 +93,7 @@ export default function OperacionesBodega({ onCambio }: { onCambio: () => void }
           {datos.tipo_despacho === "pallet" ? (
             <select required className={campo} value={datos.pallet} onChange={(e) => setDatos({ ...datos, pallet: e.target.value })}><option value="">Pallet disponible…</option>{productos.filter((p) => p.estado_inventario === "disponible" && p.ubicacion_tipo === "disponible").map((p) => <option key={p.id} value={p.pallet}>{p.pallet_codigo} · {p.producto_nombre} · {p.kg_neto} kg</option>)}</select>
           ) : <>
-            <select required className={campo} value={datos.granel} onChange={(e) => { const elegido = graneles.find((item) => item.id === Number(e.target.value)); setDatos({ ...datos, granel: e.target.value, cantidad: elegido?.cantidad_disponible ?? "" }); }}><option value="">Granel liberado para despacho…</option>{graneles.map((item) => <option key={item.id} value={item.id}>{item.corrida_codigo} · {item.producto} · {item.cantidad_disponible} {item.unidad}</option>)}</select>
+            <select required className={campo} value={datos.granel} onChange={(e) => { const elegido = graneles.find((item) => item.id === Number(e.target.value)); setDatos({ ...datos, granel: e.target.value, cantidad: elegido?.cantidad_disponible ?? "" }); }}><option value="">Granel liberado para despacho…</option>{graneles.map((item) => <option key={item.id} value={item.id}>{item.lote_codigo ?? item.corrida_codigo} · {item.producto_nombre} · {item.silo_codigo ?? "sin silo"} · {item.cantidad_disponible} {item.unidad}</option>)}</select>
             <input required min="0.001" step="0.001" type="number" className={campo} placeholder="Cantidad a despachar" value={datos.cantidad} onChange={(e) => setDatos({ ...datos, cantidad: e.target.value })} />
           </>}
           <input className={campo} placeholder="Observación" value={datos.motivo} onChange={(e) => setDatos({ ...datos, motivo: e.target.value })} />

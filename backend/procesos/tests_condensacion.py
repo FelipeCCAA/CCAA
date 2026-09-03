@@ -1,9 +1,11 @@
+import threading
 from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.db import connection, connections
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -14,7 +16,7 @@ from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
     CorridaCondensacion, EjecucionProceso, EntradaProceso, EtapaProceso, Proceso,
-    RutaProducto, SalidaProceso,
+    ReservaSiloProceso, RutaProducto, SalidaProceso,
 )
 from .servicios import cerrar_condensacion, crear_condensacion_guiada, iniciar_condensacion
 
@@ -51,6 +53,14 @@ class FlujoCondensacionTests(TestCase):
         MovimientoSilo.objects.create(
             silo=self.origen, tipo=MovimientoSilo.Tipo.INGRESO,
             litros=Decimal("1500"), fecha_hora=timezone.now(),
+        )
+        AnalisisSilo.objects.create(
+            silo=self.origen, tomado_en=timezone.now(),
+            grasa=Decimal("3.60"), sng=Decimal("8.60"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
         )
         proceso = Proceso.objects.create(codigo="cond", nombre="Condensación")
         etapa = EtapaProceso.objects.create(
@@ -104,6 +114,13 @@ class FlujoCondensacionTests(TestCase):
         )
         self.assertEqual(consumo.litros, Decimal("600"))
         self.assertEqual(consumo.lote, self.lote)
+        reserva = ReservaSiloProceso.objects.get(
+            ejecucion=self.ejecucion,
+            silo=self.destino,
+            tipo=ReservaSiloProceso.Tipo.DESTINO,
+        )
+        self.assertEqual(reserva.estado, ReservaSiloProceso.Estado.ACTIVA)
+        self.assertEqual(reserva.cantidad_planificada, Decimal("600"))
 
     def test_cierre_deja_precondensado_y_balance_de_ejecucion(self):
         iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
@@ -120,8 +137,33 @@ class FlujoCondensacionTests(TestCase):
         self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.CERRADA)
         ingreso = self.destino.movimientos.get(tipo=MovimientoSilo.Tipo.INGRESO)
         self.assertEqual(ingreso.litros, Decimal("250"))
+        reserva = ReservaSiloProceso.objects.get(
+            ejecucion=self.ejecucion,
+            silo=self.destino,
+            tipo=ReservaSiloProceso.Tipo.DESTINO,
+        )
+        self.assertEqual(reserva.estado, ReservaSiloProceso.Estado.CONSUMIDA)
+        self.assertEqual(reserva.cantidad_real, Decimal("250"))
         self.assertEqual(self.ejecucion.entradas.get().cantidad, Decimal("600"))
         self.assertEqual(self.ejecucion.salidas.get().cantidad, Decimal("250"))
+
+    def test_inicio_rechaza_tk_destino_reservado_por_otra_ejecucion(self):
+        otra = EjecucionProceso.objects.create(
+            codigo="EJ-OTRA", etapa=self.ejecucion.etapa, sucursal=self.planta,
+            equipo=self.equipo, responsable=self.usuario,
+        )
+        ReservaSiloProceso.objects.create(
+            ejecucion=otra, silo=self.destino,
+            tipo=ReservaSiloProceso.Tipo.DESTINO,
+            cantidad_planificada=Decimal("100"),
+        )
+
+        with self.assertRaisesMessage(ValidationError, "reservado por EJ-OTRA"):
+            iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        self.assertFalse(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+        ).exists())
 
     def test_precondensado_finaliza_en_calidad_y_despacho_directo(self):
         self._crear_especificacion_precondensado()
@@ -136,6 +178,7 @@ class FlujoCondensacionTests(TestCase):
         RutaProducto.objects.create(
             sucursal=self.planta, producto=self.lote.producto,
             proceso=self.ejecucion.etapa.proceso,
+            destino_final=RutaProducto.DestinoFinal.DESPACHO_DIRECTO,
             destino="Despacho directo",
         )
         iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
@@ -177,6 +220,15 @@ class FlujoCondensacionTests(TestCase):
         self.assertEqual(respuesta.status_code, 200, respuesta.data)
         self.orden.refresh_from_db()
         self.assertEqual(self.orden.estado, OrdenProduccion.Estado.LIBERADA)
+        produccion = APIClient()
+        produccion.force_authenticate(self.usuario)
+        disponibles = produccion.get("/api/procesos/salidas/disponibles/")
+        self.assertEqual(disponibles.status_code, 200, disponibles.data)
+        material = next(item for item in disponibles.data if item["id"] == salida.pk)
+        self.assertEqual(
+            material["acciones_permitidas"],
+            [{"codigo": "preparar_despacho", "etiqueta": "Preparar despacho"}],
+        )
 
     def test_calidad_libera_precondensado_con_analisis_confirmado(self):
         self._crear_especificacion_precondensado()
@@ -390,3 +442,125 @@ class FlujoCondensacionTests(TestCase):
         self.assertFalse(MovimientoSilo.objects.filter(
             silo=self.origen, tipo=MovimientoSilo.Tipo.SALIDA
         ).exists())
+
+
+class ConcurrenciaReservaCondensacionTests(TransactionTestCase):
+    def setUp(self):
+        empresa = Empresa.objects.create(rut="COND-RACE", nombre="Concurrencia")
+        self.planta = Sucursal.objects.create(
+            empresa=empresa, codigo="RACE", nombre="Planta concurrencia",
+        )
+        self.usuario = User.objects.create_user("operador-race")
+        mandante = Mandante.objects.create(
+            empresa=empresa, nombre="Mandante race", codigo_cliente="race",
+        )
+        producto = Producto.objects.create(
+            mandante=mandante, nombre="Precondensado race",
+            familia=Producto.Familia.LIQUIDO,
+            naturaleza=Producto.Naturaleza.INTERMEDIO,
+            unidad_base=Producto.Unidad.L,
+        )
+        proceso = Proceso.objects.create(codigo="cond-race", nombre="Evaporacion")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="evap-race", nombre="Evaporar",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=1,
+        )
+        self.destino = Silo.objects.create(
+            sucursal=self.planta, codigo="TK-PC-RACE",
+            tipo=Silo.Tipo.SILO, capacidad_l=Decimal("1000"),
+        )
+        self.corridas = []
+        for indice in (1, 2):
+            equipo = Equipo.objects.create(
+                sucursal=self.planta, codigo=f"EV-RACE-{indice}",
+                nombre=f"Evaporador race {indice}",
+                tipo=Equipo.Tipo.EVAPORADOR,
+            )
+            origen = Silo.objects.create(
+                sucursal=self.planta, codigo=f"ORIGEN-RACE-{indice}",
+                tipo=Silo.Tipo.SILO, capacidad_l=Decimal("2000"),
+            )
+            MovimientoSilo.objects.create(
+                silo=origen, tipo=MovimientoSilo.Tipo.INGRESO,
+                litros=Decimal("1000"), fecha_hora=timezone.now(),
+            )
+            AnalisisSilo.objects.create(
+                silo=origen, tomado_en=timezone.now(),
+                grasa=Decimal("3.60"), sng=Decimal("8.60"),
+                inhibidores_resultado="negativo", metodo="snap",
+                hora_lectura=timezone.localtime().time(),
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+                analista=self.usuario, visualizado_por=self.usuario,
+            )
+            ejecucion = EjecucionProceso.objects.create(
+                codigo=f"EJ-COND-RACE-{indice}", etapa=etapa,
+                sucursal=self.planta, equipo=equipo, responsable=self.usuario,
+            )
+            orden = OrdenProduccion.objects.create(
+                sucursal=self.planta, codigo=f"OP-RACE-{indice}",
+                producto=producto, cantidad_planificada=Decimal("600"),
+                unidad="L", equipo=equipo,
+                estado=OrdenProduccion.Estado.PROGRAMADA,
+            )
+            lote = Lote.objects.create(
+                sucursal=self.planta, codigo_lote=f"LOTE-RACE-{indice}",
+                orden=orden, op=orden.codigo, producto=producto,
+                fecha=date(2026, 9, 3),
+            )
+            self.corridas.append(CorridaCondensacion.objects.create(
+                ejecucion=ejecucion, orden=orden, lote=lote,
+                silo_origen=origen, silo_destino=self.destino,
+                litros_entrada=Decimal("600"),
+            ))
+
+    def test_dos_evaporaciones_no_reservan_el_mismo_tk(self):
+        if not connection.features.has_select_for_update:
+            self.skipTest("el motor no soporta bloqueos de fila")
+
+        barrera = threading.Barrier(2)
+        resultados = []
+        candado = threading.Lock()
+
+        def iniciar(corrida_id):
+            try:
+                barrera.wait(timeout=10)
+                iniciar_condensacion(
+                    corrida_id=corrida_id, usuario=self.usuario,
+                )
+                resultado = "iniciada"
+            except ValidationError as error:
+                resultado = f"rechazada: {error}"
+            finally:
+                connections.close_all()
+            with candado:
+                resultados.append(resultado)
+
+        hilos = [
+            threading.Thread(target=iniciar, args=(corrida.pk,))
+            for corrida in self.corridas
+        ]
+        for hilo in hilos:
+            hilo.start()
+        for hilo in hilos:
+            hilo.join(timeout=20)
+
+        self.assertEqual(resultados.count("iniciada"), 1, resultados)
+        self.assertEqual(
+            len([resultado for resultado in resultados if resultado.startswith("rechazada:")]),
+            1,
+            resultados,
+        )
+        self.assertEqual(
+            ReservaSiloProceso.objects.filter(
+                silo=self.destino, estado=ReservaSiloProceso.Estado.ACTIVA,
+                tipo=ReservaSiloProceso.Tipo.DESTINO,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            MovimientoSilo.objects.filter(
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+            ).count(),
+            1,
+        )

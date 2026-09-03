@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, FlaskConical, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import {
   definirDestinoSalida,
@@ -14,7 +15,7 @@ import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-pro
 
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 });
 
-export default function SalidasIntermedias() {
+export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void }) {
   const [salidas, setSalidas] = useState<SalidaIntermediaDisponible[] | null>(null);
   const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [cargando, setCargando] = useState(false);
@@ -84,6 +85,7 @@ export default function SalidasIntermedias() {
       setMensaje(`${ejecucion.codigo} quedó en preparación.`);
       setPreparando(null);
       await cargar();
+      onCambio?.();
     } catch (errorPeticion: unknown) {
       const mensaje = mensajeErrorProceso(errorPeticion, "No se pudo preparar la etapa siguiente.");
       if (esErrorDeEquipo(errorPeticion)) await cargar(false);
@@ -101,6 +103,7 @@ export default function SalidasIntermedias() {
       await definirDestinoSalida(salida.id, destino);
       setMensaje(`Destino de ${salida.corrida_codigo}: ${salida.destinos_permitidos.find((item) => item.valor === destino)?.etiqueta ?? destino}.`);
       await cargar();
+      onCambio?.();
     } catch (errorPeticion: unknown) {
       setError(mensajeErrorProceso(errorPeticion, "No se pudo definir el destino de la salida."));
     } finally {
@@ -198,7 +201,31 @@ export default function SalidasIntermedias() {
                   <p className="text-sm text-amber-700">No tiene una etapa posterior activa configurada.</p>
                 )}
               </div>
-              {preparando === salida.id ? (
+              {salida.acciones_permitidas.some((accion) => accion.codigo === "preparar_despacho") ? (
+                <Link
+                  to="/inventario"
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  {salida.acciones_permitidas.find((accion) => accion.codigo === "preparar_despacho")?.etiqueta}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              ) : salida.acciones_permitidas.some((accion) => accion.codigo === "enviar_estandarizacion") ? (
+                <Link
+                  to="/estandarizacion"
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  {salida.acciones_permitidas.find((accion) => accion.codigo === "enviar_estandarizacion")?.etiqueta}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              ) : salida.acciones_permitidas.some((accion) => accion.codigo === "iniciar_mantequilla") ? (
+                <Link
+                  to="/procesos?seccion=mantequilla"
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  {salida.acciones_permitidas.find((accion) => accion.codigo === "iniciar_mantequilla")?.etiqueta}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              ) : preparando === salida.id ? (
                 <div className="mt-4 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                   <label className="block text-xs font-semibold text-slate-700">
                     Etapa siguiente
@@ -248,7 +275,7 @@ export default function SalidasIntermedias() {
                 </div>
               ) : salida.etapas_siguientes.some((item) => item.equipos.some((equipo) => !ocupaciones.has(equipo.id))) ? (
                 <button type="button" onClick={() => abrirPreparacion(salida)} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">
-                  Preparar etapa siguiente <ArrowRight className="h-4 w-4" />
+                  {salida.acciones_permitidas[0]?.etiqueta ?? "Preparar etapa siguiente"} <ArrowRight className="h-4 w-4" />
                 </button>
               ) : salida.etapas_siguientes.some((item) => item.equipos.length > 0) ? (
                 <p className="mt-4 text-sm font-medium text-amber-800">Todos los equipos compatibles están reservados u ocupados.</p>

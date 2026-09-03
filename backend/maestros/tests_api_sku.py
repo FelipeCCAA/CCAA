@@ -171,6 +171,14 @@ class CatalogosSkuTests(BaseApiMaestros):
 
         self.assertTrue(all(o["etiqueta"] for o in datos["categoria"]))
 
+    def test_catalogo_de_equipos_incluye_descremadora(self):
+        datos = self.cliente.get("/api/maestros/catalogos/").json()
+
+        self.assertIn(
+            {"valor": "descremadora", "etiqueta": "Descremadora"},
+            datos["equipo_tipo"],
+        )
+
 
 class MandanteApiTests(BaseApiMaestros):
 

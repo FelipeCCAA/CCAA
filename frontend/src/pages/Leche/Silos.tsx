@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Beaker, FlaskConical, GitBranch, Truck, Warehouse } from "lucide-react";
 
@@ -7,6 +7,10 @@ import {
 } from "../../services/recepcion.service";
 import AnalisisSiloPanel from "./AnalisisSilo";
 import FormularioDespachoLeche from "./FormularioDespachoLeche";
+import {
+  obtenerSalidasIntermediasDisponibles,
+  type SalidaIntermediaDisponible,
+} from "../../services/procesos.service";
 
 /*
   Los silos como herramienta, no como decoración.
@@ -100,6 +104,7 @@ function Barra({
         <span className={`rounded-full px-2.5 py-1 font-medium ${silo.estado === "bloqueado_calidad" || silo.estado === "en_cip" || silo.estado === "fuera_servicio" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>{silo.estado_etiqueta}</span>
         {silo.producto_actual && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{silo.producto_actual}</span>}
         {silo.temperatura_actual != null && <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700">{silo.temperatura_actual} °C</span>}
+        {silo.reservas_activas.length > 0 && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">Reservado · {silo.reservas_activas[0].ejecucion_codigo}</span>}
       </div>
 
       <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
@@ -135,6 +140,10 @@ function Silos({ soloPrincipales = false }: SilosProps) {
   const [seleccionado, setSeleccionado] = useState<OcupacionSilo | null>(null);
   const [despachando, setDespachando] = useState(false);
   const [despachos, setDespachos] = useState<DespachoLeche[] | null>(null);
+  const [materiales, setMateriales] = useState<SalidaIntermediaDisponible[] | null>(null);
+  const [cargandoMateriales, setCargandoMateriales] = useState(false);
+  const [errorMateriales, setErrorMateriales] = useState("");
+  const cargaMaterialRef = useRef(0);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -173,11 +182,41 @@ function Silos({ soloPrincipales = false }: SilosProps) {
   // su muestra, movimientos y despacho.
   const tanquesProceso = silos.filter((s) => s.tipo !== "silo");
   const faltaTkCrema = !silos.some((s) => s.tipo === "tk_crema");
+  const bloqueoSeleccionado = seleccionado?.reservas_activas.length
+    ? `Reservado por ${seleccionado.reservas_activas[0].ejecucion_codigo}`
+    : seleccionado?.motivos_no_disponible[0];
 
   const capacidadTotal = silos.reduce((suma, s) => suma + s.capacidad, 0);
   const pctTotal = capacidadTotal > 0
     ? Math.round((ocupacion.litros_totales / capacidadTotal) * 100)
     : 0;
+
+  const seleccionarSilo = (elegido: OcupacionSilo) => {
+    setDespachos(null);
+    setErrorMateriales("");
+    const cerrando = seleccionado?.silo_id === elegido.silo_id;
+    setSeleccionado(cerrando ? null : elegido);
+    const solicitud = ++cargaMaterialRef.current;
+    if (cerrando) {
+      setMateriales(null);
+      setCargandoMateriales(false);
+      return;
+    }
+    setMateriales(null);
+    setCargandoMateriales(true);
+    void obtenerSalidasIntermediasDisponibles(elegido.silo_id)
+      .then((resultado) => {
+        if (cargaMaterialRef.current === solicitud) setMateriales(resultado);
+      })
+      .catch(() => {
+        if (cargaMaterialRef.current === solicitud) {
+          setErrorMateriales("No se pudo cargar el material trazable del silo.");
+        }
+      })
+      .finally(() => {
+        if (cargaMaterialRef.current === solicitud) setCargandoMateriales(false);
+      });
+  };
 
   return (
     <div className="space-y-6">
@@ -271,6 +310,44 @@ function Silos({ soloPrincipales = false }: SilosProps) {
                 {seleccionado.motivos_no_disponible.join(" · ")}
               </div>
             )}
+            {seleccionado.reservas_activas.length > 0 && (
+              <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+                <p className="font-semibold">Reserva activa</p>
+                {seleccionado.reservas_activas.map((reserva) => (
+                  <p key={reserva.id} className="mt-1 text-xs">
+                    {reserva.tipo_etiqueta}: {formato.format(Number(reserva.cantidad_planificada))} L · {reserva.producto_nombre ?? "contenido actual"} · {reserva.ejecucion_codigo}
+                  </p>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 rounded-xl border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Material trazable liberado</h3>
+              <p className="mt-1 text-xs text-slate-500">Capas de proceso con aprobación de Calidad y saldo disponible en este silo/TK.</p>
+              {cargandoMateriales && <p className="mt-3 text-sm text-slate-600">Cargando material…</p>}
+              {errorMateriales && <p className="mt-3 text-sm text-rose-700">{errorMateriales}</p>}
+              {materiales?.length === 0 && <p className="mt-3 text-sm text-slate-600">No hay salidas de proceso liberadas con saldo en esta unidad.</p>}
+              {materiales && materiales.length > 0 && <div className="mt-3 space-y-2">
+                {materiales.map((material) => {
+                  const accion = material.acciones_permitidas[0];
+                  const destinoAccion = accion?.codigo === "preparar_despacho"
+                    ? "/inventario"
+                    : accion?.codigo === "enviar_estandarizacion"
+                      ? `/estandarizacion?silo=${material.silo_id}`
+                      : accion?.codigo === "iniciar_mantequilla"
+                        ? "/procesos?seccion=mantequilla"
+                        : accion?.codigo === "continuar_secado" ? "/secado" : null;
+                  return <article key={material.id} className="rounded-lg bg-slate-50 px-3 py-3 text-xs text-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div><b className="text-slate-900">{material.producto_nombre ?? material.resultado}</b><br />{material.lote_codigo ? `Lote ${material.lote_codigo} · ` : ""}{material.corrida_codigo}</div>
+                      <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-800">{material.estado_material_etiqueta}</span>
+                    </div>
+                    <p className="mt-2">Disponible: <b>{Number(material.cantidad_disponible).toLocaleString("es-CL")} {material.unidad}</b> · Destino: {material.destino_etiqueta}</p>
+                    {accion && destinoAccion && <Link to={destinoAccion} className="mt-2 inline-flex font-semibold text-emerald-700 underline">{accion.etiqueta}</Link>}
+                    {!accion && <p className="mt-2 text-amber-700">Sin siguiente acción activa configurada.</p>}
+                  </article>;
+                })}
+              </div>}
+            </div>
             {seleccionado.tipo === "tk_ld" && (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
                 Este es el <strong>TK de leche descremada</strong>: se usa como insumo de la estandarización. No es el silo de entrada para una nueva descremación.
@@ -278,9 +355,9 @@ function Silos({ soloPrincipales = false }: SilosProps) {
             )}
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <AccionSilo texto="Tomar muestra" icono={Beaker} onClick={() => document.getElementById("analisis-silo")?.scrollIntoView({ behavior: "smooth" })} />
-              <AccionSilo texto="Estandarizar" icono={FlaskConical} destino={`/estandarizacion?silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />
-              {seleccionado.tipo === "silo" && <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={seleccionado.motivos_no_disponible[0]} />}
-              <AccionSilo texto="Despachar" icono={Truck} onClick={() => setDespachando(true)} bloqueado={seleccionado.motivos_no_disponible[0]} />
+              <AccionSilo texto="Estandarizar" icono={FlaskConical} destino={`/estandarizacion?silo=${seleccionado.silo_id}`} bloqueado={bloqueoSeleccionado} />
+              {seleccionado.tipo === "silo" && <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={bloqueoSeleccionado} />}
+              <AccionSilo texto="Despachar" icono={Truck} onClick={() => setDespachando(true)} bloqueado={bloqueoSeleccionado} />
             </div>
             <div className="mt-4">
               <button type="button" onClick={() => void obtenerDespachosLeche(seleccionado.silo_id).then(setDespachos).catch(() => setError("No se pudo cargar el historial de despachos."))} className="text-sm font-medium text-emerald-700 underline">Ver historial de despachos</button>
@@ -306,12 +383,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
                 key={s.silo_id}
                 silo={s}
                 activo={seleccionado?.silo_id === s.silo_id}
-                onSelect={(elegido) => {
-                  setDespachos(null);
-                  setSeleccionado((actual) =>
-                    actual?.silo_id === elegido.silo_id ? null : elegido,
-                  );
-                }}
+                onSelect={seleccionarSilo}
               />
             ))}
           </div>
@@ -323,10 +395,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
           <h2 className="mb-3 font-semibold text-slate-900">TK y estanques de proceso</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {tanquesProceso.map((s) => (
-              <Barra key={s.silo_id} silo={s} activo={seleccionado?.silo_id === s.silo_id} onSelect={(elegido) => {
-                setDespachos(null);
-                setSeleccionado((actual) => actual?.silo_id === elegido.silo_id ? null : elegido);
-              }} />
+              <Barra key={s.silo_id} silo={s} activo={seleccionado?.silo_id === s.silo_id} onSelect={seleccionarSilo} />
             ))}
             {faltaTkCrema && (
               <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-5">
@@ -354,12 +423,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
                 key={s.silo_id}
                 silo={s}
                 activo={seleccionado?.silo_id === s.silo_id}
-                onSelect={(elegido) => {
-                  setDespachos(null);
-                  setSeleccionado((actual) =>
-                    actual?.silo_id === elegido.silo_id ? null : elegido,
-                  );
-                }}
+                onSelect={seleccionarSilo}
               />
             ))}
           </div>

@@ -350,11 +350,14 @@ export interface DetalleDespacho {
 
 export interface DetalleDespachoGranel {
   id: number; salida: number; corrida_codigo: string; cantidad: string;
-  unidad: string; destino_etiqueta: string;
+  unidad: string; destino_etiqueta: string; producto_id: number | null;
+  producto_nombre: string; lote_codigo: string | null; silo_codigo: string | null;
 }
 
 export interface GranelDisponible {
-  id: number; corrida_codigo: string; producto: string; silo_codigo: string | null;
+  id: number; corrida_codigo: string; producto_id: number | null;
+  producto: string; producto_nombre: string; lote_codigo: string | null;
+  silo_codigo: string | null;
   cantidad_disponible: string; unidad: string;
 }
 

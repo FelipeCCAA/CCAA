@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import serializers
 
 from usuarios.models import Empresa
@@ -10,9 +11,73 @@ from .models import (
     Especificacion,
     Mandante,
     Producto,
+    Receta,
+    RecetaComponente,
     Silo,
     Vehiculo,
 )
+
+
+class RecetaComponenteSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    insumo_nombre = serializers.CharField(source="insumo.nombre", read_only=True)
+    fase_etiqueta = serializers.CharField(source="get_fase_display", read_only=True)
+
+    class Meta:
+        model = RecetaComponente
+        fields = [
+            "id", "producto", "producto_nombre", "insumo", "insumo_nombre",
+            "fase", "fase_etiqueta", "cantidad", "unidad", "merma",
+        ]
+
+
+class RecetaSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    componentes = RecetaComponenteSerializer(many=True)
+
+    class Meta:
+        model = Receta
+        fields = [
+            "id", "producto", "producto_nombre", "version", "cantidad_base",
+            "vigente_desde", "vigente_hasta", "fuente", "componentes",
+        ]
+
+    def validate(self, attrs):
+        componentes = attrs.get("componentes") or []
+        if not componentes:
+            raise serializers.ValidationError({"componentes": "Agrega al menos un componente."})
+        empresa_id = attrs["producto"].mandante.empresa_id
+        scope = _scope_del_contexto(self)
+        if scope is not None and not scope.es_global and scope.empresa_id != empresa_id:
+            raise serializers.ValidationError({"producto": "El producto no pertenece a tu organización."})
+        for indice, componente in enumerate(componentes, start=1):
+            producto = componente.get("producto")
+            insumo = componente.get("insumo")
+            if bool(producto) == bool(insumo):
+                raise serializers.ValidationError({
+                    "componentes": f"Fila {indice}: selecciona un producto o un insumo."
+                })
+            if producto and producto.mandante.empresa_id != empresa_id:
+                raise serializers.ValidationError({
+                    "componentes": f"Fila {indice}: el producto pertenece a otra organización."
+                })
+            if insumo and insumo.empresa_id != empresa_id:
+                raise serializers.ValidationError({
+                    "componentes": f"Fila {indice}: el insumo pertenece a otra organización."
+                })
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        componentes = validated_data.pop("componentes")
+        receta = Receta(**validated_data)
+        receta.full_clean()
+        receta.save()
+        for datos in componentes:
+            componente = RecetaComponente(receta=receta, **datos)
+            componente.full_clean()
+            componente.save()
+        return receta
 
 
 def _scope_del_contexto(serializer):
@@ -222,6 +287,7 @@ class EquipoSerializer(serializers.ModelSerializer):
             "tipo",
             "tipo_etiqueta",
             "consume_leche",
+            "consume_materiales",
             "orden",
             "activo",
         ]

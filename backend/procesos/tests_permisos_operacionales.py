@@ -55,7 +55,7 @@ class PermisosOperacionalesPorEtapaTests(TestCase):
         )
         self.descremadora = Equipo.objects.create(
             sucursal=self.sucursal, codigo="DE-PER", nombre="Descremadora",
-            tipo=Equipo.Tipo.OTRO,
+            tipo=Equipo.Tipo.DESCREMADORA,
         )
         self.condensacion = self._usuario("condensacion", PerfilUsuario.Area.CONDENSACION)
         self.secado = self._usuario("secado", PerfilUsuario.Area.SECADO)

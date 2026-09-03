@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
@@ -40,6 +41,7 @@ export default function NuevaMantequilla({
   const ocupaciones = ocupacionesPorEquipo(ejecuciones);
   const equipoSeleccionado = opciones?.equipos.find((item) => item.id === Number(datos.equipo));
   const ocupacionSeleccionada = equipoSeleccionado ? ocupaciones.get(equipoSeleccionado.id) : undefined;
+  const equipoBloqueado = Boolean(ocupacionSeleccionada || equipoSeleccionado?.ocupado_por);
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
@@ -76,17 +78,19 @@ export default function NuevaMantequilla({
             <Selector texto="Orden de mantequilla" valor={datos.orden} cambiar={(valor) => setDatos({ ...datos, orden: valor })}><option value="">Seleccionar OP…</option>{opciones?.ordenes.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto}</option>)}</Selector>
             <Selector texto="Lote de crema" valor={datos.crema} cambiar={(valor) => setDatos({ ...datos, crema: valor, kg: "" })}><option value="">Seleccionar crema…</option>{opciones?.cremas.map((item) => <option key={item.id} value={item.id}>{item.codigo} · disponible {Number(item.disponible_kg).toLocaleString("es-CL")} kg</option>)}</Selector>
             <label className="text-sm font-medium text-slate-700">Crema a utilizar (kg)<input required min="0.001" max={crema?.disponible_kg} step="0.001" type="number" value={datos.kg} onChange={(evento) => setDatos({ ...datos, kg: evento.target.value })} className={campo} /></label>
-            <Selector texto="Línea / equipo" valor={datos.equipo} cambiar={(valor) => setDatos({ ...datos, equipo: valor })}><option value="">Seleccionar línea…</option>{opciones?.equipos.map((item) => { const ocupacion = ocupaciones.get(item.id); return <option key={item.id} value={item.id} disabled={Boolean(ocupacion)}>{item.nombre}{ocupacion ? ` · ${ocupacion.disponibilidad} por ${ocupacion.ejecucion}` : " · disponible"}</option>; })}</Selector>
-            {equipoSeleccionado && <div className="self-end pb-2"><EstadoEquipo estado={ocupacionSeleccionada?.estado} ejecucion={ocupacionSeleccionada?.ejecucion} /></div>}
+            <Selector texto="Línea / equipo" valor={datos.equipo} cambiar={(valor) => setDatos({ ...datos, equipo: valor })}><option value="">Seleccionar línea…</option>{opciones?.equipos.map((item) => { const ocupacion = ocupaciones.get(item.id); const ocupadoPor = ocupacion?.ejecucion ?? item.ocupado_por; return <option key={item.id} value={item.id} disabled={Boolean(ocupadoPor)}>{item.nombre}{ocupadoPor ? ` · ocupado por ${ocupadoPor}` : " · disponible"}</option>; })}</Selector>
+            {equipoSeleccionado && <div className="self-end pb-2"><EstadoEquipo estado={ocupacionSeleccionada?.estado ?? (equipoSeleccionado.ocupado_por ? "ejecucion" : undefined)} ejecucion={ocupacionSeleccionada?.ejecucion ?? equipoSeleccionado.ocupado_por ?? undefined} /></div>}
             <label className="text-sm font-medium text-slate-700">Código nuevo lote de mantequilla<input required value={datos.codigo} onChange={(evento) => setDatos({ ...datos, codigo: evento.target.value.toUpperCase() })} className={campo} /></label>
             <Selector texto="Lote de suero (si se medirá)" valor={datos.suero} cambiar={(valor) => setDatos({ ...datos, suero: valor })}><option value="">Sin suero declarado</option>{opciones?.sueros.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto}</option>)}</Selector>
           </div>
         )}
-        {opciones && (opciones.ordenes.length === 0 || opciones.cremas.length === 0) && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">Falta una OP programada de mantequilla o un lote de crema producido con saldo en kg.</p>}
+        {opciones?.ordenes.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">No hay una OP de mantequilla programada. <Link to="/planificacion" className="font-semibold underline">Ir a Planificación</Link>.</p>}
+        {opciones && opciones.cremas.length === 0 && opciones.cremas_pendientes_calidad.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">No existe crema producida con saldo disponible.</p>}
+        {opciones && opciones.cremas_pendientes_calidad.length > 0 && <section className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3"><p className="text-sm font-semibold text-violet-900">Crema no habilitada</p><div className="mt-2 space-y-1">{opciones.cremas_pendientes_calidad.map((item) => <p key={item.id} className="text-xs text-violet-800">{item.codigo} · {item.producto} · {item.estado_calidad === "rechazado" ? "Rechazada" : item.estado_calidad === "trazabilidad_incompleta" ? `Trazabilidad incompleta: origen ${item.etapa_origen}` : "Pendiente de liberación"}</p>)}</div><p className="mt-2 text-xs text-violet-700">Los lotes pendientes se gestionan en <Link to="/calidad" className="font-semibold underline">Calidad</Link>. Un lote con trazabilidad incompleta requiere revisión y no puede aprobarse automáticamente.</p></section>}
         {error && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={onCerrar} className="px-4 py-2 text-sm text-slate-600">Cancelar</button>
-          <button disabled={guardando || Boolean(ocupacionSeleccionada) || !datos.orden || !datos.crema || !datos.equipo || !datos.codigo || !datos.kg} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{guardando ? "Creando…" : "Crear corrida"}</button>
+          <button disabled={guardando || equipoBloqueado || !datos.orden || !datos.crema || !datos.equipo || !datos.codigo || !datos.kg} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{guardando ? "Creando…" : "Crear corrida"}</button>
         </div>
       </form>
     </div>

@@ -181,6 +181,10 @@ export interface LoteDetalle extends Lote {
     registrado_en: string | null;
     kg_base: string | null;
     pendiente: boolean;
+    envasado: {
+      operaciones: number;
+      kg_base_total: string;
+    };
   };
   pallets_resumen: {
     total: number;
@@ -301,7 +305,32 @@ export interface RegistroEnvaseCreado {
   controles: Record<string, string | boolean | number>;
 }
 
+export interface MaterialEnvasable {
+  salida_id: number;
+  lote_id: number;
+  lote_codigo: string;
+  producto_id: number;
+  producto_nombre: string;
+  cantidad_disponible: string;
+  unidad: string;
+  formato: "saco_25kg" | "caja_20kg";
+  formato_nombre: string;
+  formato_kg: string;
+  maximo_pallet_kg: string;
+  origen: string;
+  calidad: "liberado";
+  motivo_bloqueo: string;
+}
+
+export async function obtenerMaterialesEnvasables(): Promise<MaterialEnvasable[]> {
+  const { data } = await api.get<MaterialEnvasable[]>(
+    "produccion/envases/materiales-habilitados/",
+  );
+  return data;
+}
+
 export async function registrarEnvase(datos: {
+  operacion_id: string;
   lote: number;
   equipo: number;
   formato_kg: number;

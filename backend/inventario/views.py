@@ -421,7 +421,11 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = Despacho.objects.select_related("cliente", "creado_por", "autorizado_por").prefetch_related(
-        "detalles__pallet__envase__lote", "detalles_granel__salida__ejecucion"
+        "detalles__pallet__envase__lote",
+        "detalles_granel__salida__producto",
+        "detalles_granel__salida__silo",
+        "detalles_granel__salida__ejecucion__etapa",
+        "detalles_granel__salida__ejecucion__lote_produccion__producto",
     )
     serializer_class = DespachoSerializer
     permission_classes = [PuedeCrearDespacho]
@@ -460,7 +464,9 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             SalidaProceso.objects.filter(
                 destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
                 liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
-            ).select_related("ejecucion__etapa", "silo").annotate(
+            ).select_related(
+                "ejecucion__etapa", "ejecucion__lote_produccion", "producto", "silo"
+            ).annotate(
                 comprometido=Coalesce(
                     Sum(
                         "detalles_despacho_granel__cantidad",
@@ -479,18 +485,24 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             campo_sucursal="ejecucion__sucursal_id",
             campo_empresa="ejecucion__sucursal__empresa_id",
         )
-        return Response([
-            {
+        respuesta = []
+        for salida in salidas:
+            if salida.cantidad - salida.comprometido <= 0:
+                continue
+            lote = getattr(salida.ejecucion, "lote_produccion", None)
+            producto = salida.producto or (lote.producto if lote else None)
+            respuesta.append({
                 "id": salida.id,
                 "corrida_codigo": salida.ejecucion.codigo,
-                "producto": salida.ejecucion.etapa.nombre,
+                "producto_id": producto.pk if producto else None,
+                "producto": producto.nombre if producto else salida.ejecucion.etapa.nombre,
+                "producto_nombre": producto.nombre if producto else salida.ejecucion.etapa.nombre,
+                "lote_codigo": lote.codigo_lote if lote else None,
                 "silo_codigo": salida.silo.codigo if salida.silo_id else None,
                 "cantidad_disponible": salida.cantidad - salida.comprometido,
                 "unidad": salida.unidad,
-            }
-            for salida in salidas
-            if salida.cantidad - salida.comprometido > 0
-        ])
+            })
+        return Response(respuesta)
 
     @action(detail=True, methods=["post"])
     def autorizar(self, request, pk=None):

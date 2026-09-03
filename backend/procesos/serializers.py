@@ -55,6 +55,43 @@ class CrearDescremacionGuiadaSerializer(serializers.Serializer):
     estanque_crema = serializers.IntegerField(min_value=1)
     producto_descremada = serializers.IntegerField(min_value=1)
     producto_crema = serializers.IntegerField(min_value=1)
+    litros_descremada_plan = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=1,
+    )
+    litros_crema_plan = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=1,
+    )
+    plan_confirmado = serializers.BooleanField()
+    ruta_descremada = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    ruta_crema = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    destino_descremada = serializers.ChoiceField(
+        choices=CorridaDescremacion.DestinoRama.choices,
+        default=CorridaDescremacion.DestinoRama.PENDIENTE,
+    )
+    destino_crema = serializers.ChoiceField(
+        choices=CorridaDescremacion.DestinoRama.choices,
+        default=CorridaDescremacion.DestinoRama.PENDIENTE,
+    )
+
+    def validate(self, attrs):
+        if not attrs.get("plan_confirmado"):
+            raise serializers.ValidationError({
+                "plan_confirmado": "El operador debe confirmar la sugerencia."
+            })
+        if attrs["litros_descremada_plan"] + attrs["litros_crema_plan"] > attrs["litros_entrada"]:
+            raise serializers.ValidationError(
+                "Los volúmenes planificados superan los litros de entrada."
+            )
+        return attrs
+
+
+class SugerirDescremacionSerializer(serializers.Serializer):
+    analisis_entrada = serializers.IntegerField(min_value=1)
+    litros_entrada = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=1,
+    )
+    producto_descremada = serializers.IntegerField(min_value=1)
+    producto_crema = serializers.IntegerField(min_value=1)
 
 
 class CierreSecadoSerializer(serializers.Serializer):
@@ -146,6 +183,8 @@ class CorridaDescremacionSerializer(serializers.ModelSerializer):
             "estado", "operacion_id", "litros_descremada", "grasa_descremada",
             "litros_crema", "grasa_crema", "controles", "iniciada_por",
             "iniciada_en", "finalizada_por", "finalizada_en", "motivo_anulacion",
+            "litros_descremada_plan", "litros_crema_plan", "fuente_plan",
+            "plan_confirmado_por", "plan_confirmado_en",
         ]
 
     def validate(self, attrs):
@@ -224,9 +263,24 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
 
 
 class ProcesoSerializer(serializers.ModelSerializer):
+    etapas = serializers.SerializerMethodField()
+
     class Meta:
         model = Proceso
         fields = "__all__"
+
+    @staticmethod
+    def get_etapas(proceso):
+        return [
+            {
+                "id": etapa.pk,
+                "nombre": etapa.nombre,
+                "tipo": etapa.tipo,
+                "activa": etapa.activa,
+                "orden": etapa.orden,
+            }
+            for etapa in proceso.etapas.all()
+        ]
 
 
 class EtapaProcesoSerializer(serializers.ModelSerializer):

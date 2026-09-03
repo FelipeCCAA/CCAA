@@ -66,6 +66,12 @@ class EtapaProceso(models.Model):
 class RutaProducto(models.Model):
     """Proceso configurable permitido para un producto en una planta."""
 
+    class DestinoFinal(models.TextChoices):
+        SIGUIENTE_PROCESO = "siguiente_proceso", "Siguiente proceso"
+        ENVASADO = "envasado", "Envasado"
+        DESPACHO_DIRECTO = "despacho_directo", "Despacho directo"
+        INVENTARIO = "inventario", "Inventario"
+
     sucursal = models.ForeignKey(
         "usuarios.Sucursal", on_delete=models.PROTECT,
         related_name="rutas_producto", default=sucursal_predeterminada_pruebas,
@@ -77,6 +83,12 @@ class RutaProducto(models.Model):
         Proceso, on_delete=models.PROTECT, related_name="rutas_producto"
     )
     prioridad = models.PositiveSmallIntegerField(default=1)
+    destino_final = models.CharField(
+        max_length=25,
+        choices=DestinoFinal.choices,
+        default=DestinoFinal.SIGUIENTE_PROCESO,
+        db_index=True,
+    )
     destino = models.CharField(max_length=120, blank=True)
     observaciones = models.TextField(blank=True)
     activa = models.BooleanField(default=True)
@@ -296,6 +308,12 @@ class CorridaDescremacion(models.Model):
         CERRADA = "cerrada", "Cerrada"
         ANULADA = "anulada", "Anulada"
 
+    class DestinoRama(models.TextChoices):
+        PENDIENTE = "pendiente", "Destino por definir"
+        ESTANDARIZACION = "estandarizacion", "Estandarizacion"
+        SIGUIENTE_PROCESO = "siguiente_proceso", "Siguiente proceso"
+        DESPACHO_DIRECTO = "despacho_directo", "Despacho directo"
+
     ejecucion = models.OneToOneField(
         "procesos.EjecucionProceso", on_delete=models.PROTECT,
         related_name="corrida_descremacion",
@@ -314,6 +332,24 @@ class CorridaDescremacion(models.Model):
         related_name="corridas_como_crema", null=True, blank=True,
         help_text="Identidad del intermedio que queda en el TK de crema.",
     )
+    ruta_descremada = models.ForeignKey(
+        RutaProducto, on_delete=models.PROTECT,
+        related_name="corridas_descremacion_descremada", null=True, blank=True,
+        help_text="Ruta elegida independientemente para la leche descremada.",
+    )
+    ruta_crema = models.ForeignKey(
+        RutaProducto, on_delete=models.PROTECT,
+        related_name="corridas_descremacion_crema", null=True, blank=True,
+        help_text="Ruta elegida independientemente para la crema.",
+    )
+    destino_descremada = models.CharField(
+        max_length=25, choices=DestinoRama.choices,
+        default=DestinoRama.PENDIENTE,
+    )
+    destino_crema = models.CharField(
+        max_length=25, choices=DestinoRama.choices,
+        default=DestinoRama.PENDIENTE,
+    )
     silo_entera = models.ForeignKey(
         "maestros.Silo", on_delete=models.PROTECT, related_name="descremaciones_origen"
     )
@@ -324,6 +360,18 @@ class CorridaDescremacion(models.Model):
     litros_entrada = models.DecimalField(max_digits=14, decimal_places=2)
     grasa_entrada = models.DecimalField(max_digits=6, decimal_places=3)
     sng_entrada = models.DecimalField(max_digits=6, decimal_places=3)
+    litros_descremada_plan = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+    )
+    litros_crema_plan = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+    )
+    fuente_plan = models.JSONField(default=dict, blank=True)
+    plan_confirmado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="planes_descremacion_confirmados", null=True, blank=True,
+    )
+    plan_confirmado_en = models.DateTimeField(null=True, blank=True)
     silo_descremada = models.ForeignKey(
         "maestros.Silo", on_delete=models.PROTECT, related_name="descremaciones_salida"
     )
@@ -369,6 +417,16 @@ class CorridaDescremacion(models.Model):
                 condition=models.Q(litros_crema__isnull=True)
                 | models.Q(litros_crema__gt=0), name="descremacion_crema_positiva"
             ),
+            models.CheckConstraint(
+                condition=models.Q(litros_descremada_plan__isnull=True)
+                | models.Q(litros_descremada_plan__gt=0),
+                name="descremacion_plan_descremada_positivo",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(litros_crema_plan__isnull=True)
+                | models.Q(litros_crema_plan__gt=0),
+                name="descremacion_plan_crema_positivo",
+            ),
         ]
 
     def clean(self):
@@ -380,12 +438,38 @@ class CorridaDescremacion(models.Model):
         if self.analisis_entrada_id and self.silo_entera_id:
             if self.analisis_entrada.silo_id != self.silo_entera_id:
                 raise ValidationError({"analisis_entrada": "El análisis no pertenece al silo de leche entera."})
-        if self.producto_descremada_id and self.producto_descremada.tipo != "descremada":
+        planes = (self.litros_descremada_plan, self.litros_crema_plan)
+        if any(valor is not None for valor in planes):
+            if any(valor is None or valor <= 0 for valor in planes):
+                raise ValidationError(
+                    "Confirma volúmenes planificados positivos para las dos ramas."
+                )
+            if sum(planes) > self.litros_entrada:
+                raise ValidationError(
+                    "Los volúmenes planificados superan los litros de entrada."
+                )
+            if not self.plan_confirmado_por_id or not self.plan_confirmado_en:
+                raise ValidationError(
+                    "El operador debe confirmar la sugerencia antes de iniciar."
+                )
+        if self.producto_descremada_id and not (
+            self.producto_descremada.tipo == "descremada"
+            and self.producto_descremada.familia == "liquido"
+            and self.producto_descremada.naturaleza == "intermedio"
+            and self.producto_descremada.unidad_base == "L"
+        ):
             raise ValidationError({
-                "producto_descremada": "Selecciona un producto de tipo descremada."
+                "producto_descremada": (
+                    "Selecciona leche descremada intermedia, liquida y medida en litros."
+                )
             })
-        if self.producto_crema_id and self.producto_crema.familia != "crema":
-            raise ValidationError({"producto_crema": "Selecciona un producto de familia crema."})
+        if self.producto_crema_id and not (
+            self.producto_crema.familia == "crema"
+            and self.producto_crema.naturaleza == "intermedio"
+        ):
+            raise ValidationError({
+                "producto_crema": "Selecciona una crema intermedia."
+            })
         if self.ejecucion_id:
             for campo in ("producto_descremada", "producto_crema"):
                 producto = getattr(self, campo, None)
@@ -398,9 +482,88 @@ class CorridaDescremacion(models.Model):
                 silo = getattr(self, campo, None)
                 if silo and silo.sucursal_id != self.ejecucion.sucursal_id:
                     raise ValidationError({campo: "El estanque pertenece a otra planta."})
+            for campo in ("ruta_descremada", "ruta_crema"):
+                ruta = getattr(self, campo, None)
+                if ruta and ruta.sucursal_id != self.ejecucion.sucursal_id:
+                    raise ValidationError({campo: "La ruta pertenece a otra planta."})
+        for rama in ("descremada", "crema"):
+            destino = getattr(self, f"destino_{rama}")
+            ruta = getattr(self, f"ruta_{rama}")
+            campo = f"ruta_{rama}"
+            if destino != self.DestinoRama.PENDIENTE and ruta is None:
+                raise ValidationError({campo: "Selecciona una ruta para esta salida."})
+            if ruta is None:
+                continue
+            producto = getattr(self, f"producto_{rama}", None)
+            if producto and ruta.producto_id != producto.pk:
+                raise ValidationError({
+                    campo: "La ruta seleccionada no pertenece al producto de esta salida."
+                })
+            tipos = set(ruta.proceso.etapas.filter(activa=True).values_list("tipo", flat=True))
+            if destino == self.DestinoRama.DESPACHO_DIRECTO:
+                if ruta.destino_final != RutaProducto.DestinoFinal.DESPACHO_DIRECTO:
+                    raise ValidationError({campo: "La ruta no termina en despacho directo."})
+            elif destino == self.DestinoRama.ESTANDARIZACION:
+                if EtapaProceso.Tipo.ESTANDARIZACION not in tipos:
+                    raise ValidationError({campo: "La ruta no contiene Estandarizacion."})
+            elif rama == "crema" and EtapaProceso.Tipo.MANTEQUILLA not in tipos:
+                raise ValidationError({campo: "La ruta de crema no contiene Mantequilla."})
 
     def __str__(self):
         return f"Descremación {self.ejecucion.codigo}"
+
+
+class ReservaSiloProceso(models.Model):
+    """Compromiso transaccional de material o capacidad para una ejecución."""
+
+    class Tipo(models.TextChoices):
+        ORIGEN = "origen", "Material de origen"
+        DESTINO = "destino", "Capacidad de destino"
+
+    class Estado(models.TextChoices):
+        ACTIVA = "activa", "Activa"
+        CONSUMIDA = "consumida", "Consumida"
+        LIBERADA = "liberada", "Liberada"
+
+    ejecucion = models.ForeignKey(
+        "procesos.EjecucionProceso", on_delete=models.PROTECT,
+        related_name="reservas_silo",
+    )
+    silo = models.ForeignKey(
+        "maestros.Silo", on_delete=models.PROTECT, related_name="reservas_proceso",
+    )
+    producto = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT,
+        related_name="reservas_silo", null=True, blank=True,
+    )
+    tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    estado = models.CharField(
+        max_length=12, choices=Estado.choices, default=Estado.ACTIVA, db_index=True,
+    )
+    cantidad_planificada = models.DecimalField(max_digits=14, decimal_places=2)
+    cantidad_real = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+    )
+    creada_en = models.DateTimeField(auto_now_add=True)
+    cerrada_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["ejecucion_id", "silo_id", "tipo"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cantidad_planificada__gt=0),
+                name="reserva_silo_cantidad_positiva",
+            ),
+            models.UniqueConstraint(
+                fields=["ejecucion", "silo", "tipo"],
+                name="reserva_silo_unica_por_ejecucion",
+            ),
+            models.UniqueConstraint(
+                fields=["silo"],
+                condition=models.Q(estado="activa", tipo="destino"),
+                name="reserva_destino_activa_unica_por_silo",
+            ),
+        ]
 
 
 class CorridaMantequilla(models.Model):
@@ -510,6 +673,11 @@ class EjecucionProceso(models.Model):
     equipo = models.ForeignKey(
         "maestros.Equipo", on_delete=models.PROTECT, related_name="ejecuciones_proceso",
         null=True, blank=True,
+    )
+    ruta_producto = models.ForeignKey(
+        RutaProducto, on_delete=models.PROTECT,
+        related_name="ejecuciones", null=True, blank=True,
+        help_text="Ruta productiva elegida al crear la ejecucion.",
     )
     responsable = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
@@ -659,10 +827,20 @@ class EntradaProceso(models.Model):
                 })
             origen = self.salida_origen.ejecucion.etapa
             destino = self.ejecucion.etapa
-            if origen.proceso_id != destino.proceso_id or destino.orden <= origen.orden:
+            ruta = self.salida_origen.ruta_producto
+            proceso_esperado_id = ruta.proceso_id if ruta else origen.proceso_id
+            etapas = EtapaProceso.objects.filter(
+                proceso_id=proceso_esperado_id, activa=True
+            ).order_by("orden", "pk")
+            etapa_esperada = (
+                etapas.first()
+                if proceso_esperado_id != origen.proceso_id
+                else etapas.filter(orden__gt=origen.orden).first()
+            )
+            if etapa_esperada is None or destino.pk != etapa_esperada.pk:
                 raise ValidationError({
                     "salida_origen": (
-                        "La etapa destino debe ser una etapa posterior del proceso configurado."
+                        "La etapa destino debe ser la continuidad inmediata de la ruta configurada."
                     )
                 })
 
@@ -775,6 +953,16 @@ class SalidaProceso(models.Model):
     naturaleza = models.CharField(
         max_length=20, choices=Naturaleza.choices, default=Naturaleza.PRINCIPAL
     )
+    producto = models.ForeignKey(
+        "maestros.Producto", on_delete=models.PROTECT,
+        related_name="salidas_proceso", null=True, blank=True,
+        help_text="Identidad explicita del material resultante.",
+    )
+    ruta_producto = models.ForeignKey(
+        RutaProducto, on_delete=models.PROTECT,
+        related_name="salidas_proceso", null=True, blank=True,
+        help_text="Ruta elegida para la continuidad de esta salida.",
+    )
     clasificacion = models.CharField(
         max_length=20,
         choices=Clasificacion.choices,
@@ -837,11 +1025,18 @@ class SalidaProceso(models.Model):
             return {self.Destino.OTRO}
         tipo = self.ejecucion.etapa.tipo
         if tipo == EtapaProceso.Tipo.DESCREMACION:
-            return {
+            permitidos = {
                 self.Destino.SIGUIENTE_PROCESO,
                 self.Destino.ESTANDARIZACION,
                 self.Destino.REPROCESO,
             }
+            if (
+                self.ruta_producto_id
+                and self.ruta_producto.destino_final
+                == RutaProducto.DestinoFinal.DESPACHO_DIRECTO
+            ):
+                permitidos.add(self.Destino.DESPACHO_DIRECTO)
+            return permitidos
         if tipo == EtapaProceso.Tipo.ESTANDARIZACION:
             return {self.Destino.SIGUIENTE_PROCESO}
         if tipo in {EtapaProceso.Tipo.EVAPORACION, EtapaProceso.Tipo.CONDENSACION}:

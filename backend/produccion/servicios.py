@@ -175,7 +175,7 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     """
     from maestros.models import Equipo
     from procesos.models import EjecucionProceso, EntradaProceso, EtapaProceso
-    from procesos.servicios import exigir_etapa_inicial_para_producto
+    from procesos.servicios import exigir_etapa_inicial_para_producto, ruta_para_etapa
 
     tipo_etapa = {
         Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
@@ -190,12 +190,14 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
         tipo=tipo_etapa,
         etapa_previa_tipo=EtapaProceso.Tipo.ESTANDARIZACION,
     )
+    ruta = ruta_para_etapa(producto=lote.producto, sucursal=lote.sucursal, etapa=etapa)
 
     ejecucion = EjecucionProceso.objects.create(
         # El código de lote no es globalmente único. La identidad de la base
         # evita colisiones entre productos, fechas y sucursales.
         codigo=f"EJ-PROD-{lote.pk}",
         etapa=etapa,
+        ruta_producto=ruta,
         sucursal=lote.sucursal,
         equipo=lote.equipo,
         responsable=usuario,
@@ -273,6 +275,8 @@ def registrar_produccion(*, lote, destino_salida=None):
         ejecucion=ejecucion,
         lote=lote,
         defaults={
+            "producto": lote.producto,
+            "ruta_producto": ejecucion.ruta_producto,
             "naturaleza": SalidaProceso.Naturaleza.PRINCIPAL,
             "clasificacion": SalidaProceso.Clasificacion.GRANEL,
             "destino": destino_salida,
@@ -334,7 +338,11 @@ def cerrar_lote_producido(*, lote, usuario, titulo=None, mensaje=None) -> str | 
 
     aviso = None
     try:
-        consumir_receta_produccion(lote_produccion=lote, usuario=usuario)
+        consumir_receta_produccion(
+            lote_produccion=lote,
+            usuario=usuario,
+            permitir_vacio=True,
+        )
     except ValidationError as error:
         aviso = (
             "No se descontó el material de bodega: "
@@ -364,7 +372,10 @@ def registrar_envasado(
     """Registra envase y pallets como un único cierre físico e idempotente."""
     from django.core.exceptions import ValidationError
     from inventario.servicios import (
-        motivo_equipo_no_habilitado, registrar_pallets_producidos,
+        consumir_receta_produccion,
+        insumos_requeridos,
+        motivo_equipo_no_habilitado,
+        registrar_pallets_producidos,
     )
 
     if operacion_id:
@@ -395,6 +406,22 @@ def registrar_envasado(
         raise ValidationError(
             "El flujo del lote no tiene Envasado como destino; revisa su etapa productiva."
         )
+    pesos_formato = {
+        lote.producto.Formato.SACO_25KG: Decimal("25"),
+        lote.producto.Formato.CAJA_20KG: Decimal("20"),
+    }
+    formato_configurado = pesos_formato.get(lote.producto.formato)
+    if formato_configurado is None:
+        raise ValidationError({
+            "formato_kg": "El producto no tiene un formato de Envasado valido configurado."
+        })
+    if Decimal(str(formato_kg)) != formato_configurado:
+        raise ValidationError({
+            "formato_kg": (
+                f"El formato configurado para {lote.producto.nombre} es "
+                f"{formato_configurado} kg."
+            )
+        })
     impedimento = motivo_equipo_no_habilitado(equipo)
     if impedimento:
         raise ValidationError(impedimento)
@@ -424,6 +451,23 @@ def registrar_envasado(
         pallet.full_clean()
         creados.append(pallet)
     PalletProducto.objects.bulk_create(creados)
+    # Sacos, cajas y pallets se usan físicamente aquí. Descontarlos al cerrar
+    # Producción adelanta un hecho que todavía no ocurrió y falla cuando el
+    # lote se envasa en varias operaciones.
+    explosion_envase, requerido_envase = insumos_requeridos(
+        producto_id=lote.producto_id,
+        cantidad=kg_total,
+        fecha=lote.fecha,
+        fase="envasado",
+    )
+    if explosion_envase.completa and requerido_envase:
+        consumir_receta_produccion(
+            lote_produccion=lote,
+            usuario=usuario,
+            fase="envasado",
+            kg_base=kg_total,
+            operacion_id=registro.operacion_id,
+        )
     # El pallet ya existe físicamente al salir de envase. Inventario lo
     # registra una sola vez en cuarentena; Calidad luego cambia su estado, no
     # vuelve a crear stock.

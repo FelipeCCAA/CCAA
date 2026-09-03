@@ -9,7 +9,7 @@ from django.utils import timezone
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
-    RutaProducto,
+    ReservaSiloProceso, RutaProducto,
 )
 
 
@@ -19,6 +19,40 @@ ESTADOS_QUE_OCUPAN_EQUIPO = frozenset({
     EjecucionProceso.Estado.PAUSADA,
     EjecucionProceso.Estado.BLOQUEADA,
 })
+
+
+def reservas_activas_silo(*, silo_id, tipo=None, excluir_ejecucion_id=None):
+    """Consulta comun para que todos los procesos respeten el mismo compromiso."""
+    reservas = ReservaSiloProceso.objects.filter(
+        silo_id=silo_id,
+        estado=ReservaSiloProceso.Estado.ACTIVA,
+    )
+    if tipo is not None:
+        reservas = reservas.filter(tipo=tipo)
+    if excluir_ejecucion_id is not None:
+        reservas = reservas.exclude(ejecucion_id=excluir_ejecucion_id)
+    return reservas
+
+
+def litros_origen_reservados(*, silo_id, excluir_ejecucion_id=None):
+    return reservas_activas_silo(
+        silo_id=silo_id,
+        tipo=ReservaSiloProceso.Tipo.ORIGEN,
+        excluir_ejecucion_id=excluir_ejecucion_id,
+    ).aggregate(total=Sum("cantidad_planificada"))["total"] or Decimal("0")
+
+
+def exigir_destino_sin_reserva(*, silo, excluir_ejecucion_id=None):
+    reserva = reservas_activas_silo(
+        silo_id=silo.pk,
+        excluir_ejecucion_id=excluir_ejecucion_id,
+    ).select_related("ejecucion").order_by("pk").first()
+    if reserva is not None:
+        raise ValidationError({
+            "silo_destino": (
+                f"{silo.codigo} esta reservado por {reserva.ejecucion.codigo}."
+            )
+        })
 
 
 def adquirir_equipo(*, equipo_id, ejecucion_id=None):
@@ -118,6 +152,10 @@ def crear_descremacion_guiada(
     *, codigo, etapa_id, equipo_id, silo_entera_id, analisis_entrada_id,
     litros_entrada, silo_descremada_id, estanque_crema_id,
     producto_descremada_id, producto_crema_id, usuario,
+    ruta_descremada_id=None, ruta_crema_id=None,
+    destino_descremada=CorridaDescremacion.DestinoRama.PENDIENTE,
+    destino_crema=CorridaDescremacion.DestinoRama.PENDIENTE,
+    litros_descremada_plan=None, litros_crema_plan=None,
 ):
     """Crea ejecucion y corrida de descremacion como una sola operacion."""
     from maestros.models import Equipo, Producto, Silo
@@ -169,6 +207,33 @@ def crear_descremacion_guiada(
     if len(productos) != 2:
         raise ValidationError("Selecciona los dos productos intermedios.")
 
+    rutas = {
+        ruta.pk: ruta
+        for ruta in RutaProducto.objects.select_related("proceso").filter(
+            pk__in=[valor for valor in (ruta_descremada_id, ruta_crema_id) if valor],
+            sucursal=origen.sucursal,
+            activa=True,
+        )
+    }
+    if ruta_descremada_id and ruta_descremada_id not in rutas:
+        raise ValidationError({"ruta_descremada": "La ruta no esta activa en esta planta."})
+    if ruta_crema_id and ruta_crema_id not in rutas:
+        raise ValidationError({"ruta_crema": "La ruta no esta activa en esta planta."})
+    for campo, destino, ruta_id in (
+        ("ruta_descremada", destino_descremada, ruta_descremada_id),
+        ("ruta_crema", destino_crema, ruta_crema_id),
+    ):
+        if destino != CorridaDescremacion.DestinoRama.PENDIENTE and not ruta_id:
+            raise ValidationError({campo: "Selecciona la ruta de continuidad de esta salida."})
+        if destino == CorridaDescremacion.DestinoRama.DESPACHO_DIRECTO and ruta_id:
+            if rutas[ruta_id].destino_final != RutaProducto.DestinoFinal.DESPACHO_DIRECTO:
+                raise ValidationError({campo: "La ruta elegida no termina en despacho directo."})
+
+    sugerencia = sugerir_plan_descremacion(
+        analisis=analisis, litros_entrada=litros_entrada,
+        producto_descremada=productos[producto_descremada_id],
+        producto_crema=productos[producto_crema_id],
+    )
     ejecucion = crear_ejecucion_proceso(datos={
         "codigo": codigo,
         "etapa": etapa,
@@ -187,7 +252,101 @@ def crear_descremacion_guiada(
         "estanque_crema": destinos[estanque_crema_id],
         "producto_descremada": productos[producto_descremada_id],
         "producto_crema": productos[producto_crema_id],
+        "ruta_descremada": rutas.get(ruta_descremada_id),
+        "ruta_crema": rutas.get(ruta_crema_id),
+        "destino_descremada": destino_descremada,
+        "destino_crema": destino_crema,
+        "litros_descremada_plan": Decimal(str(litros_descremada_plan)),
+        "litros_crema_plan": Decimal(str(litros_crema_plan)),
+        "fuente_plan": sugerencia["fuente_plan"],
+        "plan_confirmado_por": usuario,
+        "plan_confirmado_en": timezone.now(),
     })
+
+
+def sugerir_plan_descremacion(
+    *, analisis, litros_entrada, producto_descremada, producto_crema,
+):
+    """Sugiere el reparto usando MG de especificaciones vigentes, sin fijarlo."""
+    from maestros.models import Especificacion, Producto
+    from produccion.dominio import especificacion_vigente
+    from .dominio import calcular_balance_descremacion
+
+    if not (
+        producto_descremada.tipo == Producto.TipoProducto.DESCREMADA
+        and producto_descremada.familia == Producto.Familia.LIQUIDO
+        and producto_descremada.naturaleza == Producto.Naturaleza.INTERMEDIO
+        and producto_descremada.unidad_base == Producto.Unidad.L
+    ):
+        raise ValidationError({
+            "producto_descremada": (
+                "Selecciona leche descremada intermedia, liquida y medida en litros."
+            )
+        })
+    if not (
+        producto_crema.familia == Producto.Familia.CREMA
+        and producto_crema.naturaleza == Producto.Naturaleza.INTERMEDIO
+    ):
+        raise ValidationError({"producto_crema": "Selecciona una crema intermedia."})
+
+    hoy = timezone.localdate()
+    especificaciones = list(Especificacion.objects.filter(
+        producto_id__in=[producto_descremada.pk, producto_crema.pk],
+        tipo_analisis=Especificacion.TipoAnalisis.SILO,
+        vigente_desde__lte=hoy,
+    ))
+
+    def objetivo(producto):
+        especificacion = especificacion_vigente(
+            especificaciones, producto.pk, hoy, Especificacion.TipoAnalisis.SILO
+        )
+        if especificacion is None:
+            raise ValidationError({
+                "especificacion": (
+                    f"{producto.nombre} no tiene especificación de silo vigente."
+                )
+            })
+        rango = especificacion.rangos.get("mg", {})
+        valor = rango.get("objetivo")
+        minimo, maximo = rango.get("min"), rango.get("max")
+        if valor is None and minimo is not None and maximo is not None:
+            valor = (Decimal(str(minimo)) + Decimal(str(maximo))) / Decimal("2")
+        elif valor is None:
+            valor = minimo if minimo is not None else maximo
+        if valor is None:
+            raise ValidationError({
+                "especificacion": (
+                    f"La especificación v{especificacion.version} de {producto.nombre} "
+                    "no define MG objetivo ni rango."
+                )
+            })
+        return Decimal(str(valor)), especificacion
+
+    grasa_descremada, especificacion_descremada = objetivo(producto_descremada)
+    grasa_crema, especificacion_crema = objetivo(producto_crema)
+    balance = calcular_balance_descremacion(
+        litros_entrada, analisis.grasa, analisis.sng,
+        grasa_descremada, grasa_crema,
+    )
+    if balance.descremada_esperada_l is None or balance.crema_esperada_l is None:
+        raise ValidationError({"balance": list(balance.avisos)})
+    return {
+        "litros_descremada_sugeridos": balance.descremada_esperada_l.quantize(Decimal("0.01")),
+        "litros_crema_sugeridos": balance.crema_esperada_l.quantize(Decimal("0.01")),
+        "grasa_descremada_objetivo": grasa_descremada,
+        "grasa_crema_objetivo": grasa_crema,
+        "fuente_plan": {
+            "metodo": "balance_materia_grasa",
+            "especificacion_descremada_id": especificacion_descremada.pk,
+            "especificacion_descremada_version": especificacion_descremada.version,
+            "especificacion_crema_id": especificacion_crema.pk,
+            "especificacion_crema_version": especificacion_crema.version,
+            "grasa_descremada_objetivo": str(grasa_descremada),
+            "grasa_crema_objetivo": str(grasa_crema),
+        },
+        "avisos": list(balance.avisos),
+        "requiere_confirmacion_operador": True,
+    }
 
 
 def tipos_equipo_para_etapa(tipo_etapa):
@@ -195,7 +354,7 @@ def tipos_equipo_para_etapa(tipo_etapa):
     from maestros.models import Equipo
 
     return {
-        EtapaProceso.Tipo.DESCREMACION: {Equipo.Tipo.OTRO},
+        EtapaProceso.Tipo.DESCREMACION: {Equipo.Tipo.DESCREMADORA},
         EtapaProceso.Tipo.EVAPORACION: {Equipo.Tipo.EVAPORADOR},
         EtapaProceso.Tipo.CONDENSACION: {Equipo.Tipo.EVAPORADOR},
         EtapaProceso.Tipo.SECADO: {Equipo.Tipo.TORRE},
@@ -220,6 +379,48 @@ def etapa_para_producto(*, producto, sucursal, tipo):
         .order_by("proceso__rutas_producto__prioridad", "orden")
         .first()
     )
+
+
+def ruta_para_etapa(*, producto, sucursal, etapa):
+    """Devuelve la ruta exacta que contiene la etapa, sin inferir por nombre."""
+    return (
+        RutaProducto.objects.filter(
+            producto=producto,
+            sucursal=sucursal,
+            proceso=etapa.proceso,
+            activa=True,
+            proceso__activo=True,
+        )
+        .order_by("prioridad", "pk")
+        .first()
+    )
+
+
+def siguiente_etapa_para_salida(*, salida, etapas_por_proceso=None):
+    """Resuelve la continuidad desde la ruta persistida de la salida.
+
+    Una rama puede abandonar el proceso que la produjo (por ejemplo,
+    Descremado -> Mantequilla). En ese caso corresponde la primera etapa de
+    la ruta elegida, no una etapa posterior del proceso de origen.
+    """
+    origen = salida.ejecucion.etapa
+    ruta = salida.ruta_producto
+    if ruta is not None and (
+        not ruta.activa or ruta.sucursal_id != salida.ejecucion.sucursal_id
+        or (salida.producto_id and ruta.producto_id != salida.producto_id)
+    ):
+        return None
+    proceso_id = ruta.proceso_id if ruta is not None else origen.proceso_id
+    if etapas_por_proceso is None:
+        etapas = list(
+            EtapaProceso.objects.filter(proceso_id=proceso_id, activa=True)
+            .order_by("orden", "pk")
+        )
+    else:
+        etapas = etapas_por_proceso.get(proceso_id, [])
+    if proceso_id != origen.proceso_id:
+        return etapas[0] if etapas else None
+    return next((etapa for etapa in etapas if etapa.orden > origen.orden), None)
 
 
 def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=None):
@@ -326,7 +527,7 @@ def exigir_etapa_para_producto(*, producto, sucursal, tipo):
     return etapa
 
 
-def destino_salida_de_ruta(*, producto, sucursal, etapa):
+def destino_salida_de_ruta(*, producto, sucursal, etapa, ruta=None):
     """Decide si el resultado continúa o termina en su destino real."""
     siguiente = EtapaProceso.objects.filter(
         proceso=etapa.proceso, activa=True, orden__gt=etapa.orden,
@@ -335,14 +536,11 @@ def destino_salida_de_ruta(*, producto, sucursal, etapa):
         if siguiente.tipo == EtapaProceso.Tipo.ENVASADO:
             return SalidaProceso.Destino.ENVASADO
         return SalidaProceso.Destino.SIGUIENTE_PROCESO
-    ruta = RutaProducto.objects.filter(
-        producto=producto, sucursal=sucursal, proceso=etapa.proceso, activa=True,
-    ).order_by("prioridad").first()
-    destino = (ruta.destino if ruta else "").strip().lower()
-    if "despacho" in destino:
-        return SalidaProceso.Destino.DESPACHO_DIRECTO
-    if "inventario" in destino:
-        return SalidaProceso.Destino.INVENTARIO
+    ruta = ruta or ruta_para_etapa(
+        producto=producto, sucursal=sucursal, etapa=etapa
+    )
+    if ruta is not None:
+        return ruta.destino_final
     return SalidaProceso.Destino.PENDIENTE
 
 
@@ -424,6 +622,9 @@ def crear_mantequilla_guiada(
     )
     if etapa is None:
         raise ValidationError({"orden": "El producto no tiene una etapa de mantequilla activa."})
+    ruta = ruta_para_etapa(
+        producto=orden.producto, sucursal=orden.sucursal, etapa=etapa
+    )
     codigo = str(codigo_lote_mantequilla).strip()
     if not codigo:
         raise ValidationError({"codigo_lote_mantequilla": "Ingresa el código del lote de salida."})
@@ -437,6 +638,7 @@ def crear_mantequilla_guiada(
     lote_salida.save()
     ejecucion = EjecucionProceso(
         codigo=f"EJ-MANT-{lote_salida.pk}", etapa=etapa,
+        ruta_producto=ruta,
         sucursal=orden.sucursal, equipo=equipo, responsable=usuario,
     )
     ejecucion.full_clean()
@@ -460,7 +662,10 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
 
     salida = (
         SalidaProceso.objects.select_for_update(of=("self",))
-        .select_related("ejecucion__etapa", "ejecucion__sucursal", "silo")
+        .select_related(
+            "ejecucion__etapa", "ejecucion__sucursal", "silo",
+            "ruta_producto__proceso", "liberacion_calidad",
+        )
         .get(pk=salida_id)
     )
     try:
@@ -469,24 +674,15 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         )
     except (EtapaProceso.DoesNotExist, TypeError, ValueError) as error:
         raise ValidationError("La etapa seleccionada no existe o está inactiva.") from error
-    origen = salida.ejecucion.etapa
-    siguiente_orden = (
-        EtapaProceso.objects.filter(
-            proceso_id=origen.proceso_id,
-            activa=True,
-            orden__gt=origen.orden,
-        )
-        .order_by("orden")
-        .values_list("orden", flat=True)
-        .first()
-    )
-    if etapa.proceso_id != origen.proceso_id or etapa.orden != siguiente_orden:
+    siguiente = siguiente_etapa_para_salida(salida=salida)
+    if siguiente is None or etapa.pk != siguiente.pk:
         raise ValidationError(
             "La etapa elegida debe ser la siguiente etapa activa de la ruta; no se pueden saltar procesos."
         )
     if salida.destino not in {
         SalidaProceso.Destino.PENDIENTE,
         SalidaProceso.Destino.SIGUIENTE_PROCESO,
+        SalidaProceso.Destino.ESTANDARIZACION,
     }:
         raise ValidationError(
             f"La salida fue destinada a {salida.get_destino_display()} y no puede consumirse como continuación."
@@ -515,7 +711,10 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     if cantidad <= 0:
         raise ValidationError("La cantidad debe ser mayor que cero.")
     consumido = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
-    disponible = salida.cantidad - consumido
+    comprometido_despacho = salida.detalles_despacho_granel.filter(
+        despacho__estado__in=["autorizado", "despachado"]
+    ).aggregate(total=Sum("cantidad"))["total"] or 0
+    disponible = salida.cantidad - consumido - comprometido_despacho
     if cantidad > disponible:
         raise ValidationError(
             f"La salida tiene {disponible} {salida.unidad} disponibles."
@@ -524,6 +723,7 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     ejecucion = EjecucionProceso(
         codigo=f"CONT-{salida.pk}-{uuid.uuid4().hex[:8].upper()}",
         etapa=etapa,
+        ruta_producto=salida.ruta_producto,
         sucursal=salida.ejecucion.sucursal,
         equipo=equipo,
         responsable=usuario,
@@ -629,6 +829,14 @@ def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
     ejecucion.estado = estado_nuevo
     ejecucion.version += 1
     ejecucion.save()
+    if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
+        ReservaSiloProceso.objects.filter(
+            ejecucion=ejecucion,
+            estado=ReservaSiloProceso.Estado.ACTIVA,
+        ).update(
+            estado=ReservaSiloProceso.Estado.LIBERADA,
+            cerrada_en=timezone.now(),
+        )
     EventoProceso.objects.create(
         ejecucion=ejecucion,
         tipo="cambio_estado",
@@ -859,10 +1067,42 @@ def iniciar_condensacion(*, corrida_id, usuario):
     if impedimento:
         raise ValidationError(impedimento)
 
-    origen = Silo.objects.select_for_update().get(pk=corrida.silo_origen_id)
+    silos = {
+        silo.pk: silo
+        for silo in Silo.objects.select_for_update().filter(pk__in=[
+            corrida.silo_origen_id, corrida.silo_destino_id,
+        ]).order_by("pk")
+    }
+    origen = silos[corrida.silo_origen_id]
+    destino = silos[corrida.silo_destino_id]
     motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
     if motivos_silo:
         raise ValidationError(f"{origen.codigo}: " + " ".join(motivos_silo))
+    if reservas_activas_silo(
+        silo_id=origen.pk, tipo=ReservaSiloProceso.Tipo.DESTINO,
+        excluir_ejecucion_id=corrida.ejecucion_id,
+    ).exists():
+        raise ValidationError(
+            f"{origen.codigo} esta reservado como destino de otra ejecucion."
+        )
+    exigir_destino_sin_reserva(
+        silo=destino, excluir_ejecucion_id=corrida.ejecucion_id,
+    )
+    if not destino.activo or destino.estado in {
+        Silo.Estado.BLOQUEADO_CALIDAD,
+        Silo.Estado.EN_CIP,
+        Silo.Estado.FUERA_SERVICIO,
+    }:
+        raise ValidationError({
+            "silo_destino": f"{destino.codigo} no admite precondensado."
+        })
+    if saldo_silo(destino) + corrida.litros_entrada > destino.capacidad_l:
+        raise ValidationError({
+            "silo_destino": (
+                f"{destino.codigo} no tiene capacidad para reservar "
+                f"{corrida.litros_entrada} L."
+            )
+        })
 
     # Tras integrar el lote con el motor de procesos aparecieron dos caminos
     # representando el mismo hecho: abrir el lote ya consumía el silo y dejaba
@@ -909,7 +1149,9 @@ def iniciar_condensacion(*, corrida_id, usuario):
                 "de proceso que corresponde al consumo del silo."
             )
     else:
-        disponible = saldo_silo(origen)
+        disponible = saldo_silo(origen) - litros_origen_reservados(
+            silo_id=origen.pk, excluir_ejecucion_id=corrida.ejecucion_id,
+        )
         if corrida.litros_entrada > disponible:
             raise ValidationError(
                 f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
@@ -938,6 +1180,13 @@ def iniciar_condensacion(*, corrida_id, usuario):
             estado_nuevo=EjecucionProceso.Estado.EJECUCION,
             usuario=usuario,
         )
+    ReservaSiloProceso.objects.create(
+        ejecucion=corrida.ejecucion,
+        silo=destino,
+        producto=corrida.lote.producto,
+        tipo=ReservaSiloProceso.Tipo.DESTINO,
+        cantidad_planificada=corrida.litros_entrada,
+    )
     corrida.estado = CorridaCondensacion.Estado.EN_PROCESO
     corrida.iniciada_por = usuario
     corrida.iniciada_en = timezone.now()
@@ -970,6 +1219,19 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         raise ValidationError(f"{destino.codigo} no admite el precondensado.")
     if saldo_silo(destino) + cantidad > destino.capacidad_l:
         raise ValidationError("El precondensado excedería la capacidad del destino.")
+    reserva_destino = ReservaSiloProceso.objects.select_for_update().filter(
+        ejecucion=corrida.ejecucion,
+        silo=destino,
+        tipo=ReservaSiloProceso.Tipo.DESTINO,
+        estado=ReservaSiloProceso.Estado.ACTIVA,
+    ).first()
+    if reserva_destino is not None and cantidad > reserva_destino.cantidad_planificada:
+        raise ValidationError({
+            "litros_precondensado": (
+                f"La salida supera los {reserva_destino.cantidad_planificada} L "
+                "reservados en el destino."
+            )
+        })
 
     for campo, valor in controles.items():
         if campo not in {
@@ -987,6 +1249,13 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         lote=corrida.lote, producto=corrida.lote.producto,
         equipo=corrida.ejecucion.equipo, usuario=usuario,
     )
+    if reserva_destino is not None:
+        reserva_destino.estado = ReservaSiloProceso.Estado.CONSUMIDA
+        reserva_destino.cantidad_real = cantidad
+        reserva_destino.cerrada_en = timezone.now()
+        reserva_destino.save(update_fields=[
+            "estado", "cantidad_real", "cerrada_en",
+        ])
     consumo = MovimientoSilo.objects.filter(
         Q(lote_id=corrida.lote_id)
         | Q(
@@ -1009,9 +1278,12 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         producto=corrida.lote.producto,
         sucursal=corrida.ejecucion.sucursal,
         etapa=corrida.ejecucion.etapa,
+        ruta=corrida.ejecucion.ruta_producto,
     )
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=corrida.lote, silo=destino,
+        producto=corrida.lote.producto,
+        ruta_producto=corrida.ejecucion.ruta_producto,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
         clasificacion=(
             SalidaProceso.Clasificacion.GRANEL
@@ -1061,16 +1333,35 @@ def iniciar_descremacion(*, corrida_id, usuario):
     corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "analisis_entrada",
         "silo_entera", "silo_descremada", "estanque_crema",
+        "producto_descremada", "producto_crema",
     ).get(pk=corrida_id)
     if corrida.estado != CorridaDescremacion.Estado.BORRADOR:
         raise ValidationError("Solo una descremación en borrador puede iniciarse.")
     corrida.clean()
+    if not (
+        corrida.litros_descremada_plan
+        and corrida.litros_crema_plan
+        and corrida.plan_confirmado_por_id
+        and corrida.plan_confirmado_en
+    ):
+        raise ValidationError(
+            "Calcula y confirma el reparto planificado antes de iniciar."
+        )
     if not corrida.ejecucion.equipo_id:
         raise ValidationError("La descremación requiere un equipo asignado.")
     impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
     if impedimento:
         raise ValidationError(impedimento)
-    origen = Silo.objects.select_for_update().get(pk=corrida.silo_entera_id)
+    silos = {
+        silo.pk: silo
+        for silo in Silo.objects.select_for_update().filter(pk__in=[
+            corrida.silo_entera_id, corrida.silo_descremada_id,
+            corrida.estanque_crema_id,
+        ]).order_by("pk")
+    }
+    origen = silos[corrida.silo_entera_id]
+    destino_descremada = silos[corrida.silo_descremada_id]
+    destino_crema = silos[corrida.estanque_crema_id]
     motivos = motivos_silo_no_disponible(origen, para="proceso")
     if motivos:
         raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
@@ -1080,8 +1371,59 @@ def iniciar_descremacion(*, corrida_id, usuario):
         raise ValidationError({
             "analisis_entrada": "Grasa y SNG deben coincidir con el análisis seleccionado."
         })
-    if saldo_silo(origen) < corrida.litros_entrada:
+    reservado_origen = ReservaSiloProceso.objects.filter(
+        silo=origen, tipo=ReservaSiloProceso.Tipo.ORIGEN,
+        estado=ReservaSiloProceso.Estado.ACTIVA,
+    ).exclude(ejecucion=corrida.ejecucion).aggregate(
+        total=Sum("cantidad_planificada")
+    )["total"] or 0
+    if saldo_silo(origen) - reservado_origen < corrida.litros_entrada:
         raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
+
+    for destino, producto, cantidad in (
+        (destino_descremada, corrida.producto_descremada, corrida.litros_descremada_plan),
+        (destino_crema, corrida.producto_crema, corrida.litros_crema_plan),
+    ):
+        if not destino.activo or destino.estado in {
+            Silo.Estado.BLOQUEADO_CALIDAD,
+            Silo.Estado.EN_CIP,
+            Silo.Estado.FUERA_SERVICIO,
+        }:
+            raise ValidationError(f"{destino.codigo} no admite producto.")
+        if ReservaSiloProceso.objects.filter(
+            silo=destino, tipo=ReservaSiloProceso.Tipo.DESTINO,
+            estado=ReservaSiloProceso.Estado.ACTIVA,
+        ).exclude(ejecucion=corrida.ejecucion).exists():
+            raise ValidationError(f"{destino.codigo} ya está reservado por otra ejecución.")
+        saldo = saldo_silo(destino)
+        if saldo > 0 and destino.producto_actual_id not in {None, producto.pk}:
+            raise ValidationError(
+                f"{destino.codigo} contiene otro producto y no admite la mezcla."
+            )
+        if saldo + cantidad > destino.capacidad_l:
+            raise ValidationError(
+                f"{destino.codigo} no tiene capacidad para los {cantidad} L planificados."
+            )
+
+    ReservaSiloProceso.objects.bulk_create([
+        ReservaSiloProceso(
+            ejecucion=corrida.ejecucion, silo=origen,
+            producto=origen.producto_actual, tipo=ReservaSiloProceso.Tipo.ORIGEN,
+            cantidad_planificada=corrida.litros_entrada,
+        ),
+        ReservaSiloProceso(
+            ejecucion=corrida.ejecucion, silo=destino_descremada,
+            producto=corrida.producto_descremada,
+            tipo=ReservaSiloProceso.Tipo.DESTINO,
+            cantidad_planificada=corrida.litros_descremada_plan,
+        ),
+        ReservaSiloProceso(
+            ejecucion=corrida.ejecucion, silo=destino_crema,
+            producto=corrida.producto_crema,
+            tipo=ReservaSiloProceso.Tipo.DESTINO,
+            cantidad_planificada=corrida.litros_crema_plan,
+        ),
+    ])
 
     EntradaProceso.objects.create(
         ejecucion=corrida.ejecucion, silo=origen,
@@ -1118,6 +1460,7 @@ def cerrar_descremacion(
     corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "silo_entera",
         "silo_descremada", "estanque_crema", "producto_descremada", "producto_crema",
+        "ruta_descremada", "ruta_crema",
     ).get(pk=corrida_id)
     if corrida.estado != CorridaDescremacion.Estado.EN_CURSO:
         raise ValidationError("Solo una descremación en curso puede cerrarse.")
@@ -1168,6 +1511,27 @@ def cerrar_descremacion(
         )
         heredar_atribuciones(ingreso, [consumo])
         ingresos.append(ingreso)
+    reservas = list(ReservaSiloProceso.objects.select_for_update().filter(
+        ejecucion=corrida.ejecucion,
+        estado=ReservaSiloProceso.Estado.ACTIVA,
+    ))
+    if corrida.plan_confirmado_en and len(reservas) != 3:
+        raise ValidationError(
+            "Las reservas de origen y destino no están completas; no se puede cerrar."
+        )
+    cantidades_reales = {
+        (ReservaSiloProceso.Tipo.ORIGEN, corrida.silo_entera_id): corrida.litros_entrada,
+        (ReservaSiloProceso.Tipo.DESTINO, corrida.silo_descremada_id): ld,
+        (ReservaSiloProceso.Tipo.DESTINO, corrida.estanque_crema_id): lc,
+    }
+    for reserva in reservas:
+        reserva.estado = ReservaSiloProceso.Estado.CONSUMIDA
+        reserva.cantidad_real = cantidades_reales[(reserva.tipo, reserva.silo_id)]
+        reserva.cerrada_en = ahora
+    if reservas:
+        ReservaSiloProceso.objects.bulk_update(
+            reservas, ["estado", "cantidad_real", "cerrada_en"]
+        )
     lotes = {}
     for clave, producto in (
         ("descremada", corrida.producto_descremada),
@@ -1194,16 +1558,20 @@ def cerrar_descremacion(
         lotes[clave] = lote
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=lotes.get("descremada"), silo=destino_d,
+        producto=corrida.producto_descremada,
+        ruta_producto=corrida.ruta_descremada,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
         clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
-        destino=SalidaProceso.Destino.PENDIENTE,
+        destino=corrida.destino_descremada,
         cantidad=ld, unidad="L",
     )
     SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=lotes.get("crema"), silo=destino_c,
+        producto=corrida.producto_crema,
+        ruta_producto=corrida.ruta_crema,
         naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
         clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
-        destino=SalidaProceso.Destino.PENDIENTE,
+        destino=corrida.destino_crema,
         cantidad=lc, unidad="L",
     )
     merma = corrida.litros_entrada - ld - lc
@@ -1355,6 +1723,8 @@ def cerrar_mantequilla(
     corrida.clean()
     salida_mantequilla = SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=corrida.lote_mantequilla,
+        producto=corrida.lote_mantequilla.producto,
+        ruta_producto=corrida.ejecucion.ruta_producto,
         naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
         clasificacion=SalidaProceso.Clasificacion.GRANEL,
         destino=SalidaProceso.Destino.ENVASADO,
@@ -1365,11 +1735,15 @@ def cerrar_mantequilla(
     if corrida.kg_suero:
         SalidaProceso.objects.create(
             ejecucion=corrida.ejecucion, lote=corrida.lote_suero,
+            producto=corrida.lote_suero.producto,
             naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
             clasificacion=SalidaProceso.Clasificacion.SUBPRODUCTO,
             destino=SalidaProceso.Destino.PENDIENTE,
             cantidad=corrida.kg_suero, unidad="kg",
         )
+        corrida.lote_suero.kg_producidos = corrida.kg_suero
+        corrida.lote_suero.estado = corrida.lote_suero.Estado.PRODUCIDO
+        corrida.lote_suero.save(update_fields=["kg_producidos", "estado"])
     if corrida.kg_merma:
         SalidaProceso.objects.create(
             ejecucion=corrida.ejecucion, naturaleza=SalidaProceso.Naturaleza.MERMA,

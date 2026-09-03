@@ -68,9 +68,11 @@ class Command(BaseCommand):
         )
         RecetaComponente.objects.create(
             receta=receta, insumo=bolsa, cantidad=Decimal("20"), unidad="un",
+            fase=RecetaComponente.Fase.ENVASADO,
         )
         RecetaComponente.objects.create(
             receta=receta, insumo=pallet_base, cantidad=Decimal("1"), unidad="un",
+            fase=RecetaComponente.Fase.ENVASADO,
         )
 
         bodega, _ = Bodega.objects.get_or_create(

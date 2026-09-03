@@ -42,10 +42,15 @@ import {
 import { RUTA_FLUJO_POLVO } from "./constantes";
 
 const SELLO = Date.now().toString().slice(-6);
+const PRODUCTO_OBJETIVO = process.env.E2E_PRODUCTO ?? "";
+const PREFIJO_LOTE = process.env.E2E_LOTE_PREFIJO ?? "CCAA-EVA";
+const RUTA_REGISTRO = process.env.E2E_REGISTRO
+  ? path.resolve(process.env.E2E_REGISTRO)
+  : RUTA_FLUJO_POLVO;
 
 const HOY = new Date().toISOString().slice(0, 10);
 
-const LOTE = { codigo: `CCAA-EVA-${SELLO}` };
+const LOTE = { codigo: `${PREFIJO_LOTE}-${SELLO}` };
 
 /*
   Cuánta leche entra a la corrida, y cuánto precondensado sale.
@@ -140,7 +145,15 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
         );
       });
 
-    const ofrecidos = await opcionesVale();
+    const ofrecidos = (await opcionesVale()).filter(
+      (texto) => !PRODUCTO_OBJETIVO || texto.includes(PRODUCTO_OBJETIVO),
+    );
+    expect(
+      ofrecidos.length,
+      PRODUCTO_OBJETIVO
+        ? `No hay un vale liberado con saldo para ${PRODUCTO_OBJETIVO}.`
+        : "No hay vales liberados con saldo.",
+    ).toBeGreaterThan(0);
 
     /*
       Un vale sirve si cumple **las dos** condiciones, y hay que comprobarlas
@@ -449,8 +462,8 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
     `El servidor rechazó peticiones que nadie esperaba: ${inesperados.join(" ·· ")}`,
   ).toHaveLength(0);
 
-  fs.mkdirSync(path.dirname(RUTA_FLUJO_POLVO), { recursive: true });
-  fs.writeFileSync(RUTA_FLUJO_POLVO, JSON.stringify({
+  fs.mkdirSync(path.dirname(RUTA_REGISTRO), { recursive: true });
+  fs.writeFileSync(RUTA_REGISTRO, JSON.stringify({
     lote: LOTE.codigo,
     silo_precondensado: destino,
     litros_precondensado: corrida.salida,

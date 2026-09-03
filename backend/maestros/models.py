@@ -362,6 +362,7 @@ class Equipo(models.Model):
     """
 
     class Tipo(models.TextChoices):
+        DESCREMADORA = "descremadora", "Descremadora"
         EVAPORADOR = "evaporador", "Evaporador"
         TORRE = "torre", "Torre de secado"
         ENVASADORA = "envasadora", "Envasadora"
@@ -1059,6 +1060,10 @@ class RecetaComponente(models.Model):
         L = "L", "Litros"
         UN = "un", "Unidades"
 
+    class Fase(models.TextChoices):
+        PROCESO = "proceso", "Proceso"
+        ENVASADO = "envasado", "Envasado"
+
     receta = models.ForeignKey(
         Receta,
         on_delete=models.CASCADE,
@@ -1084,6 +1089,16 @@ class RecetaComponente(models.Model):
         help_text="Si el componente se compra y se descuenta de bodega.",
     )
     cantidad = models.DecimalField("Cantidad", max_digits=12, decimal_places=4)
+    fase = models.CharField(
+        "Etapa de consumo",
+        max_length=20,
+        choices=Fase.choices,
+        default=Fase.PROCESO,
+        help_text=(
+            "Proceso se descuenta al cerrar el lote; Envasado se descuenta "
+            "cuando se generan físicamente sus pallets."
+        ),
+    )
     unidad = models.CharField(
         "Unidad",
         max_length=5,

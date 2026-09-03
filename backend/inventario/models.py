@@ -1,5 +1,6 @@
 from decimal import Decimal
 from math import sqrt
+import uuid
 
 from django.conf import settings
 from django.db import models
@@ -79,12 +80,28 @@ class Insumo(models.Model):
 
 class ConsumoLoteProduccion(models.Model):
     """Cabecera auditable del descuento automático de una receta."""
-    lote_produccion = models.OneToOneField(
-        "produccion.Lote", on_delete=models.PROTECT, related_name="consumo_inventario"
+    class Fase(models.TextChoices):
+        PROCESO = "proceso", "Proceso"
+        ENVASADO = "envasado", "Envasado"
+        COMPLETO_LEGACY = "completo_legacy", "Receta completa (histórico)"
+
+    lote_produccion = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT, related_name="consumos_inventario"
     )
+    fase = models.CharField(max_length=20, choices=Fase.choices, default=Fase.PROCESO)
+    operacion_id = models.UUIDField(null=True, blank=True, unique=True, editable=False)
     kg_base = models.DecimalField(max_digits=14, decimal_places=3)
     registrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     registrado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lote_produccion", "fase"],
+                condition=models.Q(fase__in=["proceso", "completo_legacy"]),
+                name="consumo_unico_lote_fase_cierre",
+            ),
+        ]
 
     def __str__(self):
         return f"Consumo {self.lote_produccion}"
@@ -1036,6 +1053,12 @@ class DetalleDespachoGranel(models.Model):
     )
     cantidad = models.DecimalField(max_digits=14, decimal_places=3)
     unidad = models.CharField(max_length=20)
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    movimiento_silo = models.OneToOneField(
+        "recepcion.MovimientoSilo", on_delete=models.PROTECT,
+        related_name="detalle_despacho_granel", null=True, blank=True,
+        editable=False,
+    )
 
     class Meta:
         constraints = [

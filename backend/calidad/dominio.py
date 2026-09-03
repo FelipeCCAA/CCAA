@@ -731,6 +731,7 @@ def puede_liberar(
     monitoreos: Iterable[Any] = (),
     cumplidos_por_dato: set[int] | None = None,
     cubiertos_por_periodo: dict[int, Any] | None = None,
+    envasado_completo: bool | None = None,
 ) -> DecisionLiberacion:
     """
     ¿Se puede liberar este lote?
@@ -759,6 +760,11 @@ def puede_liberar(
         bloqueos.append("El lote está anulado.")
     if lote.estado == "en_proceso":
         bloqueos.append("El lote aún está en proceso: primero hay que cerrar la producción.")
+
+    if envasado_completo is False:
+        bloqueos.append(
+            "El producto requiere terminar Envasado antes de la liberacion comercial."
+        )
 
     exigibles = documentos_aplicables(documentos, producto)
     avance = avance_checklist(

@@ -1,7 +1,7 @@
 """Cuentas operacionales reproducibles para el circuito Playwright de polvo."""
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -17,6 +17,7 @@ CUENTAS = (
     ("e2e_secado", Rol.PRODUCCION, PerfilUsuario.Area.SECADO),
     ("e2e_envasado", Rol.PRODUCCION, PerfilUsuario.Area.ENVASE),
     ("e2e_inventario", Rol.OPERARIO, PerfilUsuario.Area.BODEGA),
+    ("e2e_despacho", Rol.OPERARIO, PerfilUsuario.Area.DESPACHO),
 )
 
 
@@ -49,4 +50,10 @@ class Command(BaseCommand):
             perfil.cargo = "Operación E2E"
             perfil.full_clean()
             perfil.save()
+            if area == PerfilUsuario.Area.DESPACHO:
+                usuario.user_permissions.add(*Permission.objects.filter(
+                    content_type__app_label="usuarios",
+                    content_type__model="perfilusuario",
+                    codename__in=["despacho_crear", "despacho_autorizar"],
+                ))
             self.stdout.write(f"{username}: {rol}/{area}")

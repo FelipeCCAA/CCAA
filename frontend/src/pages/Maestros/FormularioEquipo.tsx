@@ -5,6 +5,7 @@ import axios from "axios";
 import {
   crearEquipo,
   editarEquipo,
+  type CatalogosSku,
   type Equipo,
 } from "../../services/maestros.service";
 
@@ -24,17 +25,10 @@ import {
 
 interface Props {
   equipo: Equipo | null;
+  catalogos: CatalogosSku;
   alCerrar: () => void;
   alGuardar: () => void;
 }
-
-
-const TIPOS = [
-  { valor: "evaporador", etiqueta: "Evaporador" },
-  { valor: "linea", etiqueta: "Línea" },
-  { valor: "carga", etiqueta: "Carga" },
-  { valor: "otro", etiqueta: "Otro" },
-];
 
 
 /** Sugiere un código a partir del nombre; el usuario puede cambiarlo. */
@@ -49,12 +43,15 @@ function codigoDesde(nombre: string): string {
 }
 
 
-function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
+function FormularioEquipo({ equipo, catalogos, alCerrar, alGuardar }: Props) {
 
   const [nombre, setNombre] = useState(equipo?.nombre ?? "");
   const [codigo, setCodigo] = useState(equipo?.codigo ?? "");
   const [tipo, setTipo] = useState(equipo?.tipo ?? "evaporador");
   const [consume, setConsume] = useState(equipo?.consume_leche ?? false);
+  const [consumeMateriales, setConsumeMateriales] = useState(
+    equipo?.consume_materiales ?? false,
+  );
   const [orden, setOrden] = useState(String(equipo?.orden ?? 0));
   const [activo, setActivo] = useState(equipo?.activo ?? true);
 
@@ -82,6 +79,7 @@ function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
       codigo,
       tipo,
       consume_leche: consume,
+      consume_materiales: consumeMateriales,
       orden: Number(orden) || 0,
       activo,
     };
@@ -91,11 +89,12 @@ function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
       if (equipo) {
         // El código no viaja en la edición: la planificación lo referencia y
         // cambiarlo dejaría los bloques apuntando a algo que ya no existe.
-        const { nombre, tipo, consume_leche, orden, activo } = datos;
+        const { nombre, tipo, consume_leche, consume_materiales, orden, activo } = datos;
         await editarEquipo(equipo.id, {
           nombre,
           tipo,
           consume_leche,
+          consume_materiales,
           orden,
           activo,
         });
@@ -210,7 +209,7 @@ function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
                   value={tipo}
                   onChange={(e) => setTipo(e.target.value)}
                 >
-                  {TIPOS.map((t) => (
+                  {catalogos.equipo_tipo.map((t) => (
                     <option key={t.valor} value={t.valor}>
                       {t.etiqueta}
                     </option>
@@ -279,6 +278,28 @@ function FormularioEquipo({ equipo, alCerrar, alGuardar }: Props) {
                 </p>
               )}
 
+            </div>
+
+            <div className={`rounded-xl border p-4 ${
+              consumeMateriales ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-slate-50"
+            }`}>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={consumeMateriales}
+                  onChange={(e) => setConsumeMateriales(e.target.checked)}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-800">
+                    Consume materiales de envase
+                  </span>
+                  <span className="mt-1 block text-sm text-slate-600">
+                    Actívalo solo en el equipo final que descuenta sacos, cajas
+                    u otros materiales del MRP. Una descremadora no lo utiliza.
+                  </span>
+                </span>
+              </label>
             </div>
 
             <label className="flex items-center gap-2 text-sm text-slate-700">

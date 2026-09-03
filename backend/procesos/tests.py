@@ -8,11 +8,12 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Mandante, Producto, Silo
+from calidad.models import LiberacionProceso
 from produccion.models import Lote
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, RutaProducto, SalidaProceso
 from .servicios import (
-    etapa_para_producto, genealogia_lote, preparar_continuacion,
+    destino_salida_de_ruta, etapa_para_producto, genealogia_lote, preparar_continuacion,
     transicionar_ejecucion,
 )
 
@@ -33,7 +34,7 @@ class ProcesosIndustrialesTests(TestCase):
         self.lote_crema = self._lote("CREMA", self.crema)
         self.lote_descremada = self._lote("DESCREMADA", self.descremada)
         self.equipo = Equipo.objects.create(
-            codigo="descremadora", nombre="Descremadora", tipo=Equipo.Tipo.OTRO
+            codigo="descremadora", nombre="Descremadora", tipo=Equipo.Tipo.DESCREMADORA
         )
         self.proceso = Proceso.objects.create(codigo="descremacion", nombre="Descremación")
         self.etapa = EtapaProceso.objects.create(
@@ -72,6 +73,23 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertEqual(self.ejecucion.salidas.count(), 3)
         self.assertEqual(sum(s.cantidad for s in self.ejecucion.salidas.all()), Decimal("1000"))
 
+    def test_destino_final_usa_codigo_estructurado_y_no_texto_libre(self):
+        ruta = RutaProducto.objects.create(
+            producto=self.leche,
+            proceso=self.proceso,
+            destino="Enviar a inventario (texto historico)",
+            destino_final=RutaProducto.DestinoFinal.DESPACHO_DIRECTO,
+        )
+
+        destino = destino_salida_de_ruta(
+            producto=self.leche,
+            sucursal=ruta.sucursal,
+            etapa=self.etapa,
+            ruta=ruta,
+        )
+
+        self.assertEqual(destino, SalidaProceso.Destino.DESPACHO_DIRECTO)
+
     def test_bandeja_operativa_excluye_ejecuciones_terminadas(self):
         EjecucionProceso.objects.create(
             codigo="EJ-CERRADA", etapa=self.etapa, equipo=self.equipo,
@@ -85,6 +103,35 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertEqual(respuesta.data[0]["equipo_id"], self.equipo.pk)
         self.assertEqual(respuesta.data[0]["equipo_nombre"], self.equipo.nombre)
         self.assertIn("preparacion", respuesta.data[0]["acciones_permitidas"])
+
+    def test_resumen_operacional_cuenta_estados_y_material_liberado(self):
+        self.ejecucion.estado = EjecucionProceso.Estado.EJECUCION
+        self.ejecucion.save(update_fields=["estado"])
+        silo = Silo.objects.create(codigo="TK-RES", capacidad_l=1000)
+        salida = SalidaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=silo, producto=self.descremada,
+            destino=SalidaProceso.Destino.SIGUIENTE_PROCESO,
+            cantidad=Decimal("250"), unidad="L",
+        )
+        LiberacionProceso.objects.create(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
+        )
+        espera = EjecucionProceso.objects.create(
+            codigo="EJ-CALIDAD", etapa=self.etapa, responsable=self.usuario,
+            estado=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        )
+
+        respuesta = self.cliente.get(
+            "/api/procesos/ejecuciones/resumen-operacional/"
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data["procesos_activos"], 1)
+        self.assertEqual(respuesta.data["esperando_calidad"], 1)
+        self.assertEqual(respuesta.data["equipos_ocupados"], 1)
+        self.assertEqual(respuesta.data["materiales_listos"], 1)
+        self.assertEqual(respuesta.data["bloqueos"], 0)
+        self.assertIsNotNone(espera.pk)
 
     def test_transicion_exige_entrada_equipo_y_registra_evento(self):
         EntradaProceso.objects.create(
@@ -122,6 +169,43 @@ class ProcesosIndustrialesTests(TestCase):
                 estado_nuevo=EjecucionProceso.Estado.PREPARACION,
                 usuario=self.usuario,
             )
+
+    def test_cinco_procesos_pueden_reservar_equipos_distintos(self):
+        configuraciones = [
+            ("est", EtapaProceso.Tipo.ESTANDARIZACION, Equipo.Tipo.OTRO),
+            ("des", EtapaProceso.Tipo.DESCREMACION, Equipo.Tipo.DESCREMADORA),
+            ("eva", EtapaProceso.Tipo.EVAPORACION, Equipo.Tipo.EVAPORADOR),
+            ("man", EtapaProceso.Tipo.MANTEQUILLA, Equipo.Tipo.LINEA),
+            ("sec", EtapaProceso.Tipo.SECADO, Equipo.Tipo.TORRE),
+        ]
+        ejecuciones = []
+        for indice, (codigo, tipo_etapa, tipo_equipo) in enumerate(configuraciones, 1):
+            proceso = Proceso.objects.create(
+                codigo=f"sim-{codigo}", nombre=f"Proceso simultaneo {codigo}"
+            )
+            etapa = EtapaProceso.objects.create(
+                proceso=proceso, codigo=f"sim-{codigo}", nombre=codigo,
+                tipo=tipo_etapa, orden=1,
+            )
+            equipo = Equipo.objects.create(
+                codigo=f"EQ-SIM-{indice}", nombre=f"Equipo simultaneo {indice}",
+                tipo=tipo_equipo,
+            )
+            ejecucion = EjecucionProceso.objects.create(
+                codigo=f"EJ-SIM-{indice}", etapa=etapa, equipo=equipo,
+                responsable=self.usuario,
+            )
+            ejecuciones.append(transicionar_ejecucion(
+                ejecucion_id=ejecucion.pk,
+                estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+                usuario=self.usuario,
+            ))
+
+        self.assertEqual(
+            {ejecucion.estado for ejecucion in ejecuciones},
+            {EjecucionProceso.Estado.PREPARACION},
+        )
+        self.assertEqual(len({ejecucion.equipo_id for ejecucion in ejecuciones}), 5)
 
     def test_la_base_impide_dos_ocupaciones_del_mismo_equipo(self):
         self.ejecucion.estado = EjecucionProceso.Estado.PAUSADA

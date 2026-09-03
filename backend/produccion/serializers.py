@@ -812,13 +812,40 @@ class LoteDetalleSerializer(LoteSerializer):
         # arriba cerraría el círculo.
         from inventario.models import ConsumoLoteProduccion
 
-        consumo = ConsumoLoteProduccion.objects.filter(lote_produccion=lote).first()
+        consumos = list(
+            ConsumoLoteProduccion.objects.filter(lote_produccion=lote).order_by(
+                "registrado_en"
+            )
+        )
+        consumo = next(
+            (
+                item
+                for item in consumos
+                if item.fase
+                in {
+                    ConsumoLoteProduccion.Fase.PROCESO,
+                    ConsumoLoteProduccion.Fase.COMPLETO_LEGACY,
+                }
+            ),
+            None,
+        )
+        consumos_envase = [
+            item
+            for item in consumos
+            if item.fase == ConsumoLoteProduccion.Fase.ENVASADO
+        ]
 
         return {
             "registrado": consumo is not None,
             "registrado_en": consumo.registrado_en if consumo else None,
             "kg_base": consumo.kg_base if consumo else None,
             "pendiente": dominio.consumo_de_inventario_pendiente(lote, consumo),
+            "envasado": {
+                "operaciones": len(consumos_envase),
+                "kg_base_total": sum(
+                    (item.kg_base for item in consumos_envase), Decimal("0")
+                ),
+            },
         }
 
     def get_pallets_resumen(self, lote):

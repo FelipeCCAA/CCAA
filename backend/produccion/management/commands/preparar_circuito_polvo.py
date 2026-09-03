@@ -346,6 +346,7 @@ class Command(BaseCommand):
                 insumo=Insumo.objects.get(empresa=sucursal.empresa, codigo=codigo),
                 cantidad=cantidad,
                 unidad=unidad,
+                fase=RecetaComponente.Fase.ENVASADO,
             )
 
         return [

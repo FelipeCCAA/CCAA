@@ -59,6 +59,60 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     permission_classes = [EscribeEnvasado]
     http_method_names = ["get", "post", "head", "options"]
 
+    @action(detail=False, methods=["get"], url_path="materiales-habilitados")
+    def materiales_habilitados(self, request):
+        """Contrato acotado: solo material liberado y realmente envasable."""
+        from procesos.models import SalidaProceso
+
+        salidas = filtrar_por_scope(
+            SalidaProceso.objects.filter(
+                destino=SalidaProceso.Destino.ENVASADO,
+                naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+                unidad__iexact="kg",
+                liberacion_calidad__estado="liberado",
+                lote__estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
+                lote__producto__formato__in=[
+                    Producto.Formato.SACO_25KG,
+                    Producto.Formato.CAJA_20KG,
+                ],
+            ).select_related(
+                "lote__producto", "ejecucion__etapa", "liberacion_calidad"
+            ).order_by("registrada_en", "pk"),
+            request.user,
+            campo_sucursal="ejecucion__sucursal_id",
+            campo_empresa="ejecucion__sucursal__empresa_id",
+        )
+        pesos = {
+            Producto.Formato.SACO_25KG: Decimal("25"),
+            Producto.Formato.CAJA_20KG: Decimal("20"),
+        }
+        respuesta = []
+        for salida in salidas:
+            envasado = salida.lote.registros_envase.aggregate(
+                total=Sum("kg_envasados")
+            )["total"] or Decimal("0")
+            disponible = salida.cantidad - envasado
+            if disponible <= 0:
+                continue
+            formato = salida.lote.producto.formato
+            respuesta.append({
+                "salida_id": salida.pk,
+                "lote_id": salida.lote_id,
+                "lote_codigo": salida.lote.codigo_lote,
+                "producto_id": salida.lote.producto_id,
+                "producto_nombre": salida.lote.producto.nombre,
+                "cantidad_disponible": disponible,
+                "unidad": salida.unidad,
+                "formato": formato,
+                "formato_nombre": salida.lote.producto.get_formato_display(),
+                "formato_kg": pesos[formato],
+                "maximo_pallet_kg": Decimal("500"),
+                "origen": salida.ejecucion.codigo,
+                "calidad": salida.liberacion_calidad.estado,
+                "motivo_bloqueo": "",
+            })
+        return Response(respuesta)
+
 
 class PalletProductoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "envase__lote__sucursal_id"

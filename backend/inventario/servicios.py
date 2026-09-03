@@ -164,7 +164,7 @@ def autorizar_despacho(despacho, usuario):
     from calidad.models import LiberacionProceso
     from procesos.models import SalidaProceso
     for detalle in graneles:
-        salida = SalidaProceso.objects.select_for_update().select_related(
+        salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
             "ejecucion__sucursal"
         ).get(pk=detalle.salida_id)
         if salida.ejecucion.sucursal_id != despacho.sucursal_id:
@@ -206,7 +206,12 @@ def ejecutar_despacho(despacho, usuario):
     if despacho.estado != Despacho.Estado.AUTORIZADO:
         raise ValidationError("El despacho debe estar autorizado.")
     detalles = list(despacho.detalles.select_related("pallet__envase__lote").select_for_update())
-    graneles = list(despacho.detalles_granel.select_related("salida").select_for_update())
+    graneles = list(
+        despacho.detalles_granel.select_related(
+            "salida__silo", "salida__lote", "salida__producto",
+            "salida__ejecucion__equipo",
+        ).select_for_update(of=("self",))
+    )
     for detalle in detalles:
         _validar_pallet_liberado(detalle.pallet)
         existencia = ExistenciaProductoTerminado.objects.select_for_update().select_related("ubicacion").get(
@@ -220,8 +225,20 @@ def ejecutar_despacho(despacho, usuario):
         )
         detalle.pallet.estado = PalletProducto.Estado.DESPACHADO
         detalle.pallet.save(update_fields=["estado"])
+    from maestros.models import Silo
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import saldo_silo
+
+    silos = {
+        silo.pk: silo
+        for silo in Silo.objects.select_for_update().filter(
+            pk__in=sorted({detalle.salida.silo_id for detalle in graneles})
+        ).order_by("pk")
+    }
     for detalle in graneles:
-        salida = SalidaProceso.objects.select_for_update().get(pk=detalle.salida_id)
+        salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
+            "lote", "producto", "ejecucion__equipo"
+        ).get(pk=detalle.salida_id)
         if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
             raise ValidationError(
                 f"{salida.ejecucion.codigo} ya no está destinada a despacho directo."
@@ -232,6 +249,40 @@ def ejecutar_despacho(despacho, usuario):
             raise ValidationError(
                 f"{salida.ejecucion.codigo} fue bloqueada por Calidad antes del despacho."
             )
+        if not salida.silo_id or salida.silo_id not in silos:
+            raise ValidationError(
+                f"{salida.ejecucion.codigo} no tiene un silo/TK fisico para descontar."
+            )
+        if salida.unidad.lower() != "l" or detalle.unidad.lower() != "l":
+            raise ValidationError(
+                "El despacho fisico a granel requiere una cantidad expresada en litros."
+            )
+        silo = silos[salida.silo_id]
+        disponible = saldo_silo(silo)
+        if detalle.cantidad > disponible:
+            raise ValidationError(
+                f"{silo.codigo} tiene {disponible} L fisicos disponibles."
+            )
+        movimiento = detalle.movimiento_silo
+        if movimiento is None:
+            movimiento = MovimientoSilo.objects.create(
+                silo=silo,
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                litros=detalle.cantidad,
+                fecha_hora=timezone.now(),
+                origen_tipo=MovimientoSilo.OrigenTipo.DESPACHO,
+                origen_id=detalle.pk,
+                operacion_id=detalle.operacion_id,
+                lote=salida.lote,
+                producto=salida.producto or (
+                    salida.lote.producto if salida.lote_id else None
+                ),
+                equipo=salida.ejecucion.equipo,
+                usuario=usuario,
+                motivo=f"Despacho {despacho.numero}",
+            )
+            detalle.movimiento_silo = movimiento
+            detalle.save(update_fields=["movimiento_silo"])
     despacho.estado = Despacho.Estado.DESPACHADO
     despacho.despachado_en = timezone.now()
     despacho.save(update_fields=["estado", "despachado_en"])
@@ -385,7 +436,7 @@ def catalogos_de_receta():
     )
 
 
-def insumos_requeridos(*, producto_id, cantidad, fecha, catalogos=None):
+def insumos_requeridos(*, producto_id, cantidad, fecha, catalogos=None, fase=None):
     """
     Qué insumos consume producir `cantidad` de un producto, y cuántos.
 
@@ -406,7 +457,9 @@ def insumos_requeridos(*, producto_id, cantidad, fecha, catalogos=None):
 
     productos, recetas = catalogos if catalogos is not None else catalogos_de_receta()
 
-    explosion = explosionar(productos, recetas, producto_id, float(cantidad), fecha)
+    explosion = explosionar(
+        productos, recetas, producto_id, float(cantidad), fecha, fase=fase
+    )
 
     # La explosión trabaja en float —es aritmética de árbol, no de dinero—; se
     # vuelve a Decimal antes de que el número toque existencias o una orden de
@@ -568,7 +621,10 @@ def ingresar_material_manual(*, insumo, codigo_lote, ubicacion, cantidad, usuari
 
 
 @transaction.atomic
-def consumir_receta_produccion(*, lote_produccion, usuario):
+def consumir_receta_produccion(
+    *, lote_produccion, usuario, fase="proceso", kg_base=None,
+    operacion_id=None, permitir_vacio=False,
+):
     """
     Descuenta por FEFO los insumos que la receta del lote declara.
 
@@ -587,20 +643,43 @@ def consumir_receta_produccion(*, lote_produccion, usuario):
 
     if lote_produccion.estado == lote_produccion.Estado.ANULADO:
         raise ValidationError("No se puede consumir inventario para un lote anulado.")
-    if not lote_produccion.kg_producidos or lote_produccion.kg_producidos <= 0:
+    kg_base = Decimal(
+        str(kg_base if kg_base is not None else lote_produccion.kg_producidos or 0)
+    )
+    if kg_base <= 0:
         raise ValidationError("El lote debe tener kilos producidos informados.")
-    if ConsumoLoteProduccion.objects.filter(lote_produccion=lote_produccion).exists():
-        raise ValidationError("La receta de este lote de Producción ya fue consumida.")
+    consumos = ConsumoLoteProduccion.objects.filter(lote_produccion=lote_produccion)
+    if operacion_id:
+        existente = consumos.filter(operacion_id=operacion_id).first()
+        if existente:
+            return existente, []
+    if fase == ConsumoLoteProduccion.Fase.PROCESO and consumos.filter(
+        fase__in=[
+            ConsumoLoteProduccion.Fase.PROCESO,
+            ConsumoLoteProduccion.Fase.COMPLETO_LEGACY,
+        ]
+    ).exists():
+        raise ValidationError("La receta de proceso de este lote ya fue consumida.")
 
     explosion, requerido = insumos_requeridos(
         producto_id=lote_produccion.producto_id,
-        cantidad=lote_produccion.kg_producidos,
+        cantidad=kg_base,
         fecha=lote_produccion.fecha,
+        fase=fase,
     )
 
     if not requerido:
+        if permitir_vacio and explosion.completa:
+            cabecera = ConsumoLoteProduccion.objects.create(
+                lote_produccion=lote_produccion,
+                fase=fase,
+                kg_base=kg_base,
+                operacion_id=operacion_id,
+                registrado_por=usuario,
+            )
+            return cabecera, []
         raise ValidationError(
-            "La receta vigente del producto no declara insumos que descontar."
+            f"La receta vigente del producto no declara insumos de {fase} que descontar."
         )
 
     # Una cadena cortada da un número que se parece demasiado a uno completo:
@@ -614,7 +693,8 @@ def consumir_receta_produccion(*, lote_produccion, usuario):
     por_id = {i.id: i for i in Insumo.objects.filter(id__in=requerido)}
 
     cabecera = ConsumoLoteProduccion.objects.create(
-        lote_produccion=lote_produccion, kg_base=lote_produccion.kg_producidos,
+        lote_produccion=lote_produccion, fase=fase, kg_base=kg_base,
+        operacion_id=operacion_id,
         registrado_por=usuario,
     )
     movimientos = []

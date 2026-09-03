@@ -12,8 +12,9 @@
 */
 
 import { expect, request as peticion, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import fs from "node:fs";
 
-import { API, ORIGEN } from "./constantes";
+import { API, ORIGEN, RUTA_ESTADO } from "./constantes";
 
 
 /*
@@ -195,6 +196,21 @@ export async function usarSesionArea(
     }, existente.valor);
     await pagina.reload();
     return;
+  }
+  if (usuario === process.env.E2E_USUARIO && fs.existsSync(RUTA_ESTADO)) {
+    const estado = JSON.parse(fs.readFileSync(RUTA_ESTADO, "utf8")) as {
+      origins?: Array<{ localStorage?: Array<{ name: string; value: string }> }>;
+    };
+    const valor = estado.origins?.flatMap((origen) => origen.localStorage ?? [])
+      .find((item) => item.name === "ccaa.sesion")?.value;
+    if (valor) {
+      await pagina.evaluate((contenido) => {
+        window.localStorage.setItem("ccaa.sesion", contenido);
+        window.sessionStorage.setItem("ccaa.sesion", contenido);
+      }, valor);
+      await pagina.reload();
+      return JSON.parse(valor).usuario;
+    }
   }
   const contexto = await peticion.newContext();
   const respuesta = await contexto.post(`${API}/api/usuarios/login/`, {

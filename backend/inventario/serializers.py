@@ -777,6 +777,19 @@ class DetalleDespachoGranelSerializer(serializers.ModelSerializer):
     destino_etiqueta = serializers.CharField(
         source="salida.get_destino_display", read_only=True
     )
+    producto_id = serializers.IntegerField(source="salida.producto_id", read_only=True)
+    producto_nombre = serializers.SerializerMethodField()
+    lote_codigo = serializers.SerializerMethodField()
+    silo_codigo = serializers.CharField(source="salida.silo.codigo", read_only=True)
+
+    def get_producto_nombre(self, detalle):
+        lote = getattr(detalle.salida.ejecucion, "lote_produccion", None)
+        producto = detalle.salida.producto or (lote.producto if lote else None)
+        return producto.nombre if producto else detalle.salida.ejecucion.etapa.nombre
+
+    def get_lote_codigo(self, detalle):
+        lote = getattr(detalle.salida.ejecucion, "lote_produccion", None)
+        return lote.codigo_lote if lote else None
 
     class Meta:
         model = DetalleDespachoGranel

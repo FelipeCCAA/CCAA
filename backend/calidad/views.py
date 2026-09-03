@@ -19,7 +19,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -155,6 +155,17 @@ def _lotes_permitidos(request):
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     )
 
+
+def _envasado_completo(lote):
+    """Distingue la puerta comercial final de la liberacion intermedia."""
+    if lote.producto.formato not in {"saco_25kg", "caja_20kg"}:
+        return None
+    if hasattr(lote, "kg_envasados_total"):
+        total = lote.kg_envasados_total or 0
+    else:
+        total = lote.registros_envase.aggregate(total=Sum("kg_envasados"))["total"] or 0
+    return lote.kg_producidos is not None and total >= lote.kg_producidos
+
 def _contexto_del_lote(lote, bloquear=False):
     """
     Todo lo que el dominio necesita para juzgar un lote.
@@ -260,6 +271,7 @@ def _contexto_del_lote(lote, bloquear=False):
         "controles": lista_controles,
         "lecturas_control": list(lecturas_control),
         "monitoreos": lista_monitoreos,
+        "envasado_completo": _envasado_completo(lote),
     }
 
 
@@ -512,6 +524,7 @@ def expedientes(request):
             "autorizacion_reproceso__decidido_por",
         )
         .prefetch_related("analisis", "registros_calidad", "liberacion")
+        .annotate(kg_envasados_total=Sum("registros_envase__kg_envasados"))
         .exclude(estado__in=[Lote.Estado.EN_PROCESO, Lote.Estado.ANULADO])
         # Un lote histórico sin producto no tiene especificación, checklist ni
         # identidad comercial que liberar. Antes llegaba al serializador y
@@ -657,6 +670,7 @@ def expedientes(request):
             lecturas_control=suyas_lecturas,
             monitoreos=suyos_monitoreo,
             cumplidos_por_dato=cumplidos_por_dato,
+            envasado_completo=_envasado_completo(lote),
         )
 
         liberacion = getattr(lote, "liberacion", None)

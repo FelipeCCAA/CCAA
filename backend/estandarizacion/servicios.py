@@ -16,7 +16,14 @@ from django.utils import timezone
 
 from .models import ValeEstandarizacion
 from maestros.models import Silo
-from procesos.servicios import cerrar_estandarizacion, registrar_estandarizacion
+from procesos.models import ReservaSiloProceso
+from procesos.servicios import (
+    cerrar_estandarizacion,
+    exigir_destino_sin_reserva,
+    litros_origen_reservados,
+    registrar_estandarizacion,
+    reservas_activas_silo,
+)
 from recepcion.models import MovimientoSilo
 from recepcion.servicios import ESTADOS_SIN_CONSUMO, motivos_silo_no_disponible
 
@@ -68,6 +75,13 @@ def transferir(*, vale_id, usuario):
         motivos = motivos_silo_no_disponible(silo, para="proceso")
         if motivos:
             raise ValidationError(f"{silo.codigo}: " + " ".join(motivos))
+        if reservas_activas_silo(
+            silo_id=silo.pk, tipo=ReservaSiloProceso.Tipo.DESTINO,
+        ).exists():
+            raise ValidationError(
+                f"{silo.codigo} esta reservado como destino de otra ejecucion."
+            )
+    exigir_destino_sin_reserva(silo=destino)
     if not destino.activo or destino.estado in {
         Silo.Estado.BLOQUEADO_CALIDAD,
         Silo.Estado.EN_CIP,
@@ -77,19 +91,23 @@ def transferir(*, vale_id, usuario):
             f"{destino.codigo} no admite ingresos ({destino.get_estado_display()})."
         )
 
-    if _saldo(entera) < vale.litros_entera:
+    if _saldo(entera) - litros_origen_reservados(silo_id=entera.pk) < vale.litros_entera:
         raise ValidationError(
             f"{entera.codigo} no tiene {vale.litros_entera} L de leche entera disponibles."
         )
     if vale.litros_descremada and (
-        descremada is None or _saldo(descremada) < vale.litros_descremada
+        descremada is None
+        or _saldo(descremada) - litros_origen_reservados(silo_id=descremada.pk)
+        < vale.litros_descremada
     ):
         codigo = descremada.codigo if descremada else "el TK seleccionado"
         raise ValidationError(
             f"{codigo} no tiene {vale.litros_descremada} L de leche descremada disponibles."
         )
     if vale.litros_crema and (
-        crema is None or _saldo(crema) < vale.litros_crema
+        crema is None
+        or _saldo(crema) - litros_origen_reservados(silo_id=crema.pk)
+        < vale.litros_crema
     ):
         codigo = crema.codigo if crema else "el TK de crema seleccionado"
         raise ValidationError(

@@ -22,6 +22,9 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto, Silo
+from procesos.models import (
+    EjecucionProceso, EtapaProceso, Proceso, ReservaSiloProceso,
+)
 from usuarios.models import PerfilUsuario, Rol
 from recepcion.models import MovimientoSilo
 
@@ -177,6 +180,34 @@ class AgitacionTests(BaseVale):
         self.silo_entera.save(update_fields=["estado"])
 
         with self.assertRaises(ValidationError):
+            servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        self.assertFalse(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=vale.id,
+        ).exists())
+
+    def test_no_transfiere_a_silo_reservado_por_otro_proceso(self):
+        vale = self.crear_vale()
+        self.abastecer_origenes()
+        proceso = Proceso.objects.create(codigo="reserva-test", nombre="Reserva")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="reserva", nombre="Reserva", orden=1,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-RESERVA-EST", etapa=etapa,
+            sucursal=self.silo_destino.sucursal, responsable=self.usuario,
+        )
+        ReservaSiloProceso.objects.create(
+            ejecucion=ejecucion, silo=self.silo_destino,
+            tipo=ReservaSiloProceso.Tipo.DESTINO,
+            cantidad_planificada="1000",
+        )
+
+        with patch(
+            "estandarizacion.servicios.motivos_silo_no_disponible",
+            return_value=[],
+        ), self.assertRaisesMessage(ValidationError, "EJ-RESERVA-EST"):
             servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
 
         self.assertFalse(MovimientoSilo.objects.filter(
