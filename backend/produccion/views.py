@@ -61,57 +61,248 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="materiales-habilitados")
     def materiales_habilitados(self, request):
-        """Contrato acotado: solo material liberado y realmente envasable."""
+        """Material liberado, formato y embalajes realmente disponibles."""
+        from inventario.models import Existencia, Insumo
+        from inventario.servicios import catalogos_de_receta, insumos_requeridos
+        from maestros.models import FormatoEnvasado
         from procesos.models import SalidaProceso
 
-        salidas = filtrar_por_scope(
+        salidas = list(filtrar_por_scope(
             SalidaProceso.objects.filter(
                 destino=SalidaProceso.Destino.ENVASADO,
                 naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
                 unidad__iexact="kg",
                 liberacion_calidad__estado="liberado",
                 lote__estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
-                lote__producto__formato__in=[
-                    Producto.Formato.SACO_25KG,
-                    Producto.Formato.CAJA_20KG,
-                ],
             ).select_related(
                 "lote__producto", "ejecucion__etapa", "liberacion_calidad"
             ).order_by("registrada_en", "pk"),
             request.user,
             campo_sucursal="ejecucion__sucursal_id",
             campo_empresa="ejecucion__sucursal__empresa_id",
-        )
-        pesos = {
-            Producto.Formato.SACO_25KG: Decimal("25"),
-            Producto.Formato.CAJA_20KG: Decimal("20"),
+        ).annotate(
+            kg_envasado_total=Sum(
+                "lote__registros_envase__kg_envasados",
+                output_field=DecimalField(max_digits=14, decimal_places=3),
+            ),
+            pallets_total=Count("lote__registros_envase__pallets", distinct=True),
+        ))
+        formatos_por_producto = defaultdict(list)
+        for formato in FormatoEnvasado.objects.filter(
+            activo=True,
+            producto_id__in={salida.lote.producto_id for salida in salidas},
+        ).select_related("producto").prefetch_related("equipos"):
+            formatos_por_producto[formato.producto_id].append(formato)
+        # La explosión de receta se calcula una vez por producto, no una vez
+        # por lote. Así la bandeja conserva una única consulta de catálogos
+        # aunque tenga varias corridas del mismo SKU.
+        catalogos = catalogos_de_receta()
+        requisitos_por_producto_fecha = {}
+        insumos_ids = set()
+        for producto_id, fecha_lote in {
+            (salida.lote.producto_id, salida.lote.fecha) for salida in salidas
+        }:
+            explosion, requerido = insumos_requeridos(
+                producto_id=producto_id,
+                cantidad=Decimal("1"),
+                fecha=fecha_lote,
+                fase="envasado",
+                catalogos=catalogos,
+            )
+            requisitos_por_producto_fecha[(producto_id, fecha_lote)] = (
+                explosion.completa, requerido
+            )
+            insumos_ids.update(requerido)
+
+        insumos = {
+            insumo.pk: insumo
+            for insumo in Insumo.objects.filter(pk__in=insumos_ids)
         }
+        stock_por_planta = defaultdict(Decimal)
+        existencias = Existencia.objects.filter(
+            lote__insumo_id__in=insumos_ids,
+            ubicacion__bodega__sucursal_id__in={
+                salida.ejecucion.sucursal_id for salida in salidas
+            },
+        ).select_related("lote", "ubicacion__bodega")
+        for existencia in existencias:
+            disponible_stock = existencia.cantidad_disponible
+            if disponible_stock > 0:
+                stock_por_planta[
+                    (existencia.ubicacion.bodega.sucursal_id, existencia.lote.insumo_id)
+                ] += disponible_stock
+
         respuesta = []
         for salida in salidas:
-            envasado = salida.lote.registros_envase.aggregate(
-                total=Sum("kg_envasados")
-            )["total"] or Decimal("0")
+            envasado = salida.kg_envasado_total or Decimal("0")
             disponible = salida.cantidad - envasado
             if disponible <= 0:
                 continue
-            formato = salida.lote.producto.formato
-            respuesta.append({
-                "salida_id": salida.pk,
-                "lote_id": salida.lote_id,
-                "lote_codigo": salida.lote.codigo_lote,
-                "producto_id": salida.lote.producto_id,
-                "producto_nombre": salida.lote.producto.nombre,
-                "cantidad_disponible": disponible,
-                "unidad": salida.unidad,
-                "formato": formato,
-                "formato_nombre": salida.lote.producto.get_formato_display(),
-                "formato_kg": pesos[formato],
-                "maximo_pallet_kg": Decimal("500"),
-                "origen": salida.ejecucion.codigo,
-                "calidad": salida.liberacion_calidad.estado,
-                "motivo_bloqueo": "",
-            })
+            formatos = formatos_por_producto[salida.lote.producto_id]
+            if not formatos:
+                respuesta.append({
+                    "salida_id": salida.pk,
+                    "lote_id": salida.lote_id,
+                    "lote_codigo": salida.lote.codigo_lote,
+                    "producto_id": salida.lote.producto_id,
+                    "producto_nombre": salida.lote.producto.nombre,
+                    "cantidad_disponible": disponible,
+                    "pallets_total": salida.pallets_total,
+                    "unidad": salida.unidad,
+                    "formato": salida.lote.producto.formato,
+                    "formato_id": None,
+                    "formato_codigo": "",
+                    "formato_nombre": "Sin formato configurado",
+                    "formato_kg": None,
+                    "maximo_pallet_kg": None,
+                    "equipos": [],
+                    "unidades_por_producto": 0,
+                    "unidades_disponibles": 0,
+                    "cantidad_envasable": Decimal("0"),
+                    "remanente_kg": disponible,
+                    "pendiente_materiales_kg": Decimal("0"),
+                    "receta_envase_completa": False,
+                    "materiales_envase": [],
+                    "puede_envasar": False,
+                    "origen": salida.ejecucion.codigo,
+                    "calidad": salida.liberacion_calidad.estado,
+                    "motivo_bloqueo": (
+                        "El producto no tiene un formato de Envasado activo. "
+                        "Configúralo en Maestros."
+                    ),
+                    "advertencia_materiales": "",
+                })
+                continue
+
+            receta_completa, requerido_por_kg = requisitos_por_producto_fecha[
+                (salida.lote.producto_id, salida.lote.fecha)
+            ]
+            for formato in formatos:
+                equipos_formato = list(formato.equipos.all())
+                formato_kg = formato.kg_neto
+                unidades_producto = int(disponible // formato_kg)
+                materiales = []
+                unidades_por_materiales = unidades_producto
+                for insumo_id, cantidad_por_kg in requerido_por_kg.items():
+                    stock = stock_por_planta[
+                        (salida.ejecucion.sucursal_id, insumo_id)
+                    ]
+                    insumo = insumos[insumo_id]
+                    materiales.append({
+                        "insumo_id": insumo_id,
+                        "codigo": insumo.codigo,
+                        "nombre": insumo.nombre,
+                        "unidad": insumo.unidad,
+                        "cantidad_por_kg": cantidad_por_kg,
+                        "stock_disponible": stock,
+                    })
+                    if cantidad_por_kg > 0:
+                        unidades_por_materiales = min(
+                            unidades_por_materiales,
+                            int((stock / cantidad_por_kg) // formato_kg),
+                        )
+                if not receta_completa or not requerido_por_kg:
+                    unidades_por_materiales = 0
+                unidades_disponibles = min(
+                    unidades_producto, unidades_por_materiales
+                )
+                cantidad_envasable = formato_kg * unidades_disponibles
+                remanente = disponible - (formato_kg * unidades_producto)
+                pendiente_materiales = (
+                    formato_kg * (unidades_producto - unidades_disponibles)
+                )
+                motivo_bloqueo = ""
+                advertencia_materiales = ""
+                if not equipos_formato:
+                    motivo_bloqueo = (
+                        "El formato no tiene una envasadora o línea autorizada."
+                    )
+                    unidades_disponibles = 0
+                    cantidad_envasable = Decimal("0")
+                elif unidades_producto == 0:
+                    motivo_bloqueo = (
+                        f"Quedan {disponible} kg, menos que una unidad completa "
+                        f"de {formato_kg} kg. El remanente debe gestionarse antes "
+                        "de la liberación comercial."
+                    )
+                elif not receta_completa:
+                    motivo_bloqueo = (
+                        "La receta de Envasado está incompleta. Configura todos "
+                        "sus materiales antes de crear el pallet."
+                    )
+                elif not requerido_por_kg:
+                    motivo_bloqueo = (
+                        "La receta vigente no declara cajas, bolsas o pallets "
+                        "para la fase de Envasado."
+                    )
+                elif unidades_disponibles == 0:
+                    faltantes = [
+                        item["nombre"] for item in materiales
+                        if item["stock_disponible"]
+                        < item["cantidad_por_kg"] * formato_kg
+                    ]
+                    motivo_bloqueo = (
+                        "Stock insuficiente de materiales de Envasado: "
+                        + ", ".join(faltantes)
+                        + "."
+                    )
+                elif pendiente_materiales > 0:
+                    advertencia_materiales = (
+                        "El stock de embalajes permite envasar "
+                        f"{cantidad_envasable} kg; quedan {pendiente_materiales} "
+                        "kg a la espera de materiales."
+                    )
+                respuesta.append({
+                    "salida_id": salida.pk,
+                    "lote_id": salida.lote_id,
+                    "lote_codigo": salida.lote.codigo_lote,
+                    "producto_id": salida.lote.producto_id,
+                    "producto_nombre": salida.lote.producto.nombre,
+                    "cantidad_disponible": disponible,
+                    "pallets_total": salida.pallets_total,
+                    "unidad": salida.unidad,
+                    "formato": salida.lote.producto.formato,
+                    "formato_id": formato.pk,
+                    "formato_codigo": formato.codigo,
+                    "formato_nombre": formato.nombre,
+                    "formato_kg": formato_kg,
+                    "maximo_pallet_kg": formato.maximo_pallet_kg,
+                    "equipos": [
+                        {
+                            "id": equipo.pk,
+                            "codigo": equipo.codigo,
+                            "nombre": equipo.nombre,
+                        }
+                        for equipo in equipos_formato
+                    ],
+                    "unidades_por_producto": unidades_producto,
+                    "unidades_disponibles": unidades_disponibles,
+                    "cantidad_envasable": cantidad_envasable,
+                    "remanente_kg": remanente,
+                    "pendiente_materiales_kg": pendiente_materiales,
+                    "receta_envase_completa": (
+                        receta_completa and bool(requerido_por_kg)
+                    ),
+                    "materiales_envase": materiales,
+                    "puede_envasar": unidades_disponibles > 0,
+                    "origen": salida.ejecucion.codigo,
+                    "calidad": salida.liberacion_calidad.estado,
+                    "motivo_bloqueo": motivo_bloqueo,
+                    "advertencia_materiales": advertencia_materiales,
+                })
         return Response(respuesta)
+
+    @action(detail=False, methods=["get"], url_path="bandeja")
+    def bandeja(self, request):
+        """Contrato compacto de Envasado: trabajo habilitado e historial reciente."""
+        materiales = self.materiales_habilitados(request)
+        if materiales.status_code != status.HTTP_200_OK:
+            return materiales
+        recientes = self.filter_queryset(self.get_queryset()).order_by("-inicio", "-id")[:20]
+        return Response({
+            "materiales": materiales.data,
+            "registros_recientes": self.get_serializer(recientes, many=True).data,
+        })
 
 
 class PalletProductoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
@@ -840,62 +1031,20 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def trazabilidad(self, request, pk=None):
-        """
-        De qué recepciones pudo salir este lote.
-
-        Devuelve un **conjunto** de recepciones candidatas por silo, no una
-        cadena: son las que habían ingresado a ese estanque antes de que el
-        lote consumiera. Prometer un vínculo exacto sería falso, porque dentro
-        del silo la leche ya está mezclada.
-        """
-        from recepcion.dominio import trazabilidad_lote
-        from recepcion.models import MovimientoSilo, Recepcion
+        """Explica cada retiro del lote mediante su atribución FIFO real."""
+        from recepcion.models import MovimientoSilo
+        from recepcion.servicios import trazabilidad_fifo_movimientos
 
         lote = self.get_object()
-
-        tramos = trazabilidad_lote(lote.id, MovimientoSilo.objects.all())
-
-        ids = {r for tramo in tramos for r in tramo["recepciones"]}
-        recepciones = {
-            r.id: {
-                "id": r.id,
-                "fecha": r.fecha,
-                "guia": r.guia,
-                "litros": r.litros,
-                "procedencia": r.procedencia,
-                "vehiculo": r.vehiculo.placa if r.vehiculo else None,
-            }
-            for r in Recepcion.objects.filter(id__in=ids).select_related("vehiculo")
-        }
-
-        silos = {
-            s.id: s.codigo
-            for s in Silo.objects.filter(id__in=[t["silo_id"] for t in tramos])
-        }
-
-        return Response(
-            {
-                "lote": lote.codigo_lote,
-                "tramos": [
-                    {
-                        "silo": tramo["silo_id"],
-                        "silo_codigo": silos.get(tramo["silo_id"]),
-                        "litros": tramo["litros"],
-                        "fecha_hora": tramo["fecha_hora"],
-                        "recepciones": [
-                            recepciones[r] for r in tramo["recepciones"] if r in recepciones
-                        ],
-                    }
-                    for tramo in tramos
-                ],
-                # Se dice explícitamente para que nadie lea la lista como una
-                # cadena de origen única.
-                "nota": (
-                    "Las recepciones son candidatas: la leche se mezcla dentro "
-                    "del silo y no hay vínculo uno a uno."
-                ),
-            }
-        )
+        consumos = MovimientoSilo.objects.filter(
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=lote.pk,
+        ).select_related("silo").order_by("fecha_hora", "pk")
+        return Response({
+            "lote": lote.codigo_lote,
+            **trazabilidad_fifo_movimientos(consumos),
+        })
 
     # ------------------------------------------------------------- ayudantes
 

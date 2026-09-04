@@ -3,8 +3,9 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Mandante, Producto, Silo
@@ -102,6 +103,7 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertEqual([item["codigo"] for item in respuesta.data], ["EJ-001"])
         self.assertEqual(respuesta.data[0]["equipo_id"], self.equipo.pk)
         self.assertEqual(respuesta.data[0]["equipo_nombre"], self.equipo.nombre)
+        self.assertEqual(respuesta.data[0]["version"], self.ejecucion.version)
         self.assertIn("preparacion", respuesta.data[0]["acciones_permitidas"])
 
     def test_resumen_operacional_cuenta_estados_y_material_liberado(self):
@@ -320,6 +322,31 @@ class ProcesosIndustrialesTests(TestCase):
         )
         self.assertFalse(hallazgo["configurada"])
         self.assertGreaterEqual(respuesta.data["faltantes"], 1)
+
+    def test_diagnostico_informa_inconsistencias_productivas(self):
+        EjecucionProceso.objects.create(
+            codigo="EJ-SIN-ORIGEN", etapa=self.etapa, equipo=self.equipo,
+            responsable=self.usuario, estado=EjecucionProceso.Estado.EJECUCION,
+        )
+        EjecucionProceso.objects.create(
+            codigo="EJ-CIERRE-INCOMPLETO", etapa=self.etapa,
+            responsable=self.usuario, estado=EjecucionProceso.Estado.CERRADA,
+        )
+
+        with CaptureQueriesContext(connection) as consultas:
+            respuesta = self.cliente.get(
+                "/api/procesos/rutas-producto/diagnostico/"
+            )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        integridad = respuesta.data["integridad"]
+        categorias = {item["codigo"]: item for item in integridad["categorias"]}
+        self.assertFalse(integridad["completa"])
+        self.assertIn("ejecucion_sin_entrada", categorias)
+        self.assertIn("cierre_sin_salida", categorias)
+        self.assertIn("estado_temporal_inconsistente", categorias)
+        self.assertNotIn("equipo_ocupado_multiples_veces", categorias)
+        self.assertLessEqual(len(consultas), 20)
 
     def test_una_continuacion_no_puede_saltarse_una_etapa(self):
         EtapaProceso.objects.create(

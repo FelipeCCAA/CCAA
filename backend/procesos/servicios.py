@@ -3,7 +3,7 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, Prefetch, Q, Sum
+from django.db.models import Count, F, Prefetch, Q, Sum
 from django.utils import timezone
 
 from .models import (
@@ -19,6 +19,120 @@ ESTADOS_QUE_OCUPAN_EQUIPO = frozenset({
     EjecucionProceso.Estado.PAUSADA,
     EjecucionProceso.Estado.BLOQUEADA,
 })
+
+
+class ConflictoVersionEjecucion(Exception):
+    """El operador actuó sobre una versión que otro turno ya modificó."""
+
+    def __init__(self, *, version_actual):
+        self.version_actual = version_actual
+        super().__init__(
+            "La ejecución cambió desde que abriste la pantalla. "
+            "Actualiza la bandeja antes de volver a intentar."
+        )
+
+
+def diagnosticar_integridad_produccion(*, usuario):
+    """Hallazgos operacionales acotados al alcance visible del usuario."""
+    from usuarios.tenancy import filtrar_por_scope
+
+    ejecuciones = filtrar_por_scope(
+        EjecucionProceso.objects.select_related("equipo", "etapa"),
+        usuario,
+        campo_sucursal="sucursal_id",
+        campo_empresa="sucursal__empresa_id",
+    )
+
+    def categoria(*, codigo, titulo, severidad, queryset, detalle):
+        cantidad = queryset.count()
+        return {
+            "codigo": codigo,
+            "titulo": titulo,
+            "severidad": severidad,
+            "cantidad": cantidad,
+            "items": [
+                {
+                    "id": ejecucion.pk,
+                    "codigo": ejecucion.codigo,
+                    "detalle": detalle(ejecucion),
+                }
+                for ejecucion in queryset.order_by("-actualizada_en")[:20]
+            ],
+        }
+
+    estados_iniciados = {
+        EjecucionProceso.Estado.EJECUCION,
+        EjecucionProceso.Estado.PAUSADA,
+        EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        EjecucionProceso.Estado.BLOQUEADA,
+        EjecucionProceso.Estado.CERRADA,
+    }
+    sin_entrada = ejecuciones.filter(
+        estado__in=estados_iniciados, entradas__isnull=True
+    )
+    cerradas_sin_salida = ejecuciones.filter(
+        estado=EjecucionProceso.Estado.CERRADA, salidas__isnull=True
+    )
+    fechas_inconsistentes = ejecuciones.filter(
+        Q(estado__in=estados_iniciados, inicio__isnull=True)
+        | Q(estado=EjecucionProceso.Estado.CERRADA, termino__isnull=True)
+        | (~Q(estado=EjecucionProceso.Estado.CERRADA) & Q(termino__isnull=False))
+    )
+    ocupaciones = list(
+        ejecuciones.filter(
+            equipo_id__isnull=False, estado__in=ESTADOS_QUE_OCUPAN_EQUIPO
+        )
+        .values("equipo_id", "equipo__codigo")
+        .annotate(cantidad=Count("id"))
+        .filter(cantidad__gt=1)
+        .order_by("equipo__codigo")[:20]
+    )
+
+    categorias = [
+        categoria(
+            codigo="ejecucion_sin_entrada",
+            titulo="Ejecuciones iniciadas sin entrada",
+            severidad="critico",
+            queryset=sin_entrada,
+            detalle=lambda item: f"{item.etapa.nombre} no tiene material de origen.",
+        ),
+        categoria(
+            codigo="cierre_sin_salida",
+            titulo="Ejecuciones cerradas sin salida",
+            severidad="critico",
+            queryset=cerradas_sin_salida,
+            detalle=lambda item: f"{item.etapa.nombre} cerró sin producto ni merma.",
+        ),
+        categoria(
+            codigo="estado_temporal_inconsistente",
+            titulo="Estados y fechas contradictorios",
+            severidad="alto",
+            queryset=fechas_inconsistentes,
+            detalle=lambda item: (
+                f"Estado {item.get_estado_display()} con inicio o término inconsistente."
+            ),
+        ),
+        {
+            "codigo": "equipo_ocupado_multiples_veces",
+            "titulo": "Equipos con más de una ocupación física",
+            "severidad": "critico",
+            "cantidad": len(ocupaciones),
+            "items": [
+                {
+                    "id": item["equipo_id"],
+                    "codigo": item["equipo__codigo"],
+                    "detalle": f'{item["cantidad"]} ejecuciones ocupan el equipo.',
+                }
+                for item in ocupaciones
+            ],
+        },
+    ]
+    hallazgos = [item for item in categorias if item["cantidad"]]
+    return {
+        "completa": not hallazgos,
+        "total_hallazgos": sum(item["cantidad"] for item in hallazgos),
+        "categorias": hallazgos,
+    }
 
 
 def reservas_activas_silo(*, silo_id, tipo=None, excluir_ejecucion_id=None):
@@ -761,12 +875,16 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
 
 
 @transaction.atomic
-def transicionar_ejecucion(*, ejecucion_id, estado_nuevo, usuario, motivo=""):
+def transicionar_ejecucion(
+    *, ejecucion_id, estado_nuevo, usuario, motivo="", version_esperada=None
+):
     ejecucion = (
         EjecucionProceso.objects.select_for_update()
         .select_related("etapa")
         .get(pk=ejecucion_id)
     )
+    if version_esperada is not None and ejecucion.version != version_esperada:
+        raise ConflictoVersionEjecucion(version_actual=ejecucion.version)
     permitidos = EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set())
     if estado_nuevo not in permitidos:
         raise ValidationError(

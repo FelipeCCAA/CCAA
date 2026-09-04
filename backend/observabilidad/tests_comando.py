@@ -7,23 +7,30 @@ llamadas, el percentil y la racha de repeticiones.
 """
 
 import json
-import tempfile
 from io import StringIO
 from pathlib import Path
+from uuid import uuid4
 
+from django.conf import settings
 from django.core.management import call_command
 from django.test import TestCase
 
 
 class ResumenMetricasTests(TestCase):
     def _archivo(self, filas):
-        ruta = Path(tempfile.mkdtemp()) / "metricas.jsonl"
+        # En Windows el runner aislado puede crear una carpeta temporal global
+        # sin heredar permisos de escritura. El archivo sigue siendo efímero,
+        # pero vive dentro del workspace autorizado del backend.
+        ruta = Path(settings.BASE_DIR) / f".metricas-test-{uuid4().hex}.jsonl"
         ruta.write_text("\n".join(json.dumps(f) for f in filas), encoding="utf-8")
+        self.addCleanup(ruta.unlink, missing_ok=True)
         return str(ruta)
 
-    def _fila(self, ruta, ms, t, consultas=1, usuario="op"):
+    def _fila(
+        self, ruta, ms, t, consultas=1, usuario="op", metodo="GET", estado=200,
+    ):
         return {
-            "ruta": ruta, "metodo": "GET", "estado": 200, "ms": ms,
+            "ruta": ruta, "metodo": metodo, "estado": estado, "ms": ms,
             "consultas": consultas, "ms_sql": 1.0, "t": t, "usuario": usuario,
         }
 
@@ -76,7 +83,7 @@ class ResumenMetricasTests(TestCase):
         El registro se escribe en producción y puede quedar cortado a mitad
         de línea. Perder el informe entero por eso sería perder la medición.
         """
-        ruta = Path(tempfile.mkdtemp()) / "metricas.jsonl"
+        ruta = Path(self._archivo([]))
         ruta.write_text(
             json.dumps(self._fila("/api/produccion/lotes/", 5.0, 0.0))
             + "\n{ esto no es json\n",
@@ -94,3 +101,21 @@ class ResumenMetricasTests(TestCase):
         texto = self._correr(archivo)
 
         self.assertIn("no trae muestras", texto)
+
+    def test_muestra_conflictos_409_por_endpoint(self):
+        archivo = self._archivo([
+            self._fila(
+                "/api/procesos/ejecuciones/:id/", 5.0, 0.0,
+                metodo="PATCH", estado=409,
+            ),
+            self._fila(
+                "/api/procesos/ejecuciones/:id/", 6.0, 1.0,
+                metodo="PATCH", estado=409,
+            ),
+        ])
+
+        texto = self._correr(archivo)
+
+        self.assertRegex(
+            texto, r"2x\s+PATCH\s+/api/procesos/ejecuciones/:id/"
+        )

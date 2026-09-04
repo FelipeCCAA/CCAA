@@ -1442,7 +1442,7 @@ def ocupacion(request):
             "producto_nombre": reserva.producto.nombre if reserva.producto_id else None,
         })
     analisis_por_silo = {}
-    for analisis in AnalisisSilo.objects.filter(
+    for analisis in _analisis_silo_con_vigencia().filter(
         silo_id__in=ids_silo, estado=AnalisisSilo.Estado.CONFIRMADO,
     ).order_by("silo_id", "-tomado_en", "-id"):
         analisis_por_silo.setdefault(analisis.silo_id, analisis)

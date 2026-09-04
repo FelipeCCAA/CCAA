@@ -10,9 +10,12 @@ from django.test import TestCase
 from observabilidad import dominio
 
 
-def _muestra(ruta, ms, consultas=1, ms_sql=1.0, t=0.0, usuario="op"):
+def _muestra(
+    ruta, ms, consultas=1, ms_sql=1.0, t=0.0, usuario="op",
+    metodo="GET", estado=200,
+):
     return dominio.Muestra(
-        ruta=ruta, metodo="GET", estado=200, ms=ms,
+        ruta=ruta, metodo=metodo, estado=estado, ms=ms,
         consultas=consultas, ms_sql=ms_sql, t=t, usuario=usuario,
     )
 
@@ -96,13 +99,24 @@ class RepeticionesTests(TestCase):
         self.assertEqual(dominio.repeticiones(muestras, ventana_seg=5.0), [])
 
     def test_dos_usuarios_pidiendo_lo_mismo_no_es_una_repeticion(self):
-        """
-        Dos operadores abriendo la misma pantalla es uso normal. Lo que se
-        busca es una pantalla pidiendo lo mismo dos veces.
-        """
+        """Dos operadores distintos no representan un refresco duplicado."""
         muestras = [
             _muestra("/api/maestros/productos/", 5.0, t=0.0, usuario="ana"),
             _muestra("/api/maestros/productos/", 5.0, t=1.0, usuario="luis"),
         ]
 
         self.assertEqual(dominio.repeticiones(muestras, ventana_seg=5.0), [])
+
+
+class ConflictosTests(TestCase):
+    def test_cuenta_solo_409_y_conserva_metodo_y_ruta(self):
+        muestras = [
+            _muestra("/api/procesos/ejecuciones/:id/", 5, metodo="PATCH", estado=409),
+            _muestra("/api/procesos/ejecuciones/:id/", 5, metodo="PATCH", estado=409),
+            _muestra("/api/procesos/ejecuciones/:id/", 5, metodo="PATCH", estado=400),
+        ]
+
+        self.assertEqual(
+            dominio.conflictos(muestras),
+            [("/api/procesos/ejecuciones/:id/", "PATCH", 2)],
+        )

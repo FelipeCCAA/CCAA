@@ -20,6 +20,7 @@ from .models import (
     ClienteDespacho, Despacho, DetalleDespacho, DetalleDespachoGranel,
     ExistenciaProductoTerminado,
     MovimientoProductoTerminado,
+    MovimientoRework, UnidadRework,
 )
 
 
@@ -415,6 +416,51 @@ class MovimientoSerializer(serializers.ModelSerializer):
         model = MovimientoInventario
         fields = "__all__"
         read_only_fields = [campo.name for campo in MovimientoInventario._meta.fields]
+
+
+class UnidadReworkSerializer(serializers.ModelSerializer):
+    lote_id = serializers.IntegerField(source="autorizacion.lote_id", read_only=True)
+    lote_codigo = serializers.CharField(
+        source="autorizacion.lote.codigo_lote", read_only=True
+    )
+    producto_nombre = serializers.CharField(
+        source="autorizacion.lote.producto.nombre", read_only=True
+    )
+    origen_rework = serializers.CharField(source="autorizacion.origen", read_only=True)
+    estado_calidad = serializers.CharField(source="autorizacion.estado", read_only=True)
+    estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
+    ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
+    bodega_nombre = serializers.CharField(source="ubicacion.bodega.nombre", read_only=True)
+    cantidad_consumida_kg = serializers.SerializerMethodField()
+    utilizable = serializers.BooleanField(read_only=True)
+
+    def get_cantidad_consumida_kg(self, unidad):
+        return unidad.cantidad_inicial_kg - unidad.cantidad_disponible_kg
+
+    class Meta:
+        model = UnidadRework
+        fields = "__all__"
+        read_only_fields = [campo.name for campo in UnidadRework._meta.fields]
+
+
+class MovimientoReworkSerializer(serializers.ModelSerializer):
+    unidad_codigo = serializers.CharField(source="unidad.codigo", read_only=True)
+    lote_codigo = serializers.CharField(
+        source="unidad.autorizacion.lote.codigo_lote", read_only=True
+    )
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+    origen_codigo = serializers.CharField(source="origen.codigo", read_only=True, allow_null=True)
+    destino_codigo = serializers.CharField(source="destino.codigo", read_only=True, allow_null=True)
+    usuario_nombre = serializers.SerializerMethodField()
+
+    def get_usuario_nombre(self, movimiento):
+        return movimiento.registrado_por.get_full_name() or movimiento.registrado_por.username
+
+    class Meta:
+        model = MovimientoRework
+        fields = "__all__"
+        read_only_fields = [campo.name for campo in MovimientoRework._meta.fields]
 
 
 class SolicitudCompraSerializer(serializers.ModelSerializer):

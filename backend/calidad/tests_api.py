@@ -143,6 +143,79 @@ class DecisionReworkTests(BaseAPI):
         self.assertEqual(fila["rework"]["decidido_por"], "M. Rivas")
         self.assertIsNotNone(fila["rework"]["decidido_en"])
 
+    def test_excedente_explicado_completa_el_balance_de_envasado(self):
+        from procesos.models import AutorizacionReproceso
+
+        self.producto.formato = Producto.Formato.CAJA_20KG
+        self.producto.save(update_fields=["formato"])
+        self.lote.kg_producidos = Decimal("31")
+        self.lote.save(update_fields=["kg_producidos"])
+        equipo = Equipo.objects.create(
+            sucursal=self.lote.sucursal,
+            codigo="ENV-MANT-20",
+            nombre="Envase mantequilla 20 kg",
+            tipo=Equipo.Tipo.ENVASADORA,
+        )
+        envase = RegistroEnvase.objects.create(
+            lote=self.lote,
+            equipo=equipo,
+            formato_kg=20,
+            unidades=1,
+            kg_envasados=20,
+            operador=self.usuario,
+            inicio=timezone.now() - timedelta(hours=1),
+            termino=timezone.now(),
+        )
+        PalletProducto.objects.create(
+            envase=envase,
+            codigo="PAL-MANT-REMANENTE",
+            unidades=1,
+            kg_neto=20,
+        )
+        pendiente = self._expediente()
+        self.assertTrue(pendiente["envasado"]["requiere_disposicion"])
+        self.assertEqual(pendiente["envasado"]["kg_sin_disposicion"], 11)
+
+        invalida = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/rework/",
+            {
+                "estado": "aprobado",
+                "origen": "excedente",
+                "cantidad_kg": "12",
+                "motivo": "Remanente de envase",
+            },
+            format="json",
+        )
+        self.assertEqual(invalida.status_code, 400)
+        self.assertFalse(AutorizacionReproceso.objects.filter(lote=self.lote).exists())
+
+        valida = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/rework/",
+            {
+                "estado": "aprobado",
+                "origen": "excedente",
+                "cantidad_kg": "11",
+                "motivo": "Remanente segregado para próxima elaboración",
+            },
+            format="json",
+        )
+        self.assertEqual(valida.status_code, 200, valida.data)
+        self._analisis()
+        self._checklist_completo()
+
+        expediente = self._expediente()
+
+        self.assertEqual(expediente["envasado"]["kg_envasados"], 20)
+        self.assertEqual(expediente["envasado"]["kg_excedente_dispuesto"], 11)
+        self.assertEqual(expediente["envasado"]["kg_sin_disposicion"], 0)
+        self.assertFalse(expediente["envasado"]["requiere_disposicion"])
+        self.assertTrue(expediente["envasado"]["completo"])
+        self.assertTrue(expediente["decision"]["permitido"])
+        liberacion = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.id}/liberar/"
+        )
+        self.assertEqual(liberacion.status_code, 200, liberacion.data)
+
 
 class ExpedienteTests(BaseAPI):
     def test_calidad_puede_corregir_un_analisis_existente_desde_el_expediente(self):

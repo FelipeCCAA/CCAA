@@ -36,6 +36,20 @@ export interface Existencia {
   cantidad_reservada: string; cantidad_disponible: string;
 }
 
+export interface UnidadRework {
+  id: number; autorizacion: number; codigo: string;
+  lote_id: number; lote_codigo: string; producto_nombre: string;
+  origen_rework: string;
+  estado_calidad: "pendiente" | "aprobado" | "bloqueado" | "destruido";
+  estado: "pendiente_ubicacion" | "disponible" | "bloqueado" | "consumido" | "destruido";
+  estado_etiqueta: string;
+  ubicacion: number; ubicacion_codigo: string;
+  ubicacion_tipo: UbicacionInventario["tipo"]; bodega_nombre: string;
+  cantidad_inicial_kg: string; cantidad_disponible_kg: string;
+  cantidad_consumida_kg: string; vencimiento: string | null;
+  utilizable: boolean; creado_en: string;
+}
+
 export interface InspeccionMaterial {
   id: number; lote: number; lote_codigo: string; insumo_nombre: string;
   estado: string; prioridad: number; observaciones: string; creada_en: string;
@@ -290,7 +304,26 @@ export const obtenerNotificaciones = () => lista<Notificacion>("inventario/notif
 export const obtenerMovimientos = () => lista<MovimientoInventario>("inventario/movimientos/");
 export const obtenerAjustes = () => lista<AjusteInventario>("inventario/ajustes/");
 export const obtenerUbicaciones = () => lista<UbicacionInventario>("inventario/ubicaciones/");
+export const obtenerReworkInventario = () => lista<UnidadRework>("inventario/rework/");
 export const obtenerAlertas = () => lista<Alerta>("inventario/alertas/");
+
+export async function habilitarRework(
+  id: number, destino: number, operacionId: string,
+): Promise<UnidadRework> {
+  const { data } = await api.post<UnidadRework>(`inventario/rework/${id}/habilitar/`, {
+    destino, operacion_id: operacionId,
+  });
+  return data;
+}
+
+export async function trasladarRework(
+  id: number, destino: number, motivo: string, operacionId: string,
+): Promise<UnidadRework> {
+  const { data } = await api.post<UnidadRework>(`inventario/rework/${id}/trasladar/`, {
+    destino, motivo, operacion_id: operacionId,
+  });
+  return data;
+}
 
 export interface ExistenciaProductoTerminado {
   id: number; pallet: number; pallet_codigo: string; lote_codigo: string;

@@ -120,3 +120,18 @@ def repeticiones(muestras, ventana_seg: float) -> list[tuple[str, int]]:
                 encontradas[ruta] = max(encontradas[ruta], racha)
 
     return sorted(encontradas.items(), key=lambda par: par[1], reverse=True)
+
+
+def conflictos(muestras) -> list[tuple[str, str, int]]:
+    """Cantidad de respuestas 409 por ruta y método, de mayor a menor."""
+    encontrados = defaultdict(int)
+
+    for muestra in muestras:
+        if muestra.estado == 409:
+            encontrados[(muestra.ruta, muestra.metodo)] += 1
+
+    return sorted(
+        ((ruta, metodo, cantidad) for (ruta, metodo), cantidad in encontrados.items()),
+        key=lambda fila: fila[2],
+        reverse=True,
+    )

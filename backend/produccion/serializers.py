@@ -42,18 +42,22 @@ class RegistroEnvaseSerializer(serializers.ModelSerializer):
     pallets_datos = PalletEntradaSerializer(many=True, write_only=True)
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
+    formato_nombre = serializers.CharField(source="formato.nombre", read_only=True)
     operador_nombre = serializers.CharField(source="operador.get_full_name", read_only=True)
     operacion_id = serializers.UUIDField(required=False)
 
     class Meta:
         model = RegistroEnvase
         fields = [
-            "id", "lote", "lote_codigo", "equipo", "equipo_nombre", "formato_kg",
+            "id", "lote", "lote_codigo", "equipo", "equipo_nombre", "formato",
+            "formato_nombre", "formato_kg",
             "unidades", "kg_envasados", "controles", "operador", "inicio", "termino",
             "observacion", "operacion_id", "creado_en", "pallets", "pallets_datos",
             "operador_nombre",
         ]
-        read_only_fields = ["unidades", "kg_envasados", "operador", "creado_en"]
+        read_only_fields = [
+            "formato_kg", "unidades", "kg_envasados", "operador", "creado_en"
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,6 +71,11 @@ class RegistroEnvaseSerializer(serializers.ModelSerializer):
         self.fields["equipo"].queryset = filtrar_por_scope(
             Equipo.objects.filter(activo=True), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+        from maestros.models import FormatoEnvasado
+        self.fields["formato"].queryset = filtrar_por_scope(
+            FormatoEnvasado.objects.filter(activo=True), request.user,
+            campo_empresa="producto__mandante__empresa_id",
         )
 
     def create(self, datos):

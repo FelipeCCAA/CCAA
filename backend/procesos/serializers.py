@@ -112,8 +112,12 @@ class CierreSecadoSerializer(serializers.Serializer):
 
 class IncorporarReworkSerializer(serializers.Serializer):
     lote = serializers.IntegerField(min_value=1)
-    cantidad = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=1)
+    unidad_rework = serializers.IntegerField(min_value=1, required=False)
+    cantidad = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0.001")
+    )
     motivo = serializers.CharField(max_length=250, allow_blank=False)
+    operacion_id = serializers.UUIDField(required=False)
 
 
 class CorridaCondensacionSerializer(serializers.ModelSerializer):

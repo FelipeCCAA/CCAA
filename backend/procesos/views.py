@@ -1,6 +1,8 @@
 from decimal import Decimal
+from uuid import uuid4
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Count, DecimalField, F, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -35,10 +37,12 @@ from .serializers import (
 from .permisos import OperaProcesoPorEtapa
 from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
+    ConflictoVersionEjecucion,
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
     genealogia_lote,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
+    diagnosticar_integridad_produccion,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     preparar_continuacion, siguiente_etapa_para_salida,
     sugerir_plan_descremacion,
@@ -138,6 +142,7 @@ class RutaProductoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
             "completo": faltantes == 0,
             "faltantes": faltantes,
             "productos": resultado,
+            "integridad": diagnosticar_integridad_produccion(usuario=request.user),
         })
 
 
@@ -889,6 +894,48 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Una ejecución cerrada o cancelada es inmutable.")
         serializer.save()
 
+    def partial_update(self, request, *args, **kwargs):
+        """PATCH protegido contra la pérdida silenciosa de cambios de otro turno."""
+        actual = self.get_object()
+        version = request.data.get("version")
+        if isinstance(version, bool):
+            version = None
+        try:
+            version = int(version)
+        except (TypeError, ValueError):
+            return Response(
+                {"version": ["Envía la versión visible de la ejecución."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        with transaction.atomic():
+            bloqueada = filtrar_por_scope(
+                EjecucionProceso.objects.select_for_update().select_related("etapa"),
+                request.user,
+                campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+            ).get(pk=actual.pk)
+            self.check_object_permissions(request, bloqueada)
+            if bloqueada.version != version:
+                return Response(
+                    {
+                        "code": "version_conflict",
+                        "detail": (
+                            "La ejecución cambió desde que abriste la pantalla. "
+                            "Actualiza antes de guardar nuevamente."
+                        ),
+                        "version_actual": bloqueada.version,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if not bloqueada.editable:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Una ejecución cerrada o cancelada es inmutable.")
+            serializer = self.get_serializer(
+                bloqueada, data=request.data, partial=True
+            )
+            serializer.is_valid(raise_exception=True)
+            serializer.save(version=bloqueada.version + 1)
+        return Response(serializer.data)
+
     @action(detail=False, methods=["get"], url_path="operativas")
     def operativas(self, request):
         """Bandeja liviana: solo ejecuciones que todavía requieren operación."""
@@ -906,6 +953,7 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             {
                 "id": ejecucion.id,
                 "codigo": ejecucion.codigo,
+                "version": ejecucion.version,
                 "estado": ejecucion.estado,
                 "estado_etiqueta": ejecucion.get_estado_display(),
                 "etapa_nombre": ejecucion.etapa.nombre,
@@ -1005,12 +1053,32 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def transicionar(self, request, pk=None):
+        version = request.data.get("version")
+        if isinstance(version, bool):
+            version = None
+        try:
+            version = int(version)
+        except (TypeError, ValueError):
+            return Response(
+                {"version": ["Envía la versión visible de la ejecución."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             ejecucion = transicionar_ejecucion(
                 ejecucion_id=self.get_object().pk,
                 estado_nuevo=request.data.get("estado", ""),
                 motivo=request.data.get("motivo", ""),
                 usuario=request.user,
+                version_esperada=version,
+            )
+        except ConflictoVersionEjecucion as error:
+            return Response(
+                {
+                    "code": "version_conflict",
+                    "detail": str(error),
+                    "version_actual": error.version_actual,
+                },
+                status=status.HTTP_409_CONFLICT,
             )
         except DjangoValidationError as error:
             # `.messages[0]` y no `.message`: el segundo solo existe cuando el
@@ -1029,6 +1097,8 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
         entrada.is_valid(raise_exception=True)
         datos = entrada.validated_data
         from produccion.models import Lote
+        from inventario.models import UnidadRework
+        from inventario.servicios import consumir_unidad_rework
 
         lotes = filtrar_por_scope(
             Lote.objects.all(), request.user,
@@ -1036,17 +1106,41 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
         )
         try:
             lote = lotes.get(pk=datos["lote"])
-            creada = crear_entrada_proceso(datos={
-                "ejecucion": ejecucion,
-                "lote": lote,
-                "tipo": EntradaProceso.Tipo.REPROCESO,
-                "cantidad": datos["cantidad"],
-                "unidad": "kg",
-                "motivo": datos["motivo"],
-            })
+            if datos.get("unidad_rework"):
+                unidades = filtrar_por_scope(
+                    UnidadRework.objects.all(), request.user,
+                    campo_sucursal="autorizacion__lote__sucursal_id",
+                    campo_empresa="autorizacion__lote__sucursal__empresa_id",
+                )
+                unidad = unidades.get(pk=datos["unidad_rework"])
+                if unidad.autorizacion.lote_id != lote.pk:
+                    return Response(
+                        {"unidad_rework": "La unidad no corresponde al lote indicado."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                creada = consumir_unidad_rework(
+                    unidad=unidad, ejecucion=ejecucion,
+                    cantidad=datos["cantidad"], motivo=datos["motivo"],
+                    usuario=request.user,
+                    operacion=datos.get("operacion_id") or uuid4(),
+                )
+            else:
+                creada = crear_entrada_proceso(datos={
+                    "ejecucion": ejecucion,
+                    "lote": lote,
+                    "tipo": EntradaProceso.Tipo.REPROCESO,
+                    "cantidad": datos["cantidad"],
+                    "unidad": "kg",
+                    "motivo": datos["motivo"],
+                })
         except Lote.DoesNotExist:
             return Response(
                 {"lote": "El lote indicado no existe."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except UnidadRework.DoesNotExist:
+            return Response(
+                {"unidad_rework": "La unidad física indicada no existe."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except DjangoValidationError as error:
@@ -1105,11 +1199,13 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
     def opciones_rework(self, request):
         """Rework aprobado con saldo; consulta acotada para el formulario operativo."""
         from .models import AutorizacionReproceso
+        from inventario.models import UnidadRework
 
         decimal = DecimalField(max_digits=14, decimal_places=3)
         autorizaciones = filtrar_por_scope(
             AutorizacionReproceso.objects.filter(
                 estado=AutorizacionReproceso.Estado.APROBADO,
+                unidades_fisicas__isnull=True,
             ).select_related("lote__producto").annotate(
                 consumido=Coalesce(
                     Sum(
@@ -1124,6 +1220,36 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
             campo_empresa="lote__sucursal__empresa_id",
         )
         resultado = []
+        unidades = filtrar_por_scope(
+            UnidadRework.objects.filter(
+                estado=UnidadRework.Estado.DISPONIBLE,
+                cantidad_disponible_kg__gt=0,
+                ubicacion__tipo="disponible",
+                autorizacion__estado=AutorizacionReproceso.Estado.APROBADO,
+            ).select_related("autorizacion__lote__producto", "ubicacion"),
+            request.user,
+            campo_sucursal="autorizacion__lote__sucursal_id",
+            campo_empresa="autorizacion__lote__sucursal__empresa_id",
+        )
+        for unidad in unidades:
+            autorizacion = unidad.autorizacion
+            resultado.append({
+                "id": autorizacion.id,
+                "unidad_rework_id": unidad.id,
+                "codigo_unidad": unidad.codigo,
+                "ubicacion_codigo": unidad.ubicacion.codigo,
+                "lote_id": autorizacion.lote_id,
+                "lote_codigo": autorizacion.lote.codigo_lote,
+                "producto_nombre": autorizacion.lote.producto.nombre,
+                "origen": autorizacion.origen,
+                "motivo": autorizacion.motivo,
+                "cantidad_autorizada_kg": unidad.cantidad_inicial_kg,
+                "cantidad_consumida_kg": (
+                    unidad.cantidad_inicial_kg - unidad.cantidad_disponible_kg
+                ),
+                "cantidad_disponible_kg": unidad.cantidad_disponible_kg,
+                "trazabilidad_fisica": True,
+            })
         for autorizacion in autorizaciones:
             disponible = autorizacion.cantidad_kg - autorizacion.consumido
             if disponible <= 0:
@@ -1138,6 +1264,10 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
                 "cantidad_autorizada_kg": autorizacion.cantidad_kg,
                 "cantidad_consumida_kg": autorizacion.consumido,
                 "cantidad_disponible_kg": disponible,
+                "unidad_rework_id": None,
+                "codigo_unidad": None,
+                "ubicacion_codigo": None,
+                "trazabilidad_fisica": False,
             })
         return Response(resultado)
 
@@ -1477,111 +1607,35 @@ def _flujo_completo(lote):
     """Recepción → estandarización → producción para una corrida concreta."""
     from inventario.models import DetalleDespacho
     from produccion.models import PalletProducto
-    from recepcion.models import AtribucionRecepcion, MovimientoSilo, Recepcion
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import trazabilidad_fifo_movimientos
 
     vale = lote.vale
     if vale is None:
         return None
 
-    consumos_estandarizacion = list(
-        MovimientoSilo.objects.filter(
+    consumos_estandarizacion = list(MovimientoSilo.objects.filter(
             tipo=MovimientoSilo.Tipo.SALIDA,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.pk,
-        ).select_related("silo").prefetch_related(
-            Prefetch(
-                "atribuciones_recepcion",
-                queryset=AtribucionRecepcion.objects.select_related(
-                    "recepcion__vehiculo"
-                ).order_by("orden"),
-                to_attr="atribuciones_fifo",
+        ).select_related("silo").order_by("fecha_hora", "pk"))
+    trazabilidad_recepciones = trazabilidad_fifo_movimientos(
+        consumos_estandarizacion
+    )
+    recepciones_agrupadas = {}
+    for tramo in trazabilidad_recepciones["tramos"]:
+        for recepcion in tramo["recepciones"]:
+            clave = (
+                recepcion["id"], recepcion["silo_codigo"],
+                recepcion["trazabilidad"],
             )
-        )
-    )
-
-    # Las atribuciones FIFO congeladas son la fuente primaria. Solo movimientos
-    # historicos sin atribucion recurren a candidatos temporales, y la respuesta
-    # los marca como inferidos para no presentar una suposicion como un hecho.
-    exactas = {}
-    consumos_sin_atribucion = []
-    litros_no_atribuibles = Decimal("0")
-    for consumo in consumos_estandarizacion:
-        atribuciones = consumo.atribuciones_fifo
-        if not atribuciones:
-            consumos_sin_atribucion.append(consumo)
-            continue
-        for atribucion in atribuciones:
-            if not atribucion.recepcion_id:
-                litros_no_atribuibles += atribucion.litros
-                continue
-            clave = (atribucion.recepcion_id, consumo.silo_id)
-            if clave not in exactas:
-                exactas[clave] = {
-                    "recepcion": atribucion.recepcion,
-                    "silo_codigo": consumo.silo.codigo,
-                    "litros_atribuidos": Decimal("0"),
-                }
-            exactas[clave]["litros_atribuidos"] += atribucion.litros
-
-    filtro_ingresos = Q(pk__in=[])
-    for consumo in consumos_sin_atribucion:
-        filtro_ingresos |= Q(
-            silo_id=consumo.silo_id, fecha_hora__lte=consumo.fecha_hora
-        )
-    ingresos = list(
-        MovimientoSilo.objects.filter(
-            filtro_ingresos,
-            tipo=MovimientoSilo.Tipo.INGRESO,
-            origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
-        ).only("silo_id", "origen_id", "fecha_hora")
-    ) if consumos_sin_atribucion else []
-    recepciones_por_orden = list(
-        Recepcion.objects.filter(
-            pk__in={ingreso.origen_id for ingreso in ingresos}
-        ).select_related("vehiculo")
-    )
-
-    recepciones = [
-        {
-            "id": dato["recepcion"].pk,
-            "fecha": dato["recepcion"].fecha,
-            "guia": dato["recepcion"].guia,
-            "litros": dato["recepcion"].litros,
-            "litros_atribuidos": dato["litros_atribuidos"],
-            "vehiculo": (
-                dato["recepcion"].vehiculo.placa
-                if dato["recepcion"].vehiculo else None
-            ),
-            "silo_codigo": dato["silo_codigo"],
-            "trazabilidad": "confirmada",
-        }
-        for dato in exactas.values()
-    ]
-    vistos = set(exactas)
-    for consumo in consumos_sin_atribucion:
-        ids = {
-            ingreso.origen_id
-            for ingreso in ingresos
-            if ingreso.silo_id == consumo.silo_id
-            and ingreso.fecha_hora <= consumo.fecha_hora
-        }
-        for recepcion in recepciones_por_orden:
-            if recepcion.pk not in ids:
-                continue
-            clave = (recepcion.pk, consumo.silo_id)
-            if clave in vistos:
-                continue
-            vistos.add(clave)
-            recepciones.append({
-                "id": recepcion.pk,
-                "fecha": recepcion.fecha,
-                "guia": recepcion.guia,
-                "litros": recepcion.litros,
-                "litros_atribuidos": None,
-                "vehiculo": recepcion.vehiculo.placa if recepcion.vehiculo else None,
-                "silo_codigo": consumo.silo.codigo,
-                "trazabilidad": "inferida",
-            })
+            if clave not in recepciones_agrupadas:
+                recepciones_agrupadas[clave] = dict(recepcion)
+            elif recepcion["litros_atribuidos"] is not None:
+                recepciones_agrupadas[clave]["litros_atribuidos"] += (
+                    recepcion["litros_atribuidos"]
+                )
+    recepciones = list(recepciones_agrupadas.values())
 
     ejecucion_est = getattr(vale, "ejecucion", None)
     ejecucion_prod = lote.ejecucion
@@ -1671,21 +1725,10 @@ def _flujo_completo(lote):
     agregar_ejecucion(ejecucion_est)
     return {
         "recepciones": recepciones,
-        "nota_recepciones": (
-            "Las cantidades confirmadas provienen de las atribuciones FIFO "
-            "guardadas al retirar leche del silo."
-            if not consumos_sin_atribucion and litros_no_atribuibles == 0
-            else (
-                "Las filas inferidas pertenecen a movimientos historicos sin "
-                "atribucion FIFO; no deben interpretarse como una relacion exacta."
-                if consumos_sin_atribucion
-                else (
-                    "Parte del volumen proviene de saldo historico sin una "
-                    "recepcion atribuible."
-                )
-            )
-        ),
-        "litros_no_atribuibles": litros_no_atribuibles,
+        "nota_recepciones": trazabilidad_recepciones["nota"],
+        "litros_no_atribuibles": trazabilidad_recepciones[
+            "litros_no_atribuibles"
+        ],
         "estandarizacion": {
             "vale_id": vale.pk,
             "vale_codigo": vale.codigo,

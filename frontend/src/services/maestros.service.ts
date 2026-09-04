@@ -144,6 +144,30 @@ export interface Equipo {
   activo: boolean;
 }
 
+export interface FormatoEnvasado {
+  id: number;
+  producto: number;
+  producto_nombre: string;
+  codigo: string;
+  nombre: string;
+  kg_neto: string;
+  unidades_maximas_pallet: number;
+  maximo_pallet_kg: string;
+  equipos: number[];
+  equipos_detalle: Array<{ id: number; codigo: string; nombre: string }>;
+  activo: boolean;
+}
+
+export interface FormatoEnvasadoEditable {
+  producto: number;
+  codigo: string;
+  nombre: string;
+  kg_neto: number;
+  unidades_maximas_pallet: number;
+  equipos: number[];
+  activo: boolean;
+}
+
 
 export interface Silo {
   id: number;
@@ -258,6 +282,23 @@ export async function editarEquipo(
   const { data } = await api.patch<Equipo>(`maestros/equipos/${id}/`, cambios);
 
   return data;
+}
+
+export async function obtenerFormatosEnvasado(): Promise<FormatoEnvasado[]> {
+  const { data } = await api.get<Pagina<FormatoEnvasado>>(
+    "maestros/formatos-envasado/",
+  );
+  return data.results;
+}
+
+export async function guardarFormatoEnvasado(
+  id: number | null,
+  datos: FormatoEnvasadoEditable,
+): Promise<FormatoEnvasado> {
+  const respuesta = id === null
+    ? await api.post<FormatoEnvasado>("maestros/formatos-envasado/", datos)
+    : await api.patch<FormatoEnvasado>(`maestros/formatos-envasado/${id}/`, datos);
+  return respuesta.data;
 }
 
 

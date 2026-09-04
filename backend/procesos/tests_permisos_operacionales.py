@@ -136,11 +136,66 @@ class PermisosOperacionalesPorEtapaTests(TestCase):
         )
         permitida = self._cliente(self.secado).patch(
             f"/api/procesos/ejecuciones/{ejecucion.pk}/",
-            {"observaciones": "Control del turno"}, format="json",
+            {"observaciones": "Control del turno", "version": ejecucion.version},
+            format="json",
         )
 
         self.assertEqual(denegada.status_code, 403)
         self.assertEqual(permitida.status_code, 200, permitida.data)
+
+    def test_patch_rechaza_version_obsoleta_sin_pisar_el_cambio_anterior(self):
+        ejecucion = EjecucionProceso.objects.create(
+            sucursal=self.sucursal, codigo="EJ-SEC-VERSION-PATCH",
+            etapa=self.etapa_secado, equipo=self.torre, responsable=self.secado,
+        )
+        cliente = self._cliente(self.secado)
+
+        primera = cliente.patch(
+            f"/api/procesos/ejecuciones/{ejecucion.pk}/",
+            {"observaciones": "Dato del primer operador", "version": 1},
+            format="json",
+        )
+        obsoleta = cliente.patch(
+            f"/api/procesos/ejecuciones/{ejecucion.pk}/",
+            {"observaciones": "Dato atrasado", "version": 1},
+            format="json",
+        )
+
+        ejecucion.refresh_from_db()
+        self.assertEqual(primera.status_code, 200, primera.data)
+        self.assertEqual(primera.data["version"], 2)
+        self.assertEqual(obsoleta.status_code, 409, obsoleta.data)
+        self.assertEqual(obsoleta.data["code"], "version_conflict")
+        self.assertEqual(obsoleta.data["version_actual"], 2)
+        self.assertEqual(ejecucion.observaciones, "Dato del primer operador")
+
+    def test_transicion_exige_version_y_rechaza_una_obsoleta(self):
+        ejecucion = EjecucionProceso.objects.create(
+            sucursal=self.sucursal, codigo="EJ-SEC-VERSION-ESTADO",
+            etapa=self.etapa_secado, equipo=self.torre, responsable=self.secado,
+            estado=EjecucionProceso.Estado.PREPARACION,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion, lote=self.lote_origen, cantidad=100, unidad="kg"
+        )
+        cliente = self._cliente(self.secado)
+        url = f"/api/procesos/ejecuciones/{ejecucion.pk}/transicionar/"
+
+        sin_version = cliente.post(url, {"estado": "ejecucion"}, format="json")
+        correcta = cliente.post(
+            url, {"estado": "ejecucion", "version": 1}, format="json"
+        )
+        obsoleta = cliente.post(
+            url, {"estado": "pausada", "version": 1}, format="json"
+        )
+
+        ejecucion.refresh_from_db()
+        self.assertEqual(sin_version.status_code, 400, sin_version.data)
+        self.assertEqual(correcta.status_code, 200, correcta.data)
+        self.assertEqual(correcta.data["version"], 2)
+        self.assertEqual(obsoleta.status_code, 409, obsoleta.data)
+        self.assertEqual(obsoleta.data["code"], "version_conflict")
+        self.assertEqual(ejecucion.estado, EjecucionProceso.Estado.EJECUCION)
 
     def test_salida_explicita_respeta_permiso_y_balance(self):
         ejecucion = EjecucionProceso.objects.create(

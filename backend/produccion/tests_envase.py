@@ -10,7 +10,8 @@ from rest_framework.test import APIClient
 
 from calidad.models import LiberacionProceso
 from maestros.models import (
-    Equipo, Especificacion, Mandante, Producto, Receta, RecetaComponente,
+    Equipo, Especificacion, FormatoEnvasado, Mandante, Producto, Receta,
+    RecetaComponente,
 )
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from inventario.models import (
@@ -54,6 +55,49 @@ class EnvasePalletTests(TestCase):
             sucursal=self.planta, codigo="rovema-test", nombre="Rovema test",
             tipo=Equipo.Tipo.ENVASADORA,
         )
+        self.formato = FormatoEnvasado.objects.create(
+            producto=self.producto, codigo="saco-25kg", nombre="Saco 25 kg",
+            kg_neto=25, unidades_maximas_pallet=20,
+        )
+        self.formato.equipos.add(self.envasadora)
+        bolsa = Insumo.objects.create(
+            empresa=empresa, codigo="ENV-BASE-BOLSA", nombre="Bolsa de prueba",
+            categoria=Insumo.Categoria.EMPAQUE, area=PerfilUsuario.Area.ENVASE,
+            unidad=Insumo.Unidad.UN, requiere_calidad=False,
+        )
+        base = Insumo.objects.create(
+            empresa=empresa, codigo="ENV-BASE-PALLET", nombre="Pallet de prueba",
+            categoria=Insumo.Categoria.EMPAQUE, area=PerfilUsuario.Area.ENVASE,
+            unidad=Insumo.Unidad.UN, requiere_calidad=False,
+        )
+        receta = Receta.objects.create(
+            producto=self.producto, version=1, cantidad_base=Decimal("500"),
+            vigente_desde=date(2026, 1, 1), fuente="Receta base de pruebas de Envase",
+        )
+        RecetaComponente.objects.create(
+            receta=receta, insumo=bolsa, cantidad=Decimal("20"), unidad="un",
+            fase=RecetaComponente.Fase.ENVASADO,
+        )
+        RecetaComponente.objects.create(
+            receta=receta, insumo=base, cantidad=Decimal("1"), unidad="un",
+            fase=RecetaComponente.Fase.ENVASADO,
+        )
+        bodega = Bodega.objects.create(
+            sucursal=self.planta, codigo="B-BASE-ENV", nombre="Envases de prueba",
+            area=PerfilUsuario.Area.BODEGA,
+        )
+        disponible = Ubicacion.objects.create(
+            bodega=bodega, codigo="BASE-DISP", tipo=Ubicacion.Tipo.DISPONIBLE,
+        )
+        for insumo, cantidad in ((bolsa, 1000), (base, 100)):
+            lote_material = LoteInventario.objects.create(
+                sucursal=self.planta, insumo=insumo, codigo=f"BASE-{insumo.codigo}",
+                estado_calidad=LoteInventario.EstadoCalidad.NO_REQUIERE,
+            )
+            registrar_entrada(
+                lote=lote_material, ubicacion=disponible, cantidad=cantidad,
+                usuario=self.usuario, documento_tipo="test", documento_id=insumo.pk,
+            )
 
     def registrar(self, *, clave=None, pallets=None):
         inicio = timezone.now() - timedelta(hours=1)
@@ -107,6 +151,47 @@ class EnvasePalletTests(TestCase):
             self.registrar(pallets=[
                 {"codigo": "PAL-EXCESO", "unidades": 41, "kg_neto": "1025"}
             ])
+
+        self.assertEqual(RegistroEnvase.objects.count(), 0)
+        self.assertEqual(PalletProducto.objects.count(), 0)
+
+    def test_formato_limita_unidades_y_equipo_autorizado(self):
+        otra = Equipo.objects.create(
+            sucursal=self.planta, codigo="otra-env", nombre="Otra envasadora",
+            tipo=Equipo.Tipo.ENVASADORA,
+        )
+        inicio = timezone.now() - timedelta(hours=1)
+        with self.assertRaisesMessage(ValidationError, "no está autorizado"):
+            registrar_envasado(
+                lote_id=self.lote.pk, equipo=otra, formato=self.formato,
+                inicio=inicio, termino=timezone.now(), usuario=self.usuario,
+                pallets=[{"codigo": "PAL-EQUIPO", "unidades": 20, "kg_neto": 500}],
+            )
+        with self.assertRaisesMessage(ValidationError, "máximo 20 unidades"):
+            registrar_envasado(
+                lote_id=self.lote.pk, equipo=self.envasadora, formato=self.formato,
+                inicio=inicio, termino=timezone.now(), usuario=self.usuario,
+                pallets=[{"codigo": "PAL-MAX", "unidades": 21, "kg_neto": 525}],
+            )
+
+        self.assertEqual(RegistroEnvase.objects.count(), 0)
+
+    def test_no_crea_pallet_si_falta_receta_de_materiales_de_envase(self):
+        Receta.objects.filter(producto=self.producto).delete()
+
+        with self.assertRaisesMessage(ValidationError, "receta de Envasado"):
+            self.registrar()
+
+        self.assertEqual(RegistroEnvase.objects.count(), 0)
+        self.assertEqual(PalletProducto.objects.count(), 0)
+
+    def test_no_crea_pallet_si_el_material_de_envase_no_tiene_stock(self):
+        Existencia.objects.filter(
+            lote__insumo__codigo="ENV-BASE-BOLSA"
+        ).update(cantidad_fisica=0, cantidad_reservada=0)
+
+        with self.assertRaisesMessage(ValidationError, "Stock insuficiente"):
+            self.registrar()
 
         self.assertEqual(RegistroEnvase.objects.count(), 0)
         self.assertEqual(PalletProducto.objects.count(), 0)
@@ -192,6 +277,85 @@ class EnvasePalletTests(TestCase):
         self.assertEqual(respuesta.data[0]["lote_id"], self.lote.pk)
         self.assertEqual(respuesta.data[0]["formato"], Producto.Formato.SACO_25KG)
         self.assertEqual(respuesta.data[0]["formato_kg"], Decimal("25"))
+        self.assertEqual(respuesta.data[0]["formato_id"], self.formato.pk)
+        self.assertEqual(
+            respuesta.data[0]["equipos"][0]["id"], self.envasadora.pk
+        )
+        self.assertEqual(respuesta.data[0]["unidades_disponibles"], 40)
+        self.assertEqual(respuesta.data[0]["cantidad_envasable"], Decimal("1000"))
+        self.assertEqual(respuesta.data[0]["remanente_kg"], Decimal("0"))
+        self.assertTrue(respuesta.data[0]["receta_envase_completa"])
+        self.assertEqual(len(respuesta.data[0]["materiales_envase"]), 2)
+        self.assertTrue(all(
+            item["stock_disponible"] > 0
+            for item in respuesta.data[0]["materiales_envase"]
+        ))
+        self.assertTrue(respuesta.data[0]["puede_envasar"])
+
+        bandeja = cliente.get("/api/produccion/envases/bandeja/")
+        self.assertEqual(bandeja.status_code, 200, bandeja.data)
+        self.assertEqual(len(bandeja.data["materiales"]), 1)
+        self.assertEqual(bandeja.data["materiales"][0]["pallets_total"], 0)
+        self.assertEqual(bandeja.data["registros_recientes"], [])
+
+        existencia_bolsa = Existencia.objects.get(
+            lote__insumo__codigo="ENV-BASE-BOLSA"
+        )
+        existencia_bolsa.cantidad_fisica = 1
+        existencia_bolsa.save(update_fields=["cantidad_fisica"])
+
+        limitada = cliente.get("/api/produccion/envases/materiales-habilitados/")
+
+        self.assertEqual(limitada.status_code, 200, limitada.data)
+        self.assertEqual(limitada.data[0]["unidades_por_producto"], 40)
+        self.assertEqual(limitada.data[0]["unidades_disponibles"], 1)
+        self.assertEqual(limitada.data[0]["cantidad_envasable"], Decimal("25"))
+        self.assertEqual(limitada.data[0]["pendiente_materiales_kg"], Decimal("975"))
+        self.assertIn("espera de materiales", limitada.data[0]["advertencia_materiales"])
+
+        existencia_bolsa.cantidad_fisica = 1000
+        existencia_bolsa.save(update_fields=["cantidad_fisica"])
+
+        self.producto.formato = Producto.Formato.CAJA_20KG
+        self.producto.save(update_fields=["formato"])
+        self.formato.nombre = "Caja 20 kg"
+        self.formato.codigo = "caja-20kg"
+        self.formato.kg_neto = 20
+        self.formato.unidades_maximas_pallet = 25
+        self.formato.save()
+        self.lote.kg_producidos = Decimal("31")
+        self.lote.save(update_fields=["kg_producidos"])
+        salida.cantidad = Decimal("31")
+        salida.save(update_fields=["cantidad"])
+
+        respuesta = cliente.get("/api/produccion/envases/materiales-habilitados/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data[0]["unidades_disponibles"], 1)
+        self.assertEqual(respuesta.data[0]["cantidad_envasable"], Decimal("20"))
+        self.assertEqual(respuesta.data[0]["remanente_kg"], Decimal("11"))
+        self.assertTrue(respuesta.data[0]["puede_envasar"])
+
+        inicio = timezone.now() - timedelta(hours=1)
+        registrar_envasado(
+            lote_id=self.lote.pk,
+            equipo=self.envasadora,
+            formato_kg="20",
+            inicio=inicio,
+            termino=timezone.now(),
+            usuario=self.usuario,
+            pallets=[
+                {"codigo": "PAL-MANT-20", "unidades": 1, "kg_neto": "20"}
+            ],
+        )
+
+        respuesta = cliente.get("/api/produccion/envases/materiales-habilitados/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data[0]["unidades_disponibles"], 0)
+        self.assertEqual(respuesta.data[0]["cantidad_disponible"], Decimal("11"))
+        self.assertFalse(respuesta.data[0]["puede_envasar"])
+        self.assertIn("menos que una unidad completa", respuesta.data[0]["motivo_bloqueo"])
 
     def test_secado_exige_liberacion_intermedia_antes_de_envasar(self):
         proceso = Proceso.objects.create(codigo="ruta-sec-env", nombre="Polvo")
@@ -217,6 +381,7 @@ class EnvasePalletTests(TestCase):
 
     def test_simulacion_pallet_25kg_consume_envases_y_respeta_500kg(self):
         """20 sacos + 1 pallet físico producen exactamente un pallet de 500 kg."""
+        Receta.objects.filter(producto=self.producto).delete()
         bolsa = Insumo.objects.create(
             empresa=self.planta.empresa, codigo="ENV-SACO-25", nombre="Saco 25 kg",
             categoria=Insumo.Categoria.EMPAQUE, area=PerfilUsuario.Area.ENVASE,
@@ -265,7 +430,10 @@ class EnvasePalletTests(TestCase):
         )
         self.assertEqual(consumo_proceso.fase, ConsumoLoteProduccion.Fase.PROCESO)
         self.assertEqual(movimientos_proceso, [])
-        self.assertTrue(all(e.cantidad_fisica > 0 for e in Existencia.objects.all()))
+        existencias_simulacion = Existencia.objects.filter(
+            lote__insumo__in=[bolsa, base]
+        )
+        self.assertTrue(all(e.cantidad_fisica > 0 for e in existencias_simulacion))
 
         registro = self.registrar(pallets=[
             {"codigo": "PAL-SIM-25KG", "unidades": 20, "kg_neto": "500"}
@@ -283,5 +451,8 @@ class EnvasePalletTests(TestCase):
         self.assertEqual(
             sorted(m.cantidad for m in movimientos), [Decimal("1.000"), Decimal("20.000")]
         )
-        self.assertTrue(all(e.cantidad_fisica == 0 for e in Existencia.objects.all()))
+        self.assertTrue(all(
+            e.cantidad_fisica == 0
+            for e in Existencia.objects.filter(lote__insumo__in=[bolsa, base])
+        ))
         self.assertEqual(MovimientoInventario.objects.filter(tipo="consumo").count(), 2)

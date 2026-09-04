@@ -15,6 +15,7 @@ from .models import (
     DocumentoLiberacion,
     Equipo,
     Especificacion,
+    FormatoEnvasado,
     Mandante,
     Producto,
     Receta,
@@ -26,6 +27,7 @@ from .serializers import (
     DocumentoLiberacionSerializer,
     EquipoSerializer,
     EspecificacionSerializer,
+    FormatoEnvasadoSerializer,
     MandanteSerializer,
     ParametroSerializer,
     ProductoSerializer,
@@ -179,6 +181,20 @@ class EquipoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [EscribeAdministracion]
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
+
+
+class FormatoEnvasadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+    queryset = FormatoEnvasado.objects.select_related("producto").prefetch_related(
+        "equipos"
+    )
+    serializer_class = FormatoEnvasadoSerializer
+    permission_classes = [EscribeAdministracion]
+    tenant_lookup_empresa = "producto__mandante__empresa_id"
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        producto = self.request.query_params.get("producto")
+        return consulta.filter(producto_id=producto) if producto else consulta
 
 
 class SiloViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):

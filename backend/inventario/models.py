@@ -1105,3 +1105,129 @@ class MovimientoProductoTerminado(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Los movimientos de producto terminado son inmutables.")
+
+
+class UnidadRework(models.Model):
+    """Existencia física segregada de una autorización de reproceso.
+
+    La autorización sigue perteneciendo a Calidad. Esta fila responde otra
+    pregunta: cuánto material hay realmente y dónde está.
+    """
+
+    class Estado(models.TextChoices):
+        PENDIENTE_UBICACION = "pendiente_ubicacion", "Aprobado; pendiente de Bodega"
+        DISPONIBLE = "disponible", "Disponible para producción"
+        BLOQUEADO = "bloqueado", "Bloqueado"
+        CONSUMIDO = "consumido", "Consumido"
+        DESTRUIDO = "destruido", "Destruido"
+
+    autorizacion = models.ForeignKey(
+        "procesos.AutorizacionReproceso", on_delete=models.PROTECT,
+        related_name="unidades_fisicas",
+    )
+    codigo = models.CharField(max_length=80, unique=True)
+    pallet_origen = models.ForeignKey(
+        "produccion.PalletProducto", on_delete=models.PROTECT,
+        related_name="unidades_rework", null=True, blank=True,
+    )
+    ubicacion = models.ForeignKey(
+        Ubicacion, on_delete=models.PROTECT, related_name="unidades_rework"
+    )
+    estado = models.CharField(
+        max_length=24, choices=Estado.choices, db_index=True,
+        default=Estado.BLOQUEADO,
+    )
+    cantidad_inicial_kg = models.DecimalField(max_digits=14, decimal_places=3)
+    cantidad_disponible_kg = models.DecimalField(max_digits=14, decimal_places=3)
+    vencimiento = models.DateField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-id"]
+        indexes = [
+            models.Index(fields=["estado", "ubicacion"], name="rw_estado_ubic_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cantidad_inicial_kg__gt=0),
+                name="rework_cantidad_inicial_positiva",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad_disponible_kg__gte=0),
+                name="rework_disponible_no_negativo",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad_disponible_kg__lte=models.F("cantidad_inicial_kg")),
+                name="rework_disponible_no_supera_inicial",
+            ),
+        ]
+
+    @property
+    def utilizable(self):
+        return (
+            self.estado == self.Estado.DISPONIBLE
+            and self.ubicacion.tipo == Ubicacion.Tipo.DISPONIBLE
+            and self.cantidad_disponible_kg > 0
+            and (self.vencimiento is None or self.vencimiento >= timezone.localdate())
+        )
+
+
+class MovimientoRework(models.Model):
+    """Libro inmutable de segregación, traslado, consumo y destrucción."""
+
+    class Tipo(models.TextChoices):
+        SEGREGACION = "segregacion", "Segregación"
+        HABILITACION = "habilitacion", "Habilitación por Bodega"
+        TRASLADO = "traslado", "Traslado"
+        BLOQUEO = "bloqueo", "Bloqueo"
+        CONSUMO = "consumo", "Consumo en producción"
+        DESTRUCCION = "destruccion", "Destrucción"
+        AJUSTE = "ajuste", "Ajuste identificado"
+
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    unidad = models.ForeignKey(
+        UnidadRework, on_delete=models.PROTECT, related_name="movimientos"
+    )
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    cantidad_kg = models.DecimalField(max_digits=14, decimal_places=3)
+    origen = models.ForeignKey(
+        Ubicacion, on_delete=models.PROTECT, related_name="rework_salidas",
+        null=True, blank=True,
+    )
+    destino = models.ForeignKey(
+        Ubicacion, on_delete=models.PROTECT, related_name="rework_entradas",
+        null=True, blank=True,
+    )
+    entrada_proceso = models.OneToOneField(
+        "procesos.EntradaProceso", on_delete=models.PROTECT,
+        related_name="movimiento_rework", null=True, blank=True,
+    )
+    motivo = models.CharField(max_length=250)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="movimientos_rework",
+    )
+    registrado_en = models.DateTimeField(auto_now_add=True)
+    saldo_anterior_kg = models.DecimalField(max_digits=14, decimal_places=3)
+    saldo_posterior_kg = models.DecimalField(max_digits=14, decimal_places=3)
+
+    class Meta:
+        ordering = ["-registrado_en", "-id"]
+        indexes = [
+            models.Index(fields=["unidad", "-registrado_en"], name="rw_mov_unidad_fecha_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cantidad_kg__gt=0),
+                name="movimiento_rework_cantidad_positiva",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Los movimientos de rework son inmutables.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Los movimientos de rework son inmutables.")

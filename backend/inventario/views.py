@@ -30,6 +30,7 @@ from .models import (
     OrdenCompra, PlantillaInspeccion, Proveedor, RecepcionCompra,
     SolicitudCompra, SolicitudMaterial, Ubicacion,
     ClienteDespacho, Despacho, ExistenciaProductoTerminado, MovimientoProductoTerminado,
+    MovimientoRework, UnidadRework,
 )
 from .serializers import (
     AdjuntoSerializer, AjusteInventarioSerializer, AlertaSerializer, BodegaSerializer, CicloCIPSerializer,
@@ -43,6 +44,7 @@ from .serializers import (
     SolicitudMaterialSerializer, UbicacionSerializer,
     ClienteDespachoSerializer, DespachoSerializer,
     ExistenciaProductoTerminadoSerializer, MovimientoProductoTerminadoSerializer,
+    MovimientoReworkSerializer, UnidadReworkSerializer,
 )
 from .bloqueo import YaEnCurso, solo_uno
 from .servicios import (
@@ -53,6 +55,7 @@ from .servicios import (
     ejecutar_mrp_semana, encolar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
     ingresar_pallet, transferir_pallet, autorizar_despacho, ejecutar_despacho,
+    habilitar_rework, transferir_rework,
 )
 
 
@@ -414,6 +417,66 @@ class MovimientoProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyM
     tenant_lookup_empresa = "pallet__envase__lote__sucursal__empresa_id"
     queryset = MovimientoProductoTerminado.objects.select_related("pallet", "origen", "destino", "despacho")
     serializer_class = MovimientoProductoTerminadoSerializer
+    permission_classes = [EscribeBodega]
+
+
+class UnidadReworkViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    """Existencia segregada; Calidad decide y Bodega controla su ubicación."""
+
+    tenant_lookup_sucursal = "autorizacion__lote__sucursal_id"
+    tenant_lookup_empresa = "autorizacion__lote__sucursal__empresa_id"
+    queryset = UnidadRework.objects.select_related(
+        "autorizacion__lote__producto", "ubicacion__bodega", "pallet_origen"
+    )
+    serializer_class = UnidadReworkSerializer
+    permission_classes = [EscribeBodega]
+
+    @action(detail=True, methods=["post"], url_path="habilitar")
+    def habilitar(self, request, pk=None):
+        try:
+            destino = _tenant_get(
+                Ubicacion, request.user, request.data.get("destino"),
+                sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id",
+            )
+            unidad = habilitar_rework(
+                self.get_object(), destino, request.user,
+                operacion=request.data.get("operacion_id") or None,
+            )
+            return Response(self.get_serializer(unidad).data)
+        except (DjangoValidationError, ValueError, TypeError) as error:
+            detalle = error.message_dict if hasattr(error, "message_dict") else str(error)
+            return Response({"detail": detalle}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"], url_path="trasladar")
+    def trasladar(self, request, pk=None):
+        motivo = str(request.data.get("motivo", "")).strip()
+        if not motivo:
+            return Response(
+                {"motivo": ["Indica el motivo del traslado."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            destino = _tenant_get(
+                Ubicacion, request.user, request.data.get("destino"),
+                sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id",
+            )
+            unidad = transferir_rework(
+                self.get_object(), destino, request.user, motivo=motivo,
+                operacion=request.data.get("operacion_id") or None,
+            )
+            return Response(self.get_serializer(unidad).data)
+        except (DjangoValidationError, ValueError, TypeError) as error:
+            detalle = error.message_dict if hasattr(error, "message_dict") else str(error)
+            return Response({"detail": detalle}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MovimientoReworkViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+    tenant_lookup_sucursal = "unidad__autorizacion__lote__sucursal_id"
+    tenant_lookup_empresa = "unidad__autorizacion__lote__sucursal__empresa_id"
+    queryset = MovimientoRework.objects.select_related(
+        "unidad__autorizacion__lote", "origen", "destino", "registrado_por"
+    )
+    serializer_class = MovimientoReworkSerializer
     permission_classes = [EscribeBodega]
 
 

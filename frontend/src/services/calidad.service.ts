@@ -156,6 +156,15 @@ export interface LoteResumen {
   estado: string;
 }
 
+export interface ResumenEnvasado {
+  kg_producidos: number | null;
+  kg_envasados: number;
+  kg_excedente_dispuesto: number;
+  kg_sin_disposicion: number;
+  requiere_disposicion: boolean;
+  completo: boolean;
+}
+
 
 export interface FilaExpediente {
   lote: LoteResumen;
@@ -165,6 +174,7 @@ export interface FilaExpediente {
   permitido: boolean;
   via_concesion: boolean;
   bloqueos: string[];
+  envasado: ResumenEnvasado | null;
   rework: {
     id: number;
     origen: string;
@@ -262,6 +272,7 @@ export interface Expediente {
     calidad: ResultadoCalidad | null;
     avance: (Avance & { detalle: EstadoDocumento[] }) | null;
   };
+  envasado: ResumenEnvasado | null;
   /* Por id de documento. */
   discrepancias: Record<string, Discrepancia[]>;
   prellenado: Record<string, Record<string, unknown>>;

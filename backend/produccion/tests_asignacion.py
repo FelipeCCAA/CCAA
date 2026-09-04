@@ -4,8 +4,8 @@ Pruebas de la asignación de leche a un lote y de su trazabilidad.
 Aquí empieza la trazabilidad real: qué leche, de qué estanques, entró a este
 lote. Lo que protegen estas pruebas es la honestidad de esa respuesta —que el
 libro mayor registre lo que se tomó y no lo que un cálculo supone, y que las
-recepciones se devuelvan como conjunto de candidatas y no como una cadena que
-no existe (MODELO_DATOS.md §2.5).
+recepciones se devuelvan con las cantidades FIFO efectivamente atribuidas. Los
+datos históricos sin atribución se identifican expresamente como inferidos.
 """
 
 from datetime import date, datetime
@@ -24,7 +24,7 @@ from maestros.models import (
     RecetaComponente,
     Silo,
 )
-from recepcion.models import MovimientoSilo, Recepcion
+from recepcion.models import AtribucionRecepcion, MovimientoSilo, Recepcion
 from usuarios.models import PerfilUsuario, Rol
 
 from .models import Lote
@@ -342,10 +342,7 @@ class GuardasDeAsignacionTests(BaseAsignacion):
 
 
 class TrazabilidadTests(BaseAsignacion):
-    """
-    La respuesta honesta es un conjunto de recepciones candidatas, no una
-    cadena: dentro del silo la leche ya está mezclada.
-    """
+    """La composición congelada de cada retiro es la trazabilidad primaria."""
 
     def _recepcion(self, silo, litros, dia, hora=8):
         recepcion = Recepcion.objects.create(
@@ -421,30 +418,52 @@ class TrazabilidadTests(BaseAsignacion):
         self.assertIn(antes.id, ids)
         self.assertNotIn(despues.id, ids)
 
-    def test_sin_declarar_la_hora_la_asignacion_es_de_ahora(self):
-        """
-        Cargar una asignación con retraso y sin decir cuándo ocurrió ensancha
-        el conjunto de candidatas: entra toda la leche que llegó entretanto.
-        Es una consecuencia real de la carga tardía, no un fallo.
-        """
-        self._recepcion(self.silo_a, 50000, 15)
+    def test_fifo_no_muestra_una_recepcion_que_no_fue_consumida(self):
+        primera = self._recepcion(self.silo_a, 50000, 15)
         tardia = self._recepcion(self.silo_a, 70000, 20)
 
         self._asignar([{"silo": self.silo_a.id, "litros": 40000}])
 
         ids = {r["id"] for r in self._trazabilidad()["tramos"][0]["recepciones"]}
 
-        self.assertIn(tardia.id, ids)
+        self.assertIn(primera.id, ids)
+        self.assertNotIn(tardia.id, ids)
+        origen = self._trazabilidad()["tramos"][0]["recepciones"][0]
+        self.assertEqual(origen["litros_atribuidos"], 40000)
+        self.assertEqual(origen["trazabilidad"], "confirmada")
 
     def test_un_lote_sin_asignacion_no_tiene_trazabilidad(self):
         self.assertEqual(self._trazabilidad()["tramos"], [])
 
-    def test_la_respuesta_advierte_que_son_candidatas(self):
-        """Sin la nota, la lista se lee como una cadena de origen única."""
+    def test_la_respuesta_explica_que_fifo_es_confirmado(self):
         self._recepcion(self.silo_a, 50000, 15)
         self._asignar([{"silo": self.silo_a.id, "litros": 40000}])
 
-        self.assertIn("candidatas", self._trazabilidad()["nota"])
+        self.assertIn("confirmadas", self._trazabilidad()["nota"])
+
+    def test_solo_el_movimiento_historico_sin_atribucion_es_inferido(self):
+        primera = self._recepcion(self.silo_a, 50000, 15)
+        segunda = self._recepcion(self.silo_a, 70000, 20)
+        self._asignar([{"silo": self.silo_a.id, "litros": 40000}])
+        movimiento = MovimientoSilo.objects.get(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=self.lote.pk,
+        )
+        AtribucionRecepcion.objects.filter(movimiento=movimiento).delete()
+
+        trazabilidad = self._trazabilidad()
+        origenes = trazabilidad["tramos"][0]["recepciones"]
+
+        self.assertEqual(
+            {origen["id"] for origen in origenes}, {primera.pk, segunda.pk}
+        )
+        self.assertTrue(all(
+            origen["trazabilidad"] == "inferida" for origen in origenes
+        ))
+        self.assertTrue(all(
+            origen["litros_atribuidos"] is None for origen in origenes
+        ))
+        self.assertIn("históricos", trazabilidad["nota"])
 
     def test_los_ajustes_de_silo_no_son_recepciones(self):
         self._recepcion(self.silo_a, 50000, 15)

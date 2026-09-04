@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageStat
 import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import StatusBadge from "../../components/ui/StatusBadge";
 import { iniciarCondensacion, iniciarMantequilla, obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type Genealogia, type RutaProducto } from "../../services/procesos.service";
-import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
+import { esConflictoVersion, esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { puedeEscribir } from "../../services/sesion";
 import ArbolGenealogia from "./ArbolGenealogia";
 import CierreCondensacion from "./CierreCondensacion";
@@ -76,18 +76,18 @@ export default function Procesos() {
     }
   };
 
-  const moverEjecucion = async (id: number) => {
+  const moverEjecucion = async (ejecucion: EjecucionOperativa) => {
     if (accionando !== null) return;
-    setAccionando(id);
+    setAccionando(ejecucion.id);
     setError("");
     try {
-      await transicionarEjecucion(id, "ejecucion");
+      await transicionarEjecucion(ejecucion.id, "ejecucion", ejecucion.version);
       if (!await refrescarEjecuciones()) {
         setError("La operación se guardó, pero no se pudo actualizar la disponibilidad. Usa actualizar antes de otra acción.");
       }
     } catch (errorPeticion: unknown) {
       setError(mensajeErrorProceso(errorPeticion, "No se pudo iniciar la ejecución."));
-      if (esErrorDeEquipo(errorPeticion)) {
+      if (esErrorDeEquipo(errorPeticion) || esConflictoVersion(errorPeticion)) {
         await refrescarEjecuciones();
       }
     } finally {
@@ -261,8 +261,8 @@ export default function Procesos() {
                   <p className="mt-2 text-sm text-slate-600">
                     {genealogia.flujo.recepciones.length} origen(es) de recepción
                   </p>
-                  <ul className="mt-2 space-y-1 text-xs text-slate-600">
-                    {genealogia.flujo.recepciones.slice(0, 4).map((item) => (
+                  <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-slate-600">
+                    {genealogia.flujo.recepciones.map((item) => (
                       <li key={`${item.id}-${item.silo_codigo}`}>
                         {item.fecha} · guía {item.guia || "—"} · {item.silo_codigo}
                         {item.litros_atribuidos !== null && ` · ${Number(item.litros_atribuidos).toLocaleString("es-CL")} L atribuidos`}
@@ -345,7 +345,7 @@ export default function Procesos() {
         <section>
           <h2 className="mb-1 text-xl font-semibold text-slate-800">Ejecuciones operativas</h2>
           <p className="mb-4 text-sm text-slate-600">Solo pendientes y en curso. El inicio valida nuevamente máquina, ocupación y aseo.</p>
-          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Sin trabajo operativo pendiente" detalle="Las ejecuciones cerradas no se cargan en esta bandeja." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">ID del proceso</th><th className="px-5 py-3">Etapa</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entrada</th><th className="px-5 py-3">Salida</th><th className="px-5 py-3">Acción</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4">{item.etapa_nombre}</td><td className="px-5 py-4"><span className="block">{item.equipo_nombre ?? "—"}</span>{item.equipo_nombre && <span className="mt-1.5 block"><EstadoEquipo estado={item.estado} ejecucion={item.codigo} /></span>}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4 text-xs">{item.entradas.join(" + ") || "—"}</td><td className="px-5 py-4 text-xs">{item.salidas.join(" + ") || "—"}</td><td className="px-5 py-4">{item.acciones_permitidas.includes("ejecucion") ? <button type="button" disabled={accionando !== null} onClick={() => void moverEjecucion(item.id)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{accionando === item.id ? "Validando…" : item.estado === "pausada" ? "Reanudar" : "Iniciar"}</button> : <span className="text-xs text-slate-500">Sin acción directa</span>}</td></tr>)}</tbody></table></div>}
+          {cargando ? <PageLoader /> : ejecuciones.length === 0 ? <EmptyState titulo="Sin trabajo operativo pendiente" detalle="Las ejecuciones cerradas no se cargan en esta bandeja." /> : <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3">ID del proceso</th><th className="px-5 py-3">Etapa</th><th className="px-5 py-3">Equipo</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Entrada</th><th className="px-5 py-3">Salida</th><th className="px-5 py-3">Acción</th></tr></thead><tbody>{ejecuciones.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="px-5 py-4 font-semibold text-slate-800">{item.codigo}</td><td className="px-5 py-4">{item.etapa_nombre}</td><td className="px-5 py-4"><span className="block">{item.equipo_nombre ?? "—"}</span>{item.equipo_nombre && <span className="mt-1.5 block"><EstadoEquipo estado={item.estado} ejecucion={item.codigo} /></span>}</td><td className="px-5 py-4"><StatusBadge estado={item.estado} etiqueta={item.estado_etiqueta} /></td><td className="px-5 py-4 text-xs">{item.entradas.join(" + ") || "—"}</td><td className="px-5 py-4 text-xs">{item.salidas.join(" + ") || "—"}</td><td className="px-5 py-4">{item.acciones_permitidas.includes("ejecucion") ? <button type="button" disabled={accionando !== null} onClick={() => void moverEjecucion(item)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{accionando === item.id ? "Validando…" : item.estado === "pausada" ? "Reanudar" : "Iniciar"}</button> : <span className="text-xs text-slate-500">Sin acción directa</span>}</td></tr>)}</tbody></table></div>}
         </section>
       </div>
     </main>

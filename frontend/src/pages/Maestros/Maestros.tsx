@@ -13,6 +13,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   obtenerCatalogosSku,
   obtenerEquipos,
+  obtenerFormatosEnvasado,
   obtenerMandantes,
   obtenerProductosMaestros,
   obtenerRecetas,
@@ -27,6 +28,7 @@ import {
   type CatalogosSku,
   type DocumentoLiberacion,
   type Equipo,
+  type FormatoEnvasado,
   type Especificacion,
   type Mandante,
   type ProductoMaestro,
@@ -52,6 +54,9 @@ import { type Campo } from "./FormularioMaestro";
 
 
 const FormularioEquipo = lazy(() => import("./FormularioEquipo"));
+const FormularioFormatoEnvasado = lazy(
+  () => import("./FormularioFormatoEnvasado"),
+);
 const FormularioEspecificacion = lazy(
   () => import("./FormularioEspecificacion"),
 );
@@ -88,6 +93,7 @@ type Pestana =
   | "mandantes"
   | "especificaciones"
   | "equipos"
+  | "formatos_envase"
   | "silos"
   | "camiones"
   | "codigos"
@@ -101,6 +107,7 @@ const ESTADO_INICIAL: Record<Pestana, EstadoCarga> = {
   mandantes: "inactivo",
   especificaciones: "inactivo",
   equipos: "inactivo",
+  formatos_envase: "inactivo",
   silos: "inactivo",
   camiones: "inactivo",
   codigos: "inactivo",
@@ -113,6 +120,7 @@ const PESTANAS: { clave: Pestana; etiqueta: string }[] = [
   { clave: "mandantes", etiqueta: "Mandantes" },
   { clave: "especificaciones", etiqueta: "Especificaciones" },
   { clave: "equipos", etiqueta: "Máquinas" },
+  { clave: "formatos_envase", etiqueta: "Formatos de envase" },
   { clave: "silos", etiqueta: "Silos y estanques" },
   { clave: "camiones", etiqueta: "Camiones" },
   { clave: "codigos", etiqueta: "Códigos de producción" },
@@ -253,6 +261,7 @@ function Maestros() {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [mandantes, setMandantes] = useState<Mandante[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
+  const [formatosEnvase, setFormatosEnvase] = useState<FormatoEnvasado[]>([]);
   const [silos, setSilos] = useState<Silo[]>([]);
   const [camiones, setCamiones] = useState<Vehiculo[]>([]);
   const [codigos, setCodigos] = useState<CodigoProduccion[]>([]);
@@ -284,6 +293,9 @@ function Maestros() {
   const [nuevoMandante, setNuevoMandante] = useState(false);
   const [editandoEquipo, setEditandoEquipo] = useState<Equipo | null>(null);
   const [nuevoEquipo, setNuevoEquipo] = useState(false);
+  // undefined: cerrado; null: nuevo; objeto: edición.
+  const [formatoEnvase, setFormatoEnvase] =
+    useState<FormatoEnvasado | null | undefined>();
 
   /* Los maestros simples comparten un formulario descrito por datos: qué
      entidad se está editando y con qué valores. */
@@ -370,6 +382,29 @@ function Maestros() {
         case "equipos":
           setEquipos(await obtenerEquipos());
           break;
+        case "formatos_envase": {
+          const [formatos, listaProductos, listaEquipos] = await Promise.all([
+            obtenerFormatosEnvasado(),
+            cargadas.current.has("productos")
+              ? Promise.resolve(null)
+              : obtenerProductosMaestros(),
+            cargadas.current.has("equipos")
+              ? Promise.resolve(null)
+              : obtenerEquipos(),
+          ]);
+          setFormatosEnvase(formatos);
+          if (listaProductos) {
+            setProductos(listaProductos);
+            cargadas.current.add("productos");
+            setEstadoCarga((actual) => ({ ...actual, productos: "listo" }));
+          }
+          if (listaEquipos) {
+            setEquipos(listaEquipos);
+            cargadas.current.add("equipos");
+            setEstadoCarga((actual) => ({ ...actual, equipos: "listo" }));
+          }
+          break;
+        }
         case "silos":
           setSilos(await obtenerSilosMaestros());
           break;
@@ -1064,6 +1099,49 @@ function Maestros() {
 
             )}
 
+            {/* Formatos de envasado */}
+
+            {pestana === "formatos_envase" && (
+              <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                  <div>
+                    <h2 className="font-semibold text-slate-800">Presentaciones operacionales</h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Cada formato gobierna peso, máximo por pallet y líneas permitidas.
+                    </p>
+                  </div>
+                  {puedeEditar && (
+                    <button type="button" onClick={() => setFormatoEnvase(null)} className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800">
+                      <Plus className="h-4 w-4" />Nuevo formato
+                    </button>
+                  )}
+                </div>
+                {formatosEnvase.length === 0 ? (
+                  <p className="px-6 py-10 text-center text-sm text-slate-600">
+                    No hay formatos configurados. Envasado mostrará el material bloqueado hasta configurarlos.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50"><tr><th className={encabezado}>Producto / formato</th><th className={encabezado}>Envase</th><th className={encabezado}>Pallet máximo</th><th className={encabezado}>Líneas autorizadas</th><th className={encabezado}></th></tr></thead>
+                      <tbody>{formatosEnvase.map((formato) => (
+                        <tr key={formato.id} className="border-t border-slate-100">
+                          <td className={celda}><b className="text-slate-800">{formato.producto_nombre}</b><div className="font-mono text-xs text-slate-500">{formato.codigo} · {formato.nombre}</div>{!formato.activo && <span className="mt-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Inactivo</span>}</td>
+                          <td className={`${celda} tabular-nums`}>{Number(formato.kg_neto).toLocaleString("es-CL")} kg</td>
+                          <td className={`${celda} tabular-nums`}>{formato.unidades_maximas_pallet} unidades · {Number(formato.maximo_pallet_kg).toLocaleString("es-CL")} kg</td>
+                          <td className={celda}>{formato.equipos_detalle.map((equipo) => `${equipo.codigo} · ${equipo.nombre}`).join(", ") || "Sin línea"}</td>
+                          <td className={`${celda} text-right`}>{puedeEditar && <button type="button" onClick={() => setFormatoEnvase(formato)} title="Editar" className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"><Pencil className="h-4 w-4" /></button>}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+                <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-600">
+                  El límite vigente es 500 kg por pallet. El operador solo verá las líneas autorizadas para la presentación elegida.
+                </p>
+              </section>
+            )}
+
             {/* Máquinas */}
 
             {pestana === "equipos" && (
@@ -1617,7 +1695,10 @@ function Maestros() {
             alGuardar={() => {
               // El producto aparece por nombre en estas pestañas y también
               // cambia el conteo por mandante. Se refrescan solo al visitarlas.
-              invalidarPestanas(["mandantes", "recetas", "especificaciones", "codigos"]);
+              invalidarPestanas([
+                "mandantes", "recetas", "especificaciones", "codigos",
+                "formatos_envase",
+              ]);
               void cargarPestana("productos", true);
             }}
           />
@@ -1651,6 +1732,16 @@ function Maestros() {
           />
         )}
 
+        {formatoEnvase !== undefined && (
+          <FormularioFormatoEnvasado
+            formato={formatoEnvase}
+            productos={productos}
+            equipos={equipos}
+            alCerrar={() => setFormatoEnvase(undefined)}
+            alGuardar={() => { void cargarPestana("formatos_envase", true); }}
+          />
+        )}
+
         {catalogos && (nuevoEquipo || editandoEquipo) && (
           <FormularioEquipo
             equipo={editandoEquipo}
@@ -1659,7 +1750,10 @@ function Maestros() {
               setNuevoEquipo(false);
               setEditandoEquipo(null);
             }}
-            alGuardar={() => { void cargarPestana("equipos", true); }}
+            alGuardar={() => {
+              invalidarPestanas(["formatos_envase"]);
+              void cargarPestana("equipos", true);
+            }}
           />
         )}
 

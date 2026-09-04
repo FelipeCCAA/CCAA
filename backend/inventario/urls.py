@@ -14,6 +14,7 @@ from .views import (
     SolicitudCompraViewSet, SolicitudMaterialViewSet, UbicacionViewSet,
     ClienteDespachoViewSet, DespachoViewSet, ExistenciaProductoTerminadoViewSet,
     MovimientoProductoTerminadoViewSet,
+    MovimientoReworkViewSet, UnidadReworkViewSet,
     calcular_mrp, estado_operacional,
 )
 
@@ -47,6 +48,8 @@ router.register("alertas", AlertaViewSet)
 router.register("clientes-despacho", ClienteDespachoViewSet)
 router.register("producto-terminado", ExistenciaProductoTerminadoViewSet, basename="producto-terminado")
 router.register("movimientos-producto-terminado", MovimientoProductoTerminadoViewSet, basename="movimientos-producto-terminado")
+router.register("rework", UnidadReworkViewSet, basename="rework")
+router.register("movimientos-rework", MovimientoReworkViewSet, basename="movimientos-rework")
 router.register("despachos", DespachoViewSet)
 
 urlpatterns = [

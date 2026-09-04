@@ -4,6 +4,7 @@ export interface Pagina<T> { count: number; next: string | null; previous: strin
 
 export interface EjecucionProceso {
   id: number;
+  version: number;
   codigo: string;
   estado: string;
   estado_etiqueta: string;
@@ -25,6 +26,7 @@ export interface EjecucionProceso {
 
 export interface EjecucionOperativa {
   id: number;
+  version: number;
   codigo: string;
   estado: string;
   estado_etiqueta: string;
@@ -126,6 +128,17 @@ export interface DiagnosticoRutasProducto {
   completo: boolean;
   faltantes: number;
   productos: DiagnosticoRutaProductoItem[];
+  integridad: {
+    completa: boolean;
+    total_hallazgos: number;
+    categorias: Array<{
+      codigo: string;
+      titulo: string;
+      severidad: "critico" | "alto";
+      cantidad: number;
+      items: Array<{ id: number; codigo: string; detalle: string }>;
+    }>;
+  };
 }
 
 export interface EtapaProceso {
@@ -292,11 +305,12 @@ export async function obtenerResumenOperacional(): Promise<ResumenOperacionalPro
 export async function transicionarEjecucion(
   id: number,
   estado: string,
+  version: number,
   motivo = "",
 ): Promise<EjecucionProceso> {
   const { data } = await api.post<EjecucionProceso>(
     `procesos/ejecuciones/${id}/transicionar/`,
-    { estado, motivo },
+    { estado, motivo, version },
   );
   return data;
 }
@@ -377,6 +391,10 @@ export interface SalidaIntermediaDisponible {
 
 export interface ReworkDisponible {
   id: number;
+  unidad_rework_id: number | null;
+  codigo_unidad: string | null;
+  ubicacion_codigo: string | null;
+  trazabilidad_fisica: boolean;
   lote_id: number;
   lote_codigo: string;
   producto_nombre: string;
@@ -496,12 +514,13 @@ export async function obtenerReworkDisponible(): Promise<ReworkDisponible[]> {
 export async function consumirRework(datos: {
   ejecucion: number;
   lote: number;
+  unidad_rework?: number;
   cantidad: number;
   motivo: string;
+  operacion_id: string;
 }): Promise<void> {
-  await api.post("procesos/entradas/", {
-    ...datos, tipo: "reproceso", unidad: "kg",
-  });
+  const { ejecucion, ...payload } = datos;
+  await api.post(`procesos/ejecuciones/${ejecucion}/incorporar-rework/`, payload);
 }
 
 export async function prepararContinuacion(

@@ -64,6 +64,36 @@ export default function DiagnosticoRutas() {
           <p className="mt-2 text-xs">Administración debe completar la ruta antes de iniciar una operación nueva.</p>
         </div>
       )}
+      {diagnostico?.integridad.completa && (
+        <p className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+          <CheckCircle2 className="h-4 w-4" /> Sin inconsistencias en ejecuciones, trazabilidad básica ni ocupación de equipos.
+        </p>
+      )}
+      {diagnostico && !diagnostico.integridad.completa && (
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950">
+          <p className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4" /> {diagnostico.integridad.total_hallazgos} inconsistencia(s) operacional(es)
+          </p>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            {diagnostico.integridad.categorias.map((categoria) => (
+              <section key={categoria.codigo} className="rounded-lg border border-rose-200 bg-white p-3">
+                <p className="font-semibold">{categoria.titulo} · {categoria.cantidad}</p>
+                <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                  {categoria.items.map((item) => (
+                    <li key={`${categoria.codigo}-${item.id}`}>
+                      <b>{item.codigo}</b>: {item.detalle}
+                    </li>
+                  ))}
+                </ul>
+                {categoria.cantidad > categoria.items.length && (
+                  <p className="mt-2 text-xs text-slate-500">Se muestran los 20 casos más recientes.</p>
+                )}
+              </section>
+            ))}
+          </div>
+          <p className="mt-3 text-xs">Corrige estos registros antes de usarlos como respaldo de trazabilidad o continuidad productiva.</p>
+        </div>
+      )}
     </div>
   );
 }

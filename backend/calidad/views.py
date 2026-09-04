@@ -156,15 +156,50 @@ def _lotes_permitidos(request):
     )
 
 
-def _envasado_completo(lote):
-    """Distingue la puerta comercial final de la liberacion intermedia."""
+def _resumen_envasado(lote):
+    """Explica el saldo final sin esconder excedentes dentro de una fórmula."""
+    from procesos.models import AutorizacionReproceso
+
     if lote.producto.formato not in {"saco_25kg", "caja_20kg"}:
         return None
     if hasattr(lote, "kg_envasados_total"):
         total = lote.kg_envasados_total or 0
     else:
         total = lote.registros_envase.aggregate(total=Sum("kg_envasados"))["total"] or 0
-    return lote.kg_producidos is not None and total >= lote.kg_producidos
+    try:
+        rework = lote.autorizacion_reproceso
+    except AutorizacionReproceso.DoesNotExist:
+        rework = None
+    dispuesto = 0
+    if (
+        rework is not None
+        and rework.origen == AutorizacionReproceso.Origen.EXCEDENTE
+        and rework.estado in {
+            AutorizacionReproceso.Estado.APROBADO,
+            AutorizacionReproceso.Estado.DESTRUIDO,
+        }
+    ):
+        dispuesto = rework.cantidad_kg
+    producido = lote.kg_producidos
+    pendiente = max((producido or 0) - total - dispuesto, 0)
+    formato_kg = {
+        "saco_25kg": Decimal("25"),
+        "caja_20kg": Decimal("20"),
+    }[lote.producto.formato]
+    return {
+        "kg_producidos": producido,
+        "kg_envasados": total,
+        "kg_excedente_dispuesto": dispuesto,
+        "kg_sin_disposicion": pendiente,
+        "requiere_disposicion": total > 0 and 0 < pendiente < formato_kg,
+        "completo": producido is not None and total + dispuesto >= producido,
+    }
+
+
+def _envasado_completo(lote):
+    """Distingue la puerta comercial final de la liberación intermedia."""
+    resumen = _resumen_envasado(lote)
+    return None if resumen is None else resumen["completo"]
 
 def _contexto_del_lote(lote, bloquear=False):
     """
@@ -659,6 +694,7 @@ def expedientes(request):
             registros, exigibles, lote.id, cumplidos_por_dato
         )
 
+        resumen_envasado = _resumen_envasado(lote)
         decision = dominio.puede_liberar(
             lote=lote,
             producto=lote.producto,
@@ -670,7 +706,9 @@ def expedientes(request):
             lecturas_control=suyas_lecturas,
             monitoreos=suyos_monitoreo,
             cumplidos_por_dato=cumplidos_por_dato,
-            envasado_completo=_envasado_completo(lote),
+            envasado_completo=(
+                resumen_envasado["completo"] if resumen_envasado else None
+            ),
         )
 
         liberacion = getattr(lote, "liberacion", None)
@@ -701,6 +739,7 @@ def expedientes(request):
                 "permitido": decision.permitido,
                 "via_concesion": decision.via_concesion,
                 "bloqueos": decision.bloqueos,
+                "envasado": resumen_envasado,
                 "rework": ({
                     "id": rework.id,
                     "origen": rework.origen,
@@ -1087,9 +1126,12 @@ def expediente(request, lote_id):
     la respuesta no es la misma para Calidad que para Producción.
     """
     lote = get_object_or_404(
-        _lotes_permitidos(request).select_related("producto", "producto__mandante"),
+        _lotes_permitidos(request).select_related(
+            "producto", "producto__mandante", "autorizacion_reproceso"
+        ).annotate(kg_envasados_total=Sum("registros_envase__kg_envasados")),
         pk=lote_id,
     )
+    resumen_envasado = _resumen_envasado(lote)
     contexto = _contexto_del_lote(lote)
 
     decision = dominio.puede_liberar(**contexto, rol=rol_de(request.user))
@@ -1120,6 +1162,7 @@ def expediente(request, lote_id):
             },
             "liberacion": LiberacionSerializer(liberacion).data if liberacion else None,
             "decision": serializar_decision(decision),
+            "envasado": resumen_envasado,
             "especificacion": (
                 {
                     "id": especificacion.id,
@@ -1172,12 +1215,17 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
     desmarcar un documento entre la comprobación y el guardado, y la
     liberación queda firmada contra un checklist que ya no está completo.
     """
-    lote = get_object_or_404(
-        _lotes_permitidos(request).select_related("producto", "orden"), pk=lote_id
-    )
     rol = rol_de(request.user)
 
     with transaction.atomic():
+        # Comparte el bloqueo del lote con Envasado y con la disposición de
+        # excedentes: la firma debe juzgar una fotografía física estable.
+        lote = get_object_or_404(
+            _lotes_permitidos(request).select_for_update(of=("self",)).select_related(
+                "producto", "orden", "autorizacion_reproceso"
+            ),
+            pk=lote_id,
+        )
         contexto = _contexto_del_lote(lote, bloquear=True)
 
         if concesion:
@@ -1462,6 +1510,32 @@ def decidir_reproceso(request, lote_id):
         return Response({"origen": ["Origen de rework inválido."]}, status=400)
 
     with transaction.atomic():
+        # Envasado y esta disposición bloquean la misma fila del lote. Así una
+        # caja creada al mismo tiempo no puede hacer que Calidad autorice como
+        # excedente kilos que ya quedaron físicamente envasados.
+        lote = get_object_or_404(
+            _lotes_permitidos(request).select_for_update(), pk=lote.pk
+        )
+        if origen == AutorizacionReproceso.Origen.EXCEDENTE:
+            if lote.kg_producidos is None:
+                return Response(
+                    {"cantidad_kg": ["El lote no tiene kg producidos confirmados."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            envasado = lote.registros_envase.aggregate(
+                total=Sum("kg_envasados")
+            )["total"] or Decimal("0")
+            saldo = max(lote.kg_producidos - envasado, Decimal("0"))
+            if cantidad > saldo:
+                return Response(
+                    {
+                        "cantidad_kg": [
+                            f"Solo quedan {saldo} kg sin envasar para declarar "
+                            "como excedente."
+                        ]
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         autorizacion = AutorizacionReproceso.objects.select_for_update().filter(
             lote=lote
         ).first()
@@ -1486,6 +1560,13 @@ def decidir_reproceso(request, lote_id):
         except DjangoValidationError as error:
             return Response(error.message_dict, status=status.HTTP_400_BAD_REQUEST)
         autorizacion.save()
+        from inventario.servicios import registrar_decision_fisica_rework
+        try:
+            unidad_fisica = registrar_decision_fisica_rework(autorizacion, request.user)
+        except DjangoValidationError as error:
+            transaction.set_rollback(True)
+            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            return Response({"detail": detalle}, status=status.HTTP_409_CONFLICT)
 
     return Response({
         "id": autorizacion.id,
@@ -1495,6 +1576,9 @@ def decidir_reproceso(request, lote_id):
         "cantidad_kg": autorizacion.cantidad_kg,
         "motivo": autorizacion.motivo,
         "observacion_calidad": autorizacion.observacion_calidad,
+        "unidad_fisica_id": unidad_fisica.id,
+        "estado_fisico": unidad_fisica.estado,
+        "ubicacion_codigo": unidad_fisica.ubicacion.codigo,
     })
 
 

@@ -884,6 +884,16 @@ class EntradaProceso(models.Model):
                 raise ValidationError({
                     "lote": "El rework está pendiente, bloqueado o destruido por Calidad."
                 })
+            if (
+                autorizacion.unidades_fisicas.exists()
+                and not getattr(self, "_unidad_rework_validada", False)
+            ):
+                raise ValidationError({
+                    "lote": (
+                        "Este rework tiene existencia física: selecciónalo desde "
+                        "la bandeja de rework disponible."
+                    )
+                })
             ya_consumido = EntradaProceso.objects.filter(
                 lote_id=self.lote_id, tipo=self.Tipo.REPROCESO,
             ).exclude(pk=self.pk).aggregate(total=models.Sum("cantidad"))["total"] or Decimal("0")

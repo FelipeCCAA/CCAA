@@ -436,6 +436,60 @@ class Equipo(models.Model):
         return self.nombre
 
 
+class FormatoEnvasado(models.Model):
+    """Presentación operable de un producto y máquinas autorizadas."""
+
+    producto = models.ForeignKey(
+        Producto, on_delete=models.PROTECT, related_name="formatos_envasado"
+    )
+    codigo = models.SlugField(max_length=40)
+    nombre = models.CharField(max_length=120)
+    kg_neto = models.DecimalField(max_digits=10, decimal_places=3)
+    unidades_maximas_pallet = models.PositiveSmallIntegerField()
+    equipos = models.ManyToManyField(
+        Equipo, related_name="formatos_envasado", blank=True
+    )
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["producto__nombre", "kg_neto", "nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["producto", "codigo"],
+                name="formato_envase_codigo_unico_producto",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kg_neto__gt=0),
+                name="formato_envase_kg_positivo",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(unidades_maximas_pallet__gt=0),
+                name="formato_envase_unidades_positivas",
+            ),
+        ]
+
+    @property
+    def maximo_pallet_kg(self):
+        return self.kg_neto * self.unidades_maximas_pallet
+
+    def clean(self):
+        super().clean()
+        if self.kg_neto and self.unidades_maximas_pallet:
+            if self.maximo_pallet_kg > 500:
+                raise ValidationError({
+                    "unidades_maximas_pallet": (
+                        "La configuración no puede superar 500 kg netos por pallet."
+                    )
+                })
+        if self.producto_id and self.producto.naturaleza != Producto.Naturaleza.TERMINADO:
+            raise ValidationError({
+                "producto": "Solo un producto terminado puede tener formato de Envasado."
+            })
+
+    def __str__(self):
+        return f"{self.producto.nombre} · {self.nombre}"
+
+
 class Silo(models.Model):
     """
     Silo o estanque de leche o crema.

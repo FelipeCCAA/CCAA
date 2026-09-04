@@ -581,3 +581,181 @@ merma. Calidad registró el análisis de lote conforme y liberó la salida para
 Envasado. El cierre actualiza ahora también cantidad y estado del lote de
 mazada; la migración `procesos.0020_reparar_lotes_suero_mantequilla` reparó los
 registros anteriores que ya tenían un balance de coproducto demostrable.
+
+## Bloque 37 - Envasado real de mantequilla y remanente visible
+
+La bandeja de Envasado calcula ahora cuántas cajas completas permite el saldo
+real, cuánto peso es envasable y cuánto quedará como remanente. El formulario
+ya no propone por defecto un pallet de 500 kg cuando el lote contiene menos:
+limita las unidades simultáneamente por saldo y por el máximo físico del pallet.
+
+El contrato `materiales-habilitados` calcula el total ya envasado dentro de la
+misma consulta y evita una agregación adicional por cada salida. Si el saldo no
+alcanza para una unidad completa, conserva el material visible pero bloquea el
+formulario con la causa; no convierte el remanente en una caja de peso falso ni
+lo hace desaparecer.
+
+Playwright continuó únicamente desde la mantequilla ya liberada. Del lote
+`MANT-E2E-66249302` creó el pallet `PAL-MANT-E2E-66249302` con una caja de 20
+kg. El pallet quedó correctamente en `BPT/PT-CUAR`, pendiente de Calidad final,
+y los 11 kg restantes quedaron visibles y no envasables.
+
+## Bloque 38 - Disposición del excedente y liberación comercial de mantequilla
+
+Se reutilizó `AutorizacionReproceso`, sin crear un registro paralelo. Calidad
+ve únicamente remanentes que aparecen después de envasar y que ya no alcanzan
+para una unidad completa; los lotes que todavía pueden seguir envasándose no se
+presentan como excedentes. La cantidad autorizada no puede superar el saldo sin
+envasar y la decisión se serializa con Envasado mediante bloqueo de fila.
+
+La puerta comercial considera explicado el lote cuando la suma de pallets
+envasados y excedente aprobado/destruido coincide con los kg producidos. Un
+remanente pendiente o bloqueado no habilita la firma. Playwright aprobó el
+circuito real: Calidad segregó 11 kg como rework, completó el checklist, liberó
+el pallet de 20 kg y lo envió desde `BPT/PT-CUAR` a `BPT/PT-DISP`. Inventario lo
+muestra disponible sin duplicar su existencia física.
+
+## Bloque 39 - Crema comercial hasta despacho directo
+
+Se verificó la alternativa de Descremado que no deriva la crema a
+Mantequilla. En la corrida `CREMA-E2E-30094186`, el operador tomó 500 L de
+Silo 3, eligió explícitamente `Despacho directo`, revisó la sugerencia de
+balance y la confirmó antes de reservar Tk03 y TkC3. El sistema cerró las dos
+salidas y Calidad analizó y liberó cada coproducto de forma independiente.
+
+Tras la liberación, la crema mostró `Preparar despacho` y no `Iniciar
+Mantequilla`. Bodega creó el despacho granel `DG-CREMA-E2E-30094186`, lo
+autorizó y confirmó su salida física. Playwright recorrió únicamente esta
+rama nueva; no repitió la prueba ya aprobada de Mantequilla.
+
+## Bloque 40 - Materiales reales y trazables en Envasado
+
+El descuento FEFO existente quedó convertido en una puerta obligatoria: si la
+receta de Envase está incompleta, no declara embalajes o no hay stock liberado,
+la transacción revierte y no crea ni registro ni pallet. Antes, una receta
+vacía permitía fabricar el pallet sin consumir caja, bolsa o base física.
+
+`materiales-habilitados` entrega ahora la lista de embalajes, stock disponible
+en la planta y máximo envasable condicionado tanto por producto como por
+materiales. La pantalla de Envasado muestra esa lista y, al cambiar las
+unidades, indica cuánto descontará la operación antes de confirmarla.
+
+La preparación local de Mantequilla configura una BOM provisional de 500 kg:
+25 cajas de 20 kg, 25 liners grado alimentario, 25 etiquetas trazables, un
+pallet y una unidad de film. También registra el stock de demostración mediante
+movimientos de entrada; no escribe un saldo oculto. La referencia queda
+marcada como provisional para que CCAA la sustituya por fichas y proveedores
+homologados.
+
+## Bloque 41 - Formatos de Envasado configurables
+
+El peso del envase y el máximo por pallet dejaron de depender de un mapa fijo
+en React. `FormatoEnvasado` relaciona cada producto terminado con su
+presentación, kg netos, unidades máximas y equipos autorizados. Cada registro
+de envase guarda la configuración utilizada y conserva además el peso como
+instantánea histórica.
+
+La bandeja de Envasado entrega una fila por formato activo. Si falta la
+configuración, el lote permanece visible con la causa del bloqueo; no se oculta
+ni se inventa un peso. El formulario usa solamente los equipos entregados para
+el formato y ya no ejecuta un GET adicional de todas las máquinas.
+
+Administración puede configurar las presentaciones desde `Maestros > Formatos
+de envase`. El sistema impide formatos sobre 500 kg por pallet, productos que
+no sean finales, torres como envasadoras y equipos de otra empresa. La semilla
+migró sacos de 25 kg a Rovema 3/4 y cajas de mantequilla de 20 kg a la línea de
+mantequilla. Los registros de envase anteriores quedaron vinculados por
+producto y peso sin perder su historial.
+
+## Bloque 42 - Genealogía FIFO exacta y visible
+
+La trazabilidad de un lote dejó de reconstruir como origen todas las
+recepciones que alguna vez estuvieron en el silo. Un servicio único usa ahora
+`AtribucionRecepcion`, que congela cuánto aportó realmente cada recepción al
+momento del retiro. Los endpoints de lotes y de trazabilidad general consumen
+la misma fuente para no entregar versiones contradictorias.
+
+Los movimientos históricos que no poseen atribuciones se mantienen
+consultables, pero aparecen como `inferidos` y sin una cantidad atribuida. El
+volumen proveniente de saldos antiguos sin recepción identificable se muestra
+separado; nunca se presenta como un origen confirmado.
+
+En Producción, `Ver trazabilidad` muestra por retiro el silo, volumen, estado
+FIFO, guía, procedencia, vehículo y litros aportados. La vista transversal de
+Procesos conserva todos los orígenes en una lista desplazable y ya no oculta
+silenciosamente los que superaban las primeras cuatro filas.
+
+## Bloque 43 - Existencia física de rework
+
+Se mantuvo `AutorizacionReproceso` como decisión de Calidad y se agregaron
+`UnidadRework` y `MovimientoRework` para representar el material real, su
+ubicación, saldo e historial. Una aprobación nueva queda segregada en
+`BRW/RW-CUAR`; no aparece utilizable en Producción hasta que Bodega confirma
+su ingreso a una ubicación disponible. El consumo bloquea la unidad y la
+ejecución en una transacción, descuenta el saldo y conserva el lote de origen.
+
+Inventario incorpora una pestaña Rework cargada bajo demanda con bandejas
+Aprobado, Bloqueado, Consumido y Destruido. Producción muestra el código de
+unidad y la ubicación física, y usa una operación UUID para que repetir el mismo
+envío no duplique el consumo. La migración `inventario.0027` materializa los
+registros históricos que tienen autor identificable sin inventar firmas para
+los que no lo tienen.
+
+## Bloque 44 - Bandeja compacta de Envasado
+
+La entrada al puesto de Envasado dejó de ejecutar tres solicitudes paralelas
+para materiales habilitados, registros y todos los pallets. El endpoint
+`produccion/envases/bandeja/` entrega en una llamada el trabajo habilitado, el
+conteo de pallets por lote y solamente los 20 cierres recientes. React conserva
+la misma operación y presentación, pero ya no descarga el inventario completo de
+pallets para calcular un contador que Django puede obtener directamente.
+
+## Bloque 45 - Concurrencia optimista y conflictos medibles
+
+Las ejecuciones productivas ya tenían un contador `version`, pero React no lo
+enviaba y Django aceptaba que una pantalla antigua sobrescribiera el cambio de
+otro turno. La bandeja operativa entrega ahora esa versión y cada transición o
+PATCH exige devolverla. Django bloquea la fila dentro de una transacción: si
+la versión cambió responde `409 version_conflict`, conserva el primer cambio y
+entrega la versión actual para que el operador refresque antes de reintentar.
+
+React muestra el mensaje operacional, bloquea el doble envío y, ante éxito o
+conflicto, actualiza solamente la bandeja de ejecuciones afectada; no recarga
+Producción, Calidad, rutas ni lotes completos. El informe de observabilidad
+`resumen_metricas` cuenta además los 409 por método y endpoint, permitiendo
+distinguir conflictos reales de concurrencia y decidir con evidencia si una
+pantalla necesita ajustes adicionales.
+
+## Bloque 46 - Diagnóstico operacional y concurrencia real
+
+La verificación de rutas existente incorpora ahora un diagnóstico de
+integridad, sin crear otra pantalla ni consultas automáticas. Al presionar
+`Verificar rutas`, Administración puede ver ejecuciones iniciadas sin entrada,
+cierres sin salida, estados incompatibles con sus horas y cualquier ocupación
+física duplicada de un equipo. Cada categoría muestra el código afectado, la
+causa y hasta 20 casos recientes; cuando no hay problemas lo informa de forma
+explícita.
+
+El diagnóstico respeta el alcance del usuario y su prueba limita el endpoint a
+20 consultas para impedir un N+1 al crecer los registros. También se ejecutó
+una prueba con dos conexiones PostgreSQL simultáneas sobre la misma ejecución:
+una actualización quedó guardada y la otra recibió `409 version_conflict`, sin
+pérdida silenciosa de datos y dejando una única versión 2.
+
+## Bloque 47 - Auditoría visual y ocupación de silos optimizada
+
+Se recorrieron en el navegador los puestos de Producción, Procesos, Secado,
+Calidad, Envasado, Inventario y Silos con el backend y PostgreSQL reales. La
+verificación de rutas informó que todos los productos elaborables poseen ruta
+activa y que no existen inconsistencias de trazabilidad básica ni ocupaciones
+duplicadas. Secado separa corridas activas, espera de Calidad y terminadas;
+Envasado explica los bloqueos en vez de ocultar materiales; e Inventario
+muestra stock, pallets y operaciones en su panel.
+
+La medición no encontró llamadas repetidas dentro de cinco segundos ni
+conflictos `409`. Sí detectó un N+1 en `GET /api/recepcion/ocupacion/`: la
+vigencia del análisis se recalculaba por cada silo. El endpoint reutiliza ahora
+la consulta anotada de vigencia ya existente, manteniendo intacta la regla de
+dominio. Con los 14 silos/TK del entorno auditado bajó de 33 a 8 consultas. Una
+prueba de regresión demuestra además que pasar de uno a seis silos no hace
+crecer las consultas por instancia.

@@ -271,7 +271,7 @@ class CadenaCompletaTests(BaseCadena):
 
         self.assertEqual(origen["trazabilidad"], "confirmada")
         self.assertEqual(origen["litros_atribuidos"], Decimal("19128.10"))
-        self.assertIn("saldo historico", flujo["nota_recepciones"])
+        self.assertIn("saldo histórico", flujo["nota_recepciones"])
         self.assertGreater(flujo["litros_no_atribuibles"], 0)
 
     def test_sin_kilos_no_se_cierra_la_corrida(self):

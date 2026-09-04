@@ -312,14 +312,34 @@ export interface MaterialEnvasable {
   producto_id: number;
   producto_nombre: string;
   cantidad_disponible: string;
+  pallets_total: number;
   unidad: string;
   formato: "saco_25kg" | "caja_20kg";
+  formato_id: number | null;
+  formato_codigo: string;
   formato_nombre: string;
-  formato_kg: string;
-  maximo_pallet_kg: string;
+  formato_kg: string | null;
+  maximo_pallet_kg: string | null;
+  equipos: Array<{ id: number; codigo: string; nombre: string }>;
+  unidades_por_producto: number;
+  unidades_disponibles: number;
+  cantidad_envasable: string;
+  remanente_kg: string;
+  pendiente_materiales_kg: string;
+  receta_envase_completa: boolean;
+  materiales_envase: Array<{
+    insumo_id: number;
+    codigo: string;
+    nombre: string;
+    unidad: string;
+    cantidad_por_kg: string;
+    stock_disponible: string;
+  }>;
+  puede_envasar: boolean;
   origen: string;
   calidad: "liberado";
   motivo_bloqueo: string;
+  advertencia_materiales: string;
 }
 
 export async function obtenerMaterialesEnvasables(): Promise<MaterialEnvasable[]> {
@@ -329,11 +349,21 @@ export async function obtenerMaterialesEnvasables(): Promise<MaterialEnvasable[]
   return data;
 }
 
+export interface BandejaEnvasado {
+  materiales: MaterialEnvasable[];
+  registros_recientes: RegistroEnvaseCreado[];
+}
+
+export async function obtenerBandejaEnvasado(): Promise<BandejaEnvasado> {
+  const { data } = await api.get<BandejaEnvasado>("produccion/envases/bandeja/");
+  return data;
+}
+
 export async function registrarEnvase(datos: {
   operacion_id: string;
   lote: number;
   equipo: number;
-  formato_kg: number;
+  formato: number;
   inicio: string;
   termino: string;
   observacion?: string;
@@ -660,24 +690,33 @@ export interface Asignacion {
   litros_por_kg_receta: number | null;
 }
 
-export interface RecepcionCandidata {
+export interface RecepcionOrigen {
   id: number;
   fecha: string;
   guia: string;
   litros: string;
+  litros_atribuidos: string | null;
   procedencia: string;
   vehiculo: string | null;
+  silo_codigo: string;
+  trazabilidad: "confirmada" | "inferida";
 }
 
 export interface Trazabilidad {
   lote: string;
   tramos: {
+    movimiento_id: number;
     silo: number;
     silo_codigo: string;
-    litros: number;
+    litros: string;
+    litros_atribuidos: string;
+    litros_no_atribuibles: string;
+    motivos_no_atribuibles: string[];
     fecha_hora: string;
-    recepciones: RecepcionCandidata[];
+    trazabilidad: "confirmada" | "inferida";
+    recepciones: RecepcionOrigen[];
   }[];
+  litros_no_atribuibles: string;
   nota: string;
 }
 

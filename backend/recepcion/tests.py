@@ -9,11 +9,14 @@ entrar o hacen mentir al saldo de un silo:
   recepciones (MODELO_DATOS.md §2.4).
 """
 
-from datetime import date, datetime, timezone as tz
+from datetime import date, datetime, timedelta, timezone as tz
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -21,7 +24,7 @@ from maestros.models import Silo, Vehiculo
 from usuarios.models import PerfilUsuario, Rol
 
 from . import dominio
-from .models import MovimientoSilo, Recepcion
+from .models import AnalisisSilo, MovimientoSilo, Recepcion
 
 
 def instante(dia, hora=12):
@@ -488,6 +491,46 @@ class DescargaTests(BaseAPIRecepcion):
 
 
 class OcupacionAPITests(BaseAPIRecepcion):
+    def test_la_ocupacion_no_consulta_la_vigencia_por_cada_silo(self):
+        ahora = timezone.now()
+
+        def crear_analisis_y_movimiento(silo):
+            AnalisisSilo.objects.create(
+                silo=silo,
+                tomado_en=ahora,
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+            )
+            MovimientoSilo.objects.create(
+                silo=silo,
+                tipo=MovimientoSilo.Tipo.INGRESO,
+                litros=100,
+                fecha_hora=ahora + timedelta(minutes=1),
+            )
+
+        crear_analisis_y_movimiento(self.silo)
+        with CaptureQueriesContext(connection) as consultas_un_silo:
+            respuesta = self.cliente.get("/api/recepcion/ocupacion/")
+        self.assertEqual(respuesta.status_code, 200)
+
+        for numero in range(2, 7):
+            silo = Silo.objects.create(
+                codigo=f"SILO PERF {numero}",
+                tipo=Silo.Tipo.SILO,
+                capacidad_l=100000,
+            )
+            crear_analisis_y_movimiento(silo)
+
+        with CaptureQueriesContext(connection) as consultas_seis_silos:
+            respuesta = self.cliente.get("/api/recepcion/ocupacion/")
+        self.assertEqual(respuesta.status_code, 200)
+
+        # Las subconsultas correlacionadas viajan en la consulta de análisis;
+        # agregar silos no debe agregar consultas de vigencia por instancia.
+        self.assertLessEqual(
+            len(consultas_seis_silos),
+            len(consultas_un_silo) + 1,
+        )
+
     def test_el_panel_explica_por_que_un_silo_no_puede_iniciar_proceso(self):
         MovimientoSilo.objects.create(
             silo=self.silo, tipo=MovimientoSilo.Tipo.INGRESO, litros=1000,

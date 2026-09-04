@@ -51,7 +51,16 @@ export default function ReworkProduccion({
     if (!motivo.trim()) { setError("El uso de rework requiere un motivo operativo."); return; }
     setGuardando(true); setError("");
     try {
-      await consumirRework({ ejecucion, lote: seleccionado.lote_id, cantidad: kg, motivo: motivo.trim() });
+      await consumirRework({
+        ejecucion,
+        lote: seleccionado.lote_id,
+        ...(seleccionado.unidad_rework_id
+          ? { unidad_rework: seleccionado.unidad_rework_id }
+          : {}),
+        cantidad: kg,
+        motivo: motivo.trim(),
+        operacion_id: crypto.randomUUID(),
+      });
       setMensaje(`${numero.format(kg)} kg de ${seleccionado.lote_codigo} vinculados a la ejecución.`);
       setSeleccionado(null);
       await Promise.all([cargar(), alConsumir()]);
@@ -71,7 +80,7 @@ export default function ReworkProduccion({
       {mensaje && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensaje}</p>}
       {materiales === null && <p className="mt-4 text-sm text-slate-500">La consulta se ejecuta al presionar el botón para reducir carga.</p>}
       {materiales?.length === 0 && <p className="mt-4 text-sm text-slate-500">No hay rework aprobado con saldo.</p>}
-      {materiales && materiales.length > 0 && <div className="mt-4 grid gap-3 lg:grid-cols-2">{materiales.map((item) => <button key={item.id} type="button" disabled={!puedeOperar} onClick={() => elegir(item)} className="rounded-xl border border-slate-200 p-4 text-left hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"><div className="flex justify-between gap-3"><div><p className="font-semibold text-slate-900">{item.producto_nombre}</p><p className="text-xs text-slate-500">Lote {item.lote_codigo} · {item.origen.replaceAll("_", " ")}</p></div><span className="text-lg font-bold text-amber-800">{numero.format(Number(item.cantidad_disponible_kg))} kg</span></div><p className="mt-2 text-xs text-slate-600">Autorizado {numero.format(Number(item.cantidad_autorizada_kg))} kg · utilizado {numero.format(Number(item.cantidad_consumida_kg))} kg</p><p className="mt-1 text-xs text-slate-500">{item.motivo}</p></button>)}</div>}
+      {materiales && materiales.length > 0 && <div className="mt-4 grid gap-3 lg:grid-cols-2">{materiales.map((item) => <button key={`${item.id}-${item.unidad_rework_id ?? "legado"}`} type="button" disabled={!puedeOperar} onClick={() => elegir(item)} className="rounded-xl border border-slate-200 p-4 text-left hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"><div className="flex justify-between gap-3"><div><p className="font-semibold text-slate-900">{item.producto_nombre}</p><p className="text-xs text-slate-500">Lote {item.lote_codigo} · {item.origen.replaceAll("_", " ")}</p>{item.trazabilidad_fisica ? <p className="mt-1 text-xs font-semibold text-emerald-700">{item.codigo_unidad} · {item.ubicacion_codigo}</p> : <p className="mt-1 text-xs font-semibold text-amber-700">Registro histórico sin unidad física</p>}</div><span className="text-lg font-bold text-amber-800">{numero.format(Number(item.cantidad_disponible_kg))} kg</span></div><p className="mt-2 text-xs text-slate-600">Autorizado {numero.format(Number(item.cantidad_autorizada_kg))} kg · utilizado {numero.format(Number(item.cantidad_consumida_kg))} kg</p><p className="mt-1 text-xs text-slate-500">{item.motivo}</p></button>)}</div>}
       {seleccionado && <form onSubmit={guardar} className="mt-4 grid gap-3 rounded-xl bg-amber-50 p-4 md:grid-cols-2"><div className="md:col-span-2"><p className="font-semibold text-amber-950">Consumir lote {seleccionado.lote_codigo}</p><p className="text-xs text-amber-800">Disponible: {seleccionado.cantidad_disponible_kg} kg. La genealogía conservará el lote de origen.</p></div><label className="text-sm font-medium text-slate-700">Ejecución destino<select required value={ejecucion} onChange={(e) => setEjecucion(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value={0}>Seleccionar…</option>{ejecuciones.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.etapa_nombre} · {item.equipo_nombre ?? "sin equipo"}</option>)}</select></label><label className="text-sm font-medium text-slate-700">Cantidad (kg)<input required type="number" min="0.01" step="0.01" max={seleccionado.cantidad_disponible_kg} value={cantidad} onChange={(e) => setCantidad(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label><label className="text-sm font-medium text-slate-700 md:col-span-2">Motivo de incorporación<textarea required value={motivo} onChange={(e) => setMotivo(e.target.value)} className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2" /></label><div className="flex justify-end gap-2 md:col-span-2"><button type="button" onClick={() => setSeleccionado(null)} className="px-3 py-2 text-sm text-slate-600">Cancelar</button><button disabled={guardando} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{guardando ? "Registrando…" : "Registrar consumo"}</button></div></form>}
     </section>
   );

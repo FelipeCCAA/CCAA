@@ -14,8 +14,9 @@ import {
 import { esAdministradorGlobal } from "../../services/access-control";
 import { obtenerSesion } from "../../services/sesion";
 import OperacionesBodega from "./OperacionesBodega";
+import ReworkInventario from "./ReworkInventario";
 
-type Pestana = "stock" | "productos" | "lotes" | "movimientos" | "despachos" | "historial";
+type Pestana = "stock" | "productos" | "lotes" | "rework" | "movimientos" | "despachos" | "historial";
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 const fecha = new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" });
 
@@ -118,6 +119,7 @@ export default function Inventario() {
 
   const pestanas: Array<[Pestana, string]> = [
     ["stock", "Stock"], ["productos", "Productos"], ["lotes", "Lotes"],
+    ["rework", "Rework"],
     ["movimientos", "Movimientos"], ["despachos", "Despachos"], ["historial", "Historial"],
   ];
 
@@ -207,6 +209,8 @@ export default function Inventario() {
         {pestana === "productos" && <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{productos?.map((item) => <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex justify-between gap-3"><div><p className="font-bold text-slate-900">{item.pallet_codigo}</p><p className="text-sm text-slate-600">{item.producto_nombre}</p></div><span className="h-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{item.estado_inventario}</span></div><p className="mt-4 text-2xl font-bold text-slate-900">{valor(item.kg_neto)} kg</p><p className="mt-1 text-xs text-slate-500">Lote {item.lote_codigo} · {item.ubicacion_codigo}</p>{item.estado_inventario === "disponible" && item.ubicacion_tipo === "cuarentena" && <p className="mt-2 text-xs font-medium text-amber-700">Liberado por Calidad; pendiente de reubicación física.</p>}</article>)}{productos?.length === 0 && <p className="text-sm text-slate-500">No hay producto terminado físico.</p>}</section>}
 
         {pestana === "lotes" && <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Lote</th><th className="px-5 py-3">Producto</th><th className="px-5 py-3">Pallets</th><th className="px-5 py-3">Físico</th><th className="px-5 py-3">Disponible</th></tr></thead><tbody>{lotes.map(([codigo, lote]) => <tr key={codigo} className="border-t border-slate-100"><td className="px-5 py-3 font-semibold">{codigo}</td><td className="px-5 py-3">{lote.producto}</td><td className="px-5 py-3">{lote.pallets}</td><td className="px-5 py-3">{valor(lote.fisico)} kg</td><td className="px-5 py-3">{valor(lote.disponible)} kg</td></tr>)}</tbody></table></section>}
+
+        {pestana === "rework" && <ReworkInventario />}
 
         {pestana === "despachos" && <section className="space-y-3">{despachos?.map((despacho) => <article key={despacho.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5"><div><p className="font-bold text-slate-900">{despacho.numero} · {despacho.cliente_nombre}</p><p className="mt-1 text-xs text-slate-500">{despacho.detalles.length > 0 ? `${despacho.detalles.length} pallet(s) · ${valor(despacho.detalles.reduce((suma, item) => suma + Number(item.kg_neto), 0))} kg` : ""}{despacho.detalles.length > 0 && despacho.detalles_granel.length > 0 ? " · " : ""}{despacho.detalles_granel.map((item) => `${item.lote_codigo ?? item.corrida_codigo} · ${item.producto_nombre} · ${item.silo_codigo ?? "sin silo"}: ${valor(item.cantidad)} ${item.unidad}`).join(" · ")}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase text-slate-700">{despacho.estado}</span>{["borrador", "autorizado"].includes(despacho.estado) && (puedeAutorizarDespachos ? <button type="button" disabled={accionandoDespacho === despacho.id} onClick={() => void avanzarDespacho(despacho)} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{accionandoDespacho === despacho.id ? "Validando…" : despacho.estado === "borrador" ? "Autorizar" : "Confirmar salida"}</button> : <span className="text-xs font-medium text-amber-700">Pendiente de autorización</span>)}</div></article>)}{despachos?.length === 0 && <p className="text-sm text-slate-500">No hay despachos registrados.</p>}</section>}
 

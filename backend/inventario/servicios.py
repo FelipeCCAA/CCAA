@@ -17,6 +17,7 @@ from .models import (
     InspeccionMaterial, LoteInventario, MovimientoInventario, Notificacion,
     ReservaInventario, Ubicacion, Despacho, DetalleDespacho, DetalleDespachoGranel,
     ExistenciaProductoTerminado, MovimientoProductoTerminado,
+    MovimientoRework, UnidadRework,
 )
 
 
@@ -1660,3 +1661,268 @@ def equipo_produciendo(equipo):
         f"{equipo.nombre} está produciendo ({corriendo.codigo}): no se puede "
         "asear mientras corre."
     )
+
+
+def _ubicacion_rework(sucursal, tipo):
+    bodega, _ = Bodega.objects.get_or_create(
+        sucursal=sucursal,
+        codigo="BRW",
+        defaults={"nombre": "Bodega segregada de rework", "area": "bodega"},
+    )
+    configuracion = {
+        Ubicacion.Tipo.CUARENTENA: (
+            "RW-CUAR", "Rework segregado pendiente de movimiento de Bodega"
+        ),
+        Ubicacion.Tipo.DISPONIBLE: (
+            "RW-DISP", "Rework aprobado y disponible para Producción"
+        ),
+        Ubicacion.Tipo.RECHAZADO: (
+            "RW-RECH", "Rework bloqueado o destruido"
+        ),
+    }
+    codigo, descripcion = configuracion[tipo]
+    ubicacion, _ = Ubicacion.objects.get_or_create(
+        bodega=bodega, codigo=codigo,
+        defaults={"tipo": tipo, "descripcion": descripcion},
+    )
+    if ubicacion.tipo != tipo:
+        raise ValidationError(
+            f"La ubicación maestra {bodega.codigo}/{codigo} debe ser {tipo}."
+        )
+    return ubicacion
+
+
+@transaction.atomic
+def registrar_decision_fisica_rework(autorizacion, usuario):
+    """Materializa la decisión de Calidad sin habilitar el uso físico."""
+    from procesos.models import AutorizacionReproceso
+
+    autorizacion = (
+        AutorizacionReproceso.objects.select_for_update()
+        .select_related("lote__sucursal")
+        .get(pk=autorizacion.pk)
+    )
+    unidad = (
+        UnidadRework.objects.select_for_update()
+        .filter(autorizacion=autorizacion)
+        .order_by("pk")
+        .first()
+    )
+    if unidad and (
+        unidad.estado in {UnidadRework.Estado.DISPONIBLE, UnidadRework.Estado.CONSUMIDO}
+        or unidad.movimientos.filter(tipo=MovimientoRework.Tipo.CONSUMO).exists()
+    ):
+        raise ValidationError(
+            "Bodega ya habilitó o Producción consumió este rework; "
+            "Calidad no puede reemplazar su disposición física."
+        )
+    if unidad and unidad.estado == UnidadRework.Estado.DESTRUIDO:
+        raise ValidationError("El material destruido no puede recuperar existencia.")
+
+    sucursal = autorizacion.lote.sucursal
+    if autorizacion.estado == AutorizacionReproceso.Estado.DESTRUIDO:
+        ubicacion = _ubicacion_rework(sucursal, Ubicacion.Tipo.RECHAZADO)
+        estado = UnidadRework.Estado.DESTRUIDO
+    else:
+        ubicacion = _ubicacion_rework(sucursal, Ubicacion.Tipo.CUARENTENA)
+        estado = (
+            UnidadRework.Estado.PENDIENTE_UBICACION
+            if autorizacion.estado == AutorizacionReproceso.Estado.APROBADO
+            else UnidadRework.Estado.BLOQUEADO
+        )
+
+    if unidad is None:
+        disponible = (
+            Decimal("0") if estado == UnidadRework.Estado.DESTRUIDO
+            else autorizacion.cantidad_kg
+        )
+        unidad = UnidadRework.objects.create(
+            autorizacion=autorizacion,
+            codigo=f"RW-{autorizacion.pk:06d}",
+            ubicacion=ubicacion,
+            estado=estado,
+            cantidad_inicial_kg=autorizacion.cantidad_kg,
+            cantidad_disponible_kg=disponible,
+        )
+        MovimientoRework.objects.create(
+            unidad=unidad,
+            tipo=MovimientoRework.Tipo.SEGREGACION,
+            cantidad_kg=autorizacion.cantidad_kg,
+            destino=ubicacion,
+            motivo=autorizacion.motivo,
+            registrado_por=usuario,
+            saldo_anterior_kg=0,
+            saldo_posterior_kg=autorizacion.cantidad_kg,
+        )
+        if estado == UnidadRework.Estado.DESTRUIDO:
+            MovimientoRework.objects.create(
+                unidad=unidad,
+                tipo=MovimientoRework.Tipo.DESTRUCCION,
+                cantidad_kg=autorizacion.cantidad_kg,
+                origen=ubicacion,
+                motivo=autorizacion.observacion_calidad or autorizacion.motivo,
+                registrado_por=usuario,
+                saldo_anterior_kg=autorizacion.cantidad_kg,
+                saldo_posterior_kg=0,
+            )
+        return unidad
+
+    saldo_anterior = unidad.cantidad_disponible_kg
+    if unidad.cantidad_inicial_kg != autorizacion.cantidad_kg:
+        MovimientoRework.objects.create(
+            unidad=unidad,
+            tipo=MovimientoRework.Tipo.AJUSTE,
+            cantidad_kg=abs(autorizacion.cantidad_kg - unidad.cantidad_inicial_kg),
+            origen=unidad.ubicacion if autorizacion.cantidad_kg < unidad.cantidad_inicial_kg else None,
+            destino=unidad.ubicacion if autorizacion.cantidad_kg > unidad.cantidad_inicial_kg else None,
+            motivo="Ajuste identificado por nueva decisión de Calidad",
+            registrado_por=usuario,
+            saldo_anterior_kg=saldo_anterior,
+            saldo_posterior_kg=(
+                Decimal("0") if estado == UnidadRework.Estado.DESTRUIDO
+                else autorizacion.cantidad_kg
+            ),
+        )
+    unidad.cantidad_inicial_kg = autorizacion.cantidad_kg
+    unidad.cantidad_disponible_kg = (
+        Decimal("0") if estado == UnidadRework.Estado.DESTRUIDO
+        else autorizacion.cantidad_kg
+    )
+    unidad.ubicacion = ubicacion
+    unidad.estado = estado
+    unidad.save(update_fields=[
+        "cantidad_inicial_kg", "cantidad_disponible_kg", "ubicacion",
+        "estado", "actualizado_en",
+    ])
+    if estado == UnidadRework.Estado.DESTRUIDO and saldo_anterior > 0:
+        MovimientoRework.objects.create(
+            unidad=unidad, tipo=MovimientoRework.Tipo.DESTRUCCION,
+            cantidad_kg=saldo_anterior, origen=ubicacion,
+            motivo=autorizacion.observacion_calidad or autorizacion.motivo,
+            registrado_por=usuario, saldo_anterior_kg=saldo_anterior,
+            saldo_posterior_kg=0,
+        )
+    return unidad
+
+
+@transaction.atomic
+def habilitar_rework(unidad, destino, usuario, *, operacion=None):
+    from procesos.models import AutorizacionReproceso
+
+    if operacion:
+        anterior = MovimientoRework.objects.filter(operacion_id=operacion).select_related(
+            "unidad"
+        ).first()
+        if anterior:
+            if anterior.unidad_id == unidad.pk and anterior.tipo == MovimientoRework.Tipo.HABILITACION:
+                return anterior.unidad
+            raise ValidationError("El identificador de operación ya fue utilizado.")
+    unidad = UnidadRework.objects.select_for_update().select_related(
+        "autorizacion__lote__sucursal", "ubicacion__bodega"
+    ).get(pk=unidad.pk)
+    destino = Ubicacion.objects.select_for_update().select_related("bodega").get(pk=destino.pk)
+    if unidad.autorizacion.estado != AutorizacionReproceso.Estado.APROBADO:
+        raise ValidationError("Calidad no ha aprobado este rework.")
+    if unidad.estado != UnidadRework.Estado.PENDIENTE_UBICACION:
+        raise ValidationError("Solo puede habilitarse rework aprobado pendiente de Bodega.")
+    if destino.tipo != Ubicacion.Tipo.DISPONIBLE:
+        raise ValidationError("El rework aprobado debe ir a una ubicación disponible.")
+    if destino.bodega.sucursal_id != unidad.autorizacion.lote.sucursal_id:
+        raise ValidationError("El rework y la ubicación pertenecen a plantas distintas.")
+    origen = unidad.ubicacion
+    saldo = unidad.cantidad_disponible_kg
+    unidad.ubicacion = destino
+    unidad.estado = UnidadRework.Estado.DISPONIBLE
+    unidad.save(update_fields=["ubicacion", "estado", "actualizado_en"])
+    MovimientoRework.objects.create(
+        operacion_id=operacion or uuid4(), unidad=unidad,
+        tipo=MovimientoRework.Tipo.HABILITACION, cantidad_kg=saldo,
+        origen=origen, destino=destino,
+        motivo="Ingreso a zona liberada confirmado por Bodega",
+        registrado_por=usuario, saldo_anterior_kg=saldo, saldo_posterior_kg=saldo,
+    )
+    return unidad
+
+
+@transaction.atomic
+def transferir_rework(unidad, destino, usuario, *, motivo, operacion=None):
+    if operacion:
+        anterior = MovimientoRework.objects.filter(operacion_id=operacion).select_related(
+            "unidad"
+        ).first()
+        if anterior:
+            if anterior.unidad_id == unidad.pk and anterior.tipo == MovimientoRework.Tipo.TRASLADO:
+                return anterior.unidad
+            raise ValidationError("El identificador de operación ya fue utilizado.")
+    unidad = UnidadRework.objects.select_for_update().select_related(
+        "autorizacion__lote__sucursal", "ubicacion__bodega"
+    ).get(pk=unidad.pk)
+    destino = Ubicacion.objects.select_for_update().select_related("bodega").get(pk=destino.pk)
+    if unidad.estado != UnidadRework.Estado.DISPONIBLE:
+        raise ValidationError("Solo puede trasladarse rework disponible.")
+    if destino.tipo != Ubicacion.Tipo.DISPONIBLE:
+        raise ValidationError("El traslado debe mantener el rework en zona disponible.")
+    if destino.bodega.sucursal_id != unidad.autorizacion.lote.sucursal_id:
+        raise ValidationError("El traslado no puede cruzar plantas.")
+    origen = unidad.ubicacion
+    saldo = unidad.cantidad_disponible_kg
+    unidad.ubicacion = destino
+    unidad.save(update_fields=["ubicacion", "actualizado_en"])
+    MovimientoRework.objects.create(
+        operacion_id=operacion or uuid4(), unidad=unidad,
+        tipo=MovimientoRework.Tipo.TRASLADO, cantidad_kg=saldo,
+        origen=origen, destino=destino, motivo=motivo,
+        registrado_por=usuario, saldo_anterior_kg=saldo, saldo_posterior_kg=saldo,
+    )
+    return unidad
+
+
+@transaction.atomic
+def consumir_unidad_rework(*, unidad, ejecucion, cantidad, motivo, usuario, operacion):
+    """Descuenta una unidad y crea su entrada genealógica en una transacción."""
+    from procesos.models import EjecucionProceso, EntradaProceso
+
+    existente = MovimientoRework.objects.filter(operacion_id=operacion).select_related(
+        "entrada_proceso"
+    ).first()
+    if existente:
+        if existente.entrada_proceso_id is None:
+            raise ValidationError("La operación ya fue utilizada para otro movimiento.")
+        return existente.entrada_proceso
+
+    ejecucion = EjecucionProceso.objects.select_for_update().select_related("sucursal").get(
+        pk=ejecucion.pk
+    )
+    unidad = UnidadRework.objects.select_for_update().select_related(
+        "autorizacion__lote__sucursal", "ubicacion"
+    ).get(pk=unidad.pk)
+    if unidad.autorizacion.lote.sucursal_id != ejecucion.sucursal_id:
+        raise ValidationError("El rework y la ejecución pertenecen a plantas distintas.")
+    if not unidad.utilizable:
+        raise ValidationError("El rework no está disponible físicamente para Producción.")
+    cantidad = Decimal(cantidad)
+    if cantidad <= 0 or cantidad > unidad.cantidad_disponible_kg:
+        raise ValidationError({
+            "cantidad": f"Solo hay {unidad.cantidad_disponible_kg} kg físicamente disponibles."
+        })
+    entrada = EntradaProceso(
+        ejecucion=ejecucion, lote=unidad.autorizacion.lote,
+        tipo=EntradaProceso.Tipo.REPROCESO, cantidad=cantidad,
+        unidad="kg", motivo=motivo,
+    )
+    entrada._unidad_rework_validada = True
+    entrada.full_clean()
+    entrada.save()
+    saldo_anterior = unidad.cantidad_disponible_kg
+    unidad.cantidad_disponible_kg -= cantidad
+    if unidad.cantidad_disponible_kg == 0:
+        unidad.estado = UnidadRework.Estado.CONSUMIDO
+    unidad.save(update_fields=["cantidad_disponible_kg", "estado", "actualizado_en"])
+    MovimientoRework.objects.create(
+        operacion_id=operacion, unidad=unidad, tipo=MovimientoRework.Tipo.CONSUMO,
+        cantidad_kg=cantidad, origen=unidad.ubicacion, entrada_proceso=entrada,
+        motivo=motivo, registrado_por=usuario,
+        saldo_anterior_kg=saldo_anterior,
+        saldo_posterior_kg=unidad.cantidad_disponible_kg,
+    )
+    return entrada

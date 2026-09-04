@@ -9,6 +9,7 @@ from .models import (
     DocumentoLiberacion,
     Equipo,
     Especificacion,
+    FormatoEnvasado,
     Mandante,
     Producto,
     Receta,
@@ -291,6 +292,71 @@ class EquipoSerializer(serializers.ModelSerializer):
             "orden",
             "activo",
         ]
+
+
+class FormatoEnvasadoSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+    maximo_pallet_kg = serializers.DecimalField(
+        max_digits=14, decimal_places=3, read_only=True
+    )
+    equipos_detalle = EquipoSerializer(source="equipos", many=True, read_only=True)
+
+    class Meta:
+        model = FormatoEnvasado
+        fields = [
+            "id", "producto", "producto_nombre", "codigo", "nombre", "kg_neto",
+            "unidades_maximas_pallet", "maximo_pallet_kg", "equipos",
+            "equipos_detalle", "activo",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _restringir_relacion_empresa(
+            self, "producto", Producto.objects.all(), "mandante__empresa_id"
+        )
+        scope = _scope_del_contexto(self)
+        equipos = Equipo.objects.filter(
+            activo=True, tipo__in=[Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA]
+        )
+        if scope is None:
+            equipos = equipos.none()
+        elif not scope.es_global:
+            equipos = equipos.filter(sucursal__empresa_id=scope.empresa_id)
+        self.fields["equipos"].queryset = equipos
+
+    def validate(self, attrs):
+        producto = attrs.get("producto") or getattr(self.instance, "producto", None)
+        equipos = attrs.get("equipos")
+        if equipos is None and self.instance is not None:
+            equipos = list(self.instance.equipos.all())
+        if not equipos:
+            raise serializers.ValidationError({
+                "equipos": "Selecciona al menos una envasadora o línea autorizada."
+            })
+        incompatibles = [
+            equipo.nombre for equipo in equipos
+            if equipo.tipo not in {Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA}
+            or equipo.sucursal.empresa_id != producto.mandante.empresa_id
+        ]
+        if incompatibles:
+            raise serializers.ValidationError({
+                "equipos": "Equipos incompatibles: " + ", ".join(incompatibles)
+            })
+        candidato = FormatoEnvasado(
+            **{
+                "producto": producto,
+                "codigo": attrs.get("codigo", getattr(self.instance, "codigo", "")),
+                "nombre": attrs.get("nombre", getattr(self.instance, "nombre", "")),
+                "kg_neto": attrs.get("kg_neto", getattr(self.instance, "kg_neto", None)),
+                "unidades_maximas_pallet": attrs.get(
+                    "unidades_maximas_pallet",
+                    getattr(self.instance, "unidades_maximas_pallet", None),
+                ),
+                "activo": attrs.get("activo", getattr(self.instance, "activo", True)),
+            }
+        )
+        candidato.clean()
+        return attrs
 
 class SiloSerializer(serializers.ModelSerializer):
     tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)

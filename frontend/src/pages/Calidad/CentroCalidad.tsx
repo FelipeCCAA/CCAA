@@ -58,6 +58,9 @@ function CentroCalidad() {
   const granelesPendientes = granelesConAnalisisLote.filter((item) => item.estado === "pendiente");
   const granelesDecididos = granelesConAnalisisLote.filter((item) => item.estado !== "pendiente");
   const porRevisar = lotes.filter((fila) => !LIBERACIONES_CERRADAS.includes(fila.liberacion?.estado ?? "pendiente"));
+  const excedentesEnvase = porRevisar.filter(
+    (fila) => fila.envasado?.requiere_disposicion === true,
+  );
   const liberados = lotes.filter((fila) => fila.liberacion?.estado === "liberado" || fila.liberacion?.estado === "liberado_concesion");
   const rechazados = lotes.filter((fila) => fila.liberacion?.estado === "rechazado");
   const materiales = inspecciones.datos ?? [];
@@ -111,6 +114,18 @@ function CentroCalidad() {
       origen: (fila.rework?.origen as "rechazo" | "saco_danado" | "excedente" | "recuperable") ?? "rechazo",
       cantidad: fila.rework?.cantidad_kg ?? fila.lote.kg_producidos,
       motivo: fila.rework?.motivo ?? "",
+      observacion: fila.rework?.observacion_calidad ?? "",
+    });
+  };
+
+  const abrirExcedenteEnvase = (fila: FilaExpediente) => {
+    setErrorRework("");
+    setReworkEditando({
+      loteId: fila.lote.id,
+      estado: "aprobado",
+      origen: "excedente",
+      cantidad: String(fila.envasado?.kg_sin_disposicion ?? ""),
+      motivo: fila.rework?.motivo ?? "Remanente segregado al finalizar Envasado",
       observacion: fila.rework?.observacion_calidad ?? "",
     });
   };
@@ -270,6 +285,25 @@ function CentroCalidad() {
 
       <Tarjeta titulo="Rework y material rechazado" descripcion="Un rechazo no vuelve automáticamente a Producción. Calidad define una cantidad trazable y decide aprobar, bloquear o destruir.">
         {errorRework && <Aviso>{errorRework}</Aviso>}
+        {excedentesEnvase.length > 0 && (
+          <div className="mb-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div><p className="text-sm font-semibold text-amber-900">Excedentes de Envasado por resolver</p><p className="mt-1 text-xs text-amber-800">Calidad debe segregar el remanente como rework antes de liberar comercialmente los pallets completos.</p></div>
+            {excedentesEnvase.map((fila) => (
+              <div key={fila.lote.id} className="rounded-lg border border-amber-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-800">{fila.lote.codigo_lote} · {fila.lote.producto_nombre}</p><p className="text-xs text-slate-600">{fila.envasado?.kg_envasados} kg envasados · {fila.envasado?.kg_sin_disposicion} kg sin disposición</p></div>{reworkEditando?.loteId !== fila.lote.id && <button type="button" onClick={() => abrirExcedenteEnvase(fila)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white">Resolver excedente</button>}</div>
+                {reworkEditando?.loteId === fila.lote.id && (
+                  <form onSubmit={guardarRework} className="mt-3 grid gap-3 border-t border-amber-100 pt-3 sm:grid-cols-2">
+                    <label className="text-xs font-semibold text-slate-600">Cantidad segregada (kg)<input required readOnly type="number" value={reworkEditando.cantidad} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-2 text-sm font-normal" /></label>
+                    <label className="text-xs font-semibold text-slate-600">Destino<select value={reworkEditando.estado} onChange={(e) => setReworkEditando({ ...reworkEditando, estado: e.target.value as "aprobado" | "bloqueado" | "destruido" })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-normal"><option value="aprobado">Rework aprobado</option><option value="bloqueado">Mantener bloqueado</option><option value="destruido">Destruido</option></select></label>
+                    <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Motivo y segregación<textarea required value={reworkEditando.motivo} onChange={(e) => setReworkEditando({ ...reworkEditando, motivo: e.target.value })} className="mt-1 min-h-16 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm font-normal" /></label>
+                    <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Observación de Calidad<textarea value={reworkEditando.observacion} onChange={(e) => setReworkEditando({ ...reworkEditando, observacion: e.target.value })} className="mt-1 min-h-14 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm font-normal" /></label>
+                    <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setReworkEditando(null)} className="px-3 py-2 text-xs text-slate-600">Cancelar</button><button disabled={guardandoRework} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{guardandoRework ? "Guardando…" : "Confirmar disposición"}</button></div>
+                  </form>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {liberados.some((fila) => !fila.rework) && (
           <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-3">
             <p className="text-sm font-semibold text-sky-900">¿Saco dañado, excedente o material recuperable?</p>

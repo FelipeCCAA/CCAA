@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { esErrorDeEquipo, mensajeErrorProceso } from "../src/services/errores-proceso.ts";
+import {
+  esConflictoVersion,
+  esErrorDeEquipo,
+  mensajeErrorProceso,
+} from "../src/services/errores-proceso.ts";
 
 test("muestra la ruta faltante con una etiqueta operacional", () => {
   const error = { response: { data: { ruta_producto: ["El producto no tiene una ruta activa."] } } };
@@ -27,4 +31,18 @@ test("identifica solamente errores de equipo para refrescar disponibilidad", () 
   assert.equal(esErrorDeEquipo({ response: { data: { equipo: "Torre ocupada." } } }), true);
   assert.equal(esErrorDeEquipo({ response: { data: { error: "Evaporador 1 está ocupado por EJ-9." } } }), true);
   assert.equal(esErrorDeEquipo({ response: { data: { detail: "Sin permiso." } } }), false);
+});
+
+test("identifica el contrato 409 de versión para refrescar la bandeja afectada", () => {
+  const conflicto = {
+    response: {
+      status: 409,
+      data: { code: "version_conflict", version_actual: 3 },
+    },
+  };
+  assert.equal(esConflictoVersion(conflicto), true);
+  assert.equal(
+    esConflictoVersion({ response: { status: 409, data: { code: "otro" } } }),
+    false,
+  );
 });

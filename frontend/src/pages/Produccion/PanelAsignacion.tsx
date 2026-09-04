@@ -415,7 +415,7 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
         <div className="mt-4 rounded-xl border border-slate-200 p-4">
 
           <h4 className="text-sm font-medium text-slate-700">
-            Recepciones candidatas
+            Origen FIFO de la leche
           </h4>
 
           <p className="mt-0.5 text-xs text-slate-600">{traza.nota}</p>
@@ -423,24 +423,28 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
           {traza.tramos.length === 0 ? (
 
             <p className="mt-3 text-sm text-slate-600">
-              No hay recepciones registradas en esos silos antes de la
-              asignación.
+              Este lote no registra retiros de leche desde silos.
             </p>
 
           ) : (
 
             traza.tramos.map((tramo, i) => (
 
-              <div key={i} className="mt-3">
+              <div key={tramo.movimiento_id || i} className="mt-3 rounded-xl bg-slate-50 p-3">
 
-                <p className="text-xs font-medium text-slate-600">
-                  {tramo.silo_codigo} · {litros.format(tramo.litros)} L
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-slate-700">
+                    {tramo.silo_codigo} · {litros.format(Number(tramo.litros))} L retirados
+                  </p>
+                  <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${tramo.trazabilidad === "confirmada" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                    {tramo.trazabilidad === "confirmada" ? "FIFO confirmado" : "Origen inferido"}
+                  </span>
+                </div>
 
                 {tramo.recepciones.length === 0 ? (
 
                   <p className="mt-1 text-sm text-slate-600">
-                    Sin recepciones previas en este estanque.
+                    Sin una recepción identificable para este retiro.
                   </p>
 
                 ) : (
@@ -452,8 +456,10 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
                         {" · "}
                         guía {r.guia || "—"}
                         {" · "}
-                        <span className="tabular-nums">
-                          {litros.format(Number(r.litros))} L
+                        <span className="font-semibold tabular-nums">
+                          {r.litros_atribuidos === null
+                            ? `${litros.format(Number(r.litros))} L recibidos`
+                            : `${litros.format(Number(r.litros_atribuidos))} L aportados`}
                         </span>
                         {r.procedencia && (
                           <span className="text-slate-600"> · {r.procedencia}</span>
@@ -465,6 +471,15 @@ function PanelAsignacion({ loteId, puedeEditar, alCambiar }: Props) {
                     ))}
                   </ul>
 
+                )}
+
+                {Number(tramo.litros_no_atribuibles) > 0 && (
+                  <p className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900">
+                    {litros.format(Number(tramo.litros_no_atribuibles))} L sin recepción histórica atribuible
+                    {tramo.motivos_no_atribuibles.length > 0
+                      ? ` · ${tramo.motivos_no_atribuibles.join(", ")}`
+                      : ""}
+                  </p>
                 )}
 
               </div>

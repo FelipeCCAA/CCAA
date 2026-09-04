@@ -71,6 +71,15 @@ class Command(BaseCommand):
         for ruta, veces in repetidas:
             self.stdout.write(f"  {veces:>3}x  {ruta}")
 
+        conflictos = dominio.conflictos(muestras)
+        self.stdout.write("\nConflictos 409 por endpoint:")
+
+        if not conflictos:
+            self.stdout.write("  ninguno")
+
+        for ruta, metodo, cantidad in conflictos:
+            self.stdout.write(f"  {cantidad:>3}x  {metodo:<6} {ruta}")
+
         self._avisar_ilegibles(ilegibles)
 
     def _avisar_ilegibles(self, ilegibles):

@@ -587,6 +587,11 @@ class RegistroEnvase(models.Model):
     equipo = models.ForeignKey(
         "maestros.Equipo", on_delete=models.PROTECT, related_name="registros_envase"
     )
+    formato = models.ForeignKey(
+        "maestros.FormatoEnvasado", on_delete=models.PROTECT,
+        related_name="registros_envase", null=True, blank=True,
+        help_text="Configuración usada; nulo solamente para registros históricos.",
+    )
     formato_kg = models.DecimalField(max_digits=10, decimal_places=3)
     unidades = models.PositiveIntegerField()
     kg_envasados = models.DecimalField(max_digits=14, decimal_places=3)
@@ -630,9 +635,20 @@ class RegistroEnvase(models.Model):
             if self.equipo.sucursal_id != self.lote.sucursal_id:
                 raise ValidationError({"equipo": "La envasadora pertenece a otra planta."})
             if self.equipo.tipo not in {
-                self.equipo.Tipo.ENVASADORA, self.equipo.Tipo.LINEA, self.equipo.Tipo.TORRE,
+                self.equipo.Tipo.ENVASADORA, self.equipo.Tipo.LINEA,
             }:
-                raise ValidationError({"equipo": "Selecciona una torre o envasadora."})
+                raise ValidationError({"equipo": "Selecciona una envasadora o línea."})
+        if self.formato_id and self.lote_id:
+            if self.formato.producto_id != self.lote.producto_id:
+                raise ValidationError({
+                    "formato": "El formato no pertenece al producto del lote."
+                })
+            if self.equipo_id and not self.formato.equipos.filter(
+                pk=self.equipo_id
+            ).exists():
+                raise ValidationError({
+                    "equipo": "El equipo no está autorizado para este formato."
+                })
         if self.lote_id and self.kg_envasados:
             ya_envasado = self.lote.registros_envase.exclude(pk=self.pk).aggregate(
                 total=models.Sum("kg_envasados")

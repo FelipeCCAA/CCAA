@@ -5,6 +5,7 @@ from .views import (
     DocumentoLiberacionViewSet,
     EquipoViewSet,
     EspecificacionViewSet,
+    FormatoEnvasadoViewSet,
     MandanteViewSet,
     ProductoViewSet,
     RecetaViewSet,
@@ -20,6 +21,7 @@ router.register("productos", ProductoViewSet)
 router.register("recetas", RecetaViewSet)
 router.register("especificaciones", EspecificacionViewSet)
 router.register("equipos", EquipoViewSet)
+router.register("formatos-envasado", FormatoEnvasadoViewSet)
 router.register("silos", SiloViewSet)
 router.register("vehiculos", VehiculoViewSet)
 router.register("documentos", DocumentoLiberacionViewSet)

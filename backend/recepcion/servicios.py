@@ -10,7 +10,9 @@ from django.utils import timezone
 from maestros.models import Silo
 
 from . import dominio
-from .models import AnalisisSilo, AtribucionRecepcion, DespachoLeche, MovimientoSilo
+from .models import (
+    AnalisisSilo, AtribucionRecepcion, DespachoLeche, MovimientoSilo, Recepcion,
+)
 
 
 ESTADOS_SIN_CONSUMO = {
@@ -247,6 +249,149 @@ def heredar_atribuciones(ingreso, salidas):
             origen_no_atribuible=fuente.origen_no_atribuible,
         ))
     return AtribucionRecepcion.objects.bulk_create(filas)
+
+
+def trazabilidad_fifo_movimientos(consumos):
+    """Explica retiros de silo con atribuciones congeladas o legado inferido.
+
+    Las atribuciones persistidas son la fuente de verdad. El fallback temporal
+    existe únicamente para movimientos históricos que no las tienen y se
+    etiqueta explícitamente como inferido.
+    """
+    consumos = list(consumos)
+    if not consumos:
+        return {
+            "tramos": [],
+            "litros_no_atribuibles": Decimal("0"),
+            "nota": "El lote no registra retiros de silo.",
+        }
+
+    por_movimiento = defaultdict(list)
+    atribuciones = AtribucionRecepcion.objects.filter(
+        movimiento_id__in=[consumo.pk for consumo in consumos]
+    ).select_related("recepcion__vehiculo").order_by("movimiento_id", "orden")
+    for atribucion in atribuciones:
+        por_movimiento[atribucion.movimiento_id].append(atribucion)
+
+    sin_atribucion = [
+        consumo for consumo in consumos if not por_movimiento[consumo.pk]
+    ]
+    ingresos = list(MovimientoSilo.objects.filter(
+        silo_id__in={consumo.silo_id for consumo in sin_atribucion},
+        fecha_hora__lte=max(
+            consumo.fecha_hora for consumo in sin_atribucion
+        ),
+        tipo=MovimientoSilo.Tipo.INGRESO,
+        origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
+    ).only("silo_id", "origen_id", "fecha_hora").order_by(
+        "fecha_hora", "pk"
+    )) if sin_atribucion else []
+    recepciones = {
+        recepcion.pk: recepcion
+        for recepcion in Recepcion.objects.filter(
+            pk__in={ingreso.origen_id for ingreso in ingresos}
+        ).select_related("vehiculo")
+    }
+
+    tramos = []
+    total_no_atribuible = Decimal("0")
+    for consumo in consumos:
+        filas = por_movimiento[consumo.pk]
+        origenes = []
+        no_atribuible = Decimal("0")
+        motivos_no_atribuibles = []
+        if filas:
+            agrupadas = {}
+            for fila in filas:
+                if not fila.recepcion_id:
+                    no_atribuible += fila.litros
+                    if fila.origen_no_atribuible:
+                        motivos_no_atribuibles.append(fila.origen_no_atribuible)
+                    continue
+                if fila.recepcion_id not in agrupadas:
+                    agrupadas[fila.recepcion_id] = {
+                        "recepcion": fila.recepcion,
+                        "litros_atribuidos": Decimal("0"),
+                    }
+                agrupadas[fila.recepcion_id]["litros_atribuidos"] += fila.litros
+            for dato in agrupadas.values():
+                recepcion = dato["recepcion"]
+                origenes.append({
+                    "id": recepcion.pk,
+                    "fecha": recepcion.fecha,
+                    "guia": recepcion.guia,
+                    "litros": recepcion.litros,
+                    "litros_atribuidos": dato["litros_atribuidos"],
+                    "procedencia": recepcion.procedencia,
+                    "vehiculo": (
+                        recepcion.vehiculo.placa if recepcion.vehiculo_id else None
+                    ),
+                    "silo_codigo": consumo.silo.codigo,
+                    "trazabilidad": "confirmada",
+                })
+            estado = "confirmada"
+        else:
+            ids = {
+                ingreso.origen_id for ingreso in ingresos
+                if ingreso.silo_id == consumo.silo_id
+                and ingreso.fecha_hora <= consumo.fecha_hora
+            }
+            for recepcion_id in ids:
+                recepcion = recepciones.get(recepcion_id)
+                if recepcion is None:
+                    continue
+                origenes.append({
+                    "id": recepcion.pk,
+                    "fecha": recepcion.fecha,
+                    "guia": recepcion.guia,
+                    "litros": recepcion.litros,
+                    "litros_atribuidos": None,
+                    "procedencia": recepcion.procedencia,
+                    "vehiculo": (
+                        recepcion.vehiculo.placa if recepcion.vehiculo_id else None
+                    ),
+                    "silo_codigo": consumo.silo.codigo,
+                    "trazabilidad": "inferida",
+                })
+            estado = "inferida"
+        total_no_atribuible += no_atribuible
+        tramos.append({
+            "movimiento_id": consumo.pk,
+            "silo": consumo.silo_id,
+            "silo_codigo": consumo.silo.codigo,
+            "litros": abs(consumo.litros),
+            "litros_atribuidos": sum(
+                (origen["litros_atribuidos"] for origen in origenes
+                 if origen["litros_atribuidos"] is not None),
+                Decimal("0"),
+            ),
+            "litros_no_atribuibles": no_atribuible,
+            "motivos_no_atribuibles": list(dict.fromkeys(motivos_no_atribuibles)),
+            "fecha_hora": consumo.fecha_hora,
+            "trazabilidad": estado,
+            "recepciones": origenes,
+        })
+
+    if sin_atribucion:
+        nota = (
+            "Las filas inferidas pertenecen a movimientos históricos sin "
+            "atribución FIFO y no representan una cantidad exacta."
+        )
+    elif total_no_atribuible:
+        nota = (
+            "Las cantidades confirmadas provienen de FIFO; parte del volumen "
+            "corresponde a saldo histórico sin recepción atribuible."
+        )
+    else:
+        nota = (
+            "Las cantidades confirmadas provienen de las atribuciones FIFO "
+            "guardadas al retirar leche del silo."
+        )
+    return {
+        "tramos": tramos,
+        "litros_no_atribuibles": total_no_atribuible,
+        "nota": nota,
+    }
 
 
 @transaction.atomic

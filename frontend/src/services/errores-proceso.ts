@@ -31,3 +31,13 @@ export function esErrorDeEquipo(error: unknown): boolean {
   const mensaje = textos(datos).join(" ").toLocaleLowerCase("es-CL");
   return /(equipo|máquina|linea|línea|torre|evaporador).*(ocupad|reservad)/.test(mensaje);
 }
+
+export function esConflictoVersion(error: unknown): boolean {
+  const respuesta = (error as { response?: { status?: number; data?: unknown } })?.response;
+  return Boolean(
+    respuesta?.status === 409
+    && respuesta.data
+    && typeof respuesta.data === "object"
+    && (respuesta.data as { code?: string }).code === "version_conflict"
+  );
+}

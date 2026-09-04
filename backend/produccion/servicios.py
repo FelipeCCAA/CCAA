@@ -366,8 +366,8 @@ def cerrar_lote_producido(*, lote, usuario, titulo=None, mensaje=None) -> str | 
 
 @transaction.atomic
 def registrar_envasado(
-    *, lote_id, equipo, formato_kg, inicio, termino, pallets, usuario,
-    controles=None, observacion="", operacion_id=None,
+    *, lote_id, equipo, inicio, termino, pallets, usuario, formato=None,
+    formato_kg=None, controles=None, observacion="", operacion_id=None,
 ):
     """Registra envase y pallets como un único cierre físico e idempotente."""
     from django.core.exceptions import ValidationError
@@ -406,22 +406,26 @@ def registrar_envasado(
         raise ValidationError(
             "El flujo del lote no tiene Envasado como destino; revisa su etapa productiva."
         )
-    pesos_formato = {
-        lote.producto.Formato.SACO_25KG: Decimal("25"),
-        lote.producto.Formato.CAJA_20KG: Decimal("20"),
-    }
-    formato_configurado = pesos_formato.get(lote.producto.formato)
-    if formato_configurado is None:
+    from maestros.models import FormatoEnvasado
+    if formato is not None and not isinstance(formato, FormatoEnvasado):
+        formato = FormatoEnvasado.objects.filter(pk=formato).first()
+    if formato is None and formato_kg is not None:
+        formatos_compatibles = FormatoEnvasado.objects.filter(
+            producto=lote.producto, activo=True, kg_neto=Decimal(str(formato_kg))
+        )
+        if formatos_compatibles.count() == 1:
+            formato = formatos_compatibles.get()
+    if formato is None or not formato.activo or formato.producto_id != lote.producto_id:
         raise ValidationError({
-            "formato_kg": "El producto no tiene un formato de Envasado valido configurado."
+            "formato": "Selecciona un formato de Envasado activo para este producto."
         })
-    if Decimal(str(formato_kg)) != formato_configurado:
+    if not formato.equipos.filter(pk=equipo.pk).exists():
         raise ValidationError({
-            "formato_kg": (
-                f"El formato configurado para {lote.producto.nombre} es "
-                f"{formato_configurado} kg."
+            "equipo": (
+                f"{equipo.nombre} no está autorizado para el formato {formato.nombre}."
             )
         })
+    formato_configurado = formato.kg_neto
     impedimento = motivo_equipo_no_habilitado(equipo)
     if impedimento:
         raise ValidationError(impedimento)
@@ -430,8 +434,18 @@ def registrar_envasado(
 
     unidades = sum(int(item.get("unidades", 0)) for item in pallets)
     kg_total = sum(Decimal(str(item.get("kg_neto", 0))) for item in pallets)
+    if any(
+        int(item.get("unidades", 0)) > formato.unidades_maximas_pallet
+        for item in pallets
+    ):
+        raise ValidationError({
+            "pallets": (
+                f"El formato {formato.nombre} permite como máximo "
+                f"{formato.unidades_maximas_pallet} unidades por pallet."
+            )
+        })
     registro = RegistroEnvase(
-        lote=lote, equipo=equipo, formato_kg=Decimal(str(formato_kg)),
+        lote=lote, equipo=equipo, formato=formato, formato_kg=formato_configurado,
         unidades=unidades, kg_envasados=kg_total, controles=controles or {},
         operador=usuario, inicio=inicio, termino=termino, observacion=observacion,
         **({"operacion_id": operacion_id} if operacion_id else {}),
@@ -460,14 +474,22 @@ def registrar_envasado(
         fecha=lote.fecha,
         fase="envasado",
     )
-    if explosion_envase.completa and requerido_envase:
-        consumir_receta_produccion(
-            lote_produccion=lote,
-            usuario=usuario,
-            fase="envasado",
-            kg_base=kg_total,
-            operacion_id=registro.operacion_id,
+    if not explosion_envase.completa:
+        raise ValidationError(
+            "La receta de Envasado está incompleta. Configura la lista de "
+            "materiales antes de crear el pallet."
         )
+    if not requerido_envase:
+        raise ValidationError(
+            "La receta vigente no declara materiales para la fase de Envasado."
+        )
+    consumir_receta_produccion(
+        lote_produccion=lote,
+        usuario=usuario,
+        fase="envasado",
+        kg_base=kg_total,
+        operacion_id=registro.operacion_id,
+    )
     # El pallet ya existe físicamente al salir de envase. Inventario lo
     # registra una sola vez en cuarentena; Calidad luego cambia su estado, no
     # vuelve a crear stock.
