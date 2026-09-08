@@ -71,6 +71,7 @@ FORMATO = {
     "granel": "01",
     "saco_25kg": "02",
     "caja_20kg": "03",
+    "big_bag": "04",
 }
 
 MERCADO = {
@@ -91,6 +92,8 @@ PESO_POR_FORMATO = {
     "granel": None,
     "saco_25kg": 25,
     "caja_20kg": 20,
+    # El peso real vive en FormatoEnvasado; Big Bag no tiene un peso global.
+    "big_bag": None,
 }
 
 # El orden manda: es la estructura del SKU.

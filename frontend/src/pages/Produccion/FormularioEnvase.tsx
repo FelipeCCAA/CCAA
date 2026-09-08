@@ -14,7 +14,8 @@ export default function FormularioEnvase({
   formatoId,
   formatoKg,
   formatoNombre,
-  maximoPalletKg,
+  maximoUnidadLogisticaKg,
+  tipoUnidadLogistica,
   cantidadDisponible,
   materiales,
   equipos,
@@ -24,7 +25,8 @@ export default function FormularioEnvase({
   formatoId: number;
   formatoKg: number;
   formatoNombre: string;
-  maximoPalletKg: number;
+  maximoUnidadLogisticaKg: number;
+  tipoUnidadLogistica: "pallet" | "big_bag";
   cantidadDisponible: number;
   materiales: Array<{
     codigo: string;
@@ -39,7 +41,7 @@ export default function FormularioEnvase({
   const [equipo, setEquipo] = useState("");
   const [codigo, setCodigo] = useState("");
   const maximoUnidades = Math.floor(
-    Math.min(maximoPalletKg, cantidadDisponible) / formatoKg,
+    Math.min(maximoUnidadLogisticaKg, cantidadDisponible) / formatoKg,
   );
   const [unidades, setUnidades] = useState(String(maximoUnidades));
   const [inicio, setInicio] = useState(() => fechaLocal(new Date(Date.now() - 60 * 60_000)));
@@ -53,7 +55,7 @@ export default function FormularioEnvase({
   const [operacionId, setOperacionId] = useState(() => crypto.randomUUID());
   const kg = useMemo(() => Number(unidades || 0) * formatoKg, [formatoKg, unidades]);
   const valido = Boolean(
-    equipo && codigo.trim() && Number(unidades) > 0 && kg <= maximoPalletKg
+    equipo && codigo.trim() && Number(unidades) > 0 && kg <= maximoUnidadLogisticaKg
     && kg <= cantidadDisponible
     && inicio && termino && new Date(termino) > new Date(inicio),
   );
@@ -71,14 +73,15 @@ export default function FormularioEnvase({
         controles: { sellado, rotulado, integridad_envase: integridad },
         pallets_datos: [{ codigo: codigo.trim(), unidades: Number(unidades), kg_neto: kg }],
       });
-      setMensaje(`Pallet ${codigo.trim()} creado: ${unidades} unidades, ${kg} kg. Quedó en cuarentena de Calidad.`);
+      const nombreUnidad = tipoUnidadLogistica === "big_bag" ? "Big Bag" : "Pallet";
+      setMensaje(`${nombreUnidad} ${codigo.trim()} creado: ${unidades} unidad(es), ${kg} kg. Quedó en cuarentena de Calidad.`);
       // La clave se conserva si falla la respuesta para que un reenvío no
       // duplique el pallet. Solo cambia después de un alta confirmada, porque
       // el siguiente pallet sí representa una operación física nueva.
       setOperacionId(crypto.randomUUID());
       const saldoSiguiente = Math.max(cantidadDisponible - kg, 0);
       const maximoSiguiente = Math.floor(
-        Math.min(maximoPalletKg, saldoSiguiente) / formatoKg,
+        Math.min(maximoUnidadLogisticaKg, saldoSiguiente) / formatoKg,
       );
       setCodigo(""); setUnidades(String(maximoSiguiente)); setObservacion(""); alGuardar();
     } catch (error) {
@@ -92,14 +95,14 @@ export default function FormularioEnvase({
   }
 
   return <form onSubmit={guardar} className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
-    <h3 className="text-sm font-bold text-slate-900">Envasar en pallet · {formatoNombre}</h3>
-    <p className="mt-1 text-xs text-slate-600">Registra el período y los controles reales. Máximo {maximoPalletKg} kg por pallet: hasta {maximoUnidades} unidades.</p>
+    <h3 className="text-sm font-bold text-slate-900">Envasar en {tipoUnidadLogistica === "big_bag" ? "Big Bag" : "pallet"} · {formatoNombre}</h3>
+    <p className="mt-1 text-xs text-slate-600">Registra el período y los controles reales. Máximo {maximoUnidadLogisticaKg} kg por {tipoUnidadLogistica === "big_bag" ? "Big Bag" : "pallet"}: hasta {maximoUnidades} unidad(es).</p>
     <p className="mt-2 text-xs font-semibold text-emerald-800">
       Saldo utilizable: {cantidadDisponible} kg · máximo {maximoUnidades} unidades completas en este pallet.
     </p>
     <div className="mt-3 grid gap-3 sm:grid-cols-3">
       <select required className={campo} value={equipo} onChange={(e) => setEquipo(e.target.value)}><option value="">Envasadora…</option>{equipos.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.nombre}</option>)}</select>
-      <input required className={campo} placeholder="Código pallet" value={codigo} onChange={(e) => setCodigo(e.target.value)} />
+      <input required className={campo} placeholder={tipoUnidadLogistica === "big_bag" ? "Código Big Bag" : "Código pallet"} value={codigo} onChange={(e) => setCodigo(e.target.value)} />
       <input required className={campo} type="number" min="1" max={maximoUnidades} step="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} />
     </div>
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -112,7 +115,7 @@ export default function FormularioEnvase({
       <Control etiqueta="Integridad del envase" valor={integridad} cambiar={setIntegridad} />
     </div>
     <label className="mt-3 block text-xs font-semibold text-slate-600">Observación del turno<textarea className={`mt-1 min-h-20 ${campo}`} value={observacion} onChange={(e) => setObservacion(e.target.value)} placeholder="Paradas, cambio de rollo, rechazo de sacos u otra novedad…" /></label>
-    <div className="mt-3 flex flex-wrap items-center gap-3"><span className={`text-sm font-bold ${kg > maximoPalletKg ? "text-red-700" : "text-emerald-800"}`}>{unidades || 0} × {formatoKg} kg = {kg} kg</span><button disabled={!valido || guardando} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{guardando ? "Registrando…" : "Crear pallet"}</button></div>
+    <div className="mt-3 flex flex-wrap items-center gap-3"><span className={`text-sm font-bold ${kg > maximoUnidadLogisticaKg ? "text-red-700" : "text-emerald-800"}`}>{unidades || 0} × {formatoKg} kg = {kg} kg</span><button disabled={!valido || guardando} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{guardando ? "Registrando…" : `Crear ${tipoUnidadLogistica === "big_bag" ? "Big Bag" : "pallet"}`}</button></div>
     <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
       <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Materiales que descontará esta operación</p>
       <ul className="mt-2 space-y-1 text-xs text-slate-600">

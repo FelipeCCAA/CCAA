@@ -45,6 +45,8 @@ export interface RutaProducto {
   proceso: number;
   producto_nombre: string;
   proceso_nombre: string;
+  insumo_origen: number | null;
+  insumo_origen_nombre: string | null;
   prioridad: number;
   destino: string;
   destino_final: "siguiente_proceso" | "envasado" | "despacho_directo" | "inventario";
@@ -206,6 +208,11 @@ export interface Genealogia {
   nodos: NodoGenealogia[];
   enlaces: { origen: number; destino: number }[];
   flujo: {
+    origenes_externos: {
+      lote_id: number; lote_codigo: string; material: string;
+      proveedor: string | null; estado_calidad: string;
+      cantidad: string; unidad: string;
+    }[];
     recepciones: {
       id: number; fecha: string; guia: string; litros: string;
       litros_atribuidos: string | null;
@@ -219,7 +226,7 @@ export interface Genealogia {
       ejecucion_codigo: string | null;
       silos_origen: { codigo: string; litros: string }[];
       silo_destino: string; rc_objetivo: string; rc_real: number | null;
-    };
+    } | null;
     produccion: {
       lote_id: number; lote_codigo: string; producto: string; linea: string;
       equipo: string | null; ejecucion_id: number | null;
@@ -334,6 +341,7 @@ export async function crearRutaProducto(datos: {
   producto: number;
   proceso: number;
   prioridad: number;
+  insumo_origen?: number | null;
   destino_final: RutaProducto["destino_final"];
   destino?: string;
   observaciones?: string;
@@ -357,7 +365,13 @@ export interface SalidaIntermediaDisponible {
   lote_codigo: string | null;
   producto_id: number | null;
   producto_nombre: string | null;
+  tipo_material: string;
+  tipo_material_etiqueta: string;
+  estado_calidad: "liberado";
+  estado_calidad_etiqueta: string;
+  /** @deprecated Usar estado_calidad. */
   estado_material: string;
+  /** @deprecated Usar estado_calidad_etiqueta. */
   estado_material_etiqueta: string;
   densidad_kg_m3: string | null;
   cantidad_trazable_kg: string | null;

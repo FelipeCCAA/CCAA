@@ -79,6 +79,14 @@ class RutaProducto(models.Model):
     producto = models.ForeignKey(
         "maestros.Producto", on_delete=models.PROTECT, related_name="rutas_proceso"
     )
+    insumo_origen = models.ForeignKey(
+        "inventario.Insumo", on_delete=models.PROTECT,
+        related_name="rutas_productivas", null=True, blank=True,
+        help_text=(
+            "Materia prima externa que puede iniciar esta ruta. Se deja vacio "
+            "cuando la ruta nace desde un silo o una salida interna."
+        ),
+    )
     proceso = models.ForeignKey(
         Proceso, on_delete=models.PROTECT, related_name="rutas_producto"
     )
@@ -114,6 +122,15 @@ class RutaProducto(models.Model):
             raise ValidationError(
                 {"producto": "El producto y la ruta deben pertenecer a la misma empresa."}
             )
+        if self.insumo_origen_id:
+            if self.insumo_origen.empresa_id != self.sucursal.empresa_id:
+                raise ValidationError({
+                    "insumo_origen": "La materia prima y la ruta pertenecen a empresas distintas."
+                })
+            if self.insumo_origen.categoria != self.insumo_origen.Categoria.MATERIA_PRIMA:
+                raise ValidationError({
+                    "insumo_origen": "El origen externo de una ruta debe ser una materia prima."
+                })
 
     def __str__(self):
         return f"{self.producto.nombre} → {self.proceso.nombre}"
@@ -760,6 +777,11 @@ class EntradaProceso(models.Model):
         "maestros.Silo", on_delete=models.PROTECT, related_name="entradas_proceso",
         null=True, blank=True, verbose_name="Silo de origen",
     )
+    lote_inventario = models.ForeignKey(
+        "inventario.LoteInventario", on_delete=models.PROTECT,
+        related_name="entradas_proceso", null=True, blank=True,
+        verbose_name="Lote externo de origen",
+    )
     salida_origen = models.ForeignKey(
         "procesos.SalidaProceso", on_delete=models.PROTECT,
         related_name="usos_como_origen", null=True, blank=True,
@@ -781,15 +803,20 @@ class EntradaProceso(models.Model):
             models.UniqueConstraint(
                 fields=["ejecucion", "lote", "tipo"], name="entrada_unica_ejecucion_lote_tipo"
             ),
+            models.UniqueConstraint(
+                fields=["ejecucion", "lote_inventario", "tipo"],
+                name="entrada_unica_ejecucion_lote_inv_tipo",
+            ),
             # Uno de los dos, nunca los dos ni ninguno: una entrada que no dice
             # de dónde vino no es trazabilidad, y una que dice dos orígenes
             # obliga a cada consumidor a elegir cuál cree.
             models.CheckConstraint(
                 condition=(
-                    models.Q(lote__isnull=False, silo__isnull=True)
-                    | models.Q(lote__isnull=True, silo__isnull=False)
+                    models.Q(lote__isnull=False, silo__isnull=True, lote_inventario__isnull=True)
+                    | models.Q(lote__isnull=True, silo__isnull=False, lote_inventario__isnull=True)
+                    | models.Q(lote__isnull=True, silo__isnull=True, lote_inventario__isnull=False)
                 ),
-                name="entrada_de_un_lote_o_de_un_silo",
+                name="entrada_con_un_solo_origen",
             ),
         ]
 
@@ -797,9 +824,11 @@ class EntradaProceso(models.Model):
         if not self.ejecucion.editable:
             raise ValidationError("No se pueden agregar entradas a una ejecución cerrada o cancelada.")
 
-        if bool(self.lote_id) == bool(self.silo_id):
+        if sum(bool(origen) for origen in (
+            self.lote_id, self.silo_id, self.lote_inventario_id,
+        )) != 1:
             raise ValidationError(
-                "Una entrada viene de un lote o de un silo, y hay que decir de cuál."
+                "Una entrada debe indicar un solo origen: lote interno, silo o lote externo."
             )
 
         if self.lote_id and self.lote.sucursal_id != self.ejecucion.sucursal_id:
@@ -807,6 +836,20 @@ class EntradaProceso(models.Model):
 
         if self.silo_id and self.silo.sucursal_id != self.ejecucion.sucursal_id:
             raise ValidationError({"silo": "El silo debe pertenecer a la sucursal de la ejecución."})
+
+        if (
+            self.lote_inventario_id
+            and self.lote_inventario.sucursal_id != self.ejecucion.sucursal_id
+        ):
+            raise ValidationError({
+                "lote_inventario": "El lote externo debe pertenecer a la planta de la ejecución."
+            })
+        if self.lote_inventario_id and not self.lote_inventario.utilizable:
+            raise ValidationError({
+                "lote_inventario": (
+                    "El lote externo debe estar vigente y aprobado por Calidad."
+                )
+            })
 
         if self.salida_origen_id:
             if not self.silo_id or self.salida_origen.silo_id != self.silo_id:

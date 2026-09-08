@@ -300,12 +300,20 @@ class FormatoEnvasadoSerializer(serializers.ModelSerializer):
         max_digits=14, decimal_places=3, read_only=True
     )
     equipos_detalle = EquipoSerializer(source="equipos", many=True, read_only=True)
+    tipo_unidad_logistica_etiqueta = serializers.CharField(
+        source="get_tipo_unidad_logistica_display", read_only=True
+    )
+    maximo_unidad_logistica_kg = serializers.DecimalField(
+        max_digits=14, decimal_places=3, read_only=True
+    )
 
     class Meta:
         model = FormatoEnvasado
         fields = [
             "id", "producto", "producto_nombre", "codigo", "nombre", "kg_neto",
-            "unidades_maximas_pallet", "maximo_pallet_kg", "equipos",
+            "unidades_maximas_pallet", "maximo_pallet_kg",
+            "maximo_unidad_logistica_kg", "tipo_unidad_logistica",
+            "tipo_unidad_logistica_etiqueta", "equipos",
             "equipos_detalle", "activo",
         ]
 
@@ -351,6 +359,14 @@ class FormatoEnvasadoSerializer(serializers.ModelSerializer):
                 "unidades_maximas_pallet": attrs.get(
                     "unidades_maximas_pallet",
                     getattr(self.instance, "unidades_maximas_pallet", None),
+                ),
+                "tipo_unidad_logistica": attrs.get(
+                    "tipo_unidad_logistica",
+                    getattr(
+                        self.instance,
+                        "tipo_unidad_logistica",
+                        FormatoEnvasado.TipoUnidadLogistica.PALLET,
+                    ),
                 ),
                 "activo": attrs.get("activo", getattr(self.instance, "activo", True)),
             }

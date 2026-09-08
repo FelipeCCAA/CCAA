@@ -12,22 +12,24 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
   onCerrar: () => void;
   onCerrada: (corrida: CorridaMantequilla) => void | Promise<void>;
 }) {
-  const [datos, setDatos] = useState({ mantequilla: "", suero: "", merma: "", humedad: "" });
+  const [datos, setDatos] = useState({ mantequilla: "", merma: "", humedad: "" });
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
-  const total = useMemo(() => Number(datos.mantequilla || 0) + Number(datos.suero || 0) + Number(datos.merma || 0), [datos]);
+  const total = useMemo(() => Number(datos.mantequilla || 0) + Number(datos.merma || 0), [datos]);
   const diferencia = Number(corrida.kg_crema) - total;
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     if (ocupado) return;
     setError("");
-    if (total > Number(corrida.kg_crema)) { setError("Mantequilla, suero y merma superan la crema utilizada."); return; }
+    if (total > Number(corrida.kg_crema)) { setError("Mantequilla y merma superan la crema utilizada."); return; }
     setOcupado(true);
     try {
       await onCerrada(await cerrarMantequilla(corrida.id, {
         kg_mantequilla: Number(datos.mantequilla),
-        kg_suero: Number(datos.suero || 0),
+        // Campo histórico conservado por compatibilidad. Mazada/suero no forma
+        // parte del alcance operacional vigente de esta pantalla.
+        kg_suero: 0,
         kg_merma: Number(datos.merma || 0),
         controles: datos.humedad ? { humedad: Number(datos.humedad) } : {},
       }));
@@ -40,7 +42,6 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
       <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{corrida.ejecucion_codigo}</p><h2 className="mt-1 text-xl font-bold">Cerrar proceso de mantequilla</h2><p className="mt-2 text-sm text-slate-600">Origen {corrida.crema_codigo} · {Number(corrida.kg_crema).toLocaleString("es-CL")} kg de crema.</p></div><button type="button" onClick={onCerrar} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Cerrar"><X className="h-5 w-5" /></button></div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <Etiqueta texto="Mantequilla producida (kg)"><input required min="0.001" step="0.001" type="number" value={datos.mantequilla} onChange={(e) => setDatos({ ...datos, mantequilla: e.target.value })} className={campo} /></Etiqueta>
-        <Etiqueta texto="Suero generado (kg)"><input min="0" step="0.001" type="number" value={datos.suero} onChange={(e) => setDatos({ ...datos, suero: e.target.value })} className={campo} /></Etiqueta>
         <Etiqueta texto="Merma medida (kg)"><input min="0" step="0.001" type="number" value={datos.merma} onChange={(e) => setDatos({ ...datos, merma: e.target.value })} className={campo} /></Etiqueta>
         <Etiqueta texto="Humedad (%)"><input min="0" max="100" step="0.01" type="number" value={datos.humedad} onChange={(e) => setDatos({ ...datos, humedad: e.target.value })} className={campo} /></Etiqueta>
       </div>

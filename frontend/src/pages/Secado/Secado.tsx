@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Clock3, Gauge, PackageCheck, RefreshCw, Wind } from "lucide-react";
+import { AlertTriangle, Clock3, Gauge, PackageCheck, Plus, RefreshCw, Wind } from "lucide-react";
 
 import StatusBadge from "../../components/ui/StatusBadge";
 import { EmptyState, ErrorState } from "../../components/ui/PageState";
@@ -8,6 +8,7 @@ import { bandejaDeSecado, estadoFisicoSecado, siguienteAccionSecado, type Bandej
 import { obtenerSecados, type CorridaSecado } from "../../services/secado.service";
 import { obtenerSesion } from "../../services/sesion";
 import CierreSecado from "./CierreSecado";
+import InicioSecadoExterno from "./InicioSecadoExterno";
 
 const formatoCantidad = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 3 });
 const formatoFecha = new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" });
@@ -39,6 +40,7 @@ export default function Secado() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [cerrando, setCerrando] = useState<CorridaSecado | null>(null);
+  const [iniciandoExterno, setIniciandoExterno] = useState(false);
   const [mensaje, setMensaje] = useState("");
   const solicitud = useRef<AbortController | null>(null);
   const secuencia = useRef(0);
@@ -91,6 +93,13 @@ export default function Secado() {
     setBandeja("terminadas");
   };
 
+  const completarInicioExterno = (creada: CorridaSecado) => {
+    setCorridas((actuales) => [creada, ...actuales.filter((item) => item.id !== creada.id)]);
+    setIniciandoExterno(false);
+    setMensaje(`Corrida ${creada.ejecucion_codigo} iniciada desde un lote externo liberado.`);
+    setBandeja("activas");
+  };
+
   return (
     <main className="px-5 py-8 sm:px-8 sm:py-10">
       <div className="mx-auto max-w-7xl">
@@ -100,7 +109,7 @@ export default function Secado() {
             <h1 className="mt-1 text-3xl font-bold text-slate-900">Secado</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">Seguimiento y cierre de las corridas que nacen automáticamente al abrir un lote en una torre.</p>
           </div>
-          <button type="button" onClick={() => void cargar()} disabled={cargando} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />Actualizar Secado</button>
+          <div className="flex flex-wrap gap-2">{puedeOperar && <button type="button" onClick={() => setIniciandoExterno(true)} className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-800"><Plus className="h-4 w-4" />Alimentación externa</button>}<button type="button" onClick={() => void cargar()} disabled={cargando} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />Actualizar Secado</button></div>
         </header>
 
         <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Bandejas de Secado">
@@ -137,6 +146,7 @@ export default function Secado() {
       </div>
 
       {cerrando && <CierreSecado corrida={cerrando} alCerrar={() => setCerrando(null)} alCompletarse={completarCierre} />}
+      {iniciandoExterno && <InicioSecadoExterno alCerrar={() => setIniciandoExterno(false)} alIniciar={completarInicioExterno} />}
     </main>
   );
 }

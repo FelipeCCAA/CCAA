@@ -153,6 +153,9 @@ export interface FormatoEnvasado {
   kg_neto: string;
   unidades_maximas_pallet: number;
   maximo_pallet_kg: string;
+  maximo_unidad_logistica_kg: string;
+  tipo_unidad_logistica: "pallet" | "big_bag";
+  tipo_unidad_logistica_etiqueta: string;
   equipos: number[];
   equipos_detalle: Array<{ id: number; codigo: string; nombre: string }>;
   activo: boolean;
@@ -164,6 +167,7 @@ export interface FormatoEnvasadoEditable {
   nombre: string;
   kg_neto: number;
   unidades_maximas_pallet: number;
+  tipo_unidad_logistica: "pallet" | "big_bag";
   equipos: number[];
   activo: boolean;
 }

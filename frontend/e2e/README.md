@@ -301,3 +301,30 @@ rechazar**.
    tres evaporadores, tres corridas abandonadas dejan la planta sin ninguno, y
    el único síntoma es «Máquina ocupada por otra corrida» sobre una máquina que
    nadie usa. Sin corregir.
+
+## Circuito visual de Suero y Big Bag
+
+El proyecto `flujo-suero` comprueba por pantalla la parte específica que no
+recorre el circuito de leche: lote externo liberado → Secado → Calidad
+intermedia → Big Bag de 700 kg → Calidad final → Inventario. Sus pesos y rangos
+son datos E2E identificados como simulados, no parámetros oficiales de planta.
+
+```powershell
+cd backend
+.venv\Scripts\python.exe manage.py crear_usuarios_flujo_e2e
+.venv\Scripts\python.exe manage.py preparar_circuito_suero --aplicar
+
+cd ..\frontend
+$env:E2E_USUARIO = "e2e_auditoria"
+$env:E2E_CLAVE = "auditoria-e2e-ccaa"
+npx.cmd playwright test --project=flujo-suero
+```
+
+Si los puertos 5173/8000 están ocupados por servidores antiguos, el circuito
+puede aislarse sin detenerlos definiendo `E2E_URL` y `E2E_API_URL`; Vite usa el
+segundo como destino de su proxy durante la prueba.
+
+La comprobación final de Inventario se puede reanudar sin repetir producción
+definiendo `E2E_SOLO_INVENTARIO=1`, `E2E_LOTE_SUERO`,
+`E2E_BIG_BAG_SUERO` y `E2E_LOTE_ID_SUERO` con los identificadores de una
+corrida ya terminada.

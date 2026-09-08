@@ -27,7 +27,7 @@ export default function NuevaMantequilla({
   alConflictoEquipo: () => Promise<void>;
 }) {
   const [opciones, setOpciones] = useState<OpcionesAltaMantequilla | null>(null);
-  const [datos, setDatos] = useState({ orden: "", crema: "", equipo: "", codigo: "", suero: "", kg: "" });
+  const [datos, setDatos] = useState({ orden: "", crema: "", equipo: "", codigo: "", kg: "" });
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -54,7 +54,6 @@ export default function NuevaMantequilla({
         lote_crema: Number(datos.crema),
         equipo: Number(datos.equipo),
         codigo_lote_mantequilla: datos.codigo,
-        ...(datos.suero ? { lote_suero: Number(datos.suero) } : {}),
         kg_crema: Number(datos.kg),
       }));
     } catch (errorPeticion: unknown) {
@@ -81,7 +80,6 @@ export default function NuevaMantequilla({
             <Selector texto="Línea / equipo" valor={datos.equipo} cambiar={(valor) => setDatos({ ...datos, equipo: valor })}><option value="">Seleccionar línea…</option>{opciones?.equipos.map((item) => { const ocupacion = ocupaciones.get(item.id); const ocupadoPor = ocupacion?.ejecucion ?? item.ocupado_por; return <option key={item.id} value={item.id} disabled={Boolean(ocupadoPor)}>{item.nombre}{ocupadoPor ? ` · ocupado por ${ocupadoPor}` : " · disponible"}</option>; })}</Selector>
             {equipoSeleccionado && <div className="self-end pb-2"><EstadoEquipo estado={ocupacionSeleccionada?.estado ?? (equipoSeleccionado.ocupado_por ? "ejecucion" : undefined)} ejecucion={ocupacionSeleccionada?.ejecucion ?? equipoSeleccionado.ocupado_por ?? undefined} /></div>}
             <label className="text-sm font-medium text-slate-700">Código nuevo lote de mantequilla<input required value={datos.codigo} onChange={(evento) => setDatos({ ...datos, codigo: evento.target.value.toUpperCase() })} className={campo} /></label>
-            <Selector texto="Lote de suero (si se medirá)" valor={datos.suero} cambiar={(valor) => setDatos({ ...datos, suero: valor })}><option value="">Sin suero declarado</option>{opciones?.sueros.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto}</option>)}</Selector>
           </div>
         )}
         {opciones?.ordenes.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">No hay una OP de mantequilla programada. <Link to="/planificacion" className="font-semibold underline">Ir a Planificación</Link>.</p>}
@@ -98,5 +96,5 @@ export default function NuevaMantequilla({
 }
 
 function Selector({ texto, valor, cambiar, children }: { texto: string; valor: string; cambiar: (valor: string) => void; children: React.ReactNode }) {
-  return <label className="text-sm font-medium text-slate-700">{texto}<select required={texto !== "Lote de suero (si se medirá)"} value={valor} onChange={(evento) => cambiar(evento.target.value)} className={campo}>{children}</select></label>;
+  return <label className="text-sm font-medium text-slate-700">{texto}<select required value={valor} onChange={(evento) => cambiar(evento.target.value)} className={campo}>{children}</select></label>;
 }

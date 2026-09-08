@@ -759,3 +759,141 @@ la consulta anotada de vigencia ya existente, manteniendo intacta la regla de
 dominio. Con los 14 silos/TK del entorno auditado bajó de 33 a 8 consultas. Una
 prueba de regresión demuestra además que pasar de uno a seis silos no hace
 crecer las consultas por instancia.
+
+## Bloque 48 - Tipo de material separado de Calidad y alcance de Mantequilla
+
+El contrato de salidas disponibles distingue ahora `tipo_material` de
+`estado_calidad`. Los campos antiguos se mantienen temporalmente para no romper
+consumidores, pero React ya no presenta “Liberado por Calidad” como si fuera la
+clase física del material. La tarjeta muestra dos identificadores explícitos:
+por ejemplo, `Producto intermedio` y `Calidad: Liberado`.
+
+Los diagramas generales y de estados adoptaron la misma separación. Rechazado
+o bloqueado es un estado de Calidad/disposición y no transforma el material en
+otro tipo.
+
+Planta confirmó que Mazada no pertenece al alcance operativo actual. Se retiró
+de los formularios nuevos y del diagrama de Mantequilla. Los campos históricos
+de suero/mazada se conservaron en Django para no destruir trazabilidad previa;
+los cierres nuevos envían cero y continúan solamente con mantequilla y merma
+declarada.
+
+La prueba focalizada de liberación independiente de las dos ramas de
+Descremado fue actualizada para usar un operador de Secado en la continuación y
+especificaciones de silo vigentes. Esto corrigió expectativas antiguas de la
+prueba sin ampliar permisos productivos.
+
+## Bloque 49 - Alcance confirmado para Suero, Protomalt y Big Bag
+
+Planta confirmó que el suero llega desde fuera de la fábrica y se seca en
+CCAA. Por tanto, no se representa como coproducto de Mantequilla: comienza como
+materia prima recibida, con origen, lote y Calidad propios. Puede reutilizar la
+infraestructura de Secado, Calidad y Envasado, pero necesita una ruta de
+producto independiente y una entrada trazable que hoy todavía no existe de
+extremo a extremo.
+
+Protomalt también llega a la fábrica y se procesa allí. Como todavía no se ha
+confirmado qué preparación antecede al Secado, su diagrama muestra una puerta
+obligatoria de configuración y no inventa el proceso. La ruta debe permanecer
+sin habilitar hasta que Producción y Calidad definan almacenamiento, controles
+y preparación real.
+
+Big Bag se definió como una unidad logística distinta de un pallet de sacos.
+Su peso será configurable y se documenta 700 kg solamente como referencia
+informada por planta. El límite de 500 kg sigue correspondiendo a pallets; no
+debe ampliarse globalmente para hacer caber un Big Bag. Esta separación requiere
+cambios posteriores en maestros, Envasado, Calidad, Inventario y E2E.
+
+Se agregaron los flujos Markdown y HTML independientes de Suero y Protomalt, se
+actualizaron el mapa general, leche en polvo y la portada visual. Ambos flujos
+nuevos quedan marcados `REQUIERE AJUSTE`, porque la documentación diferencia
+claramente el objetivo confirmado de lo que CCAA realmente soporta hoy.
+
+## Bloque 50 - Big Bag como unidad logística independiente
+
+`FormatoEnvasado` distingue ahora entre pallet y Big Bag. El peso continúa
+siendo configurable en el maestro: un pallet conserva obligatoriamente el
+límite de 500 kg, mientras un Big Bag se registra como una sola unidad y puede
+usar la referencia de 700 kg informada por planta sin ampliar el límite de los
+pallets.
+
+El cierre de Envasado copia el tipo configurado a la unidad física para
+conservarlo históricamente. Los contratos API mantienen los campos antiguos de
+pallet por compatibilidad y agregan `tipo_unidad_logistica`, su etiqueta y el
+peso máximo genérico. Envasado, Maestros e Inventario muestran explícitamente
+`Pallet` o `Big Bag`; Calidad e Inventario continúan usando la misma cuarentena,
+liberación y trazabilidad de lote sin convertir el Big Bag en varios sacos.
+
+Las migraciones `maestros.0038` y `produccion.0016` fueron aplicadas en la base
+local. Se probaron seis casos focalizados: formatos existentes, límite de 500
+kg, Big Bag configurable de 700 kg, rechazo de más de una unidad y creación de
+ambos tipos con existencia física. TypeScript, ESLint, Ruff, migraciones y
+`git diff --check` terminaron sin errores.
+
+## Bloque 51 - Materia prima externa conectada con Secado
+
+Las rutas productivas pueden declarar ahora una materia prima externa de
+origen. Esto permite configurar `Suero recibido -> Secado` sin fingir que el
+material fue leche estandarizada ni duplicar Recepción, Calidad o Inventario.
+La misma capacidad queda disponible para Protomalt, pero su ruta no debe
+habilitarse hasta confirmar el proceso previo real.
+
+El puesto de Secado incorpora una acción visual de alimentación externa. En una
+sola consulta muestra las órdenes cuya ruta comienza realmente en Secado, los
+lotes externos liberados y con stock disponible, y las torres activas indicando
+si están ocupadas. Al confirmar, una transacción crea el lote de salida, reserva
+la torre, registra la entrada productiva y descuenta exactamente el lote de
+inventario. Un lote pendiente, rechazado, vencido, sin ruta compatible o sin
+stock no puede avanzar.
+
+La trazabilidad del lote terminado muestra el lote del proveedor, material,
+cantidad, proveedor y decisión de Calidad, y el cierre conserva la cantidad ya
+descontada para no descoordinar el balance de torre con el libro de inventario.
+No se aplican conversiones ocultas: esta primera versión exige que la materia
+prima de Secado esté configurada en kg. La migración `procesos.0021` fue creada
+y aplicada localmente. Las pruebas focalizadas validan liberación, consumo,
+rollback del material pendiente y trazabilidad; TypeScript, ESLint, Ruff y la
+verificación de migraciones finalizaron correctamente.
+
+## Bloque 52 - Circuito integral de Suero verificado
+
+Se agregó una prueba transaccional cruzada que recorre el Suero desde una
+compra y recepción externa hasta una unidad terminada disponible en Bodega.
+El circuito probado incluye cuarentena, inspección y aprobación de Calidad,
+traslado físico a disponible, consumo trazable por Secado, cierre con balance,
+análisis y liberación intermedia, Envasado en un Big Bag configurable de 700 kg,
+expediente de Calidad y traslado final a inventario disponible.
+
+La prueba detectó y corrigió un enlace de pertenencia: el lote creado al recibir
+una compra ahora toma explícitamente la sucursal de la bodega receptora. Antes
+podía heredar la sucursal predeterminada y quedar invisible para Secado en una
+instalación con más de una planta. El cambio no altera cantidades ni reglas de
+Calidad y no requiere migración.
+
+Todos los parámetros usados por la prueba están identificados como simulados y
+no se incorporan al catálogo operacional. El resultado confirma 800 kg
+consumidos desde el lote externo, 200 kg remanentes trazables y un Big Bag de
+700 kg liberado e ingresado una sola vez a producto terminado.
+
+## Bloque 53 - Flujo visual E2E de Suero y Big Bag
+
+Se agregó un escenario Playwright independiente que opera las pantallas reales
+de Secado, Calidad, Envasado e Inventario. El escenario selecciona una orden y
+un lote externo, registra el balance de torre, crea el análisis del lote,
+libera el resultado intermedio, envasa 700 kg como una única unidad Big Bag,
+completa el expediente, libera el producto y comprueba su disponibilidad en
+Bodega. Puede reanudar solamente la comprobación final para no repetir una
+corrida productiva que ya terminó correctamente.
+
+La ejecución visual detectó dos defectos de integración. Primero, el modal de
+alimentación externa cancelaba su propia consulta en React Strict Mode y
+mostraba un error de conexión sin llegar a llamar al backend; ahora difiere la
+lectura hasta completar el montaje y conserva la cancelación al cerrar. Segundo,
+la tarjeta de producto terminado recibía el tipo logístico, pero no lo mostraba;
+ahora identifica explícitamente `Pallet` o `Big Bag` junto al producto.
+
+Playwright puede levantar Vite y Django en puertos aislados, evitando reutilizar
+un servidor antiguo que no corresponda al código auditado. El recorrido real
+superó Secado, Calidad intermedia, Envasado, los 21 documentos configurados,
+liberación final y envío a Bodega. La verificación final de Inventario terminó
+con dos pruebas aprobadas (sesión y flujo), sin repetir el proceso ya ejecutado.

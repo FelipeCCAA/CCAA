@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Secado de suero recibido | CCAA</title>
+<style>:root{font-family:Inter,system-ui,sans-serif;color:#172033;background:#f3f6fa}*{box-sizing:border-box}body{margin:0}.top{background:linear-gradient(120deg,#071a33,#123f69);color:#fff;padding:18px max(16px,calc((100% - 1500px)/2))}.top a{color:#fff;text-decoration:none;font-weight:800}.page{width:min(1500px,calc(100% - 32px));margin:auto;padding:34px 0}.head{display:flex;justify-content:space-between;gap:20px;align-items:start}h1{margin:4px 0;font-size:clamp(2rem,4vw,3rem)}.lead{color:#5e6b82;max-width:850px}.badge{padding:8px 12px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:.75rem;font-weight:900;white-space:nowrap}.panel{background:#fff;border:1px solid #dbe3ee;border-radius:18px;box-shadow:0 12px 34px #20334f0b}.diagram{margin-top:24px;overflow:auto;padding:28px;min-height:430px}.mermaid{min-width:920px;display:flex;justify-content:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}.info{padding:22px}.info h2{margin-top:0}.info li{margin:.55rem 0;color:#455268}.validation{margin-top:18px;padding:18px 22px;border-left:6px solid #dc2626}@media(max-width:760px){.head,.grid{display:grid;grid-template-columns:1fr}.diagram{padding:12px}}</style></head>
+<body><header class="top"><a href="index.html">← CCAA · Flujos de planta</a></header><main class="page"><div class="head"><div><p>FLUJO OPERACIONAL</p><h1>Secado de suero recibido</h1><p class="lead">El suero llega desde fuera de la fábrica como materia prima trazable. No proviene de Mantequilla dentro del alcance actual.</p></div><span class="badge">REQUIERE AJUSTE</span></div>
+<section class="panel diagram"><pre class="mermaid">flowchart LR
+REC[Recepción de suero] --> MP[Materia prima: suero recibido]
+MP --> Q1{Calidad de recepción}
+Q1 -->|Liberado| ALM[(Almacenamiento / alimentación)]
+Q1 -->|Rechazado| RET[Disposición de Calidad]
+ALM --> PRE{¿Preparación previa según ficha?}
+PRE -->|No| SEC[Secado]
+PRE -->|Sí, configurada| PPRO[Proceso previo autorizado]
+PPRO --> SEC
+SEC --> GR[Intermedio: suero en polvo a granel]
+GR --> Q2{Calidad de lote}
+Q2 -->|Liberado| ENV[Envasado]
+Q2 -->|Rechazado| DISP[Disposición de Calidad]
+ENV --> PT[Producto terminado]
+PT --> Q3{Liberación final}
+Q3 --> INV[Inventario o Despacho]
+class REC,PPRO,SEC,ENV p; class ALM s; class MP,GR m; class PT f; class Q1,Q2,Q3 q; class RET,DISP,INV d;
+classDef p fill:#dbeafe,stroke:#2563eb; classDef s fill:#e0f2fe,stroke:#0284c7; classDef m fill:#fef3c7,stroke:#d97706; classDef f fill:#f3e8ff,stroke:#9333ea; classDef q fill:#dcfce7,stroke:#16a34a; classDef d fill:#fee2e2,stroke:#dc2626;</pre></section>
+<div class="grid"><section class="panel info"><h2>En pocas palabras</h2><p>Recepción identifica origen, lote y cantidad. Calidad decide si puede almacenarse y alimentar Secado. La corrida y las liberaciones pueden reutilizar la infraestructura existente, pero con producto y ruta propios.</p></section><section class="panel info"><h2>Decisiones importantes</h2><ul><li>No mezclarlo con leche recibida.</li><li>No relacionarlo con Mazada.</li><li>La preparación previa depende de la ficha real.</li><li>Formato y especificaciones deben ser configurados.</li></ul></section></div>
+<section class="panel validation"><b>REQUIERE AJUSTE.</b> CCAA aún no conecta la recepción externa de suero con Secado de extremo a extremo. Faltan confirmar almacenamiento, controles y preparación previa.</section></main>
+<script type="module">const c=document.querySelector('.mermaid');try{const{default:m}=await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');m.initialize({startOnLoad:false,securityLevel:'strict',theme:'base',flowchart:{htmlLabels:true}});await m.run({nodes:[c]})}catch{c.style.whiteSpace='pre-wrap'}</script></body></html>

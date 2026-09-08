@@ -110,6 +110,16 @@ class CierreSecadoSerializer(serializers.Serializer):
     controles = serializers.JSONField(required=False, default=dict)
 
 
+class CrearSecadoInventarioSerializer(serializers.Serializer):
+    orden = serializers.IntegerField(min_value=1)
+    existencia = serializers.IntegerField(min_value=1)
+    equipo = serializers.IntegerField(min_value=1)
+    codigo_lote = serializers.CharField(max_length=60)
+    cantidad = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0.001")
+    )
+
+
 class IncorporarReworkSerializer(serializers.Serializer):
     lote = serializers.IntegerField(min_value=1)
     unidad_rework = serializers.IntegerField(min_value=1, required=False)
@@ -298,6 +308,9 @@ class EtapaProcesoSerializer(serializers.ModelSerializer):
 class RutaProductoSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
     proceso_nombre = serializers.CharField(source="proceso.nombre", read_only=True)
+    insumo_origen_nombre = serializers.CharField(
+        source="insumo_origen.nombre", read_only=True, allow_null=True
+    )
     etapas = EtapaProcesoSerializer(source="proceso.etapas", many=True, read_only=True)
 
     class Meta:
@@ -321,6 +334,9 @@ class RutaProductoSerializer(serializers.ModelSerializer):
 class EntradaProcesoSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
+    lote_inventario_codigo = serializers.CharField(
+        source="lote_inventario.codigo", read_only=True
+    )
     salida_origen_codigo = serializers.CharField(
         source="salida_origen.ejecucion.codigo", read_only=True
     )

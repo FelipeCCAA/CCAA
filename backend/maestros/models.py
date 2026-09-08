@@ -145,6 +145,7 @@ class Producto(models.Model):
         GRANEL = "granel", "Granel"
         SACO_25KG = "saco_25kg", "Saco 25 kg"
         CAJA_20KG = "caja_20kg", "Caja 20 kg"
+        BIG_BAG = "big_bag", "Big Bag"
 
     class Mercado(models.TextChoices):
         LOCAL = "local", "Local"
@@ -439,6 +440,10 @@ class Equipo(models.Model):
 class FormatoEnvasado(models.Model):
     """Presentación operable de un producto y máquinas autorizadas."""
 
+    class TipoUnidadLogistica(models.TextChoices):
+        PALLET = "pallet", "Pallet"
+        BIG_BAG = "big_bag", "Big Bag"
+
     producto = models.ForeignKey(
         Producto, on_delete=models.PROTECT, related_name="formatos_envasado"
     )
@@ -446,6 +451,11 @@ class FormatoEnvasado(models.Model):
     nombre = models.CharField(max_length=120)
     kg_neto = models.DecimalField(max_digits=10, decimal_places=3)
     unidades_maximas_pallet = models.PositiveSmallIntegerField()
+    tipo_unidad_logistica = models.CharField(
+        max_length=15,
+        choices=TipoUnidadLogistica.choices,
+        default=TipoUnidadLogistica.PALLET,
+    )
     equipos = models.ManyToManyField(
         Equipo, related_name="formatos_envasado", blank=True
     )
@@ -472,13 +482,29 @@ class FormatoEnvasado(models.Model):
     def maximo_pallet_kg(self):
         return self.kg_neto * self.unidades_maximas_pallet
 
+    @property
+    def maximo_unidad_logistica_kg(self):
+        return self.maximo_pallet_kg
+
     def clean(self):
         super().clean()
         if self.kg_neto and self.unidades_maximas_pallet:
-            if self.maximo_pallet_kg > 500:
+            if (
+                self.tipo_unidad_logistica == self.TipoUnidadLogistica.PALLET
+                and self.maximo_pallet_kg > 500
+            ):
                 raise ValidationError({
                     "unidades_maximas_pallet": (
                         "La configuración no puede superar 500 kg netos por pallet."
+                    )
+                })
+            if (
+                self.tipo_unidad_logistica == self.TipoUnidadLogistica.BIG_BAG
+                and self.unidades_maximas_pallet != 1
+            ):
+                raise ValidationError({
+                    "unidades_maximas_pallet": (
+                        "Un Big Bag es una unidad logística individual; configura 1 unidad."
                     )
                 })
         if self.producto_id and self.producto.naturaleza != Producto.Naturaleza.TERMINADO:

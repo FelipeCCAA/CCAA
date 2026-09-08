@@ -158,9 +158,14 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                     {salida.corrida_codigo} · {salida.silo_codigo}
                   </p>
                 </div>
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
-                  {salida.estado_material_etiqueta}
-                </span>
+                <div className="flex flex-wrap justify-end gap-2 text-xs font-bold">
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-900">
+                    Tipo: {salida.tipo_material_etiqueta}
+                  </span>
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
+                    Calidad: {salida.estado_calidad_etiqueta}
+                  </span>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-sm">
                 <div><span className="text-slate-500">Disponible</span><br /><b>{numero.format(Number(salida.cantidad_disponible))} {salida.unidad}</b></div>
@@ -170,7 +175,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <div className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600">
-                  Clase<br /><b className="text-slate-800">{salida.clasificacion_etiqueta}</b>
+                  Tipo de material<br /><b className="text-slate-800">{salida.tipo_material_etiqueta}</b>
                 </div>
                 <label className="text-xs font-semibold text-slate-600">
                   Destino operativo

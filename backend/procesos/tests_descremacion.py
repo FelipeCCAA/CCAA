@@ -537,11 +537,13 @@ class CierreDescremacionTests(TestCase):
     def test_calidad_decide_descremada_y_crema_por_separado(self):
         Especificacion.objects.create(
             producto=self.producto_descremada, version=1,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
             vigente_desde=timezone.localdate() - timedelta(days=1),
             rangos={"mg": {"min": 0, "max": 0.2, "obligatorio": True}},
         )
         Especificacion.objects.create(
             producto=self.producto_crema, version=1,
+            tipo_analisis=Especificacion.TipoAnalisis.SILO,
             vigente_desde=timezone.localdate() - timedelta(days=1),
             rangos={"mg": {"min": 35, "max": 45, "obligatorio": True}},
         )
@@ -594,11 +596,20 @@ class CierreDescremacionTests(TestCase):
             usuario=calidad, empresa=self.sucursal.empresa, sucursal=self.sucursal,
             rol=Rol.CALIDAD, area=PerfilUsuario.Area.CALIDAD,
         )
+        operador_secado = User.objects.create_user("secado-descremacion")
+        PerfilUsuario.objects.create(
+            usuario=operador_secado, empresa=self.sucursal.empresa,
+            sucursal=self.sucursal, rol=Rol.PRODUCCION,
+            area=PerfilUsuario.Area.SECADO,
+        )
         cliente = APIClient()
         cliente.force_authenticate(calidad)
         salidas = {salida.silo_id: salida for salida in self.ejecucion.salidas.all()}
         produccion = APIClient()
-        produccion.force_authenticate(self.usuario)
+        # La continuación elegida para esta prueba es Secado. Una cuenta de
+        # Condensación recibe correctamente 403 y no alcanza a comprobar la
+        # puerta de Calidad que este escenario pretende aislar.
+        produccion.force_authenticate(operador_secado)
         bloqueada = produccion.post(
             "/api/procesos/entradas/",
             {
@@ -617,7 +628,7 @@ class CierreDescremacionTests(TestCase):
         self.assertEqual(cola.status_code, 200, cola.data)
         self.assertEqual(
             {item["producto_nombre"] for item in cola.data["procesos"]},
-            {"Leche descremada", "Crema"},
+            {self.producto_descremada.nombre, self.producto_crema.nombre},
         )
 
         primera = cliente.post(
@@ -665,6 +676,10 @@ class CierreDescremacionTests(TestCase):
         self.assertEqual(descremada["cantidad_disponible"], Decimal("500"))
         self.assertEqual(descremada["lote_codigo"], lote_descremada.codigo_lote)
         self.assertEqual(descremada["producto_nombre"], "Leche descremada intermedia")
+        self.assertEqual(descremada["tipo_material"], "intermedio")
+        self.assertEqual(descremada["tipo_material_etiqueta"], "Producto intermedio")
+        self.assertEqual(descremada["estado_calidad"], "liberado")
+        self.assertEqual(descremada["estado_calidad_etiqueta"], "Liberado por Calidad")
         self.assertEqual(descremada["estado_material"], "liberado")
         self.assertEqual(descremada["densidad_kg_m3"], Decimal("1032.000"))
         self.assertEqual(descremada["cantidad_consumida_kg"], Decimal("412.800"))

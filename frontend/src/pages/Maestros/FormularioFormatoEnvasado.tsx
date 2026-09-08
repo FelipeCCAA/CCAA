@@ -34,6 +34,9 @@ export default function FormularioFormatoEnvasado({
   const [unidades, setUnidades] = useState(
     String(formato?.unidades_maximas_pallet ?? 20),
   );
+  const [tipoUnidad, setTipoUnidad] = useState<"pallet" | "big_bag">(
+    formato?.tipo_unidad_logistica ?? "pallet",
+  );
   const [equiposElegidos, setEquiposElegidos] = useState<number[]>(
     formato?.equipos ?? [],
   );
@@ -41,7 +44,7 @@ export default function FormularioFormatoEnvasado({
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
-  const pesoPallet = Number(kgNeto || 0) * Number(unidades || 0);
+  const pesoUnidadLogistica = Number(kgNeto || 0) * Number(unidades || 0);
   const productosTerminados = useMemo(
     () => productos.filter((item) => item.activo && item.naturaleza === "terminado"),
     [productos],
@@ -54,7 +57,9 @@ export default function FormularioFormatoEnvasado({
   );
   const valido = Boolean(
     producto && codigo.trim() && nombre.trim() && Number(kgNeto) > 0
-      && Number(unidades) > 0 && pesoPallet <= 500 && equiposElegidos.length,
+      && Number(unidades) > 0
+      && (tipoUnidad === "big_bag" ? Number(unidades) === 1 : pesoUnidadLogistica <= 500)
+      && equiposElegidos.length,
   );
 
   const alternarEquipo = (id: number) => {
@@ -77,6 +82,7 @@ export default function FormularioFormatoEnvasado({
         nombre: nombre.trim(),
         kg_neto: Number(kgNeto),
         unidades_maximas_pallet: Number(unidades),
+        tipo_unidad_logistica: tipoUnidad,
         equipos: equiposElegidos,
         activo,
       });
@@ -105,7 +111,7 @@ export default function FormularioFormatoEnvasado({
               {formato ? "Editar formato de envase" : "Nuevo formato de envase"}
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Presentación comercial, límite físico del pallet y líneas autorizadas.
+              Presentación comercial, unidad logística y líneas autorizadas.
             </p>
           </div>
           <button type="button" onClick={alCerrar} aria-label="Cerrar" className="rounded-lg p-1 text-slate-600 hover:bg-slate-100">
@@ -121,14 +127,15 @@ export default function FormularioFormatoEnvasado({
             </select>
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-slate-700">Unidad logística *<select required className={`mt-1.5 ${campo}`} value={tipoUnidad} onChange={(e) => { const tipo = e.target.value as "pallet" | "big_bag"; setTipoUnidad(tipo); if (tipo === "big_bag") setUnidades("1"); }}><option value="pallet">Pallet</option><option value="big_bag">Big Bag</option></select></label>
             <label className="text-sm font-medium text-slate-700">Código *<input required className={`mt-1.5 ${campo}`} value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="SACO-25KG" /></label>
             <label className="text-sm font-medium text-slate-700">Nombre *<input required className={`mt-1.5 ${campo}`} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Saco 25 kg" /></label>
             <label className="text-sm font-medium text-slate-700">Peso neto por envase (kg) *<input required type="number" min="0.001" step="0.001" className={`mt-1.5 ${campo}`} value={kgNeto} onChange={(e) => setKgNeto(e.target.value)} /></label>
-            <label className="text-sm font-medium text-slate-700">Máximo de envases por pallet *<input required type="number" min="1" step="1" className={`mt-1.5 ${campo}`} value={unidades} onChange={(e) => setUnidades(e.target.value)} /></label>
+            <label className="text-sm font-medium text-slate-700">{tipoUnidad === "big_bag" ? "Unidades por Big Bag" : "Máximo de envases por pallet"} *<input required disabled={tipoUnidad === "big_bag"} type="number" min="1" step="1" className={`mt-1.5 ${campo}`} value={unidades} onChange={(e) => setUnidades(e.target.value)} /></label>
           </div>
-          <div className={`rounded-xl border p-4 ${pesoPallet > 500 ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
-            <p className="text-sm font-bold">Máximo configurado: {pesoPallet.toLocaleString("es-CL")} kg por pallet</p>
-            <p className="mt-1 text-xs">El sistema impide superar 500 kg y también este máximo de unidades.</p>
+          <div className={`rounded-xl border p-4 ${tipoUnidad === "pallet" && pesoUnidadLogistica > 500 ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
+            <p className="text-sm font-bold">Máximo configurado: {pesoUnidadLogistica.toLocaleString("es-CL")} kg por {tipoUnidad === "big_bag" ? "Big Bag" : "pallet"}</p>
+            <p className="mt-1 text-xs">{tipoUnidad === "big_bag" ? "El peso es configurable y el Big Bag se registra como una unidad física independiente." : "El sistema impide superar 500 kg por pallet."}</p>
           </div>
           <fieldset>
             <legend className="text-sm font-medium text-slate-700">Líneas autorizadas *</legend>

@@ -151,6 +151,8 @@ export interface PalletProducto {
   codigo: string;
   unidades: number;
   kg_neto: string;
+  tipo_unidad_logistica: "pallet" | "big_bag";
+  tipo_unidad_logistica_etiqueta: string;
   estado: string;
   estado_etiqueta: string;
   lote_codigo?: string;
@@ -314,12 +316,15 @@ export interface MaterialEnvasable {
   cantidad_disponible: string;
   pallets_total: number;
   unidad: string;
-  formato: "saco_25kg" | "caja_20kg";
+  formato: "saco_25kg" | "caja_20kg" | "big_bag";
   formato_id: number | null;
   formato_codigo: string;
   formato_nombre: string;
   formato_kg: string | null;
   maximo_pallet_kg: string | null;
+  maximo_unidad_logistica_kg: string | null;
+  tipo_unidad_logistica: "pallet" | "big_bag" | null;
+  tipo_unidad_logistica_etiqueta: string;
   equipos: Array<{ id: number; codigo: string; nombre: string }>;
   unidades_por_producto: number;
   unidades_disponibles: number;

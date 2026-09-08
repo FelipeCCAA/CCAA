@@ -10,8 +10,9 @@ npm.cmd install
 npm.cmd run dev -- --host 127.0.0.1
 ```
 
-La aplicación queda disponible en `http://127.0.0.1:5173/`. Por defecto consume
-la API en `http://127.0.0.1:8000/api/`; `VITE_API_URL` permite cambiarla.
+La aplicación queda disponible en `http://127.0.0.1:5173/` y también en la IP
+local anunciada por Vite. En desarrollo consume `/api/` mediante el proxy de
+Vite hacia Django en `http://127.0.0.1:8000`; `VITE_API_URL` permite cambiarlo.
 
 ## Verificación
 

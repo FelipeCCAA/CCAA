@@ -82,14 +82,17 @@
     SEC --&gt; ME3[Polvo a granel]
     ME3 --&gt; Q4{Calidad de lote}
     Q4 --&gt;|Liberado para Envasado| ENV[Envasado]
-    ENV --&gt; PT[Producto terminado&lt;br/&gt;sacos + pallet]
-    PT --&gt; Q5{Liberación final}
+    ENV --&gt; FORM{Formato configurado}
+    FORM --&gt; SAC[Producto terminado&lt;br/&gt;Sacos + pallet ≤ 500 kg]
+    FORM --&gt; BB[Producto terminado&lt;br/&gt;Big Bag · unidad propia]
+    SAC --&gt; Q5{Liberación final}
+    BB --&gt; Q5
     Q5 --&gt;|Liberado| INV[Inventario disponible]
 
     class REC,EST,EVA,SEC,ENV process;
     class SILO storage;
     class ME1,ME2,ME3 intermediate;
-    class PT final;
+    class SAC,BB final;
     class Q1,Q2,Q3,Q4,Q5 quality;
     class INV destination;
     classDef process fill:#dbeafe,stroke:#2563eb,color:#172554;
@@ -101,10 +104,10 @@
       <div class="render-alert" role="status"></div>
     </section>
     <div class="info-grid">
-      <section class="panel info"><h2>En pocas palabras</h2><p>La leche pasa por transformaciones físicas separadas y cada material intermedio conserva su lote y origen. El cierre de una máquina no reemplaza una liberación de Calidad. Envasado consume los materiales de embalaje y crea el pallet; la liberación final permite que llegue a stock disponible.</p></section>
-      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>El RC conforme habilita la salida de Estandarización.</li><li>El precondensado necesita liberación antes de Secado.</li><li>El polvo a granel necesita liberación antes de Envasado.</li><li>El pallet queda en cuarentena hasta la liberación comercial final.</li></ul></section>
+      <section class="panel info"><h2>En pocas palabras</h2><p>Envasado crea la unidad logística configurada para el producto. Un pallet de sacos y un Big Bag conservan la misma trazabilidad de lote, pero no son el mismo objeto físico ni comparten el límite de 500 kg.</p></section>
+      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>El RC conforme habilita la salida de Estandarización.</li><li>El precondensado necesita liberación antes de Secado.</li><li>El polvo a granel necesita liberación antes de Envasado.</li><li>El formato se obtiene del maestro.</li><li>Big Bag tiene peso configurable; referencia informada: 700 kg.</li><li>Toda unidad queda en cuarentena hasta la liberación final.</li></ul></section>
     </div>
-    <section class="panel validation"><span class="badge ok">CORRECTO</span><p>El circuito completo fue verificado por interfaz hasta un pallet de 500 kg disponible en Inventario.</p></section>
+    <section class="panel validation"><span class="badge observe">CORRECTO CON OBSERVACIONES</span><p>El circuito de sacos fue verificado hasta Inventario. Big Bag ya tiene soporte técnico independiente; falta configurar el SKU, embalajes y línea reales y ejecutar su E2E físico.</p></section>
   </main>
   <footer>Fuente: <code>01-leche-polvo.md</code> · Documento visual de consulta · CCAA</footer>
   

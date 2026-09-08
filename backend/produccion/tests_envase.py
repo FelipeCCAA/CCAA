@@ -135,6 +135,39 @@ class EnvasePalletTests(TestCase):
         self.assertIn("operador_nombre", datos)
         self.assertTrue(datos["inicio"])
 
+    def test_registra_big_bag_700kg_como_unidad_logistica_independiente(self):
+        self.formato.codigo = "big-bag-700"
+        self.formato.nombre = "Big Bag 700 kg"
+        self.formato.kg_neto = Decimal("700")
+        self.formato.unidades_maximas_pallet = 1
+        self.formato.tipo_unidad_logistica = (
+            FormatoEnvasado.TipoUnidadLogistica.BIG_BAG
+        )
+        self.formato.full_clean()
+        self.formato.save()
+        self.lote.kg_producidos = Decimal("700")
+        self.lote.save(update_fields=["kg_producidos"])
+
+        registro = registrar_envasado(
+            lote_id=self.lote.pk,
+            equipo=self.envasadora,
+            formato=self.formato,
+            inicio=timezone.now() - timedelta(hours=1),
+            termino=timezone.now(),
+            usuario=self.usuario,
+            pallets=[{"codigo": "BB-700-001", "unidades": 1, "kg_neto": "700"}],
+        )
+
+        unidad = registro.pallets.get()
+        self.assertEqual(unidad.tipo_unidad_logistica, "big_bag")
+        self.assertEqual(unidad.kg_neto, Decimal("700"))
+        self.assertEqual(
+            RegistroEnvaseSerializer(registro).data["pallets"][0][
+                "tipo_unidad_logistica_etiqueta"
+            ],
+            "Big Bag",
+        )
+
     def test_clave_idempotente_no_duplica_pallets(self):
         clave = uuid.uuid4()
         primero = self.registrar(clave=clave)

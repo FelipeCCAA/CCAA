@@ -79,7 +79,6 @@
     TK --&gt; Q2{Calidad crema}
     Q2 --&gt;|Liberada para Mantequilla| MAN[Proceso de Mantequilla]
     MAN --&gt; MB[Mantequilla a granel]
-    MAN --&gt; MAZ[Mazada / coproducto]
     MAN --&gt; MER[Merma]
     MB --&gt; Q3{Calidad de lote}
     Q3 --&gt;|Liberada para Envasado| ENV[Envasado]
@@ -89,7 +88,7 @@
 
     class REC,DES,MAN,ENV process;
     class SILO,TK storage;
-    class CRE,LD,MB,MAZ,MER intermediate;
+    class CRE,LD,MB,MER intermediate;
     class CAJ final;
     class Q1,Q2,Q3,Q4 quality;
     class INV destination;
@@ -102,10 +101,10 @@
       <div class="render-alert" role="status"></div>
     </section>
     <div class="info-grid">
-      <section class="panel info"><h2>En pocas palabras</h2><p>La crema nace como una de las dos salidas de Descremado y tiene su propio lote, TK y liberación. Mantequilla registra el balance entre producto, mazada y merma. Solo la mantequilla a granel conforme puede envasarse; las cajas requieren una liberación final antes de estar disponibles.</p></section>
-      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>Crema pendiente o rechazada no puede entrar a Mantequilla.</li><li>La corrida termina físicamente antes de la decisión sobre el granel.</li><li>El formato y la cantidad máxima del pallet vienen de configuración.</li><li>Un remanente insuficiente para una caja debe explicarse como rework o destrucción.</li></ul></section>
+      <section class="panel info"><h2>En pocas palabras</h2><p>La crema nace como una de las dos salidas de Descremado y tiene su propio lote, TK y liberación. En el alcance operacional actual, CCAA continúa solamente con mantequilla y merma declarada; no ofrece una ruta de mazada. Solo la mantequilla a granel conforme puede envasarse y las cajas requieren liberación final.</p></section>
+      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>Crema pendiente o rechazada no puede entrar a Mantequilla.</li><li>La corrida termina físicamente antes de la decisión sobre el granel.</li><li>Mazada queda fuera del flujo operativo hasta que planta confirme que existe y cómo se gestiona.</li><li>El formato y la cantidad máxima del pallet vienen de configuración.</li><li>Un remanente insuficiente para una caja debe explicarse como rework o destrucción.</li></ul></section>
     </div>
-    <section class="panel validation"><span class="badge observe">CORRECTO CON OBSERVACIONES</span><p>El circuito fue probado hasta Inventario; las especificaciones y capacidades provisionales deben reemplazarse por las aprobadas por CCAA.</p></section>
+    <section class="panel validation"><span class="badge observe">CORRECTO CON OBSERVACIONES</span><p>El circuito fue probado hasta Inventario. Mazada no se presenta como destino operativo y las especificaciones provisionales deben reemplazarse por las aprobadas por CCAA.</p></section>
   </main>
   <footer>Fuente: <code>03-mantequilla.md</code> · Documento visual de consulta · CCAA</footer>
   

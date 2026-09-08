@@ -770,6 +770,12 @@ class ClienteDespachoSerializer(serializers.ModelSerializer):
 
 class ExistenciaProductoTerminadoSerializer(serializers.ModelSerializer):
     pallet_codigo = serializers.CharField(source="pallet.codigo", read_only=True)
+    tipo_unidad_logistica = serializers.CharField(
+        source="pallet.tipo_unidad_logistica", read_only=True
+    )
+    tipo_unidad_logistica_etiqueta = serializers.CharField(
+        source="pallet.get_tipo_unidad_logistica_display", read_only=True
+    )
     lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo_lote", read_only=True)
     producto_nombre = serializers.CharField(source="pallet.envase.lote.producto.nombre", read_only=True)
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)

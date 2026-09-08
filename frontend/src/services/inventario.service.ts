@@ -330,6 +330,8 @@ export interface ExistenciaProductoTerminado {
   producto_nombre: string; ubicacion: number; ubicacion_codigo: string;
   ubicacion_tipo: "disponible" | "cuarentena" | "rechazado" | "produccion";
   kg_neto: string; activo: boolean; actualizado_en: string;
+  tipo_unidad_logistica: "pallet" | "big_bag";
+  tipo_unidad_logistica_etiqueta: string;
   estado_inventario: "cuarentena" | "disponible" | "bloqueado" | "despachado" | "anulado";
   kg_disponible: string | number;
 }

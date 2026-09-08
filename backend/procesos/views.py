@@ -27,6 +27,7 @@ from .serializers import (
     CierreSecadoSerializer,
     CierreMantequillaSerializer, CrearCondensacionGuiadaSerializer,
     CrearDescremacionGuiadaSerializer, CrearMantequillaGuiadaSerializer,
+    CrearSecadoInventarioSerializer,
     CorridaCondensacionSerializer,
     CorridaDescremacionSerializer, CorridaMantequillaSerializer,
     CorridaSecadoSerializer,
@@ -42,6 +43,7 @@ from .servicios import (
     genealogia_lote,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
+    crear_secado_desde_inventario,
     diagnosticar_integridad_produccion,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     preparar_continuacion, siguiente_etapa_para_salida,
@@ -69,9 +71,10 @@ class RutaProductoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     tenant_lookup_empresa = "sucursal__empresa_id"
     tenant_relation_fields = {
         "producto": (None, "mandante__empresa_id"),
+        "insumo_origen": (None, "empresa_id"),
     }
     queryset = RutaProducto.objects.select_related(
-        "sucursal", "producto", "proceso"
+        "sucursal", "producto", "proceso", "insumo_origen"
     ).prefetch_related("proceso__etapas")
     serializer_class = RutaProductoSerializer
     permission_classes = [ConfiguraProcesos]
@@ -821,6 +824,133 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             detail="La corrida de Secado nace al abrir el lote desde su vale.",
         )
 
+    @action(detail=False, methods=["get"], url_path="opciones-alimentacion-externa")
+    def opciones_alimentacion_externa(self, request):
+        """Catalogos acotados para iniciar una ruta desde materia prima externa."""
+        from inventario.models import Existencia, Ubicacion
+        from maestros.models import Equipo
+        from produccion.models import OrdenProduccion
+
+        rutas_scope = filtrar_por_scope(
+            RutaProducto.objects.filter(
+                activa=True, proceso__activo=True, insumo_origen__isnull=False,
+            ).select_related("producto", "insumo_origen", "proceso").prefetch_related(
+                "proceso__etapas"
+            ).order_by("producto_id", "prioridad", "pk"),
+            request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        rutas_por_producto = {}
+        for ruta in rutas_scope:
+            inicial = next(
+                (etapa for etapa in ruta.proceso.etapas.all() if etapa.activa), None
+            )
+            if inicial and inicial.tipo == EtapaProceso.Tipo.SECADO:
+                rutas_por_producto.setdefault(ruta.producto_id, ruta)
+        insumos = {ruta.insumo_origen_id for ruta in rutas_por_producto.values()}
+
+        existencias = filtrar_por_scope(
+            Existencia.objects.filter(
+                lote__insumo_id__in=insumos, lote__activo=True,
+                ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+            ).select_related("lote__insumo", "ubicacion"),
+            request.user, campo_sucursal="lote__sucursal_id",
+            campo_empresa="lote__sucursal__empresa_id",
+        )
+        ordenes = filtrar_por_scope(
+            OrdenProduccion.objects.filter(
+                producto_id__in=rutas_por_producto,
+                estado__in=[
+                    OrdenProduccion.Estado.PROGRAMADA,
+                    OrdenProduccion.Estado.EN_PROCESO,
+                ],
+            ).select_related("producto"),
+            request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        equipos = filtrar_por_scope(
+            Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.TORRE),
+            request.user, campo_sucursal="sucursal_id",
+            campo_empresa="sucursal__empresa_id",
+        )
+        ocupados = set(EjecucionProceso.objects.filter(
+            equipo_id__in=equipos.values_list("id", flat=True),
+            estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+        ).values_list("equipo_id", flat=True))
+        return Response({
+            "existencias": [
+                {
+                    "id": item.pk,
+                    "lote_id": item.lote_id,
+                    "lote_codigo": item.lote.codigo,
+                    "insumo_id": item.lote.insumo_id,
+                    "insumo_nombre": item.lote.insumo.nombre,
+                    "cantidad_disponible": item.cantidad_disponible,
+                    "unidad": item.lote.insumo.unidad,
+                    "estado_calidad": item.lote.estado_calidad,
+                }
+                for item in existencias if item.cantidad_disponible > 0
+            ],
+            "ordenes": [
+                {
+                    "id": item.pk,
+                    "codigo": item.codigo,
+                    "producto_id": item.producto_id,
+                    "producto_nombre": item.producto.nombre,
+                    "insumo_origen_id": rutas_por_producto[item.producto_id].insumo_origen_id,
+                }
+                for item in ordenes
+            ],
+            "equipos": [
+                {
+                    "id": item.pk, "codigo": item.codigo, "nombre": item.nombre,
+                    "disponible": item.pk not in ocupados,
+                }
+                for item in equipos
+            ],
+        })
+
+    @action(detail=False, methods=["post"], url_path="iniciar-desde-inventario")
+    def iniciar_desde_inventario(self, request):
+        from inventario.models import Existencia
+        from maestros.models import Equipo
+        from produccion.models import OrdenProduccion
+
+        entrada = CrearSecadoInventarioSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = entrada.validated_data
+        try:
+            existencia = filtrar_por_scope(
+                Existencia.objects.all(), request.user,
+                campo_sucursal="lote__sucursal_id",
+                campo_empresa="lote__sucursal__empresa_id",
+            ).get(pk=datos["existencia"])
+            orden = filtrar_por_scope(
+                OrdenProduccion.objects.all(), request.user,
+                campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+            ).get(pk=datos["orden"])
+            equipo = filtrar_por_scope(
+                Equipo.objects.all(), request.user,
+                campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+            ).get(pk=datos["equipo"])
+            corrida = crear_secado_desde_inventario(
+                orden=orden, existencia=existencia, equipo=equipo,
+                codigo_lote=datos["codigo_lote"], cantidad=datos["cantidad"],
+                usuario=request.user,
+            )
+        except (Existencia.DoesNotExist, OrdenProduccion.DoesNotExist, Equipo.DoesNotExist):
+            return Response(
+                {"detail": "La orden, existencia o torre no existe en tu alcance."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except DjangoValidationError as error:
+            detalle = (
+                error.message_dict if hasattr(error, "message_dict")
+                else {"detail": error.messages[0]}
+            )
+            return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
         entrada = CierreSecadoSerializer(data=request.data)
@@ -867,6 +997,7 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             "lote_produccion", "lote_produccion__producto",
         ).prefetch_related(
             "entradas__lote__producto", "entradas__silo",
+            "entradas__lote_inventario__insumo",
             "salidas__lote__producto", "salidas__silo", "eventos__usuario"
         )
         estado = self.request.query_params.get("estado")
@@ -943,7 +1074,8 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             EjecucionProceso.objects.exclude(
                 estado__in={EjecucionProceso.Estado.CERRADA, EjecucionProceso.Estado.CANCELADA}
             ).select_related("etapa", "equipo").prefetch_related(
-                "entradas__silo", "entradas__lote", "salidas__silo", "salidas__lote"
+                "entradas__silo", "entradas__lote", "entradas__lote_inventario",
+                "salidas__silo", "salidas__lote"
             ),
             request.user,
             campo_sucursal="sucursal_id",
@@ -964,7 +1096,11 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                     EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set())
                 ),
                 "entradas": [
-                    entrada.lote.codigo_lote if entrada.lote else entrada.silo.codigo
+                    (
+                        entrada.lote.codigo_lote if entrada.lote
+                        else entrada.silo.codigo if entrada.silo
+                        else entrada.lote_inventario.codigo
+                    )
                     for entrada in ejecucion.entradas.all()
                 ],
                 "salidas": [
@@ -1184,16 +1320,29 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
         "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
         "lote": ("sucursal_id", "sucursal__empresa_id"),
         "silo": ("sucursal_id", "sucursal__empresa_id"),
+        "lote_inventario": ("sucursal_id", "sucursal__empresa_id"),
         "salida_origen": (
             "ejecucion__sucursal_id", "ejecucion__sucursal__empresa_id"
         ),
     }
     queryset = EntradaProceso.objects.select_related(
-        "ejecucion", "lote__producto", "silo", "salida_origen__ejecucion"
+        "ejecucion", "lote__producto", "silo", "lote_inventario__insumo",
+        "salida_origen__ejecucion"
     )
     serializer_class = EntradaProcesoSerializer
     permission_classes = [OperaProcesoPorEtapa]
     http_method_names = ["get", "post", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        if request.data.get("lote_inventario"):
+            raise MethodNotAllowed(
+                "POST",
+                detail=(
+                    "La materia prima externa se incorpora desde la accion "
+                    "especializada de Secado para descontar inventario en la misma transaccion."
+                ),
+            )
+        return super().create(request, *args, **kwargs)
 
     @action(detail=False, methods=["get"], url_path="opciones-rework")
     def opciones_rework(self, request):
@@ -1432,6 +1581,14 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                 "producto_nombre": (
                     salida.lote.producto.nombre if salida.lote_id else None
                 ),
+                "tipo_material": salida.clasificacion,
+                "tipo_material_etiqueta": salida.get_clasificacion_display(),
+                "estado_calidad": salida.liberacion_calidad.estado,
+                "estado_calidad_etiqueta": "Liberado por Calidad",
+                # Compatibilidad temporal: los consumidores nuevos deben usar
+                # ``tipo_material`` y ``estado_calidad``. Estos dos campos
+                # históricos mezclaban el estado del material con la decisión
+                # de Calidad y se retirarán en una versión posterior de la API.
                 "estado_material": "liberado",
                 "estado_material_etiqueta": "Liberado por Calidad",
                 "densidad_kg_m3": (
@@ -1611,16 +1768,14 @@ def _flujo_completo(lote):
     from recepcion.servicios import trazabilidad_fifo_movimientos
 
     vale = lote.vale
-    if vale is None:
-        return None
-
     consumos_estandarizacion = list(MovimientoSilo.objects.filter(
             tipo=MovimientoSilo.Tipo.SALIDA,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
-            origen_id=vale.pk,
+            origen_id=vale.pk if vale else 0,
         ).select_related("silo").order_by("fecha_hora", "pk"))
-    trazabilidad_recepciones = trazabilidad_fifo_movimientos(
-        consumos_estandarizacion
+    trazabilidad_recepciones = (
+        trazabilidad_fifo_movimientos(consumos_estandarizacion)
+        if vale else {"tramos": [], "nota": "", "litros_no_atribuibles": 0}
     )
     recepciones_agrupadas = {}
     for tramo in trazabilidad_recepciones["tramos"]:
@@ -1681,7 +1836,8 @@ def _flujo_completo(lote):
         visitadas.add(ejecucion.pk)
         entradas = list(
             ejecucion.entradas.select_related(
-                "salida_origen__ejecucion__etapa", "lote", "silo"
+                "salida_origen__ejecucion__etapa", "lote", "silo",
+                "lote_inventario__insumo", "lote_inventario__proveedor",
             )
         )
         for entrada in entradas:
@@ -1702,6 +1858,8 @@ def _flujo_completo(lote):
                         else entrada.lote.codigo_lote
                         if entrada.lote_id
                         else entrada.silo.codigo
+                        if entrada.silo_id
+                        else entrada.lote_inventario.codigo
                     ),
                     "cantidad": entrada.cantidad,
                     "unidad": entrada.unidad,
@@ -1723,8 +1881,26 @@ def _flujo_completo(lote):
 
     agregar_ejecucion(ejecucion_prod)
     agregar_ejecucion(ejecucion_est)
+    origenes_externos = []
+    if ejecucion_prod:
+        for entrada in ejecucion_prod.entradas.select_related(
+            "lote_inventario__insumo", "lote_inventario__proveedor"
+        ).filter(lote_inventario__isnull=False):
+            origenes_externos.append({
+                "lote_id": entrada.lote_inventario_id,
+                "lote_codigo": entrada.lote_inventario.codigo,
+                "material": entrada.lote_inventario.insumo.nombre,
+                "proveedor": (
+                    entrada.lote_inventario.proveedor.nombre
+                    if entrada.lote_inventario.proveedor_id else None
+                ),
+                "estado_calidad": entrada.lote_inventario.get_estado_calidad_display(),
+                "cantidad": entrada.cantidad,
+                "unidad": entrada.unidad,
+            })
     return {
         "recepciones": recepciones,
+        "origenes_externos": origenes_externos,
         "nota_recepciones": trazabilidad_recepciones["nota"],
         "litros_no_atribuibles": trazabilidad_recepciones[
             "litros_no_atribuibles"
@@ -1744,7 +1920,7 @@ def _flujo_completo(lote):
             "silo_destino": vale.silo_destino.codigo,
             "rc_objetivo": vale.rc_objetivo,
             "rc_real": vale.rc_real,
-        },
+        } if vale else None,
         "produccion": {
             "lote_id": lote.pk,
             "lote_codigo": lote.codigo_lote,

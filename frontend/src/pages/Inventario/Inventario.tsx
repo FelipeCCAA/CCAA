@@ -153,7 +153,7 @@ export default function Inventario() {
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
               <div>
-                <h2 className="font-bold text-slate-900">Materiales, envases y pallets</h2>
+                <h2 className="font-bold text-slate-900">Materiales, envases y unidades logísticas</h2>
                 <p className="mt-1 text-xs text-slate-500">Saldo físico y realmente utilizable por Bodega y Producción.</p>
               </div>
               <label className="flex min-w-64 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 focus-within:border-emerald-500">
@@ -185,7 +185,7 @@ export default function Inventario() {
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="font-bold text-slate-900">Productos: Producción → Calidad → Bodega</h2>
-              <p className="mt-1 text-xs text-slate-500">Un solo resumen: lotes activos, kilos físicos y pallets realmente registrados.</p>
+              <p className="mt-1 text-xs text-slate-500">Un solo resumen: lotes activos, kilos físicos, pallets y Big Bags registrados.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-left text-sm">
@@ -200,13 +200,13 @@ export default function Inventario() {
                   <td className="px-5 py-4">{item.pallets_cuarentena > 0 ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">{item.pallets_cuarentena} en cuarentena</span> : <span className="text-xs text-slate-500">Sin pendientes</span>}</td>
                 </tr>)}</tbody>
               </table>
-              {resumen.productos.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-500">No hay lotes activos ni pallets en bodega.</p>}
+              {resumen.productos.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-500">No hay lotes activos ni unidades logísticas en bodega.</p>}
             </div>
           </section>
           <OperacionesBodega onCambio={actualizarDespuesDeMovimiento} />
         </div>}
 
-        {pestana === "productos" && <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{productos?.map((item) => <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex justify-between gap-3"><div><p className="font-bold text-slate-900">{item.pallet_codigo}</p><p className="text-sm text-slate-600">{item.producto_nombre}</p></div><span className="h-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{item.estado_inventario}</span></div><p className="mt-4 text-2xl font-bold text-slate-900">{valor(item.kg_neto)} kg</p><p className="mt-1 text-xs text-slate-500">Lote {item.lote_codigo} · {item.ubicacion_codigo}</p>{item.estado_inventario === "disponible" && item.ubicacion_tipo === "cuarentena" && <p className="mt-2 text-xs font-medium text-amber-700">Liberado por Calidad; pendiente de reubicación física.</p>}</article>)}{productos?.length === 0 && <p className="text-sm text-slate-500">No hay producto terminado físico.</p>}</section>}
+        {pestana === "productos" && <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{productos?.map((item) => <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex justify-between gap-3"><div><p className="font-bold text-slate-900">{item.pallet_codigo}</p><p className="text-sm text-slate-600">{item.producto_nombre}</p><p className="mt-1 text-xs font-semibold text-emerald-700">{item.tipo_unidad_logistica_etiqueta}</p></div><span className="h-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{item.estado_inventario}</span></div><p className="mt-4 text-2xl font-bold text-slate-900">{valor(item.kg_neto)} kg</p><p className="mt-1 text-xs text-slate-500">Lote {item.lote_codigo} · {item.ubicacion_codigo}</p>{item.estado_inventario === "disponible" && item.ubicacion_tipo === "cuarentena" && <p className="mt-2 text-xs font-medium text-amber-700">Liberado por Calidad; pendiente de reubicación física.</p>}</article>)}{productos?.length === 0 && <p className="text-sm text-slate-500">No hay producto terminado físico.</p>}</section>}
 
         {pestana === "lotes" && <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Lote</th><th className="px-5 py-3">Producto</th><th className="px-5 py-3">Pallets</th><th className="px-5 py-3">Físico</th><th className="px-5 py-3">Disponible</th></tr></thead><tbody>{lotes.map(([codigo, lote]) => <tr key={codigo} className="border-t border-slate-100"><td className="px-5 py-3 font-semibold">{codigo}</td><td className="px-5 py-3">{lote.producto}</td><td className="px-5 py-3">{lote.pallets}</td><td className="px-5 py-3">{valor(lote.fisico)} kg</td><td className="px-5 py-3">{valor(lote.disponible)} kg</td></tr>)}</tbody></table></section>}
 

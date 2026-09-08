@@ -155,6 +155,9 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                     "formato_nombre": "Sin formato configurado",
                     "formato_kg": None,
                     "maximo_pallet_kg": None,
+                    "maximo_unidad_logistica_kg": None,
+                    "tipo_unidad_logistica": None,
+                    "tipo_unidad_logistica_etiqueta": "",
                     "equipos": [],
                     "unidades_por_producto": 0,
                     "unidades_disponibles": 0,
@@ -228,7 +231,7 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                 elif not receta_completa:
                     motivo_bloqueo = (
                         "La receta de Envasado está incompleta. Configura todos "
-                        "sus materiales antes de crear el pallet."
+                        "sus materiales antes de crear la unidad logística."
                     )
                 elif not requerido_por_kg:
                     motivo_bloqueo = (
@@ -267,6 +270,11 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                     "formato_nombre": formato.nombre,
                     "formato_kg": formato_kg,
                     "maximo_pallet_kg": formato.maximo_pallet_kg,
+                    "maximo_unidad_logistica_kg": formato.maximo_unidad_logistica_kg,
+                    "tipo_unidad_logistica": formato.tipo_unidad_logistica,
+                    "tipo_unidad_logistica_etiqueta": (
+                        formato.get_tipo_unidad_logistica_display()
+                    ),
                     "equipos": [
                         {
                             "id": equipo.pk,

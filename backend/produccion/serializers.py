@@ -16,13 +16,17 @@ from .models import (
 
 class PalletProductoSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    tipo_unidad_logistica_etiqueta = serializers.CharField(
+        source="get_tipo_unidad_logistica_display", read_only=True
+    )
     lote_codigo = serializers.CharField(source="envase.lote.codigo_lote", read_only=True)
     producto_nombre = serializers.CharField(source="envase.lote.producto.nombre", read_only=True)
 
     class Meta:
         model = PalletProducto
         fields = [
-            "id", "codigo", "unidades", "kg_neto", "estado", "estado_etiqueta",
+            "id", "codigo", "unidades", "kg_neto", "tipo_unidad_logistica",
+            "tipo_unidad_logistica_etiqueta", "estado", "estado_etiqueta",
             "lote_codigo", "producto_nombre",
         ]
         read_only_fields = ["estado"]
@@ -33,7 +37,6 @@ class PalletEntradaSerializer(serializers.Serializer):
     unidades = serializers.IntegerField(min_value=1)
     kg_neto = serializers.DecimalField(
         max_digits=14, decimal_places=3, min_value=Decimal("0.001"),
-        max_value=Decimal("500"),
     )
 
 

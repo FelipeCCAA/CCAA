@@ -30,7 +30,7 @@ export default function CierreSecado({
   alCerrar: () => void;
   alCompletarse: (corrida: CorridaSecado) => void;
 }) {
-  const [alimentacion, setAlimentacion] = useState("");
+  const [alimentacion, setAlimentacion] = useState(corrida.kg_alimentacion ?? "");
   const [solidos, setSolidos] = useState("");
   const [polvo, setPolvo] = useState("");
   const [finos, setFinos] = useState("0");
@@ -100,7 +100,7 @@ export default function CierreSecado({
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="text-sm font-medium text-slate-700">Alimentación medida <span className="text-slate-500">(kg)</span><input required type="number" min="0.001" step="0.001" value={alimentacion} onChange={(e) => setAlimentacion(e.target.value)} className={campo} /></label>
+          <label className="text-sm font-medium text-slate-700">Alimentación medida <span className="text-slate-500">(kg)</span><input required readOnly={corrida.kg_alimentacion !== null} type="number" min="0.001" step="0.001" value={alimentacion} onChange={(e) => setAlimentacion(e.target.value)} className={`${campo} ${corrida.kg_alimentacion !== null ? "bg-slate-100" : ""}`} />{corrida.kg_alimentacion !== null && <span className="mt-1 block text-xs font-normal text-slate-500">Cantidad ya descontada del lote externo; no se modifica en el cierre.</span>}</label>
           <label className="text-sm font-medium text-slate-700">Sólidos de entrada <span className="text-slate-500">(%)</span><input required type="number" min="0.01" max="100" step="0.01" value={solidos} onChange={(e) => setSolidos(e.target.value)} className={campo} /></label>
           <label className="text-sm font-medium text-slate-700">Polvo obtenido <span className="text-slate-500">(kg)</span><input required type="number" min="0.001" step="0.001" value={polvo} onChange={(e) => setPolvo(e.target.value)} className={campo} /></label>
           <label className="text-sm font-medium text-slate-700">Finos recuperados <span className="text-slate-500">(kg)</span><input required type="number" min="0" step="0.001" value={finos} onChange={(e) => setFinos(e.target.value)} className={campo} /></label>

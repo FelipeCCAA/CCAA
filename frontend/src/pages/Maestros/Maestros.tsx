@@ -1128,7 +1128,7 @@ function Maestros() {
                         <tr key={formato.id} className="border-t border-slate-100">
                           <td className={celda}><b className="text-slate-800">{formato.producto_nombre}</b><div className="font-mono text-xs text-slate-500">{formato.codigo} · {formato.nombre}</div>{!formato.activo && <span className="mt-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Inactivo</span>}</td>
                           <td className={`${celda} tabular-nums`}>{Number(formato.kg_neto).toLocaleString("es-CL")} kg</td>
-                          <td className={`${celda} tabular-nums`}>{formato.unidades_maximas_pallet} unidades · {Number(formato.maximo_pallet_kg).toLocaleString("es-CL")} kg</td>
+                          <td className={`${celda} tabular-nums`}>{formato.tipo_unidad_logistica_etiqueta} · {formato.unidades_maximas_pallet} unidad(es) · {Number(formato.maximo_unidad_logistica_kg).toLocaleString("es-CL")} kg</td>
                           <td className={celda}>{formato.equipos_detalle.map((equipo) => `${equipo.codigo} · ${equipo.nombre}`).join(", ") || "Sin línea"}</td>
                           <td className={`${celda} text-right`}>{puedeEditar && <button type="button" onClick={() => setFormatoEnvase(formato)} title="Editar" className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"><Pencil className="h-4 w-4" /></button>}</td>
                         </tr>

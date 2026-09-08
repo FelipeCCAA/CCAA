@@ -12,7 +12,10 @@ import {
 
 const api = axios.create({
 
-    baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/",
+    // En desarrollo se usa el mismo origen del navegador. Vite deriva /api/
+    // a Django; así el acceso también funciona desde otro equipo de la red y
+    // no intenta conectarse al 127.0.0.1 de ese dispositivo.
+    baseURL: import.meta.env.VITE_API_URL || "/api/",
     timeout: 15000,
 
 });

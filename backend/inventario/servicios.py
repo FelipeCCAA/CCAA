@@ -930,6 +930,7 @@ def recibir_detalle_compra(*, recepcion, detalle_orden_id, ubicacion, codigo_lot
         if insumo.requiere_calidad else LoteInventario.EstadoCalidad.NO_REQUIERE
     )
     lote = LoteInventario.objects.create(
+        sucursal=recepcion.orden.bodega_entrega.sucursal,
         insumo=insumo, proveedor=detalle_orden.orden.proveedor,
         codigo=codigo_lote or f"SIN-LOTE-{recepcion.pk}-{detalle_orden.pk}",
         elaboracion=elaboracion, vencimiento=vencimiento, estado_calidad=estado,

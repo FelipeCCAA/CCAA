@@ -430,7 +430,7 @@ def registrar_envasado(
     if impedimento:
         raise ValidationError(impedimento)
     if not isinstance(pallets, list) or not pallets:
-        raise ValidationError({"pallets": "Registra al menos un pallet."})
+        raise ValidationError({"pallets": "Registra al menos una unidad logística."})
 
     unidades = sum(int(item.get("unidades", 0)) for item in pallets)
     kg_total = sum(Decimal(str(item.get("kg_neto", 0))) for item in pallets)
@@ -441,7 +441,8 @@ def registrar_envasado(
         raise ValidationError({
             "pallets": (
                 f"El formato {formato.nombre} permite como máximo "
-                f"{formato.unidades_maximas_pallet} unidades por pallet."
+                f"{formato.unidades_maximas_pallet} unidades por "
+                f"{formato.get_tipo_unidad_logistica_display()}."
             )
         })
     registro = RegistroEnvase(
@@ -459,9 +460,12 @@ def registrar_envasado(
             envase=registro, codigo=str(item.get("codigo", "")).strip(),
             unidades=int(item.get("unidades", 0)),
             kg_neto=Decimal(str(item.get("kg_neto", 0))),
+            tipo_unidad_logistica=formato.tipo_unidad_logistica,
         )
         if not pallet.codigo:
-            raise ValidationError({"pallets": "Cada pallet requiere código."})
+            raise ValidationError({
+                "pallets": "Cada unidad logística requiere código."
+            })
         pallet.full_clean()
         creados.append(pallet)
     PalletProducto.objects.bulk_create(creados)
@@ -477,7 +481,7 @@ def registrar_envasado(
     if not explosion_envase.completa:
         raise ValidationError(
             "La receta de Envasado está incompleta. Configura la lista de "
-            "materiales antes de crear el pallet."
+            "materiales antes de crear la unidad logística."
         )
     if not requerido_envase:
         raise ValidationError(

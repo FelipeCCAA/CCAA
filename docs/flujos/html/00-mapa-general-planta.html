@@ -71,27 +71,30 @@
       <div class="diagram-head"><strong id="diagram-title">Material → Proceso → Calidad → Destino</strong><div class="tools" aria-label="Controles de tamaño"><button type="button" data-zoom-out aria-label="Reducir diagrama">−</button><button type="button" data-zoom-reset aria-label="Restablecer tamaño">100%</button><button type="button" data-zoom-in aria-label="Ampliar diagrama">+</button></div></div>
       <div class="diagram-scroll"><pre class="mermaid">flowchart LR
     REC[Recepción] --&gt; QREC{Calidad&lt;br/&gt;de leche}
-    QREC --&gt;|Liberada| SILO[(Silo de leche)]
-    QREC --&gt;|Rechazada| RET[Retención]
+    QREC --&gt;|Liberada| SILO[(Materia prima: leche&lt;br/&gt;Calidad: liberada)]
+    QREC --&gt;|Rechazada| RET[Materia prima: leche&lt;br/&gt;Calidad: rechazada]
 
     SILO --&gt; EST[Estandarización]
-    EST --&gt; LEST[Leche estandarizada]
+    EST --&gt; LEST[Material intermedio&lt;br/&gt;Leche estandarizada]
     LEST --&gt; QEST{Calidad}
     QEST --&gt;|Liberada| EVA[Evaporación]
-    EVA --&gt; PRE[Precondensado]
+    EVA --&gt; PRE[Material intermedio&lt;br/&gt;Precondensado]
     PRE --&gt; QPRE{Calidad}
     QPRE --&gt;|Despacho directo| DG1[Despacho a granel]
     QPRE --&gt;|Continuar| SEC[Secado]
-    SEC --&gt; POL[Polvo a granel]
+    SEC --&gt; POL[Material intermedio&lt;br/&gt;Polvo a granel]
     POL --&gt; QPOL{Calidad}
     QPOL --&gt;|Liberado| ENV1[Envasado]
-    ENV1 --&gt; PAL1[Pallet]
+    ENV1 --&gt; FMT{Formato configurado}
+    FMT --&gt; PAL1[Producto terminado&lt;br/&gt;Sacos + pallet]
+    FMT --&gt; BB[Producto terminado&lt;br/&gt;Big Bag]
     PAL1 --&gt; QFIN1{Liberación final}
+    BB --&gt; QFIN1
     QFIN1 --&gt; INV1[Inventario]
 
     SILO --&gt; DES[Descremado]
-    DES --&gt; LD[Leche descremada]
-    DES --&gt; CRE[Crema]
+    DES --&gt; LD[Material intermedio&lt;br/&gt;Leche descremada]
+    DES --&gt; CRE[Material intermedio&lt;br/&gt;Crema]
     LD --&gt; TKLD[(TK descremada)]
     TKLD --&gt; QLD{Calidad}
     QLD --&gt;|Ruta autorizada| EST
@@ -100,17 +103,26 @@
     QCRE --&gt;|Mantequilla| MAN[Mantequilla]
     QCRE --&gt;|Despacho directo| DG2[Despacho a granel]
     QCRE -.-&gt;|Si la ruta lo permite| EST
-    MAN --&gt; MB[Mantequilla a granel]
+    MAN --&gt; MB[Material intermedio&lt;br/&gt;Mantequilla a granel]
     MB --&gt; QMAN{Calidad}
     QMAN --&gt;|Liberada| ENV2[Envasado]
-    ENV2 --&gt; CAJ[Cajas / pallet]
+    ENV2 --&gt; CAJ[Producto terminado&lt;br/&gt;Cajas / pallet]
     CAJ --&gt; QFIN2{Liberación final}
     QFIN2 --&gt; INV2[Inventario]
 
-    class REC,EST,EVA,SEC,DES,MAN,ENV1,ENV2 process;
+    SUE[Materia prima externa&lt;br/&gt;Suero recibido] --&gt; QSUE{Calidad}
+    QSUE --&gt; SECS[Secado de suero&lt;br/&gt;Ruta propia]
+    SECS --&gt; SUF[Producto terminado&lt;br/&gt;Suero en polvo]
+
+    MAL[Materia prima / insumo&lt;br/&gt;Extracto de malta] --&gt; QMAL{Calidad}
+    QMAL --&gt; PREM[Preparación previa&lt;br/&gt;pendiente de confirmar]
+    PREM --&gt; SECM[Secado Protomalt&lt;br/&gt;Ruta propia]
+    SECM --&gt; PMF[Producto terminado&lt;br/&gt;Protomalt]
+
+    class REC,EST,EVA,SEC,DES,MAN,ENV1,ENV2,SECS,PREM,SECM process;
     class SILO,TKLD,TKC storage;
-    class LEST,PRE,POL,LD,CRE,MB,PAL1,CAJ material;
-    class QREC,QEST,QPRE,QPOL,QCRE,QLD,QMAN,QFIN1,QFIN2 quality;
+    class LEST,PRE,POL,LD,CRE,MB,PAL1,BB,CAJ,SUE,SUF,MAL,PMF material;
+    class QREC,QEST,QPRE,QPOL,QCRE,QLD,QMAN,QFIN1,QFIN2,QSUE,QMAL quality;
     class RET,DG1,DG2,INV1,INV2 destination;
     classDef process fill:#dbeafe,stroke:#2563eb,color:#172554;
     classDef storage fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e;
@@ -121,9 +133,9 @@
     </section>
     <div class="info-grid">
       <section class="panel info"><h2>En pocas palabras</h2><p>La leche liberada entra a un silo y desde ahí sigue la ruta configurada para el producto. Descremado abre dos ramas independientes. Precondensado y crema pueden despacharse sin convertirse en producto envasado. Calidad aparece como varias puertas sobre materiales concretos, no como una etapa única al final.</p></section>
-      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>Una ruta decide la etapa y el destino siguientes.</li><li>Un material rechazado o pendiente de Calidad no continúa.</li><li>La crema y la leche descremada conservan decisiones independientes.</li><li>Inventario recibe producto terminado liberado; el granel sale mediante despacho físico.</li></ul></section>
+      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>Una ruta decide la etapa y el destino siguientes.</li><li>El tipo de material y su estado de Calidad se muestran por separado.</li><li>Un material rechazado o pendiente de Calidad no continúa.</li><li>La crema y la leche descremada conservan decisiones independientes.</li><li>Inventario recibe producto terminado liberado; el granel sale mediante despacho físico.</li></ul></section>
     </div>
-    <section class="panel validation"><span class="badge observe">CORRECTO CON OBSERVACIONES</span><p>El mapa coincide con la implementación actual. Las capacidades, identificadores físicos y parámetros provisionales deben ser confirmados por planta.</p></section>
+    <section class="panel validation"><span class="badge adjust">REQUIERE AJUSTE</span><p>Los flujos actuales coinciden con CCAA. Suero recibido, Protomalt y Big Bag quedan visibles como ampliaciones pendientes, sin presentar como implementadas etapas que planta aún no confirmó.</p></section>
   </main>
   <footer>Fuente: <code>00-mapa-general-planta.md</code> · Documento visual de consulta · CCAA</footer>
   

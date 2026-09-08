@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 import { API, ORIGEN, RUTA_ESTADO } from "./e2e/constantes";
 
+const puertoFrontend = new URL(ORIGEN).port || "5173";
+const puertoBackend = new URL(API).port || "8000";
+
 /*
   Configuración de la auditoría de accesibilidad.
 
@@ -135,11 +138,20 @@ export default defineConfig({
         storageState: RUTA_ESTADO,
       },
     },
+    {
+      name: "flujo-suero",
+      testMatch: /flujo-suero\.spec\.ts/,
+      dependencies: ["sesion"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: RUTA_ESTADO,
+      },
+    },
   ],
 
   webServer: [
     {
-      command: "npm run dev -- --port 5173 --strictPort",
+      command: `npm run dev -- --port ${puertoFrontend} --strictPort`,
       url: ORIGEN,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
@@ -152,7 +164,7 @@ export default defineConfig({
       */
       /* Con la ruta explícita: `cmd.exe` no busca en el directorio actual
          cuando lo invoca Playwright, y sin el `.\` no encuentra el archivo. */
-      command: ".\\iniciar_servidor.cmd 8000",
+      command: `.\\iniciar_servidor.cmd ${puertoBackend}`,
       cwd: "../backend",
       /* `/api/salud/` responde 200 sin token. Apuntar a un endpoint con
          permisos daría 401 y Playwright no sabría si el servidor arrancó. */

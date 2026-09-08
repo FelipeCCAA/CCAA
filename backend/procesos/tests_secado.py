@@ -7,6 +7,9 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from calidad.models import LiberacionProceso
+from inventario.models import (
+    Bodega, Existencia, Insumo, LoteInventario, MovimientoInventario, Ubicacion,
+)
 from maestros.models import Equipo, Especificacion, Mandante, Producto
 from produccion.models import Analisis, Lote, OrdenProduccion
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
@@ -220,6 +223,140 @@ class CierreSecadoTests(TestCase):
         self.assertEqual(self.corrida.lote.estado, Lote.Estado.EN_PROCESO)
         self.assertEqual(self.corrida.ejecucion.estado, EjecucionProceso.Estado.EJECUCION)
         self.assertFalse(SalidaProceso.objects.filter(ejecucion=self.corrida.ejecucion).exists())
+
+
+class InicioSecadoDesdeInventarioTests(TestCase):
+    def setUp(self):
+        self.empresa = Empresa.objects.create(rut="SEC-EXT", nombre="Empresa externa")
+        self.planta = Sucursal.objects.create(
+            empresa=self.empresa, codigo="SE", nombre="Planta externa"
+        )
+        self.usuario = User.objects.create_user("secador-externo")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.empresa, sucursal=self.planta,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+            rol=Rol.PRODUCCION, area=PerfilUsuario.Area.SECADO,
+        )
+        mandante = Mandante.objects.create(
+            empresa=self.empresa, nombre="Mandante suero", codigo_cliente="sue"
+        )
+        self.producto = Producto.objects.create(
+            mandante=mandante, nombre="Suero en polvo",
+            familia=Producto.Familia.POLVO,
+            naturaleza=Producto.Naturaleza.TERMINADO,
+            categoria=Producto.Categoria.SUERO,
+        )
+        self.insumo = Insumo.objects.create(
+            empresa=self.empresa, codigo="SUE-EXT", nombre="Suero recibido",
+            categoria=Insumo.Categoria.MATERIA_PRIMA,
+            area=PerfilUsuario.Area.SECADO, unidad=Insumo.Unidad.KG,
+            requiere_calidad=True,
+        )
+        bodega = Bodega.objects.create(
+            sucursal=self.planta, codigo="BMP", nombre="Materia prima",
+            area=PerfilUsuario.Area.BODEGA,
+        )
+        ubicacion = Ubicacion.objects.create(
+            bodega=bodega, codigo="MP-LIB", tipo=Ubicacion.Tipo.DISPONIBLE,
+        )
+        self.lote_externo = LoteInventario.objects.create(
+            sucursal=self.planta, insumo=self.insumo, codigo="PROV-SUE-001",
+            estado_calidad=LoteInventario.EstadoCalidad.APROBADO,
+        )
+        self.existencia = Existencia.objects.create(
+            lote=self.lote_externo, ubicacion=ubicacion,
+            cantidad_fisica=Decimal("1000"),
+        )
+        self.torre = Equipo.objects.create(
+            sucursal=self.planta, codigo="TOR-SUE", nombre="Torre suero",
+            tipo=Equipo.Tipo.TORRE,
+        )
+        proceso = Proceso.objects.create(codigo="secado-suero", nombre="Secado suero")
+        EtapaProceso.objects.create(
+            proceso=proceso, codigo="secar-suero", nombre="Secar suero",
+            tipo=EtapaProceso.Tipo.SECADO, orden=1, requiere_calidad=True,
+        )
+        self.ruta = RutaProducto.objects.create(
+            sucursal=self.planta, producto=self.producto, proceso=proceso,
+            insumo_origen=self.insumo, destino_final=RutaProducto.DestinoFinal.ENVASADO,
+        )
+        self.orden = OrdenProduccion.objects.create(
+            sucursal=self.planta, codigo="OP-SUE-1", producto=self.producto,
+            cantidad_planificada=Decimal("400"), unidad="kg",
+            estado=OrdenProduccion.Estado.PROGRAMADA,
+        )
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(self.usuario)
+
+    def test_inicia_secado_con_lote_externo_liberado_y_descuenta_stock(self):
+        opciones = self.cliente.get(
+            "/api/procesos/secados/opciones-alimentacion-externa/"
+        )
+        self.assertEqual(opciones.status_code, 200, opciones.data)
+        self.assertEqual(opciones.data["existencias"][0]["lote_codigo"], "PROV-SUE-001")
+        self.assertEqual(opciones.data["ordenes"][0]["insumo_origen_id"], self.insumo.pk)
+
+        respuesta = self.cliente.post(
+            "/api/procesos/secados/iniciar-desde-inventario/",
+            {
+                "orden": self.orden.pk, "existencia": self.existencia.pk,
+                "equipo": self.torre.pk, "codigo_lote": "SUE-POL-001",
+                "cantidad": "700.000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        corrida = CorridaSecado.objects.get(pk=respuesta.data["id"])
+        entrada = corrida.ejecucion.entradas.get()
+        self.assertEqual(entrada.lote_inventario, self.lote_externo)
+        self.assertEqual(entrada.cantidad, Decimal("700.000"))
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.cantidad_fisica, Decimal("300.000"))
+        self.assertTrue(MovimientoInventario.objects.filter(
+            lote=self.lote_externo, tipo=MovimientoInventario.Tipo.CONSUMO,
+            documento_id=corrida.ejecucion_id,
+        ).exists())
+        trazabilidad = self.cliente.get(
+            "/api/procesos/trazabilidad/lotes/SUE-POL-001/?direccion=atras"
+        )
+        self.assertEqual(trazabilidad.status_code, 200, trazabilidad.data)
+        origen = trazabilidad.data["flujo"]["origenes_externos"][0]
+        self.assertEqual(origen["lote_codigo"], "PROV-SUE-001")
+        self.assertEqual(origen["estado_calidad"], "Aprobado")
+
+    def test_calidad_pendiente_no_puede_alimentar_secado(self):
+        self.lote_externo.estado_calidad = LoteInventario.EstadoCalidad.PENDIENTE
+        self.lote_externo.save(update_fields=["estado_calidad"])
+
+        respuesta = self.cliente.post(
+            "/api/procesos/secados/iniciar-desde-inventario/",
+            {
+                "orden": self.orden.pk, "existencia": self.existencia.pk,
+                "equipo": self.torre.pk, "codigo_lote": "SUE-POL-002",
+                "cantidad": "100.000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertFalse(Lote.objects.filter(codigo_lote="SUE-POL-002").exists())
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.cantidad_fisica, Decimal("1000.000"))
+
+    def test_endpoint_generico_no_omite_el_descuento_de_inventario(self):
+        respuesta = self.cliente.post(
+            "/api/procesos/entradas/",
+            {
+                "ejecucion": 999, "lote_inventario": self.lote_externo.pk,
+                "cantidad": "10.000", "unidad": "kg", "tipo": "principal",
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 405, respuesta.data)
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.cantidad_fisica, Decimal("1000.000"))
 
 
 class CierreSecadoDescuentaMaterialTests(CierreSecadoTests):

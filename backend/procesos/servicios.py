@@ -1905,6 +1905,129 @@ def cerrar_mantequilla(
 
 
 @transaction.atomic
+def crear_secado_desde_inventario(
+    *, orden, existencia, equipo, codigo_lote, cantidad, usuario,
+):
+    """Inicia Secado desde una materia prima externa liberada y trazable."""
+    from inventario.models import Existencia, Insumo, Ubicacion
+    from inventario.servicios import (
+        advertencia_aseo_equipo, motivo_equipo_no_habilitado, registrar_salida,
+    )
+    from maestros.models import Equipo
+    from produccion.models import Lote, OrdenProduccion
+
+    orden = OrdenProduccion.objects.select_for_update(of=("self",)).select_related(
+        "producto", "sucursal"
+    ).get(pk=orden.pk)
+    existencia = Existencia.objects.select_for_update(of=("self",)).select_related(
+        "lote__insumo", "lote__sucursal", "ubicacion"
+    ).get(pk=existencia.pk)
+    equipo = adquirir_equipo(equipo_id=equipo.pk)
+    cantidad = Decimal(str(cantidad))
+
+    if orden.estado not in {
+        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
+    }:
+        raise ValidationError({"orden": "La orden no esta programada o en proceso."})
+    if existencia.lote.sucursal_id != orden.sucursal_id or equipo.sucursal_id != orden.sucursal_id:
+        raise ValidationError("La orden, el material y la torre deben pertenecer a la misma planta.")
+    if existencia.lote.insumo.categoria != Insumo.Categoria.MATERIA_PRIMA:
+        raise ValidationError({"existencia": "Selecciona un lote clasificado como materia prima."})
+    if existencia.lote.insumo.unidad != Insumo.Unidad.KG:
+        raise ValidationError({
+            "existencia": (
+                "El balance actual de Secado trabaja en kg. Configura esta materia prima "
+                "en kg antes de alimentarla; no se aplican conversiones ocultas."
+            )
+        })
+    if not existencia.lote.utilizable or existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+        raise ValidationError({
+            "existencia": "La materia prima debe estar vigente y aprobada por Calidad."
+        })
+    if cantidad > existencia.cantidad_disponible:
+        raise ValidationError({
+            "cantidad": f"El lote externo tiene {existencia.cantidad_disponible} kg disponibles."
+        })
+    if equipo.tipo != Equipo.Tipo.TORRE or not equipo.activo:
+        raise ValidationError({"equipo": "Selecciona una torre activa de esta planta."})
+    impedimento = motivo_equipo_no_habilitado(equipo)
+    if impedimento:
+        raise ValidationError({"equipo": impedimento})
+
+    rutas = RutaProducto.objects.filter(
+        sucursal=orden.sucursal, producto=orden.producto,
+        insumo_origen=existencia.lote.insumo, activa=True,
+    ).select_related("proceso").prefetch_related(Prefetch(
+        "proceso__etapas",
+        queryset=EtapaProceso.objects.filter(activa=True).order_by("orden", "pk"),
+        to_attr="etapas_para_inicio",
+    )).order_by(
+        "prioridad", "pk"
+    )
+    ruta = next((
+        candidata for candidata in rutas
+        if candidata.proceso.etapas_para_inicio
+        and candidata.proceso.etapas_para_inicio[0].tipo == EtapaProceso.Tipo.SECADO
+    ), None)
+    if ruta is None:
+        raise ValidationError({
+            "ruta_producto": (
+                f"{orden.producto.nombre} no tiene una ruta de Secado que acepte "
+                f"{existencia.lote.insumo.nombre} como materia prima externa."
+            )
+        })
+    etapa = ruta.proceso.etapas_para_inicio[0]
+    codigo = str(codigo_lote).strip()
+    if not codigo:
+        raise ValidationError({"codigo_lote": "Ingresa el codigo del lote de salida."})
+    advertencia = advertencia_aseo_equipo(equipo)
+    lote = Lote(
+        sucursal=orden.sucursal, codigo_lote=codigo,
+        codigo_lote_propuesto=codigo, op=orden.codigo, orden=orden,
+        producto=orden.producto, equipo=equipo, fecha=timezone.localdate(),
+        estado=Lote.Estado.EN_PROCESO,
+        observacion=(f"[ADVERTENCIA ASEO AL INICIO] {advertencia}" if advertencia else ""),
+    )
+    lote.full_clean()
+    lote.save()
+    ejecucion = EjecucionProceso(
+        codigo=f"EJ-SEC-EXT-{lote.pk}", etapa=etapa, ruta_producto=ruta,
+        sucursal=orden.sucursal, equipo=equipo, responsable=usuario,
+        estado=EjecucionProceso.Estado.EJECUCION, inicio=timezone.now(),
+    )
+    ejecucion.full_clean()
+    ejecucion.save()
+    lote.ejecucion = ejecucion
+    lote.save(update_fields=["ejecucion"])
+    entrada = EntradaProceso(
+        ejecucion=ejecucion, lote_inventario=existencia.lote,
+        tipo=EntradaProceso.Tipo.PRINCIPAL, cantidad=cantidad, unidad="kg",
+    )
+    entrada.full_clean()
+    entrada.save()
+    registrar_salida(
+        existencia_id=existencia.pk, cantidad=cantidad, usuario=usuario,
+        documento_tipo="procesos.EjecucionProceso", documento_id=ejecucion.pk,
+        motivo=f"Alimentacion externa de Secado {ejecucion.codigo}", consumo=True,
+    )
+    corrida = CorridaSecado.objects.create(
+        ejecucion=ejecucion, orden=orden, lote=lote, kg_alimentacion=cantidad,
+    )
+    if orden.estado == OrdenProduccion.Estado.PROGRAMADA:
+        orden.estado = OrdenProduccion.Estado.EN_PROCESO
+        orden.save(update_fields=["estado"])
+    EventoProceso.objects.create(
+        ejecucion=ejecucion, usuario=usuario, tipo="inicio_secado_externo",
+        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        motivo=(
+            f"Lote externo {existencia.lote.codigo}; {cantidad} kg de "
+            f"{existencia.lote.insumo.nombre}."
+        ),
+    )
+    return corrida
+
+
+@transaction.atomic
 def cerrar_secado(
     *, corrida_id, usuario, kg_alimentacion, solidos_entrada_pct,
     kg_polvo, kg_finos=0, kg_merma=0, controles=None,
@@ -1929,7 +2052,15 @@ def cerrar_secado(
     }:
         raise ValidationError("Solo una corrida de Secado activa puede cerrarse.")
 
-    corrida.kg_alimentacion = Decimal(str(kg_alimentacion))
+    alimentacion = Decimal(str(kg_alimentacion))
+    if corrida.kg_alimentacion is not None and alimentacion != corrida.kg_alimentacion:
+        raise ValidationError({
+            "kg_alimentacion": (
+                f"La corrida consumio {corrida.kg_alimentacion} kg del lote externo; "
+                "el cierre debe conservar esa cantidad auditable."
+            )
+        })
+    corrida.kg_alimentacion = alimentacion
     corrida.solidos_entrada_pct = Decimal(str(solidos_entrada_pct))
     corrida.kg_polvo = Decimal(str(kg_polvo))
     corrida.kg_finos = Decimal(str(kg_finos))

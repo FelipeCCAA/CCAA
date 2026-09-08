@@ -10,16 +10,16 @@ Evitar que un mismo estado se utilice para describir cuatro situaciones operacio
 flowchart LR
     CIERRE[Cierre físico de corrida] --> PROC[PROCESO<br/>Terminado]
     CIERRE --> EQ[EQUIPO<br/>Disponible]
-    CIERRE --> MAT[MATERIAL<br/>Pendiente de Calidad]
-    MAT --> CAL[CALIDAD<br/>Pendiente]
-    CAL -->|Resultado conforme| LIB[MATERIAL<br/>Liberado]
-    CAL -->|Resultado no conforme| RECH[MATERIAL<br/>Rechazado / bloqueado]
+    CIERRE --> TIPO[TIPO DE MATERIAL<br/>Materia prima / intermedio / terminado]
+    TIPO --> CAL[ESTADO DE CALIDAD<br/>Pendiente]
+    CAL -->|Resultado conforme| LIB[ESTADO DE CALIDAD<br/>Liberado]
+    CAL -->|Resultado no conforme| RECH[ESTADO DE CALIDAD<br/>Rechazado / bloqueado]
     LIB --> SIG[Siguiente etapa]
     RECH --> DISP[Disposición definida<br/>por Calidad]
 
     class CIERRE,PROC process;
     class EQ equipment;
-    class MAT material;
+    class TIPO material;
     class CAL quality;
     class LIB approved;
     class RECH blocked;
@@ -35,14 +35,15 @@ flowchart LR
 
 ## Explicación breve
 
-Cerrar una corrida indica que la transformación física terminó. El equipo puede quedar disponible inmediatamente, aunque el material siga retenido. Calidad decide si ese material continúa, se bloquea o requiere otra disposición.
+Cerrar una corrida indica que la transformación física terminó. El equipo puede quedar disponible inmediatamente, aunque el material siga retenido. El tipo del material no cambia porque Calidad lo rechace: solamente cambia su estado de Calidad y su disposición permitida.
 
 ## Estados o decisiones importantes
 
 - Estado del proceso: qué ocurrió con la corrida.
 - Estado del equipo: si puede recibir otro trabajo.
-- Estado del material: si puede utilizarse o moverse.
-- Estado de Calidad: si existe una decisión pendiente, conforme o rechazada.
+- Tipo de material: materia prima/insumo, intermedio, terminado, coproducto, rework o merma según corresponda.
+- Estado de Calidad: pendiente, liberado, rechazado o bloqueado.
+- Ejemplo: `Material intermedio` + `Calidad pendiente`.
 
 ## Validación del experto-procesos-lacteos
 

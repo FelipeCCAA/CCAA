@@ -38,6 +38,29 @@ export interface CierreSecado {
   controles: Record<string, number>;
 }
 
+export interface OpcionesSecadoExterno {
+  existencias: Array<{
+    id: number; lote_id: number; lote_codigo: string;
+    insumo_id: number; insumo_nombre: string;
+    cantidad_disponible: string; unidad: string; estado_calidad: string;
+  }>;
+  ordenes: Array<{
+    id: number; codigo: string; producto_id: number;
+    producto_nombre: string; insumo_origen_id: number;
+  }>;
+  equipos: Array<{
+    id: number; codigo: string; nombre: string; disponible: boolean;
+  }>;
+}
+
+export interface InicioSecadoExterno {
+  orden: number;
+  existencia: number;
+  equipo: number;
+  codigo_lote: string;
+  cantidad: number;
+}
+
 export async function obtenerSecados(signal?: AbortSignal): Promise<Pagina<CorridaSecado>> {
   const { data } = await api.get<Pagina<CorridaSecado>>("procesos/secados/", { signal });
   return data;
@@ -50,5 +73,23 @@ export async function obtenerSecado(id: number, signal?: AbortSignal): Promise<C
 
 export async function cerrarSecado(id: number, datos: CierreSecado): Promise<CorridaSecado> {
   const { data } = await api.post<CorridaSecado>(`procesos/secados/${id}/cerrar/`, datos);
+  return data;
+}
+
+export async function obtenerOpcionesSecadoExterno(
+  signal?: AbortSignal,
+): Promise<OpcionesSecadoExterno> {
+  const { data } = await api.get<OpcionesSecadoExterno>(
+    "procesos/secados/opciones-alimentacion-externa/", { signal },
+  );
+  return data;
+}
+
+export async function iniciarSecadoExterno(
+  datos: InicioSecadoExterno,
+): Promise<CorridaSecado> {
+  const { data } = await api.post<CorridaSecado>(
+    "procesos/secados/iniciar-desde-inventario/", datos,
+  );
   return data;
 }

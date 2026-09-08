@@ -72,16 +72,16 @@
       <div class="diagram-scroll"><pre class="mermaid">flowchart LR
     CIERRE[Cierre físico de corrida] --&gt; PROC[PROCESO&lt;br/&gt;Terminado]
     CIERRE --&gt; EQ[EQUIPO&lt;br/&gt;Disponible]
-    CIERRE --&gt; MAT[MATERIAL&lt;br/&gt;Pendiente de Calidad]
-    MAT --&gt; CAL[CALIDAD&lt;br/&gt;Pendiente]
-    CAL --&gt;|Resultado conforme| LIB[MATERIAL&lt;br/&gt;Liberado]
-    CAL --&gt;|Resultado no conforme| RECH[MATERIAL&lt;br/&gt;Rechazado / bloqueado]
+    CIERRE --&gt; TIPO[TIPO DE MATERIAL&lt;br/&gt;Materia prima / intermedio / terminado]
+    TIPO --&gt; CAL[ESTADO DE CALIDAD&lt;br/&gt;Pendiente]
+    CAL --&gt;|Resultado conforme| LIB[ESTADO DE CALIDAD&lt;br/&gt;Liberado]
+    CAL --&gt;|Resultado no conforme| RECH[ESTADO DE CALIDAD&lt;br/&gt;Rechazado / bloqueado]
     LIB --&gt; SIG[Siguiente etapa]
     RECH --&gt; DISP[Disposición definida&lt;br/&gt;por Calidad]
 
     class CIERRE,PROC process;
     class EQ equipment;
-    class MAT material;
+    class TIPO material;
     class CAL quality;
     class LIB approved;
     class RECH blocked;
@@ -96,8 +96,8 @@
       <div class="render-alert" role="status"></div>
     </section>
     <div class="info-grid">
-      <section class="panel info"><h2>En pocas palabras</h2><p>Cerrar una corrida indica que la transformación física terminó. El equipo puede quedar disponible inmediatamente, aunque el material siga retenido. Calidad decide si ese material continúa, se bloquea o requiere otra disposición.</p></section>
-      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>Estado del proceso: qué ocurrió con la corrida.</li><li>Estado del equipo: si puede recibir otro trabajo.</li><li>Estado del material: si puede utilizarse o moverse.</li><li>Estado de Calidad: si existe una decisión pendiente, conforme o rechazada.</li></ul></section>
+      <section class="panel info"><h2>En pocas palabras</h2><p>Cerrar una corrida indica que la transformación física terminó. El equipo puede quedar disponible inmediatamente, aunque el material siga retenido. El tipo del material no cambia porque Calidad lo rechace: solamente cambia su estado de Calidad y su disposición permitida.</p></section>
+      <section class="panel info"><h2>Decisiones importantes</h2><ul class="decisions"><li>Estado del proceso: qué ocurrió con la corrida.</li><li>Estado del equipo: si puede recibir otro trabajo.</li><li>Tipo de material: materia prima/insumo, intermedio, terminado, coproducto, rework o merma según corresponda.</li><li>Estado de Calidad: pendiente, liberado, rechazado o bloqueado.</li><li>Ejemplo: Material intermedio + Calidad pendiente.</li></ul></section>
     </div>
     <section class="panel validation"><span class="badge ok">CORRECTO</span><p>Esta separación coincide con Secado, Descremado, Mantequilla y las liberaciones intermedias implementadas.</p></section>
   </main>

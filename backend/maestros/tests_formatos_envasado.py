@@ -102,6 +102,37 @@ class FormatosEnvasadoApiTests(TestCase):
         self.assertEqual(sobrepeso.status_code, 400)
         self.assertIn("unidades_maximas_pallet", sobrepeso.data)
 
+    def test_big_bag_acepta_peso_configurable_sin_convertirse_en_pallet(self):
+        respuesta = self.cliente(administracion=True).post(
+            "/api/maestros/formatos-envasado/",
+            self.datos(
+                codigo="big-bag-700",
+                nombre="Big Bag 700 kg",
+                kg_neto="700.000",
+                unidades_maximas_pallet=1,
+                tipo_unidad_logistica="big_bag",
+            ),
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.data["tipo_unidad_logistica"], "big_bag")
+        self.assertEqual(respuesta.data["maximo_unidad_logistica_kg"], "700.000")
+
+    def test_big_bag_rechaza_mas_de_una_unidad(self):
+        respuesta = self.cliente(administracion=True).post(
+            "/api/maestros/formatos-envasado/",
+            self.datos(
+                kg_neto="700.000",
+                unidades_maximas_pallet=2,
+                tipo_unidad_logistica="big_bag",
+            ),
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("unidades_maximas_pallet", respuesta.data)
+
     def test_operador_envase_no_puede_modificar_maestro(self):
         respuesta = self.cliente(administracion=False).post(
             "/api/maestros/formatos-envasado/", self.datos(), format="json"

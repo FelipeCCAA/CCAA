@@ -660,6 +660,10 @@ class RegistroEnvase(models.Model):
 
 
 class PalletProducto(models.Model):
+    class TipoUnidadLogistica(models.TextChoices):
+        PALLET = "pallet", "Pallet"
+        BIG_BAG = "big_bag", "Big Bag"
+
     class Estado(models.TextChoices):
         PENDIENTE_CALIDAD = "pendiente_calidad", "Pendiente de Calidad"
         BLOQUEADO = "bloqueado", "Bloqueado"
@@ -674,6 +678,11 @@ class PalletProducto(models.Model):
     codigo = models.CharField(max_length=80, unique=True)
     unidades = models.PositiveIntegerField()
     kg_neto = models.DecimalField(max_digits=14, decimal_places=3)
+    tipo_unidad_logistica = models.CharField(
+        max_length=15,
+        choices=TipoUnidadLogistica.choices,
+        default=TipoUnidadLogistica.PALLET,
+    )
     estado = models.CharField(
         max_length=25, choices=Estado.choices, default=Estado.PENDIENTE_CALIDAD,
         db_index=True,
@@ -690,13 +699,26 @@ class PalletProducto(models.Model):
                 condition=models.Q(kg_neto__gt=0), name="pallet_kg_positivos"
             ),
             models.CheckConstraint(
-                condition=models.Q(kg_neto__lte=500), name="pallet_kg_maximo_500"
+                condition=(
+                    models.Q(tipo_unidad_logistica="big_bag")
+                    | models.Q(kg_neto__lte=500)
+                ),
+                name="unidad_logistica_peso_valido",
             ),
         ]
 
     def clean(self):
-        if self.kg_neto and self.kg_neto > 500:
+        if (
+            self.tipo_unidad_logistica == self.TipoUnidadLogistica.PALLET
+            and self.kg_neto
+            and self.kg_neto > 500
+        ):
             raise ValidationError({"kg_neto": "Un pallet no puede superar 500 kg netos."})
+        if (
+            self.tipo_unidad_logistica == self.TipoUnidadLogistica.BIG_BAG
+            and self.unidades != 1
+        ):
+            raise ValidationError({"unidades": "Un Big Bag debe registrarse como una unidad."})
         if self.envase_id and self.unidades and self.kg_neto:
             esperado = self.envase.formato_kg * self.unidades
             if self.kg_neto != esperado:

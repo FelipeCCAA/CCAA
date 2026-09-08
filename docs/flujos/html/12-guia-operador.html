@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Guía visual paso a paso para operadores nuevos de CCAA.">
+  <title>Guía visual del operador | CCAA</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink:#172033; --muted:#5e6b82; --line:#dbe3ee; --surface:#fff;
+      --navy:#071a33; --blue:#1769aa; --blue-soft:#eaf4ff;
+      --green:#157347; --green-soft:#e6f7ee; --amber:#8a4b08; --amber-soft:#fff3cd;
+      --red:#a12424; --red-soft:#fee2e2; --violet:#6d3bb5; --violet-soft:#f2eafe;
+    }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--ink); background:#f3f6fa; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; line-height:1.5; }
+    a { color:inherit; }
+    a:focus-visible, summary:focus-visible { outline:3px solid #60a5fa; outline-offset:3px; }
+    .topbar { position:sticky; top:0; z-index:20; color:#fff; background:linear-gradient(120deg,var(--navy),#123f69); box-shadow:0 8px 28px #0b254526; }
+    .topbar-inner { width:min(1480px,calc(100% - 32px)); margin:auto; padding:14px 0; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .brand { display:flex; align-items:center; gap:10px; font-weight:850; }
+    .brand-mark { display:grid; place-items:center; width:38px; height:38px; border-radius:11px; color:#0b5f9e; background:#fff; }
+    .back { padding:9px 13px; border:1px solid #ffffff44; border-radius:10px; text-decoration:none; font-weight:750; background:#ffffff12; }
+    .page { width:min(1480px,calc(100% - 32px)); margin:auto; padding:34px 0 60px; }
+    .hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,.55fr); gap:22px; align-items:stretch; }
+    .hero-main,.start,.panel,.process { background:var(--surface); border:1px solid var(--line); border-radius:20px; box-shadow:0 12px 34px #20334f0b; }
+    .hero-main { padding:clamp(24px,4vw,46px); background:linear-gradient(145deg,#fff 55%,#edf6ff); }
+    .eyebrow { margin:0 0 7px; color:var(--blue); font-size:.78rem; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+    h1 { margin:0; font-size:clamp(2rem,5vw,3.55rem); line-height:1.04; letter-spacing:-.04em; }
+    .lead { max-width:830px; margin:15px 0 0; color:var(--muted); font-size:1.04rem; }
+    .start { padding:24px; }
+    .start h2,.section-title h2 { margin:0; }
+    .checklist { margin:14px 0 0; padding:0; list-style:none; display:grid; gap:9px; }
+    .checklist li { display:flex; gap:10px; align-items:flex-start; color:#3e4c63; }
+    .checklist li::before { content:"✓"; flex:0 0 24px; display:grid; place-items:center; width:24px; height:24px; border-radius:50%; color:#fff; background:var(--green); font-weight:900; }
+    .rule { margin:22px 0; padding:18px 20px; border-left:6px solid var(--blue); border-radius:14px; background:var(--blue-soft); }
+    .rule strong { display:block; margin-bottom:5px; }
+    .chain { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-top:13px; }
+    .chain span { position:relative; padding:12px 8px; border:1px solid #bcd7ee; border-radius:12px; background:#fff; text-align:center; font-weight:800; font-size:.83rem; }
+    .chain span:not(:last-child)::after { content:"→"; position:absolute; right:-10px; top:50%; z-index:2; transform:translateY(-50%); color:var(--blue); font-size:1.15rem; }
+    .section-title { display:flex; justify-content:space-between; align-items:end; gap:18px; margin:36px 0 16px; }
+    .section-title p { margin:0; color:var(--muted); }
+    .chooser { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+    .choice { display:flex; flex-direction:column; min-height:132px; padding:17px; border:1px solid var(--line); border-radius:16px; background:#fff; text-decoration:none; transition:.15s ease; }
+    .choice:hover { transform:translateY(-2px); border-color:#93b8d8; box-shadow:0 12px 26px #20334f12; }
+    .choice small { color:var(--blue); font-weight:900; text-transform:uppercase; letter-spacing:.06em; }
+    .choice strong { margin:8px 0 5px; font-size:1rem; }
+    .choice span { color:var(--muted); font-size:.84rem; }
+    .processes { display:grid; gap:16px; }
+    .process { overflow:hidden; scroll-margin-top:88px; }
+    summary { cursor:pointer; display:grid; grid-template-columns:52px minmax(0,1fr) auto; align-items:center; gap:15px; padding:20px 22px; list-style:none; }
+    summary::-webkit-details-marker { display:none; }
+    summary::after { content:"Abrir ↓"; color:var(--blue); font-size:.82rem; font-weight:900; }
+    details[open] summary::after { content:"Cerrar ↑"; }
+    .num { display:grid; place-items:center; width:46px; height:46px; border-radius:13px; color:#fff; background:linear-gradient(135deg,var(--blue),#0b416d); font-weight:900; }
+    summary h3 { margin:0; font-size:1.13rem; }
+    summary p { margin:3px 0 0; color:var(--muted); font-size:.88rem; }
+    .process-body { border-top:1px solid var(--line); padding:22px; background:#fbfdff; }
+    .path { display:inline-flex; gap:8px; align-items:center; padding:8px 11px; border-radius:10px; color:#0b4f7f; background:var(--blue-soft); font-weight:800; font-size:.85rem; }
+    .flow { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin:18px 0; }
+    .step { position:relative; min-height:110px; padding:14px; border:1px solid var(--line); border-radius:14px; background:#fff; }
+    .step:not(:last-child)::after { content:"→"; position:absolute; right:-10px; top:44px; z-index:2; color:var(--blue); font-size:1.2rem; font-weight:900; }
+    .step b { display:block; margin-bottom:7px; color:var(--blue); font-size:.76rem; letter-spacing:.05em; text-transform:uppercase; }
+    .step span { font-size:.9rem; }
+    .bottom-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .callout { padding:15px 17px; border-radius:13px; border:1px solid; }
+    .callout strong { display:block; margin-bottom:4px; }
+    .quality { color:#28593e; border-color:#9bd5b5; background:var(--green-soft); }
+    .warning { color:#70440c; border-color:#efd083; background:var(--amber-soft); }
+    .danger { color:#7f1d1d; border-color:#f6aaaa; background:var(--red-soft); }
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:.72rem; font-weight:900; white-space:nowrap; }
+    .badge.ok { color:var(--green); background:var(--green-soft); }
+    .badge.observe { color:var(--amber); background:var(--amber-soft); }
+    .badge.adjust { color:var(--red); background:var(--red-soft); }
+    .links { margin-top:14px; }
+    .links a { color:var(--blue); font-weight:850; text-decoration:none; }
+    .legend { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
+    footer { color:#6b778c; text-align:center; font-size:.82rem; padding:0 16px 34px; }
+    @media (max-width:1100px) { .chooser { grid-template-columns:repeat(3,1fr); } .flow { grid-template-columns:repeat(3,1fr); } .step::after { display:none; } }
+    @media (max-width:800px) { .hero { grid-template-columns:1fr; } .chooser { grid-template-columns:repeat(2,1fr); } .chain { grid-template-columns:repeat(3,1fr); } .chain span::after { display:none; } .flow { grid-template-columns:1fr 1fr; } }
+    @media (max-width:560px) { .topbar-inner,.page { width:min(100% - 22px,1480px); } .topbar-inner { align-items:flex-start; } .chooser,.flow,.bottom-grid { grid-template-columns:1fr; } summary { grid-template-columns:44px 1fr; padding:17px; } summary::after { grid-column:2; } .process-body { padding:17px; } }
+    @media print { .topbar { position:static; } .choice { min-height:auto; } details:not([open]) .process-body { display:block; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <span class="brand"><span class="brand-mark" aria-hidden="true">→</span> CCAA · Guía del operador</span>
+      <a class="back" href="index.html">← Volver a los flujos</a>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="hero">
+      <div class="hero-main">
+        <p class="eyebrow">Capacitación visual</p>
+        <h1>¿Qué hago ahora<br>en cada proceso?</h1>
+        <p class="lead">Guía rápida para un operador nuevo. Elige tu puesto, abre el proceso y sigue los pasos en orden. CCAA conserva el lote y la trazabilidad entre una etapa y la siguiente.</p>
+        <div class="legend" aria-label="Leyenda de estados">
+          <span class="badge ok">✓ Puede continuar</span>
+          <span class="badge observe">! Revisar advertencia</span>
+          <span class="badge adjust">× No operar todavía</span>
+        </div>
+      </div>
+      <aside class="start">
+        <h2>Antes de confirmar</h2>
+        <ul class="checklist">
+          <li>Lote y producto correctos.</li>
+          <li>Origen y cantidad disponibles.</li>
+          <li>Equipo o silo correcto y disponible.</li>
+          <li>Calidad liberada cuando corresponde.</li>
+          <li>Destino y siguiente etapa definidos.</li>
+          <li>Revisar el resumen antes de guardar.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="rule">
+      <strong>La regla que nunca debes perder</strong>
+      Cada movimiento debe conservar esta cadena. Si falta un dato, no adivines: revisa el lote o consulta al supervisor.
+      <div class="chain" aria-label="Cadena de trazabilidad">
+        <span>Origen</span><span>Lote</span><span>Equipo / Silo</span><span>Proceso</span><span>Calidad</span><span>Destino</span>
+      </div>
+    </section>
+
+    <div class="section-title"><div><p class="eyebrow">Acceso rápido</p><h2>Elige el proceso que vas a operar</h2></div><p>Las tarjetas te llevan al paso a paso.</p></div>
+    <nav class="chooser" aria-label="Procesos de la guía">
+      <a class="choice" href="#recepcion"><small>Inicio</small><strong>Recepción de leche</strong><span>Camión, muestra, decisión y descarga.</span></a>
+      <a class="choice" href="#silos"><small>Almacenamiento</small><strong>Silos y TK</strong><span>Contenido, capacidad, estado y destino.</span></a>
+      <a class="choice" href="#descremado"><small>Producción</small><strong>Descremado</strong><span>Leche entera hacia crema y descremada.</span></a>
+      <a class="choice" href="#estandarizacion"><small>Producción</small><strong>Estandarización</strong><span>Receta sugerida, RC, mezcla y liberación.</span></a>
+      <a class="choice" href="#evaporacion"><small>Producción</small><strong>Evaporación</strong><span>Leche estandarizada a precondensado.</span></a>
+      <a class="choice" href="#secado"><small>Producción</small><strong>Secado</strong><span>Torre, controles, balance y Calidad.</span></a>
+      <a class="choice" href="#polvo"><small>Envasado</small><strong>Leche en polvo</strong><span>Sacos de 25 kg y pallets de 500 kg.</span></a>
+      <a class="choice" href="#bigbag"><small>Envasado</small><strong>Big Bag</strong><span>Unidad logística configurable.</span></a>
+      <a class="choice" href="#mantequilla"><small>Producción</small><strong>Mantequilla</strong><span>Crema liberada hasta cajas.</span></a>
+      <a class="choice" href="#granel"><small>Despacho</small><strong>Productos a granel</strong><span>Crema o precondensado autorizado.</span></a>
+      <a class="choice" href="#suero"><small>Ruta externa</small><strong>Suero recibido</strong><span>Recepción, Calidad, Secado y Envasado.</span></a>
+      <a class="choice" href="#calidad"><small>Control</small><strong>Calidad</strong><span>Muestras, decisión y continuidad.</span></a>
+      <a class="choice" href="#inventario"><small>Bodega</small><strong>Inventario</strong><span>Materiales y productos terminados.</span></a>
+      <a class="choice" href="#rework"><small>Excepción</small><strong>Rework</strong><span>Solo con decisión y autorización.</span></a>
+      <a class="choice" href="#protomalt"><small>Pendiente</small><strong>Protomalt</strong><span>No operar hasta confirmar parámetros.</span></a>
+    </nav>
+
+    <div class="section-title"><div><p class="eyebrow">Paso a paso</p><h2>Guías por puesto y producto</h2></div><p>Abre solamente el proceso que necesitas.</p></div>
+    <section class="processes">
+
+      <details class="process" id="recepcion" open>
+        <summary><span class="num">01</span><span><h3>Recepción de leche</h3><p>Desde la llegada del camión hasta el silo de destino.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Menú → Recepción</span>
+          <div class="flow">
+            <div class="step"><b>1 · Llegada</b><span>Registra productor, camión, guía, conductor, litros, fecha y hora.</span></div>
+            <div class="step"><b>2 · Muestra</b><span>Registra o selecciona el análisis del camión.</span></div>
+            <div class="step"><b>3 · Calidad</b><span>Espera la decisión: aprobada, rechazada o bloqueada.</span></div>
+            <div class="step"><b>4 · Descarga</b><span>Selecciona únicamente un silo compatible y con capacidad.</span></div>
+            <div class="step"><b>5 · Verifica</b><span>Confirma que el saldo quedó visible en Silos principales.</span></div>
+          </div>
+          <div class="bottom-grid"><div class="callout quality"><strong>Puede continuar</strong>La leche aprobada queda trazada con su recepción, análisis y silo.</div><div class="callout danger"><strong>No descargues</strong>Si Calidad rechazó, falta análisis o el silo no tiene capacidad.</div></div>
+          <p class="links"><a href="00-mapa-general-planta.html">Ver mapa general de planta →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="silos">
+        <summary><span class="num">02</span><span><h3>Silos principales y TK</h3><p>Comprueba dónde está cada material y qué puede hacerse con él.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Inicio → Silos principales</span>
+          <div class="flow">
+            <div class="step"><b>1 · Identifica</b><span>Código del silo/TK, producto y lote.</span></div>
+            <div class="step"><b>2 · Cantidad</b><span>Revisa cantidad actual, capacidad y porcentaje ocupado.</span></div>
+            <div class="step"><b>3 · Estado físico</b><span>Disponible, reservado, ocupado, bloqueado o en aseo.</span></div>
+            <div class="step"><b>4 · Calidad</b><span>Confirma si el material está pendiente, liberado o rechazado.</span></div>
+            <div class="step"><b>5 · Acción</b><span>Abre el detalle y sigue el destino permitido.</span></div>
+          </div>
+          <div class="callout warning"><strong>Dos estados distintos</strong>Un equipo puede estar disponible físicamente mientras el material continúa esperando Calidad.</div>
+          <p class="links"><a href="08-estados-proceso-material-calidad.html">Entender los estados →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="descremado">
+        <summary><span class="num">03</span><span><h3>Descremado</h3><p>Una entrada produce dos salidas trazables: crema y leche descremada.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Producción → Descremado</span>
+          <div class="flow">
+            <div class="step"><b>1 · Entrada</b><span>Selecciona leche entera liberada y la descremadora disponible.</span></div>
+            <div class="step"><b>2 · Destinos</b><span>Elige TK para crema y TK/silo para leche descremada.</span></div>
+            <div class="step"><b>3 · Sugerencia</b><span>Revisa el balance calculado por CCAA. El operador debe confirmarlo.</span></div>
+            <div class="step"><b>4 · Cierre real</b><span>Registra cantidades reales, materia grasa y merma.</span></div>
+            <div class="step"><b>5 · Calidad</b><span>Cada salida queda con decisión y siguiente destino propios.</span></div>
+          </div>
+          <div class="bottom-grid"><div class="callout quality"><strong>Crema</strong>Puede ir a Mantequilla, Estandarización o despacho autorizado.</div><div class="callout quality"><strong>Leche descremada</strong>Queda como intermedio para Estandarización; no es producto terminado.</div></div>
+          <p class="links"><a href="06-descremado.html">Ver diagrama de Descremado →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="estandarizacion">
+        <summary><span class="num">04</span><span><h3>Estandarización</h3><p>La receta define el objetivo antes de mezclar; el operador confirma la sugerencia.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Producción → Estandarización</span>
+          <div class="flow">
+            <div class="step"><b>1 · Objetivo</b><span>Selecciona producto y revisa MG, SNG, RC objetivo y tolerancias.</span></div>
+            <div class="step"><b>2 · Receta sugerida</b><span>CCAA propone orígenes y cantidades. Revisa disponibilidad.</span></div>
+            <div class="step"><b>3 · Confirmación</b><span>El operador acepta o ajusta justificadamente antes de ejecutar.</span></div>
+            <div class="step"><b>4 · Mezcla</b><span>Transfiere, agita, toma muestra y registra el RC medido.</span></div>
+            <div class="step"><b>5 · Decisión</b><span>Si cumple, libera el vale; si no, corrige, reagita y remuestrea.</span></div>
+          </div>
+          <div class="callout danger"><strong>No liberes por aproximación</strong>El RC medido debe compararse con el objetivo y su tolerancia. La sugerencia no reemplaza la confirmación del operador.</div>
+          <p class="links"><a href="09-trazabilidad.html">Ver trazabilidad completa →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="evaporacion">
+        <summary><span class="num">05</span><span><h3>Evaporación y precondensado</h3><p>Transforma leche estandarizada liberada y define un único destino.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Producción → Evaporación</span>
+          <div class="flow">
+            <div class="step"><b>1 · Material</b><span>Selecciona vale liberado, orden de producción y cantidad.</span></div>
+            <div class="step"><b>2 · Equipo</b><span>Elige solamente un evaporador disponible y compatible.</span></div>
+            <div class="step"><b>3 · Ejecución</b><span>Inicia y registra los controles operacionales requeridos.</span></div>
+            <div class="step"><b>4 · Cierre</b><span>Registra cantidad real, balance y silo/TK de salida.</span></div>
+            <div class="step"><b>5 · Destino</b><span>Continúa a Secado o a despacho a granel, según la orden.</span></div>
+          </div>
+          <div class="callout warning"><strong>Un destino por salida</strong>No envíes la misma cantidad simultáneamente a Secado y Despacho.</div>
+          <p class="links"><a href="02-precondensado-despacho.html">Ver precondensado a despacho →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="secado">
+        <summary><span class="num">06</span><span><h3>Secado</h3><p>La corrida usa una torre; el cierre físico no libera automáticamente el material.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Producción → Secado</span>
+          <div class="flow">
+            <div class="step"><b>1 · Corrida</b><span>Abre la corrida creada desde el lote y confirma torre, producto y orden.</span></div>
+            <div class="step"><b>2 · Inicio</b><span>Confirma preparación e inicia solamente con material habilitado.</span></div>
+            <div class="step"><b>3 · Controles</b><span>Registra alimentación, sólidos y controles operacionales.</span></div>
+            <div class="step"><b>4 · Balance</b><span>Ingresa kg de polvo, finos, merma y revisa el resumen.</span></div>
+            <div class="step"><b>5 · Cierre</b><span>Finaliza la corrida; el polvo queda esperando Calidad si corresponde.</span></div>
+          </div>
+          <div class="bottom-grid"><div class="callout quality"><strong>Torre</strong>Puede quedar físicamente disponible al cerrar.</div><div class="callout warning"><strong>Material</strong>No pasa a Envasado hasta su liberación de Calidad.</div></div>
+          <p class="links"><a href="01-leche-polvo.html">Ver flujo de leche en polvo →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="polvo">
+        <summary><span class="num">07</span><span><h3>Leche en polvo · sacos de 25 kg</h3><p>Envasado, palletización, Calidad final e Inventario.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Envasado → Leche en polvo</span>
+          <div class="flow">
+            <div class="step"><b>1 · Habilitación</b><span>Selecciona solo polvo a granel liberado por Calidad.</span></div>
+            <div class="step"><b>2 · Materiales</b><span>Verifica sacos, etiquetas y pallet disponibles.</span></div>
+            <div class="step"><b>3 · Envasado</b><span>Registra formato de 25 kg y cantidad de sacos producidos.</span></div>
+            <div class="step"><b>4 · Pallet</b><span>20 sacos × 25 kg = 500 kg máximo por pallet.</span></div>
+            <div class="step"><b>5 · Liberación</b><span>Calidad final libera; luego envía el pallet a Bodega.</span></div>
+          </div>
+          <div class="callout danger"><strong>No exceder</strong>Un pallet de este formato no debe superar 500 kg.</div>
+          <p class="links"><a href="01-leche-polvo.html">Ver diagrama completo →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="bigbag">
+        <summary><span class="num">08</span><span><h3>Big Bag</h3><p>Formato configurable y unidad logística independiente del pallet.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Envasado → Big Bag</span>
+          <div class="flow">
+            <div class="step"><b>1 · Producto</b><span>Selecciona material liberado y formato Big Bag habilitado.</span></div>
+            <div class="step"><b>2 · Peso</b><span>Revisa el peso configurado para el formato, por ejemplo 700 kg.</span></div>
+            <div class="step"><b>3 · Consumos</b><span>Confirma envase, etiqueta y materiales utilizados.</span></div>
+            <div class="step"><b>4 · Unidad</b><span>Crea el Big Bag como unidad logística propia, no como pallet.</span></div>
+            <div class="step"><b>5 · Destino</b><span>Tras Calidad final, envía la unidad a Inventario.</span></div>
+          </div>
+          <div class="callout warning"><strong>Dato configurable</strong>El peso debe venir del formato vigente; no se debe asumir siempre 700 kg.</div>
+        </div>
+      </details>
+
+      <details class="process" id="mantequilla">
+        <summary><span class="num">09</span><span><h3>Mantequilla</h3><p>Crema liberada, corrida, Calidad de lote, Envasado e Inventario.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Producción → Mantequilla</span>
+          <div class="flow">
+            <div class="step"><b>1 · Crema</b><span>Selecciona un lote de crema liberado y con saldo suficiente.</span></div>
+            <div class="step"><b>2 · Corrida</b><span>Confirma orden, equipo disponible y cantidad a procesar.</span></div>
+            <div class="step"><b>3 · Cierre</b><span>Registra mantequilla producida y merma real.</span></div>
+            <div class="step"><b>4 · Calidad</b><span>La mantequilla a granel espera análisis de lote y liberación.</span></div>
+            <div class="step"><b>5 · Envasado</b><span>Envasa en cajas; Calidad final libera y Bodega recibe.</span></div>
+          </div>
+          <div class="callout warning"><strong>Alcance actual</strong>La Mazada no forma parte del flujo operativo por ahora; el registro termina en mantequilla y merma.</div>
+          <p class="links"><a href="03-mantequilla.html">Ver flujo de Mantequilla →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="granel">
+        <summary><span class="num">10</span><span><h3>Despacho de crema o precondensado a granel</h3><p>Salida comercial directa desde TK/silo, sin Envasado.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Despacho → Producto a granel</span>
+          <div class="flow">
+            <div class="step"><b>1 · Material</b><span>Selecciona crema o precondensado liberado para despacho.</span></div>
+            <div class="step"><b>2 · Saldo</b><span>Confirma lote, TK/silo y cantidad disponible.</span></div>
+            <div class="step"><b>3 · Borrador</b><span>Crea el despacho con cliente, vehículo y cantidad.</span></div>
+            <div class="step"><b>4 · Autoriza</b><span>Revisa documentación y autoriza según permisos.</span></div>
+            <div class="step"><b>5 · Ejecuta</b><span>Confirma carga y comprueba el nuevo saldo físico.</span></div>
+          </div>
+          <div class="bottom-grid"><div class="links"><a href="04-crema-despacho.html">Ver crema a despacho →</a></div><div class="links"><a href="02-precondensado-despacho.html">Ver precondensado a despacho →</a></div></div>
+        </div>
+      </details>
+
+      <details class="process" id="suero">
+        <summary><span class="num">11</span><span><h3>Suero recibido para Secado</h3><p>El suero llega desde fuera de la fábrica; no se produce aquí.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Inventario → Recepción · luego Producción → Secado</span>
+          <div class="flow">
+            <div class="step"><b>1 · Recepción</b><span>Registra proveedor, lote externo, guía, kg recibidos y ubicación.</span></div>
+            <div class="step"><b>2 · Cuarentena</b><span>El material queda retenido hasta la decisión de Calidad.</span></div>
+            <div class="step"><b>3 · Alimentación</b><span>Selecciona orden, lote exacto, torre, lote de salida y kg a consumir.</span></div>
+            <div class="step"><b>4 · Secado</b><span>Ejecuta la corrida y registra el balance en la unidad real.</span></div>
+            <div class="step"><b>5 · Salida</b><span>Calidad libera, Envasado crea la unidad e Inventario recibe.</span></div>
+          </div>
+          <div class="callout danger"><strong>No conviertas unidades a mano</strong>La alimentación se registra en kg. No uses conversiones ocultas entre litros y kg.</div>
+          <p class="links"><a href="10-secado-suero.html">Ver flujo de Secado de suero →</a></p>
+        </div>
+      </details>
+
+      <details class="process" id="calidad">
+        <summary><span class="num">12</span><span><h3>Calidad entre procesos</h3><p>Decide sobre el material; no ejecuta físicamente los equipos.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Calidad → Panel de Calidad</span>
+          <div class="flow">
+            <div class="step"><b>1 · Bandeja</b><span>Abre el material pendiente de la etapa correspondiente.</span></div>
+            <div class="step"><b>2 · Contexto</b><span>Revisa lote, origen, proceso, equipo, cantidad y especificación.</span></div>
+            <div class="step"><b>3 · Análisis</b><span>Selecciona o registra el análisis correcto: silo o lote.</span></div>
+            <div class="step"><b>4 · Compara</b><span>Contrasta resultados con los rangos visibles.</span></div>
+            <div class="step"><b>5 · Decide</b><span>Libera, rechaza, bloquea o solicita corrección/remuestreo.</span></div>
+          </div>
+          <div class="callout quality"><strong>La decisión mueve el flujo</strong>Al liberar aparece la siguiente acción permitida; al rechazar debe quedar visible el motivo.</div>
+        </div>
+      </details>
+
+      <details class="process" id="inventario">
+        <summary><span class="num">13</span><span><h3>Inventario y Bodega</h3><p>Consulta saldos físicos y recibe productos terminados liberados.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Inventario → Panel</span>
+          <div class="flow">
+            <div class="step"><b>1 · Tipo</b><span>Distingue material/insumo, intermedio y producto terminado.</span></div>
+            <div class="step"><b>2 · Calidad</b><span>Revisa disponible, reservado, cuarentena o bloqueado.</span></div>
+            <div class="step"><b>3 · Ubicación</b><span>Confirma bodega, zona y unidad logística.</span></div>
+            <div class="step"><b>4 · Recepción</b><span>Recibe pallets, cajas o Big Bags liberados por Calidad.</span></div>
+            <div class="step"><b>5 · Movimiento</b><span>Todo ingreso, consumo o salida debe quedar registrado.</span></div>
+          </div>
+          <div class="callout warning"><strong>No mezclar conceptos</strong>“Producto terminado” describe el tipo de material; “Liberado” describe su estado de Calidad.</div>
+        </div>
+      </details>
+
+      <details class="process" id="rework">
+        <summary><span class="num">14</span><span><h3>Rework</h3><p>Material recuperable que requiere autorización antes de volver a Producción.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Calidad → Decisión · Inventario → Unidad de rework</span>
+          <div class="flow">
+            <div class="step"><b>1 · Origen</b><span>Identifica producto rechazado, daño, excedente o material recuperable.</span></div>
+            <div class="step"><b>2 · Calidad</b><span>Decide: aprobado, bloqueado o destrucción.</span></div>
+            <div class="step"><b>3 · Unidad</b><span>Crea una unidad física trazable y registra su ubicación.</span></div>
+            <div class="step"><b>4 · Autorización</b><span>Define proceso, producto y cantidad máxima permitida.</span></div>
+            <div class="step"><b>5 · Consumo</b><span>Producción consume el rework manteniendo el vínculo al lote original.</span></div>
+          </div>
+          <div class="callout danger"><strong>Nunca usar sin aprobación</strong>Un rework bloqueado o pendiente no puede ingresar a Producción.</div>
+        </div>
+      </details>
+
+      <details class="process" id="protomalt">
+        <summary><span class="num">15</span><span><h3>Protomalt / extracto de malta</h3><p>Ruta externa identificada, pero aún no está autorizada para operación.</p></span></summary>
+        <div class="process-body">
+          <span class="path">Estado → REQUIERE AJUSTE</span>
+          <div class="flow">
+            <div class="step"><b>Confirmado</b><span>El producto llega desde fuera de la fábrica.</span></div>
+            <div class="step"><b>Pendiente</b><span>Almacenamiento físico y preparación previa.</span></div>
+            <div class="step"><b>Pendiente</b><span>Controles, parámetros y compatibilidad de equipos.</span></div>
+            <div class="step"><b>Pendiente</b><span>Especificación de Calidad y formato final.</span></div>
+            <div class="step"><b>Decisión</b><span>No iniciar hasta que Planta y Calidad confirmen estos datos.</span></div>
+          </div>
+          <div class="callout danger"><strong>No operar todavía</strong>CCAA no debe inventar el proceso previo ni sus parámetros.</div>
+          <p class="links"><a href="11-secado-protomalt.html">Ver diagrama y pendientes →</a></p>
+        </div>
+      </details>
+    </section>
+  </main>
+  <footer>Guía operacional visual · Documentación de CCAA · No reemplaza los procedimientos oficiales de planta</footer>
+</body>
+</html>
