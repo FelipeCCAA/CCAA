@@ -34,6 +34,8 @@ export interface EjecucionOperativa {
   etapa_tipo: string;
   equipo_id: number | null;
   equipo_nombre: string | null;
+  motivo_bloqueo: string;
+  cambio_estado_en: string | null;
   acciones_permitidas: string[];
   entradas: string[];
   salidas: string[];

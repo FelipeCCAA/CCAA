@@ -249,14 +249,6 @@ class FlujoCondensacionTests(TestCase):
         )
         self.destino.refresh_from_db()
         self.assertEqual(self.destino.estado, Silo.Estado.BLOQUEADO_CALIDAD)
-        analisis = AnalisisSilo.objects.create(
-            silo=self.destino, tomado_en=timezone.now(),
-            grasa=Decimal("7.00"), sng=Decimal("42.00"),
-            inhibidores_resultado="negativo", metodo="snap",
-            hora_lectura=timezone.localtime().time(),
-            estado=AnalisisSilo.Estado.CONFIRMADO,
-            analista=self.usuario, visualizado_por=self.usuario,
-        )
         calidad = User.objects.create_user("calidad-condensacion")
         PerfilUsuario.objects.create(
             usuario=calidad, empresa=self.planta.empresa, sucursal=self.planta,
@@ -265,8 +257,76 @@ class FlujoCondensacionTests(TestCase):
         cliente = APIClient()
         cliente.force_authenticate(calidad)
 
+        sin_analisis = cliente.get("/api/calidad/resultados-proceso/")
+        self.assertEqual(
+            sin_analisis.data["resultados"][0]["preparacion"],
+            "esperando_analisis",
+        )
+        self.assertEqual(
+            cliente.get(
+                "/api/calidad/resultados-proceso/",
+                {"preparacion": "esperando_analisis"},
+            ).data["total"],
+            1,
+        )
+        analisis = AnalisisSilo.objects.create(
+            silo=self.destino, tomado_en=timezone.now(),
+            grasa=Decimal("7.00"), sng=Decimal("42.00"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime().time(),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+        )
+
         cola = cliente.get("/api/calidad/expedientes/", {"incluir_procesos": "1"})
         self.assertEqual(cola.status_code, 200, cola.data)
+        bandeja_procesos = cliente.get("/api/calidad/resultados-proceso/")
+        self.assertEqual(bandeja_procesos.status_code, 200, bandeja_procesos.data)
+        self.assertIn(
+            self.ejecucion.salidas.get().pk,
+            {item["id"] for item in bandeja_procesos.data["resultados"]},
+        )
+        self.assertEqual(bandeja_procesos.data["total"], 1)
+        self.assertEqual(bandeja_procesos.data["pagina"], 1)
+        self.assertEqual(bandeja_procesos.data["limite"], 20)
+        self.assertFalse(bandeja_procesos.data["hay_mas"])
+        self.assertEqual(bandeja_procesos.data["orden"], "antiguedad_ascendente")
+        self.assertIsNotNone(bandeja_procesos.data["resultados"][0]["registrada_en"])
+        self.assertEqual(
+            bandeja_procesos.data["resultados"][0]["preparacion"],
+            "listo_liberar",
+        )
+        self.assertTrue(
+            bandeja_procesos.data["resultados"][0]["analisis_disponibles"][0][
+                "habilita_liberacion"
+            ]
+        )
+        self.assertEqual(
+            cliente.get(
+                "/api/calidad/resultados-proceso/",
+                {"tipo": "condensacion", "buscar": self.ejecucion.codigo},
+            ).data["total"],
+            1,
+        )
+        self.assertEqual(
+            cliente.get(
+                "/api/calidad/resultados-proceso/", {"tipo": "secado"}
+            ).data["total"],
+            0,
+        )
+        self.assertEqual(
+            cliente.get(
+                "/api/calidad/resultados-proceso/",
+                {"preparacion": "con_analisis"},
+            ).data["total"],
+            1,
+        )
+        self.assertEqual(
+            cliente.get(
+                "/api/calidad/resultados-proceso/", {"tipo": "desconocido"}
+            ).status_code,
+            400,
+        )
         pendiente = next(
             item for item in cola.data["procesos"]
             if item["id"] == self.ejecucion.salidas.get().pk

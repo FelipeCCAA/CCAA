@@ -15,6 +15,7 @@ from .views import (
     enviar_pallets_bodega,
     liberar_resultado_proceso,
     rechazar_resultado_proceso,
+    resultados_proceso,
     revisar,
 )
 
@@ -39,5 +40,6 @@ urlpatterns = [
     path("expedientes/<int:lote_id>/revisar/", revisar, name="revisar"),
     path("resultados-proceso/<int:salida_id>/liberar/", liberar_resultado_proceso),
     path("resultados-proceso/<int:salida_id>/rechazar/", rechazar_resultado_proceso),
+    path("resultados-proceso/", resultados_proceso, name="resultados-proceso"),
     path("", include(router.urls)),
 ]

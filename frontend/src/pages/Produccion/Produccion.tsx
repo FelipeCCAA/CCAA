@@ -27,6 +27,7 @@ import {
 } from "../../services/procesos.service";
 import EvaporadoresProduccion from "./EvaporadoresProduccion";
 import SalidasIntermedias from "./SalidasIntermedias";
+import BandejaTrabajoArea from "./BandejaTrabajoArea";
 
 const DetalleLote = lazy(() => import("./DetalleLote"));
 const FormularioLote = lazy(() => import("./FormularioLote"));
@@ -84,6 +85,7 @@ function Produccion() {
   const [error, setError] = useState("");
   const [formularioAbierto, setFormularioAbierto] = useState(false);
   const [loteAbierto, setLoteAbierto] = useState<number | null>(null);
+  const [historialActivo, setHistorialActivo] = useState(false);
   const [resumenOperacional, setResumenOperacional] = useState<ResumenOperacionalProduccion | null>(null);
   const [resumenNoDisponible, setResumenNoDisponible] = useState(false);
 
@@ -125,10 +127,11 @@ function Produccion() {
   // Los productos alimentan el filtro visible y se cargan una sola vez. Los
   // parámetros y pallets se piden al abrir las secciones que los usan.
   useEffect(() => {
+    if (!historialActivo) return;
     obtenerProductos()
       .then(setProductos)
       .catch((error) => console.error("Error cargando los productos:", error));
-  }, []);
+  }, [historialActivo]);
 
   const cargarResumenOperacional = useCallback(() => {
     void obtenerResumenOperacional()
@@ -149,12 +152,13 @@ function Produccion() {
   // Espera a que el usuario deje de escribir antes de consultar, para no
   // lanzar una petición por tecla.
   useEffect(() => {
+    if (!historialActivo) return;
 
     const temporizador = setTimeout(cargarLotes, 250);
 
     return () => clearTimeout(temporizador);
 
-  }, [cargarLotes]);
+  }, [cargarLotes, historialActivo]);
 
   const cambiarFiltro = (aplicar: () => void) => {
     aplicar();
@@ -173,7 +177,7 @@ function Produccion() {
   }[] = [
     { etiqueta: "Procesos activos", valor: resumenOperacional?.procesos_activos, Icono: Factory, tono: "text-sky-700" },
     { etiqueta: "Esperando Calidad", valor: resumenOperacional?.esperando_calidad, Icono: FlaskConical, tono: "text-violet-700" },
-    { etiqueta: "Materiales listos", valor: resumenOperacional?.materiales_listos, Icono: PackageCheck, tono: "text-emerald-700" },
+    { etiqueta: "Materiales listos planta", valor: resumenOperacional?.materiales_listos, Icono: PackageCheck, tono: "text-emerald-700" },
     { etiqueta: "Equipos ocupados", valor: resumenOperacional?.equipos_ocupados, Icono: Gauge, tono: "text-amber-700" },
     { etiqueta: "Bloqueos", valor: resumenOperacional?.bloqueos, Icono: AlertTriangle, tono: "text-rose-700" },
   ];
@@ -244,6 +248,8 @@ function Produccion() {
           ))}
         </section>
 
+        <BandejaTrabajoArea />
+
         <section className="mb-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Flujo por proceso</p>
           <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
@@ -261,6 +267,21 @@ function Produccion() {
         {veCondensacion && <div id="evaporacion"><EvaporadoresProduccion /></div>}
 
         {/* Filtros */}
+
+        {!historialActivo ? (
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
+            <h2 className="text-xl font-bold text-slate-900">Historial de lotes productivos</h2>
+            <p className="mx-auto mt-2 max-w-2xl text-sm text-slate-600">Consulta lotes cerrados, calidad y trazabilidad cuando los necesites. El historial no se descarga durante la operación diaria.</p>
+            <button
+              type="button"
+              onClick={() => setHistorialActivo(true)}
+              className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:border-emerald-500"
+            >
+              Consultar historial
+            </button>
+          </section>
+        ) : (
+          <>
 
         <section className="mb-3">
           <h2 className="text-xl font-bold text-slate-900">Lotes productivos</h2>
@@ -438,6 +459,9 @@ function Produccion() {
 
           </div>
 
+        )}
+
+          </>
         )}
 
       </div>

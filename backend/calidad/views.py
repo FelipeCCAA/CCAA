@@ -27,6 +27,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from auditoria.registro import actualizar_queryset_con_auditoria
 from inocuidad.models import MonitoreoPPRO
 from maestros.catalogos import PARAMETROS
 from maestros.models import DocumentoLiberacion, Especificacion
@@ -48,6 +49,13 @@ from usuarios.tenancy import (
 )
 
 from . import dominio
+from .consultas import (
+    RESULTADOS_PROCESO_MAXIMO,
+    RESULTADOS_PROCESO_POR_PAGINA,
+    consultar_resultados_intermedios,
+    filtro_resultados_de_proceso,
+    valores_calidad_de_silo,
+)
 from .models import Liberacion, LiberacionProceso, RegistroCalidad, RegistroEquipo
 from .serializers_equipo import RegistroEquipoSerializer
 from .serializers import (
@@ -149,10 +157,13 @@ class LiberacionViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
 
 # --------------------------------------------------------------- expedientes
 
+
 def _lotes_permitidos(request):
     return filtrar_por_scope(
-        Lote.objects.all(), request.user,
-        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        Lote.objects.all(),
+        request.user,
+        campo_sucursal="sucursal_id",
+        campo_empresa="sucursal__empresa_id",
     )
 
 
@@ -174,7 +185,8 @@ def _resumen_envasado(lote):
     if (
         rework is not None
         and rework.origen == AutorizacionReproceso.Origen.EXCEDENTE
-        and rework.estado in {
+        and rework.estado
+        in {
             AutorizacionReproceso.Estado.APROBADO,
             AutorizacionReproceso.Estado.DESTRUIDO,
         }
@@ -200,6 +212,7 @@ def _envasado_completo(lote):
     """Distingue la puerta comercial final de la liberación intermedia."""
     resumen = _resumen_envasado(lote)
     return None if resumen is None else resumen["completo"]
+
 
 def _contexto_del_lote(lote, bloquear=False):
     """
@@ -319,31 +332,6 @@ EXPEDIENTES_POR_PAGINA = 50
 EXPEDIENTES_MAXIMO = 200
 
 
-def _filtro_resultados_de_proceso():
-    """Resultados que Calidad debe decidir antes de que el flujo continúe."""
-    from procesos.models import EtapaProceso, SalidaProceso
-
-    intermedio_en_silo = Q(silo__isnull=False) & (
-        Q(ejecucion__etapa__requiere_calidad=True)
-        | Q(destino=SalidaProceso.Destino.DESPACHO_DIRECTO)
-    )
-    mantequilla_a_granel = Q(
-        silo__isnull=True,
-        lote__isnull=False,
-        ejecucion__etapa__tipo=EtapaProceso.Tipo.MANTEQUILLA,
-        ejecucion__etapa__requiere_calidad=True,
-        destino=SalidaProceso.Destino.ENVASADO,
-    )
-    secado_a_granel = Q(
-        silo__isnull=True,
-        lote__isnull=False,
-        ejecucion__etapa__tipo=EtapaProceso.Tipo.SECADO,
-        ejecucion__etapa__requiere_calidad=True,
-        destino=SalidaProceso.Destino.PENDIENTE,
-    )
-    return intermedio_en_silo | mantequilla_a_granel | secado_a_granel
-
-
 def _ejecucion_admite_decision_de_calidad(salida):
     """Calidad decide material; no reabre una ejecución física de Secado."""
     from procesos.models import EjecucionProceso, EtapaProceso
@@ -359,7 +347,9 @@ def _ejecucion_admite_decision_de_calidad(salida):
     )
 
 
-def _pagina_y_limite(parametros):
+def _pagina_y_limite(
+    parametros, *, por_pagina=EXPEDIENTES_POR_PAGINA, maximo=EXPEDIENTES_MAXIMO
+):
     """Lee la paginación de la petición, acotada y a prueba de basura."""
 
     def entero(nombre, defecto):
@@ -370,174 +360,52 @@ def _pagina_y_limite(parametros):
 
     return (
         entero("pagina", 1),
-        min(entero("limite", EXPEDIENTES_POR_PAGINA), EXPEDIENTES_MAXIMO),
+        min(entero("limite", por_pagina), maximo),
     )
 
 
-def _resultados_intermedios(request):
-    """Salidas trazables que requieren una decisión propia de Calidad."""
-    from produccion import dominio as dominio_produccion
-    from procesos.models import EjecucionProceso, SalidaProceso
-    from recepcion.models import AnalisisSilo
+@api_view(["GET"])
+@permission_classes([EscribeCalidad])
+def resultados_proceso(request):
+    """Bandeja propia de Calidad para resultados de procesos productivos."""
+    from procesos.models import EtapaProceso
 
-    salidas = filtrar_por_scope(
-        SalidaProceso.objects.filter(_filtro_resultados_de_proceso()).filter(
-            Q(ejecucion__estado__in=[
-                EjecucionProceso.Estado.PENDIENTE_CONTROL,
-                EjecucionProceso.Estado.BLOQUEADA,
-            ])
-            | Q(liberacion_calidad__isnull=False)
-        ).select_related(
-            "ejecucion__etapa", "ejecucion__equipo", "silo", "lote__producto",
-            "liberacion_calidad", "liberacion_calidad__analisis_lote",
-            "ejecucion__corrida_condensacion__lote__producto",
-            "ejecucion__corrida_descremacion",
-        ).order_by("-registrada_en"),
+    tipo = str(request.query_params.get("tipo", "")).strip()
+    preparacion = str(request.query_params.get("preparacion", "")).strip()
+    buscar = str(request.query_params.get("buscar", "")).strip()[:80]
+    if tipo and tipo not in EtapaProceso.Tipo.values:
+        return Response({"tipo": "Tipo de proceso no válido."}, status=400)
+    if preparacion not in {"", "con_analisis", "esperando_analisis"}:
+        return Response({"preparacion": "Filtro de preparación no válido."}, status=400)
+    pagina, limite = _pagina_y_limite(
+        request.query_params,
+        por_pagina=RESULTADOS_PROCESO_POR_PAGINA,
+        maximo=RESULTADOS_PROCESO_MAXIMO,
+    )
+    resultados, total = consultar_resultados_intermedios(
         request.user,
-        campo_sucursal="ejecucion__sucursal_id",
-        campo_empresa="ejecucion__sucursal__empresa_id",
+        solo_pendientes=True,
+        pagina=pagina,
+        limite=limite,
+        tipo=tipo,
+        preparacion=preparacion,
+        buscar=buscar,
     )
-    salidas = list(salidas[:50])
-    analisis_por_silo = defaultdict(list)
-    analisis = AnalisisSilo.objects.filter(
-        silo_id__in=[salida.silo_id for salida in salidas],
-        estado=AnalisisSilo.Estado.CONFIRMADO,
-    ).order_by("-tomado_en")
-    for item in analisis:
-        analisis_por_silo[item.silo_id].append(item)
-    analisis_por_lote = defaultdict(list)
-    from produccion.models import Analisis
-    for item in Analisis.objects.filter(
-        lote_id__in=[salida.lote_id for salida in salidas if salida.lote_id]
-    ).select_related("especificacion").order_by("-fecha", "-id"):
-        analisis_por_lote[item.lote_id].append(item)
-    especificaciones = list(Especificacion.objects.filter(
-        producto_id__in={
-            salida.lote.producto_id
-            for salida in salidas
-            if salida.lote_id and salida.lote.producto_id
+    return Response(
+        {
+            "resultados": resultados,
+            "total": total,
+            "pagina": pagina,
+            "limite": limite,
+            "hay_mas": pagina * limite < total,
+            "orden": "antiguedad_ascendente",
+            "filtros": {
+                "tipo": tipo,
+                "preparacion": preparacion,
+                "buscar": buscar,
+            },
         }
-    ))
-
-    resultado = []
-    for salida in salidas:
-        decision = getattr(salida, "liberacion_calidad", None)
-        condensacion = getattr(salida.ejecucion, "corrida_condensacion", None)
-        descremacion = getattr(salida.ejecucion, "corrida_descremacion", None)
-        if salida.lote_id:
-            producto = salida.lote.producto.nombre
-            lote_codigo = salida.lote.codigo_lote
-        elif descremacion is not None:
-            producto = (
-                "Leche descremada"
-                if salida.naturaleza == SalidaProceso.Naturaleza.PRINCIPAL
-                else "Crema"
-            )
-            lote_codigo = f"{salida.ejecucion.codigo}-{salida.pk}"
-        else:
-            producto = salida.ejecucion.etapa.nombre
-            lote_codigo = salida.ejecucion.codigo
-        disponibles_silo = [
-            item for item in analisis_por_silo[salida.silo_id]
-            if item.tomado_en >= salida.registrada_en
-        ] if salida.silo_id else []
-        disponibles_lote = [
-            item for item in analisis_por_lote[salida.lote_id]
-            if item.fecha >= timezone.localdate(salida.registrada_en)
-        ] if salida.lote_id and not salida.silo_id else []
-        especificacion = None
-        if salida.lote_id and salida.lote.producto_id:
-            especificacion = dominio_produccion.especificacion_vigente(
-                especificaciones,
-                salida.lote.producto_id,
-                timezone.localdate(salida.registrada_en),
-                (
-                    Especificacion.TipoAnalisis.SILO
-                    if salida.silo_id
-                    else Especificacion.TipoAnalisis.LOTE
-                ),
-            )
-
-        def serializar_analisis_silo(item):
-            evaluacion = dominio_produccion.evaluar_analisis(
-                _valores_calidad_de_silo(item), especificacion
-            ) if salida.lote_id else None
-            return {
-                "id": item.id,
-                "tomado_en": item.tomado_en,
-                "ph": item.ph,
-                "acidez": item.acidez,
-                "grasa": item.grasa,
-                "sng": item.sng,
-                "proteina": item.proteina,
-                "densidad": item.densidad,
-                "resultado": evaluacion.resultado if evaluacion else None,
-                "faltantes": evaluacion.faltantes if evaluacion else [],
-                "desviaciones": [
-                    {
-                        "parametro": detalle.parametro,
-                        "valor": detalle.valor,
-                        "min": detalle.minimo,
-                        "max": detalle.maximo,
-                    }
-                    for detalle in (evaluacion.desviaciones if evaluacion else [])
-                ],
-            }
-        def serializar_analisis_lote(item):
-            evaluacion = dominio_produccion.evaluar_analisis(
-                item.valores, item.especificacion or especificacion
-            )
-            return {
-                "id": item.id,
-                "fecha": item.fecha,
-                "muestra": item.muestra,
-                "valores": item.valores,
-                "resultado": evaluacion.resultado,
-                "faltantes": evaluacion.faltantes,
-                "desviaciones": [
-                    {
-                        "parametro": detalle.parametro,
-                        "valor": detalle.valor,
-                        "min": detalle.minimo,
-                        "max": detalle.maximo,
-                    }
-                    for detalle in evaluacion.desviaciones
-                ],
-            }
-        resultado.append({
-            "id": salida.id,
-            "tipo": salida.ejecucion.etapa.get_tipo_display(),
-            "etapa_tipo": salida.ejecucion.etapa.tipo,
-            "corrida_codigo": salida.ejecucion.codigo,
-            "lote_codigo": lote_codigo,
-            "producto_nombre": producto,
-            "equipo_nombre": (
-                salida.ejecucion.equipo.nombre if salida.ejecucion.equipo_id else None
-            ),
-            "silo_destino_codigo": salida.silo.codigo if salida.silo_id else None,
-            "cantidad": salida.cantidad,
-            "unidad": salida.unidad,
-            "clasificacion": salida.get_clasificacion_display(),
-            "destino": salida.get_destino_display(),
-            "estado": decision.estado if decision else LiberacionProceso.Estado.PENDIENTE,
-            "observacion": decision.observacion if decision else "",
-            "decidida_en": decision.decidida_en if decision else None,
-            "analisis_tipo": "silo" if salida.silo_id else "lote",
-            "analisis_seleccionado": (
-                decision.analisis_silo_id if salida.silo_id
-                else decision.analisis_lote_id
-            ) if decision else None,
-            "especificacion": {
-                "version": especificacion.version,
-                "rangos": especificacion.rangos,
-            } if especificacion else None,
-            "analisis_disponibles": (
-                [serializar_analisis_silo(item) for item in disponibles_silo]
-                if salida.silo_id else
-                [serializar_analisis_lote(item) for item in disponibles_lote]
-            ),
-        })
-    return resultado
+    )
 
 
 @api_view(["GET"])
@@ -553,8 +421,11 @@ def expedientes(request):
     Acepta `estado` (el de la liberación), `producto`, `desde` y `hasta`.
     """
     lotes = (
-        _lotes_permitidos(request).select_related(
-            "producto", "producto__mandante", "autorizacion_reproceso",
+        _lotes_permitidos(request)
+        .select_related(
+            "producto",
+            "producto__mandante",
+            "autorizacion_reproceso",
             "autorizacion_reproceso__solicitado_por",
             "autorizacion_reproceso__decidido_por",
         )
@@ -591,9 +462,7 @@ def expedientes(request):
     # lo mismo —algo que todavía nadie decidió—.
     estado = parametros.get("estado")
     if estado == Liberacion.Estado.PENDIENTE:
-        lotes = lotes.filter(
-            Q(liberacion__isnull=True) | Q(liberacion__estado=estado)
-        )
+        lotes = lotes.filter(Q(liberacion__isnull=True) | Q(liberacion__estado=estado))
     elif estado:
         lotes = lotes.filter(liberacion__estado=estado)
 
@@ -610,13 +479,18 @@ def expedientes(request):
 
     # Los maestros se cargan una vez y los comparten todos los lotes: sin esto
     # cada lote dispararía sus propias consultas.
-    documentos = list(filtrar_por_scope(
-        DocumentoLiberacion.objects.all(), request.user, campo_empresa="empresa_id"
-    ))
-    especificaciones = list(filtrar_por_scope(
-        Especificacion.objects.all(), request.user,
-        campo_empresa="producto__mandante__empresa_id",
-    ))
+    documentos = list(
+        filtrar_por_scope(
+            DocumentoLiberacion.objects.all(), request.user, campo_empresa="empresa_id"
+        )
+    )
+    especificaciones = list(
+        filtrar_por_scope(
+            Especificacion.objects.all(),
+            request.user,
+            campo_empresa="producto__mandante__empresa_id",
+        )
+    )
 
     # Lo que la inocuidad y la evidencia necesitan, para TODOS los lotes de la
     # página en una consulta por tabla.
@@ -667,8 +541,8 @@ def expedientes(request):
         registros = list(lote.registros_calidad.all())
         analisis = list(lote.analisis.all())
         if lote.producto_id not in exigibles_por_producto:
-            exigibles_por_producto[lote.producto_id] = (
-                dominio.documentos_aplicables(documentos, lote.producto)
+            exigibles_por_producto[lote.producto_id] = dominio.documentos_aplicables(
+                documentos, lote.producto
             )
         exigibles = exigibles_por_producto[lote.producto_id]
 
@@ -740,48 +614,62 @@ def expedientes(request):
                 "via_concesion": decision.via_concesion,
                 "bloqueos": decision.bloqueos,
                 "envasado": resumen_envasado,
-                "rework": ({
-                    "id": rework.id,
-                    "origen": rework.origen,
-                    "estado": rework.estado,
-                    "cantidad_kg": rework.cantidad_kg,
-                    "motivo": rework.motivo,
-                    "observacion_calidad": rework.observacion_calidad,
-                    "solicitado_por": (
-                        rework.solicitado_por.get_full_name() or rework.solicitado_por.username
-                        if rework.solicitado_por_id else None
-                    ),
-                    "solicitado_en": rework.solicitado_en,
-                    "decidido_por": (
-                        rework.decidido_por.get_full_name() or rework.decidido_por.username
-                        if rework.decidido_por_id else None
-                    ),
-                    "decidido_en": rework.decidido_en,
-                } if rework else None),
+                "rework": (
+                    {
+                        "id": rework.id,
+                        "origen": rework.origen,
+                        "estado": rework.estado,
+                        "cantidad_kg": rework.cantidad_kg,
+                        "motivo": rework.motivo,
+                        "observacion_calidad": rework.observacion_calidad,
+                        "solicitado_por": (
+                            rework.solicitado_por.get_full_name()
+                            or rework.solicitado_por.username
+                            if rework.solicitado_por_id
+                            else None
+                        ),
+                        "solicitado_en": rework.solicitado_en,
+                        "decidido_por": (
+                            rework.decidido_por.get_full_name()
+                            or rework.decidido_por.username
+                            if rework.decidido_por_id
+                            else None
+                        ),
+                        "decidido_en": rework.decidido_en,
+                    }
+                    if rework
+                    else None
+                ),
             }
         )
 
-    return Response({
-        "resultados": filas,
-        "procesos": (
-            _resultados_intermedios(request)
-            if request.query_params.get("incluir_procesos") == "1"
-            else []
-        ),
-        # El total de la consulta, no el de la página: es lo que permite
-        # mostrar «50 de 954» y saber que hay más.
-        "total": total,
-        "pagina": pagina,
-        "limite": limite,
-        "hay_mas": pagina * limite < total,
-    })
+    return Response(
+        {
+            "resultados": filas,
+            "procesos": (
+                consultar_resultados_intermedios(request.user)
+                if request.query_params.get("incluir_procesos") == "1"
+                else []
+            ),
+            # El total de la consulta, no el de la página: es lo que permite
+            # mostrar «50 de 954» y saber que hay más.
+            "total": total,
+            "pagina": pagina,
+            "limite": limite,
+            "hay_mas": pagina * limite < total,
+        }
+    )
 
 
 def _salida_intermedia_permitida(request, salida_id, bloquear=False):
     from procesos.models import SalidaProceso
+
     consulta = filtrar_por_scope(
-        SalidaProceso.objects.filter(_filtro_resultados_de_proceso()).select_related(
-            "ejecucion__etapa", "silo", "lote__producto", "liberacion_calidad",
+        SalidaProceso.objects.filter(filtro_resultados_de_proceso()).select_related(
+            "ejecucion__etapa",
+            "silo",
+            "lote__producto",
+            "liberacion_calidad",
             "liberacion_calidad__analisis_lote",
         ),
         request.user,
@@ -791,23 +679,6 @@ def _salida_intermedia_permitida(request, salida_id, bloquear=False):
     if bloquear:
         consulta = consulta.select_for_update(of=("self",))
     return get_object_or_404(consulta, pk=salida_id)
-
-
-def _valores_calidad_de_silo(analisis):
-    """Traduce el análisis físico del silo al catálogo común de Calidad."""
-    grasa = analisis.grasa
-    sng = analisis.sng
-    return {
-        "mg": grasa,
-        "sng": sng,
-        "st": grasa + sng if grasa is not None and sng is not None else None,
-        "acidez": analisis.acidez,
-        "ph": analisis.ph,
-        "temperatura": analisis.temperatura,
-        "proteina": analisis.proteina,
-        # AnalisisSilo conserva kg/m³; el catálogo común expresa g/mL.
-        "pesoEsp": analisis.densidad / 1000 if analisis.densidad is not None else None,
-    }
 
 
 def _bloqueo_especificacion_intermedia(salida, analisis):
@@ -828,7 +699,7 @@ def _bloqueo_especificacion_intermedia(salida, analisis):
         Especificacion.TipoAnalisis.SILO,
     )
     evaluacion = dominio_produccion.evaluar_analisis(
-        _valores_calidad_de_silo(analisis), especificacion
+        valores_calidad_de_silo(analisis), especificacion
     )
     if evaluacion.resultado == dominio_produccion.CONFORME:
         requiere_balance_masico = (
@@ -882,15 +753,16 @@ def _bloqueo_especificacion_lote(salida, analisis):
     """Valida el análisis del granel contra la especificación congelada."""
     from produccion import dominio as dominio_produccion
 
-    especificacion = analisis.especificacion or dominio_produccion.especificacion_vigente(
-        Especificacion.objects.filter(producto_id=salida.lote.producto_id),
-        salida.lote.producto_id,
-        analisis.fecha,
-        Especificacion.TipoAnalisis.LOTE,
+    especificacion = (
+        analisis.especificacion
+        or dominio_produccion.especificacion_vigente(
+            Especificacion.objects.filter(producto_id=salida.lote.producto_id),
+            salida.lote.producto_id,
+            analisis.fecha,
+            Especificacion.TipoAnalisis.LOTE,
+        )
     )
-    evaluacion = dominio_produccion.evaluar_analisis(
-        analisis.valores, especificacion
-    )
+    evaluacion = dominio_produccion.evaluar_analisis(analisis.valores, especificacion)
     if evaluacion.resultado == dominio_produccion.CONFORME:
         return None
     return {
@@ -920,7 +792,9 @@ def _activar_lote_intermedio(salida, analisis):
     ):
         return
     kilos = (
-        Decimal(str(salida.cantidad)) * Decimal(str(analisis.densidad)) / Decimal("1000")
+        Decimal(str(salida.cantidad))
+        * Decimal(str(analisis.densidad))
+        / Decimal("1000")
     ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     salida.lote.kg_producidos = kilos
     salida.lote.estado = Lote.Estado.PRODUCIDO
@@ -933,7 +807,10 @@ def liberar_resultado_proceso(request, salida_id):
     """Libera una salida intermedia usando el análisis de silo o lote aplicable."""
     from maestros.models import Silo
     from procesos.models import (
-        CorridaCondensacion, CorridaMantequilla, EjecucionProceso, SalidaProceso,
+        CorridaCondensacion,
+        CorridaMantequilla,
+        EjecucionProceso,
+        SalidaProceso,
     )
     from produccion.models import Analisis, OrdenProduccion
     from procesos.servicios import transicionar_ejecucion
@@ -963,12 +840,16 @@ def liberar_resultado_proceso(request, salida_id):
             )
             if analisis_silo.tomado_en < salida.registrada_en:
                 return Response(
-                    {"analisis_id": "El análisis es anterior al resultado de la corrida."},
+                    {
+                        "analisis_id": "El análisis es anterior al resultado de la corrida."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if not analisis_silo.analista_id or not analisis_silo.visualizado_por_id:
                 return Response(
-                    {"analisis_id": "El análisis requiere firma de realización y visualización."},
+                    {
+                        "analisis_id": "El análisis requiere firma de realización y visualización."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if analisis_silo.inhibidores_resultado != "negativo":
@@ -989,17 +870,19 @@ def liberar_resultado_proceso(request, salida_id):
                 Analisis.objects.select_for_update(of=("self",)).select_related(
                     "especificacion"
                 ),
-                pk=request.data.get("analisis_lote_id", request.data.get("analisis_id")),
+                pk=request.data.get(
+                    "analisis_lote_id", request.data.get("analisis_id")
+                ),
                 lote_id=salida.lote_id,
             )
             if analisis_lote.fecha < timezone.localdate(salida.registrada_en):
                 return Response(
-                    {"analisis_lote_id": "El análisis es anterior al resultado de la corrida."},
+                    {
+                        "analisis_lote_id": "El análisis es anterior al resultado de la corrida."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            bloqueo_especificacion = _bloqueo_especificacion_lote(
-                salida, analisis_lote
-            )
+            bloqueo_especificacion = _bloqueo_especificacion_lote(salida, analisis_lote)
         if bloqueo_especificacion:
             return Response(
                 bloqueo_especificacion,
@@ -1030,34 +913,51 @@ def liberar_resultado_proceso(request, salida_id):
             salida.save(update_fields=["destino"])
         if analisis_silo is not None:
             _activar_lote_intermedio(salida, analisis_silo)
-            Silo.objects.filter(pk=salida.silo_id).update(
-                estado=Silo.Estado.DISPONIBLE
+            actualizar_queryset_con_auditoria(
+                Silo.objects.filter(pk=salida.silo_id),
+                estado=Silo.Estado.DISPONIBLE,
             )
-        faltan = SalidaProceso.objects.filter(
-            _filtro_resultados_de_proceso(), ejecucion=salida.ejecucion,
-        ).exclude(
-            liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO
-        ).exists()
-        if not faltan and salida.ejecucion.estado == EjecucionProceso.Estado.PENDIENTE_CONTROL:
+        faltan = (
+            SalidaProceso.objects.filter(
+                filtro_resultados_de_proceso(),
+                ejecucion=salida.ejecucion,
+            )
+            .exclude(liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO)
+            .exists()
+        )
+        if (
+            not faltan
+            and salida.ejecucion.estado == EjecucionProceso.Estado.PENDIENTE_CONTROL
+        ):
             transicionar_ejecucion(
                 ejecucion_id=salida.ejecucion_id,
                 estado_nuevo=EjecucionProceso.Estado.CERRADA,
                 usuario=request.user,
                 motivo="Todas las salidas intermedias fueron liberadas por Calidad.",
             )
-            CorridaCondensacion.objects.filter(
-                ejecucion_id=salida.ejecucion_id,
-                estado=CorridaCondensacion.Estado.PENDIENTE_CALIDAD,
-            ).update(estado=CorridaCondensacion.Estado.CERRADA)
-            CorridaMantequilla.objects.filter(
-                ejecucion_id=salida.ejecucion_id,
-                estado=CorridaMantequilla.Estado.PENDIENTE_CALIDAD,
-            ).update(estado=CorridaMantequilla.Estado.CERRADA)
-            if salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO:
-                corrida_final = CorridaCondensacion.objects.select_related("orden").filter(
+            actualizar_queryset_con_auditoria(
+                CorridaCondensacion.objects.filter(
                     ejecucion_id=salida.ejecucion_id,
-                    orden__estado=OrdenProduccion.Estado.PENDIENTE_CALIDAD,
-                ).first()
+                    estado=CorridaCondensacion.Estado.PENDIENTE_CALIDAD,
+                ),
+                estado=CorridaCondensacion.Estado.CERRADA,
+            )
+            actualizar_queryset_con_auditoria(
+                CorridaMantequilla.objects.filter(
+                    ejecucion_id=salida.ejecucion_id,
+                    estado=CorridaMantequilla.Estado.PENDIENTE_CALIDAD,
+                ),
+                estado=CorridaMantequilla.Estado.CERRADA,
+            )
+            if salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO:
+                corrida_final = (
+                    CorridaCondensacion.objects.select_related("orden")
+                    .filter(
+                        ejecucion_id=salida.ejecucion_id,
+                        orden__estado=OrdenProduccion.Estado.PENDIENTE_CALIDAD,
+                    )
+                    .first()
+                )
                 if corrida_final:
                     corrida_final.orden.estado = OrdenProduccion.Estado.LIBERADA
                     corrida_final.orden.save(update_fields=["estado"])
@@ -1098,8 +998,9 @@ def rechazar_resultado_proceso(request, salida_id):
         decision.observacion = motivo
         decision.save()
         if salida.silo_id:
-            Silo.objects.filter(pk=salida.silo_id).update(
-                estado=Silo.Estado.BLOQUEADO_CALIDAD
+            actualizar_queryset_con_auditoria(
+                Silo.objects.filter(pk=salida.silo_id),
+                estado=Silo.Estado.BLOQUEADO_CALIDAD,
             )
         if salida.ejecucion.estado not in {
             EjecucionProceso.Estado.BLOQUEADA,
@@ -1126,9 +1027,9 @@ def expediente(request, lote_id):
     la respuesta no es la misma para Calidad que para Producción.
     """
     lote = get_object_or_404(
-        _lotes_permitidos(request).select_related(
-            "producto", "producto__mandante", "autorizacion_reproceso"
-        ).annotate(kg_envasados_total=Sum("registros_envase__kg_envasados")),
+        _lotes_permitidos(request)
+        .select_related("producto", "producto__mandante", "autorizacion_reproceso")
+        .annotate(kg_envasados_total=Sum("registros_envase__kg_envasados")),
         pk=lote_id,
     )
     resumen_envasado = _resumen_envasado(lote)
@@ -1221,9 +1122,9 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         # Comparte el bloqueo del lote con Envasado y con la disposición de
         # excedentes: la firma debe juzgar una fotografía física estable.
         lote = get_object_or_404(
-            _lotes_permitidos(request).select_for_update(of=("self",)).select_related(
-                "producto", "orden", "autorizacion_reproceso"
-            ),
+            _lotes_permitidos(request)
+            .select_for_update(of=("self",))
+            .select_related("producto", "orden", "autorizacion_reproceso"),
             pk=lote_id,
         )
         contexto = _contexto_del_lote(lote, bloquear=True)
@@ -1278,13 +1179,20 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         if lote.orden_id and lote.orden.estado == lote.orden.Estado.PENDIENTE_CALIDAD:
             lote.orden.estado = lote.orden.Estado.LIBERADA
             lote.orden.save(update_fields=["estado"])
-        PalletProducto.objects.filter(envase__lote=lote).exclude(
-            estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
-        ).update(estado=PalletProducto.Estado.LIBERADO)
+        actualizar_queryset_con_auditoria(
+            PalletProducto.objects.filter(envase__lote=lote).exclude(
+                estado__in=[
+                    PalletProducto.Estado.DESPACHADO,
+                    PalletProducto.Estado.ANULADO,
+                ]
+            ),
+            estado=PalletProducto.Estado.LIBERADO,
+        )
 
     # La existencia física ya nació en envase. Calidad solo cambia su estado
     # y avisa a Bodega para que reubique el pallet; no vuelve a sumar stock.
     from inventario.servicios import _notificar_area
+
     _notificar_area(
         "bodega",
         tipo="producto_liberado",
@@ -1308,7 +1216,10 @@ def liberar(request, lote_id):
     datos.is_valid(raise_exception=True)
 
     return _firmar(
-        request, lote_id, concesion=False, observacion=datos.validated_data["observacion"]
+        request,
+        lote_id,
+        concesion=False,
+        observacion=datos.validated_data["observacion"],
     )
 
 
@@ -1341,11 +1252,13 @@ def enviar_pallets_bodega(request, lote_id):
 
     with transaction.atomic():
         bodega, _ = Bodega.objects.get_or_create(
-            sucursal=lote.sucursal, codigo="BPT",
+            sucursal=lote.sucursal,
+            codigo="BPT",
             defaults={"nombre": "Bodega de producto terminado", "area": "bodega"},
         )
         destino, _ = Ubicacion.objects.get_or_create(
-            bodega=bodega, codigo="PT-DISP",
+            bodega=bodega,
+            codigo="PT-DISP",
             defaults={
                 "tipo": Ubicacion.Tipo.DISPONIBLE,
                 "descripcion": "Producto terminado liberado por Calidad",
@@ -1363,14 +1276,19 @@ def enviar_pallets_bodega(request, lote_id):
             ingresar_pallet(pallet, destino, request.user)
             enviados += 1
 
-    return Response({
-        "lote": lote.id, "enviados": enviados, "pallets": len(pallets),
-        "ubicacion": f"{bodega.codigo}/{destino.codigo}",
-        "detail": (
-            f"{enviados} pallet(s) enviados a {bodega.codigo}/{destino.codigo}."
-            if enviados else "Los pallets ya estaban disponibles en Bodega."
-        ),
-    })
+    return Response(
+        {
+            "lote": lote.id,
+            "enviados": enviados,
+            "pallets": len(pallets),
+            "ubicacion": f"{bodega.codigo}/{destino.codigo}",
+            "detail": (
+                f"{enviados} pallet(s) enviados a {bodega.codigo}/{destino.codigo}."
+                if enviados
+                else "Los pallets ya estaban disponibles en Bodega."
+            ),
+        }
+    )
 
 
 @api_view(["POST"])
@@ -1413,9 +1331,15 @@ def revisar(request, lote_id):
         liberacion.autorizada_por = None
         liberacion.autorizada_en = None
         liberacion.save()
-        PalletProducto.objects.filter(envase__lote=lote).exclude(
-            estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
-        ).update(estado=PalletProducto.Estado.BLOQUEADO)
+        actualizar_queryset_con_auditoria(
+            PalletProducto.objects.filter(envase__lote=lote).exclude(
+                estado__in=[
+                    PalletProducto.Estado.DESPACHADO,
+                    PalletProducto.Estado.ANULADO,
+                ]
+            ),
+            estado=PalletProducto.Estado.BLOQUEADO,
+        )
 
     return Response(LiberacionSerializer(liberacion).data)
 
@@ -1463,7 +1387,9 @@ def bloquear(request, lote_id):
         if liberacion.estado != Liberacion.Estado.RECHAZADO:
             if not liberacion.puede_pasar_a(Liberacion.Estado.RECHAZADO):
                 return Response(
-                    {"detail": "El expediente no admite bloqueo desde su estado actual."},
+                    {
+                        "detail": "El expediente no admite bloqueo desde su estado actual."
+                    },
                     status=status.HTTP_409_CONFLICT,
                 )
             liberacion.estado = Liberacion.Estado.RECHAZADO
@@ -1473,13 +1399,22 @@ def bloquear(request, lote_id):
         liberacion.concesion = False
         liberacion.motivo_concesion = ""
         liberacion.save()
-        PalletProducto.objects.filter(envase__lote=lote).exclude(
-            estado__in=[PalletProducto.Estado.DESPACHADO, PalletProducto.Estado.ANULADO]
-        ).update(estado=PalletProducto.Estado.BLOQUEADO)
+        actualizar_queryset_con_auditoria(
+            PalletProducto.objects.filter(envase__lote=lote).exclude(
+                estado__in=[
+                    PalletProducto.Estado.DESPACHADO,
+                    PalletProducto.Estado.ANULADO,
+                ]
+            ),
+            estado=PalletProducto.Estado.BLOQUEADO,
+        )
         silos_ids = MovimientoSilo.objects.filter(
             lote=lote, tipo=MovimientoSilo.Tipo.INGRESO
         ).values_list("silo_id", flat=True)
-        Silo.objects.filter(pk__in=silos_ids).update(estado=Silo.Estado.BLOQUEADO_CALIDAD)
+        actualizar_queryset_con_auditoria(
+            Silo.objects.filter(pk__in=silos_ids),
+            estado=Silo.Estado.BLOQUEADO_CALIDAD,
+        )
 
     return Response(LiberacionSerializer(liberacion).data)
 
@@ -1505,7 +1440,9 @@ def decidir_reproceso(request, lote_id):
     if estado not in AutorizacionReproceso.Estado.values:
         return Response({"estado": ["Decisión de rework inválida."]}, status=400)
     if estado == AutorizacionReproceso.Estado.PENDIENTE:
-        return Response({"estado": ["Calidad debe tomar una decisión final."]}, status=400)
+        return Response(
+            {"estado": ["Calidad debe tomar una decisión final."]}, status=400
+        )
     if origen not in AutorizacionReproceso.Origen.values:
         return Response({"origen": ["Origen de rework inválido."]}, status=400)
 
@@ -1522,9 +1459,9 @@ def decidir_reproceso(request, lote_id):
                     {"cantidad_kg": ["El lote no tiene kg producidos confirmados."]},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            envasado = lote.registros_envase.aggregate(
-                total=Sum("kg_envasados")
-            )["total"] or Decimal("0")
+            envasado = lote.registros_envase.aggregate(total=Sum("kg_envasados"))[
+                "total"
+            ] or Decimal("0")
             saldo = max(lote.kg_producidos - envasado, Decimal("0"))
             if cantidad > saldo:
                 return Response(
@@ -1536,16 +1473,19 @@ def decidir_reproceso(request, lote_id):
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        autorizacion = AutorizacionReproceso.objects.select_for_update().filter(
-            lote=lote
-        ).first()
+        autorizacion = (
+            AutorizacionReproceso.objects.select_for_update().filter(lote=lote).first()
+        )
         if autorizacion is None:
             autorizacion = AutorizacionReproceso(
-                lote=lote, solicitado_por=request.user,
+                lote=lote,
+                solicitado_por=request.user,
             )
         if autorizacion.estado == AutorizacionReproceso.Estado.DESTRUIDO:
             return Response(
-                {"detail": "El material ya fue destruido y la decisión es irreversible."},
+                {
+                    "detail": "El material ya fue destruido y la decisión es irreversible."
+                },
                 status=status.HTTP_409_CONFLICT,
             )
         autorizacion.origen = origen
@@ -1561,25 +1501,30 @@ def decidir_reproceso(request, lote_id):
             return Response(error.message_dict, status=status.HTTP_400_BAD_REQUEST)
         autorizacion.save()
         from inventario.servicios import registrar_decision_fisica_rework
+
         try:
             unidad_fisica = registrar_decision_fisica_rework(autorizacion, request.user)
         except DjangoValidationError as error:
             transaction.set_rollback(True)
-            detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
+            detalle = (
+                error.message_dict if hasattr(error, "message_dict") else error.messages
+            )
             return Response({"detail": detalle}, status=status.HTTP_409_CONFLICT)
 
-    return Response({
-        "id": autorizacion.id,
-        "lote": lote.id,
-        "estado": autorizacion.estado,
-        "origen": autorizacion.origen,
-        "cantidad_kg": autorizacion.cantidad_kg,
-        "motivo": autorizacion.motivo,
-        "observacion_calidad": autorizacion.observacion_calidad,
-        "unidad_fisica_id": unidad_fisica.id,
-        "estado_fisico": unidad_fisica.estado,
-        "ubicacion_codigo": unidad_fisica.ubicacion.codigo,
-    })
+    return Response(
+        {
+            "id": autorizacion.id,
+            "lote": lote.id,
+            "estado": autorizacion.estado,
+            "origen": autorizacion.origen,
+            "cantidad_kg": autorizacion.cantidad_kg,
+            "motivo": autorizacion.motivo,
+            "observacion_calidad": autorizacion.observacion_calidad,
+            "unidad_fisica_id": unidad_fisica.id,
+            "estado_fisico": unidad_fisica.estado,
+            "ubicacion_codigo": unidad_fisica.ubicacion.codigo,
+        }
+    )
 
 
 class RegistroEquipoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
@@ -1633,7 +1578,9 @@ class RegistroEquipoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         if "sucursal" in self.request.data:
-            raise PermissionDenied("La sucursal no se cambia mediante una edición genérica.")
+            raise PermissionDenied(
+                "La sucursal no se cambia mediante una edición genérica."
+            )
         self._guardar_firmando(serializer)
 
     def _guardar_firmando(self, serializer, **tenant):

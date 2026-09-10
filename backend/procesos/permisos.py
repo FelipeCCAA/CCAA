@@ -31,6 +31,21 @@ TIPOS_OPERABLES_POR_AREA = {
 }
 
 
+def tipos_operables_para(usuario):
+    """Tipos que forman la bandeja operacional del area del usuario."""
+    if rol_de(usuario) == Rol.ADMIN:
+        return None
+    perfil = getattr(usuario, "perfil", None)
+    if not perfil:
+        return set()
+    return set(TIPOS_OPERABLES_POR_AREA.get(perfil.area, set()))
+
+
+def puede_operar_tipo(usuario, tipo):
+    tipos = tipos_operables_para(usuario)
+    return tipos is None or tipo in tipos
+
+
 class OperaProcesoPorEtapa(EscribeProduccion):
     """Permite escribir solamente sobre las etapas operadas por el area."""
 
@@ -61,10 +76,7 @@ class OperaProcesoPorEtapa(EscribeProduccion):
 
     @staticmethod
     def _puede_operar_tipo(usuario, tipo):
-        perfil = getattr(usuario, "perfil", None)
-        return bool(
-            perfil and tipo in TIPOS_OPERABLES_POR_AREA.get(perfil.area, set())
-        )
+        return puede_operar_tipo(usuario, tipo)
 
     def _tipo_solicitado(self, request, view):
         tipo_fijo = getattr(view, "tipo_etapa_operacional", None)

@@ -78,8 +78,7 @@ export default function ResultadoProcesoCalidadCard({
   const seleccionado = item.analisis_disponibles.find(
     (analisis) => analisis.id === Number(analisisId),
   );
-  const puedeLiberar = seleccionado
-    && (seleccionado.resultado === null || seleccionado.resultado === "conforme");
+  const puedeLiberar = seleccionado?.habilita_liberacion === true;
   const estado = ESTADOS[item.estado];
   const esAnalisisLote = item.analisis_tipo === "lote";
 
@@ -93,11 +92,18 @@ export default function ResultadoProcesoCalidadCard({
             {item.equipo_nombre || "Sin equipo"}
             {item.silo_destino_codigo ? ` → ${item.silo_destino_codigo}` : " · producto a granel"}
           </p>
+          <p className="mt-1 text-xs font-medium text-violet-700">
+            En espera desde {new Date(item.registrada_en).toLocaleString("es-CL")}
+          </p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${estado.clase}`}>
           {estado.etiqueta}
         </span>
       </div>
+
+      <p className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium ${item.preparacion === "listo_liberar" ? "bg-emerald-100 text-emerald-900" : "bg-rose-100 text-rose-900"}`}>
+        {item.motivo_preparacion}
+      </p>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {item.especificacion ? (

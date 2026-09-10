@@ -6,6 +6,11 @@ from django.db import transaction
 from django.db.models import Count, F, Prefetch, Q, Sum
 from django.utils import timezone
 
+from auditoria.registro import (
+    actualizar_en_lote_con_auditoria,
+    actualizar_queryset_con_auditoria,
+    crear_en_lote_con_auditoria,
+)
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
@@ -948,10 +953,11 @@ def transicionar_ejecucion(
     ejecucion.version += 1
     ejecucion.save()
     if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
-        ReservaSiloProceso.objects.filter(
-            ejecucion=ejecucion,
-            estado=ReservaSiloProceso.Estado.ACTIVA,
-        ).update(
+        actualizar_queryset_con_auditoria(
+            ReservaSiloProceso.objects.filter(
+                ejecucion=ejecucion,
+                estado=ReservaSiloProceso.Estado.ACTIVA,
+            ),
             estado=ReservaSiloProceso.Estado.LIBERADA,
             cerrada_en=timezone.now(),
         )
@@ -1523,7 +1529,7 @@ def iniciar_descremacion(*, corrida_id, usuario):
                 f"{destino.codigo} no tiene capacidad para los {cantidad} L planificados."
             )
 
-    ReservaSiloProceso.objects.bulk_create([
+    crear_en_lote_con_auditoria([
         ReservaSiloProceso(
             ejecucion=corrida.ejecucion, silo=origen,
             producto=origen.producto_actual, tipo=ReservaSiloProceso.Tipo.ORIGEN,
@@ -1647,7 +1653,7 @@ def cerrar_descremacion(
         reserva.cantidad_real = cantidades_reales[(reserva.tipo, reserva.silo_id)]
         reserva.cerrada_en = ahora
     if reservas:
-        ReservaSiloProceso.objects.bulk_update(
+        actualizar_en_lote_con_auditoria(
             reservas, ["estado", "cantidad_real", "cerrada_en"]
         )
     lotes = {}
@@ -1719,7 +1725,8 @@ def cerrar_descremacion(
         estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
     )
     if corrida.ejecucion.etapa.requiere_calidad:
-        Silo.objects.filter(pk__in=[destino_d.pk, destino_c.pk]).update(
+        actualizar_queryset_con_auditoria(
+            Silo.objects.filter(pk__in=[destino_d.pk, destino_c.pk]),
             estado=Silo.Estado.BLOQUEADO_CALIDAD
         )
     else:

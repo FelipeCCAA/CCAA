@@ -191,6 +191,7 @@ export interface FilaExpediente {
 
 interface EvaluacionAnalisisProceso {
   id: number;
+  habilita_liberacion: boolean;
   resultado: "conforme" | "no_conforme" | "sin_analisis" | "sin_especificacion" | null;
   faltantes: string[];
   desviaciones: Array<{
@@ -227,6 +228,9 @@ interface ResultadoProcesoCalidadBase {
   equipo_nombre: string | null;
   cantidad: string;
   unidad: string;
+  registrada_en: string;
+  preparacion: "listo_liberar" | "requiere_decision" | "esperando_analisis";
+  motivo_preparacion: string;
   clasificacion: string;
   destino: string;
   estado: "pendiente" | "liberado" | "rechazado";
@@ -259,6 +263,20 @@ export interface RespuestaExpedientes {
   pagina: number;
   limite: number;
   hay_mas: boolean;
+}
+
+export interface RespuestaResultadosProceso {
+  resultados: ResultadoProcesoCalidad[];
+  total: number;
+  pagina: number;
+  limite: number;
+  hay_mas: boolean;
+  orden: "antiguedad_ascendente";
+  filtros: {
+    tipo: string;
+    preparacion: string;
+    buscar: string;
+  };
 }
 
 
@@ -350,6 +368,24 @@ export async function liberarResultadoProceso(
     `calidad/resultados-proceso/${salidaId}/liberar/`,
     payloadLiberacionProceso(analisisTipo, analisisId, observacion),
   );
+}
+
+export async function obtenerResultadosProceso(
+  pagina = 1,
+  filtros: { tipo?: string; preparacion?: string; buscar?: string } = {},
+): Promise<RespuestaResultadosProceso> {
+  const { data } = await api.get<RespuestaResultadosProceso>(
+    "calidad/resultados-proceso/",
+    {
+      params: {
+        pagina: pagina > 1 ? pagina : undefined,
+        tipo: filtros.tipo || undefined,
+        preparacion: filtros.preparacion || undefined,
+        buscar: filtros.buscar || undefined,
+      },
+    },
+  );
+  return data;
 }
 
 export async function rechazarResultadoProceso(

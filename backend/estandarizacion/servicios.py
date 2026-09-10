@@ -14,6 +14,7 @@ from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from auditoria.registro import crear_en_lote_con_auditoria
 from .models import ValeEstandarizacion
 from maestros.models import Silo
 from procesos.models import ReservaSiloProceso
@@ -152,7 +153,7 @@ def transferir(*, vale_id, usuario):
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id, operacion_id=operacion_id, usuario=usuario,
         ))
-    creados = MovimientoSilo.objects.bulk_create(movimientos)
+    creados = crear_en_lote_con_auditoria(movimientos)
     from recepcion.servicios import atribuir_salida, heredar_atribuciones
 
     salidas = [

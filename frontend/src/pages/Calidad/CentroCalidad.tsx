@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ClipboardCheck, FlaskConical, ShieldAlert, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardCheck, Clock3, FlaskConical, ShieldAlert, Sparkles } from "lucide-react";
 
 import {
   buscarExpedientes,
   decidirRework,
   liberarResultadoProceso,
+  obtenerResultadosProceso,
   rechazarResultadoProceso,
   type FilaExpediente,
 } from "../../services/calidad.service";
@@ -23,7 +24,19 @@ function CentroCalidad() {
   // Tres lecturas independientes y acotadas: el centro carga únicamente lo
   // que Calidad necesita, no todas las tablas de Inventario ni el histórico
   // completo de Producción.
-  const expedientes = useCarga(async () => buscarExpedientes({ pagina: 1, incluir_procesos: true }));
+  const [paginaResultados, setPaginaResultados] = useState(1);
+  const [busquedaResultados, setBusquedaResultados] = useState("");
+  const [filtrosResultados, setFiltrosResultados] = useState({
+    tipo: "",
+    preparacion: "",
+    buscar: "",
+  });
+  const expedientes = useCarga(async () => buscarExpedientes({ pagina: 1 }));
+  const resultados = useCarga(() => obtenerResultadosProceso(
+    paginaResultados,
+    filtrosResultados,
+  ));
+  const recargarResultados = resultados.recargar;
   const inspecciones = useCarga(obtenerInspecciones);
   const aseos = useCarga(obtenerAseos);
   const sesion = obtenerSesion();
@@ -51,12 +64,45 @@ function CentroCalidad() {
     observacion: string;
   } | null>(null);
   const lotes = (expedientes.datos?.resultados ?? []) as FilaExpediente[];
-  const resultadosProceso = expedientes.datos?.procesos ?? [];
+  const primeraCargaResultados = useRef(true);
+  useEffect(() => {
+    if (primeraCargaResultados.current) {
+      primeraCargaResultados.current = false;
+      return;
+    }
+    const temporizador = window.setTimeout(() => void recargarResultados(), 0);
+    return () => window.clearTimeout(temporizador);
+  }, [
+    paginaResultados,
+    filtrosResultados.tipo,
+    filtrosResultados.preparacion,
+    filtrosResultados.buscar,
+    recargarResultados,
+  ]);
+
+  const cambiarFiltroResultado = (campo: "tipo" | "preparacion", valor: string) => {
+    setPaginaResultados(1);
+    setFiltrosResultados((actual) => ({ ...actual, [campo]: valor }));
+  };
+
+  const buscarResultados = (evento: React.FormEvent) => {
+    evento.preventDefault();
+    const buscar = busquedaResultados.trim();
+    setPaginaResultados(1);
+    if (buscar === filtrosResultados.buscar) {
+      void recargarResultados();
+      return;
+    }
+    setFiltrosResultados((actual) => ({ ...actual, buscar }));
+  };
+
+  const resultadosProceso = resultados.datos?.resultados ?? [];
   const procesosPendientes = resultadosProceso.filter((item) => item.estado === "pendiente");
-  const intermediosEnSilo = procesosPendientes.filter((item) => item.analisis_tipo === "silo");
-  const granelesConAnalisisLote = resultadosProceso.filter((item) => item.analisis_tipo === "lote");
+  const esperandoAnalisis = procesosPendientes.filter((item) => item.preparacion === "esperando_analisis");
+  const listosParaDecidir = procesosPendientes.filter((item) => item.preparacion !== "esperando_analisis");
+  const intermediosEnSilo = listosParaDecidir.filter((item) => item.analisis_tipo === "silo");
+  const granelesConAnalisisLote = listosParaDecidir.filter((item) => item.analisis_tipo === "lote");
   const granelesPendientes = granelesConAnalisisLote.filter((item) => item.estado === "pendiente");
-  const granelesDecididos = granelesConAnalisisLote.filter((item) => item.estado !== "pendiente");
   const porRevisar = lotes.filter((fila) => !LIBERACIONES_CERRADAS.includes(fila.liberacion?.estado ?? "pendiente"));
   const excedentesEnvase = porRevisar.filter(
     (fila) => fila.envasado?.requiere_disposicion === true,
@@ -83,7 +129,7 @@ function CentroCalidad() {
       const observacion = observacionesProceso[id]?.trim()
         || (item.analisis_tipo === "lote" ? "Resultado conforme" : "");
       await liberarResultadoProceso(id, item.analisis_tipo, analisisId, observacion);
-      await expedientes.recargar();
+      await resultados.recargar();
     } catch (error) {
       setErrorProceso(mensajeErrorProceso(error, "No se pudo liberar el resultado intermedio."));
     } finally { setAccionandoProceso(null); }
@@ -97,7 +143,7 @@ function CentroCalidad() {
       setErrorProceso("");
       setAccionandoProceso({ id, tipo: "rechazar" });
       await rechazarResultadoProceso(id, motivo);
-      await expedientes.recargar();
+      await resultados.recargar();
       setRechazoAbierto(null);
     } catch (error) {
       setErrorProceso(mensajeErrorProceso(error, "No se pudo rechazar el resultado intermedio."));
@@ -161,7 +207,7 @@ function CentroCalidad() {
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Indicador etiqueta="Resultados por revisar" valor={porRevisar.length + procesosPendientes.length} Icono={FlaskConical} tono={porRevisar.length + procesosPendientes.length ? "alerta" : "normal"} />
+        <Indicador etiqueta="Resultados por revisar" valor={porRevisar.length + (resultados.datos?.total ?? procesosPendientes.length)} Icono={FlaskConical} tono={porRevisar.length + (resultados.datos?.total ?? procesosPendientes.length) ? "alerta" : "normal"} />
         <Indicador etiqueta="Materiales en cuarentena" valor={materialesPendientes.length} Icono={ShieldAlert} tono={materialesPendientes.length ? "alerta" : "normal"} />
         <Indicador etiqueta="Lotes liberados" valor={liberados.length} Icono={ClipboardCheck} />
         <Indicador etiqueta="Aseos por verificar" valor={aseosPendientes.length} Icono={Sparkles} tono={aseosPendientes.length ? "alerta" : "normal"} />
@@ -169,8 +215,70 @@ function CentroCalidad() {
 
       {errorProceso && <Aviso>{errorProceso}</Aviso>}
 
+      <form onSubmit={buscarResultados} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_1fr_2fr_auto]" aria-label="Filtros de resultados productivos">
+        <label className="text-xs font-semibold text-slate-600">
+          Proceso
+          <select value={filtrosResultados.tipo} onChange={(evento) => cambiarFiltroResultado("tipo", evento.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal">
+            <option value="">Todos</option>
+            <option value="estandarizacion">Estandarización</option>
+            <option value="descremacion">Descremación</option>
+            <option value="evaporacion">Evaporación</option>
+            <option value="condensacion">Condensación</option>
+            <option value="secado">Secado</option>
+            <option value="mantequilla">Mantequilla</option>
+          </select>
+        </label>
+        <label className="text-xs font-semibold text-slate-600">
+          Antecedentes
+          <select value={filtrosResultados.preparacion} onChange={(evento) => cambiarFiltroResultado("preparacion", evento.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal">
+            <option value="">Todos</option>
+            <option value="con_analisis">Con análisis firmado</option>
+            <option value="esperando_analisis">Esperando análisis o firma</option>
+          </select>
+        </label>
+        <label className="text-xs font-semibold text-slate-600">
+          Lote, corrida, producto o silo
+          <input value={busquedaResultados} onChange={(evento) => setBusquedaResultados(evento.target.value)} maxLength={80} placeholder="Ej.: SEC-020 o TK-03" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" />
+        </label>
+        <button type="submit" disabled={resultados.cargando} className="self-end rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-40">Buscar</button>
+      </form>
+
+      {resultados.datos && resultados.datos.total > 0 && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3" aria-label="Paginación de resultados productivos">
+          <p className="text-sm text-violet-900">
+            <span className="font-semibold">Más antiguos primero.</span>{" "}
+            Mostrando {(resultados.datos.pagina - 1) * resultados.datos.limite + 1}–{Math.min(resultados.datos.pagina * resultados.datos.limite, resultados.datos.total)} de {resultados.datos.total} pendientes.
+            <span className="ml-2 font-semibold">{listosParaDecidir.length} listos · {esperandoAnalisis.length} esperando antecedentes.</span>
+          </p>
+          <div className="flex gap-2">
+            <button type="button" aria-label="Página anterior de resultados" disabled={paginaResultados === 1 || resultados.cargando} onClick={() => setPaginaResultados((actual) => Math.max(1, actual - 1))} className="rounded-lg border border-violet-300 bg-white p-2 text-violet-800 disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+            <button type="button" aria-label="Página siguiente de resultados" disabled={!resultados.datos.hay_mas || resultados.cargando} onClick={() => setPaginaResultados((actual) => actual + 1)} className="rounded-lg border border-violet-300 bg-white p-2 text-violet-800 disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
+          </div>
+        </section>
+      )}
+
+      {esperandoAnalisis.length > 0 && (
+        <Tarjeta titulo="Esperando análisis o firma" descripcion="Estos resultados mantienen detenido el flujo, pero todavía no poseen antecedentes válidos para abrir una decisión.">
+          <div className="grid gap-3 lg:grid-cols-2">
+            {esperandoAnalisis.map((item) => (
+              <article key={item.id} className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Clock3 className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-slate-900">{item.lote_codigo} · {item.producto_nombre}</p>
+                    <p className="mt-1 text-sm text-slate-700">{item.corrida_codigo} · {Number(item.cantidad).toLocaleString("es-CL")} {item.unidad}</p>
+                    <p className="mt-2 text-sm font-medium text-amber-900">{item.motivo_preparacion}</p>
+                    <p className="mt-1 text-xs text-slate-600">En espera desde {new Date(item.registrada_en).toLocaleString("es-CL")}</p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Tarjeta>
+      )}
+
       <Tarjeta titulo="Productos a granel pendientes" descripcion="Calidad revisa análisis de lote de polvo o mantequilla. No se solicita silo y la liberación habilita su paso a Envasado.">
-        {expedientes.error ? <Aviso>No se pudo cargar la bandeja de productos a granel.</Aviso> : granelesPendientes.length === 0 ? <Vacio>No hay productos a granel esperando aprobación.</Vacio> : (
+        {resultados.error ? <Aviso>No se pudo cargar la bandeja de productos a granel.</Aviso> : granelesPendientes.length === 0 ? <Vacio>No hay productos a granel listos para decidir en esta página.</Vacio> : (
           <div className="grid gap-3 lg:grid-cols-2">
             {granelesPendientes.map((item) => (
               <ResultadoProcesoCalidadCard
@@ -193,36 +301,10 @@ function CentroCalidad() {
             ))}
           </div>
         )}
-        {granelesDecididos.length > 0 && (
-          <div className="mt-5 border-t border-slate-200 pt-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Decisiones recientes</p>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {granelesDecididos.slice(0, 8).map((item) => (
-                <ResultadoProcesoCalidadCard
-                  key={item.id}
-                  item={item}
-                  analisisId=""
-                  observacion=""
-                  motivo=""
-                  rechazando={false}
-                  accion={null}
-                  puedeDecidir={false}
-                  alElegirAnalisis={() => undefined}
-                  alCambiarObservacion={() => undefined}
-                  alCambiarMotivo={() => undefined}
-                  alAbrirRechazo={() => undefined}
-                  alCancelarRechazo={() => undefined}
-                  alLiberar={() => undefined}
-                  alRechazar={() => undefined}
-                />
-              ))}
-            </div>
-          </div>
-        )}
       </Tarjeta>
 
       <Tarjeta titulo="Resultados intermedios en silo" descripcion="Precondensados y condensados utilizan exclusivamente análisis confirmados del silo de destino.">
-        {expedientes.error ? <Aviso>No se pudo cargar la cola de procesos.</Aviso> : intermediosEnSilo.length === 0 ? <Vacio>No hay resultados en silo pendientes.</Vacio> : (
+        {resultados.error ? <Aviso>No se pudo cargar la cola de procesos.</Aviso> : intermediosEnSilo.length === 0 ? <Vacio>No hay resultados en silo listos para decidir en esta página.</Vacio> : (
           <div className="grid gap-3 lg:grid-cols-2">
             {intermediosEnSilo.map((item) => (
               <ResultadoProcesoCalidadCard

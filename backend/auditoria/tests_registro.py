@@ -10,6 +10,7 @@ y no solo el admin como hacía el `LogEntry` de Django.
 from datetime import date
 
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.test import TestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
@@ -19,6 +20,11 @@ from produccion.models import Lote
 from usuarios.models import PerfilUsuario, Rol
 
 from .models import RegistroAuditoria
+from .registro import (
+    actualizar_en_lote_con_auditoria,
+    actualizar_queryset_con_auditoria,
+    crear_en_lote_con_auditoria,
+)
 
 
 class BaseAuditoria(TestCase):
@@ -53,6 +59,70 @@ class BaseAuditoria(TestCase):
 
 
 class CapturaDeCambiosTests(BaseAuditoria):
+
+    def test_bulk_create_explicito_audita_cada_alta(self):
+        creados = crear_en_lote_con_auditoria([
+            Lote(codigo_lote="L-BULK-1", producto=self.producto, fecha=date(2026, 7, 16)),
+            Lote(codigo_lote="L-BULK-2", producto=self.producto, fecha=date(2026, 7, 16)),
+        ])
+
+        registros = self._registros("produccion.Lote")
+        self.assertEqual(len(creados), 2)
+        self.assertEqual(len(registros), 2)
+        self.assertEqual(
+            {registro.cambios["codigo_lote"][1] for registro in registros},
+            {"L-BULK-1", "L-BULK-2"},
+        )
+
+    def test_queryset_update_explicito_conserva_antes_y_despues(self):
+        lote = Lote.objects.create(
+            codigo_lote="L-BULK", producto=self.producto,
+            fecha=date(2026, 7, 16), estado=Lote.Estado.EN_PROCESO,
+        )
+        RegistroAuditoria.objects.all().delete()
+
+        cantidad = actualizar_queryset_con_auditoria(
+            Lote.objects.filter(pk=lote.pk), estado=Lote.Estado.PRODUCIDO,
+        )
+
+        registro = self._registros("produccion.Lote")[0]
+        self.assertEqual(cantidad, 1)
+        self.assertEqual(
+            registro.cambios["estado"],
+            [Lote.Estado.EN_PROCESO, Lote.Estado.PRODUCIDO],
+        )
+
+    def test_bulk_update_explicito_audita_cada_objeto(self):
+        lotes = Lote.objects.bulk_create([
+            Lote(codigo_lote="L-U-1", producto=self.producto, fecha=date(2026, 7, 16)),
+            Lote(codigo_lote="L-U-2", producto=self.producto, fecha=date(2026, 7, 16)),
+        ])
+        RegistroAuditoria.objects.all().delete()
+        for lote in lotes:
+            lote.estado = Lote.Estado.PRODUCIDO
+
+        actualizar_en_lote_con_auditoria(lotes, ["estado"])
+
+        registros = self._registros("produccion.Lote")
+        self.assertEqual(len(registros), 2)
+        self.assertTrue(all("estado" in registro.cambios for registro in registros))
+
+    def test_auditoria_masiva_se_revierte_con_la_operacion(self):
+        lote = Lote.objects.create(
+            codigo_lote="L-ROLLBACK", producto=self.producto, fecha=date(2026, 7, 16)
+        )
+        RegistroAuditoria.objects.all().delete()
+
+        with self.assertRaisesMessage(RuntimeError, "forzar rollback"):
+            with transaction.atomic():
+                actualizar_queryset_con_auditoria(
+                    Lote.objects.filter(pk=lote.pk), estado=Lote.Estado.PRODUCIDO,
+                )
+                raise RuntimeError("forzar rollback")
+
+        lote.refresh_from_db()
+        self.assertEqual(lote.estado, Lote.Estado.EN_PROCESO)
+        self.assertEqual(self._registros("produccion.Lote"), [])
 
     def test_una_creacion_queda_registrada(self):
         Lote.objects.create(

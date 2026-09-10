@@ -8,7 +8,7 @@ from maestros.models import Equipo, Mandante, Producto
 from produccion.models import Lote
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
-from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso
+from .models import EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, Proceso
 
 
 class PermisosOperacionalesPorEtapaTests(TestCase):
@@ -60,6 +60,9 @@ class PermisosOperacionalesPorEtapaTests(TestCase):
         self.condensacion = self._usuario("condensacion", PerfilUsuario.Area.CONDENSACION)
         self.secado = self._usuario("secado", PerfilUsuario.Area.SECADO)
         self.calidad = self._usuario("calidad", PerfilUsuario.Area.CALIDAD, Rol.CALIDAD)
+        self.admin = self._usuario(
+            "administracion", PerfilUsuario.Area.ADMINISTRACION, Rol.ADMIN
+        )
 
     def _usuario(self, nombre, area, rol=Rol.PRODUCCION):
         usuario = User.objects.create_user(nombre)
@@ -122,6 +125,86 @@ class PermisosOperacionalesPorEtapaTests(TestCase):
                 format="json",
             ).status_code,
             403,
+        )
+
+    def test_bandeja_operativa_muestra_solo_el_trabajo_del_area(self):
+        EjecucionProceso.objects.create(
+            sucursal=self.sucursal, codigo="EJ-COND-BANDEJA",
+            etapa=self.etapa_condensacion, equipo=self.evaporador,
+            responsable=self.condensacion,
+            estado=EjecucionProceso.Estado.PREPARACION,
+        )
+        EjecucionProceso.objects.create(
+            sucursal=self.sucursal, codigo="EJ-SEC-BANDEJA",
+            etapa=self.etapa_secado, equipo=self.torre, responsable=self.secado,
+            estado=EjecucionProceso.Estado.PREPARACION,
+        )
+        bloqueada = EjecucionProceso.objects.create(
+            sucursal=self.sucursal, codigo="EJ-BLOQUEADA-BANDEJA",
+            etapa=self.etapa_condensacion, responsable=self.condensacion,
+            estado=EjecucionProceso.Estado.BLOQUEADA,
+        )
+        EventoProceso.objects.create(
+            ejecucion=bloqueada,
+            tipo="cambio_estado",
+            estado_anterior=EjecucionProceso.Estado.EJECUCION,
+            estado_nuevo=EjecucionProceso.Estado.BLOQUEADA,
+            motivo="Desviación de temperatura en evaporación",
+            usuario=self.condensacion,
+        )
+        EjecucionProceso.objects.create(
+            sucursal=self.sucursal, codigo="EJ-CERRADA-BANDEJA",
+            etapa=self.etapa_secado, equipo=self.torre, responsable=self.secado,
+            estado=EjecucionProceso.Estado.CERRADA,
+        )
+
+        condensacion = self._cliente(self.condensacion).get(
+            "/api/procesos/ejecuciones/operativas/"
+        )
+        secado = self._cliente(self.secado).get(
+            "/api/procesos/ejecuciones/operativas/"
+        )
+        calidad = self._cliente(self.calidad).get(
+            "/api/procesos/ejecuciones/operativas/"
+        )
+        administracion = self._cliente(self.admin).get(
+            "/api/procesos/ejecuciones/operativas/"
+        )
+
+        self.assertEqual(condensacion.status_code, 200)
+        self.assertEqual(
+            {item["codigo"] for item in condensacion.data},
+            {"EJ-COND-BANDEJA", "EJ-BLOQUEADA-BANDEJA"},
+        )
+        self.assertEqual(
+            next(
+                item for item in condensacion.data
+                if item["codigo"] == "EJ-BLOQUEADA-BANDEJA"
+            )["motivo_bloqueo"],
+            "Desviación de temperatura en evaporación",
+        )
+        self.assertEqual(
+            {item["codigo"] for item in secado.data}, {"EJ-SEC-BANDEJA"}
+        )
+        self.assertEqual(calidad.data, [])
+        self.assertEqual(
+            {item["codigo"] for item in administracion.data},
+            {"EJ-COND-BANDEJA", "EJ-BLOQUEADA-BANDEJA", "EJ-SEC-BANDEJA"},
+        )
+        self.assertTrue(
+            all(item["acciones_permitidas"] for item in administracion.data)
+        )
+        self.assertEqual(
+            self._cliente(self.condensacion).get(
+                "/api/procesos/ejecuciones/resumen-operacional/"
+            ).data["procesos_activos"],
+            1,
+        )
+        self.assertEqual(
+            self._cliente(self.calidad).get(
+                "/api/procesos/ejecuciones/resumen-operacional/"
+            ).data["procesos_activos"],
+            0,
         )
 
     def test_permiso_de_detalle_protege_la_etapa(self):

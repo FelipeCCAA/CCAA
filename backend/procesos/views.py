@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, DecimalField, F, Prefetch, Q, Sum, Value
+from django.db.models import Count, DecimalField, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -18,7 +18,7 @@ from usuarios.tenancy import (
 )
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
-    EjecucionProceso, EntradaProceso,
+    EjecucionProceso, EntradaProceso, EventoProceso,
     EtapaProceso, Proceso, RutaProducto,
     SalidaProceso,
 )
@@ -35,7 +35,7 @@ from .serializers import (
     IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
     RutaProductoSerializer, SugerirDescremacionSerializer,
 )
-from .permisos import OperaProcesoPorEtapa
+from .permisos import OperaProcesoPorEtapa, puede_operar_tipo, tipos_operables_para
 from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
     ConflictoVersionEjecucion,
@@ -1069,10 +1069,18 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="operativas")
     def operativas(self, request):
+        ultimo_cambio = EventoProceso.objects.filter(
+            ejecucion_id=OuterRef("pk"),
+            tipo="cambio_estado",
+            estado_nuevo=OuterRef("estado"),
+        ).order_by("-fecha_hora")
         """Bandeja liviana: solo ejecuciones que todavía requieren operación."""
         queryset = filtrar_por_scope(
             EjecucionProceso.objects.exclude(
                 estado__in={EjecucionProceso.Estado.CERRADA, EjecucionProceso.Estado.CANCELADA}
+            ).annotate(
+                motivo_estado=Subquery(ultimo_cambio.values("motivo")[:1]),
+                cambio_estado_en=Subquery(ultimo_cambio.values("fecha_hora")[:1]),
             ).select_related("etapa", "equipo").prefetch_related(
                 "entradas__silo", "entradas__lote", "entradas__lote_inventario",
                 "salidas__silo", "salidas__lote"
@@ -1081,6 +1089,9 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
         )
+        tipos_operables = tipos_operables_para(request.user)
+        if tipos_operables is not None:
+            queryset = queryset.filter(etapa__tipo__in=tipos_operables)
         return Response([
             {
                 "id": ejecucion.id,
@@ -1092,8 +1103,16 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                 "etapa_tipo": ejecucion.etapa.tipo,
                 "equipo_id": ejecucion.equipo_id,
                 "equipo_nombre": ejecucion.equipo.nombre if ejecucion.equipo else None,
-                "acciones_permitidas": sorted(
-                    EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set())
+                "motivo_bloqueo": (
+                    ejecucion.motivo_estado
+                    if ejecucion.estado == EjecucionProceso.Estado.BLOQUEADA
+                    else ""
+                ),
+                "cambio_estado_en": ejecucion.cambio_estado_en,
+                "acciones_permitidas": (
+                    sorted(EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set()))
+                    if puede_operar_tipo(request.user, ejecucion.etapa.tipo)
+                    else []
                 ),
                 "entradas": [
                     (
@@ -1122,6 +1141,9 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             EjecucionProceso.objects.all(), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
+        tipos_operables = tipos_operables_para(request.user)
+        if tipos_operables is not None:
+            ejecuciones = ejecuciones.filter(etapa__tipo__in=tipos_operables)
         indicadores = ejecuciones.aggregate(
             procesos_activos=Count(
                 "id", filter=Q(estado__in=[

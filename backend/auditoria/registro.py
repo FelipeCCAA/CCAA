@@ -90,7 +90,14 @@ def _instantanea(instancia) -> dict:
     return {
         campo.name: _valor(instancia, campo)
         for campo in instancia._meta.concrete_fields
-        if campo.name not in CAMPOS_EXCLUIDOS and not campo.primary_key
+        if (
+            campo.name not in CAMPOS_EXCLUIDOS
+            and not campo.primary_key
+            # La auditoría ya posee `fecha_hora`. Los `auto_now` cambian en
+            # cada save aunque la decisión de negocio no haya cambiado y
+            # convertirían guardados inocuos en falsos hechos auditables.
+            and not getattr(campo, "auto_now", False)
+        )
     }
 
 
@@ -120,6 +127,80 @@ def _diferencias(antes: dict, despues: dict) -> dict:
         for campo in despues
         if antes.get(campo) != despues.get(campo)
     }
+
+
+def crear_en_lote_con_auditoria(objetos, **opciones):
+    """Ejecuta ``bulk_create`` sin perder el rastro regulatorio de cada alta.
+
+    Django no emite ``post_save`` para escrituras masivas. Esta envoltura se
+    usa solamente en operaciones de dominio donde cada fila representa un
+    movimiento o una reserva física que debe poder reconstruirse después.
+    """
+    objetos = list(objetos)
+    if not objetos:
+        return []
+    modelo = type(objetos[0])
+    if any(type(objeto) is not modelo for objeto in objetos):
+        raise TypeError("Todos los objetos del lote deben pertenecer al mismo modelo.")
+    creados = modelo._base_manager.bulk_create(objetos, **opciones)
+    if se_audita(modelo):
+        for objeto in creados:
+            despues = _instantanea_guardada(modelo, objeto.pk) or _instantanea(objeto)
+            _escribir(
+                objeto,
+                "creacion",
+                {campo: [None, valor] for campo, valor in despues.items()},
+            )
+    return creados
+
+
+def actualizar_queryset_con_auditoria(queryset, **cambios):
+    """Actualiza filas bloqueadas y registra el antes/después de cada una.
+
+    Debe llamarse dentro de la misma transacción de la operación de dominio.
+    El ``select_for_update`` hace que el diff corresponda exactamente al valor
+    reemplazado y no a una lectura que otro operador pudo cambiar entre medio.
+    """
+    objetos = list(queryset.select_for_update())
+    if not objetos:
+        return 0
+    modelo = queryset.model
+    antes = {objeto.pk: _instantanea(objeto) for objeto in objetos}
+    ids = list(antes)
+    cantidad = modelo._base_manager.filter(pk__in=ids).update(**cambios)
+    if se_audita(modelo):
+        despues_por_id = {
+            objeto.pk: objeto
+            for objeto in modelo._base_manager.filter(pk__in=ids)
+        }
+        for pk in ids:
+            objeto = despues_por_id[pk]
+            diferencias = _diferencias(antes[pk], _instantanea(objeto))
+            if diferencias:
+                _escribir(objeto, "modificacion", diferencias)
+    return cantidad
+
+
+def actualizar_en_lote_con_auditoria(objetos, campos, **opciones):
+    """Versión auditable de ``bulk_update`` para objetos ya modificados."""
+    objetos = list(objetos)
+    if not objetos:
+        return 0
+    modelo = type(objetos[0])
+    if any(type(objeto) is not modelo for objeto in objetos):
+        raise TypeError("Todos los objetos del lote deben pertenecer al mismo modelo.")
+    ids = [objeto.pk for objeto in objetos]
+    anteriores = {
+        objeto.pk: _instantanea(objeto)
+        for objeto in modelo._base_manager.select_for_update().filter(pk__in=ids)
+    }
+    cantidad = modelo._base_manager.bulk_update(objetos, campos, **opciones)
+    if se_audita(modelo):
+        for objeto in modelo._base_manager.filter(pk__in=ids):
+            diferencias = _diferencias(anteriores[objeto.pk], _instantanea(objeto))
+            if diferencias:
+                _escribir(objeto, "modificacion", diferencias)
+    return cantidad
 
 
 @receiver(pre_save)
