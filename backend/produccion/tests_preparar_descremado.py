@@ -7,27 +7,36 @@ from maestros.models import Equipo, Especificacion, Producto
 from planificacion.models import CapacidadProceso
 from procesos.models import Proceso, RutaProducto
 from usuarios.models import Empresa, Sucursal
+from usuarios.tenancy import unica_sucursal_activa
 
 
 class PrepararCircuitoDescremadoTests(TestCase):
     def test_crea_referencias_operables_sin_duplicarlas(self):
-        empresa = Empresa.objects.create(rut="DES-REF", nombre="Planta referencia")
-        sucursal = Sucursal.objects.create(
-            empresa=empresa, codigo="DES", nombre="Planta Descremado"
+        # Compatibilidad de esquema: el comando resuelve este registro técnico
+        # sin recibir Empresa/Sucursal como selector funcional.
+        sucursal = unica_sucursal_activa(None)
+        if sucursal is None:
+            empresa = Empresa.objects.create(
+                rut="DES-REF", nombre="Configuración técnica"
+            )
+            sucursal = Sucursal.objects.create(
+                empresa=empresa, codigo="DES", nombre="Configuración técnica"
+            )
+        Proceso.objects.update_or_create(
+            codigo="ruta-polvo", version=1,
+            defaults={"nombre": "Ruta polvo", "activo": True},
         )
-        Proceso.objects.create(codigo="ruta-polvo", nombre="Ruta polvo", activo=True)
-        proceso_mantequilla = Proceso.objects.create(
-            codigo="ruta-mantequilla", nombre="Ruta mantequilla", activo=True,
+        proceso_mantequilla, _ = Proceso.objects.update_or_create(
+            codigo="ruta-mantequilla", version=1,
+            defaults={"nombre": "Ruta mantequilla", "activo": True},
         )
 
         call_command(
             "preparar_circuito_descremado",
-            sucursal=sucursal.pk,
             aplicar=True,
             stdout=StringIO(),
         )
         descremada = Producto.objects.get(
-            mandante__empresa=empresa,
             nombre="Leche descremada líquida intermedia CCAA",
         )
         crema = Producto.objects.create(
@@ -39,14 +48,12 @@ class PrepararCircuitoDescremadoTests(TestCase):
         )
         call_command(
             "preparar_circuito_descremado",
-            sucursal=sucursal.pk,
             aplicar=True,
             stdout=StringIO(),
         )
 
-        equipo = Equipo.objects.get(sucursal=sucursal, codigo="des-01")
+        equipo = Equipo.objects.get(codigo="des-01")
         producto = Producto.objects.get(
-            mandante__empresa=empresa,
             nombre="Leche descremada líquida intermedia CCAA",
         )
         self.assertEqual(equipo.tipo, Equipo.Tipo.DESCREMADORA)

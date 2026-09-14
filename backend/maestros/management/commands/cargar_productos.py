@@ -30,7 +30,7 @@ from django.db import transaction
 
 from maestros.dominio import generar_sku
 from maestros.models import Mandante, Producto
-from usuarios.models import Empresa
+from usuarios.tenancy import unica_empresa_activa
 
 
 ARCHIVO = (
@@ -160,11 +160,6 @@ class Command(BaseCommand):
             help="Escribe en la base. Sin esto solo simula.",
         )
         parser.add_argument(
-            "--empresa",
-            type=int,
-            help="ID de la empresa destino. Obligatorio si hay más de una activa.",
-        )
-        parser.add_argument(
             "--omitir-sku-duplicados",
             action="store_true",
             help="Conserva la primera fila de cada SKU repetido e informa las omitidas.",
@@ -181,7 +176,11 @@ class Command(BaseCommand):
         if not ARCHIVO.exists():
             raise CommandError(f"No encuentro el archivo: {ARCHIVO}")
 
-        self.empresa = self._empresa(opciones.get("empresa"))
+        # Registro histórico requerido por el esquema; no es una dimensión
+        # funcional ni una selección de quien ejecuta la carga.
+        self.empresa = unica_empresa_activa()
+        if self.empresa is None or not self.empresa.activa:
+            raise CommandError("Falta la configuración técnica histórica requerida.")
         filas = self._leer(load_workbook)
         aplicar = opciones["aplicar"]
         resultados = []
@@ -291,20 +290,6 @@ class Command(BaseCommand):
         return filas
 
     # ------------------------------------------------------------ escritura
-
-    def _empresa(self, empresa_id):
-        empresas = Empresa.objects.filter(activa=True)
-        if empresa_id is not None:
-            try:
-                return empresas.get(pk=empresa_id)
-            except Empresa.DoesNotExist as error:
-                raise CommandError(f"No existe una empresa activa con id {empresa_id}.") from error
-
-        if empresas.count() == 1:
-            return empresas.first()
-        raise CommandError(
-            "Indica --empresa ID: la carga de productos debe saber en qué empresa crear el maestro."
-        )
 
     @classmethod
     def _omitir_skus_duplicados(cls, filas):

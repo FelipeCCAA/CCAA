@@ -232,10 +232,12 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
             codigo="SILO 9", tipo=Silo.Tipo.SILO, capacidad_l=Decimal("50000")
         )
         AnalisisSilo.objects.create(
-            silo=self.silo, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc)
+            silo=self.silo, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
         )
         AnalisisSilo.objects.create(
-            silo=otro, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc)
+            silo=otro, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
         )
 
         respuesta = self.cliente.get(f"/api/recepcion/analisis-silo/?silo={otro.id}")
@@ -247,7 +249,8 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
 
     def test_vigentes_deja_fuera_al_que_recibio_leche_despues(self):
         viejo = AnalisisSilo.objects.create(
-            silo=self.silo, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc)
+            silo=self.silo, tomado_en=datetime(2026, 7, 15, 9, 0, tzinfo=tz.utc),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
         )
         MovimientoSilo.objects.create(
             silo=self.silo,
@@ -256,7 +259,8 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
             fecha_hora=datetime(2026, 7, 15, 12, 0, tzinfo=tz.utc),
         )
         nuevo = AnalisisSilo.objects.create(
-            silo=self.silo, tomado_en=datetime(2026, 7, 15, 13, 0, tzinfo=tz.utc)
+            silo=self.silo, tomado_en=datetime(2026, 7, 15, 13, 0, tzinfo=tz.utc),
+            estado=AnalisisSilo.Estado.CONFIRMADO,
         )
 
         respuesta = self.cliente.get("/api/recepcion/analisis-silo/?vigentes=1")

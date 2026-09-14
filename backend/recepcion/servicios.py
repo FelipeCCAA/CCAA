@@ -434,8 +434,6 @@ def transferir_silo(
         return existente
     origen = bloqueados[silo_origen_id]
     destino = bloqueados[silo_destino_id]
-    if origen.sucursal_id != destino.sucursal_id:
-        raise ValidationError("No se puede transferir entre plantas distintas.")
     if not origen.activo or origen.estado in ESTADOS_SIN_CONSUMO:
         raise ValidationError(f"El silo {origen.codigo} no está habilitado para consumo.")
     if not destino.activo or destino.estado in {

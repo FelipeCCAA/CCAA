@@ -344,9 +344,7 @@ def _contexto(semana):
                 "codigo", "equipo"
             )
         ),
-        list(CodigoProduccion.objects.filter(
-            producto__mandante__empresa_id=semana.sucursal.empresa_id
-        )),
+        list(CodigoProduccion.objects.all()),
         list(BalanceDia.objects.filter(semana=semana)),
     )
 
@@ -357,7 +355,6 @@ def _movimientos_y_seguridad(semana):
     )
     seguridad = {}
     for item in StockSeguridadPlan.objects.filter(
-        propietario__empresa_id=semana.sucursal.empresa_id,
         vigente_desde__lte=semana.fecha_inicio,
     ).order_by("propietario_id", "-vigente_desde"):
         seguridad.setdefault(item.propietario_id, float(item.cantidad))
@@ -540,15 +537,13 @@ def contraste(request, semana_id):
         balances,
         # Solo lo descargado: una recepción registrada todavía no entró al silo.
         Recepcion.objects.filter(
-            vehiculo__sucursal_id=semana.sucursal_id,
             fecha__gte=desde, fecha__lte=hasta, estado=Recepcion.Estado.DESCARGADA
         ),
         MovimientoSilo.objects.filter(
-            silo__sucursal_id=semana.sucursal_id,
             tipo=MovimientoSilo.Tipo.SALIDA,
             origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
         ),
-        Lote.objects.filter(sucursal_id=semana.sucursal_id, fecha__gte=desde, fecha__lte=hasta).exclude(
+        Lote.objects.filter(fecha__gte=desde, fecha__lte=hasta).exclude(
             estado=Lote.Estado.ANULADO
         ),
     )

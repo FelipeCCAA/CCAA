@@ -13,18 +13,10 @@ qué es, y sin privilegios de más.
 
 Por qué NO es superusuario
 --------------------------
-Un superusuario tendría `rol = admin` sin necesidad de perfil y sería una línea
-más corto. Pero `scope_de` le devuelve alcance global, o sea que ve datos que
-ningún administrador real ve, y la auditoría estaría midiendo pantallas que en
-planta nadie tiene delante. Con un perfil de Administración general se audita lo
-que de verdad se usa.
-
-El perfil sigue la regla vigente del modelo: Administración general es de
-**alcance empresa** y por tanto **sin sucursal** (ver `PerfilUsuario.clean()` y
-el CHECK `alcance`/`sucursal`). Ojo con un efecto que no es de este comando:
-`PerfilUsuario.save()` marca `is_staff` a todo administrador de área, así que la
-cuenta acaba con acceso al admin de Django. Es la regla del modelo, no una
-concesión de aquí.
+Un superusuario eludiría los permisos por rol y área. Con un perfil de
+Administración se audita la interfaz con las mismas reglas funcionales que una
+cuenta real. Los campos históricos de organización se completan únicamente
+porque el esquema todavía los exige; no conceden alcance ni filtran datos.
 
 Uso
 ---
@@ -43,7 +35,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from config.seguridad import ENTORNOS_ENDURECIDOS
-from usuarios.models import Empresa, PerfilUsuario, Rol
+from usuarios.models import PerfilUsuario, Rol
+from usuarios.tenancy import unica_empresa_activa
 
 USUARIO = "e2e_auditoria"
 CLAVE_POR_OMISION = "auditoria-e2e-ccaa"
@@ -60,12 +53,6 @@ class Command(BaseCommand):
                 "Contraseña de la cuenta. Por omisión toma E2E_CLAVE del entorno "
                 f"y, si tampoco está, «{CLAVE_POR_OMISION}»."
             ),
-        )
-        parser.add_argument(
-            "--empresa",
-            type=int,
-            default=None,
-            help="Id de la empresa. Solo hace falta si hay más de una activa.",
         )
 
     @transaction.atomic
@@ -84,7 +71,11 @@ class Command(BaseCommand):
                 "desarrollo o pruebas."
             )
 
-        empresa = self._empresa(opciones["empresa"])
+        empresa = unica_empresa_activa()
+        if empresa is None or not empresa.activa:
+            raise CommandError(
+                "Falta el registro técnico histórico requerido por el perfil."
+            )
         clave = opciones["clave"]
 
         usuario, creado = User.objects.get_or_create(
@@ -102,9 +93,8 @@ class Command(BaseCommand):
         usuario.is_active = True
         usuario.save()
 
-        # Se busca sin crear y se instancia en memoria si no había: `PerfilUsuario.save()`
-        # valida en `clean()`, así que un `get_or_create` intentaría guardar un perfil
-        # vacío —sin empresa— y reventaría antes de llegar a rellenarlo.
+        # El registro técnico histórico solo satisface restricciones del esquema.
+        # La autorización funcional depende exclusivamente de rol y área.
         perfil = (
             PerfilUsuario.objects.filter(usuario=usuario).first()
             or PerfilUsuario(usuario=usuario)
@@ -128,8 +118,7 @@ class Command(BaseCommand):
         if opciones["verbosity"] >= 1:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Cuenta {'creada' if creado else 'repuesta'}: {USUARIO} "
-                    f"(empresa «{empresa.nombre}», alcance empresa)."
+                    f"Cuenta {'creada' if creado else 'repuesta'}: {USUARIO}."
                 )
             )
             self.stdout.write("")
@@ -140,33 +129,3 @@ class Command(BaseCommand):
             self.stdout.write(f'    $env:E2E_CLAVE = "{clave}"')
             self.stdout.write("    npm run auditoria")
             self.stdout.write("")
-
-    def _empresa(self, id_empresa):
-        """
-        Con una sola empresa activa no se pregunta; con varias, sí.
-
-        Mismo criterio que `usuarios.tenancy.unica_sucursal_activa`: resolver lo
-        que solo tiene una respuesta es servicial, elegir por el operador entre
-        dos es dejarle la cuenta colgando de la empresa equivocada.
-        """
-        if id_empresa is not None:
-            try:
-                return Empresa.objects.get(pk=id_empresa)
-            except Empresa.DoesNotExist:
-                raise CommandError(f"No existe la empresa con id {id_empresa}.")
-
-        activas = list(Empresa.objects.filter(activa=True))
-
-        if not activas:
-            raise CommandError(
-                "No hay ninguna empresa activa. Crea una antes: el perfil la exige."
-            )
-
-        if len(activas) > 1:
-            detalle = ", ".join(f"{e.pk}={e.nombre}" for e in activas)
-            raise CommandError(
-                f"Hay {len(activas)} empresas activas ({detalle}). "
-                "Indica cuál con --empresa <id>."
-            )
-
-        return activas[0]

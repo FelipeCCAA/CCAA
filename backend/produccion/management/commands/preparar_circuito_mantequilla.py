@@ -13,7 +13,7 @@ from maestros.models import (
 )
 from procesos.models import RutaProducto
 from produccion.models import Lote, OrdenProduccion
-from usuarios.models import Sucursal
+from usuarios.tenancy import unica_sucursal_activa
 
 
 FUENTE_CODEX = (
@@ -37,23 +37,19 @@ class Command(BaseCommand):
     help = "Prepara OP, especificacion y lote de mazada para probar Mantequilla."
 
     def add_arguments(self, parser):
-        parser.add_argument("--sucursal", type=int)
         parser.add_argument("--aplicar", action="store_true")
 
     @transaction.atomic
     def handle(self, *args, **opciones):
-        plantas = Sucursal.objects.filter(activa=True).select_related("empresa")
-        if opciones["sucursal"]:
-            plantas = plantas.filter(pk=opciones["sucursal"])
-        if plantas.count() != 1:
-            raise CommandError("Indica --sucursal cuando no exista una unica planta activa.")
-        planta = plantas.get()
+        # Clave histórica de persistencia; no es selector ni dimensión funcional.
+        planta = unica_sucursal_activa(None)
+        if planta is None:
+            raise CommandError("Falta la configuración técnica histórica requerida.")
         usuario = User.objects.filter(is_superuser=True).order_by("id").first()
         if usuario is None:
             raise CommandError("Falta un administrador local para auditar la preparacion.")
 
         producto = Producto.objects.filter(
-            mandante__empresa=planta.empresa,
             categoria=Producto.Categoria.MANTEQUILLA,
             formato=Producto.Formato.CAJA_20KG,
             activo=True,
@@ -61,12 +57,12 @@ class Command(BaseCommand):
         if producto is None:
             raise CommandError("Falta un producto activo de mantequilla en caja de 20 kg.")
         if not RutaProducto.objects.filter(
-            sucursal=planta, producto=producto, proceso__codigo="ruta-mantequilla",
+            producto=producto, proceso__codigo="ruta-mantequilla",
             activa=True,
         ).exists():
             raise CommandError("La mantequilla no tiene una ruta activa de Mantequilla a Envasado.")
         linea = Equipo.objects.filter(
-            sucursal=planta, activo=True, tipo=Equipo.Tipo.LINEA,
+            activo=True, tipo=Equipo.Tipo.LINEA,
             nombre__icontains="mantequilla",
         ).first()
         if linea is None:
@@ -122,7 +118,6 @@ class Command(BaseCommand):
         receta_envase = None
         materiales = 0
         productos_mantequilla = Producto.objects.filter(
-            mandante__empresa=planta.empresa,
             categoria=Producto.Categoria.MANTEQUILLA,
             formato=Producto.Formato.CAJA_20KG,
             activo=True,
@@ -135,14 +130,12 @@ class Command(BaseCommand):
                 receta_envase = receta_configurada
 
         orden = OrdenProduccion.objects.filter(
-            sucursal=planta, producto=producto,
+            producto=producto,
             estado__in=[OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO],
         ).first()
         if orden is None:
             base = f"OP-E2E-MANT-{date.today():%Y%m%d}"
-            correlativo = OrdenProduccion.objects.filter(
-                sucursal=planta, codigo__startswith=base,
-            ).count() + 1
+            correlativo = OrdenProduccion.objects.filter(codigo__startswith=base).count() + 1
             orden = OrdenProduccion.objects.create(
                 sucursal=planta,
                 codigo=f"{base}-{correlativo}",
@@ -177,16 +170,14 @@ class Command(BaseCommand):
             },
         )
         lote_suero = Lote.objects.filter(
-            sucursal=planta, producto=mazada,
+            producto=mazada,
             estado__in=[Lote.Estado.BORRADOR, Lote.Estado.EN_PROCESO],
             kg_producidos__isnull=True,
             corridas_como_suero_mantequilla__isnull=True,
         ).first()
         if lote_suero is None:
             base = f"MAZ-E2E-{date.today():%Y%m%d}"
-            correlativo = Lote.objects.filter(
-                sucursal=planta, codigo_lote__startswith=base,
-            ).count() + 1
+            correlativo = Lote.objects.filter(codigo_lote__startswith=base).count() + 1
             lote_suero = Lote.objects.create(
                 sucursal=planta,
                 codigo_lote=f"{base}-{correlativo}",

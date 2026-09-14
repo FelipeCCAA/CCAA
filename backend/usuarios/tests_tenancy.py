@@ -92,7 +92,10 @@ class TenancyUsuariosTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 201)
         creado = User.objects.get(username="intruso")
-        self.assertEqual(creado.perfil.empresa_id, self.empresa_a.id)
+        self.assertNotIn(
+            creado.perfil.empresa_id,
+            {self.empresa_a.id, self.empresa_b.id},
+        )
         self.assertIsNone(creado.perfil.sucursal_id)
 
     def test_administracion_ve_usuarios_sin_particion_organizacional(self):

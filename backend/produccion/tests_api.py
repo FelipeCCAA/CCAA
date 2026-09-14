@@ -17,6 +17,7 @@ from rest_framework.test import APIClient
 
 from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Especificacion, Mandante, Producto, Silo
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso
 from recepcion.models import MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 from usuarios.tests_helpers import credencial_sesion
@@ -36,6 +37,7 @@ class BaseAPI(TestCase):
             empresa=self.empresa, codigo="PLANTA", nombre="Planta pruebas"
         )
         usuario = User.objects.create_user(username="pruebas", password="x")
+        self.usuario = usuario
         PerfilUsuario.objects.create(
             usuario=usuario,
             rol=Rol.PRODUCCION,
@@ -64,6 +66,14 @@ class BaseAPI(TestCase):
                 "mg": {"min": 26.0, "max": 28.0, "obligatorio": True},
             },
         )
+        proceso = Proceso.objects.create(codigo="secado-api", nombre="Secado API")
+        self.etapa = EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="secado-api",
+            nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=1,
+        )
 
     def _lote(self, codigo="CCAA6140N", **extra):
         datos = {
@@ -74,7 +84,15 @@ class BaseAPI(TestCase):
             "kg_producidos": 10000,
         }
         datos.update(extra)
-        return Lote.objects.create(**datos)
+        lote = Lote.objects.create(**datos)
+        lote.ejecucion = EjecucionProceso.objects.create(
+            codigo=f"EJ-{lote.pk}-{codigo}",
+            etapa=self.etapa,
+            responsable=self.usuario,
+            estado=EjecucionProceso.Estado.EJECUCION,
+        )
+        lote.save(update_fields=["ejecucion"])
+        return lote
 
 
 class TransicionesDeEstadoTests(BaseAPI):
@@ -167,7 +185,11 @@ class TransicionesDeEstadoTests(BaseAPI):
 
         respuesta = self.cliente.patch(
             f"/api/produccion/lotes/{lote.id}/",
-            {"estado": "producido", "bultos": 42},
+            {
+                "estado": "producido",
+                "bultos": 42,
+                "motivo_correccion": "Cantidad de bultos verificada",
+            },
             format="json",
         )
 
@@ -213,7 +235,13 @@ class EdicionDeLoteTests(BaseAPI):
     def test_se_editan_los_datos_de_un_lote_en_proceso(self):
         lote = self._lote(estado=Lote.Estado.EN_PROCESO)
 
-        respuesta = self._patch(lote, kg_producidos="11500.00", bultos=230, turno="B")
+        respuesta = self._patch(
+            lote,
+            kg_producidos="11500.00",
+            bultos=230,
+            turno="B",
+            motivo_correccion="Datos de cierre verificados",
+        )
         lote.refresh_from_db()
 
         self.assertEqual(respuesta.status_code, 200)
@@ -225,7 +253,14 @@ class EdicionDeLoteTests(BaseAPI):
         """Producido no es final: todavía se corrige lo que se tecleó mal."""
         lote = self._lote(estado=Lote.Estado.PRODUCIDO)
 
-        self.assertEqual(self._patch(lote, bultos=99).status_code, 200)
+        self.assertEqual(
+            self._patch(
+                lote,
+                bultos=99,
+                motivo_correccion="Corrección de digitación",
+            ).status_code,
+            200,
+        )
 
     def test_un_lote_cerrado_no_se_edita(self):
         lote = self._lote(estado=Lote.Estado.CERRADO)
@@ -561,7 +596,7 @@ class LotesAPITests(BaseAPI):
         # 1 valida el token, 1 cuenta para paginar, 1 trae los lotes, 1 trae
         # todos sus análisis de una vez y 1 las especificaciones. Ninguna
         # depende del número de lotes.
-        with self.assertNumQueries(5):
+        with self.assertNumQueries(6):
             respuesta = self.cliente.get("/api/produccion/lotes/")
 
         self.assertEqual(

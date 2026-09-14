@@ -11,9 +11,11 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.response import Response
 
+from config.api_exceptions import respuesta_error_dominio
+
 from usuarios.permisos import ConfiguraProcesos
 from usuarios.tenancy import (
-    QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope, scope_de,
+    QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope,
     sucursal_para_escritura,
 )
 from .models import (
@@ -101,8 +103,6 @@ class RutaProductoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     def diagnostico(self, request):
         """Expone faltantes de configuración sin confundir insumos con productos."""
         from maestros.models import Producto
-        from usuarios.models import Sucursal
-
         categorias_productivas = {
             Producto.Categoria.LECHE_POLVO,
             Producto.Categoria.LP_INSTANTANEA,
@@ -113,44 +113,30 @@ class RutaProductoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
         productos = Producto.objects.filter(activo=True).filter(
             Q(familia=Producto.Familia.POLVO)
             | Q(categoria__in=categorias_productivas)
-        ).select_related("mandante__empresa")
-        sucursales = Sucursal.objects.filter(activa=True).select_related("empresa")
-        scope = scope_de(request.user, requerido=True)
-        if not scope.es_global:
-            productos = productos.filter(mandante__empresa_id=scope.empresa_id)
-            sucursales = sucursales.filter(empresa_id=scope.empresa_id)
-        if scope.es_sucursal:
-            sucursales = sucursales.filter(pk=scope.sucursal_id)
+        )
 
         rutas = self.get_queryset().filter(activa=True, proceso__activo=True)
-        rutas_por_par = {}
+        rutas_por_producto = {}
         for ruta in rutas:
-            rutas_por_par.setdefault((ruta.producto_id, ruta.sucursal_id), []).append(ruta)
+            rutas_por_producto.setdefault(ruta.producto_id, []).append(ruta)
 
         resultado = []
         for producto in productos:
-            plantas_producto = [
-                planta for planta in sucursales
-                if planta.empresa_id == producto.mandante.empresa_id
-            ]
-            for planta in plantas_producto:
-                configuradas = rutas_por_par.get((producto.pk, planta.pk), [])
-                resultado.append({
-                    "producto": producto.pk,
-                    "producto_nombre": producto.nombre,
-                    "sucursal": planta.pk,
-                    "sucursal_nombre": planta.nombre,
-                    "configurada": bool(configuradas),
-                    "rutas": [
-                        {
-                            "id": ruta.pk,
-                            "proceso": ruta.proceso_id,
-                            "proceso_nombre": ruta.proceso.nombre,
-                            "prioridad": ruta.prioridad,
-                        }
-                        for ruta in configuradas
-                    ],
-                })
+            configuradas = rutas_por_producto.get(producto.pk, [])
+            resultado.append({
+                "producto": producto.pk,
+                "producto_nombre": producto.nombre,
+                "configurada": bool(configuradas),
+                "rutas": [
+                    {
+                        "id": ruta.pk,
+                        "proceso": ruta.proceso_id,
+                        "proceso_nombre": ruta.proceso.nombre,
+                        "prioridad": ruta.prioridad,
+                    }
+                    for ruta in configuradas
+                ],
+            })
 
         faltantes = sum(not item["configurada"] for item in resultado)
         return Response({
@@ -310,21 +296,7 @@ class CorridaCondensacionViewSet(
         return Response(self.get_serializer(corrida).data)
 
 
-class CorridaDescremacionViewSet(
-    RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
-):
-    tenant_lookup_sucursal = "ejecucion__sucursal_id"
-    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
-    tenant_relation_fields = {
-        "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
-        "orden": ("sucursal_id", "sucursal__empresa_id"),
-        "producto_descremada": (None, "mandante__empresa_id"),
-        "producto_crema": (None, "mandante__empresa_id"),
-        "silo_entera": ("sucursal_id", "sucursal__empresa_id"),
-        "analisis_entrada": ("silo__sucursal_id", "silo__sucursal__empresa_id"),
-        "silo_descremada": ("sucursal_id", "sucursal__empresa_id"),
-        "estanque_crema": ("sucursal_id", "sucursal__empresa_id"),
-    }
+class CorridaDescremacionViewSet(viewsets.ModelViewSet):
     queryset = CorridaDescremacion.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "analisis_entrada",
         "producto_descremada", "producto_crema",
@@ -351,27 +323,12 @@ class CorridaDescremacionViewSet(
             activa=True,
             proceso__activo=True,
         ).select_related("proceso")
-        equipos = filtrar_por_scope(
-            Equipo.objects.filter(
-                activo=True,
-                tipo__in=tipos_equipo_para_etapa(EtapaProceso.Tipo.DESCREMACION),
-            ),
-            request.user,
-            campo_sucursal="sucursal_id",
-            campo_empresa="sucursal__empresa_id",
+        equipos = Equipo.objects.filter(
+            activo=True,
+            tipo__in=tipos_equipo_para_etapa(EtapaProceso.Tipo.DESCREMACION),
         )
-        silos = filtrar_por_scope(
-            Silo.objects.filter(activo=True),
-            request.user,
-            campo_sucursal="sucursal_id",
-            campo_empresa="sucursal__empresa_id",
-        )
-        productos = filtrar_por_scope(
-            Producto.objects.filter(activo=True).select_related("mandante"),
-            request.user,
-            campo_sucursal=None,
-            campo_empresa="mandante__empresa_id",
-        )
+        silos = Silo.objects.filter(activo=True)
+        productos = Producto.objects.filter(activo=True).select_related("mandante")
         productos_descremada = productos.filter(
             tipo=Producto.TipoProducto.DESCREMADA,
             familia=Producto.Familia.LIQUIDO,
@@ -396,22 +353,16 @@ class CorridaDescremacionViewSet(
                 Q(vigente_hasta__isnull=True) | Q(vigente_hasta__gte=hoy),
             ).values_list("producto_id", flat=True)
         )
-        rutas = filtrar_por_scope(
-            RutaProducto.objects.filter(
-                activa=True,
-                proceso__activo=True,
-                producto_id__in=ids_productos,
-            ).select_related("producto", "proceso").prefetch_related("proceso__etapas"),
-            request.user,
-            campo_sucursal="sucursal_id",
-            campo_empresa="sucursal__empresa_id",
-        )
+        rutas = RutaProducto.objects.filter(
+            activa=True,
+            proceso__activo=True,
+            producto_id__in=ids_productos,
+        ).select_related("producto", "proceso").prefetch_related("proceso__etapas")
         ocupaciones = {
             ejecucion.equipo_id: ejecucion.codigo
             for ejecucion in EjecucionProceso.objects.filter(
-                sucursal_id__in={equipo.sucursal_id for equipo in equipos},
                 estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
-                equipo_id__isnull=False,
+                equipo_id__in=equipos.values_list("pk", flat=True),
             ).only("equipo_id", "codigo")
         }
         silos_descremada = silos.filter(tipo=Silo.Tipo.TK_LD)
@@ -490,15 +441,8 @@ class CorridaDescremacionViewSet(
         entrada = SugerirDescremacionSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
         datos = entrada.validated_data
-        analisis_qs = filtrar_por_scope(
-            AnalisisSilo.objects.select_related("silo"), request.user,
-            campo_sucursal="silo__sucursal_id",
-            campo_empresa="silo__sucursal__empresa_id",
-        )
-        productos_qs = filtrar_por_scope(
-            Producto.objects.select_related("mandante"), request.user,
-            campo_sucursal=None, campo_empresa="mandante__empresa_id",
-        )
+        analisis_qs = AnalisisSilo.objects.select_related("silo")
+        productos_qs = Producto.objects.select_related("mandante")
         try:
             analisis = analisis_qs.get(pk=datos["analisis_entrada"])
             producto_descremada = productos_qs.get(pk=datos["producto_descremada"])
@@ -536,27 +480,11 @@ class CorridaDescremacionViewSet(
         entrada = CrearDescremacionGuiadaSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
         datos = entrada.validated_data
-        silos = filtrar_por_scope(
-            Silo.objects.all(), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        equipos = filtrar_por_scope(
-            Equipo.objects.all(), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        productos = filtrar_por_scope(
-            Producto.objects.all(), request.user,
-            campo_sucursal=None, campo_empresa="mandante__empresa_id",
-        )
-        rutas = filtrar_por_scope(
-            RutaProducto.objects.filter(activa=True), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        analisis = filtrar_por_scope(
-            AnalisisSilo.objects.all(), request.user,
-            campo_sucursal="silo__sucursal_id",
-            campo_empresa="silo__sucursal__empresa_id",
-        )
+        silos = Silo.objects.all()
+        equipos = Equipo.objects.all()
+        productos = Producto.objects.all()
+        rutas = RutaProducto.objects.filter(activa=True)
+        analisis = AnalisisSilo.objects.all()
         ids_validos = (
             silos.filter(pk=datos["silo_entera"]).exists()
             and silos.filter(pk=datos["silo_descremada"]).exists()
@@ -576,7 +504,7 @@ class CorridaDescremacionViewSet(
         )
         if not ids_validos:
             return Response(
-                {"error": "Alguna seleccion no pertenece a tu alcance."},
+                {"error": "Alguna selección no existe o no está activa."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         try:
@@ -1188,13 +1116,7 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
         except DjangoValidationError as error:
-            # `.messages[0]` y no `.message`: el segundo solo existe cuando el
-            # error se levantó con un string suelto. Con un dict o una lista
-            # —como los que levanta `SalidaProceso.clean()` en este mismo
-            # módulo— no existe, y el 400 se convertiría en un 500.
-            return Response(
-                {"error": error.messages[0]}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return respuesta_error_dominio(error)
         return Response(self.get_serializer(ejecucion).data)
 
     @action(detail=True, methods=["post"], url_path="incorporar-rework")

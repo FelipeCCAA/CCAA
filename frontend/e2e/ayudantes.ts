@@ -528,6 +528,23 @@ export async function analizarSilo(
 
   const { id } = await respuesta.json();
   await firmarVisualizacion(id);
+
+  // La segunda firma pertenece a otra persona y se registra fuera de esta
+  // sesión. Recargar reproduce el regreso del primer operador a la pantalla
+  // y evita conservar localmente el bloqueo anterior a la firma.
+  await pagina.reload();
+  await expect(pagina.getByRole("button", { name: /SILO |TK / }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  const actualizado = pagina
+    .getByRole("button", { name: new RegExp(nombreVisible, "i") })
+    .first();
+  if (!(await actualizado.isVisible())) {
+    const desplegar = pagina.getByRole("button", { name: /Ver los \d+ silos vacíos/ });
+    if (await desplegar.count()) await desplegar.first().click();
+  }
+  await expect(actualizado).toBeVisible({ timeout: 15_000 });
+  await actualizado.click();
 }
 
 

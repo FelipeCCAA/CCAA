@@ -129,13 +129,32 @@ class DeclararProducidoTests(BaseApertura):
     """Los kilos son obligatorios aquí, que es cuando se conocen."""
 
     def _lote_abierto(self, **extra):
-        return Lote.objects.create(
+        from procesos.models import EjecucionProceso, EtapaProceso, Proceso
+
+        proceso = Proceso.objects.create(codigo="secado-cierre", nombre="Secado")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="secado-cierre",
+            nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=1,
+        )
+        lote = Lote.objects.create(
             sucursal=self.sucursal,
             codigo_lote="CCAA6197",
             producto=self.polvo,
             fecha=date(2026, 7, 16),
             **extra,
         )
+        lote.ejecucion = EjecucionProceso.objects.create(
+            codigo=f"EJ-{lote.codigo_lote}",
+            etapa=etapa,
+            equipo=self.equipo,
+            responsable=PerfilUsuario.objects.get(rol=Rol.PRODUCCION).usuario,
+            estado=EjecucionProceso.Estado.EJECUCION,
+        )
+        lote.save(update_fields=["ejecucion"])
+        return lote
 
     def _producir(self, lote, **extra):
         datos = {"estado": "producido"}
@@ -359,11 +378,32 @@ class ConsumoDeInventarioTests(BaseApertura):
             documento_tipo="recepcion", documento_id=1,
         )
 
-    def _lote_abierto(self):
-        return Lote.objects.create(
-            sucursal=self.sucursal,
-            codigo_lote="CCAA6197", producto=self.polvo, fecha=date(2026, 7, 16),
+    def _lote_abierto(self, *, producto=None, codigo="CCAA6197"):
+        from procesos.models import EjecucionProceso, EtapaProceso, Proceso
+
+        proceso = Proceso.objects.create(codigo="secado-inv", nombre="Secado")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="secado-inv",
+            nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=1,
         )
+        lote = Lote.objects.create(
+            sucursal=self.sucursal,
+            codigo_lote=codigo,
+            producto=producto or self.polvo,
+            fecha=date(2026, 7, 16),
+        )
+        lote.ejecucion = EjecucionProceso.objects.create(
+            codigo=f"EJ-{lote.codigo_lote}",
+            etapa=etapa,
+            equipo=self.equipo,
+            responsable=PerfilUsuario.objects.get(rol=Rol.PRODUCCION).usuario,
+            estado=EjecucionProceso.Estado.EJECUCION,
+        )
+        lote.save(update_fields=["ejecucion"])
+        return lote
 
     def _producir(self, lote, kg=1000):
         return self.cliente.patch(
@@ -425,9 +465,9 @@ class ConsumoDeInventarioTests(BaseApertura):
         self.assertIn("Stock insuficiente", str(respuesta.data["avisos"]))
 
     def test_un_lote_sin_receta_no_bloquea_pero_queda_pendiente(self):
-        lote = Lote.objects.create(
-            sucursal=self.sucursal,
-            codigo_lote="CCAA6198", producto=self.crema, fecha=date(2026, 7, 16),
+        lote = self._lote_abierto(
+            producto=self.crema,
+            codigo="CCAA6198",
         )
 
         respuesta = self._producir(lote)

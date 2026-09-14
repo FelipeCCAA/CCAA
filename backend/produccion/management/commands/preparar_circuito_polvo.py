@@ -322,8 +322,7 @@ class Command(BaseCommand):
             raise CommandError(
                 "Falta el catálogo de embalaje: "
                 + ", ".join(faltan)
-                + ". Córrelo antes con «configurar_inventario_inicial "
-                f"--empresa {sucursal.empresa_id} --aplicar»."
+                + ". Córrelo antes con «configurar_inventario_inicial --aplicar»."
             )
 
         vigente = producto.recetas.order_by("-version").first()
@@ -368,7 +367,7 @@ class Command(BaseCommand):
         if bodega is None:
             raise CommandError(
                 "No existe la bodega de embalaje BEM. Córrelo antes con "
-                f"«configurar_inventario_inicial --empresa {sucursal.empresa_id} --aplicar»."
+                "«configurar_inventario_inicial --aplicar»."
             )
 
         ubicacion = Ubicacion.objects.filter(

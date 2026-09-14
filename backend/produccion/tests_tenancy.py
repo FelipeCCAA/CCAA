@@ -45,7 +45,7 @@ class TenancyOperacionalTests(TestCase):
             empresa=self.empresa_a, nombre="Documento A"
         )
         self.documento_b = DocumentoLiberacion.objects.create(
-            empresa=self.empresa_b, nombre="Documento B"
+            empresa=self.empresa_b, nombre="Documento B", aplica_a=["polvo"]
         )
         self.spec_b = Especificacion.objects.create(
             producto=self.producto_b, version="1", vigente_desde=date(2026, 1, 1), rangos={}
@@ -65,30 +65,40 @@ class TenancyOperacionalTests(TestCase):
         cliente.force_authenticate(usuario)
         return cliente
 
-    def test_lote_ajeno_es_404_en_get_y_patch(self):
+    def test_ubicacion_historica_no_oculta_lote_autorizado(self):
         cliente = self.cliente("prod-a1", Rol.PRODUCCION, self.empresa_a, self.a1)
         ruta = f"/api/produccion/lotes/{self.lote_a2.id}/"
-        self.assertEqual(cliente.get(ruta).status_code, 404)
-        self.assertEqual(cliente.patch(ruta, {"observacion": "intrusión"}, format="json").status_code, 404)
+        self.assertEqual(cliente.get(ruta).status_code, 200)
+        self.assertEqual(
+            cliente.patch(
+                ruta,
+                {
+                    "observacion": "Corrección autorizada",
+                    "motivo_correccion": "Dato operacional verificado",
+                },
+                format="json",
+            ).status_code,
+            200,
+        )
 
-    def test_no_crea_lote_con_producto_de_otra_empresa(self):
+    def test_empresa_historica_del_producto_no_bloquea_lote(self):
         cliente = self.cliente("prod-a2", Rol.PRODUCCION, self.empresa_a, self.a1)
         respuesta = cliente.post(
             "/api/produccion/lotes/",
             {"codigo_lote": "X", "producto": self.producto_b.id, "fecha": "2026-08-02"},
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertFalse(Lote.objects.filter(codigo_lote="X").exists())
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertTrue(Lote.objects.filter(codigo_lote="X").exists())
 
-    def test_no_crea_control_con_equipo_de_otra_sucursal(self):
+    def test_sucursal_historica_del_equipo_no_bloquea_control(self):
         cliente = self.cliente("prod-a3", Rol.PRODUCCION, self.empresa_a, self.a1)
         respuesta = cliente.post(
             "/api/produccion/controles/",
             {"lote": self.lote_a1.id, "equipo": self.equipo_a2.id, "fecha": "2026-08-01"},
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
 
     def test_no_crea_analisis_con_especificacion_ajena(self):
         cliente = self.cliente("prod-a4", Rol.PRODUCCION, self.empresa_a, self.a1)
@@ -104,7 +114,7 @@ class TenancyOperacionalTests(TestCase):
         )
         self.assertEqual(respuesta.status_code, 400)
 
-    def test_inocuidad_no_admite_equipo_de_otra_sucursal(self):
+    def test_inocuidad_usa_equipo_sin_aislar_por_sucursal(self):
         cliente = self.cliente("prod-a5", Rol.PRODUCCION, self.empresa_a, self.a1)
         respuesta = cliente.post(
             "/api/inocuidad/monitoreos/",
@@ -116,25 +126,28 @@ class TenancyOperacionalTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
 
-    def test_expediente_ajeno_es_404(self):
+    def test_calidad_ve_expediente_por_permiso_no_por_sucursal(self):
         cliente = self.cliente("cal-a1", Rol.CALIDAD, self.empresa_a, self.a1)
-        self.assertEqual(
-            cliente.get(f"/api/calidad/expedientes/{self.lote_a2.id}/").status_code,
-            404,
-        )
+        respuesta = cliente.get(f"/api/calidad/expedientes/{self.lote_a2.id}/")
+        self.assertEqual(respuesta.status_code, 200)
+        documentos = {
+            fila["documento"]["id"]
+            for fila in respuesta.data["decision"]["avance"]["detalle"]
+        }
+        self.assertIn(self.documento_b.id, documentos)
 
-    def test_registro_calidad_no_admite_documento_de_otra_empresa(self):
+    def test_documento_no_se_aisla_por_empresa_historica(self):
         cliente = self.cliente("cal-a2", Rol.CALIDAD, self.empresa_a, self.a1)
         respuesta = cliente.post(
             "/api/calidad/registros/",
             {"lote": self.lote_a1.id, "documento": self.documento_b.id},
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
 
-    def test_registro_periodico_no_admite_equipo_de_otra_sucursal(self):
+    def test_registro_periodico_no_se_aisla_por_sucursal(self):
         cliente = self.cliente("cal-a3", Rol.CALIDAD, self.empresa_a, self.a1)
         respuesta = cliente.post(
             "/api/calidad/registros-equipo/",
@@ -145,4 +158,4 @@ class TenancyOperacionalTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)

@@ -6,7 +6,7 @@ from django.db.models import Count, Q
 from rest_framework import serializers
 from maestros.catalogos import CLAVES_PARAMETROS
 from maestros.models import Equipo, Especificacion, Producto
-from usuarios.tenancy import filtrar_por_scope, scope_de, sucursal_para_escritura
+from usuarios.tenancy import filtrar_por_scope, sucursal_para_escritura
 
 from . import dominio
 from .models import (
@@ -169,13 +169,7 @@ class AnalisisSerializer(serializers.ModelSerializer):
             Lote.objects.all(), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
-        scope = scope_de(request.user)
-        specs = Especificacion.objects.all()
-        if scope is None:
-            specs = specs.none()
-        elif not scope.es_global:
-            specs = specs.filter(producto__mandante__empresa_id=scope.empresa_id)
-        self.fields["especificacion"].queryset = specs
+        self.fields["especificacion"].queryset = Especificacion.objects.all()
 
     def validate(self, datos):
         lote = datos.get("lote", getattr(self.instance, "lote", None))
@@ -350,13 +344,7 @@ class LoteSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request:
             return
-        scope = scope_de(request.user)
-        productos = Producto.objects.all()
-        if scope is None:
-            productos = productos.none()
-        elif not scope.es_global:
-            productos = productos.filter(mandante__empresa_id=scope.empresa_id)
-        self.fields["producto"].queryset = productos
+        self.fields["producto"].queryset = Producto.objects.all()
         self.fields["equipo"].queryset = filtrar_por_scope(
             Equipo.objects.filter(activo=True), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
@@ -476,12 +464,6 @@ class LoteSerializer(serializers.ModelSerializer):
             datos["op"] = orden.codigo
             if producto and orden.producto_id != producto.id:
                 raise serializers.ValidationError({"orden": "La orden corresponde a otro producto."})
-            if sucursal and orden.sucursal_id != sucursal.id:
-                raise serializers.ValidationError({"orden": "La orden pertenece a otra organización."})
-        if sucursal and producto and producto.mandante.empresa_id != sucursal.empresa_id:
-            raise serializers.ValidationError(
-                {"producto": "El producto y la orden deben pertenecer a la misma organización."}
-            )
 
         if self.instance is None and not self.partial and vale is not None:
             if "litros_estandarizados" not in datos:
@@ -500,11 +482,6 @@ class LoteSerializer(serializers.ModelSerializer):
                 })
             datos["sucursal"] = vale.silo_destino.sucursal
             sucursal = datos["sucursal"]
-
-        if equipo and vale and equipo.sucursal_id != vale.silo_destino.sucursal_id:
-            raise serializers.ValidationError({
-                "equipo": "La máquina debe pertenecer a la planta del vale."
-            })
 
         codigo = datos.get("codigo_lote", getattr(self.instance, "codigo_lote", None))
         fecha = datos.get("fecha", getattr(self.instance, "fecha", None))

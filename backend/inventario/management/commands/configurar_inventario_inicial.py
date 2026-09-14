@@ -2,20 +2,22 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from inventario.models import Bodega, Insumo, Ubicacion
-from usuarios.models import Empresa, Sucursal
+from usuarios.models import Sucursal
+from usuarios.tenancy import unica_empresa_activa
 
 
 class Command(BaseCommand):
     help = "Crea el catálogo y ubicaciones iniciales para embalaje y producto terminado."
 
     def add_arguments(self, parser):
-        parser.add_argument("--empresa", type=int, required=True)
         parser.add_argument("--aplicar", action="store_true")
 
     def handle(self, *args, **options):
-        empresa = Empresa.objects.filter(pk=options["empresa"]).first()
+        # Empresa/Sucursal solo completan claves históricas del esquema. No se
+        # solicitan al usuario ni definen permisos, aislamiento o navegación.
+        empresa = unica_empresa_activa()
         if empresa is None:
-            self.stderr.write("La empresa indicada no existe.")
+            self.stderr.write("No existe la configuración técnica histórica requerida.")
             return
         sucursal = Sucursal.objects.filter(empresa=empresa, activa=True).order_by("id").first()
         if sucursal is None:

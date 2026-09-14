@@ -67,18 +67,21 @@ class ConsultaResultadosProcesoTests(TestCase):
             limite=50,
         )
 
-    def test_aplica_el_scope_tenant_dentro_del_servicio(self):
+    def test_empresa_historica_no_oculta_trabajo_de_calidad(self):
         propia = self._crear_salida(sucursal=self.sucursal, correlativo=1)
         otra_empresa = Empresa.objects.create(rut="COLA-CAL-2", nombre="Empresa dos")
         otra_sucursal = Sucursal.objects.create(
             empresa=otra_empresa, codigo="P2", nombre="Planta dos"
         )
-        self._crear_salida(sucursal=otra_sucursal, correlativo=2)
+        ajena = self._crear_salida(sucursal=otra_sucursal, correlativo=2)
 
         resultados, total = self._consultar()
 
-        self.assertEqual(total, 1)
-        self.assertEqual([item["id"] for item in resultados], [propia.id])
+        self.assertEqual(total, 2)
+        self.assertEqual(
+            {item["id"] for item in resultados},
+            {propia.id, ajena.id},
+        )
 
     def test_el_numero_de_consultas_no_crece_por_resultado(self):
         self._crear_salida(sucursal=self.sucursal, correlativo=1)

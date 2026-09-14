@@ -22,7 +22,6 @@ from usuarios.tenancy import (
     RelacionesTenantMixin,
     SucursalTenantViewSetMixin,
     filtrar_por_scope,
-    scope_de,
     sucursal_para_escritura,
 )
 
@@ -118,19 +117,14 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             insumo.pk: insumo
             for insumo in Insumo.objects.filter(pk__in=insumos_ids)
         }
-        stock_por_planta = defaultdict(Decimal)
+        stock_por_insumo = defaultdict(Decimal)
         existencias = Existencia.objects.filter(
             lote__insumo_id__in=insumos_ids,
-            ubicacion__bodega__sucursal_id__in={
-                salida.ejecucion.sucursal_id for salida in salidas
-            },
         ).select_related("lote", "ubicacion__bodega")
         for existencia in existencias:
             disponible_stock = existencia.cantidad_disponible
             if disponible_stock > 0:
-                stock_por_planta[
-                    (existencia.ubicacion.bodega.sucursal_id, existencia.lote.insumo_id)
-                ] += disponible_stock
+                stock_por_insumo[existencia.lote.insumo_id] += disponible_stock
 
         respuesta = []
         for salida in salidas:
@@ -187,9 +181,7 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                 materiales = []
                 unidades_por_materiales = unidades_producto
                 for insumo_id, cantidad_por_kg in requerido_por_kg.items():
-                    stock = stock_por_planta[
-                        (salida.ejecucion.sucursal_id, insumo_id)
-                    ]
+                    stock = stock_por_insumo[insumo_id]
                     insumo = insumos[insumo_id]
                     materiales.append({
                         "insumo_id": insumo_id,
@@ -1082,7 +1074,13 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
             origen_id=lote.id,
         )
-        movimiento.delete()
+        from recepcion.models import AtribucionRecepcion
+
+        # Las atribuciones FIFO forman parte del mismo asiento provisional.
+        # PROTECT conserva la historia confirmada; aquí aún se está armando.
+        with transaction.atomic():
+            AtribucionRecepcion.objects.filter(movimiento=movimiento).delete()
+            movimiento.delete()
 
         return Response(self._estado_asignacion(lote))
 

@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from estandarizacion.models import ValeEstandarizacion
-from procesos.models import EjecucionProceso, EtapaProceso, Proceso
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso, RutaProducto
 from recepcion.models import MovimientoSilo
 
 from .models import Lote
@@ -27,6 +27,22 @@ class BorradorLoteTests(BaseApertura):
             litros_entera=Decimal("19000.00"),
             litros_descremada=Decimal("1000.00"),
             estado=ValeEstandarizacion.Estado.LIBERADO,
+        )
+        proceso = Proceso.objects.create(
+            codigo="ruta-borrador-polvo", nombre="Ruta polvo de prueba"
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="evaporar-borrador",
+            nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=1,
+        )
+        RutaProducto.objects.create(
+            sucursal=self.sucursal,
+            producto=self.polvo,
+            proceso=proceso,
+            prioridad=1,
         )
 
     def crear_borrador(self, **datos):

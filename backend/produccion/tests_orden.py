@@ -45,12 +45,13 @@ class OrdenProduccionTests(TestCase):
             format="json",
         )
 
-    def test_crea_orden_vinculada_a_semana_y_planta(self):
+    def test_crea_orden_vinculada_a_semana_y_producto(self):
         respuesta = self._crear()
         orden = OrdenProduccion.objects.get()
 
         self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(orden.sucursal, self.sucursal)
+        self.assertEqual(orden.semana, self.semana)
+        self.assertEqual(orden.producto, self.producto)
         self.assertEqual(orden.creada_por.username, "produccion")
 
     def test_lote_con_orden_conserva_codigo_legacy_y_relacion(self):

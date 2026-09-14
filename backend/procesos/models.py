@@ -115,18 +115,7 @@ class RutaProducto(models.Model):
         indexes = [models.Index(fields=["sucursal", "producto", "activa"])]
 
     def clean(self):
-        if (
-            self.sucursal_id and self.producto_id
-            and self.producto.mandante.empresa_id != self.sucursal.empresa_id
-        ):
-            raise ValidationError(
-                {"producto": "El producto y la ruta deben pertenecer a la misma empresa."}
-            )
         if self.insumo_origen_id:
-            if self.insumo_origen.empresa_id != self.sucursal.empresa_id:
-                raise ValidationError({
-                    "insumo_origen": "La materia prima y la ruta pertenecen a empresas distintas."
-                })
             if self.insumo_origen.categoria != self.insumo_origen.Categoria.MATERIA_PRIMA:
                 raise ValidationError({
                     "insumo_origen": "El origen externo de una ruta debe ser una materia prima."
@@ -215,13 +204,6 @@ class CorridaCondensacion(models.Model):
             raise ValidationError({"ejecucion": "La ejecución no es de condensación/evaporación."})
         if self.orden_id and self.lote_id and self.lote.orden_id != self.orden_id:
             raise ValidationError({"lote": "El lote no pertenece a la orden seleccionada."})
-        if self.ejecucion_id:
-            sucursal_id = self.ejecucion.sucursal_id
-            for campo in ("silo_origen", "silo_destino"):
-                silo = getattr(self, campo, None)
-                if silo and silo.sucursal_id != sucursal_id:
-                    raise ValidationError({campo: "El silo pertenece a otra planta."})
-
     def __str__(self):
         return f"Condensación {self.ejecucion.codigo}"
 
@@ -487,22 +469,6 @@ class CorridaDescremacion(models.Model):
             raise ValidationError({
                 "producto_crema": "Selecciona una crema intermedia."
             })
-        if self.ejecucion_id:
-            for campo in ("producto_descremada", "producto_crema"):
-                producto = getattr(self, campo, None)
-                if (
-                    producto
-                    and producto.mandante.empresa_id != self.ejecucion.sucursal.empresa_id
-                ):
-                    raise ValidationError({campo: "El producto pertenece a otra organización."})
-            for campo in ("silo_entera", "silo_descremada", "estanque_crema"):
-                silo = getattr(self, campo, None)
-                if silo and silo.sucursal_id != self.ejecucion.sucursal_id:
-                    raise ValidationError({campo: "El estanque pertenece a otra planta."})
-            for campo in ("ruta_descremada", "ruta_crema"):
-                ruta = getattr(self, campo, None)
-                if ruta and ruta.sucursal_id != self.ejecucion.sucursal_id:
-                    raise ValidationError({campo: "La ruta pertenece a otra planta."})
         for rama in ("descremada", "crema"):
             destino = getattr(self, f"destino_{rama}")
             ruta = getattr(self, f"ruta_{rama}")
@@ -659,9 +625,6 @@ class CorridaMantequilla(models.Model):
             raise ValidationError({"lote_crema": "La materia prima debe ser un lote de crema."})
         if self.lote_mantequilla_id and self.lote_mantequilla.producto.categoria != "mantequilla":
             raise ValidationError({"lote_mantequilla": "El lote de salida debe ser mantequilla."})
-        if self.lote_crema_id and self.lote_mantequilla_id:
-            if self.lote_crema.sucursal_id != self.lote_mantequilla.sucursal_id:
-                raise ValidationError("Los lotes deben pertenecer a la misma planta.")
         if self.kg_suero and not self.lote_suero_id:
             raise ValidationError({"lote_suero": "Identifica el lote del suero generado."})
         if self.kg_reproceso and not self.lote_reproceso_id:
@@ -673,10 +636,6 @@ class CorridaMantequilla(models.Model):
                 "motivo_reproceso": "Indica por qué este material requiere reproceso."
             })
         if self.lote_reproceso_id:
-            if self.lote_reproceso.sucursal_id != self.lote_mantequilla.sucursal_id:
-                raise ValidationError({
-                    "lote_reproceso": "El reproceso debe pertenecer a la misma planta."
-                })
             if self.lote_reproceso.producto_id != self.lote_mantequilla.producto_id:
                 raise ValidationError({
                     "lote_reproceso": "El reproceso debe conservar el producto de mantequilla."
@@ -720,7 +679,9 @@ class EjecucionProceso(models.Model):
             Estado.CANCELADA,
         },
         Estado.PAUSADA: {Estado.EJECUCION, Estado.BLOQUEADA, Estado.CANCELADA},
-        Estado.PENDIENTE_CONTROL: {Estado.CERRADA, Estado.BLOQUEADA, Estado.EJECUCION},
+        # Calidad decide el material; no reinicia físicamente una ejecución ya
+        # terminada. Un reproceso debe abrir una ejecución trazable nueva.
+        Estado.PENDIENTE_CONTROL: {Estado.CERRADA, Estado.BLOQUEADA},
         Estado.BLOQUEADA: {Estado.EJECUCION, Estado.CANCELADA},
         Estado.CERRADA: set(),
         Estado.CANCELADA: set(),
@@ -790,10 +751,6 @@ class EjecucionProceso(models.Model):
 
     def __str__(self):
         return f"{self.codigo} · {self.etapa.nombre}"
-
-    def clean(self):
-        if self.equipo_id and self.equipo.sucursal_id != self.sucursal_id:
-            raise ValidationError({"equipo": "El equipo debe pertenecer a la sucursal de la ejecución."})
 
     @property
     def editable(self):
@@ -876,19 +833,6 @@ class EntradaProceso(models.Model):
                 "Una entrada debe indicar un solo origen: lote interno, silo o lote externo."
             )
 
-        if self.lote_id and self.lote.sucursal_id != self.ejecucion.sucursal_id:
-            raise ValidationError({"lote": "El lote debe pertenecer a la sucursal de la ejecución."})
-
-        if self.silo_id and self.silo.sucursal_id != self.ejecucion.sucursal_id:
-            raise ValidationError({"silo": "El silo debe pertenecer a la sucursal de la ejecución."})
-
-        if (
-            self.lote_inventario_id
-            and self.lote_inventario.sucursal_id != self.ejecucion.sucursal_id
-        ):
-            raise ValidationError({
-                "lote_inventario": "El lote externo debe pertenecer a la planta de la ejecución."
-            })
         if self.lote_inventario_id and not self.lote_inventario.utilizable:
             raise ValidationError({
                 "lote_inventario": (
@@ -1113,8 +1057,6 @@ class SalidaProceso(models.Model):
                 "destino": "Solo un producto terminado puede destinarse a Inventario."
             })
 
-        if self.lote_id and self.lote.sucursal_id != self.ejecucion.sucursal_id:
-            raise ValidationError({"lote": "El lote debe pertenecer a la sucursal de la ejecución."})
         self._validar_balance()
 
     def destinos_permitidos(self):

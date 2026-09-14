@@ -89,6 +89,23 @@ class CorreccionLoteTests(BaseApertura):
 
     def test_el_cierre_normal_con_kilos_no_pide_motivo_de_correccion(self):
         lote = self.lote()
+        from procesos.models import EjecucionProceso, EtapaProceso, Proceso
+
+        proceso = Proceso.objects.create(codigo="secado-correccion", nombre="Secado")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="secado-correccion",
+            nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=1,
+        )
+        lote.ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-LOTE-CORR-1",
+            etapa=etapa,
+            equipo=self.equipo,
+            estado=EjecucionProceso.Estado.EJECUCION,
+        )
+        lote.save(update_fields=["ejecucion"])
 
         respuesta = self.editar(
             lote, estado=Lote.Estado.PRODUCIDO, kg_producidos="1000.00"

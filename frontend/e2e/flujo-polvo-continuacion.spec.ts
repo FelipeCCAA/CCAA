@@ -96,12 +96,9 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
   if (reanudarDesde <= 4) await test.step("4 · Calidad analiza y libera el polvo", async () => {
     await usarSesionArea(page, "e2e_envasado");
     await irA(page, "/envasado");
-    const esperaCalidad = page.locator("section").filter({
-      has: page.getByRole("heading", { name: "En espera de Calidad" }),
-    });
-    const bloqueado = esperaCalidad.locator("article").filter({ hasText: flujo.lote });
-    await expect(bloqueado).toBeVisible({ timeout: 20_000 });
-    await expect(bloqueado).toContainText("pendiente de aprobación de Calidad");
+    // La bandeja actual muestra únicamente material ya liberado: mientras
+    // Calidad está pendiente, el lote no debe ofrecerse como seleccionable.
+    await expect(page.getByText("No hay material liberado para envasar.")).toBeVisible();
     await expect(page.getByRole("button", { name: new RegExp(flujo.lote) })).toHaveCount(0);
 
     await usarSesionArea(page, "e2e_calidad");

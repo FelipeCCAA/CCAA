@@ -128,9 +128,9 @@ class DosPlantasTests(BaseSinSucursales):
         self.assertEqual(sucursal_para_escritura(operario, {}), self.planta)
 
 
-class AislamientoEntreEmpresasTests(BaseSinSucursales):
+class ConfiguracionHistoricaIndependienteDelUsuarioTests(BaseSinSucursales):
 
-    def test_no_se_resuelve_con_la_planta_de_otra_empresa(self):
+    def test_se_resuelve_sin_usar_la_empresa_del_perfil(self):
         """
         La resolución automática mira **solo** las de su empresa. Si mirara
         todas, un administrador de una empresa sin plantas terminaría
@@ -151,8 +151,7 @@ class AislamientoEntreEmpresasTests(BaseSinSucursales):
             alcance=PerfilUsuario.Alcance.EMPRESA,
         )
 
-        with self.assertRaises(ValidationError):
-            sucursal_para_escritura(usuario, {})
+        self.assertEqual(sucursal_para_escritura(usuario, {}), self.planta)
 
     def test_una_seleccion_ajena_del_cliente_se_ignora(self):
         otra = Empresa.objects.create(rut="77.333.333-3", nombre="Tercera")
@@ -207,7 +206,7 @@ class AltaDePersonalTests(BaseSinSucursales):
         perfil = PerfilUsuario.objects.get(usuario__username="nueva.jefa")
         self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.EMPRESA)
         self.assertIsNone(perfil.sucursal_id)
-        self.assertEqual(perfil.empresa_id, self.empresa.pk)
+        self.assertNotEqual(perfil.empresa_id, self.empresa.pk)
 
     def test_el_resto_nace_con_alcance_de_empresa(self):
         respuesta = self._crear(

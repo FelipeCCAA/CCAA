@@ -109,6 +109,26 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertEqual(respuesta.data[0]["version"], self.ejecucion.version)
         self.assertIn("preparacion", respuesta.data[0]["acciones_permitidas"])
 
+    def test_pendiente_control_no_ofrece_reiniciar_y_api_explica_el_rechazo(self):
+        self.ejecucion.estado = EjecucionProceso.Estado.PENDIENTE_CONTROL
+        self.ejecucion.save(update_fields=["estado"])
+
+        bandeja = self.cliente.get("/api/procesos/ejecuciones/operativas/")
+        respuesta = self.cliente.post(
+            f"/api/procesos/ejecuciones/{self.ejecucion.pk}/transicionar/",
+            {
+                "estado": EjecucionProceso.Estado.EJECUCION,
+                "version": self.ejecucion.version,
+            },
+            format="json",
+        )
+
+        self.assertEqual(bandeja.status_code, 200, bandeja.data)
+        self.assertNotIn("ejecucion", bandeja.data[0]["acciones_permitidas"])
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertEqual(respuesta.data["code"], "TRANSICION_NO_PERMITIDA")
+        self.assertIn("Pendiente de control", respuesta.data["message"])
+
     def test_resumen_operacional_cuenta_estados_y_material_liberado(self):
         self.ejecucion.estado = EjecucionProceso.Estado.EJECUCION
         self.ejecucion.save(update_fields=["estado"])
@@ -370,7 +390,6 @@ class ProcesosIndustrialesTests(TestCase):
         hallazgo = next(
             item for item in respuesta.data["productos"]
             if item["producto"] == producto.pk
-            and item["sucursal"] == self.ejecucion.sucursal_id
         )
         self.assertFalse(hallazgo["configurada"])
         self.assertGreaterEqual(respuesta.data["faltantes"], 1)

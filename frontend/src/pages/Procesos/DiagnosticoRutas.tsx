@@ -59,7 +59,7 @@ export default function DiagnosticoRutas() {
             <AlertTriangle className="h-4 w-4" /> {diagnostico.faltantes} producto(s) sin ruta activa
           </p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
-            {faltantes.map((item) => <li key={`${item.producto}-${item.sucursal}`}>{item.producto_nombre}</li>)}
+            {faltantes.map((item) => <li key={item.producto}>{item.producto_nombre}</li>)}
           </ul>
           <p className="mt-2 text-xs">Administración debe completar la ruta antes de iniciar una operación nueva.</p>
         </div>

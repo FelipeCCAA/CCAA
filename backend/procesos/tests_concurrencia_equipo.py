@@ -15,8 +15,6 @@ from .models import EjecucionProceso, EtapaProceso, Proceso
 class ConcurrenciaEquipoTests(TransactionTestCase):
     """Dos puestos no pueden reservar simultáneamente la misma máquina."""
 
-    reset_sequences = True
-
     def setUp(self):
         self.usuarios = []
         for indice in (1, 2):
@@ -76,7 +74,7 @@ class ConcurrenciaEquipoTests(TransactionTestCase):
                 )
                 return respuesta.status_code, respuesta.data
             finally:
-                close_old_connections()
+                connection.close()
 
         with ThreadPoolExecutor(max_workers=2) as ejecutor:
             resultados = list(
@@ -84,13 +82,15 @@ class ConcurrenciaEquipoTests(TransactionTestCase):
             )
 
         estados = sorted(estado for estado, _ in resultados)
-        self.assertEqual(estados, [200, 400], resultados)
+        self.assertEqual(estados, [200, 409], resultados)
         ocupada = EjecucionProceso.objects.get(
             estado=EjecucionProceso.Estado.PREPARACION
         )
-        rechazada = next(datos for estado, datos in resultados if estado == 400)
-        self.assertIn("Torre de secado concurrente", rechazada["error"])
-        self.assertIn(f"ocupado por {ocupada.codigo}", rechazada["error"])
+        rechazada = next(datos for estado, datos in resultados if estado == 409)
+        self.assertEqual(rechazada["code"], "EQUIPO_OCUPADO")
+        self.assertIn("Torre de secado concurrente", rechazada["message"])
+        self.assertIn(f"ocupado por {ocupada.codigo}", rechazada["message"])
+        self.assertIn("equipo", rechazada["details"])
         self.assertEqual(
             EjecucionProceso.objects.filter(
                 equipo=ocupada.equipo,

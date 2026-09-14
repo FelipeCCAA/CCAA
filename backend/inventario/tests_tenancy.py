@@ -1,13 +1,16 @@
+from decimal import Decimal
+
 from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
-from .models import Bodega, Ubicacion
+from .models import Alerta, Bodega, Existencia, Insumo, LoteInventario, Ubicacion
+from .servicios import actualizar_alertas_inventario
 
 
-class TenancyInventarioTests(TestCase):
+class CompatibilidadHistoricaInventarioTests(TestCase):
     def setUp(self):
         self.empresa = Empresa.objects.create(rut="INV-A", nombre="Empresa A")
         self.a1 = Sucursal.objects.create(empresa=self.empresa, codigo="A1", nombre="A1")
@@ -23,35 +26,70 @@ class TenancyInventarioTests(TestCase):
         self.cliente = APIClient()
         self.cliente.force_authenticate(usuario)
 
-    def test_lista_y_detalle_no_exponen_otra_sucursal(self):
+    def test_lista_y_detalle_no_usan_sucursal_como_aislamiento(self):
         respuesta = self.cliente.get("/api/inventario/bodegas/")
         ids = {fila["id"] for fila in respuesta.data["results"]}
-        self.assertEqual(ids, {self.bodega_a1.id})
+        self.assertEqual(ids, {self.bodega_a1.id, self.bodega_a2.id})
         self.assertEqual(
             self.cliente.get(f"/api/inventario/bodegas/{self.bodega_a2.id}/").status_code,
-            404,
+            200,
         )
 
-    def test_patch_ajeno_es_404(self):
+    def test_patch_no_se_bloquea_por_sucursal_historica(self):
         respuesta = self.cliente.patch(
             f"/api/inventario/bodegas/{self.bodega_a2.id}/",
-            {"nombre": "Intrusion"}, format="json",
+            {"nombre": "Bodega actualizada"}, format="json",
         )
-        self.assertEqual(respuesta.status_code, 404)
+        self.assertEqual(respuesta.status_code, 200)
 
-    def test_create_ignora_sucursal_ajena_y_usa_scope(self):
+    def test_create_no_toma_sucursal_del_perfil_como_scope(self):
         respuesta = self.cliente.post(
             "/api/inventario/bodegas/",
             {"codigo": "N", "nombre": "Nueva", "sucursal": self.a2.id},
             format="json",
         )
         self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(Bodega.objects.get(codigo="N").sucursal_id, self.a1.id)
+        self.assertNotEqual(Bodega.objects.get(codigo="N").sucursal_id, self.a2.id)
 
-    def test_no_crea_ubicacion_en_bodega_ajena(self):
+    def test_crea_ubicacion_sin_restringir_sucursal_historica(self):
         respuesta = self.cliente.post(
             "/api/inventario/ubicaciones/",
             {"bodega": self.bodega_a2.id, "codigo": "X"}, format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertFalse(Ubicacion.objects.filter(codigo="X").exists())
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertTrue(Ubicacion.objects.filter(codigo="X").exists())
+
+    def test_alerta_de_stock_suma_todas_las_ubicaciones_operacionales(self):
+        ubicacion_a1 = Ubicacion.objects.create(
+            bodega=self.bodega_a1, codigo="DISP-1", tipo=Ubicacion.Tipo.DISPONIBLE
+        )
+        ubicacion_a2 = Ubicacion.objects.create(
+            bodega=self.bodega_a2, codigo="DISP-2", tipo=Ubicacion.Tipo.DISPONIBLE
+        )
+        insumo = Insumo.objects.create(
+            empresa=self.empresa,
+            codigo="ENV-GLOBAL",
+            nombre="Envase operacional",
+            categoria=Insumo.Categoria.EMPAQUE,
+            area=PerfilUsuario.Area.ENVASE,
+            unidad=Insumo.Unidad.UN,
+            stock_minimo=Decimal("100"),
+        )
+        for indice, (sucursal, ubicacion) in enumerate(
+            ((self.a1, ubicacion_a1), (self.a2, ubicacion_a2)), start=1
+        ):
+            lote = LoteInventario.objects.create(
+                sucursal=sucursal,
+                insumo=insumo,
+                codigo=f"LOTE-{indice}",
+                estado_calidad=LoteInventario.EstadoCalidad.NO_REQUIERE,
+            )
+            Existencia.objects.create(
+                lote=lote, ubicacion=ubicacion, cantidad_fisica=Decimal("60")
+            )
+
+        actualizar_alertas_inventario()
+
+        self.assertFalse(
+            Alerta.objects.filter(insumo=insumo, tipo="stock_minimo", activa=True).exists()
+        )

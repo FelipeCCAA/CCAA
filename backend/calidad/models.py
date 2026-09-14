@@ -381,15 +381,7 @@ class RegistroEquipo(models.Model):
         ]
 
     def clean(self):
-        if self.documento_id and self.sucursal_id:
-            if self.documento.empresa_id != self.sucursal.empresa_id:
-                raise ValidationError(
-                    {"documento": "El documento debe pertenecer a la empresa de la sucursal."}
-                )
-        if self.equipo_id and self.sucursal_id and self.equipo.sucursal_id != self.sucursal_id:
-            raise ValidationError(
-                {"equipo": "El equipo debe pertenecer a la sucursal del registro."}
-            )
+        return None
 
     def __str__(self):
         donde = self.equipo or "planta"

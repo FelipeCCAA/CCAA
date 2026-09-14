@@ -110,10 +110,12 @@ function Estandarizacion() {
 
   useEffect(() => {
     const silo = Number(parametros.get("silo"));
-    if (silo > 0) {
+    if (!(silo > 0)) return;
+    const tarea = window.setTimeout(() => {
       setPreseleccion({ silo_entera: silo });
       setNuevoAbierto(true);
-    }
+    }, 0);
+    return () => window.clearTimeout(tarea);
   }, [parametros]);
 
   const ejecutar = async (

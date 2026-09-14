@@ -237,10 +237,15 @@ class AperturaTests(BaseValeLote):
             [etapa["id"] for etapa in entrada["etapas_iniciales"]],
             [evaporacion.pk],
         )
-        self.assertEqual(entrada["equipos_compatibles"], [evaporador.pk])
+        evaporadores_activos = set(
+            Equipo.objects.filter(
+                activo=True, tipo=Equipo.Tipo.EVAPORADOR
+            ).values_list("pk", flat=True)
+        )
+        self.assertEqual(set(entrada["equipos_compatibles"]), evaporadores_activos)
         self.assertEqual(
-            [equipo["id"] for equipo in respuesta.data["equipos"]],
-            [evaporador.pk],
+            {equipo["id"] for equipo in respuesta.data["equipos"]},
+            evaporadores_activos,
         )
 
     def test_un_lote_sin_ejecucion_no_puede_cerrar_trazabilidad(self):

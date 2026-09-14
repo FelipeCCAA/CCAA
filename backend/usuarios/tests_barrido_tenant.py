@@ -279,6 +279,7 @@ class NingunaEscrituraPideLaPlantaTests(TestCase):
         def llamar():
             respuesta = getattr(vista, nombre)(vista.request)
             devuelto["cuerpo"] = getattr(respuesta, "data", None)
+            devuelto["estado"] = getattr(respuesta, "status_code", 200)
 
         reproche = self._mirar(etiqueta, llamar)
 
@@ -287,7 +288,9 @@ class NingunaEscrituraPideLaPlantaTests(TestCase):
 
         texto = str(devuelto.get("cuerpo", "")).lower()
 
-        if any(señal in texto for señal in SEÑALES):
+        if devuelto.get("estado", 200) >= 400 and any(
+            señal in texto for señal in SEÑALES
+        ):
             return f"{etiqueta}: {texto[:120]}"
 
         return None

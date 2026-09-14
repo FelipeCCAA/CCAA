@@ -42,7 +42,6 @@ from .permisos_industriales import (
     queryset_permisos_industriales,
 )
 from .throttling import LoginIPThrottle, LoginUsuarioThrottle
-from .tenancy import scope_de
 from .sesiones import (
     cerrar_sesion,
     datos_cliente,

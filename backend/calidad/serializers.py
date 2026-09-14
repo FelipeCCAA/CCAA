@@ -85,11 +85,6 @@ class RegistroCalidadSerializer(serializers.ModelSerializer):
             "observacion", getattr(self.instance, "observacion", "") or ""
         )
 
-        if lote and documento and lote.sucursal.empresa_id != documento.empresa_id:
-            raise serializers.ValidationError(
-                {"documento": "El documento y el lote deben pertenecer a la misma empresa."}
-            )
-
         if estado == RegistroCalidad.Estado.OBSERVADO and not observacion.strip():
             raise serializers.ValidationError(
                 {"observacion": "Un formulario observado debe decir qué se observó."}

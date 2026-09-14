@@ -112,7 +112,7 @@ Una vez, para dejar la planta en condiciones:
 
 ```powershell
 cd backend
-.venv\Scripts\python.exe manage.py configurar_inventario_inicial --empresa 2 --aplicar
+.venv\Scripts\python.exe manage.py configurar_inventario_inicial --aplicar
 .venv\Scripts\python.exe manage.py preparar_circuito_polvo --aplicar
 .venv\Scripts\python.exe manage.py crear_usuario_e2e
 .venv\Scripts\python.exe manage.py crear_usuarios_flujo_e2e

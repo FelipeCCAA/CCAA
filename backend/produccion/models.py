@@ -104,13 +104,8 @@ class OrdenProduccion(models.Model):
         return self.codigo
 
     def clean(self):
-        if self.producto_id and self.sucursal_id:
-            if self.producto.mandante.empresa_id != self.sucursal.empresa_id:
-                raise ValidationError({"producto": "El producto pertenece a otra empresa."})
-        if self.semana_id and self.semana.sucursal_id != self.sucursal_id:
-            raise ValidationError({"semana": "La semana pertenece a otra planta."})
-        if self.equipo_id and self.equipo.sucursal_id != self.sucursal_id:
-            raise ValidationError({"equipo": "El equipo pertenece a otra planta."})
+        # Claves históricas de persistencia: no autorizan ni aíslan trabajo.
+        return None
 
 
 class Lote(DocumentoBorradorMixin, models.Model):
@@ -306,27 +301,9 @@ class Lote(DocumentoBorradorMixin, models.Model):
     def clean(self):
         if self.lote_anterior_id and not self.motivo_corte.strip():
             raise ValidationError({"motivo_corte": "Un corte sin motivo no se puede auditar."})
-        if (
-            self.sucursal_id
-            and self.producto_id
-            and self.producto.mandante.empresa_id != self.sucursal.empresa_id
-        ):
-            raise ValidationError(
-                {"producto": "El producto y la sucursal deben pertenecer a la misma empresa."}
-            )
         if self.orden_id:
-            if self.orden.sucursal_id != self.sucursal_id:
-                raise ValidationError({"orden": "La orden pertenece a otra planta."})
             if self.orden.producto_id != self.producto_id:
                 raise ValidationError({"orden": "La orden corresponde a otro producto."})
-        if (
-            self.sucursal_id
-            and self.equipo_id
-            and self.equipo.sucursal_id != self.sucursal_id
-        ):
-            raise ValidationError(
-                {"equipo": "La máquina debe pertenecer a la sucursal del lote."}
-            )
         if (
             self.hora_inicio is not None
             and self.hora_termino is not None
@@ -511,10 +488,6 @@ class ControlProceso(models.Model):
         return f"Control {self.equipo} · {self.lote.codigo_lote} · {self.fecha}"
 
     def clean(self):
-        if self.lote_id and self.equipo_id and self.lote.sucursal_id != self.equipo.sucursal_id:
-            raise ValidationError(
-                {"equipo": "El equipo debe pertenecer a la sucursal del lote."}
-            )
         if (
             self.hora_inicio_produccion is not None
             and self.hora_termino_produccion is not None
@@ -632,8 +605,6 @@ class RegistroEnvase(models.Model):
                 "lote": "Envasado solo recibe productos finales; el intermedio debe continuar su proceso."
             })
         if self.equipo_id and self.lote_id:
-            if self.equipo.sucursal_id != self.lote.sucursal_id:
-                raise ValidationError({"equipo": "La envasadora pertenece a otra planta."})
             if self.equipo.tipo not in {
                 self.equipo.Tipo.ENVASADORA, self.equipo.Tipo.LINEA,
             }:

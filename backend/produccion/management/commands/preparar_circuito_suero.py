@@ -26,7 +26,8 @@ from maestros.models import (
 )
 from procesos.models import EtapaProceso, Proceso, RutaProducto
 from produccion.models import OrdenProduccion
-from usuarios.models import PerfilUsuario, Sucursal
+from usuarios.models import PerfilUsuario
+from usuarios.tenancy import unica_sucursal_activa
 
 
 class Command(BaseCommand):
@@ -52,12 +53,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"Simulación: {mensaje} Usa --aplicar."))
 
     def _preparar(self):
-        planta = Sucursal.objects.filter(activa=True).select_related("empresa").order_by("id").first()
+        # Clave histórica de persistencia; no es selector ni dimensión funcional.
+        planta = unica_sucursal_activa(None)
         if planta is None:
             raise CommandError("No existe una planta activa.")
         usuario = User.objects.filter(
-            username="e2e_inventario", perfil__sucursal=planta,
-            perfil__area=PerfilUsuario.Area.BODEGA,
+            username="e2e_inventario", perfil__area=PerfilUsuario.Area.BODEGA,
         ).first()
         if usuario is None:
             raise CommandError("Ejecuta primero manage.py crear_usuarios_flujo_e2e.")

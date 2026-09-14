@@ -253,14 +253,6 @@ class RecepcionSerializer(serializers.ModelSerializer):
         return controles
 
     def validate(self, datos):
-        sucursal = getattr(self.instance, "sucursal", None)
-
-        vehiculo = datos.get("vehiculo", getattr(self.instance, "vehiculo", None))
-        if sucursal and vehiculo and sucursal.pk != vehiculo.sucursal_id:
-            raise serializers.ValidationError(
-                {"vehiculo": "El vehículo debe pertenecer a la organización."}
-            )
-
         estado = datos.get("estado", getattr(self.instance, "estado", None))
         motivo = datos.get("motivo", getattr(self.instance, "motivo", "") or "")
 

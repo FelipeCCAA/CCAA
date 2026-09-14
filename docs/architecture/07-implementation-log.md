@@ -1201,3 +1201,79 @@ contratos funcionales.
 ### Siguiente bloque
 
 No hay siguiente bloque: Fase 9/9 y el roadmap aprobado quedan cerrados.
+
+## Estabilización integral posterior al roadmap — 2026-09-14
+
+Se completó la campaña solicitada de reset seguro, estado QA reproducible,
+corrección de errores de Calidad/transiciones y recorridos integrales desde
+datos operacionales vacíos. El resultado detallado, inventario de endpoints,
+bugs, matriz de equipo, E2E y comandos reproducibles está en
+`docs/architecture/08-stabilization-report.md`.
+
+La campaña no crea una fase ni altera el roadmap cerrado. Su siguiente paso es
+operación/QA continua sobre la base estabilizada.
+
+> “CCAA no utiliza Empresa ni Sucursal como dimensiones funcionales, de
+> permisos, aislamiento o navegación.”
+
+## Cierre residual posterior a estabilización — 2026-09-14
+
+### Implementado
+
+- Se eliminaron filtros directos por Empresa/Sucursal que aún intervenían en
+  el contraste semanal, los maestros de planificación y el stock de seguridad.
+- La selección de rutas y etapas productivas quedó basada en producto,
+  proceso, prioridad y estado activo; la sucursal histórica ya no dirige la
+  navegación.
+- Calidad evalúa todos los documentos aplicables por familia/evidencia, sin
+  aislar el expediente por la empresa histórica del lote.
+- Inventario calcula alertas con el saldo operacional completo del insumo y
+  Envasado calcula materiales disponibles desde las existencias físicas
+  reales, sin agrupar por sucursal.
+- Recepción dejó de impedir la relación con un vehículo por diferencias entre
+  claves históricas.
+- Se añadieron regresiones específicas para planificación, rutas, Calidad e
+  Inventario.
+
+### Archivos principales
+
+- `backend/planificacion/views.py`
+- `backend/procesos/servicios.py`
+- `backend/calidad/views.py`
+- `backend/inventario/servicios.py`
+- `backend/produccion/views.py`
+- `backend/recepcion/serializers.py`
+- `backend/planificacion/tests_contraste.py`
+- `backend/procesos/tests_rutas.py`
+- `backend/inventario/tests_tenancy.py`
+- `backend/produccion/tests_tenancy.py`
+- `docs/architecture/08-stabilization-report.md`
+
+### Pruebas ejecutadas
+
+- Regresiones dirigidas: 35/35 correctas.
+- Suite integral backend: 1.417 correctas, 5 omitidas, 0 fallos.
+- Ruff focal, `manage.py check` y `makemigrations --check --dry-run`: correctos.
+
+### Problemas encontrados
+
+- El adaptador de tenancy ya era un no-op, pero había consultas directas que lo
+  evitaban y todavía recortaban resultados por claves históricas.
+- Dos selectores auxiliares de rutas seguían usando sucursal aunque el listado
+  inicial ya había sido corregido.
+
+### Decisiones tomadas
+
+- Se conservaron campos, firmas y relaciones obligatorias únicamente como
+  compatibilidad de persistencia; eliminarlos ahora implicaría una migración
+  destructiva sin beneficio funcional.
+- Las ubicaciones físicas, productos, etapas, fechas, áreas, permisos y
+  relaciones de trabajo son las fuentes funcionales de verdad.
+
+### Siguiente bloque
+
+No hay un bloque pendiente del roadmap: Fase 9/9 continúa cerrada. El siguiente
+paso es QA/operación continua y corrección de incidencias reales si aparecen.
+
+> “CCAA no utiliza Empresa ni Sucursal como dimensiones funcionales, de
+> permisos, aislamiento o navegación.”

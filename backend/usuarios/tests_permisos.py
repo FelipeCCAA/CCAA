@@ -69,7 +69,7 @@ class LecturaPorResponsabilidadTests(BasePermisos):
     LECTURAS = {
         Rol.ADMIN: set(RUTAS),
         Rol.CALIDAD: set(RUTAS),
-        Rol.PRODUCCION: set(RUTAS[:3]),
+        Rol.PRODUCCION: set(RUTAS),
         Rol.RECEPCION: {RUTAS[2]},
         Rol.OPERARIO: {RUTAS[2]},
         Rol.LECTURA: {RUTAS[2]},

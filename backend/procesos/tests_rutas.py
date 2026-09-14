@@ -6,6 +6,7 @@ from maestros.models import Mandante, Producto
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import EtapaProceso, Proceso, RutaProducto
+from .servicios import etapa_para_producto, etapas_iniciales_para_producto, ruta_para_etapa
 
 
 class RutasProductoTests(TestCase):
@@ -47,7 +48,7 @@ class RutasProductoTests(TestCase):
         self.assertEqual(respuesta.status_code, 201)
         self.assertEqual(respuesta.json()["producto_nombre"], "Producto ruteable")
         self.assertEqual(len(respuesta.json()["etapas"]), 2)
-        self.assertEqual(RutaProducto.objects.get().sucursal, self.planta)
+        self.assertEqual(RutaProducto.objects.get().producto, self.producto)
 
     def test_catalogo_de_procesos_expone_la_secuencia_para_el_formulario(self):
         respuesta = self.cliente.get("/api/procesos/procesos/")
@@ -62,7 +63,7 @@ class RutasProductoTests(TestCase):
             [(EtapaProceso.Tipo.CONDENSACION, 1), (EtapaProceso.Tipo.SECADO, 2)],
         )
 
-    def test_no_acepta_producto_de_otra_empresa(self):
+    def test_empresa_historica_del_producto_no_limita_la_ruta(self):
         otra = Empresa.objects.create(rut="RUTA-2", nombre="Otra")
         mandante = Mandante.objects.create(
             empresa=otra, nombre="Mandante ajeno", codigo_cliente="ma"
@@ -75,7 +76,43 @@ class RutasProductoTests(TestCase):
             format="json",
         )
 
-        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.data["producto"], ajeno.pk)
+
+    def test_sucursal_historica_no_selecciona_la_navegacion_productiva(self):
+        otra_empresa = Empresa.objects.create(rut="RUTA-3", nombre="Histórica")
+        otra_planta = Sucursal.objects.create(
+            empresa=otra_empresa, codigo="HIST", nombre="Registro histórico"
+        )
+        ruta = RutaProducto.objects.create(
+            producto=self.producto,
+            proceso=self.proceso,
+            sucursal=self.planta,
+            prioridad=1,
+        )
+        condensacion = EtapaProceso.objects.get(
+            proceso=self.proceso, tipo=EtapaProceso.Tipo.CONDENSACION
+        )
+
+        iniciales = etapas_iniciales_para_producto(
+            producto=self.producto, sucursal=otra_planta
+        )
+
+        self.assertEqual(iniciales, [condensacion])
+        self.assertEqual(
+            etapa_para_producto(
+                producto=self.producto,
+                sucursal=otra_planta,
+                tipo=EtapaProceso.Tipo.CONDENSACION,
+            ),
+            condensacion,
+        )
+        self.assertEqual(
+            ruta_para_etapa(
+                producto=self.producto, sucursal=otra_planta, etapa=condensacion
+            ),
+            ruta,
+        )
 
     def test_produccion_consulta_pero_no_configura_rutas(self):
         operador = User.objects.create_user("operador-rutas")

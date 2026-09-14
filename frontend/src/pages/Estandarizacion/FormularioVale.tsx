@@ -172,20 +172,23 @@ function FormularioVale({
       || datos.descremada_disponible !== descremadaDisponible
       || datos.crema_disponible !== cremaDisponible
     ) {
-      setDatos((actual) => ({
-        ...actual,
-        entera_disponible: enteraDisponible,
-        descremada_disponible: descremadaDisponible,
-        crema_disponible: cremaDisponible,
-      }));
+      const tarea = window.setTimeout(() => {
+        setDatos((actual) => ({
+          ...actual,
+          entera_disponible: enteraDisponible,
+          descremada_disponible: descremadaDisponible,
+          crema_disponible: cremaDisponible,
+        }));
+      }, 0);
+      return () => window.clearTimeout(tarea);
     }
   }, [silos, datos.silo_entera, datos.silo_descremada, datos.silo_crema, datos.entera_disponible, datos.descremada_disponible, datos.crema_disponible]);
 
   useEffect(() => {
     const volumen = Number(datos.volumen);
     if (!(volumen > 0)) {
-      setSugerencias([]);
-      return;
+      const tarea = window.setTimeout(() => setSugerencias([]), 0);
+      return () => window.clearTimeout(tarea);
     }
     let vigente = true;
     const temporizador = window.setTimeout(() => {

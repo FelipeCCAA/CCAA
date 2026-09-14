@@ -342,6 +342,11 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 PROXIES_DE_CONFIANZA = int(os.environ.get("PROXIES_DE_CONFIANZA", "0"))
 
 REST_FRAMEWORK = {
+    # Las reglas del dominio usan ValidationError de Django. Si una vista no la
+    # intercepta, debe seguir siendo un rechazo operacional (400/409), nunca un
+    # error interno 500.
+    "EXCEPTION_HANDLER": "config.api_exceptions.api_exception_handler",
+
     # Los listados van paginados: el historico de produccion son ~954 lotes y
     # va a seguir creciendo. Sin esto, /lotes/ devolveria la tabla entera.
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",

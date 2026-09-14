@@ -204,8 +204,8 @@ def actualizar_en_lote_con_auditoria(objetos, campos, **opciones):
 
 
 @receiver(pre_save)
-def _antes_de_guardar(sender, instance, **kwargs):
-    if not se_audita(sender):
+def _antes_de_guardar(sender, instance, raw=False, **kwargs):
+    if raw or not se_audita(sender):
         return
 
     if instance.pk is None:
@@ -219,8 +219,8 @@ def _antes_de_guardar(sender, instance, **kwargs):
 
 
 @receiver(post_save)
-def _al_guardar(sender, instance, created, **kwargs):
-    if not se_audita(sender):
+def _al_guardar(sender, instance, created, raw=False, **kwargs):
+    if raw or not se_audita(sender):
         return
 
     antes = _PENDIENTES.pop(id(instance), None)

@@ -122,8 +122,6 @@ export interface ProcesoMaestro {
 export interface DiagnosticoRutaProductoItem {
   producto: number;
   producto_nombre: string;
-  sucursal: number;
-  sucursal_nombre: string;
   configurada: boolean;
   rutas: {
     id: number;

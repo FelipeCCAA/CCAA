@@ -1,3 +1,4 @@
+from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 import uuid
 
@@ -300,9 +301,7 @@ def crear_descremacion_guiada(
     if len(destinos) != 2:
         raise ValidationError("Selecciona los dos estanques de destino.")
     try:
-        equipo = Equipo.objects.get(
-            pk=equipo_id, sucursal_id=origen.sucursal_id, activo=True
-        )
+        equipo = Equipo.objects.get(pk=equipo_id, activo=True)
     except Equipo.DoesNotExist as error:
         raise ValidationError({"equipo": "El equipo no esta activo en la planta de origen."}) from error
     if equipo.tipo not in tipos_equipo_para_etapa(etapa.tipo):
@@ -330,14 +329,13 @@ def crear_descremacion_guiada(
         ruta.pk: ruta
         for ruta in RutaProducto.objects.select_related("proceso").filter(
             pk__in=[valor for valor in (ruta_descremada_id, ruta_crema_id) if valor],
-            sucursal=origen.sucursal,
             activa=True,
         )
     }
     if ruta_descremada_id and ruta_descremada_id not in rutas:
-        raise ValidationError({"ruta_descremada": "La ruta no esta activa en esta planta."})
+        raise ValidationError({"ruta_descremada": "La ruta no está activa."})
     if ruta_crema_id and ruta_crema_id not in rutas:
-        raise ValidationError({"ruta_crema": "La ruta no esta activa en esta planta."})
+        raise ValidationError({"ruta_crema": "La ruta no está activa."})
     for campo, destino, ruta_id in (
         ("ruta_descremada", destino_descremada, ruta_descremada_id),
         ("ruta_crema", destino_crema, ruta_crema_id),
@@ -485,11 +483,14 @@ def tipos_equipo_para_etapa(tipo_etapa):
 
 
 def etapa_para_producto(*, producto, sucursal, tipo):
-    """Obtiene una etapa solo desde la ruta activa del producto y la planta."""
+    """Obtiene una etapa desde la ruta activa del producto.
+
+    ``sucursal`` se conserva en la firma por compatibilidad con llamadores
+    históricos, pero no participa en la navegación productiva.
+    """
     return (
         EtapaProceso.objects.filter(
             proceso__rutas_producto__producto=producto,
-            proceso__rutas_producto__sucursal=sucursal,
             proceso__rutas_producto__activa=True,
             proceso__activo=True,
             tipo=tipo,
@@ -501,11 +502,13 @@ def etapa_para_producto(*, producto, sucursal, tipo):
 
 
 def ruta_para_etapa(*, producto, sucursal, etapa):
-    """Devuelve la ruta exacta que contiene la etapa, sin inferir por nombre."""
+    """Devuelve la ruta del producto que contiene la etapa.
+
+    ``sucursal`` es un argumento legado y no selecciona la ruta funcional.
+    """
     return (
         RutaProducto.objects.filter(
             producto=producto,
-            sucursal=sucursal,
             proceso=etapa.proceso,
             activa=True,
             proceso__activo=True,
@@ -525,7 +528,7 @@ def siguiente_etapa_para_salida(*, salida, etapas_por_proceso=None):
     origen = salida.ejecucion.etapa
     ruta = salida.ruta_producto
     if ruta is not None and (
-        not ruta.activa or ruta.sucursal_id != salida.ejecucion.sucursal_id
+        not ruta.activa
         or (salida.producto_id and ruta.producto_id != salida.producto_id)
     ):
         return None
@@ -598,10 +601,13 @@ def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=Non
     if not pares:
         return {}
 
+    pares_por_producto = defaultdict(list)
+    for par in pares:
+        pares_por_producto[par[0]].append(par)
+
     rutas = (
         RutaProducto.objects.filter(
             producto_id__in={par[0] for par in pares},
-            sucursal_id__in={par[1] for par in pares},
             activa=True,
             proceso__activo=True,
         )
@@ -611,13 +617,11 @@ def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=Non
             queryset=EtapaProceso.objects.order_by("orden", "pk"),
             to_attr="etapas_para_inicio",
         ))
-        .order_by("producto_id", "sucursal_id", "prioridad", "pk")
+        .order_by("producto_id", "prioridad", "pk")
     )
     resultado = {par: [] for par in pares}
+    etapas_vistas = {par: set() for par in pares}
     for ruta in rutas:
-        par = (ruta.producto_id, ruta.sucursal_id)
-        if par not in resultado:
-            continue
         etapas = ruta.proceso.etapas_para_inicio
         orden_previo = None
         if etapa_previa_tipo is not None:
@@ -635,7 +639,10 @@ def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=Non
             None,
         )
         if inicial is not None:
-            resultado[par].append(inicial)
+            for par in pares_por_producto[ruta.producto_id]:
+                if inicial.pk not in etapas_vistas[par]:
+                    resultado[par].append(inicial)
+                    etapas_vistas[par].add(inicial.pk)
     return resultado
 
 
@@ -670,7 +677,7 @@ def exigir_etapa_inicial_para_producto(
     else:
         detalle = (
             f"{producto.nombre} no tiene una ruta activa con una etapa inicial "
-            f"disponible en {sucursal.nombre}. Configura la ruta antes de continuar."
+            "disponible. Configura la ruta antes de continuar."
         )
     raise ValidationError({"ruta_producto": detalle})
 
@@ -735,8 +742,6 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
     if entrada is None:
         raise ValidationError({"lote": "La ejecución no tiene una entrada trazable en litros."})
     destino = Silo.objects.select_for_update().get(pk=silo_destino_id)
-    if destino.sucursal_id != lote.sucursal_id:
-        raise ValidationError({"silo_destino": "El destino pertenece a otra planta."})
     corrida = CorridaCondensacion(
         ejecucion=ejecucion, orden=lote.orden, lote=lote,
         silo_origen=entrada.silo, silo_destino=destino,
@@ -771,14 +776,12 @@ def crear_mantequilla_guiada(
         raise ValidationError({"orden": "La orden no corresponde a mantequilla."})
     if orden.estado not in {OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO}:
         raise ValidationError({"orden": "La orden no está programada o en proceso."})
-    if crema.sucursal_id != orden.sucursal_id or crema.producto.familia != "crema":
-        raise ValidationError({"lote_crema": "Selecciona un lote de crema de esta planta."})
-    if equipo.sucursal_id != orden.sucursal_id or not equipo.activo:
-        raise ValidationError({"equipo": "La línea no está activa en esta planta."})
+    if crema.producto.familia != "crema":
+        raise ValidationError({"lote_crema": "Selecciona un lote de crema."})
+    if not equipo.activo:
+        raise ValidationError({"equipo": "La línea no está activa."})
     if equipo.tipo not in {Equipo.Tipo.LINEA, Equipo.Tipo.OTRO}:
         raise ValidationError({"equipo": "El equipo no corresponde a la línea de mantequilla."})
-    if suero and suero.sucursal_id != orden.sucursal_id:
-        raise ValidationError({"lote_suero": "El lote de suero pertenece a otra planta."})
     etapa = etapa_para_producto(
         producto=orden.producto, sucursal=orden.sucursal,
         tipo=EtapaProceso.Tipo.MANTEQUILLA,
@@ -2161,8 +2164,6 @@ def crear_secado_desde_inventario(
         OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
     }:
         raise ValidationError({"orden": "La orden no esta programada o en proceso."})
-    if existencia.lote.sucursal_id != orden.sucursal_id or equipo.sucursal_id != orden.sucursal_id:
-        raise ValidationError("La orden, el material y la torre deben pertenecer a la misma planta.")
     if existencia.lote.insumo.categoria != Insumo.Categoria.MATERIA_PRIMA:
         raise ValidationError({"existencia": "Selecciona un lote clasificado como materia prima."})
     if existencia.lote.insumo.unidad != Insumo.Unidad.KG:

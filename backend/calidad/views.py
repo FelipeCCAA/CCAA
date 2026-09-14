@@ -269,9 +269,7 @@ def _contexto_del_lote(lote, bloquear=False):
     # consulta por monitoreo dentro del dominio.
     monitoreos = monitoreos.prefetch_related("lecturas")
 
-    documentos = list(
-        DocumentoLiberacion.objects.filter(empresa_id=lote.sucursal.empresa_id)
-    )
+    documentos = list(DocumentoLiberacion.objects.all())
 
     # Los documentos que el propio dato del sistema da por cumplidos: el PCC 1
     # lo cumple su control de proceso, no una casilla. Se calcula aquí y se
@@ -796,22 +794,64 @@ def _activar_lote_intermedio(salida, analisis):
     salida.lote.save(update_fields=["kg_producidos", "estado"])
 
 
-@api_view(["POST"])
-@permission_classes([EscribeCalidad])
-def liberar_resultado_proceso(request, salida_id):
-    """Libera una salida intermedia usando el análisis de silo o lote aplicable."""
-    from maestros.models import Silo
+def _cerrar_ejecucion_si_calidad_termino(*, salida, usuario):
+    """Cierra la operación física cuando todas sus salidas ya fueron decididas.
+
+    Rechazar describe la disposición del material, no un bloqueo mecánico del
+    equipo. Por eso nunca lleva la ejecución a ``bloqueada`` ni readquiere la
+    máquina que produjo el resultado.
+    """
     from procesos.models import (
         CorridaCondensacion,
         CorridaMantequilla,
         EjecucionProceso,
         SalidaProceso,
     )
-    from produccion.models import Analisis, OrdenProduccion
-    from procesos.servicios import (
-        notificar_handoff_salida_liberada,
-        transicionar_ejecucion,
+    from procesos.servicios import transicionar_ejecucion
+
+    resultados = SalidaProceso.objects.filter(
+        filtro_resultados_de_proceso(), ejecucion=salida.ejecucion
     )
+    faltan_decisiones = resultados.filter(
+        Q(liberacion_calidad__isnull=True)
+        | Q(liberacion_calidad__estado=LiberacionProceso.Estado.PENDIENTE)
+    ).exists()
+    if faltan_decisiones:
+        return False
+    if salida.ejecucion.estado != EjecucionProceso.Estado.PENDIENTE_CONTROL:
+        return False
+
+    transicionar_ejecucion(
+        ejecucion_id=salida.ejecucion_id,
+        estado_nuevo=EjecucionProceso.Estado.CERRADA,
+        usuario=usuario,
+        motivo="Calidad terminó de decidir todas las salidas intermedias.",
+    )
+    actualizar_queryset_con_auditoria(
+        CorridaCondensacion.objects.filter(
+            ejecucion_id=salida.ejecucion_id,
+            estado=CorridaCondensacion.Estado.PENDIENTE_CALIDAD,
+        ),
+        estado=CorridaCondensacion.Estado.CERRADA,
+    )
+    actualizar_queryset_con_auditoria(
+        CorridaMantequilla.objects.filter(
+            ejecucion_id=salida.ejecucion_id,
+            estado=CorridaMantequilla.Estado.PENDIENTE_CALIDAD,
+        ),
+        estado=CorridaMantequilla.Estado.CERRADA,
+    )
+    return True
+
+
+@api_view(["POST"])
+@permission_classes([EscribeCalidad])
+def liberar_resultado_proceso(request, salida_id):
+    """Libera una salida intermedia usando el análisis de silo o lote aplicable."""
+    from maestros.models import Silo
+    from procesos.models import CorridaCondensacion, SalidaProceso
+    from produccion.models import Analisis, OrdenProduccion
+    from procesos.servicios import notificar_handoff_salida_liberada
     from recepcion.models import AnalisisSilo
 
     with transaction.atomic():
@@ -915,38 +955,15 @@ def liberar_resultado_proceso(request, salida_id):
                 Silo.objects.filter(pk=salida.silo_id),
                 estado=Silo.Estado.DISPONIBLE,
             )
-        faltan = (
-            SalidaProceso.objects.filter(
-                filtro_resultados_de_proceso(),
-                ejecucion=salida.ejecucion,
-            )
-            .exclude(liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO)
-            .exists()
+        cerrada = _cerrar_ejecucion_si_calidad_termino(
+            salida=salida, usuario=request.user
         )
-        if (
-            not faltan
-            and salida.ejecucion.estado == EjecucionProceso.Estado.PENDIENTE_CONTROL
-        ):
-            transicionar_ejecucion(
-                ejecucion_id=salida.ejecucion_id,
-                estado_nuevo=EjecucionProceso.Estado.CERRADA,
-                usuario=request.user,
-                motivo="Todas las salidas intermedias fueron liberadas por Calidad.",
-            )
-            actualizar_queryset_con_auditoria(
-                CorridaCondensacion.objects.filter(
-                    ejecucion_id=salida.ejecucion_id,
-                    estado=CorridaCondensacion.Estado.PENDIENTE_CALIDAD,
-                ),
-                estado=CorridaCondensacion.Estado.CERRADA,
-            )
-            actualizar_queryset_con_auditoria(
-                CorridaMantequilla.objects.filter(
-                    ejecucion_id=salida.ejecucion_id,
-                    estado=CorridaMantequilla.Estado.PENDIENTE_CALIDAD,
-                ),
-                estado=CorridaMantequilla.Estado.CERRADA,
-            )
+        todas_liberadas = not SalidaProceso.objects.filter(
+            filtro_resultados_de_proceso(), ejecucion=salida.ejecucion
+        ).exclude(
+            liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO
+        ).exists()
+        if cerrada and todas_liberadas:
             if salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO:
                 corrida_final = (
                     CorridaCondensacion.objects.select_related("orden")
@@ -968,9 +985,6 @@ def liberar_resultado_proceso(request, salida_id):
 def rechazar_resultado_proceso(request, salida_id):
     """Rechaza el resultado y conserva bloqueado su silo de destino."""
     from maestros.models import Silo
-    from procesos.models import EjecucionProceso
-    from procesos.servicios import transicionar_ejecucion
-
     motivo = str(request.data.get("motivo", "")).strip()
     if not motivo:
         return Response({"motivo": "Indica el motivo del rechazo."}, status=400)
@@ -1001,17 +1015,15 @@ def rechazar_resultado_proceso(request, salida_id):
                 Silo.objects.filter(pk=salida.silo_id),
                 estado=Silo.Estado.BLOQUEADO_CALIDAD,
             )
-        if salida.ejecucion.estado not in {
-            EjecucionProceso.Estado.BLOQUEADA,
-            EjecucionProceso.Estado.CERRADA,
-        }:
-            transicionar_ejecucion(
-                ejecucion_id=salida.ejecucion_id,
-                estado_nuevo=EjecucionProceso.Estado.BLOQUEADA,
-                usuario=request.user,
-                motivo=motivo,
-            )
-    return Response({"estado": decision.estado})
+        _cerrar_ejecucion_si_calidad_termino(
+            salida=salida, usuario=request.user
+        )
+    return Response({
+        "code": "RESULTADO_RECHAZADO",
+        "message": "Calidad rechazó el material; el equipo no fue bloqueado.",
+        "details": {"salida_id": salida.pk, "ejecucion": salida.ejecucion.codigo},
+        "estado": decision.estado,
+    })
 
 
 @api_view(["GET"])

@@ -21,13 +21,20 @@ function textos(valor: unknown): string[] {
 /** Traduce respuestas DRF sin ocultar la causa operacional entregada por Django. */
 export function mensajeErrorProceso(error: unknown, respaldo: string): string {
   const datos = (error as { response?: { data?: unknown } })?.response?.data;
+  if (datos && typeof datos === "object" && "message" in datos) {
+    const mensaje = (datos as { message?: unknown }).message;
+    if (typeof mensaje === "string" && mensaje.trim()) return mensaje;
+  }
   const mensajes = textos(datos);
   return mensajes.length ? mensajes.join(" · ") : respaldo;
 }
 
 export function esErrorDeEquipo(error: unknown): boolean {
   const datos = (error as { response?: { data?: unknown } })?.response?.data;
-  if (datos && typeof datos === "object" && "equipo" in datos) return true;
+  if (datos && typeof datos === "object") {
+    if ((datos as { code?: unknown }).code === "EQUIPO_OCUPADO") return true;
+    if ("equipo" in datos) return true;
+  }
   const mensaje = textos(datos).join(" ").toLocaleLowerCase("es-CL");
   return /(equipo|máquina|linea|línea|torre|evaporador).*(ocupad|reservad)/.test(mensaje);
 }

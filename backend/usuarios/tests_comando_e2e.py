@@ -61,7 +61,7 @@ class CuentaCreada(TestCase):
 
         Empresa.objects.exclude(pk=self.empresa.pk).update(activa=False)
 
-    def test_crea_un_administrador_de_alcance_empresa(self):
+    def test_crea_un_administrador_por_rol_y_area(self):
         call_command("crear_usuario_e2e", verbosity=0)
 
         usuario = User.objects.get(username=USUARIO)
@@ -71,8 +71,7 @@ class CuentaCreada(TestCase):
         self.assertEqual(perfil.nivel, PerfilUsuario.Nivel.ADMIN)
         self.assertEqual(perfil.alcance, PerfilUsuario.Alcance.EMPRESA)
 
-        # Alcance empresa y sucursal son excluyentes (CHECK del modelo). Si esto
-        # se rompiera, el perfil dejaría de guardarse y la auditoría no entraría.
+        # Sucursal no interviene en los permisos ni en la navegación.
         self.assertIsNone(perfil.sucursal)
 
     def test_el_rol_efectivo_es_admin(self):
@@ -88,9 +87,7 @@ class CuentaCreada(TestCase):
 
     def test_no_es_superusuario(self):
         """
-        Un superusuario tendría alcance global (`scope_de`) y vería datos que
-        ningún administrador real ve: la auditoría mediría pantallas que en
-        planta nadie tiene delante.
+        Un superusuario eludiría los permisos reales por rol y área.
         """
         self.assertFalse(User.objects.filter(username=USUARIO, is_superuser=True).exists())
 
@@ -110,13 +107,14 @@ class CuentaCreada(TestCase):
         self.assertTrue(User.objects.get(username=USUARIO).check_password("segunda"))
 
 
-class SinEmpresa(TestCase):
-    """Sin empresa activa el comando se niega, en vez de dejar un perfil inválido."""
+class SinDimensionFuncionalDeEmpresa(TestCase):
+    """La cuenta QA no depende de una Empresa activa para sus permisos."""
 
-    def test_avisa_en_vez_de_crear_un_perfil_a_medias(self):
+    def test_conserva_rol_y_area_aunque_no_haya_empresa_activa(self):
         Empresa.objects.update(activa=False)
 
-        with self.assertRaises(CommandError):
-            call_command("crear_usuario_e2e", verbosity=0)
+        call_command("crear_usuario_e2e", verbosity=0)
 
-        self.assertFalse(User.objects.filter(username=USUARIO).exists())
+        perfil = User.objects.get(username=USUARIO).perfil
+        self.assertEqual(perfil.rol, Rol.ADMIN)
+        self.assertEqual(perfil.area, PerfilUsuario.Area.ADMINISTRACION)

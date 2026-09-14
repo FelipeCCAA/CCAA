@@ -24,15 +24,16 @@ from maestros.models import (
 )
 from produccion.models import Lote
 from recepcion.models import MovimientoSilo, Recepcion
-from usuarios.models import PerfilUsuario, Rol
+from usuarios.models import Empresa, PerfilUsuario, Rol
 
-from . import contraste, dominio
+from . import contraste, dominio, views
 from .models import (
     BalanceDia,
     BloquePlan,
     CategoriaConsumo,
     CodigoProduccion,
     SemanaPlan,
+    StockSeguridadPlan,
 )
 
 
@@ -104,6 +105,35 @@ class BaseContraste(TestCase):
             kg_producidos=kg,
             estado=Lote.Estado.PRODUCIDO,
         )
+
+    def test_contexto_planificador_no_se_recorta_por_empresa_historica(self):
+        empresa_historica = Empresa.objects.create(
+            rut="PLAN-HIST", nombre="Referencia histórica"
+        )
+        mandante = Mandante.objects.create(
+            empresa=empresa_historica, nombre="Mandante operacional"
+        )
+        producto = Producto.objects.create(
+            nombre="Producto operacional", mandante=mandante
+        )
+        codigo = CodigoProduccion.objects.create(
+            codigo="GLOBAL",
+            categoria=CategoriaConsumo.SECADO_CCAA,
+            rendimiento_lh=1000,
+            producto=producto,
+            mandante=mandante,
+        )
+        StockSeguridadPlan.objects.create(
+            propietario=mandante,
+            vigente_desde=date(2026, 1, 1),
+            cantidad=123,
+        )
+
+        _, codigos, _ = views._contexto(self.semana)
+        _, seguridad = views._movimientos_y_seguridad(self.semana)
+
+        self.assertIn(codigo, codigos)
+        self.assertEqual(seguridad[mandante.id], 123.0)
 
 
 class ConsumoRealTests(BaseContraste):

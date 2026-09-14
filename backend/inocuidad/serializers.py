@@ -89,10 +89,4 @@ class MonitoreoPPROSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, datos):
-        lote = datos.get("lote", getattr(self.instance, "lote", None))
-        equipo = datos.get("equipo", getattr(self.instance, "equipo", None))
-        if lote and equipo and lote.sucursal_id != equipo.sucursal_id:
-            raise serializers.ValidationError(
-                {"equipo": "El equipo debe pertenecer a la sucursal del lote."}
-            )
         return datos

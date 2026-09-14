@@ -50,8 +50,6 @@ def registrar_pallets_producidos(pallets, usuario):
     if not pallets:
         return []
     sucursal = pallets[0].envase.lote.sucursal
-    if any(p.envase.lote.sucursal_id != sucursal.id for p in pallets):
-        raise ValidationError("Todos los pallets deben pertenecer a la misma planta.")
     ubicacion = _ubicacion_control_producto(sucursal)
     existentes = set(
         ExistenciaProductoTerminado.objects.filter(
@@ -92,8 +90,6 @@ def ingresar_pallet(pallet, ubicacion, usuario, *, operacion=None):
     pallet = PalletProducto.objects.select_for_update().select_related("envase__lote__sucursal").get(pk=pallet.pk)
     ubicacion = Ubicacion.objects.select_for_update().select_related("bodega__sucursal").get(pk=ubicacion.pk)
     _validar_pallet_liberado(pallet)
-    if pallet.envase.lote.sucursal_id != ubicacion.bodega.sucursal_id:
-        raise ValidationError("El pallet y la ubicación pertenecen a plantas distintas.")
     if ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
         raise ValidationError("El destino del pallet debe ser una ubicación disponible de Bodega.")
     if pallet.estado not in {PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO}:
@@ -126,8 +122,6 @@ def transferir_pallet(existencia, destino, usuario, *, motivo="", operacion=None
     destino = Ubicacion.objects.select_for_update().select_related("bodega__sucursal").get(pk=destino.pk)
     if not existencia.activo:
         raise ValidationError("El pallet ya no tiene existencia activa.")
-    if existencia.ubicacion.bodega.sucursal_id != destino.bodega.sucursal_id:
-        raise ValidationError("La transferencia no puede cruzar plantas.")
     origen = existencia.ubicacion
     existencia.ubicacion = destino
     existencia.save(update_fields=["ubicacion", "actualizado_en"])
@@ -168,8 +162,6 @@ def autorizar_despacho(despacho, usuario):
         salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
             "ejecucion__sucursal"
         ).get(pk=detalle.salida_id)
-        if salida.ejecucion.sucursal_id != despacho.sucursal_id:
-            raise ValidationError("La salida a granel pertenece a otra planta.")
         if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
             raise ValidationError(
                 f"{salida.ejecucion.codigo} no está destinada a despacho directo."
@@ -335,10 +327,10 @@ def _actualizar_alertas_inventario_legacy():
 
 
 def actualizar_alertas_inventario():
-    """Recalcula alertas por sucursal, sin mezclar saldos entre tenants."""
+    """Recalcula alertas sobre el stock operacional completo de cada insumo."""
     from datetime import timedelta
 
-    from usuarios.models import Sucursal
+    from usuarios.tenancy import unica_sucursal_activa
     from .models import Alerta, Insumo
 
     tipos = ["stock_minimo", "punto_reposicion", "proximo_vencer", "cuarentena_atrasada"]
@@ -346,24 +338,26 @@ def actualizar_alertas_inventario():
         activa=False, resuelta_en=timezone.now()
     )
     nuevas = []
+    registro_tecnico = unica_sucursal_activa(None)
+    if registro_tecnico is None:
+        raise ValidationError("Falta la configuración técnica histórica requerida.")
     for insumo in Insumo.objects.filter(activo=True):
-        for sucursal in Sucursal.objects.filter(empresa_id=insumo.empresa_id):
-            existencias = Existencia.objects.select_related("lote").filter(
-                lote__insumo=insumo, lote__sucursal=sucursal
-            )
-            disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
-            if insumo.stock_minimo > 0 and disponible < insumo.stock_minimo:
-                nuevas.append(Alerta(
-                    sucursal=sucursal, tipo="stock_minimo",
-                    severidad=Alerta.Severidad.CRITICA, insumo=insumo,
-                    mensaje=f"Stock disponible {disponible}, bajo mínimo {insumo.stock_minimo}.",
-                ))
-            elif insumo.punto_reposicion > 0 and disponible <= insumo.punto_reposicion:
-                nuevas.append(Alerta(
-                    sucursal=sucursal, tipo="punto_reposicion",
-                    severidad=Alerta.Severidad.ADVERTENCIA, insumo=insumo,
-                    mensaje=f"Stock disponible {disponible}, alcanzó el punto de reposición {insumo.punto_reposicion}.",
-                ))
+        existencias = Existencia.objects.select_related("lote").filter(
+            lote__insumo=insumo
+        )
+        disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
+        if insumo.stock_minimo > 0 and disponible < insumo.stock_minimo:
+            nuevas.append(Alerta(
+                sucursal=registro_tecnico, tipo="stock_minimo",
+                severidad=Alerta.Severidad.CRITICA, insumo=insumo,
+                mensaje=f"Stock disponible {disponible}, bajo mínimo {insumo.stock_minimo}.",
+            ))
+        elif insumo.punto_reposicion > 0 and disponible <= insumo.punto_reposicion:
+            nuevas.append(Alerta(
+                sucursal=registro_tecnico, tipo="punto_reposicion",
+                severidad=Alerta.Severidad.ADVERTENCIA, insumo=insumo,
+                mensaje=f"Stock disponible {disponible}, alcanzó el punto de reposición {insumo.punto_reposicion}.",
+            ))
     limite = timezone.localdate() + timedelta(days=30)
     for lote in LoteInventario.objects.filter(
         activo=True, vencimiento__isnull=False, vencimiento__lte=limite
@@ -602,8 +596,6 @@ def ingresar_material_manual(*, insumo, codigo_lote, ubicacion, cantidad, usuari
         if insumo.requiere_calidad else LoteInventario.EstadoCalidad.NO_REQUIERE
     )
     sucursal = ubicacion.bodega.sucursal
-    if insumo.empresa_id != sucursal.empresa_id:
-        raise ValidationError("El material y la ubicación pertenecen a empresas distintas.")
     codigo = codigo_lote or f"SIN-LOTE-{timezone.now():%Y%m%d%H%M%S}"
     lote = LoteInventario.objects.filter(
         sucursal=sucursal, insumo=insumo, codigo=codigo, proveedor=None
@@ -1877,8 +1869,6 @@ def habilitar_rework(unidad, destino, usuario, *, operacion=None):
         raise ValidationError("Solo puede habilitarse rework aprobado pendiente de Bodega.")
     if destino.tipo != Ubicacion.Tipo.DISPONIBLE:
         raise ValidationError("El rework aprobado debe ir a una ubicación disponible.")
-    if destino.bodega.sucursal_id != unidad.autorizacion.lote.sucursal_id:
-        raise ValidationError("El rework y la ubicación pertenecen a plantas distintas.")
     origen = unidad.ubicacion
     saldo = unidad.cantidad_disponible_kg
     unidad.ubicacion = destino
@@ -1912,8 +1902,6 @@ def transferir_rework(unidad, destino, usuario, *, motivo, operacion=None):
         raise ValidationError("Solo puede trasladarse rework disponible.")
     if destino.tipo != Ubicacion.Tipo.DISPONIBLE:
         raise ValidationError("El traslado debe mantener el rework en zona disponible.")
-    if destino.bodega.sucursal_id != unidad.autorizacion.lote.sucursal_id:
-        raise ValidationError("El traslado no puede cruzar plantas.")
     origen = unidad.ubicacion
     saldo = unidad.cantidad_disponible_kg
     unidad.ubicacion = destino
@@ -1946,8 +1934,6 @@ def consumir_unidad_rework(*, unidad, ejecucion, cantidad, motivo, usuario, oper
     unidad = UnidadRework.objects.select_for_update().select_related(
         "autorizacion__lote__sucursal", "ubicacion"
     ).get(pk=unidad.pk)
-    if unidad.autorizacion.lote.sucursal_id != ejecucion.sucursal_id:
-        raise ValidationError("El rework y la ejecución pertenecen a plantas distintas.")
     if not unidad.utilizable:
         raise ValidationError("El rework no está disponible físicamente para Producción.")
     cantidad = Decimal(cantidad)

@@ -105,11 +105,6 @@ class RegistroEquipoSerializer(serializers.ModelSerializer):
                     {"fecha": "Ya existe un registro para este período."}
                 )
 
-        if equipo and documento and equipo.sucursal.empresa_id != documento.empresa_id:
-            raise serializers.ValidationError(
-                {"documento": "El documento y el equipo deben pertenecer a la misma organización."}
-            )
-
         if documento and documento.frecuencia == "segun_programa" and hasta is None:
             raise serializers.ValidationError(
                 {

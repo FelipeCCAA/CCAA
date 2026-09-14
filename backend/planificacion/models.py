@@ -345,11 +345,6 @@ class BloquePlan(models.Model):
             raise ValidationError(
                 {"codigo": "Un bloque de estado no produce: no lleva código."}
             )
-        if self.semana_id and self.equipo_id and self.semana.sucursal_id != self.equipo.sucursal_id:
-            raise ValidationError({"equipo": "El equipo debe pertenecer a la sucursal de la semana."})
-        if self.codigo_id and self.codigo.producto_id:
-            if self.codigo.producto.mandante.empresa_id != self.semana.sucursal.empresa_id:
-                raise ValidationError({"codigo": "El código debe pertenecer a la empresa de la semana."})
         if bool(self.fecha_hora_inicio) != bool(self.fecha_hora_fin):
             raise ValidationError("Inicio y término deben informarse juntos.")
         if self.fecha_hora_inicio and self.fecha_hora_fin:

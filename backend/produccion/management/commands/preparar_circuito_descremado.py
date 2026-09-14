@@ -7,7 +7,7 @@ from django.db import transaction
 from maestros.models import Equipo, Especificacion, Mandante, Producto
 from planificacion.models import CapacidadProceso
 from procesos.models import Proceso, RutaProducto
-from usuarios.models import Sucursal
+from usuarios.tenancy import unica_sucursal_activa
 
 
 FUENTE = (
@@ -20,17 +20,14 @@ class Command(BaseCommand):
     help = "Prepara maestros provisionales y trazables para operar Descremado."
 
     def add_arguments(self, parser):
-        parser.add_argument("--sucursal", type=int)
         parser.add_argument("--aplicar", action="store_true")
 
     @transaction.atomic
     def handle(self, *args, **options):
-        sucursales = Sucursal.objects.filter(activa=True).select_related("empresa")
-        if options["sucursal"]:
-            sucursales = sucursales.filter(pk=options["sucursal"])
-        if sucursales.count() != 1:
-            raise CommandError("Indica --sucursal cuando no exista una única planta activa.")
-        sucursal = sucursales.get()
+        # Clave histórica de persistencia; no es selector ni dimensión funcional.
+        sucursal = unica_sucursal_activa(None)
+        if sucursal is None:
+            raise CommandError("Falta la configuración técnica histórica requerida.")
         if not options["aplicar"]:
             self.stdout.write(
                 self.style.WARNING(
@@ -121,7 +118,6 @@ class Command(BaseCommand):
         )
 
         cremas = Producto.objects.filter(
-            mandante__empresa=sucursal.empresa,
             familia=Producto.Familia.CREMA,
             naturaleza=Producto.Naturaleza.INTERMEDIO,
             activo=True,

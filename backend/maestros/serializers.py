@@ -2,7 +2,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from usuarios.models import Empresa
-from usuarios.tenancy import scope_de, unica_empresa_activa
+from usuarios.tenancy import unica_empresa_activa
 
 from .catalogos import PARAMETROS
 from .models import (
@@ -47,24 +47,12 @@ class RecetaSerializer(serializers.ModelSerializer):
         componentes = attrs.get("componentes") or []
         if not componentes:
             raise serializers.ValidationError({"componentes": "Agrega al menos un componente."})
-        empresa_id = attrs["producto"].mandante.empresa_id
-        scope = _scope_del_contexto(self)
-        if scope is not None and not scope.es_global and scope.empresa_id != empresa_id:
-            raise serializers.ValidationError({"producto": "El producto no pertenece a tu organización."})
         for indice, componente in enumerate(componentes, start=1):
             producto = componente.get("producto")
             insumo = componente.get("insumo")
             if bool(producto) == bool(insumo):
                 raise serializers.ValidationError({
                     "componentes": f"Fila {indice}: selecciona un producto o un insumo."
-                })
-            if producto and producto.mandante.empresa_id != empresa_id:
-                raise serializers.ValidationError({
-                    "componentes": f"Fila {indice}: el producto pertenece a otra organización."
-                })
-            if insumo and insumo.empresa_id != empresa_id:
-                raise serializers.ValidationError({
-                    "componentes": f"Fila {indice}: el insumo pertenece a otra organización."
                 })
         return attrs
 
@@ -82,18 +70,12 @@ class RecetaSerializer(serializers.ModelSerializer):
 
 
 def _scope_del_contexto(serializer):
-    request = serializer.context.get("request")
-    return scope_de(getattr(request, "user", None)) if request else None
+    """Nombre legado: la configuración histórica no define alcance funcional."""
+    return None
 
 
 def _restringir_empresa(serializer, campo="empresa"):
-    scope = _scope_del_contexto(serializer)
-    queryset = Empresa.objects.filter(activa=True)
-    if scope is None:
-        queryset = queryset.none()
-    elif not scope.es_global:
-        queryset = queryset.filter(pk=scope.empresa_id)
-    serializer.fields[campo].queryset = queryset
+    serializer.fields[campo].queryset = Empresa.objects.filter(activa=True)
 
     # Y además se resuelve, no solo se restringe. Ninguna pantalla pide la
     # empresa —CCAA es una—, así que sin esto el campo no llega a
@@ -101,28 +83,16 @@ def _restringir_empresa(serializer, campo="empresa"):
     # la restricción la acababa aplicando PostgreSQL, o sea un `IntegrityError`
     # y un error 500 donde correspondía un mensaje. Con el valor puesto, la
     # comprobación ocurre antes de escribir y en todos los entornos.
-    serializer.fields[campo].default = lambda: _empresa_del_actor(scope)
+    serializer.fields[campo].default = unica_empresa_activa
 
 
 def _empresa_del_actor(scope):
-    """La empresa en la que escribe este actor, o `None` si es ambiguo."""
-    if scope is None:
-        return None
-
-    if not scope.es_global:
-        return Empresa.objects.filter(pk=scope.empresa_id).first()
-
-    # El superusuario no está acotado a ninguna: se resuelve si hay una sola
-    # activa, y si hay varias se deja vacía para que el viewset lo diga.
+    """Compatibilidad histórica: nunca deriva la organización del actor."""
     return unica_empresa_activa()
 
 
 def _restringir_relacion_empresa(serializer, campo, queryset, lookup):
-    scope = _scope_del_contexto(serializer)
-    if scope is None:
-        queryset = queryset.none()
-    elif not scope.es_global:
-        queryset = queryset.filter(**{lookup: scope.empresa_id})
+    """Nombre legado: conserva todos los objetos del catálogo disponibles."""
     serializer.fields[campo].queryset = queryset
 
 
@@ -322,14 +292,9 @@ class FormatoEnvasadoSerializer(serializers.ModelSerializer):
         _restringir_relacion_empresa(
             self, "producto", Producto.objects.all(), "mandante__empresa_id"
         )
-        scope = _scope_del_contexto(self)
         equipos = Equipo.objects.filter(
             activo=True, tipo__in=[Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA]
         )
-        if scope is None:
-            equipos = equipos.none()
-        elif not scope.es_global:
-            equipos = equipos.filter(sucursal__empresa_id=scope.empresa_id)
         self.fields["equipos"].queryset = equipos
 
     def validate(self, attrs):
@@ -344,7 +309,6 @@ class FormatoEnvasadoSerializer(serializers.ModelSerializer):
         incompatibles = [
             equipo.nombre for equipo in equipos
             if equipo.tipo not in {Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA}
-            or equipo.sucursal.empresa_id != producto.mandante.empresa_id
         ]
         if incompatibles:
             raise serializers.ValidationError({

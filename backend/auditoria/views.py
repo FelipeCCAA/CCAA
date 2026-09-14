@@ -7,14 +7,11 @@ cambiarlo después. Por eso es un `ReadOnlyModelViewSet` y no un
 `ModelViewSet` — no existe el endpoint que lo modifique.
 """
 
-from django.db.models import Q
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from usuarios.permisos import PuedeVerAuditoria
-from usuarios.tenancy import scope_de
-
 from .models import RegistroAuditoria
 from .registro import APPS_AUDITADAS
 from .serializers import RegistroAuditoriaSerializer
@@ -27,13 +24,6 @@ class RegistroAuditoriaViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         consulta = super().get_queryset()
-        scope = scope_de(self.request.user, requerido=True)
-        if not scope.es_global:
-            consulta = consulta.filter(empresa_id=scope.empresa_id)
-            if scope.es_sucursal:
-                consulta = consulta.filter(
-                    Q(sucursal_id=scope.sucursal_id) | Q(sucursal__isnull=True)
-                )
         parametros = self.request.query_params
 
         usuario = parametros.get("usuario")
@@ -79,14 +69,7 @@ def filtros(request):
     Se sacan de los datos y no de una lista fija: una lista fija ofrecería
     filtros que no devuelven nada y escondería los que sí.
     """
-    scope = scope_de(request.user, requerido=True)
     consulta = RegistroAuditoria.objects.all()
-    if not scope.es_global:
-        consulta = consulta.filter(empresa_id=scope.empresa_id)
-        if scope.es_sucursal:
-            consulta = consulta.filter(
-                Q(sucursal_id=scope.sucursal_id) | Q(sucursal__isnull=True)
-            )
     modelos = (
         consulta.values_list("modelo", "etiqueta_modelo")
         .distinct()

@@ -38,6 +38,24 @@ test("informa qué ejecución ocupa el equipo después de una carrera", () => {
   assert.equal(esErrorDeEquipo(error), true);
 });
 
+test("muestra limpio el contrato operacional estructurado", () => {
+  const error = {
+    response: {
+      status: 409,
+      data: {
+        code: "EQUIPO_OCUPADO",
+        message: "Evaporador 1 está ocupado por EJ-9.",
+        details: { equipo: ["Evaporador 1 está ocupado por EJ-9."] },
+      },
+    },
+  };
+  assert.equal(
+    mensajeErrorProceso(error, "No se pudo iniciar."),
+    "Evaporador 1 está ocupado por EJ-9.",
+  );
+  assert.equal(esErrorDeEquipo(error), true);
+});
+
 test("usa el mensaje de respaldo cuando no hay respuesta DRF", () => {
   assert.equal(mensajeErrorProceso(new Error("red"), "Sin conexión."), "Sin conexión.");
 });

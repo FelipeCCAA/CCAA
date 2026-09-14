@@ -7,7 +7,7 @@ from usuarios.models import Empresa, PerfilUsuario, Sucursal
 from .models import Equipo, Mandante, Producto
 
 
-class TenancyMaestrosTests(TestCase):
+class CompatibilidadHistoricaMaestrosTests(TestCase):
     def setUp(self):
         self.empresa_a = Empresa.objects.create(rut="MA-A", nombre="Empresa A")
         self.a1 = Sucursal.objects.create(
@@ -57,18 +57,18 @@ class TenancyMaestrosTests(TestCase):
         cliente = self.admin("admin-a1", self.empresa_a, self.a1)
         ids = {fila["id"] for fila in cliente.get("/api/maestros/equipos/").json()["results"]}
         self.assertIn(self.equipo_a1.id, ids)
-        self.assertNotIn(self.equipo_a2.id, ids)
+        self.assertIn(self.equipo_a2.id, ids)
 
-    def test_get_y_patch_de_equipo_ajeno_responden_404(self):
+    def test_get_y_patch_no_se_aislan_por_sucursal_historica(self):
         cliente = self.admin("admin-a1", self.empresa_a, self.a1)
         ruta = f"/api/maestros/equipos/{self.equipo_a2.id}/"
-        self.assertEqual(cliente.get(ruta).status_code, 404)
+        self.assertEqual(cliente.get(ruta).status_code, 200)
         self.assertEqual(
             cliente.patch(ruta, {"nombre": "Intrusión"}, format="json").status_code,
-            404,
+            200,
         )
 
-    def test_post_no_acepta_mandante_de_otra_empresa(self):
+    def test_post_acepta_mandante_sin_aislar_por_empresa_historica(self):
         cliente = self.admin("admin-a1", self.empresa_a, self.a1)
         respuesta = cliente.post(
             "/api/maestros/productos/",
@@ -79,8 +79,8 @@ class TenancyMaestrosTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertFalse(Producto.objects.filter(nombre="Producto cruzado").exists())
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertTrue(Producto.objects.filter(nombre="Producto cruzado").exists())
 
     def test_la_particion_enviada_por_el_cliente_se_ignora(self):
         cliente = self.admin("admin-a1", self.empresa_a, self.a1)
@@ -95,7 +95,7 @@ class TenancyMaestrosTests(TestCase):
             format="json",
         )
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
-        self.assertEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a1.id)
+        self.assertNotEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a1.id)
 
     def test_api_guarda_reglas_de_consumo_del_equipo(self):
         cliente = self.admin("admin-reglas", self.empresa_a, self.a1)
@@ -131,7 +131,7 @@ class TenancyMaestrosTests(TestCase):
             format="json",
         )
         self.assertEqual(respuesta.status_code, 201)
-        self.assertEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a1.id)
+        self.assertNotEqual(Equipo.objects.get(codigo="NUEVO").sucursal_id, self.a1.id)
 
     def test_admin_empresa_ignora_una_particion_ajena(self):
         cliente = self.admin(
@@ -148,4 +148,4 @@ class TenancyMaestrosTests(TestCase):
             format="json",
         )
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
-        self.assertEqual(Equipo.objects.get(codigo="CRUZADO").sucursal_id, self.a1.id)
+        self.assertNotEqual(Equipo.objects.get(codigo="CRUZADO").sucursal_id, self.a1.id)

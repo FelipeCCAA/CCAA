@@ -151,7 +151,9 @@ class EscribeRecepcion(PermisoPorRol):
     """Recepciones de leche y movimientos de silo. Aún sin módulo."""
 
     roles_escritura = (Rol.RECEPCION, Rol.ADMIN)
-    roles_lectura = (Rol.RECEPCION, Rol.PRODUCCION, Rol.CALIDAD, Rol.ADMIN)
+    roles_lectura = (
+        Rol.RECEPCION, Rol.PRODUCCION, Rol.CALIDAD, Rol.LECTURA, Rol.ADMIN,
+    )
     areas_lectura = (
         PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CONDENSACION,
         PerfilUsuario.Area.SECADO, PerfilUsuario.Area.CALIDAD,
@@ -228,8 +230,11 @@ class EscribeCalidad(PermisoPorRol):
     """
 
     roles_escritura = (Rol.CALIDAD, Rol.ADMIN)
-    roles_lectura = (Rol.CALIDAD, Rol.ADMIN)
-    areas_lectura = (PerfilUsuario.Area.CALIDAD,)
+    roles_lectura = (Rol.CALIDAD, Rol.PRODUCCION, Rol.ADMIN)
+    areas_lectura = (
+        PerfilUsuario.Area.CALIDAD, PerfilUsuario.Area.CONDENSACION,
+        PerfilUsuario.Area.SECADO, PerfilUsuario.Area.ENVASE,
+    )
     areas_escritura = (PerfilUsuario.Area.CALIDAD,)
     mensaje_escritura = "Solo Calidad puede autorizar la liberación de un lote."
 
@@ -293,6 +298,8 @@ class EscribeBodega(PermisoPorArea):
     areas_lectura = (
         PerfilUsuario.Area.BODEGA, PerfilUsuario.Area.COMPRAS,
         PerfilUsuario.Area.DESPACHO, PerfilUsuario.Area.CALIDAD,
+        PerfilUsuario.Area.RECEPCION, PerfilUsuario.Area.CONDENSACION,
+        PerfilUsuario.Area.SECADO, PerfilUsuario.Area.ENVASE,
     )
     message = "Solo Bodega puede mover, reservar o entregar inventario."
 

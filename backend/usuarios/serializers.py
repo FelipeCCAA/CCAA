@@ -99,10 +99,9 @@ class TrabajadorSerializer(UsuarioSerializer):
     @staticmethod
     def _completar_tenant(attrs, perfil_actual=None):
         """Completa claves históricas sin exponerlas en el contrato funcional."""
-        if attrs.get("empresa") is None:
-            empresa = getattr(perfil_actual, "empresa", None) or unica_empresa_activa()
-            if empresa is not None:
-                attrs["empresa"] = empresa
+        empresa = unica_empresa_activa()
+        if empresa is not None:
+            attrs["empresa"] = empresa
         attrs["sucursal"] = None
         attrs["alcance"] = PerfilUsuario.Alcance.EMPRESA
 
@@ -129,7 +128,7 @@ class TrabajadorSerializer(UsuarioSerializer):
         empresa = attrs.get("empresa", getattr(perfil_actual, "empresa", None))
         if empresa is None:
             raise serializers.ValidationError(
-                {"empresa": "No existe una empresa activa configurada."}
+                {"non_field_errors": "Falta la configuración técnica histórica."}
             )
         return attrs
 

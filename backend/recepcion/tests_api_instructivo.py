@@ -93,6 +93,7 @@ class RegistrarLlegadaTests(BaseAPIRecepcion):
 class DerivadosEnLaApiTests(BaseAPIRecepcion):
     def test_la_ficha_trae_los_calculos_del_formato(self):
         recepcion = Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
             litros=Decimal("5321"),
@@ -124,6 +125,7 @@ class ResumenDiarioTests(BaseAPIRecepcion):
     def test_totaliza_el_dia_como_el_pie_de_la_planilla(self):
         for litros in ("5321", "8560"):
             Recepcion.objects.create(
+                estado=Recepcion.Estado.REGISTRADA,
                 fecha=date(2026, 7, 31),
                 tipo_leche=Recepcion.TipoLeche.ENTERA,
                 procedencia=Recepcion.Procedencia.CCAA,
@@ -155,12 +157,14 @@ class ResumenDiarioTests(BaseAPIRecepcion):
         los camiones que sí tienen romana.
         """
         Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
             litros=Decimal("5000"),
             kg_romana=Decimal("5100"),
         )
         Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
             litros=Decimal("5000"),
@@ -182,11 +186,13 @@ class ResumenDiarioTests(BaseAPIRecepcion):
     def test_un_rango_totaliza_todos_los_dias_incluidos(self):
         for dia, litros in ((30, "1000"), (31, "2500")):
             Recepcion.objects.create(
+                estado=Recepcion.Estado.REGISTRADA,
                 fecha=date(2026, 7, dia),
                 tipo_leche=Recepcion.TipoLeche.ENTERA,
                 litros=Decimal(litros),
             )
         Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 8, 1),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
             litros=Decimal("9999"),
@@ -204,6 +210,7 @@ class ResumenDiarioTests(BaseAPIRecepcion):
 
     def test_el_detalle_incluye_camion_crioscopias_y_sobreestadia(self):
         recepcion = Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             hora_arribo_porteria="07:00",
             hora_termino_cip="11:30",
@@ -228,12 +235,13 @@ class ResumenDiarioTests(BaseAPIRecepcion):
         self.assertEqual(item["permanencia_horas"], 2.5)
         self.assertEqual(item["horas_a_pagar"], 2)
 
-    def test_no_mezcla_recepciones_de_otra_empresa(self):
+    def test_la_ubicacion_historica_no_oculta_recepciones(self):
         otra_empresa = Empresa.objects.create(rut="99.999.999-9", nombre="Otra")
         otra_sucursal = Sucursal.objects.create(
             empresa=otra_empresa, codigo="OTRA", nombre="Otra planta"
         )
         Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             sucursal=otra_sucursal,
             fecha=date(2026, 7, 31),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
@@ -245,10 +253,12 @@ class ResumenDiarioTests(BaseAPIRecepcion):
         )
 
         self.assertEqual(respuesta.status_code, 200)
-        self.assertEqual(respuesta.data["camiones"], 0)
+        self.assertEqual(respuesta.data["camiones"], 1)
+        self.assertEqual(respuesta.data["litros"], "9999.00")
 
     def test_exporta_csv_y_xlsx(self):
         Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             guia="G-1",
             tipo_leche=Recepcion.TipoLeche.ENTERA,
@@ -383,6 +393,7 @@ class DiferenciaRecoleccionLitrosTipoTests(BaseAPIRecepcion):
     def test_sale_como_string_no_como_numero(self):
         carga = self._crear_carga(Decimal("4900.00"))
         recepcion = Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
             litros=Decimal("5000.00"),
@@ -411,6 +422,7 @@ class PermanenciaMotivoApiTests(BaseAPIRecepcion):
 
     def test_expone_el_motivo_cuando_falta_una_marca_horaria(self):
         recepcion = Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
             litros=Decimal("5000"),
@@ -427,6 +439,7 @@ class PermanenciaMotivoApiTests(BaseAPIRecepcion):
 
     def test_vacio_cuando_si_se_pudo_calcular(self):
         recepcion = Recepcion.objects.create(
+            estado=Recepcion.Estado.REGISTRADA,
             fecha=date(2026, 7, 31),
             tipo_leche=Recepcion.TipoLeche.ENTERA,
             litros=Decimal("5000"),

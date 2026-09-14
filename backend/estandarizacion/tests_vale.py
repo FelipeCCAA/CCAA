@@ -23,10 +23,10 @@ from rest_framework.test import APIClient
 
 from maestros.models import Mandante, Producto, Silo
 from procesos.models import (
-    EjecucionProceso, EtapaProceso, Proceso, ReservaSiloProceso,
+    EjecucionProceso, EtapaProceso, Proceso, ReservaSiloProceso, RutaProducto,
 )
 from usuarios.models import PerfilUsuario, Rol
-from recepcion.models import MovimientoSilo
+from recepcion.models import AnalisisSilo, ControlInhibidores, MovimientoSilo
 
 from . import servicios
 from .models import MINUTOS_DE_AGITACION, ValeEstandarizacion
@@ -38,6 +38,9 @@ class BaseVale(TestCase):
     def setUpTestData(cls):
         cls.usuario = get_user_model().objects.create_user(
             username="operador", password="x"
+        )
+        cls.visualizador = get_user_model().objects.create_user(
+            username="visualizador-estandarizacion", password="x"
         )
         cls.mandante, _ = Mandante.objects.update_or_create(
             nombre="Mandante de prueba"
@@ -62,6 +65,22 @@ class BaseVale(TestCase):
         cls.silo_destino, _ = Silo.objects.update_or_create(
             codigo="SILO-D-TEST",
             defaults={"tipo": Silo.Tipo.SILO, "capacidad_l": 50000},
+        )
+        proceso = Proceso.objects.create(
+            codigo="estandarizacion-test", nombre="Estandarización de prueba"
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="estandarizar-test",
+            nombre="Estandarizar",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION,
+            orden=1,
+        )
+        RutaProducto.objects.create(
+            sucursal=cls.silo_destino.sucursal,
+            producto=cls.producto,
+            proceso=proceso,
+            prioridad=1,
         )
 
     def crear_vale(self, **extra):
@@ -106,9 +125,26 @@ class BaseVale(TestCase):
             ),
         ])
 
+    def analizar_origenes(self):
+        for silo in (self.silo_entera, self.silo_descremada):
+            AnalisisSilo.objects.create(
+                silo=silo,
+                tomado_en=timezone.now(),
+                grasa="4.20",
+                sng="8.80",
+                inhibidores_resultado=ControlInhibidores.Resultado.NEGATIVO,
+                metodo=ControlInhibidores.Metodo.DELVO_SP,
+                hora_lectura=timezone.localtime().time(),
+                analista=self.usuario,
+                visualizado_por=self.visualizador,
+                visualizado_en=timezone.now(),
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+            )
+
     def llevar_a_agitando(self, vale, minutos=MINUTOS_DE_AGITACION):
         """Deja el vale agitando desde hace `minutos`."""
         self.abastecer_origenes()
+        self.analizar_origenes()
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
         servicios.iniciar_agitacion(vale_id=vale.pk)
 
@@ -149,6 +185,7 @@ class AgitacionTests(BaseVale):
     def test_transferir_mueve_litros_entre_silos(self):
         vale = self.crear_vale()
         self.abastecer_origenes()
+        self.analizar_origenes()
 
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
 
@@ -257,6 +294,7 @@ class AgitacionTests(BaseVale):
     def test_sin_agitar_no_se_muestrea(self):
         vale = self.crear_vale()
         self.abastecer_origenes()
+        self.analizar_origenes()
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
 
         with self.assertRaises(ValidationError):
@@ -270,6 +308,7 @@ class AgitacionTests(BaseVale):
         """
         vale = self.crear_vale()
         self.abastecer_origenes()
+        self.analizar_origenes()
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
 
         antes = timezone.now()
@@ -597,6 +636,7 @@ class ApiTests(BaseVale):
         """
         vale = self.crear_vale()
         self.abastecer_origenes()
+        self.analizar_origenes()
         servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
 
         respuesta = self.cliente.post(

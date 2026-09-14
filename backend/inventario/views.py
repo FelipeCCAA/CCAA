@@ -20,7 +20,7 @@ from usuarios.permisos import (
 )
 from usuarios.tenancy import (
     EmpresaTenantViewSetMixin, QuerysetTenantMixin, RelacionesTenantMixin,
-    SucursalTenantViewSetMixin, filtrar_por_scope, scope_de, sucursal_para_escritura,
+    SucursalTenantViewSetMixin, filtrar_por_scope, sucursal_para_escritura,
 )
 
 from .models import (
@@ -263,9 +263,7 @@ class AccesoAseos(BasePermission):
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
-        return scope_de(request.user) is not None and (
-            request.user.is_superuser or bool(getattr(request.user, "perfil", None))
-        )
+        return request.user.is_superuser or bool(getattr(request.user, "perfil", None))
 
     def has_object_permission(self, request, view, ciclo):
         areas = _areas_aseo_del_usuario(request.user)
@@ -497,14 +495,7 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         sucursal = sucursal_para_escritura(self.request.user, serializer.validated_data, "sucursal")
-        cliente = serializer.validated_data["cliente"]
-        pallets = serializer.validated_data.get("pallets_solicitados", [])
         graneles = serializer.validated_data.get("graneles", [])
-        if cliente.empresa_id != sucursal.empresa_id:
-            raise ValidationError({"cliente": "El cliente pertenece a otra empresa."})
-        ajenos = [p.codigo for p in pallets if p.envase.lote.sucursal_id != sucursal.id]
-        if ajenos:
-            raise ValidationError({"pallet_ids": f"Hay pallets de otra planta: {', '.join(ajenos)}"})
         from procesos.models import SalidaProceso
         salidas = filtrar_por_scope(
             SalidaProceso.objects.filter(pk__in=[item.get("salida") for item in graneles]),
@@ -512,10 +503,8 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             campo_sucursal="ejecucion__sucursal_id",
             campo_empresa="ejecucion__sucursal__empresa_id",
         )
-        if salidas.count() != len(graneles) or salidas.exclude(
-            ejecucion__sucursal_id=sucursal.id
-        ).exists():
-            raise ValidationError({"graneles": "Hay salidas que no pertenecen a esta planta."})
+        if salidas.count() != len(graneles):
+            raise ValidationError({"graneles": "Hay salidas inexistentes o no disponibles."})
         serializer.save(creado_por=self.request.user, sucursal=sucursal)
 
     @action(detail=False, methods=["get"], url_path="granel-disponible")
