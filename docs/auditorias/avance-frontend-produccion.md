@@ -97,7 +97,7 @@ Cuando Django devuelve que la mantequilla sigue pendiente:
 Limitación backend detectada: el listado de lotes de Envasado no expone anticipadamente la liberación intermedia. Por eso React puede mostrar el bloqueo después de la validación del POST, pero no conocerlo preventivamente sin un campo o endpoint backend adicional.
 También detecté que Calidad devuelve para ciertas mantequillas el código/nombre de la ejecución como lote_codigo/producto_nombre, en lugar de los datos directos de salida.lote. No modifiqué Django por restricción del alcance.
 Refrescos
-- Liberar/rechazar: solamente GET /api/calidad/expedientes/?incluir_procesos=1.
+- Liberar/rechazar: solamente `GET /api/calidad/resultados-proceso/`.
 - Envasado bloqueado: actualización local, sin GET adicional.
 - Los POST invalidan la caché; Envasado obtendrá información fresca al volver a cargar.
 - Sin polling y sin recargar Producción completa.

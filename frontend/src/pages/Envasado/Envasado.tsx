@@ -12,6 +12,9 @@ const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
 export default function Envasado() {
   const [materiales, setMateriales] = useState<MaterialEnvasable[]>([]);
+  const [bloqueadosCalidad, setBloqueadosCalidad] = useState<
+    Awaited<ReturnType<typeof obtenerBandejaEnvasado>>["bloqueados_calidad"]
+  >([]);
   const [registros, setRegistros] = useState<RegistroEnvaseCreado[]>([]);
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -23,6 +26,7 @@ export default function Envasado() {
     try {
       const bandeja = await obtenerBandejaEnvasado();
       setMateriales(bandeja.materiales);
+      setBloqueadosCalidad(bandeja.bloqueados_calidad);
       setRegistros(bandeja.registros_recientes);
     } catch {
       setError("No se pudo cargar la bandeja de Envasado.");
@@ -45,6 +49,14 @@ export default function Envasado() {
     <section className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-4">
       <div><b>1. Calidad intermedia</b><br />Libera el material a granel.</div><div><b>2. Envasado</b><br />Envase selecciona lote y máquina.</div><div><b>3. Unidad logística</b><br />Pallet o Big Bag según maestro.</div><div><b>4. Calidad final</b><br />Libera antes de ingresar a Bodega.</div>
     </section>
+    {bloqueadosCalidad.length > 0 && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+      <h2 className="font-bold text-amber-950">En espera de Calidad</h2>
+      <p className="mt-1 text-xs text-amber-800">Estos lotes ya llegaron a Envase, pero el backend no permite envasarlos hasta que Calidad tome una decisión.</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">{bloqueadosCalidad.map((item) => <article key={item.salida_id} className="rounded-xl border border-amber-200 bg-white p-4">
+        <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{item.lote_codigo} · {item.producto_nombre}</p><p className="mt-1 text-xs text-slate-500">{kilos(item.cantidad)} · origen {item.origen}</p></div><span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">Calidad {item.calidad}</span></div>
+        <p className="mt-3 text-sm text-amber-900">{item.motivo_bloqueo}</p>
+      </article>)}</div>
+    </section>}
     {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
     <section className="grid items-start gap-6 lg:grid-cols-[1.15fr_.85fr]">
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">

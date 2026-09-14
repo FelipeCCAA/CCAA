@@ -24,7 +24,6 @@ export function useBorrador<T, R extends DocumentoConId>({
   const ultimaGuardada = useRef<string | null>(null);
   const idRef = useRef<number | null>(null);
   const enCurso = useRef<Promise<R> | null>(null);
-  const pendiente = useRef(false);
   const crearRef = useRef(crear);
   const actualizarRef = useRef(actualizar);
   const errorRef = useRef(alError);
@@ -43,7 +42,6 @@ export function useBorrador<T, R extends DocumentoConId>({
 
   const reiniciar = useCallback(() => {
     idRef.current = null;
-    pendiente.current = false;
     ultimaGuardada.current = null;
     setId(null);
     setEstado("sin_cambios");
@@ -57,13 +55,12 @@ export function useBorrador<T, R extends DocumentoConId>({
       return idRef.current;
     }
     if (enCurso.current) {
-      pendiente.current = true;
       await enCurso.current.catch(() => undefined);
-      if (pendiente.current) {
-        pendiente.current = false;
-        return persistir(opciones);
-      }
-      return idRef.current;
+      /* No basta con esperar la escritura que estaba en curso: mientras se
+         resolvía pudo cambiar otro campo. Se vuelve a comparar la huella y,
+         si corresponde, se persiste la versión más reciente antes de dejar
+         continuar a quien pidió guardar ahora. */
+      return persistir(opciones);
     }
 
     setEstado("guardando");
@@ -84,10 +81,6 @@ export function useBorrador<T, R extends DocumentoConId>({
       if (opciones.propagarError) throw error;
     } finally {
       enCurso.current = null;
-    }
-    if (pendiente.current) {
-      pendiente.current = false;
-      return persistir(opciones);
     }
     return idRef.current;
   }, [activo]);

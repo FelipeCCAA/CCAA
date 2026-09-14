@@ -610,10 +610,16 @@ class CorridaMantequilla(models.Model):
         "produccion.Lote", on_delete=models.PROTECT,
         related_name="corridas_como_suero_mantequilla", null=True, blank=True,
     )
+    lote_reproceso = models.ForeignKey(
+        "produccion.Lote", on_delete=models.PROTECT,
+        related_name="corridas_como_reproceso_mantequilla", null=True, blank=True,
+    )
     kg_crema = models.DecimalField(max_digits=14, decimal_places=3)
     kg_mantequilla = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
     kg_suero = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     kg_merma = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    kg_reproceso = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    motivo_reproceso = models.CharField(max_length=250, blank=True)
     controles = models.JSONField(default=dict, blank=True)
     operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     estado = models.CharField(
@@ -634,8 +640,16 @@ class CorridaMantequilla(models.Model):
         ordering = ["-id"]
         constraints = [
             models.CheckConstraint(condition=models.Q(kg_crema__gt=0), name="mantequilla_crema_positiva"),
+            models.CheckConstraint(
+                condition=models.Q(kg_mantequilla__isnull=True) | models.Q(kg_mantequilla__gt=0),
+                name="mantequilla_salida_positiva",
+            ),
             models.CheckConstraint(condition=models.Q(kg_suero__gte=0), name="mantequilla_suero_no_negativo"),
             models.CheckConstraint(condition=models.Q(kg_merma__gte=0), name="mantequilla_merma_no_negativa"),
+            models.CheckConstraint(
+                condition=models.Q(kg_reproceso__gte=0),
+                name="mantequilla_reproceso_no_negativo",
+            ),
         ]
 
     def clean(self):
@@ -650,10 +664,41 @@ class CorridaMantequilla(models.Model):
                 raise ValidationError("Los lotes deben pertenecer a la misma planta.")
         if self.kg_suero and not self.lote_suero_id:
             raise ValidationError({"lote_suero": "Identifica el lote del suero generado."})
+        if self.kg_reproceso and not self.lote_reproceso_id:
+            raise ValidationError({
+                "lote_reproceso": "El reproceso debe quedar segregado en un lote propio."
+            })
+        if self.kg_reproceso and not self.motivo_reproceso.strip():
+            raise ValidationError({
+                "motivo_reproceso": "Indica por qué este material requiere reproceso."
+            })
+        if self.lote_reproceso_id:
+            if self.lote_reproceso.sucursal_id != self.lote_mantequilla.sucursal_id:
+                raise ValidationError({
+                    "lote_reproceso": "El reproceso debe pertenecer a la misma planta."
+                })
+            if self.lote_reproceso.producto_id != self.lote_mantequilla.producto_id:
+                raise ValidationError({
+                    "lote_reproceso": "El reproceso debe conservar el producto de mantequilla."
+                })
         if self.kg_mantequilla is not None:
-            total = self.kg_mantequilla + self.kg_suero + self.kg_merma
-            if total > self.kg_crema:
-                raise ValidationError("Mantequilla, suero y merma superan la crema utilizada.")
+            if self.kg_mantequilla <= 0:
+                raise ValidationError({
+                    "kg_mantequilla": "La mantequilla producida debe ser mayor que cero."
+                })
+            total = (
+                self.kg_mantequilla + self.kg_suero
+                + self.kg_merma + self.kg_reproceso
+            )
+            diferencia = self.kg_crema - total
+            if diferencia != 0:
+                sentido = "faltan por clasificar" if diferencia > 0 else "exceden la entrada"
+                raise ValidationError({
+                    "balance": (
+                        "El cierre debe clasificar el 100% de la crema: "
+                        f"{abs(diferencia)} kg {sentido}."
+                    )
+                })
 
 
 class EjecucionProceso(models.Model):
@@ -1161,6 +1206,10 @@ class EventoProceso(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True
     )
     fecha_hora = models.DateTimeField(auto_now_add=True)
+    operacion_id = models.UUIDField(
+        null=True, blank=True, unique=True, editable=False,
+        help_text="Clave idempotente de la accion que origino el evento.",
+    )
 
     class Meta:
         ordering = ["fecha_hora"]

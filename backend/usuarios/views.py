@@ -281,18 +281,11 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
             return usuarios
 
         perfil = self.request.user.perfil
-        scope = scope_de(self.request.user, requerido=True)
         usuarios = usuarios.filter(is_superuser=False)
         if perfil.area == PerfilUsuario.Area.ADMINISTRACION:
-            usuarios = usuarios.filter(perfil__empresa_id=scope.empresa_id)
-            if scope.es_sucursal:
-                usuarios = usuarios.filter(perfil__sucursal_id=scope.sucursal_id)
             return usuarios
 
         usuarios = usuarios.filter(perfil__area=perfil.area)
-        usuarios = usuarios.filter(perfil__empresa_id=scope.empresa_id)
-        if scope.es_sucursal:
-            usuarios = usuarios.filter(perfil__sucursal_id=scope.sucursal_id)
         return usuarios
 
     def perform_create(self, serializer):
@@ -307,9 +300,6 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
         serializer.save(
             area=perfil.area,
             nivel=PerfilUsuario.Nivel.TRABAJADOR,
-            empresa=perfil.empresa,
-            sucursal=None,
-            alcance=PerfilUsuario.Alcance.EMPRESA,
         )
 
     def perform_update(self, serializer):

@@ -8,13 +8,15 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from calidad.models import LiberacionProceso
+from inventario.models import Notificacion
 from maestros.models import Equipo, Especificacion, Mandante, Producto, Silo
 from produccion.models import Analisis, Lote, OrdenProduccion
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
-    CorridaMantequilla, EjecucionProceso, EtapaProceso, Proceso, SalidaProceso,
+    AutorizacionReproceso, CorridaMantequilla, EjecucionProceso,
+    EtapaProceso, Proceso, RutaProducto, SalidaProceso,
 )
 from .servicios import (
     cerrar_mantequilla, crear_mantequilla_guiada,
@@ -56,6 +58,10 @@ class MantequillaTests(TestCase):
         etapa = EtapaProceso.objects.create(
             proceso=proceso, codigo="batir", nombre="Batido",
             tipo=EtapaProceso.Tipo.MANTEQUILLA, orden=1, requiere_calidad=True,
+        )
+        RutaProducto.objects.create(
+            sucursal=planta, producto=mantequilla, proceso=proceso,
+            destino_final=RutaProducto.DestinoFinal.ENVASADO,
         )
         ejecucion = EjecucionProceso.objects.create(
             codigo="EJ-MANT-1", etapa=etapa, sucursal=planta,
@@ -113,6 +119,71 @@ class MantequillaTests(TestCase):
         genealogia = genealogia_lote(self.corrida.lote_mantequilla_id, "atras")
         self.assertIn(self.lote_crema.pk, {n["id"] for n in genealogia["nodos"]})
 
+    def test_no_cierra_si_queda_crema_sin_clasificar(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        with self.assertRaisesMessage(ValidationError, "faltan por clasificar"):
+            cerrar_mantequilla(
+                corrida_id=self.corrida.pk, usuario=self.usuario,
+                kg_mantequilla="420", kg_suero="500", kg_merma="10",
+            )
+
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaMantequilla.Estado.EN_PROCESO)
+        self.assertEqual(self.corrida.ejecucion.salidas.count(), 0)
+        self.assertEqual(AutorizacionReproceso.objects.count(), 0)
+
+    def test_reproceso_se_segrega_en_lote_propio_y_espera_calidad(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        cerrar_mantequilla(
+            corrida_id=self.corrida.pk, usuario=self.usuario,
+            kg_mantequilla="420", kg_suero="550", kg_merma="10",
+            kg_reproceso="20", motivo_reproceso="Textura fuera de objetivo",
+        )
+
+        self.corrida.refresh_from_db()
+        self.assertIsNotNone(self.corrida.lote_reproceso_id)
+        self.assertNotEqual(
+            self.corrida.lote_reproceso_id, self.corrida.lote_mantequilla_id
+        )
+        self.assertEqual(self.corrida.lote_reproceso.kg_producidos, Decimal("20"))
+        salida = self.corrida.ejecucion.salidas.get(
+            naturaleza=SalidaProceso.Naturaleza.REPROCESO
+        )
+        self.assertEqual(salida.lote, self.corrida.lote_reproceso)
+        self.assertEqual(salida.destino, SalidaProceso.Destino.REPROCESO)
+        self.assertEqual(salida.cantidad, Decimal("20"))
+        autorizacion = self.corrida.lote_reproceso.autorizacion_reproceso
+        self.assertEqual(autorizacion.estado, AutorizacionReproceso.Estado.PENDIENTE)
+        self.assertEqual(autorizacion.cantidad_kg, Decimal("20"))
+        self.assertEqual(autorizacion.motivo, "Textura fuera de objetivo")
+        self.corrida.lote_mantequilla.refresh_from_db()
+        self.assertEqual(self.corrida.lote_mantequilla.kg_producidos, Decimal("420"))
+
+    def test_api_rechaza_cantidades_negativas_antes_del_dominio(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+        self.usuario.perfil.area = PerfilUsuario.Area.CONDENSACION
+        self.usuario.perfil.save(update_fields=["area"])
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.post(
+            f"/api/procesos/mantequillas/{self.corrida.pk}/cerrar/",
+            {
+                "kg_mantequilla": "420",
+                "kg_suero": "580",
+                "kg_merma": "-1",
+                "kg_reproceso": "1",
+                "motivo_reproceso": "Recuperable",
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("kg_merma", respuesta.data)
+        self.assertEqual(self.corrida.ejecucion.salidas.count(), 0)
+
     def test_calidad_libera_mantequilla_con_analisis_de_lote(self):
         iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
         cerrar_mantequilla(
@@ -135,6 +206,12 @@ class MantequillaTests(TestCase):
             alcance=PerfilUsuario.Alcance.SUCURSAL,
             rol=Rol.CALIDAD, area=PerfilUsuario.Area.CALIDAD,
         )
+        envase = User.objects.create_user("envase-mantequilla")
+        PerfilUsuario.objects.create(
+            usuario=envase, empresa=self.empresa, sucursal=self.planta,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+            rol=Rol.PRODUCCION, area=PerfilUsuario.Area.ENVASE,
+        )
         cliente = APIClient()
         cliente.force_authenticate(calidad)
         salida = self.corrida.ejecucion.salidas.get(
@@ -154,6 +231,12 @@ class MantequillaTests(TestCase):
         )
         self.assertEqual(salida.liberacion_calidad.analisis_lote, analisis)
         self.assertEqual(self.corrida.estado, CorridaMantequilla.Estado.CERRADA)
+        aviso = Notificacion.objects.get(
+            destinatario=envase,
+            tipo="material_liberado_para_continuar",
+        )
+        self.assertEqual(aviso.accion_url, "/envasado")
+        self.assertEqual(aviso.documento_id, salida.pk)
 
     def test_no_permite_consumir_mas_crema_que_la_disponible(self):
         self.corrida.kg_crema = Decimal("1001")

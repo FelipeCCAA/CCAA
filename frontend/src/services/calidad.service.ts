@@ -258,7 +258,6 @@ export type ResultadoProcesoCalidad = ResultadoProcesoCalidadBase & (
 
 export interface RespuestaExpedientes {
   resultados: FilaExpediente[];
-  procesos: ResultadoProcesoCalidad[];
   total: number;
   pagina: number;
   limite: number;
@@ -341,7 +340,6 @@ export async function buscarExpedientes(
     desde?: string;
     hasta?: string;
     pagina?: number;
-    incluir_procesos?: boolean;
   } = {},
 ): Promise<RespuestaExpedientes> {
 
@@ -351,7 +349,6 @@ export async function buscarExpedientes(
       desde: filtros.desde || undefined,
       hasta: filtros.hasta || undefined,
       pagina: filtros.pagina && filtros.pagina > 1 ? filtros.pagina : undefined,
-      incluir_procesos: filtros.incluir_procesos ? 1 : undefined,
     },
   });
 

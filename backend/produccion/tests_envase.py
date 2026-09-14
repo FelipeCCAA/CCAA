@@ -259,6 +259,40 @@ class EnvasePalletTests(TestCase):
         )
         decision = LiberacionProceso.objects.create(salida=salida)
 
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+        bandeja_bloqueada = cliente.get("/api/produccion/envases/bandeja/")
+
+        self.assertEqual(bandeja_bloqueada.status_code, 200, bandeja_bloqueada.data)
+        self.assertEqual(bandeja_bloqueada.data["materiales"], [])
+        self.assertEqual(len(bandeja_bloqueada.data["bloqueados_calidad"]), 1)
+        self.assertEqual(
+            bandeja_bloqueada.data["bloqueados_calidad"][0]["lote_codigo"],
+            self.lote.codigo_lote,
+        )
+        self.assertIn(
+            "pendiente de aprobación de Calidad",
+            bandeja_bloqueada.data["bloqueados_calidad"][0]["motivo_bloqueo"],
+        )
+
+        intento_api = cliente.post(
+            "/api/produccion/envases/",
+            {
+                "lote": self.lote.pk,
+                "equipo": self.envasadora.pk,
+                "formato": self.formato.pk,
+                "inicio": (timezone.now() - timedelta(hours=1)).isoformat(),
+                "termino": timezone.now().isoformat(),
+                "pallets_datos": [
+                    {"codigo": "PAL-BLOQUEADO", "unidades": 40, "kg_neto": "1000"}
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(intento_api.status_code, 400, intento_api.data)
+        self.assertIn("pendiente de aprobación", str(intento_api.data))
+        self.assertFalse(RegistroEnvase.objects.exists())
+
         with self.assertRaisesMessage(ValidationError, "pendiente de aprobación"):
             self.registrar()
 
@@ -276,6 +310,11 @@ class EnvasePalletTests(TestCase):
         decision.decidida_en = timezone.now()
         decision.full_clean()
         decision.save()
+
+        bandeja_liberada = cliente.get("/api/produccion/envases/bandeja/")
+        self.assertEqual(bandeja_liberada.status_code, 200, bandeja_liberada.data)
+        self.assertEqual(bandeja_liberada.data["bloqueados_calidad"], [])
+        self.assertEqual(len(bandeja_liberada.data["materiales"]), 1)
 
         registro = self.registrar()
         self.assertEqual(registro.lote, self.lote)

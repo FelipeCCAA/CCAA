@@ -290,14 +290,18 @@ def ejecutar_despacho(despacho, usuario):
     return despacho
 
 
-def _notificar_area(area, *, tipo, titulo, mensaje, documento_tipo, documento_id):
-    from usuarios.models import PerfilUsuario
+def _notificar_area(
+    area, *, tipo, titulo, mensaje, documento_tipo, documento_id, accion_url="",
+):
+    """Entrega trabajo a todos quienes cubren el área responsable."""
+    from usuarios.areas import perfiles_del_area
 
-    destinatarios = PerfilUsuario.objects.filter(area=area, usuario__is_active=True).values_list("usuario_id", flat=True)
+    destinatarios = perfiles_del_area(area).values_list("usuario_id", flat=True)
     Notificacion.objects.bulk_create([
         Notificacion(
             destinatario_id=usuario_id, tipo=tipo, titulo=titulo, mensaje=mensaje,
             documento_tipo=documento_tipo, documento_id=documento_id,
+            accion_url=accion_url,
         )
         for usuario_id in destinatarios
     ])
@@ -963,10 +967,12 @@ def recibir_detalle_compra(*, recepcion, detalle_orden_id, ubicacion, codigo_lot
         InspeccionMaterial.objects.create(lote=lote, plantilla=plantilla)
         from usuarios.models import PerfilUsuario
         _notificar_area(
-            PerfilUsuario.Area.CALIDAD, tipo="inspeccion_material_solicitada",
+            PerfilUsuario.Area.CALIDAD,
+            tipo="inspeccion_material_solicitada",
             titulo="Material en cuarentena",
             mensaje=f"{insumo.nombre}, lote {lote.codigo}, requiere inspección.",
             documento_tipo="inventario.LoteInventario", documento_id=lote.pk,
+            accion_url="/calidad",
         )
     actualizar_alertas_inventario()
     return detalle
@@ -1011,10 +1017,12 @@ def decidir_inspeccion(*, inspeccion_id, decision, usuario, resultados, observac
     from usuarios.models import PerfilUsuario
     for area in (PerfilUsuario.Area.BODEGA, PerfilUsuario.Area.COMPRAS):
         _notificar_area(
-            area, tipo=f"material_{decision}",
+            area,
+            tipo=f"material_{decision}",
             titulo=f"Decisión de Calidad: {inspeccion.lote.insumo.nombre}",
             mensaje=f"Lote {inspeccion.lote.codigo}: {decision}.",
             documento_tipo="inventario.InspeccionMaterial", documento_id=inspeccion.pk,
+            accion_url="/inventario",
         )
     actualizar_alertas_inventario()
     return inspeccion
@@ -1238,7 +1246,7 @@ def registrar_devolucion(*, detalle_entrega, cantidad, estado_material, motivo, 
 
 
 @transaction.atomic
-def encolar_mrp_semana(*, semana, usuario):
+def encolar_mrp_semana(*, semana, usuario, operacion_id=None):
     """
     Crea la ejecución y manda el cálculo a la cola. Devuelve la ejecución.
 
@@ -1255,20 +1263,46 @@ def encolar_mrp_semana(*, semana, usuario):
 
     from planificacion.models import SemanaPlan
 
+    from django.db import IntegrityError
+
     from .models import EjecucionMRP
     from .tareas import calcular_mrp_semana
 
     if semana.estado != SemanaPlan.Estado.PUBLICADA:
         raise ValidationError("El MRP solo puede ejecutarse sobre una semana publicada.")
 
-    ejecucion = EjecucionMRP.objects.create(
-        sucursal=semana.sucursal,
-        fecha_corte=semana.fecha_inicio,
-        horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
-        ejecutada_por=usuario,
-        parametros={"semana": semana.pk, "codigo": semana.codigo},
-        estado=EjecucionMRP.Estado.PENDIENTE,
-    )
+    operacion_id = operacion_id or uuid4()
+    existente = EjecucionMRP.objects.filter(operacion_id=operacion_id).first()
+    if existente:
+        if existente.semana_id != semana.pk:
+            raise ValidationError("La clave de operacion ya pertenece a otra semana.")
+        return existente
+
+    try:
+        # El savepoint permite resolver una carrera de unicidad sin dejar rota
+        # la transaccion exterior. La base, no el cache, es la autoridad.
+        with transaction.atomic():
+            ejecucion = EjecucionMRP.objects.create(
+                semana=semana,
+                fecha_corte=semana.fecha_inicio,
+                horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
+                ejecutada_por=usuario,
+                parametros={"semana": semana.pk, "codigo": semana.codigo},
+                estado=EjecucionMRP.Estado.PENDIENTE,
+                operacion_id=operacion_id,
+            )
+    except IntegrityError:
+        existente = EjecucionMRP.objects.filter(operacion_id=operacion_id).first()
+        if existente:
+            if existente.semana_id != semana.pk:
+                raise ValidationError("La clave de operacion ya pertenece a otra semana.")
+            return existente
+        if EjecucionMRP.objects.filter(
+            semana=semana,
+            estado__in=[EjecucionMRP.Estado.PENDIENTE, EjecucionMRP.Estado.EN_CURSO],
+        ).exists():
+            raise ValidationError("El MRP de esta semana ya se esta calculando.")
+        raise
 
     # `on_commit` y no `delay()` a secas: sin esto, con un worker real la tarea
     # puede empezar antes de que la transacción de esta petición se confirme y
@@ -1279,6 +1313,7 @@ def encolar_mrp_semana(*, semana, usuario):
     return ejecucion
 
 
+@transaction.atomic
 def ejecutar_mrp_semana(*, semana, usuario, ejecucion=None):
     """
     Explota el programa publicado sin modificar Planificación ni sus bloques.
@@ -1336,16 +1371,20 @@ def ejecutar_mrp_semana(*, semana, usuario, ejecucion=None):
 
     if ejecucion is None:
         ejecucion = EjecucionMRP.objects.create(
-            sucursal=semana.sucursal,
+            semana=semana,
             fecha_corte=semana.fecha_inicio,
             horizonte_hasta=semana.fecha_inicio + timedelta(days=6),
             ejecutada_por=usuario,
             parametros={"semana": semana.pk, "codigo": semana.codigo},
         )
 
+    # Un reintento de una ejecucion historica en curso reconstruye el conjunto
+    # dentro de la misma transaccion. Nunca conviven resultados parciales.
+    ejecucion.resultados.all().delete()
+
     for insumo_id, necesidad_bruta in bruta.items():
         existencias = Existencia.objects.select_related("lote").filter(
-            lote__insumo_id=insumo_id, lote__sucursal=semana.sucursal
+            lote__insumo_id=insumo_id
         )
         disponible = sum((e.cantidad_disponible for e in existencias), Decimal("0"))
         programadas = sum(
@@ -1353,7 +1392,6 @@ def ejecutar_mrp_semana(*, semana, usuario, ejecucion=None):
                 d.cantidad - d.cantidad_recibida
                 for d in DetalleOrdenCompra.objects.filter(
                     insumo_id=insumo_id,
-                    orden__bodega_entrega__sucursal=semana.sucursal,
                     orden__estado__in=[OrdenCompra.Estado.APROBADA, OrdenCompra.Estado.ENVIADA, OrdenCompra.Estado.PARCIAL],
                 )
             ),
@@ -1401,13 +1439,24 @@ def crear_solicitud_desde_mrp(*, ejecucion, usuario, area=None):
     después de un quiebre: si esto salió del cálculo o alguien lo agregó a
     mano.
 
-    El número lleva el id de la ejecución y `numero` es único, así que
-    ejecutar esto dos veces sobre el mismo cálculo falla en vez de duplicar la
-    compra. No es un efecto secundario afortunado: es la garantía.
+    La relación uno-a-uno con la ejecución hace idempotente la conversión: un
+    reintento devuelve la misma solicitud y nunca repite sus líneas.
     """
     from usuarios.models import PerfilUsuario
 
     from .models import DetalleSolicitudCompra, SolicitudCompra
+
+    ejecucion = type(ejecucion).objects.select_for_update().get(pk=ejecucion.pk)
+    solicitud_existente = SolicitudCompra.objects.filter(
+        ejecucion_mrp=ejecucion
+    ).first()
+    if solicitud_existente:
+        return solicitud_existente
+
+    if ejecucion.estado != ejecucion.Estado.TERMINADA:
+        raise ValidationError(
+            "La ejecución MRP debe terminar antes de generar la solicitud de compra."
+        )
 
     lineas = [r for r in ejecucion.resultados.all() if r.compra_sugerida > 0]
 
@@ -1420,8 +1469,8 @@ def crear_solicitud_desde_mrp(*, ejecucion, usuario, area=None):
     perfil = getattr(usuario, "perfil", None)
 
     solicitud = SolicitudCompra.objects.create(
-        sucursal=ejecucion.sucursal,
         numero=f"SC-MRP-{ejecucion.pk}",
+        ejecucion_mrp=ejecucion,
         area=area or (perfil.area if perfil else PerfilUsuario.Area.BODEGA),
         solicitante=usuario,
         motivo=(

@@ -1,7 +1,5 @@
 """
-Pruebas de permisos por rol.
-
-El criterio: todos leen todo, cada uno escribe en lo suyo.
+Pruebas de permisos por puesto operacional.
 
 Lo que se vigila aquí es que un rol NO pueda escribir donde no le
 corresponde. Que el camino permitido funcione importa; que el prohibido
@@ -59,12 +57,7 @@ class BasePermisos(TestCase):
         }
 
 
-class TodosLeenTodoTests(BasePermisos):
-    """
-    Que Recepción consulte los lotes de Producción no es una concesión: es
-    necesario para trabajar. Ocultar información entre áreas de la misma
-    planta genera más errores de los que evita.
-    """
+class LecturaPorResponsabilidadTests(BasePermisos):
 
     RUTAS = [
         "/api/produccion/lotes/",
@@ -73,13 +66,23 @@ class TodosLeenTodoTests(BasePermisos):
         "/api/maestros/especificaciones/",
     ]
 
-    def test_todos_los_roles_pueden_leer(self):
+    LECTURAS = {
+        Rol.ADMIN: set(RUTAS),
+        Rol.CALIDAD: set(RUTAS),
+        Rol.PRODUCCION: set(RUTAS[:3]),
+        Rol.RECEPCION: {RUTAS[2]},
+        Rol.OPERARIO: {RUTAS[2]},
+        Rol.LECTURA: {RUTAS[2]},
+    }
+
+    def test_cada_rol_lee_solo_lo_requerido_por_su_responsabilidad(self):
         for rol in Rol.values:
             cliente = self.cliente_con_rol(rol)
 
             for ruta in self.RUTAS:
                 with self.subTest(rol=rol, ruta=ruta):
-                    self.assertEqual(cliente.get(ruta).status_code, 200)
+                    esperado = 200 if ruta in self.LECTURAS[rol] else 403
+                    self.assertEqual(cliente.get(ruta).status_code, esperado)
 
 
 class EscrituraDeProduccionTests(BasePermisos):

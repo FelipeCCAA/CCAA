@@ -98,9 +98,9 @@ test("descremado separa, Calidad libera y conserva ambas rutas", async ({ page }
   await test.step("5 · Las ramas muestran su siguiente acción contractual", async () => {
     await irA(page, "/leche/silos");
     await page.getByRole("button", { name: new RegExp(tkDescremada, "i") }).first().click();
-    await expect(page.getByRole("link", { name: /Enviar a Estandarizaci[oó]n/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Enviar a Estandarizaci[oó]n/ }).first()).toBeVisible();
     await page.getByRole("button", { name: new RegExp(tkCrema, "i") }).first().click();
-    await expect(page.getByRole("link", { name: "Iniciar Mantequilla" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Iniciar Mantequilla" }).first()).toBeVisible();
   });
 
   expect(erroresJs).toHaveLength(0);
@@ -229,7 +229,7 @@ test("ramas liberadas muestran Estandarización y Mantequilla", async ({ page })
   await usarSesionArea(page, "e2e_calidad");
   await irA(page, "/leche/silos");
   await page.getByRole("button", { name: new RegExp(tkDescremada, "i") }).first().click();
-  await expect(page.getByRole("link", { name: /Enviar a Estandarizaci[oó]n/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Enviar a Estandarizaci[oó]n/ }).first()).toBeVisible();
   await page.getByRole("button", { name: new RegExp(tkCrema, "i") }).first().click();
-  await expect(page.getByRole("link", { name: "Iniciar Mantequilla" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Iniciar Mantequilla" }).first()).toBeVisible();
 });

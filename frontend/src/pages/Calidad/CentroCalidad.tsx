@@ -289,6 +289,7 @@ function CentroCalidad() {
                 motivo={motivosProceso[item.id] ?? ""}
                 rechazando={rechazoAbierto === item.id}
                 accion={accionandoProceso?.id === item.id ? accionandoProceso.tipo : null}
+                bloqueado={accionandoProceso !== null && accionandoProceso.id !== item.id}
                 puedeDecidir={puedeDecidir}
                 alElegirAnalisis={(valor) => setAnalisisElegido((actual) => ({ ...actual, [item.id]: valor }))}
                 alCambiarObservacion={(valor) => setObservacionesProceso((actual) => ({ ...actual, [item.id]: valor }))}
@@ -315,6 +316,7 @@ function CentroCalidad() {
                 motivo={motivosProceso[item.id] ?? ""}
                 rechazando={rechazoAbierto === item.id}
                 accion={accionandoProceso?.id === item.id ? accionandoProceso.tipo : null}
+                bloqueado={accionandoProceso !== null && accionandoProceso.id !== item.id}
                 puedeDecidir={puedeDecidir}
                 alElegirAnalisis={(valor) => setAnalisisElegido((actual) => ({ ...actual, [item.id]: valor }))}
                 alCambiarObservacion={() => undefined}

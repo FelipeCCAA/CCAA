@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CalendarClock, FileOutput, Play } from "lucide-react";
 
@@ -187,6 +187,7 @@ function Mrp() {
   const [corriendo, setCorriendo] = useState(false);
   const [error, setError] = useState("");
   const [reciente, setReciente] = useState<EjecucionMRP | null>(null);
+  const operacionPendiente = useRef<string | null>(null);
 
   const [solicitando, setSolicitando] = useState(false);
   const [solicitud, setSolicitud] = useState("");
@@ -231,7 +232,10 @@ function Mrp() {
     setCorriendo(true);
 
     try {
-      const encolada = await ejecutarMRPSemana(Number(semana));
+      const operacionId = operacionPendiente.current ?? crypto.randomUUID();
+      operacionPendiente.current = operacionId;
+      const encolada = await ejecutarMRPSemana(Number(semana), operacionId);
+      operacionPendiente.current = null;
 
       // Se muestra ya, en cola: sin esto la pantalla no da señal de vida
       // durante todo el cálculo y se pulsa el botón otra vez.
@@ -308,7 +312,10 @@ function Mrp() {
           <div className="flex shrink-0 gap-2">
             <select
               value={semana}
-              onChange={(e) => setSemana(e.target.value)}
+              onChange={(e) => {
+                setSemana(e.target.value);
+                operacionPendiente.current = null;
+              }}
               className={claseCampo}
             >
               <option value="">Semana publicada…</option>

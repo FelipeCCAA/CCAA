@@ -237,10 +237,32 @@ class CorridaDescremacionSerializer(serializers.ModelSerializer):
 
 
 class CierreMantequillaSerializer(serializers.Serializer):
-    kg_mantequilla = serializers.DecimalField(max_digits=14, decimal_places=3)
-    kg_suero = serializers.DecimalField(max_digits=14, decimal_places=3, required=False, default=0)
-    kg_merma = serializers.DecimalField(max_digits=14, decimal_places=3, required=False, default=0)
+    kg_mantequilla = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0.001")
+    )
+    kg_suero = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0"),
+        required=False, default=0,
+    )
+    kg_merma = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0"),
+        required=False, default=0,
+    )
+    kg_reproceso = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0"),
+        required=False, default=0,
+    )
+    motivo_reproceso = serializers.CharField(
+        max_length=250, required=False, allow_blank=True, default="",
+    )
     controles = serializers.JSONField(required=False, default=dict)
+
+    def validate(self, attrs):
+        if attrs["kg_reproceso"] > 0 and not attrs["motivo_reproceso"].strip():
+            raise serializers.ValidationError({
+                "motivo_reproceso": "Indica por qué este material requiere reproceso."
+            })
+        return attrs
 
 
 class CorridaMantequillaSerializer(serializers.ModelSerializer):
@@ -257,7 +279,8 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
         model = CorridaMantequilla
         fields = "__all__"
         read_only_fields = [
-            "estado", "kg_mantequilla", "kg_suero", "kg_merma", "controles",
+            "estado", "kg_mantequilla", "kg_suero", "kg_merma", "kg_reproceso",
+            "motivo_reproceso", "lote_reproceso", "controles",
             "iniciada_por", "iniciada_en", "finalizada_por", "finalizada_en",
         ]
 

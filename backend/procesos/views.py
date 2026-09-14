@@ -7,7 +7,7 @@ from django.db.models import Count, DecimalField, F, OuterRef, Prefetch, Q, Subq
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.response import Response
 
@@ -35,7 +35,18 @@ from .serializers import (
     IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
     RutaProductoSerializer, SugerirDescremacionSerializer,
 )
-from .permisos import OperaProcesoPorEtapa, puede_operar_tipo, tipos_operables_para
+from .consultas_planta import consultar_planta_ahora, resumen_operacional_produccion
+from .consultas_trazabilidad import (
+    construir_timeline_trazabilidad,
+    resolver_referencia_trazabilidad,
+    ubicacion_actual_lote,
+)
+from .permisos import (
+    OperaProcesoPorEtapa,
+    PuedeVerPlantaAhora,
+    puede_operar_tipo,
+    tipos_operables_para,
+)
 from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
     ConflictoVersionEjecucion,
@@ -44,6 +55,7 @@ from .servicios import (
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
     crear_secado_desde_inventario,
+    definir_destino_salida,
     diagnosticar_integridad_produccion,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     preparar_continuacion, siguiente_etapa_para_salida,
@@ -1075,19 +1087,24 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
             estado_nuevo=OuterRef("estado"),
         ).order_by("-fecha_hora")
         """Bandeja liviana: solo ejecuciones que todavía requieren operación."""
-        queryset = filtrar_por_scope(
+        queryset = (
             EjecucionProceso.objects.exclude(
                 estado__in={EjecucionProceso.Estado.CERRADA, EjecucionProceso.Estado.CANCELADA}
             ).annotate(
                 motivo_estado=Subquery(ultimo_cambio.values("motivo")[:1]),
                 cambio_estado_en=Subquery(ultimo_cambio.values("fecha_hora")[:1]),
             ).select_related("etapa", "equipo").prefetch_related(
-                "entradas__silo", "entradas__lote", "entradas__lote_inventario",
-                "salidas__silo", "salidas__lote"
-            ),
-            request.user,
-            campo_sucursal="sucursal_id",
-            campo_empresa="sucursal__empresa_id",
+                Prefetch(
+                    "entradas",
+                    queryset=EntradaProceso.objects.select_related(
+                        "silo", "lote", "lote_inventario"
+                    ),
+                ),
+                Prefetch(
+                    "salidas",
+                    queryset=SalidaProceso.objects.select_related("silo", "lote"),
+                ),
+            )
         )
         tipos_operables = tipos_operables_para(request.user)
         if tipos_operables is not None:
@@ -1134,80 +1151,12 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="resumen-operacional")
     def resumen_operacional(self, request):
         """Cinco indicadores de puesto sin serializar las bandejas completas."""
-        from calidad.models import LiberacionProceso
-        from inventario.models import Despacho
-
-        ejecuciones = filtrar_por_scope(
-            EjecucionProceso.objects.all(), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
         tipos_operables = tipos_operables_para(request.user)
-        if tipos_operables is not None:
-            ejecuciones = ejecuciones.filter(etapa__tipo__in=tipos_operables)
-        indicadores = ejecuciones.aggregate(
-            procesos_activos=Count(
-                "id", filter=Q(estado__in=[
-                    EjecucionProceso.Estado.PREPARACION,
-                    EjecucionProceso.Estado.EJECUCION,
-                    EjecucionProceso.Estado.PAUSADA,
-                ])
-            ),
-            esperando_calidad=Count(
-                "id", filter=Q(estado=EjecucionProceso.Estado.PENDIENTE_CONTROL)
-            ),
-            equipos_ocupados=Count(
-                "equipo_id", distinct=True,
-                filter=Q(
-                    equipo_id__isnull=False,
-                    estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
-                ),
-            ),
-            bloqueos=Count(
-                "id", filter=Q(estado=EjecucionProceso.Estado.BLOQUEADA)
-            ),
-        )
-        salidas = filtrar_por_scope(
-            SalidaProceso.objects.filter(
-                liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
-            ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA),
-            request.user,
-            campo_sucursal="ejecucion__sucursal_id",
-            campo_empresa="ejecucion__sucursal__empresa_id",
-        )
-        cero = Value(Decimal("0"))
-        decimal = DecimalField(max_digits=14, decimal_places=3)
-        continuables = salidas.filter(destino__in=[
-            SalidaProceso.Destino.PENDIENTE,
-            SalidaProceso.Destino.SIGUIENTE_PROCESO,
-            SalidaProceso.Destino.ESTANDARIZACION,
-        ]).annotate(
-            comprometido=Coalesce(Sum("usos_como_origen__cantidad"), cero, output_field=decimal)
-        ).filter(cantidad__gt=F("comprometido")).count()
-        despachables = salidas.filter(
-            destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
-        ).annotate(
-            comprometido=Coalesce(
-                Sum(
-                    "detalles_despacho_granel__cantidad",
-                    filter=Q(detalles_despacho_granel__despacho__estado__in=[
-                        Despacho.Estado.AUTORIZADO, Despacho.Estado.DESPACHADO,
-                    ]),
-                ),
-                cero,
-                output_field=decimal,
+        return Response(
+            resumen_operacional_produccion(
+                tipos_etapa=tipos_operables
             )
-        ).filter(cantidad__gt=F("comprometido")).count()
-        envasables = salidas.filter(
-            destino=SalidaProceso.Destino.ENVASADO,
-            lote__isnull=False,
-        ).annotate(
-            comprometido=Coalesce(
-                Sum("lote__registros_envase__kg_envasados"), cero,
-                output_field=decimal,
-            )
-        ).filter(cantidad__gt=F("comprometido")).count()
-        indicadores["materiales_listos"] = continuables + despachables + envasables
-        return Response(indicadores)
+        )
 
     @action(detail=True, methods=["post"])
     def transicionar(self, request, pk=None):
@@ -1443,14 +1392,7 @@ class EntradaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
         return Response(resultado)
 
 
-class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
-    tenant_lookup_sucursal = "ejecucion__sucursal_id"
-    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
-    tenant_relation_fields = {
-        "ejecucion": ("sucursal_id", "sucursal__empresa_id"),
-        "lote": ("sucursal_id", "sucursal__empresa_id"),
-        "silo": ("sucursal_id", "sucursal__empresa_id"),
-    }
+class SalidaProcesoViewSet(viewsets.ModelViewSet):
     queryset = SalidaProceso.objects.select_related("ejecucion", "lote__producto")
     serializer_class = SalidaProcesoSerializer
     permission_classes = [OperaProcesoPorEtapa]
@@ -1462,7 +1404,7 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
         from calidad.models import LiberacionProceso
         from recepcion.models import MovimientoSilo
 
-        salidas = filtrar_por_scope(
+        salidas = (
             SalidaProceso.objects.filter(
                 liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
                 silo__isnull=False,
@@ -1478,10 +1420,7 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                 "ejecucion__etapa__proceso", "ejecucion__equipo", "silo",
                 "lote__producto", "liberacion_calidad__analisis_silo",
                 "ruta_producto__proceso",
-            ).annotate(consumido=Sum("usos_como_origen__cantidad")),
-            request.user,
-            campo_sucursal="ejecucion__sucursal_id",
-            campo_empresa="ejecucion__sucursal__empresa_id",
+            ).annotate(consumido=Sum("usos_como_origen__cantidad"))
         )
         silo_id = request.query_params.get("silo")
         if silo_id:
@@ -1537,7 +1476,6 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
             if salida.ruta_producto_id else salida.ejecucion.etapa.proceso_id
             for salida in salidas
         }
-        sucursales_ids = {salida.ejecucion.sucursal_id for salida in salidas}
         etapas_por_proceso = {}
         for etapa in EtapaProceso.objects.filter(
             proceso_id__in=procesos_ids, activa=True
@@ -1545,13 +1483,10 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
             etapas_por_proceso.setdefault(etapa.proceso_id, []).append(etapa)
 
         from maestros.models import Equipo
-        equipos = Equipo.objects.filter(
-            sucursal_id__in=sucursales_ids, activo=True
-        ).order_by("orden", "nombre")
+        equipos = Equipo.objects.filter(activo=True).order_by("orden", "nombre")
         ocupaciones = {
             ejecucion.equipo_id: ejecucion.codigo
             for ejecucion in EjecucionProceso.objects.filter(
-                sucursal_id__in=sucursales_ids,
                 estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
                 equipo_id__isnull=False,
             ).only("equipo_id", "codigo")
@@ -1661,10 +1596,7 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
                                 "ocupado_por": ocupaciones.get(equipo.id),
                             }
                             for equipo in equipos
-                            if (
-                                equipo.sucursal_id == salida.ejecucion.sucursal_id
-                                and equipo.tipo in tipos_equipo_para_etapa(etapa.tipo)
-                            )
+                            if equipo.tipo in tipos_equipo_para_etapa(etapa.tipo)
                         ],
                     }
                     for etapa in etapas_siguientes(salida)
@@ -1697,32 +1629,28 @@ class SalidaProcesoViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.
 
     @action(detail=True, methods=["post"], url_path="definir-destino")
     def definir_destino(self, request, pk=None):
-        salida = self.get_object()
-        destino = request.data.get("destino", "")
-        if destino not in salida.destinos_permitidos():
-            return Response(
-                {"error": "El destino no es compatible con este producto intermedio."},
-                status=status.HTTP_400_BAD_REQUEST,
+        try:
+            salida = definir_destino_salida(
+                salida_id=self.get_object().pk,
+                destino=request.data.get("destino", ""),
+                destino_anterior=request.data.get("destino_anterior", ""),
+                operacion_id=request.data.get("operacion_id"),
+                usuario=request.user,
             )
-        if salida.usos_como_origen.exists() and destino != SalidaProceso.Destino.SIGUIENTE_PROCESO:
-            return Response(
-                {"error": "La salida ya fue consumida por otro proceso y no puede cambiar de destino."},
-                status=status.HTTP_409_CONFLICT,
-            )
-        if salida.detalles_despacho_granel.exclude(
-            despacho__estado="cancelado"
-        ).exists() and destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
-            return Response(
-                {"error": "La salida ya forma parte de un despacho y no puede cambiar de destino."},
-                status=status.HTTP_409_CONFLICT,
-            )
-        salida.destino = destino
-        salida.save(update_fields=["destino"])
+        except DjangoValidationError as error:
+            return Response({"error": error.messages[0]}, status=409)
         return Response(self.get_serializer(salida).data)
 
 
 @api_view(["GET"])
-def trazabilidad(request, lote):
+@permission_classes([PuedeVerPlantaAhora])
+def planta_ahora(request):
+    """Resumen transversal de la operación, resuelto en un único contrato."""
+    return Response(consultar_planta_ahora())
+
+
+@api_view(["GET"])
+def trazabilidad(request, lote=None, tipo=None, referencia=None):
     """
     Genealogía de un lote, hacia atrás o hacia adelante.
 
@@ -1731,53 +1659,29 @@ def trazabilidad(request, lote):
     la mano un `CCAA6212010102010201-01`, no un 47. Pedirle el id volvía la
     pantalla inservible para quien la necesita.
     """
-    from produccion.models import Lote, PalletProducto
-
     direccion = request.query_params.get("direccion", "atras")
-
-    lotes = filtrar_por_scope(
-        Lote.objects.select_related(
-            "producto", "equipo", "ejecucion",
-            "vale__silo_destino", "vale__ejecucion",
-            "liberacion__autorizada_por",
-        ), request.user,
-        campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-    )
-    if str(lote).isdigit():
-        encontrado = lotes.filter(pk=int(lote)).first()
-    else:
-        encontrado = lotes.filter(codigo_lote=lote).first()
-        if encontrado is None:
-            pallet = filtrar_por_scope(
-                PalletProducto.objects.select_related("envase__lote"), request.user,
-                campo_sucursal="envase__lote__sucursal_id",
-                campo_empresa="envase__lote__sucursal__empresa_id",
-            ).filter(codigo=lote).first()
-            # Recuperarlo desde el queryset enriquecido evita que el camino
-            # por pallet pierda los ``select_related`` que usa el flujo.
-            encontrado = (
-                lotes.filter(pk=pallet.envase.lote_id).first() if pallet else None
-            )
-
-    if encontrado is None:
+    tipo = tipo or "lote"
+    referencia = referencia or lote
+    try:
+        encontrado, foco = resolver_referencia_trazabilidad(tipo, referencia)
+    except ValueError as error:
+        return Response({"error": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+    except LookupError as error:
         return Response(
-            {"error": f"No existe un lote «{lote}»."},
+            {"error": str(error)},
             status=status.HTTP_404_NOT_FOUND,
         )
-
     try:
-        scope = scope_de(request.user, requerido=True)
-        datos = genealogia_lote(
-            encontrado.pk, direccion,
-            sucursal_id=scope.sucursal_id if scope.es_sucursal else None,
-            empresa_id=scope.empresa_id if scope.es_empresa else None,
-        )
+        datos = genealogia_lote(encontrado.pk, direccion)
     except ValueError as error:
         return Response({"error": str(error)}, status=400)
 
     return Response({
         **datos,
         "raiz": encontrado.pk,
+        "foco": foco,
+        "ubicacion_actual": ubicacion_actual_lote(encontrado),
+        "timeline": construir_timeline_trazabilidad(encontrado, datos),
         "flujo": _flujo_completo(encontrado),
     })
 

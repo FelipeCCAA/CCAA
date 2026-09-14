@@ -8,7 +8,13 @@ from rest_framework.test import APIClient
 
 from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Equipo, Mandante, Producto, Silo
-from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
+from procesos.models import (
+    EjecucionProceso,
+    EtapaProceso,
+    Proceso,
+    RutaProducto,
+    SalidaProceso,
+)
 from recepcion.models import MovimientoSilo, Recepcion
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
@@ -38,6 +44,30 @@ class FlujoIntegradoApiTests(TestCase):
         self.equipo = Equipo.objects.create(
             sucursal=self.planta, codigo="EGRON-1", nombre="Torre Egron 1",
             tipo=Equipo.Tipo.TORRE,
+        )
+        proceso = Proceso.objects.create(
+            codigo="polvo-flujo-integrado", nombre="Polvo flujo integrado"
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="estandarizacion-flujo-integrado",
+            nombre="Estandarización",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION,
+            orden=1,
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="secado-flujo-integrado",
+            nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=2,
+        )
+        RutaProducto.objects.create(
+            # Campo histórico obligatorio del esquema; no representa una
+            # dimensión funcional ni un criterio de aislamiento de esta prueba.
+            sucursal=self.planta,
+            producto=self.producto,
+            proceso=proceso,
         )
         self.vale = ValeEstandarizacion.objects.create(
             codigo="VE-100", fecha=date(2026, 8, 13), producto=self.producto,

@@ -37,6 +37,7 @@ export function esAdministradorGlobal(usuario?: Usuario | null): boolean {
 export function puedeAccederModulo(usuario: Usuario | null | undefined, modulo: ModuloSistema): boolean {
   if (!usuario) return false;
   if (esAdministradorGlobal(usuario)) return true;
+  if (modulo === "dashboard") return usuario.perfil?.nivel === "admin";
   if (modulo === "administracion") return usuario.perfil?.nivel === "admin";
   const area = usuario.perfil?.area;
   if (area) return AREAS[modulo].includes(area);

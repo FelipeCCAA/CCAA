@@ -10,6 +10,7 @@ que aparecieron en la prueba de carga.
 import logging
 
 from celery import shared_task
+from django.db import transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -24,10 +25,8 @@ def refrescar_alertas_operacionales():
 
 
 @shared_task(
-    # No se reintenta sola. El MRP escribe resultados y órdenes sugeridas: un
-    # reintento automático sobre un fallo que dejó datos a medias los duplica,
-    # y nadie mira dos veces una ejecución que figura terminada. Quien la pidió
-    # ve el motivo y decide si repetirla.
+    # `acks_late` admite redelivery: la transacción y el estado terminal hacen
+    # que repetir el mismo mensaje sea seguro y no duplique resultados.
     autoretry_for=(),
     acks_late=True,
 )
@@ -44,36 +43,49 @@ def calcular_mrp_semana(ejecucion_id):
     from .models import EjecucionMRP
     from .servicios import ejecutar_mrp_semana
 
-    ejecucion = EjecucionMRP.objects.filter(pk=ejecucion_id).first()
-
-    if ejecucion is None:
-        # La ejecución desapareció entre encolar y correr. No es un error del
-        # cálculo y reintentar no la va a resucitar.
-        logger.warning("MRP: la ejecución %s ya no existe", ejecucion_id)
-        return
-
-    ejecucion.estado = EjecucionMRP.Estado.EN_CURSO
-    ejecucion.save(update_fields=["estado"])
-
     try:
-        semana = SemanaPlan.objects.get(pk=ejecucion.parametros.get("semana"))
+        with transaction.atomic():
+            ejecucion = EjecucionMRP.objects.select_for_update().filter(
+                pk=ejecucion_id
+            ).first()
+            if ejecucion is None:
+                logger.warning("MRP: la ejecución %s ya no existe", ejecucion_id)
+                return
+            if ejecucion.estado in {
+                EjecucionMRP.Estado.TERMINADA,
+                EjecucionMRP.Estado.FALLIDA,
+            }:
+                return
 
-        ejecutar_mrp_semana(
-            semana=semana,
-            usuario=ejecucion.ejecutada_por,
-            ejecucion=ejecucion,
-        )
+            ejecucion.estado = EjecucionMRP.Estado.EN_CURSO
+            ejecucion.error = ""
+            ejecucion.save(update_fields=["estado", "error"])
+
+            # La relación directa es el contrato nuevo. El JSON se conserva
+            # solo para terminar ejecuciones históricas previas a la migración.
+            semana = ejecucion.semana
+            if semana is None:
+                semana = SemanaPlan.objects.get(
+                    pk=ejecucion.parametros.get("semana")
+                )
+
+            ejecutar_mrp_semana(
+                semana=semana,
+                usuario=ejecucion.ejecutada_por,
+                ejecucion=ejecucion,
+            )
+            ejecucion.estado = EjecucionMRP.Estado.TERMINADA
+            ejecucion.terminada_en = timezone.now()
+            ejecucion.save(update_fields=["estado", "terminada_en"])
     except Exception as error:  # noqa: BLE001 — el motivo se guarda, no se traga
         logger.exception("MRP: falló la ejecución %s", ejecucion_id)
-
-        # El motivo queda en la ejecución. Una fallida sin decir por qué obliga
-        # a repetirla para averiguarlo, y repetirla es justo lo caro.
-        ejecucion.estado = EjecucionMRP.Estado.FALLIDA
-        ejecucion.error = str(error)[:2000]
-        ejecucion.terminada_en = timezone.now()
-        ejecucion.save(update_fields=["estado", "error", "terminada_en"])
-        return
-
-    ejecucion.estado = EjecucionMRP.Estado.TERMINADA
-    ejecucion.terminada_en = timezone.now()
-    ejecucion.save(update_fields=["estado", "terminada_en"])
+        # La transacción anterior revierte también cualquier resultado parcial.
+        with transaction.atomic():
+            ejecucion = EjecucionMRP.objects.select_for_update().filter(
+                pk=ejecucion_id
+            ).first()
+            if ejecucion and ejecucion.estado != EjecucionMRP.Estado.TERMINADA:
+                ejecucion.estado = EjecucionMRP.Estado.FALLIDA
+                ejecucion.error = str(error)[:2000]
+                ejecucion.terminada_en = timezone.now()
+                ejecucion.save(update_fields=["estado", "error", "terminada_en"])

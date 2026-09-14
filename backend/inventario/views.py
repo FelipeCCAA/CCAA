@@ -1,5 +1,6 @@
 from decimal import Decimal
 from math import ceil
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, DecimalField, F, Prefetch, Q, Sum, Value
@@ -983,9 +984,11 @@ class SolicitudMaterialViewSet(SucursalTenantViewSetMixin, RelacionesTenantMixin
         from usuarios.models import PerfilUsuario
         from .servicios import _notificar_area
         _notificar_area(
-            PerfilUsuario.Area.BODEGA, tipo="mrq_enviada", titulo="Nueva solicitud de materiales",
+            PerfilUsuario.Area.BODEGA,
+            tipo="mrq_enviada", titulo="Nueva solicitud de materiales",
             mensaje=f"La MRQ {solicitud.numero} requiere preparación.",
             documento_tipo="inventario.SolicitudMaterial", documento_id=solicitud.pk,
+            accion_url="/inventario",
         )
         return Response(self.get_serializer(solicitud).data)
 
@@ -1039,10 +1042,10 @@ class NotificacionViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(self.get_serializer(notificacion).data)
 
 
-class EjecucionMRPViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
-    tenant_lookup_sucursal = "sucursal_id"
-    tenant_lookup_empresa = "sucursal__empresa_id"
-    queryset = EjecucionMRP.objects.select_related("ejecutada_por").prefetch_related("resultados__insumo")
+class EjecucionMRPViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = EjecucionMRP.objects.select_related(
+        "ejecutada_por", "semana"
+    ).prefetch_related("resultados__insumo")
     serializer_class = EjecucionMRPSerializer
     permission_classes = [EsAdministrador]
 
@@ -1062,12 +1065,17 @@ class EjecucionMRPViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
         from planificacion.models import SemanaPlan
 
         semana_id = request.data.get("semana")
+        try:
+            operacion_id = UUID(str(request.data.get("operacion_id") or uuid4()))
+        except (TypeError, ValueError, AttributeError):
+            return Response({"error": "La clave de operación no es válida."}, status=400)
 
         try:
             with solo_uno(f"mrp:semana:{semana_id}"):
                 ejecucion = encolar_mrp_semana(
-                    semana=_tenant_get(SemanaPlan, request.user, semana_id, sucursal="sucursal_id", empresa="sucursal__empresa_id"),
+                    semana=SemanaPlan.objects.get(pk=semana_id),
                     usuario=request.user,
+                    operacion_id=operacion_id,
                 )
         except YaEnCurso:
             return Response(
@@ -1094,19 +1102,9 @@ class EjecucionMRPViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
         donde se pierde el «para cuándo» y donde aparecen las diferencias
         entre lo calculado y lo pedido.
         """
-        from django.db import IntegrityError
-
         try:
             solicitud = crear_solicitud_desde_mrp(
                 ejecucion=self.get_object(), usuario=request.user
-            )
-        except IntegrityError:
-            # `numero` lleva el id de la ejecución y es único, así que un
-            # segundo intento sobre el mismo cálculo choca aquí. Es la
-            # garantía de no duplicar la compra, no un accidente.
-            return Response(
-                {"error": "Esta ejecución ya generó su solicitud de compra."},
-                status=409,
             )
         except DjangoValidationError as error:
             return Response({"error": error.messages[0]}, status=409)

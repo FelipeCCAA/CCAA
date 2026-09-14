@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 
 import Navbar from "../components/Navbar/Navbar";
+import ContextoOperacional from "../components/Navegacion/ContextoOperacional";
 
 
 /*
@@ -18,6 +19,8 @@ function MainLayout() {
       <Navbar />
 
       <main className="min-w-0 flex-1">
+
+        <ContextoOperacional />
 
         <Outlet />
 

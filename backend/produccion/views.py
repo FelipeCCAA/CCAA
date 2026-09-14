@@ -302,13 +302,62 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="bandeja")
     def bandeja(self, request):
-        """Contrato compacto de Envasado: trabajo habilitado e historial reciente."""
+        """Trabajo de Envase, incluida la espera explícita por Calidad."""
+        from calidad.models import LiberacionProceso
+        from procesos.models import EjecucionProceso, SalidaProceso
+
         materiales = self.materiales_habilitados(request)
         if materiales.status_code != status.HTTP_200_OK:
             return materiales
+        # La relación salida -> lote es la fuente del trabajo recibido por
+        # Envasado. Los pendientes se muestran, pero nunca se mezclan con los
+        # materiales habilitados ni se convierten en una autorización.
+        pendientes_calidad = (
+            SalidaProceso.objects.filter(
+                destino=SalidaProceso.Destino.ENVASADO,
+                naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+                unidad__iexact="kg",
+                ejecucion__etapa__requiere_calidad=True,
+                ejecucion__estado__in=[
+                    EjecucionProceso.Estado.PENDIENTE_CONTROL,
+                    EjecucionProceso.Estado.BLOQUEADA,
+                ],
+                lote__producto__isnull=False,
+                lote__estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
+            )
+            .exclude(liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO)
+            .select_related(
+                "lote__producto", "ejecucion__etapa", "liberacion_calidad"
+            )
+            .order_by("registrada_en", "pk")
+        )
+        bloqueados_calidad = []
+        for salida in pendientes_calidad:
+            decision = getattr(salida, "liberacion_calidad", None)
+            estado = decision.estado if decision else LiberacionProceso.Estado.PENDIENTE
+            motivo = (
+                decision.observacion.strip()
+                if decision and decision.observacion.strip()
+                else (
+                    f"{salida.ejecucion.etapa.get_tipo_display()} está pendiente "
+                    "de aprobación de Calidad antes de Envasado."
+                )
+            )
+            bloqueados_calidad.append({
+                "salida_id": salida.pk,
+                "lote_id": salida.lote_id,
+                "lote_codigo": salida.lote.codigo_lote,
+                "producto_nombre": salida.lote.producto.nombre,
+                "cantidad": salida.cantidad,
+                "unidad": salida.unidad,
+                "origen": salida.ejecucion.codigo,
+                "calidad": estado,
+                "motivo_bloqueo": motivo,
+            })
         recientes = self.filter_queryset(self.get_queryset()).order_by("-inicio", "-id")[:20]
         return Response({
             "materiales": materiales.data,
+            "bloqueados_calidad": bloqueados_calidad,
             "registros_recientes": self.get_serializer(recientes, many=True).data,
         })
 

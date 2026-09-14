@@ -184,7 +184,9 @@ export interface Bodega {
 
 
 export interface Notificacion {
-  id: number; tipo: string; titulo: string; mensaje: string; leida_en: string | null; creada_en: string;
+  id: number; tipo: string; titulo: string; mensaje: string;
+  documento_tipo: string; documento_id: number | null; accion_url: string;
+  leida_en: string | null; creada_en: string;
 }
 
 export interface MovimientoInventario {
@@ -301,6 +303,10 @@ export const obtenerInspecciones = () => lista<InspeccionMaterial>("inventario/i
 export const obtenerMRQ = () => lista<SolicitudMaterial>("inventario/mrq/");
 export const obtenerOrdenesCompra = () => lista<OrdenCompra>("inventario/ordenes-compra/");
 export const obtenerNotificaciones = () => lista<Notificacion>("inventario/notificaciones/");
+export async function marcarNotificacionLeida(id: number): Promise<Notificacion> {
+  const { data } = await api.post<Notificacion>(`inventario/notificaciones/${id}/leer/`);
+  return data;
+}
 export const obtenerMovimientos = () => lista<MovimientoInventario>("inventario/movimientos/");
 export const obtenerAjustes = () => lista<AjusteInventario>("inventario/ajustes/");
 export const obtenerUbicaciones = () => lista<UbicacionInventario>("inventario/ubicaciones/");
@@ -637,9 +643,8 @@ export async function crearUbicacion(datos: {
   Pasa lo que el MRP dice que falta a una solicitud de compra.
 
   Cierra el circuito: hasta aquí el cálculo terminaba en la pantalla y alguien
-  volvía a teclear las cantidades. Responde 409 si esa ejecución ya generó su
-  solicitud — duplicar la compra es peor que fallar, porque la segunda orden
-  llega igual y hay que devolverla.
+  volvía a teclear las cantidades. Repetir la petición devuelve la misma
+  solicitud: nunca crea otra compra ni duplica sus líneas.
 */
 export async function solicitarCompraDesdeMRP(
   ejecucion: number,
@@ -705,10 +710,13 @@ export async function convertirSolicitudEnOrdenes(
   plan en borrador todavía se mueve, y comprar contra él es comprar contra
   algo que nadie firmó.
 */
-export async function ejecutarMRPSemana(semana: number): Promise<EjecucionMRP> {
+export async function ejecutarMRPSemana(
+  semana: number,
+  operacionId: string,
+): Promise<EjecucionMRP> {
   const { data } = await api.post<EjecucionMRP>(
     "inventario/ejecuciones-mrp/ejecutar/",
-    { semana },
+    { semana, operacion_id: operacionId },
   );
 
   return data;

@@ -1,6 +1,7 @@
 from copy import copy
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
 from rest_framework import serializers
 from maestros.catalogos import CLAVES_PARAMETROS
@@ -86,10 +87,17 @@ class RegistroEnvaseSerializer(serializers.ModelSerializer):
 
         pallets = datos.pop("pallets_datos")
         lote = datos.pop("lote")
-        return registrar_envasado(
-            lote_id=lote.pk, pallets=pallets,
-            usuario=self.context["request"].user, **datos,
-        )
+        try:
+            return registrar_envasado(
+                lote_id=lote.pk, pallets=pallets,
+                usuario=self.context["request"].user, **datos,
+            )
+        except DjangoValidationError as error:
+            # Los servicios de dominio también se usan fuera de HTTP y por eso
+            # expresan sus bloqueos con ValidationError de Django. En la
+            # frontera REST se conserva el mensaje y se traduce a un 400, no a
+            # un error interno sin explicación para el operador.
+            raise serializers.ValidationError(error.messages) from error
 
 
 class OrdenProduccionSerializer(serializers.ModelSerializer):

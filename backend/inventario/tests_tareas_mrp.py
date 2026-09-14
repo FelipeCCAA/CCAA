@@ -11,6 +11,8 @@ formas de responder habría dos caminos que mantener y solo uno se probaría.
 """
 
 from datetime import date
+import uuid
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -20,7 +22,7 @@ from rest_framework.test import APIClient
 
 from planificacion.models import SemanaPlan
 
-from .models import EjecucionMRP
+from .models import EjecucionMRP, Insumo, ResultadoMRP
 from .tareas import calcular_mrp_semana
 
 
@@ -54,6 +56,31 @@ class BaseMRP(TestCase):
 
 
 class ContratoTests(BaseMRP):
+
+    def test_repetir_operacion_devuelve_la_misma_ejecucion(self):
+        operacion_id = str(uuid.uuid4())
+        datos = {"semana": self.semana.pk, "operacion_id": operacion_id}
+
+        primera = self.cliente.post(
+            "/api/inventario/ejecuciones-mrp/ejecutar/", datos, format="json"
+        )
+        segunda = self.cliente.post(
+            "/api/inventario/ejecuciones-mrp/ejecutar/", datos, format="json"
+        )
+
+        self.assertEqual(primera.status_code, 202)
+        self.assertEqual(segunda.status_code, 202)
+        self.assertEqual(primera.data["id"], segunda.data["id"])
+        self.assertEqual(EjecucionMRP.objects.count(), 1)
+        self.assertNotIn("sucursal", primera.data)
+
+    def test_otra_operacion_no_duplica_calculo_activo(self):
+        primera = self._ejecutar()
+        segunda = self._ejecutar()
+
+        self.assertEqual(primera.status_code, 202)
+        self.assertEqual(segunda.status_code, 409)
+        self.assertEqual(EjecucionMRP.objects.count(), 1)
 
     def test_responde_202_con_la_ejecucion(self):
         """
@@ -148,6 +175,57 @@ class RechazoTempranoTests(BaseMRP):
 
 
 class FalloDeLaTareaTests(BaseMRP):
+
+    def _ejecucion_pendiente(self):
+        return EjecucionMRP.objects.create(
+            semana=self.semana,
+            fecha_corte=self.semana.fecha_inicio,
+            horizonte_hasta=date(2026, 8, 9),
+            ejecutada_por=self.usuario,
+            estado=EjecucionMRP.Estado.PENDIENTE,
+            parametros={"semana": self.semana.pk},
+        )
+
+    def test_redelivery_de_terminada_no_repite_resultados(self):
+        ejecucion = self._ejecucion_pendiente()
+        insumo = Insumo.objects.create(codigo="IDEM", nombre="Idempotente")
+
+        def calcular(*, ejecucion, **_kwargs):
+            ResultadoMRP.objects.create(
+                ejecucion=ejecucion, insumo=insumo,
+                fecha_requerida=date(2026, 8, 3), necesidad_bruta=1,
+                disponible_proyectado=0, necesidad_neta=1,
+                compra_sugerida=1, fecha_sugerida_orden=date(2026, 8, 3),
+            )
+
+        with patch("inventario.servicios.ejecutar_mrp_semana", side_effect=calcular) as servicio:
+            calcular_mrp_semana(ejecucion.pk)
+            calcular_mrp_semana(ejecucion.pk)
+
+        ejecucion.refresh_from_db()
+        self.assertEqual(ejecucion.estado, EjecucionMRP.Estado.TERMINADA)
+        self.assertEqual(ejecucion.resultados.count(), 1)
+        self.assertEqual(servicio.call_count, 1)
+
+    def test_un_fallo_revierte_resultados_parciales(self):
+        ejecucion = self._ejecucion_pendiente()
+        insumo = Insumo.objects.create(codigo="ROLL", nombre="Rollback")
+
+        def fallar(*, ejecucion, **_kwargs):
+            ResultadoMRP.objects.create(
+                ejecucion=ejecucion, insumo=insumo,
+                fecha_requerida=date(2026, 8, 3), necesidad_bruta=1,
+                disponible_proyectado=0, necesidad_neta=1,
+                compra_sugerida=1, fecha_sugerida_orden=date(2026, 8, 3),
+            )
+            raise RuntimeError("fallo controlado")
+
+        with patch("inventario.servicios.ejecutar_mrp_semana", side_effect=fallar):
+            calcular_mrp_semana(ejecucion.pk)
+
+        ejecucion.refresh_from_db()
+        self.assertEqual(ejecucion.estado, EjecucionMRP.Estado.FALLIDA)
+        self.assertEqual(ejecucion.resultados.count(), 0)
 
     def test_un_fallo_deja_el_motivo_escrito(self):
         """

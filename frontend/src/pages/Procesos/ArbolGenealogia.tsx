@@ -81,6 +81,12 @@ function Nodo({ nodo, esRaiz }: { nodo: NodoGenealogia; esRaiz: boolean }) {
       <p className="mt-1 text-sm text-slate-600">
         {nodo.producto} · {nodo.fecha}
       </p>
+      <p className="mt-2 text-xs font-medium text-slate-500">
+        {nodo.estado}
+        {nodo.cantidad !== null && nodo.unidad
+          ? ` · ${Number(nodo.cantidad).toLocaleString("es-CL")} ${nodo.unidad}`
+          : ""}
+      </p>
     </div>
   );
 }
@@ -111,9 +117,22 @@ export default function ArbolGenealogia({
         <div key={indice}>
 
           {indice > 0 && (
-            <div className="flex items-center gap-2 py-2 pl-4 text-xs text-slate-600">
-              <ArrowDown className="h-3.5 w-3.5" />
-              {direccion === "atras" ? "salió de" : "dio origen a"}
+            <div className="space-y-1 py-2 pl-4 text-xs text-slate-600">
+              {genealogia.enlaces
+                .filter((enlace) => nivel.some((nodo) => nodo.id === (
+                  direccion === "atras" ? enlace.origen : enlace.destino
+                )))
+                .map((enlace) => (
+                  <div key={`${enlace.origen}-${enlace.destino}-${enlace.salida.id}`} className="flex items-start gap-2">
+                    <ArrowDown className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      <b>{enlace.ejecucion.etapa}</b> · {enlace.ejecucion.codigo}
+                      {enlace.ejecucion.equipo ? ` · ${enlace.ejecucion.equipo}` : ""}
+                      {` · entraron ${Number(enlace.entrada.cantidad).toLocaleString("es-CL")} ${enlace.entrada.unidad}`}
+                      {` · salieron ${Number(enlace.salida.cantidad).toLocaleString("es-CL")} ${enlace.salida.unidad}`}
+                    </span>
+                  </div>
+                ))}
             </div>
           )}
 

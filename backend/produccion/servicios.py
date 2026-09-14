@@ -359,6 +359,7 @@ def cerrar_lote_producido(*, lote, usuario, titulo=None, mensaje=None) -> str | 
         ),
         documento_tipo="lote_produccion",
         documento_id=lote.id,
+        accion_url="/calidad",
     )
 
     return aviso
@@ -498,6 +499,21 @@ def registrar_envasado(
     # registra una sola vez en cuarentena; Calidad luego cambia su estado, no
     # vuelve a crear stock.
     registrar_pallets_producidos(creados, usuario)
+    from inventario.servicios import _notificar_area
+    from usuarios.models import PerfilUsuario
+
+    _notificar_area(
+        PerfilUsuario.Area.CALIDAD,
+        tipo="envasado_pendiente_calidad",
+        titulo="Producto envasado pendiente de Calidad",
+        mensaje=(
+            f"Lote {lote.codigo_lote}: {kg_total} kg envasados en "
+            f"{len(creados)} unidad(es) logística(s). Revisa su liberación final."
+        ),
+        documento_tipo="produccion.RegistroEnvase",
+        documento_id=registro.pk,
+        accion_url="/calidad",
+    )
     return registro
 
 

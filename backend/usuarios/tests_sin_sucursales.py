@@ -295,24 +295,19 @@ class UnaSolaEmpresaTests(TestCase):
             Mandante.objects.get(nombre="Nestlé").empresa_id, self.empresa.pk
         )
 
-    def test_con_dos_empresas_activas_hay_que_indicarla(self):
-        """
-        Elegir por él sería registrar el mandante en la empresa equivocada —y
-        sus productos heredarían ese error en el SKU.
-        """
+    def test_dos_empresas_historicas_no_crean_una_dimension_funcional(self):
         Empresa.objects.create(rut="77.666.666-6", nombre="Otra")
 
         respuesta = self._crear("Colun", "colun")
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("empresa", respuesta.data)
-        self.assertFalse(Mandante.objects.filter(nombre="Colun").exists())
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(Mandante.objects.get(nombre="Colun").empresa_id, self.empresa.pk)
 
-    def test_una_empresa_inactiva_no_cuenta(self):
+    def test_un_registro_historico_inactivo_no_bloquea_la_operacion(self):
         self.empresa.activa = False
         self.empresa.save(update_fields=["activa"])
 
-        self.assertEqual(self._crear("Soprole", "soprole").status_code, 400)
+        self.assertEqual(self._crear("Soprole", "soprole").status_code, 201)
 
 
 class DefaultDeTenantTests(TestCase):

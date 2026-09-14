@@ -1,13 +1,10 @@
 """
 Permisos por rol.
 
-El criterio, acordado con el prototipo: **todos los roles leen todo, y cada
-uno escribe en lo suyo**.
-
-Que Recepción pueda consultar los lotes de Producción no es una concesión:
-es necesario para trabajar. Lo que no puede es editarlos. Ocultar
-información entre áreas de la misma planta genera más errores de los que
-evita.
+El criterio vigente es acceso por puesto: cada área lee lo necesario para su
+responsabilidad y escribe únicamente en sus operaciones autorizadas. Calidad
+mantiene la lectura transversal que exige su función y Administración conserva
+la visión global.
 
 `lectura` y los usuarios sin perfil no escriben en ninguna parte.
 """
@@ -15,7 +12,6 @@ evita.
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from .models import PerfilUsuario, Rol, rol_de
-from .tenancy import scope_de
 
 
 class IsAdminDeArea(BasePermission):
@@ -34,7 +30,6 @@ class IsAdminDeArea(BasePermission):
             usuario.is_staff
             and perfil
             and perfil.es_admin_de_area
-            and scope_de(usuario) is not None
         )
 
 
@@ -55,8 +50,7 @@ class PuedeGestionarSesiones(BasePermission):
 
 class PermisoPorRol(BasePermission):
     """
-    Base: lectura para cualquiera autenticado, escritura solo para los roles
-    declarados en `roles_escritura`.
+    Base: lectura y escritura según las áreas/roles declarados por la subclase.
 
     Las subclases declaran quién escribe. Una que no declare nada no deja
     escribir a nadie, que es el fallo seguro.
@@ -77,8 +71,6 @@ class PermisoPorRol(BasePermission):
         rol = rol_de(request.user)
 
         if request.method in SAFE_METHODS:
-            if scope_de(request.user) is None:
-                return False
             if rol == Rol.ADMIN or self.areas_lectura is None:
                 return True
             return area in self.areas_lectura or (
@@ -280,8 +272,6 @@ class PermisoPorArea(BasePermission):
             return False
         if request.user.is_superuser:
             return True
-        if scope_de(request.user) is None:
-            return False
         perfil = getattr(request.user, "perfil", None)
         if request.method in SAFE_METHODS:
             if self.areas_lectura is None:
@@ -351,7 +341,7 @@ class PuedeVerAuditoria(BasePermission):
             return False
         if request.user.is_superuser:
             return True
-        return scope_de(request.user) is not None and rol_de(request.user) in (
+        return rol_de(request.user) in (
             Rol.CALIDAD,
             Rol.ADMIN,
         )

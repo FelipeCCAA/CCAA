@@ -587,15 +587,16 @@ class CircuitoDeCompraTests(TestCase):
         La unicidad del número lo impide. Duplicar la compra es peor que
         fallar: la segunda orden llega igual y hay que devolverla.
         """
-        from django.db import IntegrityError
+        primera = crear_solicitud_desde_mrp(
+            ejecucion=self.ejecucion, usuario=self.usuario
+        )
+        segunda = crear_solicitud_desde_mrp(
+            ejecucion=self.ejecucion, usuario=self.usuario
+        )
 
-        crear_solicitud_desde_mrp(ejecucion=self.ejecucion, usuario=self.usuario)
-
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                crear_solicitud_desde_mrp(
-                    ejecucion=self.ejecucion, usuario=self.usuario
-                )
+        self.assertEqual(primera.pk, segunda.pk)
+        self.assertEqual(SolicitudCompra.objects.count(), 1)
+        self.assertEqual(primera.detalles.count(), 1)
 
     def test_una_ejecucion_sin_faltantes_no_genera_solicitud(self):
         from .models import EjecucionMRP

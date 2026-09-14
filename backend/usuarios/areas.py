@@ -58,35 +58,22 @@ def condicion_de_area(area: str, prefijo: str = "") -> Q:
     return condicion
 
 
-def perfiles_del_area(area: str, *, empresa_id=None, sucursal_id=None):
-    """Los perfiles activos que cubren un área, acotados al tenant que se pida."""
+def perfiles_del_area(area: str):
+    """Perfiles activos responsables del área, sin particiones organizacionales."""
     consulta = PerfilUsuario.objects.filter(
         condicion_de_area(area), usuario__is_active=True
     )
-
-    if empresa_id is not None:
-        consulta = consulta.filter(empresa_id=empresa_id)
-
-    if sucursal_id is not None:
-        consulta = consulta.filter(sucursal_id=sucursal_id)
 
     # `distinct` porque el JOIN con las áreas adicionales duplica al que está
     # en varias: sin esto, quien trabaja en dos áreas recibiría dos avisos.
     return consulta.distinct()
 
 
-def usuarios_del_area(area: str, *, empresa_id=None, sucursal_id=None):
+def usuarios_del_area(area: str):
     """Igual, pero como `User` — que es lo que necesitan los desplegables."""
     consulta = User.objects.filter(
         condicion_de_area(area, prefijo="perfil__"), is_active=True
     )
-
-    if empresa_id is not None:
-        consulta = consulta.filter(perfil__empresa_id=empresa_id)
-
-    if sucursal_id is not None:
-        consulta = consulta.filter(perfil__sucursal_id=sucursal_id)
-
     return consulta.distinct()
 
 

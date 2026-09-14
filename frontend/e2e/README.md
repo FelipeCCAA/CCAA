@@ -115,7 +115,7 @@ cd backend
 .venv\Scripts\python.exe manage.py configurar_inventario_inicial --empresa 2 --aplicar
 .venv\Scripts\python.exe manage.py preparar_circuito_polvo --aplicar
 .venv\Scripts\python.exe manage.py crear_usuario_e2e
-.venv\Scripts\python.exe manage.py crear_usuario_e2e --usuario e2e_segunda_firma --clave "segunda-firma-e2e-ccaa"
+.venv\Scripts\python.exe manage.py crear_usuarios_flujo_e2e
 ```
 
 Después, cada vez:
@@ -160,8 +160,10 @@ npx playwright test --project=flujo-precondensado
 
 El análisis de silo exige **dos firmas de personas distintas** —quien realiza y
 quien visualiza— y el backend rechaza con 409 que las ponga la misma. Es el
-control de cuatro ojos del formato, no un capricho: sin la segunda cuenta el
-circuito no pasa de la transferencia del vale.
+control de cuatro ojos del formato, no un capricho: la segunda firma usa
+`e2e_calidad_firma`, creada por `crear_usuarios_flujo_e2e`, para representar a
+otra persona autorizada por rol y área, sin depender de Empresa/Sucursal ni
+reutilizar la sesión de quien opera la pantalla.
 
 ## Descremado con dos ramas
 

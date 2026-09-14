@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import uuid
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -12,9 +13,9 @@ from maestros.models import Equipo, Mandante, Producto, Silo
 from calidad.models import LiberacionProceso
 from produccion.models import Lote
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
-from .models import EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, RutaProducto, SalidaProceso
+from .models import EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, Proceso, RutaProducto, SalidaProceso
 from .servicios import (
-    destino_salida_de_ruta, etapa_para_producto, genealogia_lote, preparar_continuacion,
+    definir_destino_salida, destino_salida_de_ruta, etapa_para_producto, genealogia_lote, preparar_continuacion,
     transicionar_ejecucion,
 )
 
@@ -23,7 +24,9 @@ class ProcesosIndustrialesTests(TestCase):
     def setUp(self):
         self.usuario = User.objects.create_user("produccion", password="x")
         PerfilUsuario.objects.create(
-            usuario=self.usuario, area=PerfilUsuario.Area.SECADO, rol=Rol.PRODUCCION
+            usuario=self.usuario,
+            area=PerfilUsuario.Area.CONDENSACION,
+            rol=Rol.PRODUCCION,
         )
         self.cliente = APIClient()
         self.cliente.force_authenticate(self.usuario)
@@ -264,6 +267,55 @@ class ProcesosIndustrialesTests(TestCase):
         self.assertIn(SalidaProceso.Destino.ESTANDARIZACION, salida.destinos_permitidos())
         self.assertIn(SalidaProceso.Destino.SIGUIENTE_PROCESO, salida.destinos_permitidos())
         self.assertNotIn(SalidaProceso.Destino.INVENTARIO, salida.destinos_permitidos())
+
+    def test_definir_destino_es_idempotente_y_auditable(self):
+        salida = SalidaProceso.objects.create(
+            ejecucion=self.ejecucion, lote=self.lote_crema,
+            naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
+            cantidad=Decimal("100"),
+        )
+        operacion_id = uuid.uuid4()
+
+        primera = definir_destino_salida(
+            salida_id=salida.pk,
+            destino=SalidaProceso.Destino.ESTANDARIZACION,
+            destino_anterior=SalidaProceso.Destino.PENDIENTE,
+            operacion_id=operacion_id,
+            usuario=self.usuario,
+        )
+        segunda = definir_destino_salida(
+            salida_id=salida.pk,
+            destino=SalidaProceso.Destino.ESTANDARIZACION,
+            destino_anterior=SalidaProceso.Destino.PENDIENTE,
+            operacion_id=operacion_id,
+            usuario=self.usuario,
+        )
+
+        self.assertEqual(primera.pk, segunda.pk)
+        self.assertEqual(
+            EventoProceso.objects.filter(operacion_id=operacion_id).count(), 1
+        )
+
+    def test_destino_obsoleto_no_sobrescribe_otra_decision(self):
+        salida = SalidaProceso.objects.create(
+            ejecucion=self.ejecucion, lote=self.lote_crema,
+            naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
+            cantidad=Decimal("100"),
+        )
+        definir_destino_salida(
+            salida_id=salida.pk,
+            destino=SalidaProceso.Destino.ESTANDARIZACION,
+            destino_anterior=SalidaProceso.Destino.PENDIENTE,
+            operacion_id=uuid.uuid4(), usuario=self.usuario,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "destino cambió"):
+            definir_destino_salida(
+                salida_id=salida.pk,
+                destino=SalidaProceso.Destino.SIGUIENTE_PROCESO,
+                destino_anterior=SalidaProceso.Destino.PENDIENTE,
+                operacion_id=uuid.uuid4(), usuario=self.usuario,
+            )
 
     def test_reproceso_exige_motivo_explicito(self):
         entrada = EntradaProceso(

@@ -462,6 +462,11 @@ class SolicitudCompra(models.Model):
     motivo = models.TextField()
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.BORRADOR)
     creada_en = models.DateTimeField(auto_now_add=True)
+    ejecucion_mrp = models.OneToOneField(
+        "EjecucionMRP", on_delete=models.PROTECT,
+        related_name="solicitud_compra", null=True, blank=True,
+        help_text="Ejecucion que origino la solicitud; garantiza conversion idempotente.",
+    )
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["sucursal", "numero"], name="solicitud_compra_numero_unico_sucursal")]
@@ -889,6 +894,12 @@ class EjecucionMRP(models.Model):
     horizonte_hasta = models.DateField()
     ejecutada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     parametros = models.JSONField(default=dict)
+    semana = models.ForeignKey(
+        "planificacion.SemanaPlan", on_delete=models.PROTECT,
+        related_name="ejecuciones_mrp", null=True, blank=True,
+        help_text="Relacion operacional directa; null solo para ejecuciones historicas.",
+    )
+    operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     # **Estado**, porque el cálculo ya no ocurre dentro de la petición: la
     # pantalla recibe la ejecución recién creada y consulta cómo va. Sin
@@ -916,6 +927,13 @@ class EjecucionMRP(models.Model):
         # haber corrido el cálculo. Que «la última» sea la primera es una
         # propiedad de la colección, no de una pantalla.
         ordering = ["-creada_en", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["semana"],
+                condition=models.Q(estado__in=["pendiente", "en_curso"]),
+                name="mrp_una_ejecucion_activa_por_semana",
+            )
+        ]
 
 
 class ResultadoMRP(models.Model):
@@ -930,6 +948,14 @@ class ResultadoMRP(models.Model):
     fecha_sugerida_orden = models.DateField()
     explicacion = models.JSONField(default=dict)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ejecucion", "insumo"],
+                name="resultado_mrp_unico_por_ejecucion_insumo",
+            )
+        ]
+
 
 class Notificacion(models.Model):
     destinatario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notificaciones")
@@ -938,6 +964,7 @@ class Notificacion(models.Model):
     mensaje = models.TextField()
     documento_tipo = models.CharField(max_length=80, blank=True)
     documento_id = models.PositiveBigIntegerField(null=True, blank=True)
+    accion_url = models.CharField(max_length=240, blank=True)
     leida_en = models.DateTimeField(null=True, blank=True)
     creada_en = models.DateTimeField(auto_now_add=True)
 

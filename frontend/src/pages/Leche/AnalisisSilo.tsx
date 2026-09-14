@@ -55,7 +55,9 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [tocado, setTocado] = useState(false);
+  const [siloBorradorConsultado, setSiloBorradorConsultado] = useState<number | null>(null);
   const [borradorPendiente, setBorradorPendiente] = useState<Analisis | null>(null);
+  const consultandoBorrador = siloBorradorConsultado !== siloId;
 
   useEffect(() => {
     let vigente = true;
@@ -65,7 +67,8 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
       .catch(() => { if (vigente) setError("No se pudo leer el historial de análisis."); });
     obtenerBorradorAnalisisSilo(siloId)
       .then((borrador) => { if (vigente) setBorradorPendiente(borrador); })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => { if (vigente) setSiloBorradorConsultado(siloId); });
     const reinicio = window.setTimeout(() => {
       setValores({ metodo: "delvo_sp", hora_lectura: horaActual() });
       setTocado(false);
@@ -198,7 +201,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
                 setTocado(true);
                 setValores({ ...valores, [clave]: e.target.value });
               }}
-              disabled={borradorPendiente !== null}
+              disabled={consultandoBorrador || borradorPendiente !== null}
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm tabular-nums text-slate-900"
             />
           </label>
@@ -208,7 +211,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <label className="text-xs font-medium text-slate-600">
           Inhibidores
-          <select value={valores.inhibidores_resultado ?? ""} onChange={(e) => { setTocado(true); setValores({ ...valores, inhibidores_resultado: e.target.value }); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+          <select disabled={consultandoBorrador || borradorPendiente !== null} value={valores.inhibidores_resultado ?? ""} onChange={(e) => { setTocado(true); setValores({ ...valores, inhibidores_resultado: e.target.value }); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
             <option value="">Seleccionar</option>
             <option value="negativo">Negativo</option>
             <option value="positivo">Positivo</option>
@@ -216,7 +219,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
         </label>
         <label className="text-xs font-medium text-slate-600">
           Método
-          <select value={valores.metodo ?? "delvo_sp"} onChange={(e) => { setTocado(true); setValores({ ...valores, metodo: e.target.value }); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+          <select disabled={consultandoBorrador || borradorPendiente !== null} value={valores.metodo ?? "delvo_sp"} onChange={(e) => { setTocado(true); setValores({ ...valores, metodo: e.target.value }); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
             <option value="delvo_sp">Delvo SP</option>
             <option value="tri_sensor">Tri Sensor</option>
             <option value="charm">Charm</option>
@@ -224,7 +227,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
         </label>
         <label className="text-xs font-medium text-slate-600">
           Hora de lectura
-          <input type="time" value={valores.hora_lectura ?? horaActual()} onChange={(e) => { setTocado(true); setValores({ ...valores, hora_lectura: e.target.value }); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          <input disabled={consultandoBorrador || borradorPendiente !== null} type="time" value={valores.hora_lectura ?? horaActual()} onChange={(e) => { setTocado(true); setValores({ ...valores, hora_lectura: e.target.value }); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
         </label>
       </div>
 
@@ -237,7 +240,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
             ["organoleptico_conforme", "Organoléptico"],
           ].map(([clave, etiqueta]) => (
             <label key={clave} className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={valores[clave] === "si"} onChange={(e) => { setTocado(true); setValores({ ...valores, [clave]: e.target.checked ? "si" : "" }); }} />
+              <input disabled={consultandoBorrador || borradorPendiente !== null} type="checkbox" checked={valores[clave] === "si"} onChange={(e) => { setTocado(true); setValores({ ...valores, [clave]: e.target.checked ? "si" : "" }); }} />
               {etiqueta} conforme
             </label>
           ))}
@@ -248,7 +251,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
         <button
           type="button"
           onClick={() => void guardar()}
-          disabled={guardando || borradorPendiente !== null}
+          disabled={guardando || consultandoBorrador || borradorPendiente !== null}
           className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {guardando ? "Confirmando…" : "Confirmar análisis"}

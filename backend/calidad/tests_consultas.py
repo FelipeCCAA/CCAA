@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from rest_framework.test import APIClient
 
 from maestros.models import Silo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
@@ -97,3 +98,13 @@ class ConsultaResultadosProcesoTests(TestCase):
                 f"hizo {len(consultas_muchas)}: existe un N+1"
             ),
         )
+
+    def test_expedientes_ignora_el_parametro_legado_y_no_mezcla_procesos(self):
+        self._crear_salida(sucursal=self.sucursal, correlativo=1)
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get("/api/calidad/expedientes/", {"incluir_procesos": "1"})
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertNotIn("procesos", respuesta.data)

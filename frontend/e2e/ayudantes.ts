@@ -158,9 +158,19 @@ export async function descartarPendiente(pagina: Page, scope: Page | Locator = p
     ? (scope as Page).getByRole("button", { name: "Descartar" })
     : (scope as Locator).getByRole("button", { name: "Descartar" });
 
+  /* La consulta del borrador es asíncrona. No se decide que «no hay» mientras
+     los campos sigan deshabilitados, porque el aviso puede aparecer justo
+     después y convertir el borrador recién creado en un falso pendiente. */
+  const controlesDisponibles = (scope as Page | Locator).locator(
+    "input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+  );
+  await expect.poll(async () =>
+    (await descartar.count()) + (await controlesDisponibles.count()),
+  { timeout: 10_000 }).toBeGreaterThan(0);
+
   if (await descartar.count()) {
     await descartar.first().click();
-    await pagina.waitForTimeout(500);
+    await expect(descartar).toHaveCount(0);
   }
 }
 
@@ -306,7 +316,9 @@ export async function irA(pagina: Page, ruta: string) {
   un botón no comprueba nada que la pantalla no haya comprobado ya con el
   primero, y el backend permite una sola sesión activa por usuario.
 
-  La cuenta la crea `manage.py crear_usuario_e2e --usuario e2e_segunda_firma`.
+  La segunda firma usa otra cuenta del área Calidad. Así la autorización
+  depende del área y del rol reales, sin crear otro administrador técnico ni
+  reutilizar la sesión de quien está operando la pantalla.
 */
 export let segundaFirma: { contexto: APIRequestContext; cabeceras: Record<string, string> } | null = null;
 
@@ -322,8 +334,8 @@ export let segundaFirma: { contexto: APIRequestContext; cabeceras: Record<string
 export async function sesionSegundaFirma() {
   if (segundaFirma) return segundaFirma;
 
-  const usuario = process.env.E2E_USUARIO_2 ?? "e2e_segunda_firma";
-  const clave = process.env.E2E_CLAVE_2 ?? "segunda-firma-e2e-ccaa";
+  const usuario = process.env.E2E_USUARIO_2 ?? "e2e_calidad_firma";
+  const clave = process.env.E2E_CLAVE_2 ?? "flujo-e2e-ccaa";
 
   const contexto = await peticion.newContext();
   const sesion = await contexto.post(`${API}/api/usuarios/login/`, {
@@ -339,7 +351,7 @@ export async function sesionSegundaFirma() {
         "a nadie. Mira cuál es con «manage.py desbloquear_login --listar» y " +
         "levántalo con «--usuario» o «--ip»."
       : `La cuenta de segunda firma «${usuario}» no pudo entrar (HTTP ${sesion.status()}). ` +
-        `Créala con «manage.py crear_usuario_e2e --usuario ${usuario}».`,
+        "Repón las cuentas con «manage.py crear_usuarios_flujo_e2e».",
   ).toBe(200);
 
   const { token } = await sesion.json();

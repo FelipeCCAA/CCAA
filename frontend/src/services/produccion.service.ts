@@ -356,6 +356,17 @@ export async function obtenerMaterialesEnvasables(): Promise<MaterialEnvasable[]
 
 export interface BandejaEnvasado {
   materiales: MaterialEnvasable[];
+  bloqueados_calidad: Array<{
+    salida_id: number;
+    lote_id: number;
+    lote_codigo: string;
+    producto_nombre: string;
+    cantidad: string;
+    unidad: string;
+    origen: string;
+    calidad: "pendiente" | "rechazado";
+    motivo_bloqueo: string;
+  }>;
   registros_recientes: RegistroEnvaseCreado[];
 }
 

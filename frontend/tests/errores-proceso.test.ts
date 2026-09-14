@@ -23,6 +23,21 @@ test("conserva el detalle de dominio y combina errores de equipo", () => {
   );
 });
 
+test("informa qué ejecución ocupa el equipo después de una carrera", () => {
+  const error = {
+    response: {
+      data: {
+        error: "Torre de secado concurrente está ocupado por EJ-TOR-RACE-1.",
+      },
+    },
+  };
+  assert.equal(
+    mensajeErrorProceso(error, "No se pudo iniciar la ejecución."),
+    "Torre de secado concurrente está ocupado por EJ-TOR-RACE-1.",
+  );
+  assert.equal(esErrorDeEquipo(error), true);
+});
+
 test("usa el mensaje de respaldo cuando no hay respuesta DRF", () => {
   assert.equal(mensajeErrorProceso(new Error("red"), "Sin conexión."), "Sin conexión.");
 });

@@ -25,6 +25,9 @@ class AdministracionPorAreaTests(TestCase):
         self.trabajador_calidad = self._usuario(
             "analista-calidad", PerfilUsuario.Area.CALIDAD
         )
+        self.recepcionista = self._usuario(
+            "operador-recepcion", PerfilUsuario.Area.RECEPCION
+        )
 
     def _usuario(self, username, area, nivel=PerfilUsuario.Nivel.TRABAJADOR, email=""):
         usuario = User.objects.create_user(
@@ -66,6 +69,47 @@ class AdministracionPorAreaTests(TestCase):
 
         self.assertIn(self.trabajador_secado.username, usernames)
         self.assertNotIn(self.trabajador_calidad.username, usernames)
+
+    def test_empresa_historica_no_particiona_la_responsabilidad_del_area(self):
+        otra_empresa = Empresa.objects.create(rut="OTRA-HIST", nombre="Otra histórica")
+        otra_sucursal = Sucursal.objects.create(
+            empresa=otra_empresa, codigo="P2", nombre="Planta histórica"
+        )
+        colega = User.objects.create_user(username="colega-secado", password="x")
+        PerfilUsuario.objects.create(
+            usuario=colega,
+            area=PerfilUsuario.Area.SECADO,
+            empresa=otra_empresa,
+            sucursal=otra_sucursal,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+        )
+        self.cliente.force_authenticate(self.admin_secado)
+
+        usernames = {
+            usuario["username"]
+            for usuario in self.cliente.get("/api/usuarios/trabajadores/").json()
+        }
+
+        self.assertIn("colega-secado", usernames)
+
+    def test_recepcion_no_puede_abrir_administracion_por_api(self):
+        self.cliente.force_authenticate(self.recepcionista)
+
+        respuesta = self.cliente.get("/api/usuarios/trabajadores/")
+
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_respuesta_de_sesion_no_expone_empresa_ni_sucursal(self):
+        self.cliente.force_authenticate(self.admin_secado)
+
+        fila = next(
+            usuario
+            for usuario in self.cliente.get("/api/usuarios/trabajadores/").json()
+            if usuario["id"] == self.trabajador_secado.pk
+        )
+
+        self.assertNotIn("empresa", fila["perfil"])
+        self.assertNotIn("sucursal", fila["perfil"])
 
     def test_superusuario_lista_todas_las_areas(self):
         superusuario = User.objects.create_superuser("root", password="x")

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Beaker, Factory, X } from "lucide-react";
 
 import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
@@ -65,6 +65,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   /* Una vez que el operador escribe el código, la sugerencia deja de pisarlo:
      lo que escribió a mano gana. */
   const [codigoEditado, setCodigoEditado] = useState(false);
+  const codigoEditadoRef = useRef(false);
   const [notaCodigo, setNotaCodigo] = useState("");
 
   const [vales, setVales] = useState<ValeDisponible[]>([]);
@@ -152,8 +153,13 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     try {
       const sugerencia = await sugerirCodigoLote(Number(equipo), fecha);
 
-      setCodigoLote(sugerencia.codigo ?? "");
-      setNotaCodigo(sugerencia.motivo ?? "");
+      /* La petición puede haber comenzado antes de que el operador escribiera.
+         Se consulta el ref al resolver para no sobrescribir su código con una
+         sugerencia tardía. */
+      if (!codigoEditadoRef.current) {
+        setCodigoLote(sugerencia.codigo ?? "");
+        setNotaCodigo(sugerencia.motivo ?? "");
+      }
     } catch {
       // Sin sugerencia el campo queda libre: se escribe a mano.
       setNotaCodigo("");
@@ -393,6 +399,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                 className={campo}
                 value={codigoLote}
                 onChange={(e) => {
+                  codigoEditadoRef.current = true;
                   setCodigoLote(e.target.value);
                   setCodigoEditado(true);
                 }}

@@ -1,4 +1,5 @@
 import api from "./api";
+import { rutaTrazabilidad, type TipoReferenciaTrazable } from "./trazabilidad-visual";
 
 export interface Pagina<T> { count: number; next: string | null; previous: string | null; results: T[] }
 
@@ -97,6 +98,10 @@ export interface CorridaMantequilla {
   kg_mantequilla: string | null;
   kg_suero: string;
   kg_merma: string;
+  kg_reproceso: string;
+  motivo_reproceso: string;
+  lote_suero: number | null;
+  lote_reproceso: number | null;
   controles: Record<string, unknown>;
   estado: string;
   estado_etiqueta: string;
@@ -193,6 +198,9 @@ export interface NodoGenealogia {
   codigo: string;
   producto: string;
   fecha: string;
+  estado: string;
+  cantidad: string | null;
+  unidad: string | null;
 }
 
 
@@ -207,8 +215,31 @@ export interface NodoGenealogia {
 */
 export interface Genealogia {
   raiz: number;
+  foco: { tipo: TipoReferenciaTrazabilidad; id: number; codigo: string };
+  ubicacion_actual: { tipo: string; codigo: string; detalle: string };
   nodos: NodoGenealogia[];
-  enlaces: { origen: number; destino: number }[];
+  enlaces: {
+    origen: number;
+    destino: number;
+    ejecucion: {
+      id: number; codigo: string; etapa: string; tipo: string; equipo: string | null;
+    };
+    entrada: { id: number; cantidad: string; unidad: string; tipo: string };
+    salida: {
+      id: number; cantidad: string; unidad: string; naturaleza: string; destino: string;
+    };
+  }[];
+  timeline: {
+    fecha_hora: string;
+    categoria: "proceso" | "entrada" | "salida" | "estado" | "calidad" | "envasado";
+    titulo: string;
+    estado: string | null;
+    responsable: string | null;
+    equipo: string | null;
+    cantidad: string | null;
+    unidad: string | null;
+    detalle: string;
+  }[];
   flujo: {
     origenes_externos: {
       lote_id: number; lote_codigo: string; material: string;
@@ -247,6 +278,8 @@ export interface Genealogia {
     }[];
   } | null;
 }
+
+export type TipoReferenciaTrazabilidad = TipoReferenciaTrazable;
 
 export interface OpcionesAltaCondensacion {
   lotes: { id: number; codigo: string; producto: string; orden: string; ejecucion: string; equipo: string | null; origen: string; litros: string }[];
@@ -302,6 +335,58 @@ export interface ResumenOperacionalProduccion {
   materiales_listos: number;
   equipos_ocupados: number;
   bloqueos: number;
+}
+
+export interface PlantaAhora {
+  generado_en: string;
+  indicadores: ResumenOperacionalProduccion & {
+    recepciones_pendientes: number;
+    recepciones_retenidas: number;
+    silos_en_alerta: number;
+    producto_pendiente_calidad: number;
+  };
+  procesos_por_etapa: {
+    tipo: string;
+    etiqueta: string;
+    total: number;
+    activos: number;
+    esperando_calidad: number;
+    bloqueados: number;
+  }[];
+  silos: {
+    total: number;
+    litros: number | string;
+    alertas: {
+      id: number;
+      codigo: string;
+      litros: number | string;
+      capacidad: number | string;
+      motivo: "saldo_negativo" | "capacidad_excedida";
+    }[];
+  };
+  actividad_reciente: {
+    id: number;
+    codigo: string;
+    etapa_tipo: string;
+    etapa: string;
+    estado: string;
+    estado_etiqueta: string;
+    equipo: string | null;
+    actualizada_en: string;
+  }[];
+  alertas: {
+    codigo: string;
+    nivel: "critica" | "atencion";
+    titulo: string;
+    detalle: string;
+    cantidad: number;
+    ruta: string;
+  }[];
+}
+
+export async function obtenerPlantaAhora(): Promise<PlantaAhora> {
+  const { data } = await api.get<PlantaAhora>("procesos/planta-ahora/");
+  return data;
 }
 
 export async function obtenerResumenOperacional(): Promise<ResumenOperacionalProduccion> {
@@ -491,6 +576,8 @@ export async function cerrarMantequilla(id: number, datos: {
   kg_mantequilla: number;
   kg_suero?: number;
   kg_merma?: number;
+  kg_reproceso?: number;
+  motivo_reproceso?: string;
   controles?: Record<string, unknown>;
 }): Promise<CorridaMantequilla> {
   const { data } = await api.post<CorridaMantequilla>(
@@ -553,8 +640,14 @@ export async function prepararContinuacion(
 export async function definirDestinoSalida(
   salidaId: number,
   destino: string,
+  destinoAnterior: string,
+  operacionId: string,
 ): Promise<void> {
-  await api.post(`procesos/salidas/${salidaId}/definir-destino/`, { destino });
+  await api.post(`procesos/salidas/${salidaId}/definir-destino/`, {
+    destino,
+    destino_anterior: destinoAnterior,
+    operacion_id: operacionId,
+  });
 }
 
 export async function crearDescremacion(datos: {
@@ -626,11 +719,12 @@ export async function cerrarDescremacion(id: number, datos: {
 /* Acepta el código de lote o el id. En planta se conoce el código —lo que va
    impreso en el saco—, así que es lo que la pantalla pide. */
 export async function obtenerGenealogia(
-  lote: string | number,
+  referencia: string | number,
   direccion: "atras" | "adelante",
+  tipo: TipoReferenciaTrazabilidad = "lote",
 ): Promise<Genealogia> {
   const { data } = await api.get<Genealogia>(
-    `procesos/trazabilidad/lotes/${encodeURIComponent(String(lote).trim())}/`,
+    rutaTrazabilidad(tipo, referencia),
     { params: { direccion } },
   );
 

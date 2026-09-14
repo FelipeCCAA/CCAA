@@ -1,23 +1,19 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowRight, FlaskConical, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import {
   definirDestinoSalida,
-  obtenerEjecucionesOperativas,
   obtenerSalidasIntermediasDisponibles,
   prepararContinuacion,
   type SalidaIntermediaDisponible,
-  type EjecucionOperativa,
 } from "../../services/procesos.service";
-import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
 import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 });
 
 export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void }) {
   const [salidas, setSalidas] = useState<SalidaIntermediaDisponible[] | null>(null);
-  const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
   const [preparando, setPreparando] = useState<number | null>(null);
@@ -27,18 +23,14 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
   const [cantidad, setCantidad] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [definiendo, setDefiniendo] = useState<number | null>(null);
+  const operacionesDestino = useRef(new Map<number, { destino: string; id: string }>());
 
   const cargar = async (limpiarError = true) => {
     if (cargando) return;
     setCargando(true);
     if (limpiarError) setError("");
     try {
-      const [resultados, operativas] = await Promise.all([
-        obtenerSalidasIntermediasDisponibles(),
-        obtenerEjecucionesOperativas(),
-      ]);
-      setSalidas(resultados);
-      setEjecuciones(operativas);
+      setSalidas(await obtenerSalidasIntermediasDisponibles());
     } catch {
       setError("No se pudieron consultar los resultados liberados.");
     } finally {
@@ -46,16 +38,14 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
     }
   };
 
-  const ocupaciones = ocupacionesPorEquipo(ejecuciones);
-
   const abrirPreparacion = (salida: SalidaIntermediaDisponible) => {
     const etapa = salida.etapas_siguientes.find((item) =>
-      item.equipos.some((equipo) => !ocupaciones.has(equipo.id)),
+      item.equipos.some((equipo) => !equipo.ocupado_por),
     );
     if (!etapa) return;
     setPreparando(salida.id);
     setEtapaId(etapa.id);
-    setEquipoId(etapa.equipos.find((equipo) => !ocupaciones.has(equipo.id))?.id ?? 0);
+    setEquipoId(etapa.equipos.find((equipo) => !equipo.ocupado_por)?.id ?? 0);
     setCantidad(salida.cantidad_disponible);
     setError("");
     setMensaje("");
@@ -64,7 +54,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
   const seleccionarEtapa = (salida: SalidaIntermediaDisponible, id: number) => {
     const etapa = salida.etapas_siguientes.find((item) => item.id === id);
     setEtapaId(id);
-    setEquipoId(etapa?.equipos.find((equipo) => !ocupaciones.has(equipo.id))?.id ?? 0);
+    setEquipoId(etapa?.equipos.find((equipo) => !equipo.ocupado_por)?.id ?? 0);
   };
 
   const guardarPreparacion = async (salida: SalidaIntermediaDisponible) => {
@@ -100,7 +90,18 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
     setDefiniendo(salida.id);
     setError("");
     try {
-      await definirDestinoSalida(salida.id, destino);
+      const pendiente = operacionesDestino.current.get(salida.id);
+      const operacion = pendiente?.destino === destino
+        ? pendiente
+        : { destino, id: crypto.randomUUID() };
+      operacionesDestino.current.set(salida.id, operacion);
+      await definirDestinoSalida(
+        salida.id,
+        destino,
+        salida.destino,
+        operacion.id,
+      );
+      operacionesDestino.current.delete(salida.id);
       setMensaje(`Destino de ${salida.corrida_codigo}: ${salida.destinos_permitidos.find((item) => item.valor === destino)?.etiqueta ?? destino}.`);
       await cargar();
       onCambio?.();
@@ -252,9 +253,8 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                       className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                     >
                       {salida.etapas_siguientes.find((item) => item.id === etapaId)?.equipos.map((equipo) => {
-                        const ocupacion = ocupaciones.get(equipo.id);
-                        return <option key={equipo.id} value={equipo.id} disabled={Boolean(ocupacion)}>
-                          {equipo.nombre}{ocupacion ? ` · ${ocupacion.disponibilidad} por ${ocupacion.ejecucion}` : " · disponible"}
+                        return <option key={equipo.id} value={equipo.id} disabled={Boolean(equipo.ocupado_por)}>
+                          {equipo.nombre}{equipo.ocupado_por ? ` · ocupado por ${equipo.ocupado_por}` : " · disponible"}
                         </option>
                       })}
                     </select>
@@ -278,7 +278,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                     </button>
                   </div>
                 </div>
-              ) : salida.etapas_siguientes.some((item) => item.equipos.some((equipo) => !ocupaciones.has(equipo.id))) ? (
+              ) : salida.etapas_siguientes.some((item) => item.equipos.some((equipo) => !equipo.ocupado_por)) ? (
                 <button type="button" onClick={() => abrirPreparacion(salida)} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">
                   {salida.acciones_permitidas[0]?.etiqueta ?? "Preparar etapa siguiente"} <ArrowRight className="h-4 w-4" />
                 </button>

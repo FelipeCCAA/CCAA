@@ -1,5 +1,26 @@
 # Plan incremental ejecutable
 
+## Estado actual
+
+Fase **P3 — optimización medida cerrada**. Los bloques 7, `Planta Ahora`, 8,
+trazabilidad visual, 9, idempotencia de MRP/destinos, y 10, eliminación medida
+de GET auxiliares/N+1 y división de componentes grandes, están cerrados.
+
+La **Fase 9 — QA operacional está cerrada**. Se validaron de extremo a extremo
+polvo, mantequilla, precondensado, bloqueo de Calidad, concurrencia y permisos
+por puesto. Con el bloque 23 quedan cerradas las nueve fases y no restan bloques
+del roadmap aprobado.
+
+## Regla arquitectónica funcional
+
+> “CCAA no utiliza Empresa ni Sucursal como dimensiones funcionales, de permisos, aislamiento o navegación.”
+
+Los campos y relaciones antiguos pueden permanecer exclusivamente por
+compatibilidad de persistencia. Ningún bloque nuevo del roadmap debe usarlos
+para seleccionar trabajo, contar operación, autorizar acciones, navegar o
+entregar notificaciones. La lógica funcional se apoya en usuario, rol, permisos,
+área, responsabilidades, estados y relaciones productivas reales.
+
 ## Top mejoras y dependencias
 
 | Prioridad | Bloque | Resultado verificable |
@@ -37,3 +58,11 @@ Analiza `EjecucionProcesoViewSet.operativas`, `TIPOS_OPERABLES_POR_AREA` y sus c
 
 Ruff, tests Django focales y de regresión, `makemigrations --check`, TypeScript, ESLint, unitarios frontend y E2E del flujo afectado. Los circuitos lácteos completos se ejecutan después de estabilizar cada handoff, no como sustituto de tests de dominio.
 
+## Fase 9 — QA operacional
+
+La fase valida los escenarios ya definidos en el prompt maestro sin introducir
+procesos nuevos: leche en polvo hasta Inventario; mantequilla hasta Inventario;
+precondensado hasta despacho directo; bloqueo y liberación de Calidad;
+exclusión concurrente de equipos; y autorización backend/frontend por área y
+permiso. Empresa y Sucursal no son criterios de aceptación ni dimensiones de
+aislamiento de estas pruebas.

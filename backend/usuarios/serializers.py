@@ -9,7 +9,7 @@ from .permisos_industriales import (
     permisos_asignables_por,
     permisos_industriales_de,
 )
-from .tenancy import unica_empresa_activa, scope_de
+from .tenancy import unica_empresa_activa
 
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
@@ -21,7 +21,7 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
         model = PerfilUsuario
         fields = [
             "cargo", "area", "area_etiqueta", "turno", "rol", "rol_etiqueta",
-            "nivel", "nivel_etiqueta", "empresa", "debe_cambiar_password",
+            "nivel", "nivel_etiqueta", "debe_cambiar_password",
         ]
 
 
@@ -83,10 +83,6 @@ class TrabajadorSerializer(UsuarioSerializer):
     )
     cargo = serializers.CharField(write_only=True, required=False, allow_blank=True)
     turno = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    empresa = serializers.PrimaryKeyRelatedField(
-        queryset=Empresa.objects.filter(activa=True), write_only=True, required=False,
-        allow_null=True,
-    )
     permisos = serializers.ListField(
         child=serializers.CharField(), required=False, write_only=True
     )
@@ -95,30 +91,16 @@ class TrabajadorSerializer(UsuarioSerializer):
     class Meta(UsuarioSerializer.Meta):
         fields = UsuarioSerializer.Meta.fields + [
             "activo", "ultimo_acceso", "password", "area", "nivel", "cargo",
-            "turno", "empresa",
+            "turno",
             "permisos", "permisos_asignados",
         ]
         extra_kwargs = {"email": {"required": False, "allow_blank": True}}
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        request = self.context.get("request")
-        scope = scope_de(getattr(request, "user", None)) if request else None
-        if scope is None:
-            self.fields["empresa"].queryset = Empresa.objects.none()
-        elif not scope.es_global:
-            self.fields["empresa"].queryset = Empresa.objects.filter(
-                pk=scope.empresa_id, activa=True
-            )
-
     @staticmethod
-    def _completar_tenant(attrs, scope_actor):
-        """Todo perfil pertenece a la empresa; no existe selección de sede."""
-        if not scope_actor.es_global:
-            attrs.setdefault("empresa", Empresa.objects.get(pk=scope_actor.empresa_id))
-
+    def _completar_tenant(attrs, perfil_actual=None):
+        """Completa claves históricas sin exponerlas en el contrato funcional."""
         if attrs.get("empresa") is None:
-            empresa = unica_empresa_activa()
+            empresa = getattr(perfil_actual, "empresa", None) or unica_empresa_activa()
             if empresa is not None:
                 attrs["empresa"] = empresa
         attrs["sucursal"] = None
@@ -142,11 +124,7 @@ class TrabajadorSerializer(UsuarioSerializer):
                 raise serializers.ValidationError({"password": error.messages}) from error
 
         perfil_actual = getattr(self.instance, "perfil", None)
-        request = self.context.get("request")
-        scope_actor = scope_de(getattr(request, "user", None)) if request else None
-
-        if scope_actor is not None:
-            self._completar_tenant(attrs, scope_actor)
+        self._completar_tenant(attrs, perfil_actual)
 
         empresa = attrs.get("empresa", getattr(perfil_actual, "empresa", None))
         if empresa is None:

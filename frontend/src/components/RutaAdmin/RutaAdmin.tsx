@@ -1,13 +1,15 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 
+import { AccesoRestringido } from "../RutaModulo/RutaModulo";
+import { puedeAccederModulo } from "../../services/access-control";
 import { obtenerSesion } from "../../services/sesion";
 
 
 function RutaAdmin() {
-  const sesion = obtenerSesion();
+  const usuario = obtenerSesion()?.usuario;
 
-  if (sesion?.usuario.rol !== "admin" && sesion?.usuario.perfil?.nivel !== "admin") {
-    return <Navigate to="/dashboard" replace />;
+  if (!puedeAccederModulo(usuario, "administracion")) {
+    return <AccesoRestringido detalle="Tu puesto no está autorizado para administrar usuarios." />;
   }
 
   return <Outlet />;

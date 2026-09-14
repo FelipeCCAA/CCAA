@@ -14,6 +14,9 @@ CLAVE = "flujo-e2e-ccaa"
 CUENTAS = (
     ("e2e_produccion", Rol.PRODUCCION, PerfilUsuario.Area.CONDENSACION),
     ("e2e_calidad", Rol.CALIDAD, PerfilUsuario.Area.CALIDAD),
+    # Persona distinta para el control de cuatro ojos. Comparte el área y el
+    # rol reales de Calidad, pero nunca la identidad ni la sesión del analista.
+    ("e2e_calidad_firma", Rol.CALIDAD, PerfilUsuario.Area.CALIDAD),
     ("e2e_secado", Rol.PRODUCCION, PerfilUsuario.Area.SECADO),
     ("e2e_envasado", Rol.PRODUCCION, PerfilUsuario.Area.ENVASE),
     ("e2e_inventario", Rol.OPERARIO, PerfilUsuario.Area.BODEGA),
@@ -42,6 +45,8 @@ class Command(BaseCommand):
             usuario.save()
             revocar_sesiones(usuario, "password")
             perfil = PerfilUsuario.objects.filter(usuario=usuario).first() or PerfilUsuario(usuario=usuario)
+            # Compatibilidad de persistencia histórica. La autorización de
+            # estas cuentas se define por rol y área, no por estos campos.
             perfil.empresa = planta.empresa
             perfil.sucursal = planta
             perfil.alcance = PerfilUsuario.Alcance.SUCURSAL

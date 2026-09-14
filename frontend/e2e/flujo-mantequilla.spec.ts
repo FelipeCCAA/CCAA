@@ -29,7 +29,7 @@ test("crema liberada se transforma en mantequilla y pasa por Calidad", async ({ 
   await campo(alta, "Crema a utilizar (kg)").fill("60");
   await elegirOpcion(campo(alta, "Línea / equipo"), /Línea de mantequilla/i);
   await campo(alta, "Código nuevo lote de mantequilla").fill(lote);
-  await elegirOpcion(campo(alta, "Lote de suero (si se medirá)"), /MAZ-E2E/);
+  await elegirOpcion(campo(alta, "Lote de suero / mazada (opcional)"), /MAZ-E2E/);
   const creada = await trasGuardar(page, "/crear-guiada/", async () => {
     await alta.getByRole("button", { name: "Crear corrida" }).click();
   });
@@ -42,7 +42,7 @@ test("crema liberada se transforma en mantequilla y pasa por Calidad", async ({ 
   await tarjeta.getByRole("button", { name: "Registrar balance y cerrar" }).click();
   const cierre = page.locator("form").filter({ hasText: "Cerrar proceso de mantequilla" });
   await campo(cierre, "Mantequilla producida (kg)").fill("31");
-  await campo(cierre, "Suero generado (kg)").fill("28");
+  await campo(cierre, "Suero / mazada recuperada (kg)").fill("28");
   await campo(cierre, "Merma medida (kg)").fill("1");
   await campo(cierre, "Humedad (%)").fill("15.8");
   await trasGuardar(page, "/cerrar/", async () => {

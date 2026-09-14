@@ -24,7 +24,7 @@ from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
 from usuarios.models import PerfilUsuario, Rol
 from usuarios.tenancy import (
     QuerysetTenantMixin, RelacionesTenantMixin,
-    filtrar_por_scope, scope_de, sucursal_para_escritura,
+    filtrar_por_scope, sucursal_para_escritura,
 )
 
 from . import dominio
@@ -48,15 +48,14 @@ from .servicios import (
 
 def _usuarios_recepcion(usuario):
     """Quién puede figurar como responsable de una muestra."""
-    return usuarios_del_area(
-        PerfilUsuario.Area.RECEPCION,
-        empresa_id=scope_de(usuario, requerido=True).empresa_id,
-    ).order_by("first_name", "last_name", "username")
+    return usuarios_del_area(PerfilUsuario.Area.RECEPCION).order_by(
+        "first_name", "last_name", "username"
+    )
 
 
 def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
     """
-    Crea avisos operativos solo para la misma empresa.
+    Crea avisos para quienes cubren las áreas responsables del trabajo.
 
     Pregunta **lo mismo** que `_usuarios_recepcion`. Cuando cada una lo
     preguntaba a su manera —una miraba `area` o `rol`, esta solo `area`— una
@@ -71,10 +70,7 @@ def _notificar_recepcion(recepcion, *, tipo, titulo, mensaje, areas):
 
     for area in areas:
         destinatarios.update(
-            perfiles_del_area(
-                area,
-                empresa_id=recepcion.sucursal.empresa_id,
-            ).values_list("usuario_id", flat=True)
+            perfiles_del_area(area).values_list("usuario_id", flat=True)
         )
     Notificacion.objects.bulk_create([
         Notificacion(
@@ -1362,21 +1358,15 @@ class MovimientoSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets
         from maestros.models import Equipo, Producto
         from produccion.models import Lote
 
-        scope = scope_de(request.user, requerido=True)
-        filtro_sucursal = {"sucursal_id": scope.sucursal_id} if scope.es_sucursal else {
-            "sucursal__empresa_id": scope.empresa_id
-        }
-        lote = Lote.objects.filter(pk=datos.get("lote"), **filtro_sucursal).first() if datos.get("lote") else None
-        producto = Producto.objects.filter(
-            pk=datos.get("producto"), mandante__empresa_id=scope.empresa_id
-        ).first() if datos.get("producto") else None
-        equipo = Equipo.objects.filter(pk=datos.get("equipo"), **filtro_sucursal).first() if datos.get("equipo") else None
+        lote = Lote.objects.filter(pk=datos.get("lote")).first() if datos.get("lote") else None
+        producto = Producto.objects.filter(pk=datos.get("producto")).first() if datos.get("producto") else None
+        equipo = Equipo.objects.filter(pk=datos.get("equipo")).first() if datos.get("equipo") else None
         if datos.get("lote") and lote is None:
-            raise DRFValidationError({"lote": "Lote inexistente o fuera de tu planta."})
+            raise DRFValidationError({"lote": "Lote inexistente."})
         if datos.get("producto") and producto is None:
-            raise DRFValidationError({"producto": "Producto inexistente o fuera de tu empresa."})
+            raise DRFValidationError({"producto": "Producto inexistente."})
         if datos.get("equipo") and equipo is None:
-            raise DRFValidationError({"equipo": "Equipo inexistente o fuera de tu planta."})
+            raise DRFValidationError({"equipo": "Equipo inexistente."})
         try:
             movimientos = transferir_silo(
                 silo_origen_id=datos["silo_origen"],

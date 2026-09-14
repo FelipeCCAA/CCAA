@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowRight, Beaker, Factory, GitBranch, Plus, Search, Truck } from "lucide-react";
+import { ArrowRight, GitBranch, Plus } from "lucide-react";
 
 import { EmptyState, ErrorState, PageLoader } from "../../components/ui/PageState";
 import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import StatusBadge from "../../components/ui/StatusBadge";
-import { iniciarCondensacion, iniciarMantequilla, obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerGenealogia, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type Genealogia, type RutaProducto } from "../../services/procesos.service";
+import { iniciarCondensacion, iniciarMantequilla, obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type RutaProducto } from "../../services/procesos.service";
 import { esConflictoVersion, esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { puedeEscribir } from "../../services/sesion";
-import ArbolGenealogia from "./ArbolGenealogia";
 import CierreCondensacion from "./CierreCondensacion";
 import CierreDescremacion from "./CierreDescremacion";
 import CierreMantequilla from "./CierreMantequilla";
@@ -18,6 +17,7 @@ import NuevaCondensacion from "./NuevaCondensacion";
 import NuevaMantequilla from "./NuevaMantequilla";
 import NuevaRutaProducto from "./NuevaRutaProducto";
 import ReworkProduccion from "./ReworkProduccion";
+import TrazabilidadProceso from "./TrazabilidadProceso";
 
 export default function Procesos() {
   const puedeOperar = puedeEscribir("produccion");
@@ -41,9 +41,6 @@ export default function Procesos() {
   const [nuevaRuta, setNuevaRuta] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
-  const [lote, setLote] = useState("");
-  const [direccion, setDireccion] = useState<"atras" | "adelante">("atras");
-  const [genealogia, setGenealogia] = useState<Genealogia | null>(null);
   const [accionando, setAccionando] = useState<number | null>(null);
   const siloParametro = Number(parametros.get("silo"));
   const siloDescremacion = parametros.get("accion") === "descremar" && Number.isInteger(siloParametro) && siloParametro > 0
@@ -174,23 +171,6 @@ export default function Procesos() {
     } catch { setError("No se pudieron cargar las descremaciones."); }
   };
 
-  const buscar = async (evento: React.FormEvent) => {
-    evento.preventDefault();
-    if (!lote.trim()) {
-      setError("Escribe el código del lote.");
-      return;
-    }
-
-    setError("");
-
-    try {
-      setGenealogia(await obtenerGenealogia(lote, direccion));
-    } catch {
-      setGenealogia(null);
-      setError(`No existe el lote «${lote.trim()}» o no se pudo reconstruir su genealogía.`);
-    }
-  };
-
   return (
     <main className="px-6 py-8 lg:px-10">
       <div className="mx-auto max-w-7xl space-y-8">
@@ -241,106 +221,7 @@ export default function Procesos() {
           alConsumir={async () => setEjecuciones(await obtenerEjecucionesOperativas())}
         />
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
-          <div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Consultar genealogía</h2></div>
-          <form onSubmit={buscar} className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <input value={lote} onChange={(e) => setLote(e.target.value)} placeholder="Código del lote (p. ej. CCAA6212010102010201-01)" className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5" />
-            <select value={direccion} onChange={(e) => setDireccion(e.target.value as "atras" | "adelante")} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5"><option value="atras">Hacia atrás</option><option value="adelante">Hacia adelante</option></select>
-            <button className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-700 px-5 py-2.5 font-semibold text-white"><Search className="h-4 w-4" />Buscar</button>
-          </form>
-          {genealogia?.flujo && (
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-                Línea completa del lote
-              </h3>
-              <div className="mt-3 grid items-stretch gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center gap-2 font-semibold text-slate-800">
-                    <Truck className="h-4 w-4 text-green-700" /> {genealogia.flujo.origenes_externos.length ? "Recepción externa" : "Recepción"}
-                  </div>
-                  {genealogia.flujo.origenes_externos.length ? <ul className="mt-2 space-y-2 text-xs text-slate-600">{genealogia.flujo.origenes_externos.map((item) => <li key={item.lote_id}><b>{item.material}</b><br />Lote {item.lote_codigo} · {Number(item.cantidad).toLocaleString("es-CL")} {item.unidad}{item.proveedor ? ` · ${item.proveedor}` : ""}</li>)}</ul> : <><p className="mt-2 text-sm text-slate-600">
-                    {genealogia.flujo.recepciones.length} origen(es) de recepción
-                  </p>
-                  <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-slate-600">
-                    {genealogia.flujo.recepciones.map((item) => (
-                      <li key={`${item.id}-${item.silo_codigo}`}>
-                        {item.fecha} · guía {item.guia || "—"} · {item.silo_codigo}
-                        {item.litros_atribuidos !== null && ` · ${Number(item.litros_atribuidos).toLocaleString("es-CL")} L atribuidos`}
-                        {` · ${item.trazabilidad === "confirmada" ? "Confirmado FIFO" : "Inferido"}`}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-2 text-xs text-slate-600">{genealogia.flujo.nota_recepciones}</p>
-                  {Number(genealogia.flujo.litros_no_atribuibles) > 0 && (
-                    <p className="mt-2 text-xs font-semibold text-amber-700">
-                      {Number(genealogia.flujo.litros_no_atribuibles).toLocaleString("es-CL")} L sin recepción histórica atribuible
-                    </p>
-                  )}</>}
-                </div>
-                <ArrowRight className="m-auto hidden h-5 w-5 text-slate-300 lg:block" />
-                <div className="rounded-xl border border-green-200 bg-green-50/50 p-4">
-                  <div className="flex items-center gap-2 font-semibold text-slate-800">
-                    <Beaker className="h-4 w-4 text-green-700" /> {genealogia.flujo.estandarizacion ? "Estandarización" : "Calidad de origen"}
-                  </div>
-                  {genealogia.flujo.estandarizacion ? <><p className="mt-2 text-sm font-medium">{genealogia.flujo.estandarizacion.vale_codigo}</p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    {genealogia.flujo.estandarizacion.silos_origen.map((item) => item.codigo).join(" + ")}
-                    {" → "}{genealogia.flujo.estandarizacion.silo_destino}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-600">
-                    Proceso {genealogia.flujo.estandarizacion.ejecucion_codigo || "sin ID"}
-                  </p></> : <><p className="mt-2 text-sm font-medium">{genealogia.flujo.origenes_externos[0]?.estado_calidad || "Sin origen externo"}</p><p className="mt-2 text-xs text-slate-600">Solo un lote vigente y liberado puede alimentar la torre.</p></>}
-                </div>
-                <ArrowRight className="m-auto hidden h-5 w-5 text-slate-300 lg:block" />
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center gap-2 font-semibold text-slate-800">
-                    <Factory className="h-4 w-4 text-green-700" /> Producción
-                  </div>
-                  <p className="mt-2 text-sm font-medium">{genealogia.flujo.produccion.lote_codigo}</p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    {genealogia.flujo.produccion.producto} · {genealogia.flujo.produccion.linea || "sin línea"} · {genealogia.flujo.produccion.equipo || "sin máquina"}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-600">
-                    Proceso {genealogia.flujo.produccion.ejecucion_codigo || "sin ID"}
-                  </p>
-                </div>
-              </div>
-              {genealogia.flujo.cadena_procesos.length > 0 && (
-                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
-                  <p className="text-sm font-semibold text-violet-950">Transformaciones relacionadas</p>
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
-                    {genealogia.flujo.cadena_procesos.map((ejecucion, indice) => (
-                      <div key={ejecucion.id} className="flex shrink-0 items-center gap-2">
-                        {indice > 0 && <ArrowRight className="h-4 w-4 text-violet-300" />}
-                        <article className="w-56 rounded-lg border border-violet-200 bg-white p-3 text-xs">
-                          <p className="font-bold text-slate-900">{ejecucion.etapa}</p>
-                          <p className="mt-1 text-violet-700">{ejecucion.codigo}</p>
-                          <p className="mt-1 text-slate-500">{ejecucion.equipo || "Sin equipo"} · {ejecucion.estado}</p>
-                          {ejecucion.salidas.map((salida) => (
-                            <p key={salida.id} className="mt-2 rounded bg-slate-50 px-2 py-1 text-slate-600">
-                              {Number(salida.cantidad).toLocaleString("es-CL")} {salida.unidad} · {salida.clase} → {salida.destino}
-                            </p>
-                          ))}
-                        </article>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4">
-                  <p className="text-sm font-semibold text-sky-900">Calidad · {genealogia.flujo.calidad.estado}</p>
-                  <p className="mt-1 text-xs text-sky-700">{genealogia.flujo.calidad.autorizada_por ? `Firmado por ${genealogia.flujo.calidad.autorizada_por}` : "Sin firma de liberación"}</p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-                  <p className="text-sm font-semibold text-amber-900">Envase, inventario y despacho</p>
-                  {genealogia.flujo.pallets.length === 0 ? <p className="mt-1 text-xs text-amber-700">Sin pallets registrados.</p> : <ul className="mt-2 space-y-1 text-xs text-amber-800">{genealogia.flujo.pallets.map((p) => <li key={p.id}>{p.codigo} · {p.kg_neto} kg · {p.ubicacion ? `ubicación ${p.ubicacion}` : p.estado}{p.cliente ? ` · cliente ${p.cliente} (${p.despacho})` : ""}</li>)}</ul>}
-                </div>
-              </div>
-            </div>
-          )}
-          {genealogia && <div className="mt-5"><ArbolGenealogia genealogia={genealogia} direccion={direccion} /></div>}
-        </section>
+        <TrazabilidadProceso />
 
         <section>
           <h2 className="mb-1 text-xl font-semibold text-slate-800">Ejecuciones operativas</h2>

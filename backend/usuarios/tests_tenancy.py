@@ -54,7 +54,7 @@ class TenancyUsuariosTests(TestCase):
                 alcance=PerfilUsuario.Alcance.SUCURSAL,
             )
 
-    def test_get_y_patch_de_usuario_de_otra_sucursal_responden_404(self):
+    def test_empresa_y_sucursal_no_ocultan_usuarios_a_administracion(self):
         admin_a1 = self.usuario_admin("admin-a1", self.empresa_a, self.a1)
         objetivo = self.usuario_admin("admin-a2", self.empresa_a, self.a2)
         cliente = APIClient()
@@ -62,7 +62,7 @@ class TenancyUsuariosTests(TestCase):
 
         self.assertEqual(
             cliente.get(f"/api/usuarios/trabajadores/{objetivo.id}/").status_code,
-            404,
+            200,
         )
         self.assertEqual(
             cliente.patch(
@@ -70,10 +70,10 @@ class TenancyUsuariosTests(TestCase):
                 {"cargo": "No autorizado"},
                 format="json",
             ).status_code,
-            404,
+            403,
         )
 
-    def test_post_rechaza_sucursal_de_otro_tenant(self):
+    def test_post_ignora_dimensiones_historicas_del_cliente(self):
         admin_a1 = self.usuario_admin("admin-a1", self.empresa_a, self.a1)
         cliente = APIClient()
         cliente.force_authenticate(admin_a1)
@@ -90,10 +90,12 @@ class TenancyUsuariosTests(TestCase):
             format="json",
         )
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertFalse(User.objects.filter(username="intruso").exists())
+        self.assertEqual(respuesta.status_code, 201)
+        creado = User.objects.get(username="intruso")
+        self.assertEqual(creado.perfil.empresa_id, self.empresa_a.id)
+        self.assertIsNone(creado.perfil.sucursal_id)
 
-    def test_admin_empresa_ve_sus_sucursales_pero_no_otra_empresa(self):
+    def test_administracion_ve_usuarios_sin_particion_organizacional(self):
         admin_empresa = self.usuario_admin(
             "admin-a", self.empresa_a, None, PerfilUsuario.Alcance.EMPRESA
         )
@@ -104,4 +106,4 @@ class TenancyUsuariosTests(TestCase):
 
         ids = {fila["id"] for fila in cliente.get("/api/usuarios/trabajadores/").json()}
         self.assertIn(propio.id, ids)
-        self.assertNotIn(ajeno.id, ids)
+        self.assertIn(ajeno.id, ids)

@@ -47,9 +47,7 @@ class BaseAreas(TestCase):
 
     def _nombres(self, area):
         return sorted(
-            usuarios_del_area(area, empresa_id=self.empresa.pk).values_list(
-                "username", flat=True
-            )
+            usuarios_del_area(area).values_list("username", flat=True)
         )
 
 
@@ -92,15 +90,11 @@ class QuienEsDeUnAreaTests(BaseAreas):
         )
 
         self.assertEqual(
-            usuarios_del_area(
-                PerfilUsuario.Area.RECEPCION, empresa_id=self.empresa.pk
-            ).count(),
+            usuarios_del_area(PerfilUsuario.Area.RECEPCION).count(),
             1,
         )
         self.assertEqual(
-            perfiles_del_area(
-                PerfilUsuario.Area.RECEPCION, empresa_id=self.empresa.pk
-            ).count(),
+            perfiles_del_area(PerfilUsuario.Area.RECEPCION).count(),
             1,
         )
 
@@ -124,7 +118,7 @@ class QuienEsDeUnAreaTests(BaseAreas):
 
         self.assertEqual(self._nombres(PerfilUsuario.Area.RECEPCION), ["eva"])
 
-    def test_no_se_cuela_quien_es_de_otra_empresa(self):
+    def test_empresa_historica_no_particiona_un_area(self):
         otra = Empresa.objects.create(rut="77.131.131-1", nombre="Otra")
         ajena = Sucursal.objects.create(empresa=otra, codigo="X", nombre="Ajena")
         usuario = User.objects.create_user(username="ajeno", password="x")
@@ -136,7 +130,7 @@ class QuienEsDeUnAreaTests(BaseAreas):
             alcance=PerfilUsuario.Alcance.SUCURSAL,
         )
 
-        self.assertEqual(self._nombres(PerfilUsuario.Area.RECEPCION), [])
+        self.assertEqual(self._nombres(PerfilUsuario.Area.RECEPCION), ["ajeno"])
 
     def test_un_inactivo_no_cuenta(self):
         usuario = self._perfil("fran", area=PerfilUsuario.Area.RECEPCION)
@@ -155,14 +149,10 @@ class QuienEsDeUnAreaTests(BaseAreas):
         self._perfil("hugo", extras=[PerfilUsuario.Area.RECEPCION])
 
         responsables = set(
-            usuarios_del_area(
-                PerfilUsuario.Area.RECEPCION, empresa_id=self.empresa.pk
-            ).values_list("id", flat=True)
+            usuarios_del_area(PerfilUsuario.Area.RECEPCION).values_list("id", flat=True)
         )
         avisados = set(
-            perfiles_del_area(
-                PerfilUsuario.Area.RECEPCION, empresa_id=self.empresa.pk
-            ).values_list("usuario_id", flat=True)
+            perfiles_del_area(PerfilUsuario.Area.RECEPCION).values_list("usuario_id", flat=True)
         )
 
         self.assertEqual(responsables, avisados)

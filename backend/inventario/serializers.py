@@ -466,8 +466,8 @@ class MovimientoReworkSerializer(serializers.ModelSerializer):
 class SolicitudCompraSerializer(serializers.ModelSerializer):
     class Meta:
         model = SolicitudCompra
-        fields = "__all__"
-        read_only_fields = ["solicitante", "estado", "creada_en"]
+        exclude = ["sucursal"]
+        read_only_fields = ["solicitante", "estado", "creada_en", "ejecucion_mrp"]
 
 
 class DetalleSolicitudCompraSerializer(serializers.ModelSerializer):
@@ -556,7 +556,16 @@ class NotificacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notificacion
         fields = "__all__"
-        read_only_fields = ["destinatario", "tipo", "titulo", "mensaje", "documento_tipo", "documento_id", "creada_en"]
+        read_only_fields = [
+            "destinatario",
+            "tipo",
+            "titulo",
+            "mensaje",
+            "documento_tipo",
+            "documento_id",
+            "accion_url",
+            "creada_en",
+        ]
 
 
 class ResultadoMRPSerializer(serializers.ModelSerializer):
@@ -577,12 +586,12 @@ class EjecucionMRPSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EjecucionMRP
-        fields = "__all__"
+        exclude = ["sucursal"]
         # El estado y el fallo los escribe la tarea. Escribibles desde la API,
         # cualquiera podría marcar como terminada una ejecución a medias — y
         # nadie vuelve a mirar algo que figura hecho.
         read_only_fields = [
-            "creada_en", "ejecutada_por", "parametros",
+            "creada_en", "ejecutada_por", "parametros", "semana", "operacion_id",
             "estado", "error", "terminada_en",
         ]
 

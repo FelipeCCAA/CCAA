@@ -646,11 +646,6 @@ def expedientes(request):
     return Response(
         {
             "resultados": filas,
-            "procesos": (
-                consultar_resultados_intermedios(request.user)
-                if request.query_params.get("incluir_procesos") == "1"
-                else []
-            ),
             # El total de la consulta, no el de la página: es lo que permite
             # mostrar «50 de 954» y saber que hay más.
             "total": total,
@@ -813,7 +808,10 @@ def liberar_resultado_proceso(request, salida_id):
         SalidaProceso,
     )
     from produccion.models import Analisis, OrdenProduccion
-    from procesos.servicios import transicionar_ejecucion
+    from procesos.servicios import (
+        notificar_handoff_salida_liberada,
+        transicionar_ejecucion,
+    )
     from recepcion.models import AnalisisSilo
 
     with transaction.atomic():
@@ -961,6 +959,7 @@ def liberar_resultado_proceso(request, salida_id):
                 if corrida_final:
                     corrida_final.orden.estado = OrdenProduccion.Estado.LIBERADA
                     corrida_final.orden.save(update_fields=["estado"])
+        notificar_handoff_salida_liberada(salida)
     return Response({"estado": decision.estado})
 
 
@@ -1203,6 +1202,7 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         ),
         documento_tipo="lote_produccion",
         documento_id=lote.id,
+        accion_url="/inventario",
     )
 
     return Response(LiberacionSerializer(liberacion).data)

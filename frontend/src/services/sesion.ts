@@ -36,7 +36,6 @@ export interface PerfilUsuario {
   rol_etiqueta: string;
   nivel: "admin" | "trabajador";
   nivel_etiqueta: string;
-  empresa: number | null;
   debe_cambiar_password: boolean;
 }
 

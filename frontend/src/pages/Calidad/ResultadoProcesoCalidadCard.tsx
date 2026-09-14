@@ -34,6 +34,7 @@ interface Props {
   motivo: string;
   rechazando: boolean;
   accion: Accion;
+  bloqueado: boolean;
   puedeDecidir: boolean;
   alElegirAnalisis: (valor: string) => void;
   alCambiarObservacion: (valor: string) => void;
@@ -66,6 +67,7 @@ export default function ResultadoProcesoCalidadCard({
   motivo,
   rechazando,
   accion,
+  bloqueado,
   puedeDecidir,
   alElegirAnalisis,
   alCambiarObservacion,
@@ -193,10 +195,10 @@ export default function ResultadoProcesoCalidadCard({
                 </label>
               )}
               <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={!puedeLiberar || accion !== null} onClick={alLiberar} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
+                <button type="button" disabled={!puedeLiberar || bloqueado || accion !== null} onClick={alLiberar} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
                   {accion === "liberar" ? "Liberando…" : esAnalisisLote ? "Liberar para Envasado" : "Liberar etapa"}
                 </button>
-                <button type="button" disabled={accion !== null} onClick={alAbrirRechazo} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-40">Rechazar</button>
+                <button type="button" disabled={bloqueado || accion !== null} onClick={alAbrirRechazo} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-40">Rechazar</button>
               </div>
             </div>
           )}
@@ -208,8 +210,8 @@ export default function ResultadoProcesoCalidadCard({
                 <textarea required value={motivo} onChange={(evento) => alCambiarMotivo(evento.target.value)} className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" />
               </label>
               <div className="mt-2 flex justify-end gap-2">
-                <button type="button" disabled={accion !== null} onClick={alCancelarRechazo} className="px-3 py-2 text-xs text-slate-600">Cancelar</button>
-                <button type="button" disabled={!motivo.trim() || accion !== null} onClick={alRechazar} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{accion === "rechazar" ? "Rechazando…" : "Confirmar rechazo"}</button>
+                <button type="button" disabled={bloqueado || accion !== null} onClick={alCancelarRechazo} className="px-3 py-2 text-xs text-slate-600">Cancelar</button>
+                <button type="button" disabled={!motivo.trim() || bloqueado || accion !== null} onClick={alRechazar} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{accion === "rechazar" ? "Rechazando…" : "Confirmar rechazo"}</button>
               </div>
             </div>
           )}

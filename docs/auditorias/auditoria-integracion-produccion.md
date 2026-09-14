@@ -178,13 +178,13 @@ ALTO.
 Problema
 Después de liberar o rechazar una salida, React recarga expedientes completos y resultados intermedios juntos.
 Backend actual
-Los resultados de proceso solo pueden solicitarse dentro de calidad/expedientes/?incluir_procesos=1.
+Resuelto: los resultados productivos se solicitan mediante `GET /api/calidad/resultados-proceso/`, con paginación y filtros propios. El parámetro legado `incluir_procesos` fue retirado del contrato de expedientes.
 Frontend actual
 expedientes.recargar() vuelve a evaluar la primera página de lotes, checklists y resultados aunque cambió una sola salida.
 Riesgo
 Consultas innecesarias y mayor tiempo de respuesta a medida que crezca el histórico.
 Solución recomendada
-Exponer un GET específico para la bandeja de resultados de proceso o retornar la representación actualizada en liberar/rechazar. React debe actualizar esa salida o recargar únicamente dicha bandeja.
+Implementada: React recarga únicamente la bandeja específica después de liberar o rechazar una salida.
 Debe cambiar
 Ambos.
 Prioridad

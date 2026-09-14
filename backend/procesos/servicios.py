@@ -542,6 +542,50 @@ def siguiente_etapa_para_salida(*, salida, etapas_por_proceso=None):
     return next((etapa for etapa in etapas if etapa.orden > origen.orden), None)
 
 
+def notificar_handoff_salida_liberada(salida):
+    """Avisa al puesto que realmente puede actuar después de la liberación."""
+    from inventario.servicios import _notificar_area
+    from usuarios.models import PerfilUsuario
+
+    if salida.destino == SalidaProceso.Destino.ENVASADO:
+        area = PerfilUsuario.Area.ENVASE
+        accion_url = "/envasado"
+        accion = "Envasado ya puede utilizar este material."
+    elif salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO:
+        area = PerfilUsuario.Area.DESPACHO
+        accion_url = "/inventario"
+        accion = "Despacho ya puede preparar la salida a granel."
+    else:
+        siguiente = siguiente_etapa_para_salida(salida=salida)
+        if siguiente is None:
+            return
+        if siguiente.tipo == EtapaProceso.Tipo.SECADO:
+            area = PerfilUsuario.Area.SECADO
+            accion_url = "/secado"
+        else:
+            area = PerfilUsuario.Area.CONDENSACION
+            accion_url = (
+                "/estandarizacion"
+                if siguiente.tipo == EtapaProceso.Tipo.ESTANDARIZACION
+                else f"/procesos?seccion={siguiente.tipo}"
+            )
+        accion = f"{siguiente.nombre} ya puede preparar la continuación."
+
+    lote = salida.lote.codigo_lote if salida.lote_id else "sin lote asignado"
+    _notificar_area(
+        area,
+        tipo="material_liberado_para_continuar",
+        titulo=f"Material liberado para {dict(PerfilUsuario.Area.choices)[area]}",
+        mensaje=(
+            f"{salida.ejecucion.codigo} · lote {lote} · "
+            f"{salida.cantidad} {salida.unidad}. {accion}"
+        ),
+        documento_tipo="procesos.SalidaProceso",
+        documento_id=salida.pk,
+        accion_url=accion_url,
+    )
+
+
 def etapas_iniciales_por_producto(*, productos_sucursales, etapa_previa_tipo=None):
     """Resuelve, por ruta y prioridad, dónde puede comenzar una operación.
 
@@ -808,9 +852,7 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         )
 
     try:
-        equipo = Equipo.objects.get(
-            pk=equipo_id, sucursal_id=salida.ejecucion.sucursal_id, activo=True
-        )
+        equipo = Equipo.objects.get(pk=equipo_id, activo=True)
     except (Equipo.DoesNotExist, TypeError, ValueError) as error:
         raise ValidationError("La máquina seleccionada no está activa en esta planta.") from error
     compatibles = tipos_equipo_para_etapa(etapa.tipo)
@@ -972,23 +1014,72 @@ def transicionar_ejecucion(
     return ejecucion
 
 
-def genealogia_lote(
-    lote_id, direccion, profundidad_maxima=12, sucursal_id=None, empresa_id=None
+@transaction.atomic
+def definir_destino_salida(
+    *, salida_id, destino, destino_anterior, operacion_id, usuario
 ):
+    """Define un destino con bloqueo, control optimista e idempotencia."""
+    try:
+        operacion_id = uuid.UUID(str(operacion_id))
+    except (TypeError, ValueError, AttributeError) as error:
+        raise ValidationError("La clave de operación no es válida.") from error
+
+    salida = (
+        SalidaProceso.objects.select_for_update(of=("self",))
+        .select_related("ejecucion")
+        .get(pk=salida_id)
+    )
+    evento_existente = EventoProceso.objects.filter(
+        operacion_id=operacion_id
+    ).first()
+    if evento_existente:
+        datos = evento_existente.datos
+        if datos.get("salida_id") != salida.pk or datos.get("destino") != destino:
+            raise ValidationError("La clave de operación ya fue usada para otra decisión.")
+        return salida
+
+    if destino_anterior != salida.destino:
+        raise ValidationError(
+            "El destino cambió desde que abriste la pantalla. Actualiza antes de decidir."
+        )
+    if destino not in salida.destinos_permitidos():
+        raise ValidationError("El destino no es compatible con este producto intermedio.")
+    if (
+        salida.usos_como_origen.exists()
+        and destino != SalidaProceso.Destino.SIGUIENTE_PROCESO
+    ):
+        raise ValidationError(
+            "La salida ya fue consumida por otro proceso y no puede cambiar de destino."
+        )
+    if salida.detalles_despacho_granel.exclude(
+        despacho__estado="cancelado"
+    ).exists() and destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
+        raise ValidationError(
+            "La salida ya forma parte de un despacho y no puede cambiar de destino."
+        )
+
+    salida.destino = destino
+    salida.save(update_fields=["destino"])
+    EventoProceso.objects.create(
+        ejecucion=salida.ejecucion,
+        tipo="destino_salida_definido",
+        datos={
+            "salida_id": salida.pk,
+            "destino_anterior": destino_anterior,
+            "destino": destino,
+        },
+        usuario=usuario,
+        operacion_id=operacion_id,
+    )
+    return salida
+
+
+def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
     from produccion.models import Lote
     from .models import EntradaProceso, SalidaProceso
 
     if direccion not in {"atras", "adelante"}:
         raise ValueError("Dirección inválida.")
-
-    def acotar_por_tenant(consulta, prefijo=""):
-        if sucursal_id is not None:
-            return consulta.filter(**{f"{prefijo}sucursal_id": sucursal_id})
-        if empresa_id is not None:
-            return consulta.filter(
-                **{f"{prefijo}sucursal__empresa_id": empresa_id}
-            )
-        return consulta
 
     def serializar_nodo(lote):
         return {
@@ -996,9 +1087,14 @@ def genealogia_lote(
             "codigo": lote.codigo_lote,
             "producto": lote.producto.nombre,
             "fecha": lote.fecha,
+            "estado": lote.get_estado_display(),
+            "cantidad": lote.kg_producidos,
+            "unidad": "kg" if lote.kg_producidos is not None else None,
         }
 
-    lotes = acotar_por_tenant(Lote.objects.select_related("producto"))
+    # Empresa y Sucursal son campos heredados de persistencia. La genealogía
+    # sigue relaciones productivas reales y nunca corta una cadena por ellos.
+    lotes = Lote.objects.select_related("producto")
     raiz = lotes.get(pk=int(lote_id))
     visitados = {raiz.id}
     frontera = [raiz]
@@ -1018,9 +1114,14 @@ def genealogia_lote(
                 ejecucion__salidas__lote_id__in=ids_actuales,
                 lote_id__isnull=False,
             ).annotate(
-                actual_relacion_id=F("ejecucion__salidas__lote_id")
-            ).select_related("lote__producto")
-            relaciones = acotar_por_tenant(relaciones, "lote__").order_by(
+                actual_relacion_id=F("ejecucion__salidas__lote_id"),
+                salida_relacion_id=F("ejecucion__salidas__id"),
+                salida_cantidad=F("ejecucion__salidas__cantidad"),
+                salida_unidad=F("ejecucion__salidas__unidad"),
+                salida_naturaleza=F("ejecucion__salidas__naturaleza"),
+                salida_destino=F("ejecucion__salidas__destino"),
+            ).select_related("lote__producto", "ejecucion__etapa", "ejecucion__equipo")
+            relaciones = relaciones.order_by(
                 "ejecucion__salidas__id", "id"
             )
         else:
@@ -1028,9 +1129,13 @@ def genealogia_lote(
                 ejecucion__entradas__lote_id__in=ids_actuales,
                 lote_id__isnull=False,
             ).annotate(
-                actual_relacion_id=F("ejecucion__entradas__lote_id")
-            ).select_related("lote__producto")
-            relaciones = acotar_por_tenant(relaciones, "lote__").order_by(
+                actual_relacion_id=F("ejecucion__entradas__lote_id"),
+                entrada_relacion_id=F("ejecucion__entradas__id"),
+                entrada_cantidad=F("ejecucion__entradas__cantidad"),
+                entrada_unidad=F("ejecucion__entradas__unidad"),
+                entrada_tipo=F("ejecucion__entradas__tipo"),
+            ).select_related("lote__producto", "ejecucion__etapa", "ejecucion__equipo")
+            relaciones = relaciones.order_by(
                 "ejecucion__entradas__id", "id"
             )
 
@@ -1046,7 +1151,56 @@ def genealogia_lote(
                     if direccion == "atras"
                     else (actual_id, relacionado.id)
                 )
-                enlaces.append({"origen": origen, "destino": destino})
+                if direccion == "atras":
+                    entrada = {
+                        "id": relacion.pk,
+                        "cantidad": relacion.cantidad,
+                        "unidad": relacion.unidad,
+                        "tipo": relacion.get_tipo_display(),
+                    }
+                    salida = {
+                        "id": relacion.salida_relacion_id,
+                        "cantidad": relacion.salida_cantidad,
+                        "unidad": relacion.salida_unidad,
+                        "naturaleza": dict(SalidaProceso.Naturaleza.choices).get(
+                            relacion.salida_naturaleza, relacion.salida_naturaleza
+                        ),
+                        "destino": dict(SalidaProceso.Destino.choices).get(
+                            relacion.salida_destino, relacion.salida_destino
+                        ),
+                    }
+                else:
+                    entrada = {
+                        "id": relacion.entrada_relacion_id,
+                        "cantidad": relacion.entrada_cantidad,
+                        "unidad": relacion.entrada_unidad,
+                        "tipo": dict(EntradaProceso.Tipo.choices).get(
+                            relacion.entrada_tipo, relacion.entrada_tipo
+                        ),
+                    }
+                    salida = {
+                        "id": relacion.pk,
+                        "cantidad": relacion.cantidad,
+                        "unidad": relacion.unidad,
+                        "naturaleza": relacion.get_naturaleza_display(),
+                        "destino": relacion.get_destino_display(),
+                    }
+                enlaces.append({
+                    "origen": origen,
+                    "destino": destino,
+                    "ejecucion": {
+                        "id": relacion.ejecucion_id,
+                        "codigo": relacion.ejecucion.codigo,
+                        "etapa": relacion.ejecucion.etapa.nombre,
+                        "tipo": relacion.ejecucion.etapa.tipo,
+                        "equipo": (
+                            relacion.ejecucion.equipo.nombre
+                            if relacion.ejecucion.equipo_id else None
+                        ),
+                    },
+                    "entrada": entrada,
+                    "salida": salida,
+                })
                 if relacionado.id in visitados:
                     continue
                 visitados.add(relacionado.id)
@@ -1831,10 +1985,12 @@ def iniciar_mantequilla(*, corrida_id, usuario):
 
 @transaction.atomic
 def cerrar_mantequilla(
-    *, corrida_id, usuario, kg_mantequilla, kg_suero=0, kg_merma=0, controles=None
+    *, corrida_id, usuario, kg_mantequilla, kg_suero=0, kg_merma=0,
+    kg_reproceso=0, motivo_reproceso="", controles=None,
 ):
     from calidad.models import LiberacionProceso
-    from .models import SalidaProceso
+    from produccion.models import Lote
+    from .models import AutorizacionReproceso, SalidaProceso
 
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "lote_mantequilla__producto", "lote_suero", "orden"
@@ -1844,7 +2000,30 @@ def cerrar_mantequilla(
     corrida.kg_mantequilla = Decimal(str(kg_mantequilla))
     corrida.kg_suero = Decimal(str(kg_suero))
     corrida.kg_merma = Decimal(str(kg_merma))
+    corrida.kg_reproceso = Decimal(str(kg_reproceso))
+    corrida.motivo_reproceso = str(motivo_reproceso).strip()
     corrida.controles = controles or {}
+    if corrida.kg_reproceso:
+        codigo_reproceso = f"RW-MANT-{corrida.operacion_id.hex[:12].upper()}"
+        lote_reproceso = Lote(
+            sucursal=corrida.lote_mantequilla.sucursal,
+            codigo_lote=codigo_reproceso,
+            codigo_lote_propuesto=codigo_reproceso,
+            op=corrida.orden.codigo,
+            orden=corrida.orden,
+            producto=corrida.lote_mantequilla.producto,
+            equipo=corrida.ejecucion.equipo,
+            fecha=timezone.localdate(),
+            estado=Lote.Estado.PRODUCIDO,
+            kg_producidos=corrida.kg_reproceso,
+            observacion=(
+                f"Reproceso segregado al cerrar {corrida.ejecucion.codigo}. "
+                f"Motivo: {corrida.motivo_reproceso}"
+            ),
+        )
+        lote_reproceso.full_clean()
+        lote_reproceso.save()
+        corrida.lote_reproceso = lote_reproceso
     corrida.clean()
     salida_mantequilla = SalidaProceso.objects.create(
         ejecucion=corrida.ejecucion, lote=corrida.lote_mantequilla,
@@ -1875,6 +2054,52 @@ def cerrar_mantequilla(
             clasificacion=SalidaProceso.Clasificacion.MERMA,
             destino=SalidaProceso.Destino.OTRO,
             cantidad=corrida.kg_merma, unidad="kg", motivo="Merma de mantequilla",
+        )
+    if corrida.kg_reproceso:
+        SalidaProceso.objects.create(
+            ejecucion=corrida.ejecucion, lote=corrida.lote_reproceso,
+            producto=corrida.lote_reproceso.producto,
+            ruta_producto=corrida.ejecucion.ruta_producto,
+            naturaleza=SalidaProceso.Naturaleza.REPROCESO,
+            clasificacion=SalidaProceso.Clasificacion.GRANEL,
+            destino=SalidaProceso.Destino.REPROCESO,
+            cantidad=corrida.kg_reproceso, unidad="kg",
+            motivo=corrida.motivo_reproceso,
+        )
+        autorizacion = AutorizacionReproceso(
+            lote=corrida.lote_reproceso,
+            origen=AutorizacionReproceso.Origen.RECUPERABLE,
+            cantidad_kg=corrida.kg_reproceso,
+            motivo=corrida.motivo_reproceso,
+            solicitado_por=usuario,
+        )
+        autorizacion.full_clean()
+        autorizacion.save()
+        from inventario.servicios import _notificar_area
+        from usuarios.models import PerfilUsuario
+
+        _notificar_area(
+            PerfilUsuario.Area.CALIDAD,
+            tipo="reproceso_pendiente_calidad",
+            titulo="Reproceso de mantequilla pendiente de Calidad",
+            mensaje=(
+                f"Lote {corrida.lote_reproceso.codigo_lote}: "
+                f"{corrida.kg_reproceso} kg segregados. "
+                f"Motivo: {corrida.motivo_reproceso}"
+            ),
+            documento_tipo="procesos.AutorizacionReproceso",
+            documento_id=autorizacion.pk,
+            accion_url="/calidad",
+        )
+        EventoProceso.objects.create(
+            ejecucion=corrida.ejecucion, usuario=usuario,
+            tipo="reproceso_solicitado",
+            estado_anterior=corrida.ejecucion.estado,
+            estado_nuevo=corrida.ejecucion.estado,
+            motivo=(
+                f"{corrida.kg_reproceso} kg segregados en "
+                f"{corrida.lote_reproceso.codigo_lote}; pendiente de Calidad."
+            ),
         )
     transicionar_ejecucion(
         ejecucion_id=corrida.ejecucion_id,

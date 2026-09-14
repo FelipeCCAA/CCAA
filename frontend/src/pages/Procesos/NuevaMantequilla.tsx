@@ -27,7 +27,7 @@ export default function NuevaMantequilla({
   alConflictoEquipo: () => Promise<void>;
 }) {
   const [opciones, setOpciones] = useState<OpcionesAltaMantequilla | null>(null);
-  const [datos, setDatos] = useState({ orden: "", crema: "", equipo: "", codigo: "", kg: "" });
+  const [datos, setDatos] = useState({ orden: "", crema: "", suero: "", equipo: "", codigo: "", kg: "" });
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -54,6 +54,7 @@ export default function NuevaMantequilla({
         lote_crema: Number(datos.crema),
         equipo: Number(datos.equipo),
         codigo_lote_mantequilla: datos.codigo,
+        lote_suero: datos.suero ? Number(datos.suero) : undefined,
         kg_crema: Number(datos.kg),
       }));
     } catch (errorPeticion: unknown) {
@@ -77,6 +78,7 @@ export default function NuevaMantequilla({
             <Selector texto="Orden de mantequilla" valor={datos.orden} cambiar={(valor) => setDatos({ ...datos, orden: valor })}><option value="">Seleccionar OP…</option>{opciones?.ordenes.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto}</option>)}</Selector>
             <Selector texto="Lote de crema" valor={datos.crema} cambiar={(valor) => setDatos({ ...datos, crema: valor, kg: "" })}><option value="">Seleccionar crema…</option>{opciones?.cremas.map((item) => <option key={item.id} value={item.id}>{item.codigo} · disponible {Number(item.disponible_kg).toLocaleString("es-CL")} kg</option>)}</Selector>
             <label className="text-sm font-medium text-slate-700">Crema a utilizar (kg)<input required min="0.001" max={crema?.disponible_kg} step="0.001" type="number" value={datos.kg} onChange={(evento) => setDatos({ ...datos, kg: evento.target.value })} className={campo} /></label>
+            <Selector texto="Lote de suero / mazada (opcional)" valor={datos.suero} cambiar={(valor) => setDatos({ ...datos, suero: valor })}><option value="">Sin recuperación de mazada…</option>{opciones?.sueros.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto}</option>)}</Selector>
             <Selector texto="Línea / equipo" valor={datos.equipo} cambiar={(valor) => setDatos({ ...datos, equipo: valor })}><option value="">Seleccionar línea…</option>{opciones?.equipos.map((item) => { const ocupacion = ocupaciones.get(item.id); const ocupadoPor = ocupacion?.ejecucion ?? item.ocupado_por; return <option key={item.id} value={item.id} disabled={Boolean(ocupadoPor)}>{item.nombre}{ocupadoPor ? ` · ocupado por ${ocupadoPor}` : " · disponible"}</option>; })}</Selector>
             {equipoSeleccionado && <div className="self-end pb-2"><EstadoEquipo estado={ocupacionSeleccionada?.estado ?? (equipoSeleccionado.ocupado_por ? "ejecucion" : undefined)} ejecucion={ocupacionSeleccionada?.ejecucion ?? equipoSeleccionado.ocupado_por ?? undefined} /></div>}
             <label className="text-sm font-medium text-slate-700">Código nuevo lote de mantequilla<input required value={datos.codigo} onChange={(evento) => setDatos({ ...datos, codigo: evento.target.value.toUpperCase() })} className={campo} /></label>

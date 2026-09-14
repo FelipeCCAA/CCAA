@@ -1,6 +1,6 @@
 """Permisos operacionales del dominio de procesos productivos."""
 
-from rest_framework.permissions import SAFE_METHODS
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from usuarios.models import PerfilUsuario, Rol, rol_de
 from usuarios.permisos import EscribeProduccion
@@ -29,6 +29,21 @@ TIPOS_OPERABLES_POR_AREA = {
     },
     PerfilUsuario.Area.SECADO: {EtapaProceso.Tipo.SECADO},
 }
+
+
+class PuedeVerPlantaAhora(BasePermission):
+    """El panel transversal es para responsables, sin dimensiones territoriales."""
+
+    message = "Solo una jefatura o Administración puede ver Planta Ahora."
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        perfil = getattr(request.user, "perfil", None)
+        return bool(
+            rol_de(request.user) == Rol.ADMIN
+            or (perfil and perfil.nivel == PerfilUsuario.Nivel.ADMIN)
+        )
 
 
 def tipos_operables_para(usuario):

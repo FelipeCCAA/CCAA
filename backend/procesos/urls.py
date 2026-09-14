@@ -5,7 +5,8 @@ from .views import (
     CorridaCondensacionViewSet, CorridaDescremacionViewSet,
     CorridaMantequillaViewSet, CorridaSecadoViewSet, EjecucionProcesoViewSet,
     EntradaProcesoViewSet, EtapaProcesoViewSet,
-    ProcesoViewSet, RutaProductoViewSet, SalidaProcesoViewSet, trazabilidad,
+    ProcesoViewSet, RutaProductoViewSet, SalidaProcesoViewSet, planta_ahora,
+    trazabilidad,
 )
 
 router = DefaultRouter()
@@ -21,8 +22,14 @@ router.register("entradas", EntradaProcesoViewSet)
 router.register("salidas", SalidaProcesoViewSet)
 
 urlpatterns = [
+    path("planta-ahora/", planta_ahora, name="planta-ahora"),
     # <str:> y no <int:>: acepta el código de lote además del id, porque el id
     # es de la base y nadie en planta lo conoce.
     path("trazabilidad/lotes/<str:lote>/", trazabilidad, name="trazabilidad-lote"),
+    path(
+        "trazabilidad/<str:tipo>/<str:referencia>/",
+        trazabilidad,
+        name="trazabilidad-referencia",
+    ),
     path("", include(router.urls)),
 ]

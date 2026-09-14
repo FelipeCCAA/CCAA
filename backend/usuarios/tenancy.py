@@ -1,10 +1,14 @@
-"""Aislamiento por organización, separado de los permisos por rol."""
+"""Compatibilidad de persistencia para campos históricos de organización.
+
+Empresa y Sucursal no son dimensiones funcionales de CCAA. Los nombres
+``tenant`` se conservan para no romper imports ni migraciones antiguas, pero
+no conceden permisos ni recortan el trabajo visible.
+"""
 
 from dataclasses import dataclass
 import sys
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 from rest_framework.exceptions import PermissionDenied
 from rest_framework import serializers
 
@@ -189,41 +193,39 @@ def filtrar_por_scope(
     campo_sucursal: str | None = None,
     campo_empresa: str | None = None,
 ):
-    """Filtra un queryset; fuera del scope se comporta como objeto inexistente."""
-    scope = scope_de(usuario)
-    if scope is None:
+    """Adaptador legado: autentica, pero nunca aísla por Empresa/Sucursal."""
+    if not (usuario and usuario.is_authenticated):
         return queryset.none()
-    if scope.es_global:
-        return queryset
-    if scope.es_sucursal and campo_sucursal:
-        return queryset.filter(**{campo_sucursal: scope.sucursal_id})
-    if campo_empresa:
-        return queryset.filter(**{campo_empresa: scope.empresa_id})
-    raise ImproperlyConfigured(
-        "El queryset tenant no declaró un camino de empresa compatible con "
-        "usuarios de alcance empresarial."
-    )
+    return queryset
 
 
 def exigir_sucursal_permitida(usuario, sucursal) -> None:
-    scope = scope_de(usuario, requerido=True)
-    if not scope.permite_sucursal(sucursal.pk, sucursal.empresa_id):
-        raise PermissionDenied("El registro indicado está fuera de tu organización.")
+    """Nombre legado; la autorización se decide por área, rol y relación real."""
+    if not (usuario and usuario.is_authenticated):
+        raise PermissionDenied("Debes iniciar sesión para realizar esta operación.")
 
 
 def unica_empresa_activa():
     """
-    La única empresa activa, o `None` si hay cero o varias.
+    Registro técnico canónico para completar claves históricas obligatorias.
 
-    Mismo criterio que `unica_sucursal_activa`, un nivel más arriba: resolver lo
-    que solo tiene una respuesta es servicial; elegir entre dos es escribir en
-    la empresa equivocada sin que nadie lo pida.
+    La elección nunca depende del usuario ni concede alcance. Se prefiere la
+    empresa asociada al registro interno sembrado y, si no existe, la primera
+    activa de forma determinista.
     """
     from .models import Empresa
 
-    candidatas = list(Empresa.objects.filter(activa=True).order_by("pk")[:2])
-
-    return candidatas[0] if len(candidatas) == 1 else None
+    empresa = (
+        Empresa.objects.filter(
+            activa=True, sucursales__codigo=CODIGO_SUCURSAL_INICIAL
+        )
+        .order_by("pk")
+        .first()
+        or Empresa.objects.filter(activa=True).order_by("pk").first()
+    )
+    if empresa is None and _en_pruebas():
+        return empresa_predeterminada_pruebas()
+    return empresa
 
 
 def unica_sucursal_activa(empresa_id: int | None):
@@ -242,18 +244,12 @@ def sucursal_para_escritura(usuario, validated_data, campo: str = "sucursal"):
     """
     Resuelve el registro técnico de partición sin aceptar una selección del cliente.
 
-    La aplicación trabaja exclusivamente con organización/empresa. Esta función
-    existe para completar claves foráneas históricas mientras se conserva la
-    compatibilidad de los datos, pero ese detalle no forma parte del contrato
-    funcional ni se presenta a los usuarios.
+    Existe solo para completar claves foráneas históricas. No consulta el
+    perfil del actor, no concede acceso y no acepta una selección funcional.
     """
-    scope = scope_de(usuario, requerido=True)
-
-    empresa_id = scope.empresa_id
-    if scope.es_global:
-        empresa = validated_data.get("empresa") or unica_empresa_activa()
-        empresa_id = getattr(empresa, "pk", None)
-    interna = unica_sucursal_activa(empresa_id)
+    if not (usuario and usuario.is_authenticated):
+        raise PermissionDenied("Debes iniciar sesión para realizar esta operación.")
+    interna = unica_sucursal_activa(None)
     if interna is None:
         raise serializers.ValidationError({
             campo: "Falta la configuración interna de la organización."
@@ -262,7 +258,7 @@ def sucursal_para_escritura(usuario, validated_data, campo: str = "sucursal"):
 
 
 class QuerysetTenantMixin:
-    """Aplica 404 fuera del scope a list/retrieve/update/delete/actions."""
+    """Compatibilidad: ya no recorta querysets por Empresa/Sucursal."""
 
     tenant_lookup_sucursal: str | None = None
     tenant_lookup_empresa: str | None = None
@@ -278,7 +274,7 @@ class QuerysetTenantMixin:
 
 
 class RelacionesTenantMixin:
-    """Restringe PK relacionadas recibidas por serializers de un ViewSet."""
+    """Compatibilidad: conserva contratos sin filtrar relaciones por tenant."""
 
     tenant_relation_fields: dict[str, tuple[str | None, str | None]] = {}
 
@@ -302,31 +298,17 @@ class EmpresaTenantViewSetMixin(QuerysetTenantMixin):
     tenant_write_field = "empresa"
 
     def perform_create(self, serializer):
-        scope = scope_de(self.request.user, requerido=True)
-
-        if not scope.es_global:
-            from .models import Empresa
-
-            serializer.save(
-                **{self.tenant_write_field: Empresa.objects.get(pk=scope.empresa_id)}
-            )
-            return
-
-        # El superusuario no está acotado a ninguna empresa, así que es el único
-        # que puede tener que elegir. Con **una sola activa** no hay elección que
-        # hacer, y exigírsela le pedía un dato que ninguna pantalla muestra: el
-        # alta de mandantes moría con «Un superusuario debe indicar la empresa»
-        # sobre un desplegable que no existe. Mismo criterio que la planta.
-        empresa = serializer.validated_data.get(self.tenant_write_field)
-
-        if empresa is None:
-            empresa = unica_empresa_activa()
-
+        # Algunos serializers históricos aún aportan un default técnico. Se
+        # acepta solo como compatibilidad de persistencia, nunca desde el
+        # perfil del usuario ni como selector de alcance.
+        empresa = (
+            serializer.validated_data.get(self.tenant_write_field)
+            or unica_empresa_activa()
+        )
         if empresa is None:
             raise serializers.ValidationError({
                 self.tenant_write_field: (
-                    "Hay más de una empresa activa: indica en cuál se registra. "
-                    "Con una sola, el sistema la resuelve solo."
+                    "Falta la configuración técnica histórica requerida."
                 )
             })
 
@@ -335,7 +317,7 @@ class EmpresaTenantViewSetMixin(QuerysetTenantMixin):
     def perform_update(self, serializer):
         if self.tenant_write_field in self.request.data:
             raise PermissionDenied(
-                "El tenant no se cambia mediante una edición genérica."
+                "La configuración histórica no forma parte de esta edición."
             )
         serializer.save()
 

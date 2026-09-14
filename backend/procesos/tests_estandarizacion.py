@@ -240,9 +240,7 @@ class CadenaCompletaTests(BaseCadena):
         _, lote = self._cadena()
 
         for direccion in ("atras", "adelante"):
-            resultado = genealogia_lote(
-                lote.pk, direccion, sucursal_id=self.planta.pk
-            )
+            resultado = genealogia_lote(lote.pk, direccion)
             self.assertEqual(len(resultado["nodos"]), 1)
 
     def test_el_flujo_muestra_la_recepcion_fifo_y_su_cantidad_confirmada(self):

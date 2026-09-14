@@ -94,14 +94,28 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
   });
 
   if (reanudarDesde <= 4) await test.step("4 · Calidad analiza y libera el polvo", async () => {
+    await usarSesionArea(page, "e2e_envasado");
+    await irA(page, "/envasado");
+    const esperaCalidad = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "En espera de Calidad" }),
+    });
+    const bloqueado = esperaCalidad.locator("article").filter({ hasText: flujo.lote });
+    await expect(bloqueado).toBeVisible({ timeout: 20_000 });
+    await expect(bloqueado).toContainText("pendiente de aprobación de Calidad");
+    await expect(page.getByRole("button", { name: new RegExp(flujo.lote) })).toHaveCount(0);
+
     await usarSesionArea(page, "e2e_calidad");
     await irA(page, `/calidad/expedientes?lote=${loteId}`);
-    await page.getByRole("button", { name: "Agregar análisis" }).click();
-    await page.getByPlaceholder("M-01").fill(`M-${flujo.lote}`);
-    await campo(page, "Humedad").fill("3");
-    await trasGuardar(page, "/analisis/", async () => {
-      await page.getByRole("button", { name: "Registrar análisis" }).click();
-    });
+    await expect(page.getByRole("heading", { name: flujo.lote })).toBeVisible({ timeout: 20_000 });
+    const agregarAnalisis = page.getByRole("button", { name: "Agregar análisis" });
+    if (await agregarAnalisis.count()) {
+      await agregarAnalisis.click();
+      await page.getByPlaceholder("M-01").fill(`M-${flujo.lote}`);
+      await campo(page, "Humedad").fill("3");
+      await trasGuardar(page, "/analisis/", async () => {
+        await page.getByRole("button", { name: "Registrar análisis" }).click();
+      });
+    }
 
     await irA(page, "/calidad");
     const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
