@@ -16,7 +16,7 @@ Lo que dejó eso en la base local, en vales ya liberados:
 | Código | De dónde sale |
 |---|---|
 | `VE-316256` | Las pruebas E2E, que inventan un número al azar |
-| `VE-20260901-01` | Alguien siguiendo una convención de fecha, a mano |
+| `VE-20260901-01` | `sembrar_flujo_demo`, que compone `VE-{AAAAMMDD}-01` por su cuenta |
 | `jkjfd` | Un código tecleado para salir del paso |
 
 Tres formas para el mismo documento, y ninguna garantizada. Un campo libre invita a
@@ -128,7 +128,17 @@ para lo que no tiene la forma, de modo que un código raro no rompe el máximo.
 - **`asignar_codigo()`**: calcula el siguiente correlativo sobre la base, guarda, y
   reintenta ante la colisión (§3.4). Es el **único** lugar que escribe un código
   definitivo.
-- **`confirmar()`** llama a `asignar_codigo()` en lugar de copiar `codigo_propuesto`.
+- **Lo llama el `save()` del vale**, no cada camino por separado. Regla: un vale que
+  **no** es borrador ni anulado y cuyo código falta o es provisional (`BORRADOR-…`)
+  recibe su código al guardarse. Así lo cubren la confirmación, la creación directa,
+  el admin y los scripts, sin que ninguno tenga que acordarse.
+  - *Por qué no desde `confirmar()`*: el `confirmar()` del mixin compartido guarda por
+    dentro; reintentar desde fuera deja el objeto a medio mutar —en el segundo intento
+    ya no es borrador y se niega a confirmar—.
+  - Un código **explícito** (pruebas, histórico) no es provisional y se respeta.
+  - Un borrador **descartado** pasa a anulado con su `BORRADOR-…`: no recibe número.
+- **`confirmar()`** deja de copiar `codigo_propuesto`; si `asignar_codigo()` agota los
+  intentos, devuelve el motivo y el vale sigue en borrador.
 - **`motivos_para_confirmar()`** pierde el chequeo «El código de vale ya existe»: ya no
   hay código tecleado que pueda repetirse.
 - **`CAMPOS_OBLIGATORIOS_AL_CONFIRMAR`** pierde `codigo_propuesto`.
@@ -144,7 +154,13 @@ auditados y ya referenciados por sus lotes.
 ### 4.4 Serializer y vistas
 
 - `codigo` pasa a **solo lectura**; `codigo_propuesto` sale de `fields`.
-- `perform_create` (creación directa) llama a `asignar_codigo()`.
+- `perform_create` (creación directa) deja de pasar `codigo_propuesto`; el `save()` asigna
+  el código, y si se agotan los intentos responde 400 con el motivo.
+- **Admin:** `codigo` pasa a `readonly_fields`. Si no, sería una tercera puerta para
+  teclearlo.
+- **`usuarios/management/commands/sembrar_flujo_demo.py`** deja de componer
+  `VE-{AAAAMMDD}-01` a mano — es de ahí que salió `VE-20260901-01` (§1), no de una
+  persona— y deja que el modelo asigne.
 - Un cliente antiguo que todavía mande `codigo` **se ignora, no se rechaza** — el mismo
   criterio que CLAUDE.md fija para la sucursal: el backend no falla por un campo que ya
   no decide nada.
@@ -152,9 +168,9 @@ auditados y ya referenciados por sus lotes.
 ### 4.5 Frontend
 
 - `pages/Estandarizacion/FormularioVale.tsx`: sale el campo «Código de vale». En su
-  lugar, texto fijo:
-  - borrador: *«Código: se asignará al confirmar»*;
-  - confirmado: el código asignado, que viene en la respuesta de `confirmar-borrador`.
+  lugar, un texto fijo: *«Se asignará al confirmar»*. Al confirmar, el formulario ya se
+  cierra y la pantalla abre el vale creado (`setValeId`), que muestra su código: no hace
+  falta dibujarlo en el formulario.
 - Sale `codigo` del estado del formulario y del armado del payload.
 - `services/estandarizacion.service.ts`: sale `codigo_propuesto` de los tipos.
 
