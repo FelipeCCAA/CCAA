@@ -77,7 +77,6 @@ const DESCREMADA = {
   mezcla pide ~14.300 L de entera y ~5.700 de descremada.
 */
 const VALE = {
-  codigo: `VE-${SELLO}`,
   volumen: "20000",
   rcObjetivo: "0.3000",
 };
@@ -328,11 +327,13 @@ test("de la leche cruda a leche estandarizada liberada, por pantalla", async ({ 
     await analizarSilo(page, ESTANQUES.descremada, DESCREMADA);
   });
 
+  /* El código lo asigna el sistema al confirmar; se lee de la respuesta. */
+  let codigoVale = "";
+
   await test.step("4 · se compone el vale de estandarización", async () => {
     await irA(page, "/estandarizacion");
     await page.getByRole("button", { name: "Nuevo vale" }).click();
 
-    await campo(page, "Código de vale").fill(VALE.codigo);
     await campo(page, "Fecha").fill(HOY);
     await elegirOpcion(campo(page, "Producto"), new RegExp(PRODUCTO));
     await campo(page, "RC objetivo").fill(VALE.rcObjetivo);
@@ -405,14 +406,18 @@ test("de la leche cruda a leche estandarizada liberada, por pantalla", async ({ 
         "contra la composición de las dos leches.",
     ).toBeVisible({ timeout: 15_000 });
 
-    await trasGuardar(page, "confirmar-borrador", async () => {
+    const confirmado = await trasGuardar(page, "confirmar-borrador", async () => {
       await page.getByRole("button", { name: "Crear vale" }).click();
     });
+    codigoVale = (await confirmado.json()).codigo;
+    expect(codigoVale, "El vale confirmado no trae el código del sistema.").toMatch(
+      /^VE\d{4}-\d{2,}$/,
+    );
   });
 
   await test.step("5 · transferir, agitar, muestrear y decidir", async () => {
     await irA(page, "/estandarizacion");
-    await page.getByRole("button", { name: new RegExp(VALE.codigo) }).first().click();
+    await page.getByRole("button", { name: new RegExp(codigoVale) }).first().click();
 
     await trasGuardar(page, "transferir", async () => {
       await page.getByRole("button", { name: "Transferido" }).click();
