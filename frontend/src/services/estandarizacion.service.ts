@@ -143,7 +143,6 @@ export async function calcularMezcla(datos: EntradaCalculo): Promise<Mezcla> {
 }
 
 export interface NuevoVale {
-  codigo: string;
   fecha: string;
   producto: number;
   rc_objetivo: number;

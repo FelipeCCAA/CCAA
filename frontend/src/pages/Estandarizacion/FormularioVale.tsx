@@ -12,6 +12,7 @@ import {
   obtenerSugerenciaSilos, type Silo, type SugerenciaSilo,
 } from "../../services/recepcion.service";
 import { mensajeDe } from "../../components/seccion/utilidades";
+import { fechaLocalISO } from "../../services/fechas";
 import { useBorrador } from "../../hooks/useBorrador";
 
 /*
@@ -29,7 +30,7 @@ import { useBorrador } from "../../hooks/useBorrador";
   se abre una válvula.
 */
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = () => fechaLocalISO();
 
 const inicial = {
   fecha: hoy(),
