@@ -44,7 +44,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ValeEstandarizacion
         fields = [
-            "id", "codigo", "codigo_propuesto", "fecha",
+            "id", "codigo", "fecha",
             "producto", "producto_nombre", "rc_objetivo", "volumen",
             "silo_entera", "silo_entera_codigo",
             "silo_descremada", "silo_descremada_codigo",
@@ -62,7 +62,10 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         ]
         # El estado lo mueven las acciones del ciclo, no un PATCH: liberar
         # exige que el RC cumpla, y con un campo escribible eso se salta.
+        # El código lo asigna el sistema al confirmar (`models.asignar_codigo`).
+        # Escribible, era por donde entraban códigos como «jkjfd».
         read_only_fields = [
+            "codigo",
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",
             "responsable", "creado_en", "es_borrador",
@@ -86,7 +89,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if self.instance is None and not self.partial:
             obligatorios = (
-                "codigo", "fecha", "producto", "rc_objetivo", "volumen",
+                "fecha", "producto", "rc_objetivo", "volumen",
                 "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
                 "litros_entera",
             )

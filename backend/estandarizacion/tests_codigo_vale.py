@@ -138,3 +138,77 @@ class AsignacionCodigoValeTests(BaseVale):
         vale.refresh_from_db()
         self.assertEqual(vale.estado, BORRADOR)
         self.assertTrue(vale.codigo.startswith("BORRADOR-"))
+
+
+class CodigoValeApiTests(BaseVale):
+    """Ningún camino de la API deja escribir el código."""
+
+    def setUp(self):
+        from rest_framework.authtoken.models import Token
+        from rest_framework.test import APIClient
+
+        from usuarios.models import PerfilUsuario, Rol
+
+        PerfilUsuario.objects.create(usuario=self.usuario, rol=Rol.RECEPCION)
+        self.cliente = APIClient()
+        self.cliente.credentials(
+            HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.usuario).key}"
+        )
+
+    def cuerpo(self, **extra):
+        datos = {
+            "fecha": DIA.isoformat(),
+            "producto": self.producto.id,
+            "rc_objetivo": "0.2010",
+            "volumen": "10000.00",
+            "silo_entera": self.silo_entera.id,
+            "silo_descremada": self.silo_descremada.id,
+            "silo_destino": self.silo_destino.id,
+            "entera_grasa": "3.90",
+            "entera_sng": "8.60",
+            "descremada_grasa": "0.05",
+            "descremada_sng": "8.90",
+            "litros_entera": "4000.00",
+            "litros_descremada": "6000.00",
+        }
+        datos.update(extra)
+        return datos
+
+    def test_la_creacion_directa_asigna_el_codigo_e_ignora_el_del_cliente(self):
+        respuesta = self.cliente.post(
+            "/api/estandarizacion/vales/", self.cuerpo(codigo="jkjfd"), format="json"
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.json())
+        self.assertEqual(respuesta.json()["codigo"], "VE6266-01")
+
+    def test_la_respuesta_ya_no_trae_codigo_propuesto(self):
+        respuesta = self.cliente.post(
+            "/api/estandarizacion/vales/", self.cuerpo(), format="json"
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.json())
+        self.assertNotIn("codigo_propuesto", respuesta.json())
+
+    def test_un_patch_no_cambia_el_codigo(self):
+        vale = self.crear_vale(codigo="", fecha=DIA)
+
+        self.cliente.patch(
+            f"/api/estandarizacion/vales/{vale.id}/", {"codigo": "jkjfd"}, format="json"
+        )
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.codigo, "VE6266-01")
+
+    def test_la_creacion_directa_sin_codigo_libre_responde_400_con_motivo(self):
+        self.crear_vale(codigo="", fecha=DIA)  # ocupa VE6266-01
+
+        with patch.object(
+            ValeEstandarizacion, "_siguiente_correlativo", lambda vale, prefijo: 1
+        ):
+            respuesta = self.cliente.post(
+                "/api/estandarizacion/vales/", self.cuerpo(), format="json"
+            )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("vuelve a confirmar", str(respuesta.json()))

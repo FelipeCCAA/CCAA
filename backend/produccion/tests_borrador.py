@@ -13,7 +13,6 @@ class BorradorLoteTests(BaseApertura):
         super().setUp()
         self.vale = ValeEstandarizacion.objects.create(
             codigo="VE-BOR-LOTE",
-            codigo_propuesto="VE-BOR-LOTE",
             fecha="2026-07-16",
             producto=self.polvo,
             rc_objetivo=Decimal("0.4000"),

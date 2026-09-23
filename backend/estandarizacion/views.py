@@ -3,7 +3,7 @@ from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Max, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -15,7 +15,8 @@ from recepcion.models import AnalisisSilo
 from . import servicios
 from .dominio import Leche, calcular_mezcla, sugerir_mezcla_con_crema
 from .models import (
-    MINUTOS_DE_AGITACION, CorreccionValeEstandarizacion, ValeEstandarizacion,
+    MINUTOS_DE_AGITACION, CodigoValeNoAsignado, CorreccionValeEstandarizacion,
+    ValeEstandarizacion,
 )
 from .serializers import (
     CalculoMezclaSerializer,
@@ -68,11 +69,14 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         return consulta
 
     def perform_create(self, serializer):
-        serializer.save(
-            responsable=self.request.user,
-            estado=ValeEstandarizacion.Estado.CALCULADO,
-            codigo_propuesto=serializer.validated_data["codigo"],
-        )
+        # El código lo asigna el `save()` del vale; el cliente ya no lo manda.
+        try:
+            serializer.save(
+                responsable=self.request.user,
+                estado=ValeEstandarizacion.Estado.CALCULADO,
+            )
+        except CodigoValeNoAsignado as error:
+            raise serializers.ValidationError({"codigo": [str(error)]})
 
     # --------------------------------------------------------- borradores
 

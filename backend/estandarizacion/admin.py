@@ -16,9 +16,11 @@ class ValeEstandarizacionAdmin(admin.ModelAdmin):
 
     # El estado y el análisis los mueven las acciones del ciclo. Editables aquí
     # dejarían liberar un vale sin muestra, que es justo lo que el ciclo impide.
+    # El código tampoco: lo asigna el sistema al confirmar. Editable aquí sería
+    # una tercera puerta para teclearlo.
     readonly_fields = (
-        "estado", "agitacion_desde", "muestreado_en", "grasa_real", "sng_real",
-        "creado_en",
+        "codigo", "estado", "agitacion_desde", "muestreado_en", "grasa_real",
+        "sng_real", "creado_en",
     )
 
     @admin.display(description="RC medido")

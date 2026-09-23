@@ -302,7 +302,6 @@ class Command(BaseCommand):
 
         # El vale no lleva sucursal propia: la hereda de sus silos.
         vale = ValeEstandarizacion.objects.create(
-            codigo=f"VE-{self.fecha:%Y%m%d}-01",
             fecha=self.fecha,
             producto=contexto["producto"],
             rc_objetivo=Decimal(str(rc_objetivo)),

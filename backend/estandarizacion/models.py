@@ -104,9 +104,6 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
     )
 
     codigo = models.CharField("Código de vale", max_length=40, unique=True)
-    codigo_propuesto = models.CharField(
-        "Código definitivo propuesto", max_length=40, blank=True
-    )
     fecha = models.DateField("Fecha")
 
     producto = models.ForeignKey(

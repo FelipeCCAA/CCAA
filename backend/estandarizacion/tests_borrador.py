@@ -29,7 +29,6 @@ class BorradorValeTests(BaseVale):
 
     def datos_completos(self):
         return {
-            "codigo_propuesto": "VE-BORRADOR-1",
             "producto": self.producto.id,
             "rc_objetivo": "0.2010",
             "volumen": "10000.00",
@@ -45,9 +44,7 @@ class BorradorValeTests(BaseVale):
         }
 
     def test_borrador_parcial_es_recuperable_y_no_aparece_en_operacion(self):
-        cuerpo = self.crear_borrador(
-            codigo_propuesto="VE-PENDIENTE", observaciones="A medio completar"
-        ).json()
+        cuerpo = self.crear_borrador(observaciones="A medio completar").json()
 
         self.assertEqual(cuerpo["estado"], ValeEstandarizacion.Estado.BORRADOR)
         self.assertTrue(cuerpo["codigo"].startswith("BORRADOR-"))
@@ -63,7 +60,7 @@ class BorradorValeTests(BaseVale):
         self.assertEqual(MovimientoSilo.objects.count(), 0)
 
     def test_no_confirma_un_borrador_incompleto(self):
-        borrador = self.crear_borrador(codigo_propuesto="VE-INCOMPLETO").json()
+        borrador = self.crear_borrador().json()
 
         respuesta = self.cliente.post(
             f"/api/estandarizacion/vales/{borrador['id']}/confirmar-borrador/"
@@ -101,7 +98,6 @@ class BorradorValeTests(BaseVale):
         borrador = self.crear_borrador().json()
         datos = self.datos_completos()
         datos.update({
-            "codigo_propuesto": "VE-SOLO-ENTERA",
             "rc_objetivo": "0.4535",
             "silo_descremada": None,
             "descremada_grasa": None,
