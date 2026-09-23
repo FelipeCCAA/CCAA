@@ -24,7 +24,6 @@ export interface Evaluacion {
 export interface ValeEstandarizacion {
   id: number;
   codigo: string;
-  codigo_propuesto: string;
   fecha: string;
   producto: number | null;
   producto_nombre: string | null;
@@ -170,7 +169,6 @@ export async function crearVale(datos: NuevoVale): Promise<ValeEstandarizacion> 
 }
 
 export interface DatosBorradorVale {
-  codigo_propuesto: string;
   fecha: string;
   producto: number | null;
   rc_objetivo: number | null;

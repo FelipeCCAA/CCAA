@@ -32,7 +32,6 @@ import { useBorrador } from "../../hooks/useBorrador";
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 const inicial = {
-  codigo: "",
   fecha: hoy(),
   producto: "",
   rc_objetivo: "",
@@ -93,7 +92,6 @@ function FormularioVale({
 
   const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
   const datosBorrador: DatosBorradorVale = {
-    codigo_propuesto: datos.codigo,
     fecha: datos.fecha,
     producto: numeroONull(datos.producto),
     rc_objetivo: numeroONull(datos.rc_objetivo),
@@ -134,7 +132,6 @@ function FormularioVale({
       }
       setDatos({
         ...inicial,
-        codigo: guardado.codigo_propuesto,
         fecha: guardado.fecha,
         producto: guardado.producto == null ? "" : String(guardado.producto),
         rc_objetivo: guardado.rc_objetivo ?? "",
@@ -323,13 +320,15 @@ function FormularioVale({
 
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
 
-          <Campo label="Código de vale">
-            <input
-              required value={datos.codigo}
-              onChange={(e) => cambiar("codigo", e.target.value)}
-              className="control"
-            />
-          </Campo>
+          {/* El código lo asigna el sistema al confirmar (VE + año + día
+              juliano + correlativo). Al confirmar, la pantalla abre el vale
+              creado, que ya muestra el suyo. */}
+          <div className="text-sm text-slate-600">
+            Código de vale
+            <p className="mt-1 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-600">
+              Se asignará al confirmar
+            </p>
+          </div>
 
           <Campo label="Fecha">
             <input
