@@ -23,6 +23,7 @@ Fuente: `docs/REGLAS_DE_PLANTA.md` §3, extraído del flujo de fábrica §10.
 """
 
 from dataclasses import dataclass, field
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -346,3 +347,44 @@ def litros_a_agregar(
     z = volumen_actual * (rc_objetivo * sng - grasa) / denominador
 
     return _redondear(z) if z > 0 else None
+
+
+# ---------------------------------------------------------- código de vale
+
+def prefijo_codigo_vale(fecha: date) -> str:
+    """
+    Lo que comparten todos los vales de un día: `VE6266-`.
+
+    VE + último dígito del año + día juliano con tres cifras. Como el código de
+    lote, el año va por su último dígito y el prefijo se repite cada diez años;
+    no choca, porque el correlativo sigue desde el máximo existente.
+    """
+    return f"VE{fecha.year % 10}{fecha.timetuple().tm_yday:03d}-"
+
+
+def generar_codigo_vale(fecha: date, correlativo: int) -> str:
+    """
+    El código de un vale: `VE6266-01`.
+
+    El correlativo va **siempre**, desde `-01` — mismo criterio que
+    `produccion.dominio.generar_codigo_lote`: ponerlo solo desde el segundo deja
+    dos formas conviviendo.
+
+    Función pura: arma el texto. **No garantiza unicidad**; la garantiza la base.
+    """
+    return f"{prefijo_codigo_vale(fecha)}{correlativo:02d}"
+
+
+def correlativo_de_codigo(codigo: str, prefijo: str) -> int | None:
+    """
+    El correlativo de un código con ese prefijo, o `None` si no tiene esa forma.
+
+    `None` y no una excepción: en la base hay códigos de antes de esta regla
+    (`VE-316256`, `jkjfd`), y ninguno debe romper el cálculo del siguiente.
+    """
+    if not codigo or not codigo.startswith(prefijo):
+        return None
+
+    resto = codigo[len(prefijo):]
+
+    return int(resto) if resto.isdigit() else None

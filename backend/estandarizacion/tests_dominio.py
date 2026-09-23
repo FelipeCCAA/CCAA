@@ -7,10 +7,12 @@ pedido** — se recalcula el RC desde las cantidades y se compara con el
 objetivo.
 """
 
+from datetime import date
 from unittest import TestCase
 
 from .dominio import (
-    Leche, calcular_mezcla, evaluar_rc, litros_a_agregar,
+    Leche, calcular_mezcla, correlativo_de_codigo, evaluar_rc,
+    generar_codigo_vale, litros_a_agregar, prefijo_codigo_vale,
     sugerir_mezcla_con_crema,
 )
 
@@ -273,3 +275,43 @@ class LitrosAAgregarTests(TestCase):
                 rc_objetivo=0.201, correctora=DESCREMADA,
             )
         )
+
+
+class CodigoValeTests(TestCase):
+    """
+    El código del vale: VE + año + día juliano + correlativo del día.
+
+    Misma familia que el código de lote (`CCAA6266E1-01`): quien ya lee el día
+    juliano en los lotes lo lee igual aquí.
+    """
+
+    def test_arma_ve_anio_juliano_y_correlativo(self):
+        self.assertEqual(generar_codigo_vale(date(2026, 9, 23), 1), "VE6266-01")
+
+    def test_el_dia_juliano_lleva_ceros(self):
+        self.assertEqual(generar_codigo_vale(date(2026, 1, 1), 1), "VE6001-01")
+
+    def test_el_anio_va_por_su_ultimo_digito(self):
+        self.assertEqual(generar_codigo_vale(date(2030, 5, 5), 1), "VE0125-01")
+
+    def test_el_correlativo_crece_mas_alla_de_dos_digitos(self):
+        self.assertEqual(generar_codigo_vale(date(2026, 9, 23), 100), "VE6266-100")
+
+    def test_el_prefijo_es_lo_que_comparten_los_vales_del_dia(self):
+        self.assertEqual(prefijo_codigo_vale(date(2026, 9, 23)), "VE6266-")
+
+    def test_lee_el_correlativo_de_un_codigo_del_dia(self):
+        self.assertEqual(correlativo_de_codigo("VE6266-07", "VE6266-"), 7)
+        self.assertEqual(correlativo_de_codigo("VE6266-100", "VE6266-"), 100)
+
+    def test_un_codigo_con_otra_forma_no_tiene_correlativo(self):
+        """
+        En la base conviven códigos de antes de esta regla. Ninguno debe romper
+        el cálculo del siguiente número, ni contar como si fuera del día.
+        """
+        for codigo in (
+            "VE-316256", "VE-20260901-01", "jkjfd", "BORRADOR-2D9928CC",
+            "VE6266-", "VE6266-0A", "VE6267-01", "",
+        ):
+            with self.subTest(codigo=codigo):
+                self.assertIsNone(correlativo_de_codigo(codigo, "VE6266-"))
