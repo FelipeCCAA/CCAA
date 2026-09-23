@@ -1,9 +1,11 @@
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from recepcion.models import MovimientoSilo
 from usuarios.models import PerfilUsuario, Rol
 
+from .dominio import generar_codigo_vale
 from .models import ValeEstandarizacion
 from .tests_vale import BaseVale
 
@@ -88,7 +90,10 @@ class BorradorValeTests(BaseVale):
         )
 
         self.assertEqual(respuesta.status_code, 200, respuesta.json())
-        self.assertEqual(respuesta.json()["codigo"], "VE-BORRADOR-1")
+        # El código ya no se teclea: lo asigna el sistema al confirmar.
+        self.assertEqual(
+            respuesta.json()["codigo"], generar_codigo_vale(timezone.localdate(), 1)
+        )
         self.assertEqual(respuesta.json()["estado"], ValeEstandarizacion.Estado.CALCULADO)
         self.assertEqual(MovimientoSilo.objects.count(), 0)
 

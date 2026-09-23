@@ -17,10 +17,11 @@ puro no puede conocer.
 """
 
 import uuid
+from datetime import date
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 from usuarios.documentos import DocumentoBorradorMixin
 
@@ -41,6 +42,19 @@ from . import dominio
 #: cambie tiene que saber qué está cambiando, y no se toca ni se hace
 #: configurable.
 MINUTOS_DE_AGITACION = 30
+
+
+#: El código provisional de un borrador. Un vale con este prefijo todavía no
+#: tiene código para la planta.
+PREFIJO_BORRADOR = "BORRADOR-"
+
+#: Intentos de asignar un código libre ante confirmaciones simultáneas. Cinco
+#: vales del mismo día confirmándose en el mismo instante no ocurren en planta.
+INTENTOS_CODIGO = 5
+
+
+class CodigoValeNoAsignado(Exception):
+    """Se agotaron los intentos de asignar un código libre al vale."""
 
 
 class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
@@ -71,7 +85,7 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
     ESTADO_BORRADOR = Estado.BORRADOR
     ESTADO_CONFIRMADO = Estado.CALCULADO
     CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
-        "codigo_propuesto", "fecha", "producto", "rc_objetivo", "volumen",
+        "fecha", "producto", "rc_objetivo", "volumen",
         "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
         "litros_entera",
     )
@@ -242,7 +256,7 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
 
     @classmethod
     def nuevo_codigo_borrador(cls):
-        return f"BORRADOR-{uuid.uuid4().hex[:8].upper()}"
+        return f"{PREFIJO_BORRADOR}{uuid.uuid4().hex[:8].upper()}"
 
     def motivos_para_confirmar(self):
         motivos = super().motivos_para_confirmar()
@@ -260,17 +274,94 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
                 (self.crema_sng, "Falta SNG de la crema."),
             )
             motivos.extend(motivo for valor, motivo in requeridos if valor in (None, ""))
-        codigo = self.codigo_propuesto.strip()
-        if codigo and type(self).objects.exclude(pk=self.pk).filter(codigo=codigo).exists():
-            motivos.append("El código de vale ya existe.")
         return motivos
 
     def confirmar(self, usuario):
-        motivos = self.motivos_para_confirmar()
-        if motivos:
-            return motivos
-        self.codigo = self.codigo_propuesto.strip()
-        return super().confirmar(usuario)
+        """
+        El código lo asigna el `save()` que hace el mixin al confirmar.
+
+        Si no hay código libre, el vale sigue en borrador y el motivo va de
+        vuelta al operador, en vez de un error 500.
+        """
+        estado_previo = self.estado
+        try:
+            return super().confirmar(usuario)
+        except CodigoValeNoAsignado as error:
+            self.estado = estado_previo
+            return [str(error)]
+
+    # --------------------------------------------------------------- código
+
+    def tiene_codigo_provisional(self):
+        return not self.codigo or self.codigo.startswith(PREFIJO_BORRADOR)
+
+    def save(self, **kwargs):
+        """
+        Un vale que deja de ser borrador sin código definitivo recibe el suyo.
+
+        Va aquí y no en cada camino que confirma, para que la confirmación, la
+        creación directa, el admin y los scripts queden cubiertos sin acordarse.
+        No toca un código explícito (pruebas, histórico) ni un borrador
+        descartado, que pasa a anulado con su `BORRADOR-…` y sin número.
+        """
+        necesita_codigo = (
+            self.estado not in (self.Estado.BORRADOR, self.Estado.ANULADO)
+            and self.tiene_codigo_provisional()
+        )
+        if necesita_codigo:
+            self.asignar_codigo(**kwargs)
+            return
+        super().save(**kwargs)
+
+    def asignar_codigo(self, **kwargs):
+        """
+        Guarda el vale con el siguiente código libre del día de `fecha`.
+
+        La unicidad la garantiza la base: si dos confirmaciones calculan el
+        mismo número, `unique` rechaza a la segunda y se reintenta con el
+        siguiente. Cada intento va en su propio savepoint; sin él, el
+        `IntegrityError` deja inutilizable la transacción de la confirmación.
+        """
+        if self.fecha is None:
+            raise ValidationError({"fecha": "Falta la fecha del vale: sin ella no hay código."})
+        fecha = self.fecha if isinstance(self.fecha, date) else date.fromisoformat(str(self.fecha))
+
+        if kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = {*kwargs["update_fields"], "codigo"}
+
+        provisional = self.codigo
+        prefijo = dominio.prefijo_codigo_vale(fecha)
+
+        for _ in range(INTENTOS_CODIGO):
+            self.codigo = dominio.generar_codigo_vale(
+                fecha, self._siguiente_correlativo(prefijo)
+            )
+            try:
+                with transaction.atomic():
+                    super().save(**kwargs)
+                return
+            except IntegrityError:
+                ocupado = type(self).objects.exclude(pk=self.pk).filter(
+                    codigo=self.codigo
+                ).exists()
+                if not ocupado:
+                    # No fue el código: otra restricción. No se enmascara.
+                    self.codigo = provisional
+                    raise
+
+        self.codigo = provisional
+        raise CodigoValeNoAsignado(
+            "No se pudo asignar un código de vale; vuelve a confirmar."
+        )
+
+    def _siguiente_correlativo(self, prefijo):
+        """El máximo correlativo con ese prefijo, más uno. Nunca reutiliza."""
+        usados = type(self).objects.filter(codigo__startswith=prefijo).values_list(
+            "codigo", flat=True
+        )
+        correlativos = (dominio.correlativo_de_codigo(c, prefijo) for c in usados)
+
+        return max((n for n in correlativos if n is not None), default=0) + 1
 
     # ------------------------------------------------------------ cálculos
 
