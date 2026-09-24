@@ -106,6 +106,14 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
             { etiqueta: "Transporte", valor: [transportista.trim(), patente.trim().toUpperCase()].filter(Boolean).join(" · ") || "—" },
             { etiqueta: "Guía de despacho", valor: guia.trim() || "Sin guía" },
             { etiqueta: "Pallets", valor: pallets.map((p) => p.pallet_codigo).join(", ") || "—" },
+            ...(granelElegido.length > 0
+              ? [{
+                  etiqueta: "Graneles",
+                  valor: granelElegido
+                    .map((g) => `${g.salida.producto_nombre} · ${identificarGranel(g.salida, { silo: g.salida.silo_codigo })} · ${cantidad(g.cantidad ?? 0, g.salida.unidad)}`)
+                    .join(", "),
+                }]
+              : []),
             { etiqueta: "Total", valor: `${totales.pallets} pallets · ${cantidad(totales.kg, "kg")}${totales.litros ? ` · ${cantidad(totales.litros, "L")}` : ""}` },
           ]}
           advertencia="Queda en borrador: la salida se ejecuta después de autorizarla."
