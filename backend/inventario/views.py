@@ -1255,7 +1255,13 @@ class NotificacionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = NotificacionSerializer
 
     def get_queryset(self):
-        return Notificacion.objects.filter(destinatario=self.request.user)
+        consulta = Notificacion.objects.filter(destinatario=self.request.user)
+        if self.request.query_params.get("no_leidas") == "1":
+            # La campanita del sidebar monta en cada navegación; sin este
+            # filtro traía la bandeja entera del usuario para descartar en el
+            # cliente lo ya leído.
+            consulta = consulta.filter(leida_en__isnull=True)
+        return consulta
 
     @action(detail=True, methods=["post"], url_path="leer")
     def leer(self, request, pk=None):

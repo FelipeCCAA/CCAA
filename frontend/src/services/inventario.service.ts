@@ -320,6 +320,16 @@ export const obtenerInspecciones = () => lista<InspeccionMaterial>("inventario/i
 export const obtenerMRQ = () => lista<SolicitudMaterial>("inventario/mrq/");
 export const obtenerOrdenesCompra = () => lista<OrdenCompra>("inventario/ordenes-compra/");
 export const obtenerNotificaciones = () => lista<Notificacion>("inventario/notificaciones/");
+/*
+  Solo las no leídas, una página. Para la campanita del sidebar y paneles que
+  descartaban en el cliente lo ya leído: traían la bandeja entera —recorriendo
+  páginas— para mostrar cuatro. El backend filtra con `?no_leidas=1`
+  (`leida_en__isnull=True`); una página alcanza para una campanita.
+*/
+export async function obtenerNotificacionesNoLeidas(): Promise<Notificacion[]> {
+  const datos = await pagina<Notificacion>("inventario/notificaciones/", { no_leidas: true });
+  return datos.results;
+}
 export async function marcarNotificacionLeida(id: number): Promise<Notificacion> {
   const { data } = await api.post<Notificacion>(`inventario/notificaciones/${id}/leer/`);
   return data;

@@ -39,7 +39,11 @@ export async function recorrerPaginas<T>(
   let actual: string | null = ruta;
   for (let vuelta = 0; actual !== null; vuelta += 1) {
     if (vuelta === maximo) {
-      throw new Error(`La lista ${ruta} tiene más de ${maximo} páginas: búscala con filtros.`);
+      // No revienta: una excepción que el llamador atrapa (como hace `lista()`
+      // en sus consumidores) esconde el corte y deja pasar una lista vacía sin
+      // decir por qué. Mejor una lista truncada, avisada, que una lista muda.
+      console.warn(`La lista ${ruta} tiene más de ${maximo} páginas: búscala con filtros. Se devuelven solo las primeras ${maximo}.`);
+      return filas;
     }
     const datos: RespuestaLista<T> = await pedir(actual);
     if (Array.isArray(datos)) return filas.concat(datos);

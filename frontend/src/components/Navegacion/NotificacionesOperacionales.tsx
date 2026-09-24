@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 
 import {
   marcarNotificacionLeida,
-  obtenerNotificaciones,
+  obtenerNotificacionesNoLeidas,
   type Notificacion,
 } from "../../services/inventario.service";
 import { rutaDeNotificacion } from "../../services/notificaciones-operacionales";
@@ -16,9 +16,9 @@ export default function NotificacionesOperacionales({ alNavegar }: {
 
   useEffect(() => {
     let vigente = true;
-    obtenerNotificaciones()
+    obtenerNotificacionesNoLeidas()
       .then((datos) => {
-        if (vigente) setNotificaciones(datos.filter((item) => !item.leida_en));
+        if (vigente) setNotificaciones(datos);
       })
       .catch(() => {
         if (vigente) setNotificaciones([]);

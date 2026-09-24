@@ -29,7 +29,20 @@ test("una respuesta sin paginar se devuelve tal cual", async () => {
 test("una lista sin fin avisa en vez de colgar la pantalla", async () => {
   const infinita = async (): Promise<RespuestaLista<number>> =>
     ({ count: 999, next: "http://b/api/z/?page=2", previous: null, results: [1] });
-  await assert.rejects(recorrerPaginas(infinita, "z/", 2), /más de 2 páginas/);
+  const avisos: unknown[][] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => { avisos.push(args); };
+  try {
+    // No revienta: devuelve lo que alcanzó a juntar (el tope corta, no falla)
+    // y avisa por consola nombrando la ruta, para que quien la llama no se
+    // quede con una lista truncada sin saberlo.
+    const filas = await recorrerPaginas(infinita, "z/", 2);
+    assert.deepEqual(filas, [1, 1]);
+  } finally {
+    console.warn = original;
+  }
+  assert.equal(avisos.length, 1);
+  assert.match(String(avisos[0][0]), /z\/.*más de 2 páginas/);
 });
 
 test("los filtros vacíos no viajan y los booleanos van como 1", () => {

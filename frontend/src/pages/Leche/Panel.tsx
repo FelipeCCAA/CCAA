@@ -14,7 +14,7 @@ import {
 } from "../../services/recoleccion.service";
 import { puedeEscribir } from "../../services/sesion";
 import FormularioRecepcion from "./FormularioRecepcion";
-import { obtenerNotificaciones, type Notificacion } from "../../services/inventario.service";
+import { obtenerNotificacionesNoLeidas, type Notificacion } from "../../services/inventario.service";
 
 /*
   El turno de un vistazo.
@@ -94,7 +94,7 @@ function Panel() {
     void obtenerResumen().then(setResumen).catch(() => setResumen(null));
     void obtenerOcupacion().then(setOcupacion).catch(() => setOcupacion(null));
     void obtenerCargasPendientes().then(setEnCamino).catch(() => setEnCamino([]));
-    void obtenerNotificaciones()
+    void obtenerNotificacionesNoLeidas()
       .then((datos) => setNotificaciones(datos.filter((item) => item.tipo.startsWith("leche_"))))
       .catch(() => setNotificaciones([]));
   };

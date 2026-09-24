@@ -1,5 +1,7 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
 
 from usuarios.models import AreaDePerfil, Empresa, PerfilUsuario, Rol, Sucursal
 
@@ -86,3 +88,49 @@ class NotificacionesPorAreaTests(TestCase):
         self.assertEqual(aviso.documento_tipo, "procesos.SalidaProceso")
         self.assertEqual(aviso.documento_id, 10)
         self.assertEqual(aviso.accion_url, "/calidad")
+
+
+class NotificacionesNoLeidasApiTests(TestCase):
+    """
+    `?no_leidas=1` filtra por `leida_en__isnull=True`.
+
+    La campanita del sidebar montaba en cada navegación y traía **todas** las
+    notificaciones del usuario para descartar en el cliente las que ya tenían
+    `leida_en`; con meses de uso eso es recorrer páginas enteras para mostrar
+    cuatro. El filtro lo aplica el servidor.
+    """
+
+    def setUp(self):
+        self.empresa = Empresa.objects.create(rut="NOTIF-NL-1", nombre="Notif no leídas")
+        self.sucursal = Sucursal.objects.create(empresa=self.empresa, codigo="NL-1", nombre="Planta NL")
+        self.usuario = User.objects.create_user("bodega-notif")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario, empresa=self.empresa, sucursal=self.sucursal,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+            area=PerfilUsuario.Area.BODEGA, rol=Rol.OPERARIO,
+        )
+        self.api = APIClient()
+        self.api.force_authenticate(self.usuario)
+        self.leida = Notificacion.objects.create(
+            destinatario=self.usuario, tipo="prueba", titulo="Ya vista",
+            mensaje="x", leida_en=timezone.now(),
+        )
+        self.no_leida = Notificacion.objects.create(
+            destinatario=self.usuario, tipo="prueba", titulo="Pendiente",
+            mensaje="x",
+        )
+
+    def test_no_leidas_filtra_por_leida_en_nula(self):
+        respuesta = self.api.get("/api/inventario/notificaciones/?no_leidas=1")
+
+        self.assertEqual(respuesta.status_code, 200)
+        ids = {item["id"] for item in respuesta.data["results"]}
+        self.assertEqual(ids, {self.no_leida.pk})
+        self.assertNotIn(self.leida.pk, ids)
+
+    def test_sin_el_filtro_trae_todas(self):
+        respuesta = self.api.get("/api/inventario/notificaciones/")
+
+        self.assertEqual(respuesta.status_code, 200)
+        ids = {item["id"] for item in respuesta.data["results"]}
+        self.assertEqual(ids, {self.leida.pk, self.no_leida.pk})
