@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 import { useCarga } from "../../components/seccion/utilidades";
 import { cantidad } from "../../services/formato";
@@ -46,6 +46,18 @@ export default function Inventario() {
   const lista = ubicaciones.datos ?? [];
   const opciones = catalogos.datos;
 
+  // Patrón de pestañas con tabindex móvil (WAI-ARIA Tabs): una sola pestaña
+  // es alcanzable por Tab; adentro, las flechas mueven selección y foco.
+  // Sin esto, un teclado sin mouse tenía que tabular las cinco para llegar
+  // a la tabla, y un lector de pantalla no oía qué panel abre cada botón.
+  const moverConFlechas = (evento: KeyboardEvent, indice: number) => {
+    if (evento.key !== "ArrowLeft" && evento.key !== "ArrowRight") return;
+    evento.preventDefault();
+    const siguiente = (indice + (evento.key === "ArrowRight" ? 1 : -1) + PESTANAS.length) % PESTANAS.length;
+    setPestana(PESTANAS[siguiente].id);
+    document.getElementById(`pestana-${PESTANAS[siguiente].id}`)?.focus();
+  };
+
   return (
     <div className="px-4 py-8 sm:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -56,15 +68,20 @@ export default function Inventario() {
         </header>
 
         <div role="tablist" aria-label="Consultas de inventario" className="flex gap-1 overflow-x-auto border-b border-slate-200">
-          {PESTANAS.map((p) => (
-            <button key={p.id} type="button" role="tab" aria-selected={pestana === p.id} onClick={() => setPestana(p.id)}
+          {PESTANAS.map((p, indice) => (
+            <button
+              key={p.id} id={`pestana-${p.id}`} type="button" role="tab"
+              aria-selected={pestana === p.id} aria-controls={`panel-${p.id}`}
+              tabIndex={pestana === p.id ? 0 : -1}
+              onClick={() => setPestana(p.id)}
+              onKeyDown={(e) => moverConFlechas(e, indice)}
               className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium ${pestana === p.id ? "border-green-700 text-green-800" : "border-transparent text-slate-600 hover:text-slate-800"}`}>
               {p.texto}
             </button>
           ))}
         </div>
 
-        <div role="tabpanel">
+        <div role="tabpanel" id={`panel-${pestana}`} aria-labelledby={`pestana-${pestana}`}>
           {pestana === "materiales" && (
             <TablaConsulta<Existencia>
               titulo="Materiales"
