@@ -58,7 +58,7 @@ export function destinoInicial(usuario: Usuario): string {
   const porArea: Record<string, string> = {
     recepcion: "/leche", condensacion: "/produccion", secado: "/secado",
     envase: "/envasado", calidad: "/calidad", aseo: "/calidad/inocuidad",
-    bodega: "/bodega", compras: "/abastecimiento", despacho: "/inventario",
+    bodega: "/bodega", compras: "/abastecimiento", despacho: "/despacho",
   };
   const area = usuario.perfil?.area;
   if (area && porArea[area]) return porArea[area];

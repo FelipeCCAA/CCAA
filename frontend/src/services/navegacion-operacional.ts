@@ -66,6 +66,7 @@ const GRUPOS: GrupoOperacional[] = [
     enlaces: [
       { etiqueta: "Envase y pallets", ruta: "/envasado", modulo: "envasado", icono: "envasado" },
       { etiqueta: "Bodega", ruta: "/bodega", modulo: "bodega", icono: "inventario" },
+      { etiqueta: "Despacho", ruta: "/despacho", modulo: "despacho", icono: "despacho" },
       { etiqueta: "Inventario y despacho", ruta: "/inventario", modulo: "inventario", icono: "inventario" },
       { etiqueta: "Compras y abastecimiento", ruta: "/abastecimiento", modulo: "abastecimiento", icono: "planificacion" },
     ],

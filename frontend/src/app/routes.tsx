@@ -76,6 +76,7 @@ const AbastecimientoRecepcion = lazy(() => import("../pages/Abastecimiento/Recep
 const PuestoBodega = lazy(() => import("../pages/Bodega/PuestoBodega"));
 const OperarBodega = lazy(() => import("../pages/Bodega/OperarBodega"));
 const ConfiguracionBodega = lazy(() => import("../pages/Bodega/ConfiguracionBodega"));
+const PuestoDespacho = lazy(() => import("../pages/Despacho/PuestoDespacho"));
 
 const diferido = (componente: React.ReactNode) => (
   <Suspense fallback={<div className="p-10 text-sm text-slate-600">Cargando módulo…</div>}>
@@ -186,6 +187,10 @@ function RoutesApp(){
                             <Route path="recepcion" element={diferido(<AbastecimientoRecepcion />)} />
                             <Route path="configuracion" element={diferido(<ConfiguracionBodega />)} />
                         </Route>
+                    </Route>
+
+                    <Route element={<RutaModulo modulo="despacho" />}>
+                        <Route path="/despacho" element={diferido(<PuestoDespacho />)} />
                     </Route>
 
                     <Route element={<RutaModulo modulo="procesos" />}>

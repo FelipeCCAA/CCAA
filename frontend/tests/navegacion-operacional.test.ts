@@ -172,3 +172,12 @@ test("Bodega entra a su puesto, y el puesto es su inicio", () => {
   const compras = usuarioDeArea("compras", "Compras", null);
   assert.equal(puedeAccederModulo(compras, "bodega"), false);
 });
+
+test("Despacho aparece en el menú solo con la capacidad", () => {
+  // Un usuario de Bodega: su inicio es /bodega, así que la entrada de
+  // Despacho no se oculta por ser su inicio y se mide solo la capacidad.
+  const bodega = usuarioDeArea("bodega", "Bodega", null);
+  assert.ok(!etiquetas(bodega, "Envasado y logística").includes("Despacho"));
+  assert.ok(etiquetas({ ...bodega, capacidades: ["despacho_crear"] }, "Envasado y logística").includes("Despacho"));
+  assert.equal(destinoInicial(usuarioDeArea("despacho", "Despacho", null)), "/despacho");
+});
