@@ -194,7 +194,7 @@ test("Calidad dispone el excedente y entrega el pallet de mantequilla a Bodega",
   await page.getByLabel("Pallet, lote o producto").fill(pallet);
   await page.getByRole("button", { name: "Filtrar" }).click();
   const fila = page.getByRole("row").filter({ hasText: pallet });
-  await expect(fila).toContainText("disponible", { timeout: 20_000 });
+  await expect(fila).toContainText(/disponible/i, { timeout: 20_000 });
   await expect(fila).toContainText("PT-DISP");
   expect(erroresJs).toHaveLength(0);
 });

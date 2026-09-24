@@ -330,7 +330,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
                 {materiales.map((material) => {
                   const accion = material.acciones_permitidas[0];
                   const destinoAccion = accion?.codigo === "preparar_despacho"
-                    ? "/inventario"
+                    ? "/despacho"
                     : accion?.codigo === "enviar_estandarizacion"
                       ? `/estandarizacion?silo=${material.silo_id}`
                       : accion?.codigo === "iniciar_mantequilla"

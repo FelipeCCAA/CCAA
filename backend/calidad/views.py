@@ -1210,11 +1210,11 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         titulo="Producto terminado liberado por Calidad",
         mensaje=(
             f"Lote {lote.codigo_lote} ({lote.producto.nombre}) liberado. "
-            "Sus pallets ya están disponibles en Inventario; reubíquelos desde PT-CUAR."
+            "Sus pallets ya están disponibles; reubíquelos desde PT-CUAR."
         ),
         documento_tipo="lote_produccion",
         documento_id=lote.id,
-        accion_url="/inventario",
+        accion_url="/bodega",
     )
 
     return Response(LiberacionSerializer(liberacion).data)

@@ -203,7 +203,7 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     await expect(fila).toBeVisible({ timeout: 20_000 });
     await expect(fila).toContainText(flujo.lote);
     await expect(fila).toContainText("500 kg");
-    await expect(fila).toContainText("disponible");
+    await expect(fila).toContainText(/disponible/i);
     await expect(fila).toContainText("PT-DISP");
   });
 

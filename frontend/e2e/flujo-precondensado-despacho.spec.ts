@@ -72,16 +72,31 @@ test("del precondensado liberado al despacho fisico desde su silo", async ({ pag
       await page.getByRole("button", { name: "Guardar hoja" }).click();
     });
 
-    const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
-    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
+    // `flujo.lote` viene de un archivo de registro que puede sobrevivir a una
+    // corrida anterior del mismo día: sin acotar al grupo, la hoja recién
+    // creada y una hoja vieja del mismo lote coinciden en el `article` y la
+    // localización queda ambigua.
+    const enBorrador = page.getByRole("region", { name: "Borrador" });
+    const tarjetaBorrador = enBorrador.locator("article").filter({ hasText: flujo.lote });
+    await expect(tarjetaBorrador).toBeVisible({ timeout: 20_000 });
     await trasGuardar(page, "/autorizar/", async () => {
-      await tarjeta.getByRole("button", { name: "Autorizar" }).click();
+      await tarjetaBorrador.getByRole("button", { name: "Autorizar" }).click();
     });
-    await tarjeta.getByRole("button", { name: "Ejecutar salida" }).click();
+
+    const enAutorizadas = page.getByRole("region", { name: "Autorizadas" });
+    const tarjetaAutorizada = enAutorizadas.locator("article").filter({ hasText: flujo.lote });
+    await expect(tarjetaAutorizada).toBeVisible({ timeout: 20_000 });
+    await tarjetaAutorizada.getByRole("button", { name: "Ejecutar salida" }).click();
     await trasGuardar(page, "/ejecutar/", async () => {
-      await tarjeta.getByRole("button", { name: "Confirmar salida" }).click();
+      await tarjetaAutorizada.getByRole("button", { name: "Confirmar salida" }).click();
     });
-    await expect(page.getByRole("region", { name: "Despachadas hoy" })).toContainText(flujo.lote);
+
+    // Aquí sí puede haber más de una hoja despachada hoy con el mismo lote
+    // (una corrida anterior del mismo día); solo importa que la de recién
+    // aparezca en el grupo correcto, no cuál de las coincidencias es.
+    await expect(
+      page.getByRole("region", { name: "Despachadas hoy" }).locator("article").filter({ hasText: flujo.lote }).first(),
+    ).toBeVisible({ timeout: 20_000 });
   });
 
   expect(erroresJs).toHaveLength(0);

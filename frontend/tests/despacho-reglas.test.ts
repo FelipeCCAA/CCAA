@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { agruparHojas, buscarPalletPorCodigo, leerCantidadChilena, totalesCarga } from "../src/services/despacho-reglas.ts";
+import { agruparHojas, buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, totalesCarga } from "../src/services/despacho-reglas.ts";
 
 test("las hojas se agrupan por lo que falta hacer, y de las despachadas solo las de hoy", () => {
   const hojas = [
@@ -37,6 +37,28 @@ test("los totales no distinguen mayúsculas en la unidad del granel", () => {
   assert.deepEqual(
     totalesCarga([], [{ cantidad: 1200, unidad: "Kg" }, { cantidad: 8000, unidad: "l" }]),
     { pallets: 0, kg: 1200, litros: 8000 },
+  );
+});
+
+test("el granel se identifica por su lote, no por la corrida", () => {
+  assert.equal(
+    identificarGranel({ lote_codigo: "LOTE-1", corrida_codigo: "COR-1" }),
+    "lote LOTE-1 · corrida COR-1",
+  );
+  assert.equal(
+    identificarGranel({ lote_codigo: null, corrida_codigo: "COR-1" }),
+    "corrida COR-1",
+  );
+});
+
+test("el granel agrega el silo solo cuando se pide y se conoce", () => {
+  assert.equal(
+    identificarGranel({ lote_codigo: "LOTE-1", corrida_codigo: "COR-1" }, { silo: "TkC2" }),
+    "lote LOTE-1 · corrida COR-1 · TkC2",
+  );
+  assert.equal(
+    identificarGranel({ lote_codigo: "LOTE-1", corrida_codigo: "COR-1" }, { silo: null }),
+    "lote LOTE-1 · corrida COR-1",
   );
 });
 

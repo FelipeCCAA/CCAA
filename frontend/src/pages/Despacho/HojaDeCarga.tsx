@@ -3,7 +3,7 @@ import { useState } from "react";
 import CampoEtiquetado from "../../components/operacion/CampoEtiquetado";
 import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
 import { claseCampo, mensajeDe } from "../../components/seccion/utilidades";
-import { totalesCarga } from "../../services/despacho-reglas";
+import { identificarGranel, totalesCarga } from "../../services/despacho-reglas";
 import { cantidad } from "../../services/formato";
 import { autorizarDespacho, cancelarDespacho, ejecutarDespacho, type Despacho } from "../../services/inventario.service";
 
@@ -44,6 +44,14 @@ export default function HojaDeCarga({ hoja, autoriza, onCambio }: {
     { etiqueta: "Cliente", valor: hoja.cliente_nombre },
     { etiqueta: "Transporte", valor: [hoja.transportista, hoja.patente].filter(Boolean).join(" · ") || "—" },
     { etiqueta: "Pallets", valor: hoja.detalles.map((d) => `${d.pallet_codigo} (${d.ubicacion_codigo ?? "sin ubicación"})`).join(", ") || "—" },
+    ...(hoja.detalles_granel.length > 0
+      ? [{
+          etiqueta: "Graneles",
+          valor: hoja.detalles_granel
+            .map((g) => `${g.producto_nombre} · ${identificarGranel(g, { silo: g.silo_codigo })}`)
+            .join(", "),
+        }]
+      : []),
     { etiqueta: "Total", valor: `${totales.pallets} pallets · ${cantidad(totales.kg, "kg")}${totales.litros ? ` · ${cantidad(totales.litros, "L")}` : ""}` },
   ];
 
@@ -72,7 +80,7 @@ export default function HojaDeCarga({ hoja, autoriza, onCambio }: {
         ))}
         {hoja.detalles_granel.map((g) => (
           <li key={`g-${g.id}`} className="flex flex-wrap justify-between gap-2 px-3 py-2">
-            <span>Granel {g.producto_nombre} · {g.corrida_codigo}</span>
+            <span>Granel {g.producto_nombre} · {identificarGranel(g, { silo: g.silo_codigo })}</span>
             <span className="tabular-nums text-slate-700">{cantidad(g.cantidad, g.unidad)}</span>
           </li>
         ))}

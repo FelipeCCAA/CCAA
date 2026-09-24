@@ -18,5 +18,7 @@ test("usa el destino explícito entregado por el handoff", () => {
 
 test("mantiene rutas útiles para notificaciones históricas", () => {
   assert.equal(rutaDeNotificacion(notificacion("producto_pendiente_calidad")), "/calidad");
-  assert.equal(rutaDeNotificacion(notificacion("producto_liberado")), "/inventario");
+  // Sin `accion_url` propio (no debería darse: el origen ya lo manda), cae al
+  // puesto que reubica el pallet — Bodega —, no a la consulta de solo lectura.
+  assert.equal(rutaDeNotificacion(notificacion("producto_liberado")), "/bodega");
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import CampoEtiquetado from "../../components/operacion/CampoEtiquetado";
 import { claseBoton, claseCampo, claseCelda, claseEncabezado } from "../../components/seccion/utilidades";
@@ -17,9 +17,14 @@ export interface Columna<T> {
   paginada: filtrar en el cliente sería filtrar solo la primera página.
 */
 export default function TablaConsulta<T>({
-  cargar, columnas, clave, estados, etiquetaEstado = "Estado", conFechas = false, ubicaciones, etiquetaBusqueda, vacio,
+  titulo, cargar, columnas, clave, estados, etiquetaEstado = "Estado", conFechas = false, ubicaciones, etiquetaBusqueda, vacio,
   filtrosFijos = {},
 }: {
+  /* Nombre accesible de la tabla: cinco pestañas comparten el mismo
+     encabezado de columnas genérico y sin esto un lector de pantalla no
+     distingue «Pallet» de la pestaña Producto terminado del de Movimientos
+     de pallets. */
+  titulo: string;
   cargar: (filtros: FiltrosInventario) => Promise<Pagina<T>>;
   columnas: Columna<T>[];
   clave: (fila: T) => string | number;
@@ -45,15 +50,28 @@ export default function TablaConsulta<T>({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filtrosFijosEstables = useMemo(() => filtrosFijos, [claveFiltrosFijos]);
 
+  // Cuenta la petición en curso: si una respuesta más vieja llega después de
+  // una más nueva (filtro cambiado dos veces seguidas, red lenta), no debe
+  // pisar lo que la más nueva ya puso en pantalla.
+  const idPeticion = useRef(0);
+
   const traer = useCallback(async () => {
+    const idActual = ++idPeticion.current;
     setCargando(true);
     try {
-      setDatos(await cargar({ ...filtrosFijosEstables, ...filtros, page: pagina }));
+      const resultado = await cargar({ ...filtrosFijosEstables, ...filtros, page: pagina });
+      if (idPeticion.current !== idActual) return;
+      setDatos(resultado);
       setError("");
     } catch {
+      if (idPeticion.current !== idActual) return;
+      // Sin esto, un error tras un filtro nuevo deja en pantalla las filas
+      // de la consulta anterior con el mensaje de error encima, como si
+      // fueran su resultado.
+      setDatos(null);
       setError("No se pudo cargar esta consulta.");
     } finally {
-      setCargando(false);
+      if (idPeticion.current === idActual) setCargando(false);
     }
   }, [cargar, filtros, pagina, filtrosFijosEstables]);
 
@@ -113,6 +131,7 @@ export default function TablaConsulta<T>({
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
         <table className="min-w-full">
+          <caption className="sr-only">{titulo}</caption>
           <thead className="bg-slate-50">
             <tr>{columnas.map((c) => <th key={c.titulo} scope="col" className={`${claseEncabezado} ${c.numerica ? "text-right" : ""}`}>{c.titulo}</th>)}</tr>
           </thead>

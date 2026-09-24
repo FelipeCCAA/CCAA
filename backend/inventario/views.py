@@ -1212,7 +1212,7 @@ class SolicitudMaterialViewSet(SucursalTenantViewSetMixin, RelacionesTenantMixin
             tipo="mrq_enviada", titulo="Nueva solicitud de materiales",
             mensaje=f"La MRQ {solicitud.numero} requiere preparación.",
             documento_tipo="inventario.SolicitudMaterial", documento_id=solicitud.pk,
-            accion_url="/inventario",
+            accion_url="/bodega",
         )
         return Response(self.get_serializer(solicitud).data)
 

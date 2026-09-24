@@ -4,7 +4,7 @@ import BuscadorCodigo from "../../components/operacion/BuscadorCodigo";
 import CampoEtiquetado from "../../components/operacion/CampoEtiquetado";
 import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
 import { claseBoton, claseCampo, mensajeDe } from "../../components/seccion/utilidades";
-import { buscarPalletPorCodigo, leerCantidadChilena, totalesCarga } from "../../services/despacho-reglas";
+import { buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, totalesCarga } from "../../services/despacho-reglas";
 import { cantidad } from "../../services/formato";
 import {
   crearDespacho, type ClienteDespacho, type ExistenciaProductoTerminado, type GranelDisponible,
@@ -171,7 +171,7 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
                           if (copia[g.id] !== undefined) delete copia[g.id]; else copia[g.id] = String(g.cantidad_disponible).replace(".", ","); // coma decimal: «12.345» se leería como miles
                           return copia;
                         })} />
-                      {g.producto_nombre} · {g.corrida_codigo} · hasta {cantidad(g.cantidad_disponible, g.unidad)}
+                      {g.producto_nombre} · {identificarGranel(g)} · hasta {cantidad(g.cantidad_disponible, g.unidad)}
                     </label>
                     {granel[g.id] !== undefined && (
                       <input aria-label={`Cantidad de ${g.producto_nombre} (${g.unidad})`} inputMode="decimal" value={granel[g.id]}

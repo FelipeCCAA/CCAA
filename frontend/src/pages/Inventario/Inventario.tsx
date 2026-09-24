@@ -29,6 +29,11 @@ type Opcion = { valor: string; etiqueta: string };
 const aEstados = (opciones: Opcion[] | undefined) =>
   (opciones ?? []).map((o) => ({ valor: o.valor, texto: o.etiqueta }));
 
+/* La etiqueta que sirve el catálogo, o el código crudo si el catálogo no
+   cargó o no trae ese valor: mejor mostrar el código que una celda vacía. */
+const etiquetaDe = (opciones: Opcion[] | undefined, valor: string) =>
+  opciones?.find((o) => o.valor === valor)?.etiqueta ?? valor;
+
 /*
   Consulta de solo lectura. Los movimientos se registran en los puestos de
   Bodega y Despacho; aquí se mira qué hay, dónde y qué pasó.
@@ -62,6 +67,7 @@ export default function Inventario() {
         <div role="tabpanel">
           {pestana === "materiales" && (
             <TablaConsulta<Existencia>
+              titulo="Materiales"
               cargar={buscarExistencias}
               filtrosFijos={SOLO_CON_SALDO}
               clave={(f) => f.id}
@@ -73,7 +79,7 @@ export default function Inventario() {
                 { titulo: "Material", celda: (f) => <>{f.insumo_nombre}<span className="block text-xs text-slate-600">{f.insumo_codigo}</span></> },
                 { titulo: "Lote", celda: (f) => <span className="font-mono">{f.lote_codigo}</span> },
                 { titulo: "Ubicación", celda: (f) => `${f.ubicacion_codigo} · ${f.bodega_nombre}` },
-                { titulo: "Calidad", celda: (f) => f.estado_calidad },
+                { titulo: "Calidad", celda: (f) => etiquetaDe(opciones?.estado_calidad, f.estado_calidad) },
                 { titulo: "Físico", numerica: true, celda: (f) => cantidad(f.cantidad_fisica, f.unidad) },
                 { titulo: "Disponible", numerica: true, celda: (f) => cantidad(f.cantidad_disponible, f.unidad) },
               ]}
@@ -81,6 +87,7 @@ export default function Inventario() {
           )}
           {pestana === "producto" && (
             <TablaConsulta<ExistenciaProductoTerminado>
+              titulo="Producto terminado"
               cargar={buscarProductoTerminado}
               clave={(f) => f.id}
               ubicaciones={lista}
@@ -90,15 +97,17 @@ export default function Inventario() {
               columnas={[
                 { titulo: "Pallet", celda: (f) => <span className="font-mono">{f.pallet_codigo}</span> },
                 { titulo: "Producto", celda: (f) => f.producto_nombre },
+                { titulo: "Unidad", celda: (f) => f.tipo_unidad_logistica_etiqueta },
                 { titulo: "Lote", celda: (f) => <span className="font-mono">{f.lote_codigo}</span> },
                 { titulo: "Ubicación", celda: (f) => f.ubicacion_codigo },
-                { titulo: "Estado", celda: (f) => f.estado_inventario },
+                { titulo: "Estado", celda: (f) => etiquetaDe(opciones?.estado_pallet, f.estado_inventario) },
                 { titulo: "Peso", numerica: true, celda: (f) => cantidad(f.kg_neto, "kg") },
               ]}
             />
           )}
           {pestana === "movimientos" && (
             <TablaConsulta<MovimientoInventario>
+              titulo="Movimientos de materiales"
               cargar={buscarMovimientos}
               clave={(f) => f.id}
               ubicaciones={lista}
@@ -119,6 +128,7 @@ export default function Inventario() {
           )}
           {pestana === "movimientos-pallets" && (
             <TablaConsulta<MovimientoProductoTerminado>
+              titulo="Movimientos de pallets"
               cargar={buscarMovimientosProductoTerminado}
               clave={(f) => f.id}
               ubicaciones={lista}

@@ -142,9 +142,10 @@ test("suero externo termina como Big Bag disponible en Inventario", async ({ pag
     await page.getByRole("button", { name: "Filtrar" }).click();
     const fila = page.getByRole("row").filter({ hasText: bigBag });
     await expect(fila).toBeVisible({ timeout: 20_000 });
+    await expect(fila).toContainText("Big Bag");
     await expect(fila).toContainText(lote);
     await expect(fila).toContainText("700 kg");
-    await expect(fila).toContainText("disponible");
+    await expect(fila).toContainText(/disponible/i);
   });
 
   expect(erroresJs).toHaveLength(0);

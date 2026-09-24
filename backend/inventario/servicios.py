@@ -1039,7 +1039,7 @@ def decidir_inspeccion(*, inspeccion_id, decision, usuario, resultados, observac
             titulo=f"Decisión de Calidad: {inspeccion.lote.insumo.nombre}",
             mensaje=f"Lote {inspeccion.lote.codigo}: {decision}.",
             documento_tipo="inventario.InspeccionMaterial", documento_id=inspeccion.pk,
-            accion_url="/inventario",
+            accion_url="/bodega",
         )
     actualizar_alertas_inventario()
     return inspeccion

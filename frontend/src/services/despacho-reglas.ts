@@ -42,6 +42,27 @@ export function buscarPalletPorCodigo<T extends { pallet_codigo: string }>(palle
 }
 
 /*
+  Cómo se identifica un granel en la hoja de carga.
+
+  El lote es lo trazable — es lo que Calidad liberó y lo que se audita después
+  del despacho—, así que manda cuando existe; la corrida queda como referencia
+  secundaria porque sigue identificando la corrida de origen aunque el granel
+  ya tenga lote. Un granel de despacho directo (sin lote) se identifica por su
+  corrida sola. El silo, cuando se conoce, ubica físicamente el origen y solo
+  se agrega si se pide: la lista de graneles por elegir no lo necesita, el
+  resumen de ejecución sí.
+*/
+export function identificarGranel(
+  granel: { lote_codigo: string | null; corrida_codigo: string },
+  opciones: { silo?: string | null } = {},
+): string {
+  const base = granel.lote_codigo
+    ? `lote ${granel.lote_codigo} · corrida ${granel.corrida_codigo}`
+    : `corrida ${granel.corrida_codigo}`;
+  return opciones.silo ? `${base} · ${opciones.silo}` : base;
+}
+
+/*
   Cantidad de granel tecleada a mano, en formato chileno: "8.000" es ocho mil,
   no ocho con tres decimales. Solo se quitan los puntos como separador de
   miles cuando el texto también trae una coma decimal, o cuando el texto

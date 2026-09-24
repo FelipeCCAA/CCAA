@@ -209,7 +209,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
               </div>
               {salida.acciones_permitidas.some((accion) => accion.codigo === "preparar_despacho") ? (
                 <Link
-                  to="/inventario"
+                  to="/despacho"
                   className="mt-4 inline-flex items-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white"
                 >
                   {salida.acciones_permitidas.find((accion) => accion.codigo === "preparar_despacho")?.etiqueta}

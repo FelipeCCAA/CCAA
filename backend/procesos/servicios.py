@@ -556,7 +556,7 @@ def notificar_handoff_salida_liberada(salida):
         accion = "Envasado ya puede utilizar este material."
     elif salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO:
         area = PerfilUsuario.Area.DESPACHO
-        accion_url = "/inventario"
+        accion_url = "/despacho"
         accion = "Despacho ya puede preparar la salida a granel."
     else:
         siguiente = siguiente_etapa_para_salida(salida=salida)
