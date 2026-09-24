@@ -56,6 +56,7 @@ from .servicios import (
     ejecutar_mrp_semana, encolar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
     ingresar_pallet, transferir_pallet, autorizar_despacho, ejecutar_despacho,
+    cancelar_despacho,
     habilitar_rework, transferir_rework,
 )
 
@@ -484,6 +485,7 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = Despacho.objects.select_related("cliente", "creado_por", "autorizado_por").prefetch_related(
         "detalles__pallet__envase__lote",
+        "detalles__pallet__existencia_producto__ubicacion",
         "detalles_granel__salida__producto",
         "detalles_granel__salida__silo",
         "detalles_granel__salida__ejecucion__etapa",
@@ -492,6 +494,18 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     serializer_class = DespachoSerializer
     permission_classes = [PuedeCrearDespacho]
     http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        if self.request.query_params.get("vigentes") == "1":
+            # Lo que el puesto de Despacho tiene que ver: lo que falta sacar y
+            # lo que salió hoy. Sin el filtro, las hojas activas de hace una
+            # semana quedarían fuera de la primera página.
+            consulta = consulta.filter(
+                Q(estado__in=[Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO])
+                | Q(estado=Despacho.Estado.DESPACHADO, despachado_en__date=timezone.localdate())
+            )
+        return consulta
 
     def perform_create(self, serializer):
         sucursal = sucursal_para_escritura(self.request.user, serializer.validated_data, "sucursal")
@@ -576,6 +590,16 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             return Response(self.get_serializer(despacho).data)
         except (DjangoValidationError, ExistenciaProductoTerminado.DoesNotExist) as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"])
+    def cancelar(self, request, pk=None):
+        if not (request.user.is_superuser or request.user.has_perm("usuarios.despacho_autorizar")):
+            raise PermissionDenied("No tienes permiso para cancelar despachos.")
+        try:
+            despacho = cancelar_despacho(self.get_object(), request.user, request.data.get("motivo", ""))
+            return Response(self.get_serializer(despacho).data)
+        except DjangoValidationError as error:
+            return Response({"detail": error.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoteInventarioViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):

@@ -282,6 +282,31 @@ def ejecutar_despacho(despacho, usuario):
     return despacho
 
 
+@transaction.atomic
+def cancelar_despacho(despacho, usuario, motivo):
+    """
+    Cancela una hoja de carga que todavía no salió.
+
+    No se borra: `Despacho.delete` lo impide, y la hoja cancelada conserva quién
+    la armó, quién la canceló y por qué. Sus pallets quedan libres para otra
+    hoja por la regla de una hoja activa por pallet, sin tocar nada más.
+    """
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError("Indica el motivo de la cancelación.")
+    despacho = Despacho.objects.select_for_update().get(pk=despacho.pk)
+    if despacho.estado not in (Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO):
+        raise ValidationError(
+            f"Un despacho {despacho.get_estado_display().lower()} no se puede cancelar."
+        )
+    despacho.estado = Despacho.Estado.CANCELADO
+    despacho.motivo_cancelacion = motivo
+    despacho.cancelado_por = usuario
+    despacho.cancelado_en = timezone.now()
+    despacho.save(update_fields=["estado", "motivo_cancelacion", "cancelado_por", "cancelado_en"])
+    return despacho
+
+
 def _notificar_area(
     area, *, tipo, titulo, mensaje, documento_tipo, documento_id, accion_url="",
 ):

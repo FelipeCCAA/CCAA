@@ -822,8 +822,13 @@ class MovimientoProductoTerminadoSerializer(serializers.ModelSerializer):
 
 class DetalleDespachoSerializer(serializers.ModelSerializer):
     pallet_codigo = serializers.CharField(source="pallet.codigo", read_only=True)
-    lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo", read_only=True)
+    lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo_lote", read_only=True)
     kg_neto = serializers.DecimalField(source="pallet.kg_neto", max_digits=14, decimal_places=3, read_only=True)
+    ubicacion_codigo = serializers.SerializerMethodField()
+
+    def get_ubicacion_codigo(self, detalle):
+        existencia = getattr(detalle.pallet, "existencia_producto", None)
+        return existencia.ubicacion.codigo if existencia and existencia.activo else None
 
     class Meta:
         model = DetalleDespacho
@@ -874,7 +879,11 @@ class DespachoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Despacho
         exclude = ["sucursal"]
-        read_only_fields = ["numero", "sucursal", "creado_por", "autorizado_por", "estado", "creado_en", "autorizado_en", "despachado_en"]
+        read_only_fields = [
+            "numero", "sucursal", "creado_por", "autorizado_por", "estado",
+            "creado_en", "autorizado_en", "despachado_en",
+            "motivo_cancelacion", "cancelado_por", "cancelado_en",
+        ]
 
     def validate_pallet_ids(self, pallets):
         ids = [p.pk for p in pallets]
@@ -894,6 +903,19 @@ class DespachoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "graneles": "Cada salida a granel debe identificarse una sola vez."
             })
+        if pallets:
+            ocupados = DetalleDespacho.objects.filter(
+                pallet__in=pallets,
+                despacho__estado__in=[Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO],
+            ).select_related("pallet", "despacho").order_by("pallet__codigo")
+            if ocupados:
+                # Sin esto el segundo despacho recién fallaba al ejecutarse, con
+                # el camión ya cargado.
+                raise serializers.ValidationError({"pallet_ids": [
+                    f"El pallet {d.pallet.codigo} ya está en el despacho {d.despacho.numero} "
+                    f"({d.despacho.get_estado_display().lower()})."
+                    for d in ocupados
+                ]})
         return attrs
 
     @transaction.atomic
