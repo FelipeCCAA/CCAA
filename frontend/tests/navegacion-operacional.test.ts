@@ -179,5 +179,19 @@ test("Despacho aparece en el menú solo con la capacidad", () => {
   const bodega = usuarioDeArea("bodega", "Bodega", null);
   assert.ok(!etiquetas(bodega, "Envasado y logística").includes("Despacho"));
   assert.ok(etiquetas({ ...bodega, capacidades: ["despacho_crear"] }, "Envasado y logística").includes("Despacho"));
-  assert.equal(destinoInicial(usuarioDeArea("despacho", "Despacho", null)), "/despacho");
+  assert.equal(
+    destinoInicial({ ...usuarioDeArea("despacho", "Despacho", null), capacidades: ["despacho_crear"] }),
+    "/despacho",
+  );
+});
+
+test("Despacho sin la capacidad no aterriza en un puesto que va a rechazarlo", () => {
+  // Antes de esta regla, `destinoInicial` mandaba a /despacho solo mirando el
+  // área, y `puedeAccederModulo` exige además la capacidad: alguien de
+  // Despacho sin `despacho_crear` ni `despacho_autorizar` caía en
+  // AccesoRestringido apenas entraba. /inventario sí lo acepta: "despacho"
+  // está en `AREAS.inventario`.
+  const sinCapacidad = usuarioDeArea("despacho", "Despacho", null);
+  assert.equal(destinoInicial(sinCapacidad), "/inventario");
+  assert.equal(puedeAccederModulo(sinCapacidad, "inventario"), true);
 });

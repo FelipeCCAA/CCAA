@@ -55,10 +55,17 @@ export function puedeAccederModulo(usuario: Usuario | null | undefined, modulo: 
 export function destinoInicial(usuario: Usuario): string {
   if (esAdministradorGlobal(usuario)) return "/dashboard";
   if (usuario.perfil?.nivel === "admin") return "/administracion";
+  // Despacho es capability-gated (`PuedeCrearDespacho` en el servidor): el
+  // área sola no basta. Sin `despacho_crear` ni `despacho_autorizar`,
+  // /despacho responde AccesoRestringido apenas se entra; /inventario sí
+  // acepta el área de Despacho (está en `AREAS.inventario`).
+  if (usuario.perfil?.area === "despacho") {
+    return puedeDespachar(usuario) ? "/despacho" : "/inventario";
+  }
   const porArea: Record<string, string> = {
     recepcion: "/leche", condensacion: "/produccion", secado: "/secado",
     envase: "/envasado", calidad: "/calidad", aseo: "/calidad/inocuidad",
-    bodega: "/bodega", compras: "/abastecimiento", despacho: "/despacho",
+    bodega: "/bodega", compras: "/abastecimiento",
   };
   const area = usuario.perfil?.area;
   if (area && porArea[area]) return porArea[area];
