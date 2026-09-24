@@ -21,4 +21,5 @@ test("mantiene rutas útiles para notificaciones históricas", () => {
   // Sin `accion_url` propio (no debería darse: el origen ya lo manda), cae al
   // puesto que reubica el pallet — Bodega —, no a la consulta de solo lectura.
   assert.equal(rutaDeNotificacion(notificacion("producto_liberado")), "/bodega");
+  assert.equal(rutaDeNotificacion(notificacion("mrq_enviada")), "/abastecimiento/pedidos");
 });
