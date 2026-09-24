@@ -37,15 +37,20 @@ export const PANTALLAS_PRIVADAS: Pantalla[] = [
      Se auditan todas: comparten el marco pero no el contenido, y las tablas
      son justamente donde se esconden los problemas de encabezado y contraste. */
   { ruta: "/abastecimiento", nombre: "Abastecimiento · Panel" },
-  { ruta: "/abastecimiento/materiales", nombre: "Abastecimiento · Materiales" },
-  { ruta: "/abastecimiento/stock", nombre: "Abastecimiento · Stock" },
-  { ruta: "/abastecimiento/bodegas", nombre: "Abastecimiento · Bodegas" },
   { ruta: "/abastecimiento/compras", nombre: "Abastecimiento · Compras" },
   { ruta: "/abastecimiento/proveedores", nombre: "Abastecimiento · Proveedores" },
-  { ruta: "/abastecimiento/recepcion", nombre: "Abastecimiento · Recepción" },
   { ruta: "/abastecimiento/calidad", nombre: "Abastecimiento · Calidad" },
+  { ruta: "/abastecimiento/no-conformidades", nombre: "Abastecimiento · No conformidades" },
   { ruta: "/abastecimiento/pedidos", nombre: "Abastecimiento · Pedidos" },
   { ruta: "/abastecimiento/mrp", nombre: "Abastecimiento · MRP" },
+
+  /* Materiales, bodegas y recepción de compras viven en el puesto de Bodega
+     desde 2026-09-24; sus rutas viejas de Abastecimiento redirigen. */
+  { ruta: "/bodega", nombre: "Bodega · Operar" },
+  { ruta: "/bodega/recepcion", nombre: "Bodega · Recepción de compras" },
+  { ruta: "/bodega/configuracion", nombre: "Bodega · Configuración" },
+  { ruta: "/despacho", nombre: "Despacho" },
+  { ruta: "/inventario", nombre: "Existencias" },
 
   { ruta: "/procesos", nombre: "Procesos" },
   { ruta: "/mantenimiento", nombre: "Mantenimiento" },
