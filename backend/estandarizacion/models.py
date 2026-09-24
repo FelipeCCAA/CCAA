@@ -17,7 +17,6 @@ puro no puede conocer.
 """
 
 import uuid
-from datetime import date
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -84,8 +83,9 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
 
     ESTADO_BORRADOR = Estado.BORRADOR
     ESTADO_CONFIRMADO = Estado.CALCULADO
+    # `fecha` no está: la sella el sistema al confirmar (`asignar_codigo`).
     CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
-        "fecha", "producto", "rc_objetivo", "volumen",
+        "producto", "rc_objetivo", "volumen",
         "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
         "litros_entera",
     )
@@ -312,19 +312,22 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
 
     def asignar_codigo(self, **kwargs):
         """
-        Guarda el vale con el siguiente código libre del día de `fecha`.
+        Sella la fecha de creación y guarda el vale con el siguiente código libre.
+
+        La fecha es la de hoy en hora local (el servidor trabaja en
+        America/Santiago) y se escribe **en el mismo guardado** que el código:
+        son el mismo dato, y así no pueden decir días distintos. Nadie la teclea.
 
         La unicidad la garantiza la base: si dos confirmaciones calculan el
         mismo número, `unique` rechaza a la segunda y se reintenta con el
         siguiente. Cada intento va en su propio savepoint; sin él, el
         `IntegrityError` deja inutilizable la transacción de la confirmación.
         """
-        if self.fecha is None:
-            raise ValidationError({"fecha": "Falta la fecha del vale: sin ella no hay código."})
-        fecha = self.fecha if isinstance(self.fecha, date) else date.fromisoformat(str(self.fecha))
+        fecha_provisional = self.fecha
+        self.fecha = fecha = timezone.localdate()
 
         if kwargs.get("update_fields") is not None:
-            kwargs["update_fields"] = {*kwargs["update_fields"], "codigo"}
+            kwargs["update_fields"] = {*kwargs["update_fields"], "codigo", "fecha"}
 
         provisional = self.codigo
         prefijo = dominio.prefijo_codigo_vale(fecha)
@@ -343,10 +346,10 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
                 ).exists()
                 if not ocupado:
                     # No fue el código: otra restricción. No se enmascara.
-                    self.codigo = provisional
+                    self.codigo, self.fecha = provisional, fecha_provisional
                     raise
 
-        self.codigo = provisional
+        self.codigo, self.fecha = provisional, fecha_provisional
         raise CodigoValeNoAsignado(
             "No se pudo asignar un código de vale; vuelve a confirmar."
         )

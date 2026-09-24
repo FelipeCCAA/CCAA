@@ -19,8 +19,8 @@ class ValeEstandarizacionAdmin(admin.ModelAdmin):
     # El código tampoco: lo asigna el sistema al confirmar. Editable aquí sería
     # una tercera puerta para teclearlo.
     readonly_fields = (
-        "codigo", "estado", "agitacion_desde", "muestreado_en", "grasa_real",
-        "sng_real", "creado_en",
+        "codigo", "fecha", "estado", "agitacion_desde", "muestreado_en",
+        "grasa_real", "sng_real", "creado_en",
     )
 
     def has_delete_permission(self, request, obj=None):

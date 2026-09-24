@@ -6,12 +6,9 @@ confirmación, la creación directa, el admin y los scripts, sin que ninguno ten
 que acordarse de llamarla.
 """
 
-from datetime import date, timedelta
+from datetime import date
 from unittest.mock import patch
 
-from django.utils import timezone
-
-from .dominio import prefijo_codigo_vale
 from .models import CodigoValeNoAsignado, ValeEstandarizacion
 from .tests_vale import BaseVale
 
@@ -21,17 +18,35 @@ DIA = date(2026, 9, 23)
 BORRADOR = ValeEstandarizacion.Estado.BORRADOR
 ANULADO = ValeEstandarizacion.Estado.ANULADO
 
+#: Otro día cualquiera, para comprobar que la fecha que se pasa no manda.
+OTRO_DIA = date(2026, 1, 1)
+
+
+def fijar_reloj(prueba):
+    """
+    Fija `timezone.localdate()` en `DIA` durante la prueba.
+
+    La fecha de creación la sella el sistema al confirmar con el día de hoy, así
+    que los códigos esperados (`VE6266-…`) dependen del reloj.
+    """
+    reloj = patch("django.utils.timezone.localdate", return_value=DIA)
+    reloj.start()
+    prueba.addCleanup(reloj.stop)
+
 
 class AsignacionCodigoValeTests(BaseVale):
 
+    def setUp(self):
+        fijar_reloj(self)
+
     def confirmado(self, **extra):
         """Un vale ya confirmado (`calculado`) sin código: el modelo se lo asigna."""
-        return self.crear_vale(codigo="", fecha=DIA, **extra)
+        return self.crear_vale(codigo="", **extra)
 
     def borrador(self, **extra):
         vale = self.crear_vale(
             codigo=ValeEstandarizacion.nuevo_codigo_borrador(),
-            fecha=DIA, estado=BORRADOR, **extra,
+            estado=BORRADOR, **extra,
         )
         # Como la vista: confirmar() opera sobre el vale leído de la base, con
         # Decimal reales. `crear_vale` deja los decimales como texto en memoria.
@@ -51,12 +66,24 @@ class AsignacionCodigoValeTests(BaseVale):
 
         self.assertEqual(self.confirmado().codigo, "VE6266-02")
 
-    def test_el_dia_sale_de_la_fecha_del_vale_y_no_del_reloj(self):
-        ayer = timezone.localdate() - timedelta(days=1)
+    def test_la_fecha_la_sella_la_confirmacion_y_no_quien_crea_el_vale(self):
+        """Fecha y código se sellan juntos: no pueden decir días distintos."""
+        vale = self.confirmado(fecha=OTRO_DIA)
 
-        vale = self.crear_vale(codigo="", fecha=ayer)
+        self.assertEqual(vale.fecha, DIA)
+        self.assertEqual(vale.codigo, "VE6266-01")
 
-        self.assertEqual(vale.codigo, f"{prefijo_codigo_vale(ayer)}01")
+    def test_confirmar_un_borrador_sella_la_fecha_de_hoy(self):
+        vale = self.borrador(fecha=OTRO_DIA)
+
+        self.assertEqual(vale.confirmar(self.usuario), [])
+
+        vale.refresh_from_db()
+        self.assertEqual(vale.fecha, DIA)
+        self.assertEqual(vale.codigo, "VE6266-01")
+
+    def test_un_borrador_conserva_su_fecha_provisional(self):
+        self.assertEqual(self.borrador(fecha=OTRO_DIA).fecha, OTRO_DIA)
 
     def test_un_borrador_no_recibe_codigo(self):
         self.assertTrue(self.borrador().codigo.startswith("BORRADOR-"))
@@ -144,6 +171,8 @@ class CodigoValeApiTests(BaseVale):
     """Ningún camino de la API deja escribir el código."""
 
     def setUp(self):
+        fijar_reloj(self)
+
         from rest_framework.authtoken.models import Token
         from rest_framework.test import APIClient
 
@@ -157,7 +186,6 @@ class CodigoValeApiTests(BaseVale):
 
     def cuerpo(self, **extra):
         datos = {
-            "fecha": DIA.isoformat(),
             "producto": self.producto.id,
             "rc_objetivo": "0.2010",
             "volumen": "10000.00",
@@ -212,3 +240,26 @@ class CodigoValeApiTests(BaseVale):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("vuelve a confirmar", str(respuesta.json()))
+
+    def test_la_creacion_directa_ignora_la_fecha_del_cliente(self):
+        respuesta = self.cliente.post(
+            "/api/estandarizacion/vales/",
+            self.cuerpo(fecha=OTRO_DIA.isoformat()),
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.json())
+        self.assertEqual(respuesta.json()["fecha"], DIA.isoformat())
+
+    def test_un_patch_no_cambia_la_fecha(self):
+        vale = self.crear_vale(codigo="")
+
+        respuesta = self.cliente.patch(
+            f"/api/estandarizacion/vales/{vale.id}/",
+            {"fecha": OTRO_DIA.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.json())
+        vale.refresh_from_db()
+        self.assertEqual(vale.fecha, DIA)

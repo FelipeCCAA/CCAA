@@ -143,7 +143,8 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         serializer.is_valid(raise_exception=True)
         vale = serializer.save(
             codigo=ValeEstandarizacion.nuevo_codigo_borrador(),
-            fecha=serializer.validated_data.get("fecha", timezone.localdate()),
+            # Provisional: la fecha de creación se sella al confirmar.
+            fecha=timezone.localdate(),
             responsable=request.user,
             abierto_por=request.user,
             abierto_en=timezone.now(),

@@ -64,8 +64,9 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         # exige que el RC cumpla, y con un campo escribible eso se salta.
         # El código lo asigna el sistema al confirmar (`models.asignar_codigo`).
         # Escribible, era por donde entraban códigos como «jkjfd».
+        # La fecha de creación también: la sella el sistema junto al código.
         read_only_fields = [
-            "codigo",
+            "codigo", "fecha",
             "estado", "agitacion_desde", "muestreado_en",
             "grasa_real", "sng_real",
             "responsable", "creado_en", "es_borrador",
@@ -89,7 +90,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if self.instance is None and not self.partial:
             obligatorios = (
-                "fecha", "producto", "rc_objetivo", "volumen",
+                "producto", "rc_objetivo", "volumen",
                 "silo_entera", "silo_destino", "entera_grasa", "entera_sng",
                 "litros_entera",
             )
