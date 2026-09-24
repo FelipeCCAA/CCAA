@@ -2725,10 +2725,14 @@ En `access-control.ts`, `destinoInicial` → `bodega: "/bodega"`. En `navegacion
 En `tests/navegacion-operacional.test.ts`:
 
 ```ts
-test("Bodega entra a su puesto", () => {
+test("Bodega entra a su puesto, y el puesto es su inicio", () => {
   const bodega = usuarioDeArea("bodega", "Bodega", null);
   assert.equal(puedeAccederModulo(bodega, "bodega"), true);
-  assert.ok(etiquetas(bodega, "Envasado y logística").includes("Bodega"));
+  assert.equal(destinoInicial(bodega), "/bodega");
+  // El menú oculta la entrada que coincide con el inicio del usuario; la
+  // entrada se comprueba con quien no la tiene de inicio.
+  const compras = usuarioDeArea("compras", "Compras", null);
+  assert.equal(puedeAccederModulo(compras, "bodega"), false);
 });
 ```
 
@@ -3320,9 +3324,12 @@ En `tests/navegacion-operacional.test.ts`:
 
 ```ts
 test("Despacho aparece en el menú solo con la capacidad", () => {
-  const despacho = usuarioDeArea("despacho", "Despacho", null);
-  assert.ok(!etiquetas(despacho, "Envasado y logística").includes("Despacho"));
-  assert.ok(etiquetas({ ...despacho, capacidades: ["despacho_crear"] }, "Envasado y logística").includes("Despacho"));
+  // Un usuario de Bodega: su inicio es /bodega, así que la entrada de
+  // Despacho no se oculta por ser su inicio y se mide solo la capacidad.
+  const bodega = usuarioDeArea("bodega", "Bodega", null);
+  assert.ok(!etiquetas(bodega, "Envasado y logística").includes("Despacho"));
+  assert.ok(etiquetas({ ...bodega, capacidades: ["despacho_crear"] }, "Envasado y logística").includes("Despacho"));
+  assert.equal(destinoInicial(usuarioDeArea("despacho", "Despacho", null)), "/despacho");
 });
 ```
 
