@@ -168,7 +168,7 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
                       <input type="checkbox" checked={granel[g.id] !== undefined} className="h-4 w-4"
                         onChange={() => setGranel((actual) => {
                           const copia = { ...actual };
-                          if (copia[g.id] !== undefined) delete copia[g.id]; else copia[g.id] = String(g.cantidad_disponible);
+                          if (copia[g.id] !== undefined) delete copia[g.id]; else copia[g.id] = String(g.cantidad_disponible).replace(".", ","); // coma decimal: «12.345» se leería como miles
                           return copia;
                         })} />
                       {g.producto_nombre} · {g.corrida_codigo} · hasta {cantidad(g.cantidad_disponible, g.unidad)}
