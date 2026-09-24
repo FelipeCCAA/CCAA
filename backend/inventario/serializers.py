@@ -874,7 +874,7 @@ class DespachoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Despacho
         exclude = ["sucursal"]
-        read_only_fields = ["sucursal", "creado_por", "autorizado_por", "estado", "creado_en", "autorizado_en", "despachado_en"]
+        read_only_fields = ["numero", "sucursal", "creado_por", "autorizado_por", "estado", "creado_en", "autorizado_en", "despachado_en"]
 
     def validate_pallet_ids(self, pallets):
         ids = [p.pk for p in pallets]
@@ -902,7 +902,8 @@ class DespachoSerializer(serializers.ModelSerializer):
 
         pallets = validated_data.pop("pallets_solicitados", [])
         graneles = validated_data.pop("graneles", [])
-        despacho = super().create(validated_data)
+        despacho = Despacho(**validated_data)
+        despacho.asignar_numero()
         DetalleDespacho.objects.bulk_create([DetalleDespacho(despacho=despacho, pallet=p) for p in pallets])
         for item in graneles:
             try:

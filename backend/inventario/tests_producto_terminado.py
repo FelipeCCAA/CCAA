@@ -1,65 +1,27 @@
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
-from django.contrib.auth.models import User
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
-from django.test import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
 
 from calidad.models import Liberacion, LiberacionProceso
-from maestros.models import Equipo, Mandante, Producto, Silo
+from maestros.models import Silo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
-from produccion.models import Lote, PalletProducto, RegistroEnvase
+from produccion.models import Lote, PalletProducto
 from recepcion.models import MovimientoSilo
-from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
+from usuarios.models import PerfilUsuario
 
 from .models import (
-    Bodega, ClienteDespacho, Despacho, DetalleDespacho, DetalleDespachoGranel,
+    Despacho, DetalleDespacho, DetalleDespachoGranel,
     ExistenciaProductoTerminado, Insumo, LoteInventario,
     MovimientoProductoTerminado, Ubicacion,
 )
+from .pruebas_base import EscenarioProductoTerminado
 from .servicios import autorizar_despacho, ejecutar_despacho, ingresar_pallet
 
 
-class FlujoProductoTerminadoTests(TestCase):
-    def setUp(self):
-        self.empresa = Empresa.objects.create(rut="PT-1", nombre="Empresa PT")
-        self.planta = Sucursal.objects.create(empresa=self.empresa, codigo="PT", nombre="Planta PT")
-        self.usuario = User.objects.create_user("bodega-pt")
-        PerfilUsuario.objects.create(
-            usuario=self.usuario, empresa=self.empresa, sucursal=self.planta,
-            rol=Rol.OPERARIO, area=PerfilUsuario.Area.BODEGA,
-        )
-        mandante = Mandante.objects.create(empresa=self.empresa, nombre="Mandante PT", codigo_cliente="pt")
-        producto = Producto.objects.create(mandante=mandante, nombre="Polvo PT", unidad_base="kg")
-        self.producto = producto
-        self.lote = Lote.objects.create(
-            sucursal=self.planta, codigo_lote="L-PT", producto=producto,
-            fecha=date(2026, 8, 17), estado=Lote.Estado.PRODUCIDO, kg_producidos=Decimal("500"),
-        )
-        equipo = Equipo.objects.create(
-            sucursal=self.planta, codigo="ENV-PT", nombre="Envasadora PT", tipo=Equipo.Tipo.ENVASADORA,
-        )
-        envase = RegistroEnvase.objects.create(
-            lote=self.lote, equipo=equipo, formato_kg=25, unidades=20, kg_envasados=500,
-            operador=self.usuario, inicio=timezone.now() - timedelta(hours=1), termino=timezone.now(),
-        )
-        self.pallet = PalletProducto.objects.create(
-            envase=envase, codigo="PAL-PT", unidades=20, kg_neto=500,
-        )
-        bodega = Bodega.objects.create(sucursal=self.planta, codigo="BPT", nombre="Bodega PT")
-        self.ubicacion = Ubicacion.objects.create(bodega=bodega, codigo="A-01")
-        self.cliente = ClienteDespacho.objects.create(empresa=self.empresa, codigo="CLI", nombre="Cliente PT")
-        self.api = APIClient()
-        self.api.force_authenticate(self.usuario)
-
-    def liberar(self):
-        Liberacion.objects.create(lote=self.lote, estado=Liberacion.Estado.LIBERADO)
-        self.pallet.estado = PalletProducto.Estado.LIBERADO
-        self.pallet.save(update_fields=["estado"])
-
+class FlujoProductoTerminadoTests(EscenarioProductoTerminado):
     def test_no_ingresa_sin_liberacion_de_calidad(self):
         with self.assertRaises(ValidationError):
             ingresar_pallet(self.pallet, self.ubicacion, self.usuario)

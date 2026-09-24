@@ -3,12 +3,14 @@ from math import sqrt
 import uuid
 
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from usuarios.models import PerfilUsuario
 from usuarios.tenancy import empresa_predeterminada_pruebas, sucursal_predeterminada_pruebas
+
+from . import dominio
 
 
 class Insumo(models.Model):
@@ -1027,6 +1029,9 @@ class ExistenciaProductoTerminado(models.Model):
         ordering = ["pallet__codigo"]
 
 
+INTENTOS_NUMERO_DESPACHO = 5
+
+
 class Despacho(models.Model):
     class Estado(models.TextChoices):
         BORRADOR = "borrador", "Borrador"
@@ -1058,6 +1063,47 @@ class Despacho(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Un despacho no se elimina; se cancela conservando su auditoría.")
+
+    def asignar_numero(self):
+        """
+        Guarda el despacho con el siguiente número libre del día.
+
+        Nadie lo teclea: un número tecleado se repite o se salta, y el de la
+        guía del SII es otro dato (`guia_despacho`). La unicidad la garantiza la
+        base; si dos hojas calculan el mismo número, `despacho_numero_sucursal`
+        rechaza a la segunda y se reintenta con el siguiente. Cada intento va en
+        su propio savepoint: sin él, el `IntegrityError` deja inutilizable la
+        transacción que está creando la hoja con sus detalles.
+        """
+        prefijo = dominio.prefijo_numero_despacho(timezone.localdate())
+
+        for _ in range(INTENTOS_NUMERO_DESPACHO):
+            self.numero = dominio.generar_numero_despacho(
+                timezone.localdate(), self._siguiente_correlativo(prefijo)
+            )
+            try:
+                with transaction.atomic():
+                    self.save()
+                return
+            except IntegrityError:
+                ocupado = type(self).objects.filter(
+                    sucursal_id=self.sucursal_id, numero=self.numero
+                ).exists()
+                if not ocupado:
+                    # No fue el número: otra restricción. No se enmascara.
+                    self.numero = ""
+                    raise
+
+        self.numero = ""
+        raise ValidationError("No se pudo asignar un número de despacho; vuelve a intentarlo.")
+
+    def _siguiente_correlativo(self, prefijo):
+        """El máximo correlativo con ese prefijo en la planta, más uno. Nunca reutiliza."""
+        usados = type(self).objects.filter(
+            sucursal_id=self.sucursal_id, numero__startswith=prefijo
+        ).values_list("numero", flat=True)
+        correlativos = (dominio.correlativo_de_numero(n, prefijo) for n in usados)
+        return max((n for n in correlativos if n is not None), default=0) + 1
 
 
 class DetalleDespacho(models.Model):
