@@ -54,7 +54,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "entera_grasa", "entera_sng", "descremada_grasa", "descremada_sng",
             "crema_grasa", "crema_sng", "analisis_entera", "analisis_descremada",
             "analisis_crema", "litros_entera", "litros_descremada", "litros_crema",
-            "estado", "agitacion_desde", "muestreado_en",
+            "estado", "agitacion_desde", "muestreado_en", "ejecutado_en",
             "grasa_real", "sng_real",
             "rc_real", "minutos_agitando", "avisos", "evaluacion",
             "observaciones", "responsable", "responsable_nombre", "creado_en",
@@ -67,7 +67,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         # La fecha de creación también: la sella el sistema junto al código.
         read_only_fields = [
             "codigo", "fecha",
-            "estado", "agitacion_desde", "muestreado_en",
+            "estado", "agitacion_desde", "muestreado_en", "ejecutado_en",
             "grasa_real", "sng_real",
             "responsable", "creado_en", "es_borrador",
             "abierto_por", "abierto_en", "actualizado_en",

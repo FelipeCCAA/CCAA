@@ -170,7 +170,9 @@ def transferir(*, vale_id, usuario):
 
     vale.estado = ValeEstandarizacion.Estado.TRANSFERIDO
     vale.responsable = vale.responsable or usuario
-    vale.save(update_fields=["estado", "responsable"])
+    # La ejecución es este momento: el mismo `ahora` de los movimientos.
+    vale.ejecutado_en = ahora
+    vale.save(update_fields=["estado", "responsable", "ejecutado_en"])
 
     # El vale queda registrado como ejecucion de la etapa
     # «Estandarizacion»: es el mismo hecho de planta, y este es el

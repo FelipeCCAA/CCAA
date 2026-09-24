@@ -219,6 +219,13 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
             "después no hay forma de saber si la muestra fue temprana."
         ),
     )
+    ejecutado_en = models.DateTimeField(
+        "Ejecutado en", null=True, blank=True,
+        help_text=(
+            "Cuándo se mezcló la leche: lo sella `transferir` con la misma hora "
+            "de los movimientos de silo. Nadie lo teclea; nulo hasta transferir."
+        ),
+    )
 
     # Lo que dio el análisis después de agitar. Nulos hasta que se muestrea.
     grasa_real = models.DecimalField(

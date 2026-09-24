@@ -183,6 +183,28 @@ class AgitacionTests(BaseVale):
             litros="100.00",
         ).exists())
 
+    def test_transferir_sella_la_ejecucion_con_la_hora_del_libro(self):
+        """
+        La ejecución es cuándo se mezcló la leche: la misma hora que queda en
+        los movimientos de silo, no una que se teclea.
+        """
+        vale = self.crear_vale()
+        self.abastecer_origenes()
+        self.analizar_origenes()
+        self.assertIsNone(ValeEstandarizacion.objects.get(pk=vale.pk).ejecutado_en)
+
+        servicios.transferir(vale_id=vale.pk, usuario=self.usuario)
+
+        vale.refresh_from_db()
+        horas_del_libro = set(
+            MovimientoSilo.objects.filter(
+                origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+                origen_id=vale.id,
+            ).values_list("fecha_hora", flat=True)
+        )
+        self.assertIsNotNone(vale.ejecutado_en)
+        self.assertEqual(horas_del_libro, {vale.ejecutado_en})
+
     def test_transferir_mueve_litros_entre_silos(self):
         vale = self.crear_vale()
         self.abastecer_origenes()
@@ -544,6 +566,18 @@ class ApiTests(BaseVale):
             HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=operador).key}"
         )
 
+    def test_la_ejecucion_se_expone_y_no_se_escribe(self):
+        vale = self.crear_vale()
+
+        respuesta = self.cliente.patch(
+            f"/api/estandarizacion/vales/{vale.id}/",
+            {"ejecutado_en": "2026-01-01T10:00:00-03:00"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.json())
+        self.assertIsNone(respuesta.json()["ejecutado_en"])
+
     def test_un_vale_no_se_borra_se_anula(self):
         """
         Borrarlo haría desaparecer el eslabón entre el precondensado y los
@@ -835,3 +869,16 @@ class AdminValeTests(BaseVale):
         modelo_admin = admin.site._registry[ValeEstandarizacion]
 
         self.assertFalse(modelo_admin.has_delete_permission(peticion, self.crear_vale()))
+
+    def test_las_fechas_del_vale_no_se_editan_en_el_admin(self):
+        peticion = RequestFactory().get("/")
+        peticion.user = get_user_model().objects.create_superuser(
+            username="admin-fechas", password="x"
+        )
+
+        solo_lectura = admin.site._registry[ValeEstandarizacion].get_readonly_fields(
+            peticion
+        )
+
+        self.assertIn("fecha", solo_lectura)
+        self.assertIn("ejecutado_en", solo_lectura)

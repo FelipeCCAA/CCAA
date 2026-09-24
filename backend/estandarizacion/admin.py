@@ -20,7 +20,7 @@ class ValeEstandarizacionAdmin(admin.ModelAdmin):
     # una tercera puerta para teclearlo.
     readonly_fields = (
         "codigo", "fecha", "estado", "agitacion_desde", "muestreado_en",
-        "grasa_real", "sng_real", "creado_en",
+        "ejecutado_en", "grasa_real", "sng_real", "creado_en",
     )
 
     def has_delete_permission(self, request, obj=None):
