@@ -1081,11 +1081,12 @@ class Despacho(models.Model):
         su propio savepoint: sin él, el `IntegrityError` deja inutilizable la
         transacción que está creando la hoja con sus detalles.
         """
-        prefijo = dominio.prefijo_numero_despacho(timezone.localdate())
+        hoy = timezone.localdate()
+        prefijo = dominio.prefijo_numero_despacho(hoy)
 
         for _ in range(INTENTOS_NUMERO_DESPACHO):
             self.numero = dominio.generar_numero_despacho(
-                timezone.localdate(), self._siguiente_correlativo(prefijo)
+                hoy, self._siguiente_correlativo(prefijo)
             )
             try:
                 with transaction.atomic():

@@ -230,3 +230,49 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         ids = {fila["id"] for fila in respuesta.data}
         self.assertEqual(ids, ids_referencia)
         self.assertIn(self.pallet.pk, {fila["pallet"] for fila in respuesta.data})
+
+    # ---- historial de despachos (FiltraConsultaMixin)
+
+    def _filas(self, respuesta):
+        return respuesta.data["results"] if isinstance(respuesta.data, dict) else respuesta.data
+
+    def test_q_busca_por_numero_y_por_codigo_de_pallet(self):
+        primero = self.crear().data
+        otro = self.crear_pallet("PAL-PT-9")
+        ingresar_pallet(otro, self.ubicacion, self.usuario)
+        segundo = self.api.post("/api/inventario/despachos/", {
+            "cliente": self.cliente.pk, "pallet_ids": [otro.pk],
+        }, format="json").data
+
+        por_numero = self._filas(self.api.get(f"/api/inventario/despachos/?q={primero['numero']}"))
+        self.assertEqual({f["id"] for f in por_numero}, {primero["id"]})
+
+        por_pallet = self._filas(self.api.get("/api/inventario/despachos/?q=PT-9"))
+        self.assertEqual({f["id"] for f in por_pallet}, {segundo["id"]})
+
+    def test_estado_filtra_el_historial(self):
+        creado = self.crear().data
+        self.assertEqual(
+            {f["id"] for f in self._filas(self.api.get("/api/inventario/despachos/?estado=borrador"))},
+            {creado["id"]},
+        )
+        self.assertEqual(
+            self._filas(self.api.get("/api/inventario/despachos/?estado=despachado")), [],
+        )
+
+    def test_una_hoja_con_dos_pallets_no_se_duplica_al_buscar(self):
+        """
+        `busqueda_en` cruza `detalles__pallet__codigo`, un FK inverso: sin
+        `.distinct()`, una hoja con más de un pallet sale una vez por cada
+        pallet que matchea el `icontains`, y el historial cuenta despachos que
+        no existen.
+        """
+        otro = self.crear_pallet("PAL-PT-DOS")
+        ingresar_pallet(otro, self.ubicacion, self.usuario)
+        creado = self.api.post("/api/inventario/despachos/", {
+            "cliente": self.cliente.pk, "pallet_ids": [self.pallet.pk, otro.pk],
+        }, format="json").data
+
+        respuesta = self._filas(self.api.get("/api/inventario/despachos/?q=PAL-PT"))
+        ids = [f["id"] for f in respuesta]
+        self.assertEqual(ids.count(creado["id"]), 1)

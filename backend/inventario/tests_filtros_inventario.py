@@ -139,3 +139,15 @@ class FiltrosInventarioTests(EscenarioProductoTerminado):
         self.assertIn("ingreso", [o["valor"] for o in datos["tipo_movimiento_pallet"]])
         self.assertEqual([o["valor"] for o in datos["estado_pallet"]], ["disponible", "cuarentena", "bloqueado"])
         self.assertTrue(datos["tipo_movimiento"])
+
+    def test_el_catalogo_sirve_los_estados_de_despacho(self):
+        datos = self.api.get("/api/inventario/catalogos/").data
+        self.assertEqual(
+            datos["estado_despacho"],
+            [
+                {"valor": "borrador", "etiqueta": "Borrador"},
+                {"valor": "autorizado", "etiqueta": "Autorizado"},
+                {"valor": "despachado", "etiqueta": "Despachado"},
+                {"valor": "cancelado", "etiqueta": "Cancelado"},
+            ],
+        )

@@ -481,6 +481,13 @@ class FiltraConsultaMixin:
     """
 
     busqueda_en: tuple[str, ...] = ()
+    # Cuando `busqueda_en` cruza una relación a-varios (un FK inverso, como
+    # `detalles__pallet__codigo`), el `icontains` produce un JOIN que repite
+    # la fila principal una vez por cada coincidencia. Opt-in y no automático:
+    # `.distinct()` sobre una consulta con `order_by` en un campo no incluido
+    # en los campos únicos puede fallar en algunos motores, así que solo lo
+    # paga quien de verdad busca sobre una relación a-varios.
+    busqueda_distinta = False
     filtro_estado: str | None = None
     filtro_ubicacion: tuple[str, ...] = ()
     filtro_fecha: str | None = None
@@ -498,6 +505,8 @@ class FiltraConsultaMixin:
             for campo in self.busqueda_en:
                 condicion |= Q(**{f"{campo}__icontains": texto})
             consulta = consulta.filter(condicion)
+            if self.busqueda_distinta:
+                consulta = consulta.distinct()
 
         estado = parametros.get("estado", "").strip()
         if estado and self.filtro_estado:
@@ -682,7 +691,7 @@ class MovimientoReworkViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet
     permission_classes = [EscribeBodega]
 
 
-class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
+class DespachoViewSet(FiltraConsultaMixin, SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
     queryset = Despacho.objects.select_related("cliente", "creado_por", "autorizado_por").prefetch_related(
@@ -696,6 +705,15 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     serializer_class = DespachoSerializer
     permission_classes = [PuedeCrearDespacho]
     http_method_names = ["get", "post", "head", "options"]
+    busqueda_en = (
+        "numero", "cliente__nombre", "detalles__pallet__codigo",
+        "detalles__pallet__envase__lote__codigo_lote",
+    )
+    # `detalles` es un FK inverso: una hoja con dos pallets que matchean el
+    # `q` saldría dos veces sin esto (fijado en `tests_despacho_hoja`).
+    busqueda_distinta = True
+    filtro_estado = "estado"
+    filtro_fecha = "creado_en"
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -1589,5 +1607,6 @@ def catalogos(request):
             "tipo_movimiento": opciones(MovimientoInventario.Tipo.choices),
             "tipo_movimiento_pallet": opciones(MovimientoProductoTerminado.Tipo.choices),
             "estado_pallet": [{"valor": v, "etiqueta": e} for v, e, _ in estados_inventario_pallet()],
+            "estado_despacho": opciones(Despacho.Estado.choices),
         }
     )
