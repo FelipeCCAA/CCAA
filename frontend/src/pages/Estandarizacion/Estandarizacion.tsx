@@ -356,6 +356,21 @@ function Estandarizacion() {
                       pie={`${vale.crema_grasa}% MG · ${vale.crema_sng}% SNG`}
                     />
                   )}
+                  {/* Las dos fechas las sella el sistema: la creación al
+                      confirmar (junto al código) y la ejecución al transferir. */}
+                  <Dato etiqueta="Creado" valor={vale.fecha} />
+                  <Dato
+                    etiqueta="Ejecutado"
+                    valor={
+                      vale.ejecutado_en
+                        ? new Date(vale.ejecutado_en).toLocaleString("es-CL", {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })
+                        : "Pendiente"
+                    }
+                    pie={vale.ejecutado_en ? undefined : "se registra al transferir"}
+                  />
                   <Dato etiqueta="RC objetivo" valor={rc(vale.rc_objetivo)} />
                   <Dato
                     etiqueta="RC medido"

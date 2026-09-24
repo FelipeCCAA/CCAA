@@ -12,7 +12,6 @@ import {
   obtenerSugerenciaSilos, type Silo, type SugerenciaSilo,
 } from "../../services/recepcion.service";
 import { mensajeDe } from "../../components/seccion/utilidades";
-import { fechaLocalISO } from "../../services/fechas";
 import { useBorrador } from "../../hooks/useBorrador";
 
 /*
@@ -30,10 +29,7 @@ import { useBorrador } from "../../hooks/useBorrador";
   se abre una válvula.
 */
 
-const hoy = () => fechaLocalISO();
-
 const inicial = {
-  fecha: hoy(),
   producto: "",
   rc_objetivo: "",
   volumen: "",
@@ -93,7 +89,6 @@ function FormularioVale({
 
   const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
   const datosBorrador: DatosBorradorVale = {
-    fecha: datos.fecha,
     producto: numeroONull(datos.producto),
     rc_objetivo: numeroONull(datos.rc_objetivo),
     volumen: numeroONull(datos.volumen),
@@ -133,7 +128,6 @@ function FormularioVale({
       }
       setDatos({
         ...inicial,
-        fecha: guardado.fecha,
         producto: guardado.producto == null ? "" : String(guardado.producto),
         rc_objetivo: guardado.rc_objetivo ?? "",
         volumen: guardado.volumen ?? "",
@@ -330,14 +324,6 @@ function FormularioVale({
               Se asignará al confirmar
             </p>
           </div>
-
-          <Campo label="Fecha">
-            <input
-              required type="date" value={datos.fecha}
-              onChange={(e) => cambiar("fecha", e.target.value)}
-              className="control"
-            />
-          </Campo>
 
           <Campo label="Producto">
             <select

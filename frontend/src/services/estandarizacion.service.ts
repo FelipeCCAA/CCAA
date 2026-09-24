@@ -51,6 +51,7 @@ export interface ValeEstandarizacion {
   estado: EstadoVale;
   agitacion_desde: string | null;
   muestreado_en: string | null;
+  ejecutado_en: string | null;
   grasa_real: string | null;
   sng_real: string | null;
   rc_real: number | null;
@@ -143,7 +144,6 @@ export async function calcularMezcla(datos: EntradaCalculo): Promise<Mezcla> {
 }
 
 export interface NuevoVale {
-  fecha: string;
   producto: number;
   rc_objetivo: number;
   volumen: number;
@@ -168,7 +168,6 @@ export async function crearVale(datos: NuevoVale): Promise<ValeEstandarizacion> 
 }
 
 export interface DatosBorradorVale {
-  fecha: string;
   producto: number | null;
   rc_objetivo: number | null;
   volumen: number | null;
