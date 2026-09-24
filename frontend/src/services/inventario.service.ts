@@ -1,4 +1,5 @@
 import api from "./api";
+import { conFiltros, recorrerPaginas, type Filtros, type Pagina, type RespuestaLista } from "./paginacion";
 
 export interface Insumo {
   id: number; codigo: string; nombre: string; area: string; area_etiqueta: string;
@@ -293,9 +294,15 @@ export async function calcularMRP(producto: number, kilos_producir: number): Pro
   return data;
 }
 
+/* Conjunto completo. Solo para listas acotadas: para las largas, `pagina()`. */
 async function lista<T>(ruta: string): Promise<T[]> {
-  const { data } = await api.get<T[] | { results: T[] }>(ruta);
-  return Array.isArray(data) ? data : data.results;
+  return recorrerPaginas<T>(async (actual) => (await api.get<RespuestaLista<T>>(actual)).data, ruta);
+}
+
+/* Una página, con sus filtros aplicados en el servidor. */
+export async function pagina<T>(ruta: string, filtros: Filtros = {}): Promise<Pagina<T>> {
+  const { data } = await api.get<RespuestaLista<T>>(conFiltros(ruta, filtros));
+  return Array.isArray(data) ? { count: data.length, next: null, previous: null, results: data } : data;
 }
 
 export const obtenerExistencias = () => lista<Existencia>("inventario/existencias/");
