@@ -77,6 +77,71 @@ def _tenant_get(modelo, usuario, pk, *, sucursal, empresa):
     ).get(pk=pk)
 
 
+def _resumen_materiales(usuario):
+    """Stock de material agrupado por insumo: físico, disponible, cuarentena, bloqueado.
+
+    Solo cuenta insumos **con alguna existencia**; un material sin ninguna
+    existencia no aparece bajo mínimo. Es una limitación consciente: el
+    resumen que consume `estado_operacional` tiene la misma.
+    """
+    decimal = DecimalField(max_digits=18, decimal_places=3)
+    existencias_material = filtrar_por_scope(
+        Existencia.objects.select_related("lote__insumo", "ubicacion"), usuario,
+        campo_sucursal="ubicacion__bodega__sucursal_id",
+        campo_empresa="ubicacion__bodega__sucursal__empresa_id",
+    )
+    estados_utilizables = [
+        LoteInventario.EstadoCalidad.NO_REQUIERE,
+        LoteInventario.EstadoCalidad.APROBADO,
+        LoteInventario.EstadoCalidad.OBSERVADO,
+    ]
+    estados_bloqueados = [
+        LoteInventario.EstadoCalidad.BLOQUEADO,
+        LoteInventario.EstadoCalidad.RECHAZADO,
+    ]
+    materiales_agrupados = existencias_material.values(
+        "lote__insumo_id", "lote__insumo__codigo", "lote__insumo__nombre",
+        "lote__insumo__unidad", "lote__insumo__categoria", "lote__insumo__stock_minimo",
+    ).annotate(
+        fisico=Coalesce(Sum("cantidad_fisica"), Value(0), output_field=decimal),
+        reservado=Coalesce(Sum("cantidad_reservada"), Value(0), output_field=decimal),
+        disponible=Coalesce(
+            Sum(
+                F("cantidad_fisica") - F("cantidad_reservada"),
+                filter=Q(
+                    ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+                    lote__activo=True,
+                    lote__estado_calidad__in=estados_utilizables,
+                ),
+            ),
+            Value(0), output_field=decimal,
+        ),
+        cuarentena=Coalesce(
+            Sum("cantidad_fisica", filter=Q(ubicacion__tipo=Ubicacion.Tipo.CUARENTENA)),
+            Value(0), output_field=decimal,
+        ),
+        bloqueado=Coalesce(
+            Sum("cantidad_fisica", filter=Q(lote__estado_calidad__in=estados_bloqueados)),
+            Value(0), output_field=decimal,
+        ),
+        ubicaciones=Count("ubicacion_id", distinct=True),
+    ).order_by("lote__insumo__nombre")
+    return [{
+        "insumo_id": fila["lote__insumo_id"],
+        "codigo": fila["lote__insumo__codigo"],
+        "nombre": fila["lote__insumo__nombre"],
+        "unidad": fila["lote__insumo__unidad"],
+        "categoria": fila["lote__insumo__categoria"],
+        "stock_minimo": fila["lote__insumo__stock_minimo"],
+        "fisico": fila["fisico"],
+        "disponible": fila["disponible"],
+        "reservado": fila["reservado"],
+        "cuarentena": fila["cuarentena"],
+        "bloqueado": fila["bloqueado"],
+        "ubicaciones": fila["ubicaciones"],
+    } for fila in materiales_agrupados]
+
+
 @api_view(["GET"])
 @permission_classes([PuedeVerInventario])
 def estado_operacional(request):
@@ -163,61 +228,7 @@ def estado_operacional(request):
             "pallets_cuarentena": fila["pallets_cuarentena"],
         })
 
-    existencias_material = filtrar_por_scope(
-        Existencia.objects.select_related("lote__insumo", "ubicacion"), request.user,
-        campo_sucursal="ubicacion__bodega__sucursal_id",
-        campo_empresa="ubicacion__bodega__sucursal__empresa_id",
-    )
-    estados_utilizables = [
-        LoteInventario.EstadoCalidad.NO_REQUIERE,
-        LoteInventario.EstadoCalidad.APROBADO,
-        LoteInventario.EstadoCalidad.OBSERVADO,
-    ]
-    estados_bloqueados = [
-        LoteInventario.EstadoCalidad.BLOQUEADO,
-        LoteInventario.EstadoCalidad.RECHAZADO,
-    ]
-    materiales_agrupados = existencias_material.values(
-        "lote__insumo_id", "lote__insumo__codigo", "lote__insumo__nombre",
-        "lote__insumo__unidad", "lote__insumo__categoria", "lote__insumo__stock_minimo",
-    ).annotate(
-        fisico=Coalesce(Sum("cantidad_fisica"), Value(0), output_field=decimal),
-        reservado=Coalesce(Sum("cantidad_reservada"), Value(0), output_field=decimal),
-        disponible=Coalesce(
-            Sum(
-                F("cantidad_fisica") - F("cantidad_reservada"),
-                filter=Q(
-                    ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
-                    lote__activo=True,
-                    lote__estado_calidad__in=estados_utilizables,
-                ),
-            ),
-            Value(0), output_field=decimal,
-        ),
-        cuarentena=Coalesce(
-            Sum("cantidad_fisica", filter=Q(ubicacion__tipo=Ubicacion.Tipo.CUARENTENA)),
-            Value(0), output_field=decimal,
-        ),
-        bloqueado=Coalesce(
-            Sum("cantidad_fisica", filter=Q(lote__estado_calidad__in=estados_bloqueados)),
-            Value(0), output_field=decimal,
-        ),
-        ubicaciones=Count("ubicacion_id", distinct=True),
-    ).order_by("lote__insumo__nombre")
-    materiales = [{
-        "insumo_id": fila["lote__insumo_id"],
-        "codigo": fila["lote__insumo__codigo"],
-        "nombre": fila["lote__insumo__nombre"],
-        "unidad": fila["lote__insumo__unidad"],
-        "categoria": fila["lote__insumo__categoria"],
-        "stock_minimo": fila["lote__insumo__stock_minimo"],
-        "fisico": fila["fisico"],
-        "disponible": fila["disponible"],
-        "reservado": fila["reservado"],
-        "cuarentena": fila["cuarentena"],
-        "bloqueado": fila["bloqueado"],
-        "ubicaciones": fila["ubicaciones"],
-    } for fila in materiales_agrupados]
+    materiales = _resumen_materiales(request.user)
 
     return Response({
         "stock": stock,
@@ -225,6 +236,79 @@ def estado_operacional(request):
         "materiales": materiales,
         "actualizado_en": timezone.now(),
     })
+
+
+@api_view(["GET"])
+@permission_classes([PuedeVerInventario])
+def pendientes_bodega(request):
+    """
+    Lo que Bodega tiene que resolver, cada cosa con lo necesario para actuar.
+
+    Es la portada del puesto: el operador no busca qué hacer entre tablas de
+    stock, lo ve. Material en cuarentena y bajo mínimo son informativos —los
+    decide Calidad y Compras—; pallets por ubicar y ajustes tienen acción.
+
+    `_resumen_materiales` solo cuenta insumos **con alguna existencia**; un
+    material sin ninguna existencia no aparece bajo mínimo aquí tampoco.
+    """
+    from produccion.models import PalletProducto
+
+    alcance = {
+        "campo_sucursal": "ubicacion__bodega__sucursal_id",
+        "campo_empresa": "ubicacion__bodega__sucursal__empresa_id",
+    }
+    pallets = filtrar_por_scope(
+        ExistenciaProductoTerminado.objects.filter(
+            activo=True, ubicacion__tipo=Ubicacion.Tipo.CUARENTENA,
+            pallet__estado=PalletProducto.Estado.LIBERADO,
+        ).select_related("pallet__envase__lote__producto", "ubicacion").order_by("pallet__codigo"),
+        request.user, **alcance,
+    )
+    cuarentena = filtrar_por_scope(
+        Existencia.objects.filter(
+            cantidad_fisica__gt=0, ubicacion__tipo=Ubicacion.Tipo.CUARENTENA,
+        ).select_related("lote__insumo", "ubicacion").order_by("lote__insumo__nombre", "lote__codigo"),
+        request.user, **alcance,
+    )
+    ajustes = filtrar_por_scope(
+        AjusteInventario.objects.filter(estado=AjusteInventario.Estado.PENDIENTE).select_related(
+            "existencia__lote__insumo", "existencia__ubicacion", "solicitante",
+        ).order_by("creado_en"),
+        request.user,
+        campo_sucursal="existencia__ubicacion__bodega__sucursal_id",
+        campo_empresa="existencia__ubicacion__bodega__sucursal__empresa_id",
+    )
+
+    respuesta = {
+        "pallets_por_ubicar": [{
+            "existencia_id": e.pk, "pallet_id": e.pallet_id, "pallet_codigo": e.pallet.codigo,
+            "lote_codigo": e.pallet.envase.lote.codigo_lote,
+            "producto_nombre": e.pallet.envase.lote.producto.nombre,
+            "kg_neto": e.pallet.kg_neto, "ubicacion_codigo": e.ubicacion.codigo,
+        } for e in pallets],
+        "material_en_cuarentena": [{
+            "existencia_id": e.pk, "lote_codigo": e.lote.codigo, "insumo_nombre": e.lote.insumo.nombre,
+            "cantidad": e.cantidad_fisica, "unidad": e.lote.insumo.unidad,
+            "ubicacion_codigo": e.ubicacion.codigo,
+        } for e in cuarentena],
+        "bajo_minimo": [{
+            "insumo_id": m["insumo_id"], "codigo": m["codigo"], "nombre": m["nombre"],
+            "unidad": m["unidad"], "disponible": m["disponible"], "stock_minimo": m["stock_minimo"],
+        } for m in _resumen_materiales(request.user)
+            if m["stock_minimo"] > 0 and m["disponible"] <= m["stock_minimo"]],
+        "ajustes_pendientes": [{
+            "id": a.pk, "existencia_id": a.existencia_id,
+            "insumo_nombre": a.existencia.lote.insumo.nombre,
+            "lote_codigo": a.existencia.lote.codigo, "ubicacion_codigo": a.existencia.ubicacion.codigo,
+            "tipo": a.tipo, "tipo_etiqueta": a.get_tipo_display(), "cantidad": a.cantidad,
+            "unidad": a.existencia.lote.insumo.unidad, "motivo": a.motivo,
+            "solicitante_id": a.solicitante_id,
+            "solicitante_nombre": a.solicitante.get_full_name() or a.solicitante.username,
+            "creado_en": a.creado_en,
+        } for a in ajustes],
+    }
+    respuesta["total"] = sum(len(v) for v in respuesta.values())
+    return Response(respuesta)
 
 
 class FiltroAreaAdminMixin:

@@ -15,7 +15,7 @@ from .views import (
     ClienteDespachoViewSet, DespachoViewSet, ExistenciaProductoTerminadoViewSet,
     MovimientoProductoTerminadoViewSet,
     MovimientoReworkViewSet, UnidadReworkViewSet,
-    calcular_mrp, estado_operacional,
+    calcular_mrp, estado_operacional, pendientes_bodega,
 )
 
 router = DefaultRouter()
@@ -54,6 +54,7 @@ router.register("despachos", DespachoViewSet)
 
 urlpatterns = [
     path("estado-operacional/", estado_operacional),
+    path("pendientes-bodega/", pendientes_bodega),
     path("mrp/", calcular_mrp),
     path("catalogos/", catalogos),
     path("", include(router.urls)),
