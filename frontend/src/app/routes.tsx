@@ -55,7 +55,22 @@ const Inventario = lazy(() => import("../pages/Inventario/Inventario"));
 const Envasado = lazy(() => import("../pages/Envasado/Envasado"));
 const Secado = lazy(() => import("../pages/Secado/Secado"));
 
-/* Abastecimiento queda conservado en código, pero no se monta ni precarga. */
+/*
+  Compras vuelve a ser alcanzable (quedó huérfana en 2430350). Lo de bodega
+  —materiales, ubicaciones, recepción— vive en /bodega; las rutas viejas
+  redirigen para no romper enlaces.
+*/
+const Abastecimiento = lazy(() => import("../pages/Abastecimiento/Abastecimiento"));
+const AbastecimientoPanel = lazy(() => import("../pages/Abastecimiento/Panel"));
+const AbastecimientoCompras = lazy(() => import("../pages/Abastecimiento/Compras"));
+const AbastecimientoProveedores = lazy(() => import("../pages/Abastecimiento/Proveedores"));
+const AbastecimientoPedidos = lazy(() => import("../pages/Abastecimiento/Pedidos"));
+const AbastecimientoMrp = lazy(() => import("../pages/Abastecimiento/Mrp"));
+const AbastecimientoCalidad = lazy(() => import("../pages/Abastecimiento/Calidad"));
+const AbastecimientoNoConformidades = lazy(() => import("../pages/Abastecimiento/NoConformidades"));
+const AbastecimientoDetalleLote = lazy(
+  () => import("../pages/Abastecimiento/DetalleLoteInventario"),
+);
 
 const diferido = (componente: React.ReactNode) => (
   <Suspense fallback={<div className="p-10 text-sm text-slate-600">Cargando módulo…</div>}>
@@ -136,9 +151,26 @@ function RoutesApp(){
 
                     <Route element={<RutaModulo modulo="inventario" />}>
                         <Route path="/inventario" element={diferido(<Inventario />)} />
+                        <Route path="/inventario/lotes/:id" element={diferido(<AbastecimientoDetalleLote />)} />
                     </Route>
-                    {/* Compatibilidad sin montar el módulo desactivado. */}
-                    <Route path="/abastecimiento/*" element={<Navigate to="/inventario" replace />} />
+
+                    {/* Compras vuelve a ser alcanzable (quedó huérfana en 2430350).
+                        Lo de bodega —materiales, ubicaciones, recepción— vive en
+                        /bodega; las rutas viejas redirigen para no romper enlaces. */}
+                    <Route element={<RutaModulo modulo="abastecimiento" />}>
+                        <Route path="/abastecimiento" element={diferido(<Abastecimiento />)}>
+                            <Route index element={diferido(<AbastecimientoPanel />)} />
+                            <Route path="compras" element={diferido(<AbastecimientoCompras />)} />
+                            <Route path="proveedores" element={diferido(<AbastecimientoProveedores />)} />
+                            <Route path="pedidos" element={diferido(<AbastecimientoPedidos />)} />
+                            <Route path="mrp" element={diferido(<AbastecimientoMrp />)} />
+                            <Route path="calidad" element={diferido(<AbastecimientoCalidad />)} />
+                            <Route path="no-conformidades" element={diferido(<AbastecimientoNoConformidades />)} />
+                            <Route path="stock" element={<Navigate to="/inventario" replace />} />
+                            <Route path="producto-terminado" element={<Navigate to="/inventario" replace />} />
+                            <Route path="*" element={<Navigate to="/abastecimiento" replace />} />
+                        </Route>
+                    </Route>
 
                     <Route element={<RutaModulo modulo="procesos" />}>
                         <Route path="/procesos" element={diferido(<Procesos />)} />

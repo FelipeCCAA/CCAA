@@ -20,12 +20,14 @@ export interface Insumo {
   no coincide. Una bodega sin ubicación de cuarentena no puede recibir nada
   que pase por Calidad.
 */
+export type TipoUbicacion = "disponible" | "cuarentena" | "rechazado" | "produccion";
+
 export interface UbicacionInventario {
   id: number;
   codigo: string;
   bodega: number;
   bodega_nombre: string;
-  tipo: "disponible" | "cuarentena" | "rechazado" | "produccion";
+  tipo: TipoUbicacion;
   tipo_etiqueta: string;
   descripcion: string;
   activo: boolean;
@@ -35,6 +37,8 @@ export interface Existencia {
   id: number; lote: number; lote_codigo: string; insumo_nombre: string;
   ubicacion_codigo: string; estado_calidad: string; cantidad_fisica: string;
   cantidad_reservada: string; cantidad_disponible: string;
+  ubicacion: number; ubicacion_tipo: TipoUbicacion; unidad: string;
+  insumo_codigo: string; bodega_nombre: string;
 }
 
 export interface UnidadRework {
@@ -191,7 +195,8 @@ export interface Notificacion {
 }
 
 export interface MovimientoInventario {
-  id: number; tipo: string; lote: number; lote_codigo: string; insumo_nombre: string;
+  id: number; tipo: string; tipo_etiqueta: string; lote: number; lote_codigo: string;
+  insumo_nombre: string; unidad: string;
   cantidad: string; origen_codigo: string | null; destino_codigo: string | null;
   motivo: string; fecha: string;
   /* El saldo antes y después. Es lo que hace auditable el libro: la cifra de
@@ -200,6 +205,7 @@ export interface MovimientoInventario {
   saldo_anterior: string; saldo_posterior: string;
   /* Qué lo originó: «produccion.Lote», «inventario.SalidaManual»… */
   documento_tipo: string; documento_id: number;
+  usuario_nombre: string;
 }
 
 export interface AjusteInventario {
@@ -341,7 +347,7 @@ export async function trasladarRework(
 export interface ExistenciaProductoTerminado {
   id: number; pallet: number; pallet_codigo: string; lote_codigo: string;
   producto_nombre: string; ubicacion: number; ubicacion_codigo: string;
-  ubicacion_tipo: "disponible" | "cuarentena" | "rechazado" | "produccion";
+  ubicacion_tipo: TipoUbicacion;
   kg_neto: string; activo: boolean; actualizado_en: string;
   tipo_unidad_logistica: "pallet" | "big_bag";
   tipo_unidad_logistica_etiqueta: string;
@@ -373,8 +379,11 @@ export interface EstadoOperacionalInventario {
 export interface MovimientoProductoTerminado {
   id: number; pallet: number; pallet_codigo: string;
   tipo: "ingreso" | "transferencia" | "despacho";
+  tipo_etiqueta: string;
   origen: number | null; destino: number | null; motivo: string;
-  registrado_por: number; registrado_en: string;
+  origen_codigo: string | null; destino_codigo: string | null;
+  registrado_por: number; registrado_por_nombre: string; registrado_en: string;
+  lote_codigo: string; kg_neto: string;
 }
 
 export async function obtenerEstadoOperacionalInventario(refrescar = false) {
@@ -394,6 +403,7 @@ export interface ClienteDespacho {
 
 export interface DetalleDespacho {
   id: number; pallet: number; pallet_codigo: string; lote_codigo: string; kg_neto: string;
+  ubicacion_codigo: string | null;
 }
 
 export interface DetalleDespachoGranel {
@@ -415,6 +425,7 @@ export interface Despacho {
   guia_despacho: string; transportista: string; patente: string;
   creado_en: string; autorizado_en: string | null; despachado_en: string | null;
   detalles: DetalleDespacho[]; detalles_granel: DetalleDespachoGranel[];
+  motivo_cancelacion: string; cancelado_en: string | null;
 }
 
 export const obtenerProductoTerminado = () =>
@@ -442,7 +453,7 @@ export async function transferirPallet(id: number, destino: number, motivo: stri
 }
 
 export async function crearDespacho(datos: {
-  numero: string; cliente: number; pallet_ids?: number[];
+  cliente: number; pallet_ids?: number[];
   graneles?: { salida: number; cantidad: number }[]; guia_despacho?: string;
   transportista?: string; patente?: string; observacion?: string;
 }) {
@@ -457,6 +468,62 @@ export async function autorizarDespacho(id: number) {
 
 export async function ejecutarDespacho(id: number) {
   const { data } = await api.post<Despacho>(`inventario/despachos/${id}/ejecutar/`);
+  return data;
+}
+
+export type FiltrosInventario = {
+  q?: string; estado?: string; ubicacion?: number | ""; desde?: string; hasta?: string;
+  page?: number; con_saldo?: boolean; cargable?: boolean;
+};
+
+export const buscarExistencias = (filtros: FiltrosInventario = {}) =>
+  pagina<Existencia>("inventario/existencias/", filtros);
+export const buscarProductoTerminado = (filtros: FiltrosInventario = {}) =>
+  pagina<ExistenciaProductoTerminado>("inventario/producto-terminado/", filtros);
+export const buscarMovimientos = (filtros: FiltrosInventario = {}) =>
+  pagina<MovimientoInventario>("inventario/movimientos/", filtros);
+export const buscarMovimientosProductoTerminado = (filtros: FiltrosInventario = {}) =>
+  pagina<MovimientoProductoTerminado>("inventario/movimientos-producto-terminado/", filtros);
+
+/* Lo que se puede subir a una hoja de carga: el servidor ya excluye lo que está en otra. */
+export const obtenerPalletsCargables = () =>
+  lista<ExistenciaProductoTerminado>("inventario/producto-terminado/?cargable=1");
+/* Borradores, autorizadas y despachadas hoy: lo que el puesto de Despacho mira. */
+export const obtenerHojasVigentes = () => lista<Despacho>("inventario/despachos/?vigentes=1");
+
+export async function cancelarDespacho(id: number, motivo: string) {
+  const { data } = await api.post<Despacho>(`inventario/despachos/${id}/cancelar/`, { motivo });
+  return data;
+}
+
+export interface PalletPorUbicar {
+  existencia_id: number; pallet_id: number; pallet_codigo: string; lote_codigo: string;
+  producto_nombre: string; kg_neto: string; ubicacion_codigo: string;
+}
+export interface MaterialEnCuarentena {
+  existencia_id: number; lote_codigo: string; insumo_nombre: string;
+  cantidad: string; unidad: string; ubicacion_codigo: string;
+}
+export interface MaterialBajoMinimo {
+  insumo_id: number; codigo: string; nombre: string; unidad: string;
+  disponible: string; stock_minimo: string;
+}
+export interface AjustePendiente {
+  id: number; existencia_id: number; insumo_nombre: string; lote_codigo: string;
+  ubicacion_codigo: string; tipo: "positivo" | "negativo" | "merma"; tipo_etiqueta: string;
+  cantidad: string; unidad: string; motivo: string; solicitante_id: number;
+  solicitante_nombre: string; creado_en: string;
+}
+export interface PendientesBodega {
+  pallets_por_ubicar: PalletPorUbicar[];
+  material_en_cuarentena: MaterialEnCuarentena[];
+  bajo_minimo: MaterialBajoMinimo[];
+  ajustes_pendientes: AjustePendiente[];
+  total: number;
+}
+
+export async function obtenerPendientesBodega() {
+  const { data } = await api.get<PendientesBodega>("inventario/pendientes-bodega/");
   return data;
 }
 
@@ -526,6 +593,10 @@ export interface CatalogosInventario {
   tipo_ubicacion: { valor: string; etiqueta: string }[];
   categoria_insumo: { valor: string; etiqueta: string }[];
   unidad_insumo: { valor: string; etiqueta: string }[];
+  estado_calidad: { valor: string; etiqueta: string }[];
+  tipo_movimiento: { valor: string; etiqueta: string }[];
+  tipo_movimiento_pallet: { valor: string; etiqueta: string }[];
+  estado_pallet: { valor: string; etiqueta: string }[];
 }
 
 

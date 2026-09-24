@@ -36,7 +36,7 @@ export default function ProductoTerminado() {
   async function guardarDespacho(evento: React.FormEvent) {
     evento.preventDefault(); setError("");
     try {
-      await crearDespacho({ numero: salida.numero, cliente: Number(salida.cliente), pallet_ids: salida.pallets });
+      await crearDespacho({ cliente: Number(salida.cliente), pallet_ids: salida.pallets });
       setSalida({ numero: "", cliente: "", pallets: [] }); await refrescar();
     } catch (e) { setError(mensaje(e)); }
   }

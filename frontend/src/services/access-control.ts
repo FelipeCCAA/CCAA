@@ -1,10 +1,12 @@
 import type { Usuario } from "./sesion";
+import { puedeDespachar } from "./permisos-despacho.ts";
 
 export type ModuloSistema =
   | "dashboard" | "recepcion" | "estandarizacion" | "produccion"
   | "secado" | "envasado" | "procesos" | "planificacion" | "inventario"
   | "calidad" | "inocuidad" | "registros" | "auditoria"
-  | "maestros" | "administracion";
+  | "maestros" | "administracion"
+  | "bodega" | "despacho" | "abastecimiento";
 
 const AREAS: Record<ModuloSistema, string[]> = {
   dashboard: ["administracion"],
@@ -22,6 +24,9 @@ const AREAS: Record<ModuloSistema, string[]> = {
   auditoria: ["calidad"],
   maestros: ["administracion"],
   administracion: [],
+  bodega: ["bodega"],
+  despacho: [],
+  abastecimiento: ["compras", "bodega", "calidad"],
 };
 
 const LEGADO: Record<string, ModuloSistema[]> = {
@@ -36,6 +41,9 @@ export function esAdministradorGlobal(usuario?: Usuario | null): boolean {
 
 export function puedeAccederModulo(usuario: Usuario | null | undefined, modulo: ModuloSistema): boolean {
   if (!usuario) return false;
+  // Despacho se decide con capacidades, como en el servidor: ni el área ni ser
+  // administrador bastan si falta el permiso (el superusuario los tiene todos).
+  if (modulo === "despacho") return puedeDespachar(usuario);
   if (esAdministradorGlobal(usuario)) return true;
   if (modulo === "dashboard") return usuario.perfil?.nivel === "admin";
   if (modulo === "administracion") return usuario.perfil?.nivel === "admin";
@@ -50,7 +58,7 @@ export function destinoInicial(usuario: Usuario): string {
   const porArea: Record<string, string> = {
     recepcion: "/leche", condensacion: "/produccion", secado: "/secado",
     envase: "/envasado", calidad: "/calidad", aseo: "/calidad/inocuidad",
-    bodega: "/inventario", compras: "/inventario", despacho: "/inventario",
+    bodega: "/inventario", compras: "/abastecimiento", despacho: "/inventario",
   };
   const area = usuario.perfil?.area;
   if (area && porArea[area]) return porArea[area];

@@ -7,7 +7,7 @@ import {
   esRutaOperacionalActual,
   navegacionPara,
 } from "../src/services/navegacion-operacional.ts";
-import { puedeAccederModulo } from "../src/services/access-control.ts";
+import { destinoInicial, puedeAccederModulo } from "../src/services/access-control.ts";
 import type { Usuario } from "../src/services/sesion.ts";
 
 function usuarioDeArea(area: string, areaEtiqueta: string, rol: Usuario["rol"]): Usuario {
@@ -141,4 +141,24 @@ test("las URLs compatibles conservan el contexto operacional", () => {
 
   assert.equal(contexto.actual.etiqueta, "Expedientes y liberación");
   assert.ok(esEnlaceOperacionalActual(contexto.actual, "/liberacion"));
+});
+
+test("Compras vuelve: es el inicio de Compras y aparece en el menú de quien tiene acceso", () => {
+  const compras = usuarioDeArea("compras", "Compras", null);
+  assert.equal(destinoInicial(compras), "/abastecimiento");
+  assert.equal(puedeAccederModulo(compras, "abastecimiento"), true);
+
+  // Compras es el destino inicial de Compras, así que la deduplicación del
+  // propio inicio la saca de su grupo (mismo criterio que Administración con
+  // /dashboard y Calidad con /calidad, ya fijado más arriba). Bodega también
+  // tiene acceso a abastecimiento pero su inicio es otra ruta, así que ahí sí
+  // se ve la entrada.
+  const bodega = usuarioDeArea("bodega", "Bodega", null);
+  assert.ok(etiquetas(bodega, "Envasado y logística").includes("Compras y abastecimiento"));
+});
+
+test("Despacho se abre con la capacidad, no con el área", () => {
+  const sinPermiso = usuarioDeArea("despacho", "Despacho", null);
+  assert.equal(puedeAccederModulo(sinPermiso, "despacho"), false);
+  assert.equal(puedeAccederModulo({ ...sinPermiso, capacidades: ["despacho_crear"] }, "despacho"), true);
 });

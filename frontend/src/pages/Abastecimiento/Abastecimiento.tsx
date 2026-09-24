@@ -2,7 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 
 
 /*
-  Abastecimiento y Bodega.
+  Abastecimiento.
 
   Antes era **una** página con trece secciones apiladas en un solo scroll:
   formularios y tablas intercalados, sin filtros, y un `Promise.all` con diez
@@ -10,12 +10,16 @@ import { NavLink, Outlet } from "react-router-dom";
   exigía recordar a qué altura estaba.
 
   Ahora es una sección con pestañas, y el orden de las pestañas **es el ciclo
-  del material**: se compra, llega, Calidad lo libera, entra a stock, se pide
-  desde planta y se consume. Esa es la forma en que la gente piensa el
+  de la compra**: se pide, se compra, llega, Calidad libera el material y las
+  no conformidades se cierran. Esa es la forma en que la gente piensa el
   problema, y por eso ordena mejor que agrupar por tabla.
 
-      Panel · Materiales · Stock · Bodegas
-      Compras · Proveedores · Recepción · Calidad · Pedidos · MRP
+      Panel · Compras · Proveedores · Pedidos · MRP
+      Calidad de materiales · No conformidades
+
+  Lo que es propio de bodega —materiales, stock, ubicaciones, recepción—
+  quedó en `/bodega`: esta sección volvió a existir para lo que sí es suyo,
+  comprar y pedir, no para duplicar esas pantallas.
 
   Cada pestaña carga lo suyo (ver `useCarga`). En este módulo los permisos son
   **por área** —Bodega, Compras, Calidad—, así que a cualquiera le van a
@@ -25,15 +29,12 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const PESTANAS = [
   { a: "", texto: "Panel", exacta: true },
-  { a: "materiales", texto: "Materiales" },
-  { a: "stock", texto: "Stock" },
-  { a: "producto-terminado", texto: "Producto terminado" },
-  { a: "bodegas", texto: "Bodegas" },
   { a: "compras", texto: "Compras" },
   { a: "proveedores", texto: "Proveedores" },
-  { a: "recepcion", texto: "Recepción" },
   { a: "pedidos", texto: "Pedidos" },
   { a: "mrp", texto: "MRP" },
+  { a: "calidad", texto: "Calidad de materiales" },
+  { a: "no-conformidades", texto: "No conformidades" },
 ];
 
 

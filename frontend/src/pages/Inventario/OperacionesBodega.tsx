@@ -6,7 +6,7 @@ import { obtenerSesion } from "../../services/sesion";
 
 type Operacion = "entrada" | "pallet" | "traslado" | "salida" | "despacho";
 const campo = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm";
-const vacio = { insumo: "", lote: "", existencia: "", ubicacion: "", cantidad: "", motivo: "", cliente: "", numero: "", pallet: "", granel: "", tipo_despacho: "pallet" };
+const vacio = { insumo: "", lote: "", existencia: "", ubicacion: "", cantidad: "", motivo: "", cliente: "", pallet: "", granel: "", tipo_despacho: "pallet" };
 
 export default function OperacionesBodega({ onCambio }: { onCambio: () => void }) {
   const usuario = obtenerSesion()?.usuario;
@@ -42,7 +42,6 @@ export default function OperacionesBodega({ onCambio }: { onCambio: () => void }
       if (operacion === "traslado") await trasladarExistencia({ existencia: Number(datos.existencia), destino: Number(datos.ubicacion), cantidad: Number(datos.cantidad), motivo: datos.motivo });
       if (operacion === "salida") await registrarSalida({ existencia: Number(datos.existencia), cantidad: Number(datos.cantidad), tipo: "salida", motivo: datos.motivo });
       if (operacion === "despacho") await crearDespacho({
-        numero: datos.numero,
         cliente: Number(datos.cliente),
         pallet_ids: datos.tipo_despacho === "pallet" ? [Number(datos.pallet)] : undefined,
         graneles: datos.tipo_despacho === "granel" ? [{ salida: Number(datos.granel), cantidad: Number(datos.cantidad) }] : undefined,
@@ -84,7 +83,6 @@ export default function OperacionesBodega({ onCambio }: { onCambio: () => void }
         {operacion === "pallet" && <><select required className={campo} value={datos.pallet} onChange={(e) => setDatos({ ...datos, pallet: e.target.value })}><option value="">Unidad logística liberada en cuarentena…</option>{palletsLiberados.map((p) => <option key={p.id} value={p.pallet}>{p.tipo_unidad_logistica_etiqueta} · {p.pallet_codigo} · {p.producto_nombre} · {p.kg_neto} kg</option>)}</select><SelectorUbicacion ubicaciones={ubicaciones.filter((u) => u.tipo === "disponible")} valor={datos.ubicacion} alCambiar={(ubicacion) => setDatos({ ...datos, ubicacion })} />{palletsLiberados.length === 0 && <p className="text-sm text-amber-700 md:col-span-2">No hay pallets o Big Bags liberados por Calidad pendientes de recibir.</p>}</>}
         {(operacion === "traslado" || operacion === "salida") && <><select required className={campo} value={datos.existencia} onChange={(e) => setDatos({ ...datos, existencia: e.target.value })}><option value="">Stock / lote…</option>{existencias.map((e) => <option key={e.id} value={e.id}>{e.insumo_nombre} · {e.lote_codigo} · {e.cantidad_disponible}</option>)}</select>{operacion === "traslado" && <SelectorUbicacion ubicaciones={ubicaciones} valor={datos.ubicacion} alCambiar={(ubicacion) => setDatos({ ...datos, ubicacion })} />}<input required min="0.001" step="0.001" type="number" className={campo} placeholder="Cantidad" value={datos.cantidad} onChange={(e) => setDatos({ ...datos, cantidad: e.target.value })} /><input required className={campo} placeholder="Motivo / documento" value={datos.motivo} onChange={(e) => setDatos({ ...datos, motivo: e.target.value })} /></>}
         {operacion === "despacho" && <>
-          <input required className={campo} placeholder="Nº de despacho" value={datos.numero} onChange={(e) => setDatos({ ...datos, numero: e.target.value })} />
           <select required className={campo} value={datos.cliente} onChange={(e) => setDatos({ ...datos, cliente: e.target.value })}><option value="">Cliente…</option>{clientes.filter((c) => c.activo).map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</select>
           <select className={campo} value={datos.tipo_despacho} onChange={(e) => setDatos({ ...datos, tipo_despacho: e.target.value, pallet: "", granel: "", cantidad: "" })}>
             <option value="pallet">Producto terminado en pallet</option>
