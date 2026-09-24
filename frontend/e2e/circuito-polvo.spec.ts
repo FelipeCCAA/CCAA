@@ -334,7 +334,6 @@ test("de la leche cruda a leche estandarizada liberada, por pantalla", async ({ 
     await irA(page, "/estandarizacion");
     await page.getByRole("button", { name: "Nuevo vale" }).click();
 
-    await campo(page, "Fecha").fill(HOY);
     await elegirOpcion(campo(page, "Producto"), new RegExp(PRODUCTO));
     await campo(page, "RC objetivo").fill(VALE.rcObjetivo);
     /*
