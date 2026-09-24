@@ -11,6 +11,10 @@ export interface FilaResumen {
   El foco va al panel y no al botón de confirmar: un lector de código manda
   Enter al final de cada escaneo, y con el foco en «Confirmar» un escaneo de
   más ejecutaría la operación.
+
+  Es una región con nombre y no un `alertdialog`: se dibuja en línea, sin
+  atrapar el foco ni cerrarse con Escape, y ese rol le anunciaría al lector de
+  pantalla un modal que no existe.
 */
 export default function ConfirmarAccion({
   titulo, filas, advertencia, textoConfirmar, peligro = false, ocupado = false, error = "",
@@ -37,7 +41,7 @@ export default function ConfirmarAccion({
     <section
       ref={panel}
       tabIndex={-1}
-      role="alertdialog"
+      role="region"
       aria-labelledby={`${id}-titulo`}
       className="rounded-2xl border-2 border-slate-300 bg-slate-50 p-5 outline-none focus:border-slate-500"
     >
