@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, DecimalField, F, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -381,7 +382,75 @@ class ClienteDespachoViewSet(EmpresaTenantViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [PuedeCrearDespacho]
 
 
-class ExistenciaProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+class FiltraConsultaMixin:
+    """
+    `?q=`, `?estado=`, `?ubicacion=`, `?desde=`, `?hasta=` sobre un listado.
+
+    En el servidor y no en el cliente: los listados están paginados, así que
+    filtrar lo que llegó es filtrar la primera página y dar por inexistente lo
+    que venía en la segunda. Cada vista declara **sobre qué campos** actúa cada
+    filtro; un filtro que la vista no declara se ignora.
+    """
+
+    busqueda_en: tuple[str, ...] = ()
+    filtro_estado: str | None = None
+    filtro_ubicacion: tuple[str, ...] = ()
+    filtro_fecha: str | None = None
+
+    def condicion_estado(self, estado):
+        return Q(**{self.filtro_estado: estado})
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        parametros = self.request.query_params
+
+        texto = parametros.get("q", "").strip()
+        if texto and self.busqueda_en:
+            condicion = Q()
+            for campo in self.busqueda_en:
+                condicion |= Q(**{f"{campo}__icontains": texto})
+            consulta = consulta.filter(condicion)
+
+        estado = parametros.get("estado", "").strip()
+        if estado and self.filtro_estado:
+            consulta = consulta.filter(self.condicion_estado(estado))
+
+        ubicacion = parametros.get("ubicacion", "").strip()
+        if ubicacion and self.filtro_ubicacion:
+            if not ubicacion.isdigit():
+                raise ValidationError({"ubicacion": "Debe ser el identificador de una ubicación."})
+            condicion = Q()
+            for campo in self.filtro_ubicacion:
+                condicion |= Q(**{campo: int(ubicacion)})
+            consulta = consulta.filter(condicion)
+
+        for nombre, comparacion in (("desde", "gte"), ("hasta", "lte")):
+            valor = parametros.get(nombre, "").strip()
+            if valor and self.filtro_fecha:
+                fecha = parse_date(valor)
+                if fecha is None:
+                    raise ValidationError({nombre: "Usa el formato AAAA-MM-DD."})
+                consulta = consulta.filter(**{f"{self.filtro_fecha}__date__{comparacion}": fecha})
+
+        return consulta
+
+
+def estados_inventario_pallet():
+    """
+    Los estados de un pallet tal como los ve Bodega: (valor, etiqueta, estados del pallet).
+
+    Una sola tabla para el filtro y para el catálogo del desplegable; con dos,
+    el desplegable ofrecería un estado que el filtro no entiende.
+    """
+    from produccion.models import PalletProducto
+    return [
+        ("disponible", "Disponible", [PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO]),
+        ("cuarentena", "Cuarentena", [PalletProducto.Estado.PENDIENTE_CALIDAD]),
+        ("bloqueado", "Bloqueado", [PalletProducto.Estado.BLOQUEADO]),
+    ]
+
+
+class ExistenciaProductoTerminadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "ubicacion__bodega__sucursal_id"
     tenant_lookup_empresa = "ubicacion__bodega__sucursal__empresa_id"
     queryset = ExistenciaProductoTerminado.objects.select_related(
@@ -390,6 +459,34 @@ class ExistenciaProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyM
     ).filter(activo=True)
     serializer_class = ExistenciaProductoTerminadoSerializer
     permission_classes = [EscribeBodega]
+    busqueda_en = (
+        "pallet__codigo", "pallet__envase__lote__codigo_lote",
+        "pallet__envase__lote__producto__nombre", "ubicacion__codigo",
+    )
+    filtro_estado = "pallet__estado"
+    filtro_ubicacion = ("ubicacion_id",)
+
+    def condicion_estado(self, estado):
+        # El estado que ve Bodega (`estado_inventario` del serializer) agrupa
+        # estados del pallet; se filtra con la misma tabla que sirve el catálogo.
+        grupos = {valor: estados for valor, _, estados in estados_inventario_pallet()}
+        return Q(pallet__estado__in=grupos.get(estado, [estado]))
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        if self.request.query_params.get("cargable") == "1":
+            from produccion.models import PalletProducto
+            # Lo que se puede subir a una hoja de carga: liberado, en una
+            # ubicación disponible y sin otra hoja activa (Task 2).
+            consulta = consulta.filter(
+                ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+                pallet__estado__in=[PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO],
+            ).exclude(
+                pallet__detalles_despacho__despacho__estado__in=[
+                    Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO,
+                ]
+            )
+        return consulta
 
     @action(detail=False, methods=["post"], url_path="ingresar")
     def ingresar(self, request):
@@ -412,12 +509,18 @@ class ExistenciaProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyM
             return Response({"detail": getattr(error, "message", str(error))}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class MovimientoProductoTerminadoViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+class MovimientoProductoTerminadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "pallet__envase__lote__sucursal_id"
     tenant_lookup_empresa = "pallet__envase__lote__sucursal__empresa_id"
-    queryset = MovimientoProductoTerminado.objects.select_related("pallet", "origen", "destino", "despacho")
+    queryset = MovimientoProductoTerminado.objects.select_related(
+        "pallet__envase__lote", "origen", "destino", "despacho", "registrado_por",
+    )
     serializer_class = MovimientoProductoTerminadoSerializer
     permission_classes = [EscribeBodega]
+    busqueda_en = ("pallet__codigo", "pallet__envase__lote__codigo_lote")
+    filtro_estado = "tipo"
+    filtro_ubicacion = ("origen_id", "destino_id")
+    filtro_fecha = "registrado_en"
 
 
 class UnidadReworkViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
@@ -626,20 +729,33 @@ class FiltraPorLoteMixin:
         return consulta.filter(lote_id=lote) if lote else consulta
 
 
-class ExistenciaViewSet(FiltraPorLoteMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+class ExistenciaViewSet(FiltraConsultaMixin, FiltraPorLoteMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "ubicacion__bodega__sucursal_id"
     tenant_lookup_empresa = "ubicacion__bodega__sucursal__empresa_id"
     queryset = Existencia.objects.select_related("lote__insumo", "ubicacion__bodega")
     serializer_class = ExistenciaSerializer
     permission_classes = [EscribeBodega]
+    busqueda_en = ("lote__codigo", "lote__insumo__nombre", "lote__insumo__codigo", "ubicacion__codigo")
+    filtro_estado = "lote__estado_calidad"
+    filtro_ubicacion = ("ubicacion_id",)
+
+    def get_queryset(self):
+        consulta = super().get_queryset()
+        if self.request.query_params.get("con_saldo") == "1":
+            consulta = consulta.filter(cantidad_fisica__gt=0)
+        return consulta
 
 
-class MovimientoViewSet(FiltraPorLoteMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
+class MovimientoViewSet(FiltraConsultaMixin, FiltraPorLoteMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "lote__sucursal_id"
     tenant_lookup_empresa = "lote__sucursal__empresa_id"
     queryset = MovimientoInventario.objects.select_related("lote__insumo", "origen", "destino", "usuario")
     serializer_class = MovimientoSerializer
     permission_classes = [EscribeBodega]
+    busqueda_en = ("lote__codigo", "lote__insumo__nombre", "lote__insumo__codigo")
+    filtro_estado = "tipo"
+    filtro_ubicacion = ("origen_id", "destino_id")
+    filtro_fecha = "fecha"
 
     @action(detail=False, methods=["post"], url_path="entrada")
     def entrada(self, request):
@@ -1332,5 +1448,9 @@ def catalogos(request):
             "tipo_ubicacion": opciones(Ubicacion.Tipo.choices),
             "categoria_insumo": opciones(Insumo.Categoria.choices),
             "unidad_insumo": opciones(Insumo.Unidad.choices),
+            "estado_calidad": opciones(LoteInventario.EstadoCalidad.choices),
+            "tipo_movimiento": opciones(MovimientoInventario.Tipo.choices),
+            "tipo_movimiento_pallet": opciones(MovimientoProductoTerminado.Tipo.choices),
+            "estado_pallet": [{"valor": v, "etiqueta": e} for v, e, _ in estados_inventario_pallet()],
         }
     )

@@ -395,10 +395,11 @@ class ExistenciaSerializer(serializers.ModelSerializer):
     insumo_nombre = serializers.CharField(source="lote.insumo.nombre", read_only=True)
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
     ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
-    ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
-    ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
     estado_calidad = serializers.CharField(source="lote.estado_calidad", read_only=True)
     cantidad_disponible = serializers.DecimalField(max_digits=16, decimal_places=3, read_only=True)
+    insumo_codigo = serializers.CharField(source="lote.insumo.codigo", read_only=True)
+    unidad = serializers.CharField(source="lote.insumo.unidad", read_only=True)
+    bodega_nombre = serializers.CharField(source="ubicacion.bodega.nombre", read_only=True)
 
     class Meta:
         model = Existencia
@@ -411,6 +412,13 @@ class MovimientoSerializer(serializers.ModelSerializer):
     insumo_nombre = serializers.CharField(source="lote.insumo.nombre", read_only=True)
     origen_codigo = serializers.CharField(source="origen.codigo", read_only=True, allow_null=True)
     destino_codigo = serializers.CharField(source="destino.codigo", read_only=True, allow_null=True)
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+    unidad = serializers.CharField(source="lote.insumo.unidad", read_only=True)
+    usuario_nombre = serializers.SerializerMethodField()
+
+    def get_usuario_nombre(self, movimiento):
+        usuario = movimiento.usuario
+        return usuario.get_full_name() or usuario.username
 
     class Meta:
         model = MovimientoInventario
@@ -788,6 +796,7 @@ class ExistenciaProductoTerminadoSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo_lote", read_only=True)
     producto_nombre = serializers.CharField(source="pallet.envase.lote.producto.nombre", read_only=True)
     ubicacion_codigo = serializers.CharField(source="ubicacion.codigo", read_only=True)
+    ubicacion_tipo = serializers.CharField(source="ubicacion.tipo", read_only=True)
     kg_neto = serializers.DecimalField(source="pallet.kg_neto", max_digits=14, decimal_places=3, read_only=True)
     estado_inventario = serializers.SerializerMethodField()
     kg_disponible = serializers.SerializerMethodField()
@@ -814,6 +823,16 @@ class ExistenciaProductoTerminadoSerializer(serializers.ModelSerializer):
 
 class MovimientoProductoTerminadoSerializer(serializers.ModelSerializer):
     pallet_codigo = serializers.CharField(source="pallet.codigo", read_only=True)
+    tipo_etiqueta = serializers.CharField(source="get_tipo_display", read_only=True)
+    origen_codigo = serializers.CharField(source="origen.codigo", read_only=True, allow_null=True, default=None)
+    destino_codigo = serializers.CharField(source="destino.codigo", read_only=True, allow_null=True, default=None)
+    lote_codigo = serializers.CharField(source="pallet.envase.lote.codigo_lote", read_only=True)
+    kg_neto = serializers.DecimalField(source="pallet.kg_neto", max_digits=14, decimal_places=3, read_only=True)
+    registrado_por_nombre = serializers.SerializerMethodField()
+
+    def get_registrado_por_nombre(self, movimiento):
+        usuario = movimiento.registrado_por
+        return usuario.get_full_name() or usuario.username
 
     class Meta:
         model = MovimientoProductoTerminado
