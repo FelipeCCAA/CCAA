@@ -290,6 +290,10 @@ def pendientes_bodega(request):
             "existencia_id": e.pk, "lote_codigo": e.lote.codigo, "insumo_nombre": e.lote.insumo.nombre,
             "cantidad": e.cantidad_fisica, "unidad": e.lote.insumo.unidad,
             "ubicacion_codigo": e.ubicacion.codigo,
+            # Un lote ya aprobado que sigue físicamente en cuarentena es
+            # trabajo de Bodega (reubicarlo), no de Calidad: con esto la
+            # pantalla distingue las dos filas sin adivinar por el nombre.
+            "estado_calidad": e.lote.estado_calidad, "utilizable": e.lote.utilizable,
         } for e in cuarentena],
         "bajo_minimo": [{
             "insumo_id": m["insumo_id"], "codigo": m["codigo"], "nombre": m["nombre"],

@@ -67,6 +67,10 @@ class FiltrosInventarioTests(EscenarioProductoTerminado):
         self.assertEqual(fila["unidad"], "un")
         self.assertEqual(fila["insumo_codigo"], "SACO-25")
         self.assertEqual(fila["bodega_nombre"], "Bodega PT")
+        # Material sin Calidad: el lote nace "no_requiere", que es utilizable
+        # desde que entra. La pantalla se apoya en este campo para no ofrecer
+        # Consumir sobre algo que `registrar_salida` va a rechazar.
+        self.assertTrue(fila["lote_utilizable"])
 
     # ---- movimientos de material
 

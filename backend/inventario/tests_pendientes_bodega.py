@@ -54,6 +54,10 @@ class PendientesBodegaTests(EscenarioProductoTerminado):
         self.assertEqual(fila["lote_codigo"], "PROV-CAL-1")
         self.assertEqual(fila["unidad"], "un")
         self.assertEqual(Decimal(str(fila["cantidad"])), Decimal("20"))
+        # Recién ingresado, el lote está pendiente de inspección: no es
+        # utilizable todavía y la decisión sigue siendo de Calidad.
+        self.assertEqual(fila["estado_calidad"], "pendiente")
+        self.assertFalse(fila["utilizable"])
 
     def test_bajo_minimo_cuando_el_disponible_no_alcanza(self):
         corto = self.material("CORTO", stock_minimo=Decimal("50"))

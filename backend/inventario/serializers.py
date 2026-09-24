@@ -400,6 +400,10 @@ class ExistenciaSerializer(serializers.ModelSerializer):
     insumo_codigo = serializers.CharField(source="lote.insumo.codigo", read_only=True)
     unidad = serializers.CharField(source="lote.insumo.unidad", read_only=True)
     bodega_nombre = serializers.CharField(source="ubicacion.bodega.nombre", read_only=True)
+    # Lo que decide si `registrar_salida` va a aceptar un consumo de esta
+    # existencia (junto con la ubicación disponible): se sirve para que la
+    # pantalla no ofrezca un botón que el backend va a rechazar.
+    lote_utilizable = serializers.BooleanField(source="lote.utilizable", read_only=True)
 
     class Meta:
         model = Existencia
