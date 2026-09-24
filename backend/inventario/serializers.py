@@ -891,6 +891,30 @@ class DespachoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Un pallet no puede repetirse en el mismo despacho.")
         return pallets
 
+    @staticmethod
+    def _pallets_en_hoja_activa(pallets):
+        """
+        Mensajes de error por cada pallet que ya está en una hoja activa.
+
+        Se llama dos veces: en `validate()`, para el rechazo temprano y amable
+        antes de tocar la base; y de nuevo en `create()`, ya con los pallets
+        bloqueados por `select_for_update`, para cerrar la ventana entre ese
+        primer chequeo y la escritura. Sin la segunda pasada, dos `POST`
+        simultáneos por el mismo pallet pasan `is_valid()` a la vez —ninguno ve
+        todavía el `DetalleDespacho` del otro— y los dos terminan en
+        `bulk_create`: no hay restricción de base que lo impida, porque la
+        unicidad de `DetalleDespacho` es `(despacho, pallet)`, no `pallet` solo.
+        """
+        ocupados = DetalleDespacho.objects.filter(
+            pallet__in=pallets,
+            despacho__estado__in=[Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO],
+        ).select_related("pallet", "despacho").order_by("pallet__codigo")
+        return [
+            f"El pallet {d.pallet.codigo} ya está en el despacho {d.despacho.numero} "
+            f"({d.despacho.get_estado_display().lower()})."
+            for d in ocupados
+        ]
+
     def validate(self, attrs):
         pallets = attrs.get("pallets_solicitados", [])
         graneles = attrs.get("graneles", [])
@@ -904,18 +928,11 @@ class DespachoSerializer(serializers.ModelSerializer):
                 "graneles": "Cada salida a granel debe identificarse una sola vez."
             })
         if pallets:
-            ocupados = DetalleDespacho.objects.filter(
-                pallet__in=pallets,
-                despacho__estado__in=[Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO],
-            ).select_related("pallet", "despacho").order_by("pallet__codigo")
-            if ocupados:
+            errores = self._pallets_en_hoja_activa(pallets)
+            if errores:
                 # Sin esto el segundo despacho recién fallaba al ejecutarse, con
                 # el camión ya cargado.
-                raise serializers.ValidationError({"pallet_ids": [
-                    f"El pallet {d.pallet.codigo} ya está en el despacho {d.despacho.numero} "
-                    f"({d.despacho.get_estado_display().lower()})."
-                    for d in ocupados
-                ]})
+                raise serializers.ValidationError({"pallet_ids": errores})
         return attrs
 
     @transaction.atomic
@@ -924,6 +941,21 @@ class DespachoSerializer(serializers.ModelSerializer):
 
         pallets = validated_data.pop("pallets_solicitados", [])
         graneles = validated_data.pop("graneles", [])
+        if pallets:
+            # Recién bloqueados, se vuelve a preguntar lo mismo que `validate()`
+            # ya preguntó sin candado. Entre esa primera lectura y este punto
+            # pudo colarse otra petición para el mismo pallet; el candado más
+            # esta segunda pasada es lo que cierra la ventana — bajo READ
+            # COMMITTED, tras esperar el candado se ve el `DetalleDespacho` que
+            # la otra transacción ya comprometió.
+            pallets = list(
+                PalletProducto.objects.select_for_update()
+                .filter(pk__in=[p.pk for p in pallets])
+                .order_by("pk")
+            )
+            errores = self._pallets_en_hoja_activa(pallets)
+            if errores:
+                raise serializers.ValidationError({"pallet_ids": errores})
         despacho = Despacho(**validated_data)
         despacho.asignar_numero()
         DetalleDespacho.objects.bulk_create([DetalleDespacho(despacho=despacho, pallet=p) for p in pallets])

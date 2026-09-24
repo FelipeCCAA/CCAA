@@ -2,11 +2,14 @@ from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from usuarios.models import PerfilUsuario, Rol
+from usuarios.tenancy import unica_sucursal_activa
 
-from .models import Despacho
+from .models import Despacho, DetalleDespacho
 from .pruebas_base import EscenarioProductoTerminado
+from .serializers import DespachoSerializer
 from .servicios import autorizar_despacho, ejecutar_despacho, ingresar_pallet
 
 
@@ -42,6 +45,36 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         primera = self.crear()
         autorizar_despacho(Despacho.objects.get(pk=primera.data["id"]), self.usuario)
         self.assertEqual(self.crear().status_code, 400)
+
+    def test_toctou_entre_validar_y_crear_no_duplica_el_pallet(self):
+        """
+        Dos peticiones por el mismo pallet, la segunda se cuela entre el
+        `validate()` de la primera (sin candado, solo un SELECT) y su `save()`.
+
+        `is_valid()` pasa porque en ese instante nadie más tiene el pallet.
+        Justo después, otra transacción ya comprometió un `DetalleDespacho`
+        para el mismo pallet. Sin el segundo chequeo —con el pallet ya
+        bloqueado, dentro de `create()`— `bulk_create` no tiene restricción de
+        base que lo frene: `despacho_pallet_unico` es `(despacho, pallet)`, no
+        `pallet` solo, así que el mismo pallet cabe en dos despachos distintos.
+        """
+        serializer = DespachoSerializer(data={
+            "cliente": self.cliente.pk, "pallet_ids": [self.pallet.pk],
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+        competidor = Despacho.objects.create(
+            sucursal=unica_sucursal_activa(None), numero="COMPETIDOR-1",
+            cliente=self.cliente, creado_por=self.usuario,
+        )
+        DetalleDespacho.objects.create(despacho=competidor, pallet=self.pallet)
+
+        with self.assertRaises(DRFValidationError):
+            serializer.save(creado_por=self.usuario, sucursal=unica_sucursal_activa(None))
+
+        self.assertEqual(
+            DetalleDespacho.objects.filter(pallet=self.pallet).count(), 1,
+        )
 
     def test_tras_cancelar_el_pallet_vuelve_a_poder_cargarse(self):
         primera = self.crear()
