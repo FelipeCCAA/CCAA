@@ -366,6 +366,7 @@ function Estandarizacion() {
                         ? new Date(vale.ejecutado_en).toLocaleString("es-CL", {
                             dateStyle: "short",
                             timeStyle: "short",
+                            timeZone: "America/Santiago",
                           })
                         : "Pendiente"
                     }

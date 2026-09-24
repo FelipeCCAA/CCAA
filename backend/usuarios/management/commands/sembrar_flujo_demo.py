@@ -302,6 +302,8 @@ class Command(BaseCommand):
 
         # El vale no lleva sucursal propia: la hereda de sus silos.
         vale = ValeEstandarizacion.objects.create(
+            # El vale sella su propia fecha al asignar el código: esta se reemplaza
+            # por la de hoy. Ver docs/superpowers/specs/2026-09-23-fechas-vale-creacion-ejecucion-design.md §4.4.
             fecha=self.fecha,
             producto=contexto["producto"],
             rc_objetivo=Decimal(str(rc_objetivo)),
