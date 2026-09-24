@@ -722,6 +722,13 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             SalidaProceso.objects.filter(
                 destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
                 liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
+                # Mismo filtro que `ejecutar_despacho` (servicios.py): ahí se
+                # rechaza cualquier granel cuya unidad no sea litros o cuya
+                # salida no tenga silo. Ofrecerlo aquí y rechazarlo al
+                # ejecutar dejaría el rechazo para el final de la hoja, con
+                # el camión ya cargado.
+                unidad__iexact="l",
+                silo__isnull=False,
             ).select_related(
                 "ejecucion__etapa", "ejecucion__lote_produccion", "producto", "silo"
             ).annotate(

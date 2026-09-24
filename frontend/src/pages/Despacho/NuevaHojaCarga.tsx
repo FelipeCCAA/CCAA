@@ -4,7 +4,7 @@ import BuscadorCodigo from "../../components/operacion/BuscadorCodigo";
 import CampoEtiquetado from "../../components/operacion/CampoEtiquetado";
 import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
 import { claseBoton, claseCampo, mensajeDe } from "../../components/seccion/utilidades";
-import { buscarPalletPorCodigo, totalesCarga } from "../../services/despacho-reglas";
+import { buscarPalletPorCodigo, leerCantidadChilena, totalesCarga } from "../../services/despacho-reglas";
 import { cantidad } from "../../services/formato";
 import {
   crearDespacho, type ClienteDespacho, type ExistenciaProductoTerminado, type GranelDisponible,
@@ -14,11 +14,15 @@ import {
   Una hoja de carga es un camión: un cliente, un transporte y varios pallets.
   El número lo asigna el sistema al guardar; la guía del SII es opcional.
 */
-export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCreada, onCerrar }: {
+export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCreada, onFallo, onCerrar }: {
   clientes: ClienteDespacho[];
   disponibles: ExistenciaProductoTerminado[];
   graneles: GranelDisponible[];
   onCreada: (mensaje: string) => void;
+  /* Un pallet o un granel pueden habérselos llevado otra hoja entre que se
+     cargó la lista y que se guardó esta; recargar lo disponible después de
+     un rechazo es lo que hace que la segunda vuelta ya no lo ofrezca. */
+  onFallo?: () => void;
   onCerrar: () => void;
 }) {
   const [cliente, setCliente] = useState("");
@@ -35,8 +39,11 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
   const pallets = disponibles.filter((p) => elegidos.includes(p.pallet));
   const granelElegido = graneles
     .filter((g) => granel[g.id] !== undefined)
-    .map((g) => ({ salida: g, cantidad: Number(granel[g.id].replace(",", ".")) }));
-  const totales = totalesCarga(pallets, granelElegido.map((g) => ({ cantidad: g.cantidad, unidad: g.salida.unidad })));
+    .map((g) => ({ salida: g, cantidad: leerCantidadChilena(granel[g.id]) }));
+  const totales = totalesCarga(
+    pallets,
+    granelElegido.map((g) => ({ cantidad: g.cantidad ?? 0, unidad: g.salida.unidad })),
+  );
   const clienteElegido = clientes.find((c) => String(c.id) === cliente);
 
   const alternar = (pallet: number) =>
@@ -56,7 +63,7 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
     evento.preventDefault();
     if (!clienteElegido) return setError("Elige el cliente.");
     if (pallets.length === 0 && granelElegido.length === 0) return setError("Agrega al menos un pallet o un granel.");
-    const malo = granelElegido.find((g) => !(g.cantidad > 0) || g.cantidad > Number(g.salida.cantidad_disponible));
+    const malo = granelElegido.find((g) => g.cantidad === null || g.cantidad > Number(g.salida.cantidad_disponible));
     if (malo) return setError(`La cantidad de ${malo.salida.producto_nombre} debe ser mayor que cero y hasta ${cantidad(malo.salida.cantidad_disponible, malo.salida.unidad)}.`);
     setError("");
     setPaso("resumen");
@@ -69,12 +76,16 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
       const hoja = await crearDespacho({
         cliente: Number(cliente),
         pallet_ids: pallets.map((p) => p.pallet),
-        graneles: granelElegido.map((g) => ({ salida: g.salida.id, cantidad: g.cantidad })),
+        // La validación en `revisar()` ya descartó cualquier cantidad nula
+        // antes de dejar avanzar hasta este paso; el `?? 0` es solo para que
+        // el tipo cierre, no una cantidad que vaya a viajar de verdad.
+        graneles: granelElegido.map((g) => ({ salida: g.salida.id, cantidad: g.cantidad ?? 0 })),
         transportista: transportista.trim(), patente: patente.trim().toUpperCase(), guia_despacho: guia.trim(),
       });
       onCreada(`Hoja ${hoja.numero} creada en borrador con ${totales.pallets} pallets.`);
     } catch (causa) {
       setError(mensajeDe(causa, "No se pudo crear la hoja de carga."));
+      onFallo?.();
     } finally {
       setOcupado(false);
     }

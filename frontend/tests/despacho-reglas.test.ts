@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { agruparHojas, buscarPalletPorCodigo, totalesCarga } from "../src/services/despacho-reglas.ts";
+import { agruparHojas, buscarPalletPorCodigo, leerCantidadChilena, totalesCarga } from "../src/services/despacho-reglas.ts";
 
 test("las hojas se agrupan por lo que falta hacer, y de las despachadas solo las de hoy", () => {
   const hojas = [
@@ -31,4 +31,21 @@ test("el código escaneado se busca sin importar mayúsculas ni espacios", () =>
   const pallets = [{ pallet_codigo: "PAL-001" }, { pallet_codigo: "PAL-002" }];
   assert.equal(buscarPalletPorCodigo(pallets, " pal-002 ")?.pallet_codigo, "PAL-002");
   assert.equal(buscarPalletPorCodigo(pallets, "PAL-9"), null);
+});
+
+test("los totales no distinguen mayúsculas en la unidad del granel", () => {
+  assert.deepEqual(
+    totalesCarga([], [{ cantidad: 1200, unidad: "Kg" }, { cantidad: 8000, unidad: "l" }]),
+    { pallets: 0, kg: 1200, litros: 8000 },
+  );
+});
+
+test("la cantidad de granel se lee en formato chileno", () => {
+  assert.equal(leerCantidadChilena("8.000"), 8000);
+  assert.equal(leerCantidadChilena("8000"), 8000);
+  assert.equal(leerCantidadChilena("12,5"), 12.5);
+  assert.equal(leerCantidadChilena("1.234,567"), 1234.567);
+  assert.equal(leerCantidadChilena("abc"), null);
+  assert.equal(leerCantidadChilena("0"), null);
+  assert.equal(leerCantidadChilena("-1"), null);
 });

@@ -76,6 +76,7 @@ export default function PuestoDespacho() {
               disponibles={disponibles.datos ?? []}
               graneles={graneles.datos ?? []}
               onCreada={cambio}
+              onFallo={() => { void disponibles.recargar(); void graneles.recargar(); }}
               onCerrar={() => setNueva(false)}
             />
           </>

@@ -1,9 +1,13 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from calidad.models import LiberacionProceso
+from maestros.models import Silo
+from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from usuarios.models import PerfilUsuario, Rol
 from usuarios.tenancy import unica_sucursal_activa
 
@@ -144,3 +148,49 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         detalle = self.crear().data["detalles"][0]
         self.assertEqual(detalle["lote_codigo"], "L-PT")
         self.assertEqual(detalle["ubicacion_codigo"], "A-01")
+
+    # ---- granel-disponible no ofrece lo que ejecutar_despacho rechazaría
+
+    def _salida_despacho_directo(self, codigo, *, unidad, silo):
+        proceso = Proceso.objects.create(codigo=f"proc-{codigo}", nombre=f"Proceso {codigo}")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="evaporar", nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=1, requiere_calidad=True,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo=codigo, etapa=etapa, sucursal=self.planta,
+        )
+        salida = SalidaProceso.objects.create(
+            ejecucion=ejecucion, silo=silo, cantidad=Decimal("5000"), unidad=unidad,
+            clasificacion=SalidaProceso.Clasificacion.GRANEL,
+            destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+        )
+        LiberacionProceso.objects.create(
+            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
+            decidida_por=self.usuario, decidida_en=timezone.now(),
+        )
+        return salida
+
+    def test_granel_disponible_no_ofrece_lo_que_ejecutar_rechazaria(self):
+        """
+        `ejecutar_despacho` (servicios.py) rechaza un granel cuya unidad no
+        sea litros o cuya salida no tenga silo. Si la pantalla de armar la
+        hoja lo ofreciera igual, el rechazo llegaría recién al ejecutar, con
+        el camión ya cargado —el mismo patrón que `_vales_operativos` fijó
+        para evaporación—.
+        """
+        silo = Silo.objects.create(
+            sucursal=self.planta, codigo="PC-DISP", tipo=Silo.Tipo.SILO,
+            capacidad_l=Decimal("20000"),
+        )
+        litros_con_silo = self._salida_despacho_directo("EV-L-SILO", unidad="L", silo=silo)
+        kg_con_silo = self._salida_despacho_directo("EV-KG-SILO", unidad="kg", silo=silo)
+        litros_sin_silo = self._salida_despacho_directo("EV-L-SIN-SILO", unidad="L", silo=None)
+
+        respuesta = self.api.get("/api/inventario/despachos/granel-disponible/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        ids = {fila["id"] for fila in respuesta.data}
+
+        self.assertIn(litros_con_silo.pk, ids)
+        self.assertNotIn(kg_con_silo.pk, ids)
+        self.assertNotIn(litros_sin_silo.pk, ids)
