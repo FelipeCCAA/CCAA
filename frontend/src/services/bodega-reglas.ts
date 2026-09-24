@@ -26,20 +26,34 @@ export function ajustePorConteo(
   return { tipo: diferencia > 0 ? "positivo" : "negativo", cantidad: Math.abs(diferencia) };
 }
 
+/* Estados de Calidad que dejan un lote en tránsito hacia una decisión, o ya
+   rechazado. Vienen de `LoteInventario.EstadoCalidad` en el backend. */
+const EN_ESPERA_DE_CALIDAD = new Set(["pendiente", "muestra", "analisis"]);
+const RECHAZADO_O_BLOQUEADO = new Set(["rechazado", "bloqueado"]);
+
 /*
   Qué tipo de ubicación acepta cada movimiento. Se ofrecen solo esas: ofrecer
   todas deja elegir un destino que el backend rechaza al final del formulario.
-  Recibir sigue la regla de `registrar_entrada` (cuarentena si pasa por Calidad).
+
+  Recibir sigue la regla de `registrar_entrada` (cuarentena si pasa por
+  Calidad). Reubicar material sigue `trasladar_existencia`, que decide por el
+  **estado de Calidad del lote** y no por dónde está guardado hoy: un lote
+  pendiente solo puede ir a otra cuarentena, uno rechazado o bloqueado solo a
+  rechazados, y el resto —aprobado, observado o sin exigir Calidad— es
+  justamente lo que hace usable el material, así que va a disponible.
 */
 export function tiposDeDestino(
   accion: TipoAccionBodega,
-  contexto: { origenTipo?: TipoUbicacion; requiereCalidad?: boolean },
+  contexto: { estadoCalidad?: string; requiereCalidad?: boolean },
 ): TipoUbicacion[] {
   switch (accion) {
     case "recibir":
       return [contexto.requiereCalidad ? "cuarentena" : "disponible"];
     case "reubicar-material":
-      return contexto.origenTipo ? [contexto.origenTipo] : [];
+      if (!contexto.estadoCalidad) return [];
+      if (EN_ESPERA_DE_CALIDAD.has(contexto.estadoCalidad)) return ["cuarentena"];
+      if (RECHAZADO_O_BLOQUEADO.has(contexto.estadoCalidad)) return ["rechazado"];
+      return ["disponible"];
     case "reubicar-pallet":
     case "ubicar-liberado":
       return ["disponible"];

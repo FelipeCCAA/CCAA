@@ -39,6 +39,10 @@ export interface Existencia {
   cantidad_reservada: string; cantidad_disponible: string;
   ubicacion: number; ubicacion_tipo: TipoUbicacion; unidad: string;
   insumo_codigo: string; bodega_nombre: string;
+  /* Lo que decide `registrar_salida` junto con la ubicación disponible: sin
+     esto la pantalla no puede saber, antes de intentarlo, si el backend va
+     a aceptar un consumo de esta existencia. */
+  lote_utilizable: boolean;
 }
 
 export interface UnidadRework {
@@ -503,6 +507,10 @@ export interface PalletPorUbicar {
 export interface MaterialEnCuarentena {
   existencia_id: number; lote_codigo: string; insumo_nombre: string;
   cantidad: string; unidad: string; ubicacion_codigo: string;
+  /* Un lote que Calidad ya aprobó pero que sigue guardado en cuarentena es
+     trabajo de Bodega —reubicarlo—, no de Calidad. `utilizable` es lo que
+     distingue las dos filas. */
+  estado_calidad: string; utilizable: boolean;
 }
 export interface MaterialBajoMinimo {
   insumo_id: number; codigo: string; nombre: string; unidad: string;

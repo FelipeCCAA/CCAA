@@ -54,7 +54,7 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
   const origenId =
     existencia?.ubicacion ?? (accion.tipo === "reubicar-pallet" ? accion.pallet.ubicacion : null);
   const tipos = tiposDeDestino(accion.tipo, {
-    origenTipo: existencia?.ubicacion_tipo,
+    estadoCalidad: existencia?.estado_calidad,
     requiereCalidad: insumo?.requiere_calidad,
   });
   const destinos = ubicaciones.filter((u) => u.activo && u.id !== origenId && tipos.includes(u.tipo));
@@ -75,8 +75,11 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
     if (pideCantidad && existencia && numero !== null && numero > Number(existencia.cantidad_disponible)) {
       return `Hay ${cantidad(existencia.cantidad_disponible, unidad)} disponibles en esa ubicación.`;
     }
+    if (accion.tipo === "consumir" && !motivo.trim()) return "El consumo necesita un motivo.";
     if (accion.tipo === "contar") {
-      if (texto.trim() === "" || !Number.isFinite(Number(texto.replace(",", ".")))) return "Escribe cuánto contaste.";
+      const contado = Number(texto.replace(",", "."));
+      if (texto.trim() === "" || !Number.isFinite(contado)) return "Escribe cuánto contaste.";
+      if (contado < 0) return "La cantidad contada no puede ser negativa.";
       if (!conteo) return "Lo contado coincide con el sistema: no hay nada que ajustar.";
       if (!motivo.trim()) return "El ajuste necesita un motivo.";
     }
@@ -154,7 +157,7 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
         const m = await trasladarExistencia({
           existencia: accion.existencia.id, destino: idDestino, cantidad: numero ?? 0, motivo: motivo.trim(),
         });
-        return `Traslado registrado: ${cantidad(m.cantidad, unidad)} de ${m.insumo_nombre}, de ${m.origen_codigo} a ${m.destino_codigo}.`;
+        return `Traslado registrado: ${cantidad(m.cantidad, unidad)} de ${m.insumo_nombre}, de ${m.origen_codigo} a ${m.destino_codigo}. Quedan ${cantidad(m.saldo_posterior, unidad)} en ${m.origen_codigo}.`;
       }
       case "consumir": {
         const m = await registrarSalida({
@@ -270,7 +273,9 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
           )}
 
           {accion.tipo !== "recibir" && accion.tipo !== "ubicar-liberado" && (
-            <CampoEtiquetado etiqueta={accion.tipo === "contar" ? "Motivo" : "Motivo (opcional)"}>
+            <CampoEtiquetado
+              etiqueta={accion.tipo === "contar" || accion.tipo === "consumir" ? "Motivo" : "Motivo (opcional)"}
+            >
               <input value={motivo} onChange={(e) => setMotivo(e.target.value)} className={claseCampo} />
             </CampoEtiquetado>
           )}

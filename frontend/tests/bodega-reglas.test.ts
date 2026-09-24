@@ -29,8 +29,18 @@ test("recibir va a cuarentena si el material pasa por Calidad, y a disponible si
   assert.deepEqual(tiposDeDestino("recibir", { requiereCalidad: false }), ["disponible"]);
 });
 
-test("reubicar material no le cambia el estado: mismo tipo de ubicación", () => {
-  assert.deepEqual(tiposDeDestino("reubicar-material", { origenTipo: "cuarentena" }), ["cuarentena"]);
+test("reubicar material sigue el estado de Calidad del lote, no la ubicación de origen", () => {
+  // Pendiente de inspección: solo puede ir a otra cuarentena.
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "pendiente" }), ["cuarentena"]);
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "muestra" }), ["cuarentena"]);
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "analisis" }), ["cuarentena"]);
+  // Rechazado o bloqueado: solo a una ubicación de rechazados.
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "rechazado" }), ["rechazado"]);
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "bloqueado" }), ["rechazado"]);
+  // Aprobado, con observaciones o sin exigir Calidad: es lo que hace usable el material.
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "aprobado" }), ["disponible"]);
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "observado" }), ["disponible"]);
+  assert.deepEqual(tiposDeDestino("reubicar-material", { estadoCalidad: "no_requiere" }), ["disponible"]);
 });
 
 test("los pallets se mueven a ubicaciones disponibles, y consumir o contar no tienen destino", () => {

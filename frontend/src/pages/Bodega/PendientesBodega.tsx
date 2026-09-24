@@ -13,10 +13,11 @@ import {
   otra área (Calidad, Compras) se muestra sin botón, para que se sepa que está
   y a quién le toca.
 */
-export default function PendientesBodega({ datos, usuarioId, onUbicar, onCambio }: {
+export default function PendientesBodega({ datos, usuarioId, onUbicar, onBuscar, onCambio }: {
   datos: Pendientes;
   usuarioId: number | undefined;
   onUbicar: (pallet: PalletPorUbicar) => void;
+  onBuscar: (loteCodigo: string) => void;
   onCambio: (mensaje: string) => void;
 }) {
   const [decision, setDecision] = useState<{ ajuste: AjustePendiente; aprobar: boolean } | null>(null);
@@ -101,10 +102,25 @@ export default function PendientesBodega({ datos, usuarioId, onUbicar, onCambio 
       )}
 
       {datos.material_en_cuarentena.length > 0 && (
-        <Tarjeta titulo={`Material en cuarentena (${datos.material_en_cuarentena.length})`} descripcion="Lo decide Calidad. Aparece para que sepas qué no se puede usar todavía." sinRelleno>
+        <Tarjeta
+          titulo={`Material en cuarentena (${datos.material_en_cuarentena.length})`}
+          descripcion="Lo que Calidad ya aprobó pero sigue guardado en cuarentena es trabajo de Bodega: reubícalo. El resto lo decide Calidad."
+          sinRelleno
+        >
           <ul className="divide-y divide-slate-100">
             {datos.material_en_cuarentena.map((m) => (
-              <li key={m.existencia_id} className="px-5 py-3 text-sm">{m.insumo_nombre} · lote {m.lote_codigo} · {cantidad(m.cantidad, m.unidad)} · en {m.ubicacion_codigo}</li>
+              <li key={m.existencia_id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
+                <span>{m.insumo_nombre} · lote {m.lote_codigo} · {cantidad(m.cantidad, m.unidad)} · en {m.ubicacion_codigo}</span>
+                {m.utilizable ? (
+                  <button
+                    type="button"
+                    onClick={() => onBuscar(m.lote_codigo)}
+                    className="rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-800 hover:bg-slate-100"
+                  >Reubicar</button>
+                ) : (
+                  <span className="text-slate-600">Lo decide Calidad</span>
+                )}
+              </li>
             ))}
           </ul>
         </Tarjeta>
