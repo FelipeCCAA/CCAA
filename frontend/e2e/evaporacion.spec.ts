@@ -367,27 +367,42 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
       La tabla se carga bajo demanda: la pantalla no descarga el histórico al
       entrar, así que sin pulsar «Cargar corridas» la fila no existe.
 
-      Se insiste hasta que el botón desaparece —es lo que hace al cargar—
-      porque un clic inmediato después de recargar la página cae a veces antes
-      de que React haya enganchado el manejador: el botón sigue ahí, la tabla
-      no llega, y el fallo aparece como una fila que nunca existió.
+      Se insiste con el clic porque uno inmediato después de recargar cae a
+      veces antes de que React haya enganchado el manejador: el botón sigue
+      ahí y la tabla no llega.
 
-      `.first()` es deliberado: hay dos botones con este nombre, el de
-      evaporación y el de mantequilla, y el primero es el de evaporación.
+      La espera termina cuando **aparece** la tabla —o el aviso de que no hay
+      corridas—, no cuando desaparece el botón. Esperar la ausencia del botón
+      daba por cargada una tabla sobre la que nunca se hizo clic: `/procesos`
+      se monta en diferido, `irA` solo espera al `main` del layout, y en ese
+      instante la sección aún no existe, así que «el botón no está visible»
+      era cierto desde el primer sondeo.
+
+      Todo se busca dentro de la sección de evaporación, no en la página. Antes
+      había un `.first()` que confiaba en que el primer «Cargar corridas» era
+      el de evaporación; el 2026-08-25 entró la sección de descremación por
+      encima, y su «Cargar corridas de descremación» también coincide —`name`
+      compara por subcadena—. Entre los dos defectos la prueba estuvo un mes
+      en rojo acusando una fila que no existía.
     */
-    const cargar = page.getByRole("button", { name: "Cargar corridas" }).first();
+    const seccion = page.locator("#proceso-condensacion");
+    const cargar = seccion.getByRole("button", { name: "Cargar corridas", exact: true });
+    const cargada = seccion
+      .getByRole("table")
+      .or(seccion.getByText("Sin corridas de evaporación"));
 
     await expect
       .poll(
         async () => {
+          if (await cargada.first().isVisible()) return true;
           if (await cargar.isVisible()) await cargar.click();
-          return cargar.isVisible();
+          return cargada.first().isVisible();
         },
         { timeout: 20_000, message: "La tabla de corridas no llegó a cargarse." },
       )
-      .toBe(false);
+      .toBe(true);
 
-    const fila = page
+    const fila = seccion
       .getByRole("row", { name: new RegExp(LOTE.codigo) })
       .filter({ has: page.getByRole("button", { name: "Iniciar evaporación" }) });
     await expect(
@@ -402,6 +417,7 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
 
   await test.step("5 · se declara el precondensado y pasa a Calidad", async () => {
     const fila = page
+      .locator("#proceso-condensacion")
       .getByRole("row", { name: new RegExp(LOTE.codigo) })
       .filter({ has: page.getByRole("button", { name: "Registrar salida" }) });
     await fila.getByRole("button", { name: "Registrar salida" }).click();

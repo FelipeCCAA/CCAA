@@ -108,6 +108,11 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     if (await agregarAnalisis.count()) {
       await agregarAnalisis.click();
       await page.getByPlaceholder("M-01").fill(`M-${flujo.lote}`);
+      /* La especificación del polvo entero exige materia grasa (26–28 %) y
+         humedad (2–4 %). Con solo humedad el formulario se niega a enviar
+         —«Faltan parámetros obligatorios: Materia grasa»— y la prueba agota
+         el tiempo esperando una petición que nunca sale. */
+      await campo(page, "Materia grasa").fill("27");
       await campo(page, "Humedad").fill("3");
       await trasGuardar(page, "/analisis/", async () => {
         await page.getByRole("button", { name: "Registrar análisis" }).click();
