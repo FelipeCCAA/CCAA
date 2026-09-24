@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.test import APIClient
 
 from calidad.models import LiberacionProceso
 from maestros.models import Silo
@@ -194,3 +195,38 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         self.assertIn(litros_con_silo.pk, ids)
         self.assertNotIn(kg_con_silo.pk, ids)
         self.assertNotIn(litros_sin_silo.pk, ids)
+
+    # ---- pallets-cargables no exige el área de Bodega, solo el permiso de despacho
+
+    def test_permiso_de_despacho_ve_los_mismos_pallets_que_bodega_sin_pertenecer_al_area(self):
+        """
+        `/despacho` está gateado por capacidad (`PuedeCrearDespacho`), pero su
+        lista de pallets venía de `producto-terminado/?cargable=1`, gateado por
+        área (`EscribeBodega.areas_lectura`, que no incluye Mantenimiento). Un
+        despachador de otra área quedaba con la pantalla vacía por un 403 que
+        la capacidad ya le había prometido resolver.
+        """
+        fuera_de_bodega = User.objects.create_user("mantenimiento-despacha")
+        PerfilUsuario.objects.create(
+            usuario=fuera_de_bodega, empresa=self.empresa, sucursal=self.planta,
+            rol=Rol.OPERARIO, area=PerfilUsuario.Area.MANTENIMIENTO,
+        )
+        self.dar_permiso("despacho_crear", fuera_de_bodega)
+        api_despacho = APIClient()
+        api_despacho.force_authenticate(fuera_de_bodega)
+
+        # El área de Mantenimiento no tiene lectura sobre producto-terminado:
+        # confirma que la puerta antigua sí lo habría rechazado.
+        self.assertEqual(
+            api_despacho.get("/api/inventario/producto-terminado/?cargable=1").status_code,
+            403,
+        )
+
+        respuesta = api_despacho.get("/api/inventario/despachos/pallets-cargables/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+
+        referencia = self.api.get("/api/inventario/producto-terminado/?cargable=1")
+        ids_referencia = {fila["id"] for fila in referencia.data["results"]}
+        ids = {fila["id"] for fila in respuesta.data}
+        self.assertEqual(ids, ids_referencia)
+        self.assertIn(self.pallet.pk, {fila["pallet"] for fila in respuesta.data})

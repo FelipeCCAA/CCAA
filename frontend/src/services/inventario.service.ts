@@ -499,9 +499,21 @@ export const buscarMovimientos = (filtros: FiltrosInventario = {}) =>
 export const buscarMovimientosProductoTerminado = (filtros: FiltrosInventario = {}) =>
   pagina<MovimientoProductoTerminado>("inventario/movimientos-producto-terminado/", filtros);
 
-/* Lo que se puede subir a una hoja de carga: el servidor ya excluye lo que está en otra. */
-export const obtenerPalletsCargables = () =>
-  lista<ExistenciaProductoTerminado>("inventario/producto-terminado/?cargable=1");
+/*
+  Lo que se puede subir a una hoja de carga: el servidor ya excluye lo que
+  está en otra.
+
+  Va por `despachos/pallets-cargables/`, bajo el permiso de despacho, y no por
+  `producto-terminado/?cargable=1`, que exige el área de Bodega
+  (`EscribeBodega`). `/despacho` es capability-gated: alguien con
+  `despacho_crear` sin pertenecer a Bodega veía la pantalla vacía por un 403
+  que la capacidad ya le había prometido resolver. La acción no pagina —igual
+  que `granel-disponible`—, así que una petición basta.
+*/
+export async function obtenerPalletsCargables(): Promise<ExistenciaProductoTerminado[]> {
+  const { data } = await api.get<ExistenciaProductoTerminado[]>("inventario/despachos/pallets-cargables/");
+  return data;
+}
 /* Borradores, autorizadas y despachadas hoy: lo que el puesto de Despacho mira. */
 export const obtenerHojasVigentes = () => lista<Despacho>("inventario/despachos/?vigentes=1");
 

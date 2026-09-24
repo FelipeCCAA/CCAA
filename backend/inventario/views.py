@@ -538,6 +538,27 @@ def estados_inventario_pallet():
     ]
 
 
+def _filtro_pallets_cargables(consulta):
+    """
+    Lo que se puede subir a una hoja de carga: liberado, en una ubicación
+    disponible y sin otra hoja activa.
+
+    Una sola función para las dos puertas que lo sirven —
+    `producto-terminado/?cargable=1` (área Bodega, `EscribeBodega`) y
+    `despachos/pallets-cargables/` (permiso de despacho, `PuedeCrearDespacho`)—
+    para que un pallet que una acepta la otra no lo rechace.
+    """
+    from produccion.models import PalletProducto
+    return consulta.filter(
+        ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+        pallet__estado__in=[PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO],
+    ).exclude(
+        pallet__detalles_despacho__despacho__estado__in=[
+            Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO,
+        ]
+    )
+
+
 class ExistenciaProductoTerminadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
     tenant_lookup_sucursal = "ubicacion__bodega__sucursal_id"
     tenant_lookup_empresa = "ubicacion__bodega__sucursal__empresa_id"
@@ -563,17 +584,7 @@ class ExistenciaProductoTerminadoViewSet(FiltraConsultaMixin, QuerysetTenantMixi
     def get_queryset(self):
         consulta = super().get_queryset()
         if self.request.query_params.get("cargable") == "1":
-            from produccion.models import PalletProducto
-            # Lo que se puede subir a una hoja de carga: liberado, en una
-            # ubicación disponible y sin otra hoja activa (Task 2).
-            consulta = consulta.filter(
-                ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
-                pallet__estado__in=[PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO],
-            ).exclude(
-                pallet__detalles_despacho__despacho__estado__in=[
-                    Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO,
-                ]
-            )
+            consulta = _filtro_pallets_cargables(consulta)
         return consulta
 
     @action(detail=False, methods=["post"], url_path="ingresar")
@@ -711,6 +722,31 @@ class DespachoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         if salidas.count() != len(graneles):
             raise ValidationError({"graneles": "Hay salidas inexistentes o no disponibles."})
         serializer.save(creado_por=self.request.user, sucursal=sucursal)
+
+    @action(detail=False, methods=["get"], url_path="pallets-cargables")
+    def pallets_cargables(self, request):
+        """
+        Los mismos pallets que `producto-terminado/?cargable=1`, bajo el
+        permiso de despacho en vez del área de Bodega.
+
+        `/despacho` se decide por capacidad (`PuedeCrearDespacho`), pero su
+        lista de pallets dependía de `EscribeBodega`, acotado por área: quien
+        tenía el permiso de despachar sin pertenecer a Bodega —Mantenimiento
+        cubriendo un turno, por ejemplo— veía la pantalla vacía por un 403
+        que la capacidad ya le había prometido resolver.
+        """
+        consulta = _filtro_pallets_cargables(
+            filtrar_por_scope(
+                ExistenciaProductoTerminado.objects.select_related(
+                    "pallet__envase__lote__producto", "pallet__envase__equipo",
+                    "ubicacion__bodega",
+                ).filter(activo=True),
+                request.user,
+                campo_sucursal="ubicacion__bodega__sucursal_id",
+                campo_empresa="ubicacion__bodega__sucursal__empresa_id",
+            )
+        )
+        return Response(ExistenciaProductoTerminadoSerializer(consulta, many=True).data)
 
     @action(detail=False, methods=["get"], url_path="granel-disponible")
     def granel_disponible(self, request):
