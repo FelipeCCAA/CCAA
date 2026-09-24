@@ -23,6 +23,10 @@ class ValeEstandarizacionAdmin(admin.ModelAdmin):
         "sng_real", "creado_en",
     )
 
+    def has_delete_permission(self, request, obj=None):
+        # Un vale se anula, no se borra: tampoco desde aquí.
+        return False
+
     @admin.display(description="RC medido")
     def rc_medido(self, vale):
         rc = vale.rc_real

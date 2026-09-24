@@ -78,6 +78,23 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         except CodigoValeNoAsignado as error:
             raise serializers.ValidationError({"codigo": [str(error)]})
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Un vale se anula; nunca se elimina físicamente.
+
+        Es el eslabón entre el precondensado y los silos de leche fresca, y
+        borrarlo liberaría además su número de código para otro vale.
+        """
+        return Response(
+            {
+                "detail": (
+                    "Un vale no se elimina porque forma parte de la trazabilidad. "
+                    "Se anula, indicando el motivo."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     # --------------------------------------------------------- borradores
 
     def _borrador_del_usuario(self, request, pk=None, *, bloquear=False):

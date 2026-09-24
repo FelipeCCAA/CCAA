@@ -16,7 +16,8 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.contrib import admin
+from django.test import RequestFactory, TestCase
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
@@ -543,6 +544,19 @@ class ApiTests(BaseVale):
             HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=operador).key}"
         )
 
+    def test_un_vale_no_se_borra_se_anula(self):
+        """
+        Borrarlo haría desaparecer el eslabón entre el precondensado y los
+        silos de leche fresca, y liberaría su número de código. Se anula.
+        """
+        vale = self.crear_vale()
+
+        respuesta = self.cliente.delete(f"/api/estandarizacion/vales/{vale.id}/")
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertIn("anula", respuesta.json()["detail"])
+        self.assertTrue(ValeEstandarizacion.objects.filter(pk=vale.pk).exists())
+
     def test_el_estado_no_se_mueve_con_un_patch(self):
         """
         La regla de liberación vive en `decidir`, que la calcula. Si `estado`
@@ -806,3 +820,18 @@ class ReglasDelDocumentoTests(BaseVale):
 
         self.assertEqual(float(vale.entera_grasa), 3.90)
         self.assertEqual(float(vale.descremada_sng), 8.90)
+
+
+class AdminValeTests(BaseVale):
+
+    def test_ni_un_superusuario_borra_un_vale_desde_el_admin(self):
+        """El admin no es una puerta lateral: ahí tampoco se borra, se anula."""
+        superusuario = get_user_model().objects.create_superuser(
+            username="admin-vale", password="x"
+        )
+        peticion = RequestFactory().get("/")
+        peticion.user = superusuario
+
+        modelo_admin = admin.site._registry[ValeEstandarizacion]
+
+        self.assertFalse(modelo_admin.has_delete_permission(peticion, self.crear_vale()))
