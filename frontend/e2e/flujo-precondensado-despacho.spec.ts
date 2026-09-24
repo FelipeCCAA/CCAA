@@ -64,7 +64,7 @@ test("del precondensado liberado al despacho fisico desde su silo", async ({ pag
     await usarSesionArea(page, "e2e_despacho");
     await irA(page, "/despacho");
     await page.getByRole("button", { name: "Nueva hoja de carga" }).click();
-    await page.getByLabel("Cliente").selectOption({ index: 1 });
+    await page.getByRole("region", { name: "Nueva hoja de carga" }).getByLabel("Cliente").selectOption({ index: 1 });
     const graneles = page.getByRole("group", { name: "Graneles liberados" });
     await graneles.getByRole("listitem").filter({ hasText: new RegExp(flujo.lote) }).getByRole("checkbox").check();
     await page.getByRole("button", { name: "Revisar hoja" }).click();
