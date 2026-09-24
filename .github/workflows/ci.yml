@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # DevelopMain es la rama donde se trabaja. Sin ella aquí, 133 commits
+    # entraron sin pasar por CI entre el 2026-08-17 y el 2026-09-03, y la
+    # suite del backend llegó a 91 pruebas en rojo sin que nada avisara.
+    branches: [main, DevelopMain]
   pull_request:
 
 permissions:
