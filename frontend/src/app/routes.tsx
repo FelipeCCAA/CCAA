@@ -71,6 +71,11 @@ const AbastecimientoNoConformidades = lazy(() => import("../pages/Abastecimiento
 const AbastecimientoDetalleLote = lazy(
   () => import("../pages/Abastecimiento/DetalleLoteInventario"),
 );
+const AbastecimientoRecepcion = lazy(() => import("../pages/Abastecimiento/Recepcion"));
+
+const PuestoBodega = lazy(() => import("../pages/Bodega/PuestoBodega"));
+const OperarBodega = lazy(() => import("../pages/Bodega/OperarBodega"));
+const ConfiguracionBodega = lazy(() => import("../pages/Bodega/ConfiguracionBodega"));
 
 const diferido = (componente: React.ReactNode) => (
   <Suspense fallback={<div className="p-10 text-sm text-slate-600">Cargando módulo…</div>}>
@@ -168,7 +173,18 @@ function RoutesApp(){
                             <Route path="no-conformidades" element={diferido(<AbastecimientoNoConformidades />)} />
                             <Route path="stock" element={<Navigate to="/inventario" replace />} />
                             <Route path="producto-terminado" element={<Navigate to="/inventario" replace />} />
+                            <Route path="materiales" element={<Navigate to="/bodega/configuracion" replace />} />
+                            <Route path="bodegas" element={<Navigate to="/bodega/configuracion" replace />} />
+                            <Route path="recepcion" element={<Navigate to="/bodega/recepcion" replace />} />
                             <Route path="*" element={<Navigate to="/abastecimiento" replace />} />
+                        </Route>
+                    </Route>
+
+                    <Route element={<RutaModulo modulo="bodega" />}>
+                        <Route path="/bodega" element={diferido(<PuestoBodega />)}>
+                            <Route index element={diferido(<OperarBodega />)} />
+                            <Route path="recepcion" element={diferido(<AbastecimientoRecepcion />)} />
+                            <Route path="configuracion" element={diferido(<ConfiguracionBodega />)} />
                         </Route>
                     </Route>
 

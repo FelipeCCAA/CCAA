@@ -162,3 +162,13 @@ test("Despacho se abre con la capacidad, no con el área", () => {
   assert.equal(puedeAccederModulo(sinPermiso, "despacho"), false);
   assert.equal(puedeAccederModulo({ ...sinPermiso, capacidades: ["despacho_crear"] }, "despacho"), true);
 });
+
+test("Bodega entra a su puesto, y el puesto es su inicio", () => {
+  const bodega = usuarioDeArea("bodega", "Bodega", null);
+  assert.equal(puedeAccederModulo(bodega, "bodega"), true);
+  assert.equal(destinoInicial(bodega), "/bodega");
+  // El menú oculta la entrada que coincide con el inicio del usuario; la
+  // entrada se comprueba con quien no la tiene de inicio.
+  const compras = usuarioDeArea("compras", "Compras", null);
+  assert.equal(puedeAccederModulo(compras, "bodega"), false);
+});
