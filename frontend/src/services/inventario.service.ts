@@ -498,6 +498,9 @@ export const buscarMovimientos = (filtros: FiltrosInventario = {}) =>
   pagina<MovimientoInventario>("inventario/movimientos/", filtros);
 export const buscarMovimientosProductoTerminado = (filtros: FiltrosInventario = {}) =>
   pagina<MovimientoProductoTerminado>("inventario/movimientos-producto-terminado/", filtros);
+/* Historial de hojas de carga: q busca por número, cliente o pallet/lote. */
+export const buscarDespachos = (filtros: FiltrosInventario = {}) =>
+  pagina<Despacho>("inventario/despachos/", filtros);
 
 /*
   Lo que se puede subir a una hoja de carga: el servidor ya excluye lo que
@@ -627,6 +630,7 @@ export interface CatalogosInventario {
   tipo_movimiento: { valor: string; etiqueta: string }[];
   tipo_movimiento_pallet: { valor: string; etiqueta: string }[];
   estado_pallet: { valor: string; etiqueta: string }[];
+  estado_despacho: { valor: string; etiqueta: string }[];
 }
 
 

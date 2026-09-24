@@ -5,11 +5,14 @@ import { Vacio } from "../../components/seccion/componentes";
 import { claseBoton, useCarga } from "../../components/seccion/utilidades";
 import { agruparHojas } from "../../services/despacho-reglas";
 import { fechaLocalISO } from "../../services/fechas";
+import { cantidad } from "../../services/formato";
 import {
-  obtenerClientesDespacho, obtenerGranelDisponible, obtenerHojasVigentes, obtenerPalletsCargables, type Despacho,
+  buscarDespachos, obtenerCatalogosInventario, obtenerClientesDespacho, obtenerGranelDisponible,
+  obtenerHojasVigentes, obtenerPalletsCargables, type Despacho,
 } from "../../services/inventario.service";
 import { puedeAutorizarDespacho, puedeDespachar } from "../../services/permisos-despacho";
 import { obtenerSesion } from "../../services/sesion";
+import TablaConsulta from "../Inventario/TablaConsulta";
 import HojaDeCarga from "./HojaDeCarga";
 import NuevaHojaCarga from "./NuevaHojaCarga";
 
@@ -24,6 +27,9 @@ function Grupo({ titulo, hojas, autoriza, vacio, onCambio }: {
   );
 }
 
+const fechaHora = (iso: string) =>
+  new Date(iso).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" });
+
 /* Abre en las hojas que falta sacar: lo primero que se decide al llegar un camión. */
 export default function PuestoDespacho() {
   const usuario = obtenerSesion()?.usuario;
@@ -33,6 +39,7 @@ export default function PuestoDespacho() {
   const clientes = useCarga(obtenerClientesDespacho);
   const disponibles = useCarga(obtenerPalletsCargables);
   const graneles = useCarga(obtenerGranelDisponible);
+  const catalogos = useCarga(obtenerCatalogosInventario);
   const [nueva, setNueva] = useState(false);
   const [mensaje, setMensaje] = useState("");
 
@@ -88,6 +95,40 @@ export default function PuestoDespacho() {
         <Grupo titulo="Autorizadas" hojas={grupos.autorizada} autoriza={autoriza} vacio="No hay hojas autorizadas esperando salida." onCambio={cambio} />
         <Grupo titulo="Borrador" hojas={grupos.borrador} autoriza={autoriza} vacio="No hay hojas en borrador." onCambio={cambio} />
         <Grupo titulo="Despachadas hoy" hojas={grupos.despachadaHoy} autoriza={false} vacio="Hoy no ha salido ninguna hoja." onCambio={cambio} />
+
+        <section aria-label="Historial de despachos" className="space-y-3">
+          <h2 className="text-lg font-semibold text-slate-900">Historial</h2>
+          <TablaConsulta<Despacho>
+            titulo="Historial de despachos"
+            cargar={buscarDespachos}
+            clave={(f) => f.id}
+            ubicaciones={[]}
+            conUbicacion={false}
+            conFechas
+            etiquetaBusqueda="Número, cliente, pallet o lote"
+            vacio="No hay despachos que coincidan."
+            estados={(catalogos.datos?.estado_despacho ?? []).map((o) => ({ valor: o.valor, texto: o.etiqueta }))}
+            columnas={[
+              { titulo: "Número", celda: (f) => <span className="font-mono">{f.numero}</span> },
+              { titulo: "Fecha", celda: (f) => fechaHora(f.creado_en) },
+              { titulo: "Cliente", celda: (f) => f.cliente_nombre },
+              {
+                titulo: "Estado",
+                celda: (f) => catalogos.datos?.estado_despacho.find((o) => o.valor === f.estado)?.etiqueta ?? f.estado,
+              },
+              { titulo: "Pallets", numerica: true, celda: (f) => f.detalles.length },
+              {
+                titulo: "Kg",
+                numerica: true,
+                celda: (f) => cantidad(
+                  f.detalles.reduce((suma, d) => suma + Number(d.kg_neto), 0),
+                  "kg",
+                ),
+              },
+              { titulo: "Motivo de cancelación", celda: (f) => f.motivo_cancelacion || "—" },
+            ]}
+          />
+        </section>
       </div>
     </div>
   );

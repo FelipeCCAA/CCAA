@@ -18,7 +18,7 @@ export interface Columna<T> {
 */
 export default function TablaConsulta<T>({
   titulo, cargar, columnas, clave, estados, etiquetaEstado = "Estado", conFechas = false, ubicaciones, etiquetaBusqueda, vacio,
-  filtrosFijos = {},
+  filtrosFijos = {}, conUbicacion = true,
 }: {
   /* Nombre accesible de la tabla: cinco pestañas comparten el mismo
      encabezado de columnas genérico y sin esto un lector de pantalla no
@@ -35,6 +35,10 @@ export default function TablaConsulta<T>({
   etiquetaBusqueda: string;
   vacio: string;
   filtrosFijos?: FiltrosInventario;
+  /* Falso en listas que no viven en una ubicación de bodega —los despachos,
+     por ejemplo—: sin esto, el filtro ofrecería un desplegable que ningún
+     `filtro_ubicacion` del backend entiende para ese listado. */
+  conUbicacion?: boolean;
 }) {
   const [borrador, setBorrador] = useState<FiltrosInventario>({});
   const [filtros, setFiltros] = useState<FiltrosInventario>({});
@@ -106,12 +110,14 @@ export default function TablaConsulta<T>({
             </select>
           </CampoEtiquetado>
         )}
-        <CampoEtiquetado etiqueta="Ubicación">
-          <select value={borrador.ubicacion ?? ""} onChange={(e) => setBorrador({ ...borrador, ubicacion: e.target.value ? Number(e.target.value) : "" })} className={claseCampo}>
-            <option value="">Todas</option>
-            {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.bodega_nombre}</option>)}
-          </select>
-        </CampoEtiquetado>
+        {conUbicacion && (
+          <CampoEtiquetado etiqueta="Ubicación">
+            <select value={borrador.ubicacion ?? ""} onChange={(e) => setBorrador({ ...borrador, ubicacion: e.target.value ? Number(e.target.value) : "" })} className={claseCampo}>
+              <option value="">Todas</option>
+              {ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.bodega_nombre}</option>)}
+            </select>
+          </CampoEtiquetado>
+        )}
         {conFechas && (
           <>
             <CampoEtiquetado etiqueta="Desde">
