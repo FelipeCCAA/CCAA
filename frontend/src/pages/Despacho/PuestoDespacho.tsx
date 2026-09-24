@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 
 import { Vacio } from "../../components/seccion/componentes";
 import { claseBoton, useCarga } from "../../components/seccion/utilidades";
-import { agruparHojas } from "../../services/despacho-reglas";
+import { agruparHojas, totalesCarga } from "../../services/despacho-reglas";
 import { fechaLocalISO } from "../../services/fechas";
 import { cantidad } from "../../services/formato";
 import {
@@ -118,12 +118,15 @@ export default function PuestoDespacho() {
               },
               { titulo: "Pallets", numerica: true, celda: (f) => f.detalles.length },
               {
-                titulo: "Kg",
+                titulo: "Cantidad",
                 numerica: true,
-                celda: (f) => cantidad(
-                  f.detalles.reduce((suma, d) => suma + Number(d.kg_neto), 0),
-                  "kg",
-                ),
+                // Mismo total que la tarjeta de la hoja: pallets y graneles en
+                // kg, y los litros aparte; una hoja solo a granel no es «0 kg».
+                celda: (f) => {
+                  const t = totalesCarga(f.detalles, f.detalles_granel);
+                  return [t.kg ? cantidad(t.kg, "kg") : "", t.litros ? cantidad(t.litros, "L") : ""]
+                    .filter(Boolean).join(" · ") || "—";
+                },
               },
               { titulo: "Motivo de cancelación", celda: (f) => f.motivo_cancelacion || "—" },
             ]}

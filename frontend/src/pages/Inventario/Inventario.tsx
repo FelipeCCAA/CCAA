@@ -71,7 +71,7 @@ export default function Inventario() {
           {PESTANAS.map((p, indice) => (
             <button
               key={p.id} id={`pestana-${p.id}`} type="button" role="tab"
-              aria-selected={pestana === p.id} aria-controls={`panel-${p.id}`}
+              aria-selected={pestana === p.id} aria-controls={pestana === p.id ? `panel-${p.id}` : undefined}
               tabIndex={pestana === p.id ? 0 : -1}
               onClick={() => setPestana(p.id)}
               onKeyDown={(e) => moverConFlechas(e, indice)}
