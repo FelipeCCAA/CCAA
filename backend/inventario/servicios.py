@@ -1039,7 +1039,8 @@ def decidir_inspeccion(*, inspeccion_id, decision, usuario, resultados, observac
             titulo=f"Decisión de Calidad: {inspeccion.lote.insumo.nombre}",
             mensaje=f"Lote {inspeccion.lote.codigo}: {decision}.",
             documento_tipo="inventario.InspeccionMaterial", documento_id=inspeccion.pk,
-            accion_url="/bodega",
+            # Bodega actúa en su puesto; Compras no entra a /bodega y consulta el lote.
+            accion_url="/bodega" if area == PerfilUsuario.Area.BODEGA else "/inventario",
         )
     actualizar_alertas_inventario()
     return inspeccion
