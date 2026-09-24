@@ -18,6 +18,8 @@ import {
   type Alerta,
 } from "../../services/inventario.service";
 import { obtenerPallets } from "../../services/produccion.service";
+import { puedeAccederModulo } from "../../services/access-control";
+import { obtenerSesion } from "../../services/sesion";
 
 import { Aviso, Indicador, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import { numero, useCarga } from "../../components/seccion/utilidades";
@@ -76,6 +78,8 @@ function FilaAlerta({ alerta }: { alerta: Alerta }) {
 
 function Panel() {
 
+  const usuario = obtenerSesion()?.usuario;
+  const accedeABodega = puedeAccederModulo(usuario, "bodega");
   const alertas = useCarga(obtenerAlertas);
   const existencias = useCarga(obtenerExistencias);
   const inspecciones = useCarga(obtenerInspecciones);
@@ -174,7 +178,13 @@ function Panel() {
           descripcion="Qué hacer según lo que llegó o se produjo."
         >
           <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-            <Link to="recepcion" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>1. Bolsas e insumos</b><br />Recibir contra compra → cuarentena → Calidad.</Link>
+            {/* Solo si el módulo de Bodega la acepta: la ruta vieja
+                redirigía a /bodega/recepcion, que `RutaModulo` rechaza para
+                quien no tiene acceso a Bodega —Compras, Calidad—, y el clic
+                terminaba en AccesoRestringido. */}
+            {accedeABodega && (
+              <Link to="/bodega/recepcion" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>1. Bolsas e insumos</b><br />Recibir contra compra → cuarentena → Calidad.</Link>
+            )}
             <Link to="/calidad" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>2. Muestra</b><br />Calidad verifica, aprueba o rechaza.</Link>
             <Link to="/produccion" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>3. Pallets</b><br />Envase crea pallets de leche en polvo de 25 kg.</Link>
             <Link to="producto-terminado" className="rounded-xl bg-slate-50 px-4 py-3 hover:bg-slate-100"><b>4. Stock liberado</b><br />Bodega asigna ubicación y queda disponible.</Link>
