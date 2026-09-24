@@ -165,6 +165,8 @@ Contexto para Claude Code. Lee estos documentos antes de proponer cambios:
   porque ambos caminos convergen en la misma organización, pero si alguien vuelve a apoyar
   una decisión en esa detección, que sepa que discrepan.
 
+- **Bodega y Despacho son puestos de trabajo, Existencias es consulta** (desde 2026-09-24, `docs/superpowers/specs/2026-09-24-puestos-bodega-despacho-design.md`). `/bodega` abre en un buscador por código y en los pendientes (`inventario/pendientes-bodega/`); cada movimiento es un panel guiado que termina en `ConfirmarAccion`. `/despacho` agrupa las hojas de carga por lo que falta hacer. `/inventario` ya no registra nada: filtra y pagina **en el servidor**, porque filtrar en el cliente es filtrar la primera página. Toda cantidad pasa por `cantidad(valor, unidad)`: «13.000» son trece unidades y en Chile se lee trece mil. Quién despacha lo deciden **solo las capacidades** (`permisos-despacho.ts`), igual que el servidor. Abastecimiento volvió como sección de compras; lo de bodega vive en el puesto.
+
 ## El circuito de producción, de punta a punta
 
 `frontend/e2e/circuito-polvo.spec.ts` (desde 2026-08-31) recorre **por pantalla** el turno

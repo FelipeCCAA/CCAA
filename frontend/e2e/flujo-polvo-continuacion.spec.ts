@@ -196,13 +196,15 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
   if (reanudarDesde <= 7) await test.step("7 · Inventario muestra el pallet disponible", async () => {
     await usarSesionArea(page, "e2e_inventario");
     await irA(page, "/inventario");
-    await page.getByRole("button", { name: "Productos", exact: true }).click();
-    const tarjeta = page.locator("article").filter({ hasText: pallet });
-    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
-    await expect(tarjeta).toContainText(flujo.lote);
-    await expect(tarjeta).toContainText("500 kg");
-    await expect(tarjeta).toContainText("disponible");
-    await expect(tarjeta).toContainText("PT-DISP");
+    await page.getByRole("tab", { name: "Producto terminado" }).click();
+    await page.getByLabel("Pallet, lote o producto").fill(pallet);
+    await page.getByRole("button", { name: "Filtrar" }).click();
+    const fila = page.getByRole("row").filter({ hasText: pallet });
+    await expect(fila).toBeVisible({ timeout: 20_000 });
+    await expect(fila).toContainText(flujo.lote);
+    await expect(fila).toContainText("500 kg");
+    await expect(fila).toContainText("disponible");
+    await expect(fila).toContainText("PT-DISP");
   });
 
   expect(erroresJs).toHaveLength(0);

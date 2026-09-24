@@ -123,12 +123,14 @@ test("envasa solamente cajas completas y deja visible el remanente", async ({ pa
 
   await usarSesionArea(page, "e2e_inventario");
   await irA(page, "/inventario");
-  await page.getByRole("button", { name: "Productos", exact: true }).click();
-  const tarjeta = page.locator("article").filter({ hasText: pallet });
-  await expect(tarjeta).toBeVisible({ timeout: 20_000 });
-  await expect(tarjeta).toContainText("20 kg");
-  await expect(tarjeta).toContainText(/cuarentena/i);
-  await expect(tarjeta).toContainText("PT-CUAR");
+  await page.getByRole("tab", { name: "Producto terminado" }).click();
+  await page.getByLabel("Pallet, lote o producto").fill(pallet);
+  await page.getByRole("button", { name: "Filtrar" }).click();
+  const fila = page.getByRole("row").filter({ hasText: pallet });
+  await expect(fila).toBeVisible({ timeout: 20_000 });
+  await expect(fila).toContainText("20 kg");
+  await expect(fila).toContainText(/cuarentena/i);
+  await expect(fila).toContainText("PT-CUAR");
   expect(erroresJs).toHaveLength(0);
 });
 
@@ -188,9 +190,11 @@ test("Calidad dispone el excedente y entrega el pallet de mantequilla a Bodega",
 
   await usarSesionArea(page, "e2e_inventario");
   await irA(page, "/inventario");
-  await page.getByRole("button", { name: "Productos", exact: true }).click();
-  const tarjeta = page.locator("article").filter({ hasText: pallet });
-  await expect(tarjeta).toContainText("disponible", { timeout: 20_000 });
-  await expect(tarjeta).toContainText("PT-DISP");
+  await page.getByRole("tab", { name: "Producto terminado" }).click();
+  await page.getByLabel("Pallet, lote o producto").fill(pallet);
+  await page.getByRole("button", { name: "Filtrar" }).click();
+  const fila = page.getByRole("row").filter({ hasText: pallet });
+  await expect(fila).toContainText("disponible", { timeout: 20_000 });
+  await expect(fila).toContainText("PT-DISP");
   expect(erroresJs).toHaveLength(0);
 });

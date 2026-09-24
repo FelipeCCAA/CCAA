@@ -31,7 +31,6 @@ test("del precondensado liberado al despacho fisico desde su silo", async ({ pag
     silo_precondensado: string;
     litros_precondensado: number;
   };
-  const numeroDespacho = `DG-${flujo.lote.replace(/[^A-Z0-9]/gi, "-")}`;
   const reanudarDesde = Number(process.env.E2E_DESDE ?? 1);
 
   if (reanudarDesde <= 1) await test.step("1 · Calidad analiza y libera el precondensado para despacho", async () => {
@@ -61,34 +60,28 @@ test("del precondensado liberado al despacho fisico desde su silo", async ({ pag
     await tarjeta.getByRole("link", { name: /Preparar despacho/ }).click();
   });
 
-  if (reanudarDesde <= 3) await test.step("3 · Despacho registra, autoriza y confirma la salida fisica", async () => {
+  if (reanudarDesde <= 3) await test.step("3 · Despacho arma, autoriza y ejecuta la hoja de carga", async () => {
     await usarSesionArea(page, "e2e_despacho");
-    await irA(page, "/inventario");
-    await page.getByRole("button", { name: "Despachar producto" }).click();
-    const formulario = page.locator("form").filter({ hasText: "Despachar producto" });
-    await formulario.getByPlaceholder("Nº de despacho").fill(numeroDespacho);
-
-    const selectores = formulario.locator("select");
-    await selectores.nth(0).selectOption({ index: 1 });
-    await selectores.nth(1).selectOption("granel");
-    await elegirOpcion(selectores.nth(2), new RegExp(flujo.lote));
-
-    const cantidad = formulario.getByPlaceholder("Cantidad a despachar");
-    await expect.poll(async () => Number(await cantidad.inputValue())).toBeGreaterThan(0);
+    await irA(page, "/despacho");
+    await page.getByRole("button", { name: "Nueva hoja de carga" }).click();
+    await page.getByLabel("Cliente").selectOption({ index: 1 });
+    const graneles = page.getByRole("group", { name: "Graneles liberados" });
+    await graneles.getByRole("listitem").filter({ hasText: new RegExp(flujo.lote) }).getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Revisar hoja" }).click();
     await trasGuardar(page, "/api/inventario/despachos/", async () => {
-      await formulario.getByRole("button", { name: "Confirmar movimiento" }).click();
+      await page.getByRole("button", { name: "Guardar hoja" }).click();
     });
 
-    await page.getByRole("button", { name: "Despachos", exact: true }).click();
-    const tarjeta = page.locator("article").filter({ hasText: numeroDespacho });
-    await expect(tarjeta).toContainText(flujo.lote, { timeout: 20_000 });
+    const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
+    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
     await trasGuardar(page, "/autorizar/", async () => {
       await tarjeta.getByRole("button", { name: "Autorizar" }).click();
     });
+    await tarjeta.getByRole("button", { name: "Ejecutar salida" }).click();
     await trasGuardar(page, "/ejecutar/", async () => {
       await tarjeta.getByRole("button", { name: "Confirmar salida" }).click();
     });
-    await expect(tarjeta).toContainText("despachado");
+    await expect(page.getByRole("region", { name: "Despachadas hoy" })).toContainText(flujo.lote);
   });
 
   expect(erroresJs).toHaveLength(0);

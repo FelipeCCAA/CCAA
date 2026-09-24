@@ -113,7 +113,6 @@ test("crema liberada sigue su ruta comercial hasta despacho directo", async ({ p
   const tkDescremada = process.env.E2E_TK_DESCREMADA_DIRECTA ?? "Tk03";
   const tkCrema = process.env.E2E_TK_CREMA_DIRECTA ?? "TkC3";
   const codigo = `CREMA-E2E-${Date.now().toString().slice(-8)}`;
-  const numeroDespacho = `DG-${codigo}`;
   let rutaDescremar = "";
   let litrosDescremada = "";
   let litrosCrema = "";
@@ -193,31 +192,27 @@ test("crema liberada sigue su ruta comercial hasta despacho directo", async ({ p
     await expect(tarjeta.getByRole("link", { name: "Iniciar Mantequilla" })).toHaveCount(0);
   });
 
-  await test.step("6 · Bodega autoriza y ejecuta el despacho físico de crema", async () => {
+  await test.step("6 · Despacho arma, autoriza y ejecuta la hoja de carga de la crema", async () => {
     await usarSesionArea(page, "e2e_despacho");
-    await irA(page, "/inventario");
-    await page.getByRole("button", { name: "Despachar producto" }).click();
-    const formulario = page.locator("form").filter({ hasText: "Despachar producto" });
-    await formulario.getByPlaceholder("Nº de despacho").fill(numeroDespacho);
-    const selectores = formulario.locator("select");
-    await selectores.nth(0).selectOption({ index: 1 });
-    await selectores.nth(1).selectOption("granel");
-    await elegirOpcion(selectores.nth(2), new RegExp(codigo));
-    const cantidad = formulario.getByPlaceholder("Cantidad a despachar");
-    await expect.poll(async () => Number(await cantidad.inputValue())).toBeGreaterThan(0);
+    await irA(page, "/despacho");
+    await page.getByRole("button", { name: "Nueva hoja de carga" }).click();
+    await page.getByLabel("Cliente").selectOption({ index: 1 });
+    const graneles = page.getByRole("group", { name: "Graneles liberados" });
+    await graneles.getByRole("listitem").filter({ hasText: new RegExp(codigo) }).getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Revisar hoja" }).click();
     await trasGuardar(page, "/api/inventario/despachos/", async () => {
-      await formulario.getByRole("button", { name: "Confirmar movimiento" }).click();
+      await page.getByRole("button", { name: "Guardar hoja" }).click();
     });
-    await page.getByRole("button", { name: "Despachos", exact: true }).click();
-    const tarjeta = page.locator("article").filter({ hasText: numeroDespacho });
-    await expect(tarjeta).toContainText(codigo, { timeout: 20_000 });
+    const tarjeta = page.locator("article").filter({ hasText: codigo });
+    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
     await trasGuardar(page, "/autorizar/", async () => {
       await tarjeta.getByRole("button", { name: "Autorizar" }).click();
     });
+    await tarjeta.getByRole("button", { name: "Ejecutar salida" }).click();
     await trasGuardar(page, "/ejecutar/", async () => {
       await tarjeta.getByRole("button", { name: "Confirmar salida" }).click();
     });
-    await expect(tarjeta).toContainText("despachado");
+    await expect(page.getByRole("region", { name: "Despachadas hoy" })).toContainText(codigo);
   });
 
   expect(erroresJs).toHaveLength(0);

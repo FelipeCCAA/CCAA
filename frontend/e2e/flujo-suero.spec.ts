@@ -137,13 +137,14 @@ test("suero externo termina como Big Bag disponible en Inventario", async ({ pag
   await test.step("6 · Inventario identifica Big Bag, lote y peso", async () => {
     await usarSesionArea(page, "e2e_inventario");
     await irA(page, "/inventario");
-    await page.getByRole("button", { name: "Productos", exact: true }).click();
-    const tarjeta = page.locator("article").filter({ hasText: bigBag });
-    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
-    await expect(tarjeta).toContainText("Big Bag");
-    await expect(tarjeta).toContainText(lote);
-    await expect(tarjeta).toContainText("700 kg");
-    await expect(tarjeta).toContainText("disponible");
+    await page.getByRole("tab", { name: "Producto terminado" }).click();
+    await page.getByLabel("Pallet, lote o producto").fill(bigBag);
+    await page.getByRole("button", { name: "Filtrar" }).click();
+    const fila = page.getByRole("row").filter({ hasText: bigBag });
+    await expect(fila).toBeVisible({ timeout: 20_000 });
+    await expect(fila).toContainText(lote);
+    await expect(fila).toContainText("700 kg");
+    await expect(fila).toContainText("disponible");
   });
 
   expect(erroresJs).toHaveLength(0);
