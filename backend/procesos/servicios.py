@@ -1142,13 +1142,18 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
                 "ejecucion__entradas__id", "id"
             )
 
+        # Se guarda la relación completa, no solo el lote vecino: con dos
+        # entradas o salidas para el mismo lote actual, cada enlace necesita
+        # su propia cantidad y ejecución, y no la última que haya recorrido
+        # este bucle.
         por_actual = {actual_id: [] for actual_id in ids_actuales}
         for relacion in relaciones:
-            por_actual[relacion.actual_relacion_id].append(relacion.lote)
+            por_actual[relacion.actual_relacion_id].append(relacion)
 
         siguiente = {}
         for actual_id in ids_actuales:
-            for relacionado in por_actual[actual_id]:
+            for relacion in por_actual[actual_id]:
+                relacionado = relacion.lote
                 origen, destino = (
                     (relacionado.id, actual_id)
                     if direccion == "atras"

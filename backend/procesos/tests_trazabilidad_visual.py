@@ -114,3 +114,72 @@ class TrazabilidadVisualTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("Tipo de referencia inválido", respuesta.data["error"])
+
+    def test_cada_enlace_lleva_su_propia_cantidad_y_ejecucion(self):
+        # Un lote que recibe precondensado de dos ejecuciones distintas: cada
+        # enlace tiene que cuantificar su propia entrada/salida y nombrar su
+        # propia corrida, no la última que el primer bucle haya recorrido.
+        mandante = Mandante.objects.create(nombre="Dos ejecuciones")
+        producto = Producto.objects.create(
+            nombre="Producto compartido", familia=Producto.Familia.POLVO,
+            mandante=mandante,
+        )
+        origen_a = Lote.objects.create(
+            codigo_lote="DOS-ORIGEN-A", producto=producto, fecha=date(2026, 9, 20),
+            kg_producidos=Decimal("100"),
+        )
+        origen_b = Lote.objects.create(
+            codigo_lote="DOS-ORIGEN-B", producto=producto, fecha=date(2026, 9, 20),
+            kg_producidos=Decimal("50"),
+        )
+        destino = Lote.objects.create(
+            codigo_lote="DOS-DESTINO", producto=producto, fecha=date(2026, 9, 20),
+            kg_producidos=Decimal("100"),
+        )
+        proceso = Proceso.objects.create(codigo="dos-ej", nombre="Dos ejecuciones")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="transformar-2", nombre="Transformación 2",
+            tipo=EtapaProceso.Tipo.OTRO, orden=1,
+        )
+        ejecucion_1 = EjecucionProceso.objects.create(
+            codigo="EJ-DOS-1", etapa=etapa, responsable=self.usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion_1, lote=origen_a,
+            cantidad=Decimal("100"), unidad="kg",
+        )
+        SalidaProceso.objects.create(
+            ejecucion=ejecucion_1, lote=destino,
+            cantidad=Decimal("60"), unidad="kg",
+        )
+        ejecucion_2 = EjecucionProceso.objects.create(
+            codigo="EJ-DOS-2", etapa=etapa, responsable=self.usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion_2, lote=origen_b,
+            cantidad=Decimal("50"), unidad="kg",
+        )
+        SalidaProceso.objects.create(
+            ejecucion=ejecucion_2, lote=destino,
+            cantidad=Decimal("40"), unidad="kg",
+        )
+
+        respuesta = self.cliente.get(
+            "/api/procesos/trazabilidad/lotes/DOS-DESTINO/"
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        enlaces = {
+            enlace["origen"]: enlace for enlace in respuesta.data["enlaces"]
+        }
+        self.assertEqual(len(enlaces), 2)
+
+        enlace_a = enlaces[origen_a.pk]
+        self.assertEqual(enlace_a["ejecucion"]["codigo"], "EJ-DOS-1")
+        self.assertEqual(enlace_a["entrada"]["cantidad"], Decimal("100.000"))
+        self.assertEqual(enlace_a["salida"]["cantidad"], Decimal("60.000"))
+
+        enlace_b = enlaces[origen_b.pk]
+        self.assertEqual(enlace_b["ejecucion"]["codigo"], "EJ-DOS-2")
+        self.assertEqual(enlace_b["entrada"]["cantidad"], Decimal("50.000"))
+        self.assertEqual(enlace_b["salida"]["cantidad"], Decimal("40.000"))
