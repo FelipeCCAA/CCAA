@@ -4,10 +4,11 @@ import BuscadorCodigo from "../../components/operacion/BuscadorCodigo";
 import CampoEtiquetado from "../../components/operacion/CampoEtiquetado";
 import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
 import { claseBoton, claseCampo, mensajeDe } from "../../components/seccion/utilidades";
-import { buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, totalesCarga } from "../../services/despacho-reglas";
+import { buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, mensajePalletNoCargable, totalesCarga } from "../../services/despacho-reglas";
 import { cantidad } from "../../services/formato";
 import {
-  crearDespacho, type ClienteDespacho, type ExistenciaProductoTerminado, type GranelDisponible,
+  buscarProductoTerminado, crearDespacho,
+  type ClienteDespacho, type ExistenciaProductoTerminado, type GranelDisponible,
 } from "../../services/inventario.service";
 
 /*
@@ -49,10 +50,22 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
   const alternar = (pallet: number) =>
     setElegidos((actual) => (actual.includes(pallet) ? actual.filter((id) => id !== pallet) : [...actual, pallet]));
 
-  const escanear = (codigo: string) => {
+  const escanear = async (codigo: string) => {
     const encontrado = buscarPalletPorCodigo(disponibles, codigo);
     if (!encontrado) {
-      setAviso(`El pallet ${codigo} no está disponible para cargar: no existe, no está liberado en una ubicación disponible o ya está en otra hoja.`);
+      // No está entre los cargables: se busca en bodega para decir por qué
+      // en vez del aviso genérico de siempre. Esa búsqueda exige el área de
+      // Bodega (`EscribeBodega`), así que quien despacha sin pertenecer a
+      // Bodega la recibe vacía o rechazada — y el aviso cae solo al genérico,
+      // sin que la pantalla se rompa por eso.
+      let hallado: ExistenciaProductoTerminado | null;
+      try {
+        const resultado = await buscarProductoTerminado({ q: codigo });
+        hallado = buscarPalletPorCodigo(resultado.results, codigo);
+      } catch {
+        hallado = null;
+      }
+      setAviso(mensajePalletNoCargable(codigo, hallado));
       return;
     }
     setAviso(elegidos.includes(encontrado.pallet) ? `${encontrado.pallet_codigo} ya estaba en la hoja.` : `${encontrado.pallet_codigo} agregado.`);
@@ -143,7 +156,7 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
             </CampoEtiquetado>
           </div>
 
-          <BuscadorCodigo etiqueta="Agregar pallet por código" onBuscar={escanear} />
+          <BuscadorCodigo etiqueta="Agregar pallet por código" onBuscar={(codigo) => void escanear(codigo)} comoFormulario={false} />
           {aviso && <p role="status" className="text-sm text-slate-700">{aviso}</p>}
 
           <fieldset className="rounded-xl border border-slate-200">
