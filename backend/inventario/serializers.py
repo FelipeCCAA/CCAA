@@ -22,6 +22,7 @@ from .models import (
     MovimientoProductoTerminado,
     MovimientoRework, UnidadRework,
 )
+from .servicios import causa_pallet_no_cargable, filtro_pallets_cargables
 
 
 class InsumoSerializer(serializers.ModelSerializer):
@@ -917,26 +918,54 @@ class DespachoSerializer(serializers.ModelSerializer):
     @staticmethod
     def _pallets_en_hoja_activa(pallets):
         """
-        Mensajes de error por cada pallet que ya está en una hoja activa.
+        Filas `DetalleDespacho` de los pallets que ya están en una hoja activa.
 
-        Se llama dos veces: en `validate()`, para el rechazo temprano y amable
-        antes de tocar la base; y de nuevo en `create()`, ya con los pallets
-        bloqueados por `select_for_update`, para cerrar la ventana entre ese
-        primer chequeo y la escritura. Sin la segunda pasada, dos `POST`
-        simultáneos por el mismo pallet pasan `is_valid()` a la vez —ninguno ve
-        todavía el `DetalleDespacho` del otro— y los dos terminan en
-        `bulk_create`: no hay restricción de base que lo impida, porque la
+        Se consulta dos veces: en `validate()`, para el rechazo temprano y
+        amable antes de tocar la base; y de nuevo en `create()`, ya con los
+        pallets bloqueados por `select_for_update`, para cerrar la ventana
+        entre ese primer chequeo y la escritura. Sin la segunda pasada, dos
+        `POST` simultáneos por el mismo pallet pasan `is_valid()` a la vez
+        —ninguno ve todavía el `DetalleDespacho` del otro— y los dos terminan
+        en `bulk_create`: no hay restricción de base que lo impida, porque la
         unicidad de `DetalleDespacho` es `(despacho, pallet)`, no `pallet` solo.
         """
-        ocupados = DetalleDespacho.objects.filter(
-            pallet__in=pallets,
-            despacho__estado__in=[Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO],
-        ).select_related("pallet", "despacho").order_by("pallet__codigo")
-        return [
+        return list(
+            DetalleDespacho.objects.filter(
+                pallet__in=pallets,
+                despacho__estado__in=[Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO],
+            ).select_related("pallet", "despacho").order_by("pallet__codigo")
+        )
+
+    @classmethod
+    def _errores_pallets(cls, pallets):
+        """
+        Un motivo por pallet que no puede entrar a la hoja: el que ya está en
+        otra hoja activa se nombra con su número; el resto se valida contra
+        `filtro_pallets_cargables` —el mismo filtro de `pallets-cargables/`—,
+        para que la hoja rechace al crearla lo mismo que rechazaría al
+        autorizar o ejecutar, en vez de dejar que el camión se cargue primero.
+        Un pallet nunca lleva los dos motivos: el de «otra hoja» ya basta.
+        """
+        ocupados = cls._pallets_en_hoja_activa(pallets)
+        mensajes = [
             f"El pallet {d.pallet.codigo} ya está en el despacho {d.despacho.numero} "
             f"({d.despacho.get_estado_display().lower()})."
             for d in ocupados
         ]
+        ids_en_hoja = {d.pallet_id for d in ocupados}
+        restantes = [p for p in pallets if p.pk not in ids_en_hoja]
+        if restantes:
+            cargables_ids = set(
+                filtro_pallets_cargables(
+                    ExistenciaProductoTerminado.objects.filter(pallet__in=restantes)
+                ).values_list("pallet_id", flat=True)
+            )
+            mensajes.extend(
+                f"El pallet {pallet.codigo} no se puede cargar: {causa_pallet_no_cargable(pallet)}."
+                for pallet in restantes
+                if pallet.pk not in cargables_ids
+            )
+        return mensajes
 
     def validate(self, attrs):
         pallets = attrs.get("pallets_solicitados", [])
@@ -951,10 +980,11 @@ class DespachoSerializer(serializers.ModelSerializer):
                 "graneles": "Cada salida a granel debe identificarse una sola vez."
             })
         if pallets:
-            errores = self._pallets_en_hoja_activa(pallets)
+            errores = self._errores_pallets(pallets)
             if errores:
                 # Sin esto el segundo despacho recién fallaba al ejecutarse, con
-                # el camión ya cargado.
+                # el camión ya cargado — y lo mismo si el pallet nunca estuvo
+                # cargable: antes el rechazo llegaba al autorizar o ejecutar.
                 raise serializers.ValidationError({"pallet_ids": errores})
         return attrs
 
@@ -976,7 +1006,7 @@ class DespachoSerializer(serializers.ModelSerializer):
                 .filter(pk__in=[p.pk for p in pallets])
                 .order_by("pk")
             )
-            errores = self._pallets_en_hoja_activa(pallets)
+            errores = self._errores_pallets(pallets)
             if errores:
                 raise serializers.ValidationError({"pallet_ids": errores})
         despacho = Despacho(**validated_data)

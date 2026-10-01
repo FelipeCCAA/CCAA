@@ -57,7 +57,7 @@ from .servicios import (
     ejecutar_mrp_semana, encolar_mrp_semana, enviar_orden_compra, insumos_requeridos, recibir_detalle_compra, registrar_devolucion,
     ingresar_material_manual, registrar_entrada, registrar_salida, reservar_solicitud_material, trasladar_existencia,
     ingresar_pallet, transferir_pallet, autorizar_despacho, ejecutar_despacho,
-    cancelar_despacho,
+    cancelar_despacho, filtro_pallets_cargables,
     habilitar_rework, transferir_rework,
 )
 
@@ -547,25 +547,9 @@ def estados_inventario_pallet():
     ]
 
 
-def _filtro_pallets_cargables(consulta):
-    """
-    Lo que se puede subir a una hoja de carga: liberado, en una ubicación
-    disponible y sin otra hoja activa.
-
-    Una sola función para las dos puertas que lo sirven —
-    `producto-terminado/?cargable=1` (área Bodega, `EscribeBodega`) y
-    `despachos/pallets-cargables/` (permiso de despacho, `PuedeCrearDespacho`)—
-    para que un pallet que una acepta la otra no lo rechace.
-    """
-    from produccion.models import PalletProducto
-    return consulta.filter(
-        ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
-        pallet__estado__in=[PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO],
-    ).exclude(
-        pallet__detalles_despacho__despacho__estado__in=[
-            Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO,
-        ]
-    )
+# `filtro_pallets_cargables` vive en `.servicios`: la usan estas vistas y
+# también `DespachoSerializer` al validar la hoja, y un serializer no debe
+# importar de `views`.
 
 
 class ExistenciaProductoTerminadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):
@@ -593,7 +577,7 @@ class ExistenciaProductoTerminadoViewSet(FiltraConsultaMixin, QuerysetTenantMixi
     def get_queryset(self):
         consulta = super().get_queryset()
         if self.request.query_params.get("cargable") == "1":
-            consulta = _filtro_pallets_cargables(consulta)
+            consulta = filtro_pallets_cargables(consulta)
         return consulta
 
     @action(detail=False, methods=["post"], url_path="ingresar")
@@ -753,7 +737,7 @@ class DespachoViewSet(FiltraConsultaMixin, SucursalTenantViewSetMixin, viewsets.
         cubriendo un turno, por ejemplo— veía la pantalla vacía por un 403
         que la capacidad ya le había prometido resolver.
         """
-        consulta = _filtro_pallets_cargables(
+        consulta = filtro_pallets_cargables(
             filtrar_por_scope(
                 ExistenciaProductoTerminado.objects.select_related(
                     "pallet__envase__lote__producto", "pallet__envase__equipo",

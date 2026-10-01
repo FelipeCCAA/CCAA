@@ -12,10 +12,11 @@ from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProce
 from usuarios.models import PerfilUsuario, Rol
 from usuarios.tenancy import unica_sucursal_activa
 
-from .models import Despacho, DetalleDespacho
+from .models import Despacho, DetalleDespacho, ExistenciaProductoTerminado, Ubicacion
 from .pruebas_base import EscenarioProductoTerminado
 from .serializers import DespachoSerializer
 from .servicios import autorizar_despacho, ejecutar_despacho, ingresar_pallet
+from produccion.models import PalletProducto
 
 
 class HojaDeCargaTests(EscenarioProductoTerminado):
@@ -80,6 +81,56 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         self.assertEqual(
             DetalleDespacho.objects.filter(pallet=self.pallet).count(), 1,
         )
+
+    # ---- el borrador exige pallets cargables (liberados, en ubicación disponible)
+
+    def test_un_pallet_en_cuarentena_se_rechaza_nombrando_la_causa(self):
+        cuarentena = Ubicacion.objects.create(
+            bodega=self.ubicacion.bodega, codigo="CUAR-1", tipo=Ubicacion.Tipo.CUARENTENA,
+        )
+        pendiente = self.crear_pallet("PAL-CUAR", estado=PalletProducto.Estado.PENDIENTE_CALIDAD)
+        ExistenciaProductoTerminado.objects.create(pallet=pendiente, ubicacion=cuarentena)
+
+        respuesta = self.crear([pendiente.pk])
+
+        self.assertEqual(respuesta.status_code, 400)
+        texto = str(respuesta.data)
+        self.assertIn("PAL-CUAR", texto)
+        self.assertIn("no está liberado", texto)
+
+    def test_un_pallet_liberado_en_ubicacion_no_disponible_se_rechaza(self):
+        bloqueada = Ubicacion.objects.create(
+            bodega=self.ubicacion.bodega, codigo="RECH-1", tipo=Ubicacion.Tipo.RECHAZADO,
+        )
+        liberado = self.crear_pallet("PAL-UBIC", estado=PalletProducto.Estado.LIBERADO)
+        ExistenciaProductoTerminado.objects.create(pallet=liberado, ubicacion=bloqueada)
+
+        respuesta = self.crear([liberado.pk])
+
+        self.assertEqual(respuesta.status_code, 400)
+        texto = str(respuesta.data)
+        self.assertIn("PAL-UBIC", texto)
+        self.assertIn("ubicación no disponible", texto)
+
+    def test_un_pallet_nunca_ingresado_a_bodega_se_rechaza(self):
+        # Liberado por Calidad pero sin existencia: nunca pasó por
+        # `ingresar_pallet`, así que no tiene una ubicación de bodega.
+        suelto = self.crear_pallet("PAL-SUELTO")
+
+        respuesta = self.crear([suelto.pk])
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("PAL-SUELTO", str(respuesta.data))
+
+    def test_un_pallet_en_otra_hoja_no_repite_un_motivo_generico(self):
+        primera = self.crear()
+        segunda = self.crear()
+        self.assertEqual(segunda.status_code, 400)
+        texto = str(segunda.data)
+        self.assertIn(primera.data["numero"], texto)
+        # Un solo motivo por pallet: el que ya nombra la hoja no debe ir
+        # acompañado del genérico de "no cargable".
+        self.assertNotIn("no se puede cargar", texto)
 
     def test_tras_cancelar_el_pallet_vuelve_a_poder_cargarse(self):
         primera = self.crear()

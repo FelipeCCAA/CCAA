@@ -133,6 +133,48 @@ def transferir_pallet(existencia, destino, usuario, *, motivo="", operacion=None
     return existencia
 
 
+def filtro_pallets_cargables(consulta):
+    """
+    Lo que se puede subir a una hoja de carga: liberado, en una ubicación
+    disponible y sin otra hoja activa.
+
+    Una sola función para las puertas que lo usan —
+    `producto-terminado/?cargable=1` (área Bodega, `EscribeBodega`),
+    `despachos/pallets-cargables/` (permiso de despacho, `PuedeCrearDespacho`)
+    y la validación de `DespachoSerializer` al crear la hoja— para que un
+    pallet que una acepta las otras no lo rechacen.
+    """
+    from produccion.models import PalletProducto
+    return consulta.filter(
+        ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+        pallet__estado__in=[PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO],
+    ).exclude(
+        pallet__detalles_despacho__despacho__estado__in=[
+            Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO,
+        ]
+    )
+
+
+def causa_pallet_no_cargable(pallet):
+    """
+    Por qué un pallet no pasa `filtro_pallets_cargables`, para nombrarla en
+    vez de un rechazo genérico.
+
+    No distingue «ya está en otra hoja»: ese motivo lo nombra
+    `DespachoSerializer`, que es quien ya sabe cuál hoja lo tiene; preguntar
+    aquí llegaría a la misma conclusión sin el número que la hace útil.
+    """
+    from produccion.models import PalletProducto
+    if pallet.estado not in (PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO):
+        return f"no está liberado (estado: {pallet.get_estado_display().lower()})"
+    existencia = getattr(pallet, "existencia_producto", None)
+    if existencia is None or not existencia.activo:
+        return "no tiene una ubicación vigente en bodega"
+    if existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+        return f"está en una ubicación no disponible ({existencia.ubicacion.codigo})"
+    return "no está disponible para cargar"
+
+
 @transaction.atomic
 def autorizar_despacho(despacho, usuario):
     despacho = Despacho.objects.select_for_update().get(pk=despacho.pk)
