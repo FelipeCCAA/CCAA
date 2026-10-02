@@ -967,6 +967,35 @@ class DespachoSerializer(serializers.ModelSerializer):
             )
         return mensajes
 
+    @classmethod
+    def motivo_no_cargable(cls, pallet):
+        """
+        Fragmento de motivo por el que un único `pallet` no entra a una hoja
+        —sin el prefijo «El pallet X»—, para que `causa-no-cargable/` lo
+        envuelva en su propia frase. `None` si el pallet sí se puede cargar.
+
+        Construido sobre las mismas piezas que `_errores_pallets`
+        (`_pallets_en_hoja_activa`, `filtro_pallets_cargables` y
+        `causa_pallet_no_cargable`): un diagnóstico que usara su propio
+        criterio podría decir «cargable» donde el `POST` real diría que no.
+        """
+        ocupado = cls._pallets_en_hoja_activa([pallet])
+        if ocupado:
+            detalle = ocupado[0]
+            return (
+                f"ya está en el despacho {detalle.despacho.numero} "
+                f"({detalle.despacho.get_estado_display().lower()})"
+            )
+        cargable = filtro_pallets_cargables(
+            ExistenciaProductoTerminado.objects.filter(pallet=pallet)
+        ).exists()
+        if cargable:
+            return None
+        # Sin el prefijo «no se puede cargar:» que ya trae `_errores_pallets`
+        # en su propia frase: quien llama a `motivo_no_cargable` arma la suya,
+        # y repetirlo aquí lo diría dos veces.
+        return causa_pallet_no_cargable(pallet)
+
     def validate(self, attrs):
         pallets = attrs.get("pallets_solicitados", [])
         graneles = attrs.get("graneles", [])

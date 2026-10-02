@@ -737,18 +737,54 @@ class DespachoViewSet(FiltraConsultaMixin, SucursalTenantViewSetMixin, viewsets.
         cubriendo un turno, por ejemplo— veía la pantalla vacía por un 403
         que la capacidad ya le había prometido resolver.
         """
+        # `activo=True` ya lo exige `filtro_pallets_cargables`: no hace falta
+        # repetirlo aquí.
         consulta = filtro_pallets_cargables(
             filtrar_por_scope(
                 ExistenciaProductoTerminado.objects.select_related(
                     "pallet__envase__lote__producto", "pallet__envase__equipo",
                     "ubicacion__bodega",
-                ).filter(activo=True),
+                ),
                 request.user,
                 campo_sucursal="ubicacion__bodega__sucursal_id",
                 campo_empresa="ubicacion__bodega__sucursal__empresa_id",
             )
         )
         return Response(ExistenciaProductoTerminadoSerializer(consulta, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path="causa-no-cargable")
+    def causa_no_cargable(self, request):
+        """
+        Por qué un pallet escaneado no aparece entre los cargables.
+
+        `/despacho` buscaba el código con `buscarProductoTerminado` —acotado
+        a `EscribeBodega`— y deducía la causa en el cliente a partir de un
+        `catch` genérico: un 403 (el mismo caso que motivó
+        `pallets-cargables/`), un corte de red o un pallet sin existencia
+        activa se veían igual, «no existe en bodega», que puede ser falso.
+
+        Responde bajo el mismo permiso que `pallets-cargables/`
+        (`PuedeCrearDespacho`) y reutiliza
+        `DespachoSerializer.motivo_no_cargable` —las mismas consultas que
+        deciden si la hoja lo rechaza al crearla— para que el diagnóstico
+        nunca diga algo distinto de lo que el `POST` terminaría respondiendo.
+        """
+        from produccion.models import PalletProducto
+        codigo = (request.query_params.get("codigo") or "").strip()
+        if not codigo:
+            return Response({"detail": "Falta el código a buscar."}, status=status.HTTP_400_BAD_REQUEST)
+        pallet = filtrar_por_scope(
+            PalletProducto.objects.filter(codigo__iexact=codigo),
+            request.user,
+            campo_sucursal="envase__lote__sucursal_id",
+            campo_empresa="envase__lote__sucursal__empresa_id",
+        ).first()
+        if pallet is None:
+            return Response({"codigo": codigo, "cargable": False, "motivo": "no existe"})
+        motivo = DespachoSerializer.motivo_no_cargable(pallet)
+        if motivo is not None:
+            return Response({"codigo": pallet.codigo, "cargable": False, "motivo": motivo})
+        return Response({"codigo": pallet.codigo, "cargable": True, "motivo": ""})
 
     @action(detail=False, methods=["get"], url_path="granel-disponible")
     def granel_disponible(self, request):

@@ -42,38 +42,6 @@ export function buscarPalletPorCodigo<T extends { pallet_codigo: string }>(palle
 }
 
 /*
-  Por qué un código escaneado no está entre los pallets cargables de la hoja.
-
-  «No existe, no está liberado o ya está en otra hoja» no le dice al operador
-  qué hacer distinto. `encontrado` es lo que devolvió una búsqueda aparte en
-  bodega (`buscarProductoTerminado`, que no exige estar entre los cargables);
-  `null` significa que ni siquiera eso lo encontró. El estado y la ubicación
-  alcanzan para nombrar la causa; «ya está en otra hoja» no se puede nombrar
-  sin un dato que el frontend no tiene, así que queda como aviso genérico.
-*/
-export function mensajePalletNoCargable(
-  codigo: string,
-  encontrado: { estado_inventario: string; ubicacion_tipo: string } | null,
-): string {
-  if (!encontrado) {
-    return `El pallet ${codigo} no existe en bodega.`;
-  }
-  const porEstado: Record<string, string> = {
-    cuarentena: `El pallet ${codigo} está en cuarentena y no se puede cargar.`,
-    bloqueado: `El pallet ${codigo} está bloqueado y no se puede cargar.`,
-    despachado: `El pallet ${codigo} ya fue despachado.`,
-    anulado: `El pallet ${codigo} fue anulado.`,
-  };
-  if (encontrado.estado_inventario !== "disponible") {
-    return porEstado[encontrado.estado_inventario] ?? `El pallet ${codigo} no se puede cargar.`;
-  }
-  if (encontrado.ubicacion_tipo !== "disponible") {
-    return `El pallet ${codigo} está en una ubicación no disponible y no se puede cargar.`;
-  }
-  return `El pallet ${codigo} no está disponible para cargar (puede estar en otra hoja activa).`;
-}
-
-/*
   Cómo se identifica un granel en la hoja de carga.
 
   El lote es lo trazable — es lo que Calidad liberó y lo que se audita después

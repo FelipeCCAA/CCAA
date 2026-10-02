@@ -112,6 +112,25 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         self.assertIn("PAL-UBIC", texto)
         self.assertIn("ubicación no disponible", texto)
 
+    def test_una_existencia_inactiva_en_ubicacion_disponible_se_rechaza(self):
+        """
+        `filtro_pallets_cargables` exige `activo=True` y el serializer lo
+        reutiliza tal cual: antes esa condición solo la aplicaban los
+        endpoints de lectura (`producto-terminado/?cargable=1` y
+        `pallets-cargables/`), y la consulta propia de `DespachoSerializer`
+        —sin ese filtro— dejaba pasar un pallet cuya existencia ya no es la
+        vigente, aunque la ubicación siga disponible.
+        """
+        liberado = self.crear_pallet("PAL-INACTIVO", estado=PalletProducto.Estado.LIBERADO)
+        ExistenciaProductoTerminado.objects.create(
+            pallet=liberado, ubicacion=self.ubicacion, activo=False,
+        )
+
+        respuesta = self.crear([liberado.pk])
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("PAL-INACTIVO", str(respuesta.data))
+
     def test_un_pallet_nunca_ingresado_a_bodega_se_rechaza(self):
         # Liberado por Calidad pero sin existencia: nunca pasó por
         # `ingresar_pallet`, así que no tiene una ubicación de bodega.
@@ -281,6 +300,78 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         ids = {fila["id"] for fila in respuesta.data}
         self.assertEqual(ids, ids_referencia)
         self.assertIn(self.pallet.pk, {fila["pallet"] for fila in respuesta.data})
+
+    # ---- causa-no-cargable: diagnóstico de un pallet escaneado
+
+    def _causa(self, codigo):
+        return self.api.get(f"/api/inventario/despachos/causa-no-cargable/?codigo={codigo}")
+
+    def test_causa_no_cargable_exige_el_codigo(self):
+        self.assertEqual(self._causa("").status_code, 400)
+
+    def test_causa_no_cargable_dice_no_existe_si_el_codigo_no_hay(self):
+        respuesta = self._causa("PAL-FANTASMA")
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data, {
+            "codigo": "PAL-FANTASMA", "cargable": False, "motivo": "no existe",
+        })
+
+    def test_causa_no_cargable_no_distingue_mayusculas(self):
+        respuesta = self._causa(self.pallet.codigo.lower())
+
+        self.assertEqual(respuesta.data["cargable"], True)
+        self.assertEqual(respuesta.data["codigo"], self.pallet.codigo)
+
+    def test_causa_no_cargable_nombra_la_hoja_que_ya_lo_tiene(self):
+        hoja = self.crear()
+
+        respuesta = self._causa(self.pallet.codigo)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertFalse(respuesta.data["cargable"])
+        self.assertIn(hoja.data["numero"], respuesta.data["motivo"])
+
+    def test_causa_no_cargable_usa_la_causa_del_dominio(self):
+        pendiente = self.crear_pallet("PAL-DIAG-CUAR", estado=PalletProducto.Estado.PENDIENTE_CALIDAD)
+        cuarentena = Ubicacion.objects.create(
+            bodega=self.ubicacion.bodega, codigo="CUAR-DIAG", tipo=Ubicacion.Tipo.CUARENTENA,
+        )
+        ExistenciaProductoTerminado.objects.create(pallet=pendiente, ubicacion=cuarentena)
+
+        respuesta = self._causa(pendiente.codigo)
+
+        self.assertFalse(respuesta.data["cargable"])
+        self.assertIn("no está liberado", respuesta.data["motivo"])
+
+    def test_causa_no_cargable_responde_cargable_para_uno_disponible(self):
+        respuesta = self._causa(self.pallet.codigo)
+
+        self.assertEqual(respuesta.data, {
+            "codigo": self.pallet.codigo, "cargable": True, "motivo": "",
+        })
+
+    def test_causa_no_cargable_no_exige_el_area_de_bodega(self):
+        """
+        El mismo caso que motivó `pallets-cargables/`: quien tiene el permiso
+        de despacho sin pertenecer a Bodega no puede quedar bloqueado por un
+        403 al diagnosticar un pallet que escaneó.
+        """
+        fuera_de_bodega = User.objects.create_user("mantenimiento-diagnostica")
+        PerfilUsuario.objects.create(
+            usuario=fuera_de_bodega, empresa=self.empresa, sucursal=self.planta,
+            rol=Rol.OPERARIO, area=PerfilUsuario.Area.MANTENIMIENTO,
+        )
+        self.dar_permiso("despacho_crear", fuera_de_bodega)
+        api_despacho = APIClient()
+        api_despacho.force_authenticate(fuera_de_bodega)
+
+        respuesta = api_despacho.get(
+            f"/api/inventario/despachos/causa-no-cargable/?codigo={self.pallet.codigo}"
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertTrue(respuesta.data["cargable"])
 
     # ---- historial de despachos (FiltraConsultaMixin)
 

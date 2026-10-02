@@ -135,17 +135,21 @@ def transferir_pallet(existencia, destino, usuario, *, motivo="", operacion=None
 
 def filtro_pallets_cargables(consulta):
     """
-    Lo que se puede subir a una hoja de carga: liberado, en una ubicación
-    disponible y sin otra hoja activa.
+    Lo que se puede subir a una hoja de carga: con existencia activa,
+    liberado, en una ubicación disponible y sin otra hoja activa.
 
     Una sola función para las puertas que lo usan —
     `producto-terminado/?cargable=1` (área Bodega, `EscribeBodega`),
     `despachos/pallets-cargables/` (permiso de despacho, `PuedeCrearDespacho`)
     y la validación de `DespachoSerializer` al crear la hoja— para que un
-    pallet que una acepta las otras no lo rechacen.
+    pallet que una acepta las otras no lo rechacen. `activo=True` vive acá y no
+    solo en los endpoints: el serializer construye su propia consulta sin ese
+    filtro, y una existencia inactiva (un pallet ya despachado o anulado) en
+    una ubicación que sigue marcada disponible pasaba la validación igual.
     """
     from produccion.models import PalletProducto
     return consulta.filter(
+        activo=True,
         ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
         pallet__estado__in=[PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO],
     ).exclude(

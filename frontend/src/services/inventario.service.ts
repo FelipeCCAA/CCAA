@@ -517,6 +517,28 @@ export async function obtenerPalletsCargables(): Promise<ExistenciaProductoTermi
   const { data } = await api.get<ExistenciaProductoTerminado[]>("inventario/despachos/pallets-cargables/");
   return data;
 }
+
+/*
+  Por qué un código escaneado no apareció entre `obtenerPalletsCargables()`.
+
+  Va por el mismo permiso de despacho (`PuedeCrearDespacho`) y la misma regla
+  que decide si la hoja lo rechazaría al crearla —`filtro_pallets_cargables`,
+  por `DespachoSerializer._errores_pallets`—, para no deducir en el cliente una
+  causa que el backend puede desmentir: antes se buscaba con
+  `buscarProductoTerminado`, que exige el área de Bodega (`EscribeBodega`) y
+  confundía un 403 con «el pallet no existe».
+*/
+export interface CausaPalletNoCargable {
+  codigo: string;
+  cargable: boolean;
+  motivo: string;
+}
+export async function obtenerCausaNoCargable(codigo: string): Promise<CausaPalletNoCargable> {
+  const { data } = await api.get<CausaPalletNoCargable>("inventario/despachos/causa-no-cargable/", {
+    params: { codigo },
+  });
+  return data;
+}
 /* Borradores, autorizadas y despachadas hoy: lo que el puesto de Despacho mira. */
 export const obtenerHojasVigentes = () => lista<Despacho>("inventario/despachos/?vigentes=1");
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { agruparHojas, buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, mensajePalletNoCargable, totalesCarga } from "../src/services/despacho-reglas.ts";
+import { agruparHojas, buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, totalesCarga } from "../src/services/despacho-reglas.ts";
 
 test("las hojas se agrupan por lo que falta hacer, y de las despachadas solo las de hoy", () => {
   const hojas = [
@@ -72,42 +72,3 @@ test("la cantidad de granel se lee en formato chileno", () => {
   assert.equal(leerCantidadChilena("-1"), null);
 });
 
-test("un código que no aparece ni entre los cargables ni en bodega: no existe", () => {
-  assert.equal(
-    mensajePalletNoCargable("PAL-999", null),
-    "El pallet PAL-999 no existe en bodega.",
-  );
-});
-
-test("un pallet en cuarentena o bloqueado lo dice, en vez del mensaje genérico", () => {
-  assert.equal(
-    mensajePalletNoCargable("PAL-001", { estado_inventario: "cuarentena", ubicacion_tipo: "cuarentena" }),
-    "El pallet PAL-001 está en cuarentena y no se puede cargar.",
-  );
-  assert.equal(
-    mensajePalletNoCargable("PAL-002", { estado_inventario: "bloqueado", ubicacion_tipo: "disponible" }),
-    "El pallet PAL-002 está bloqueado y no se puede cargar.",
-  );
-  assert.equal(
-    mensajePalletNoCargable("PAL-003", { estado_inventario: "despachado", ubicacion_tipo: "disponible" }),
-    "El pallet PAL-003 ya fue despachado.",
-  );
-  assert.equal(
-    mensajePalletNoCargable("PAL-004", { estado_inventario: "anulado", ubicacion_tipo: "disponible" }),
-    "El pallet PAL-004 fue anulado.",
-  );
-});
-
-test("un pallet liberado pero en una ubicación no disponible lo dice", () => {
-  assert.equal(
-    mensajePalletNoCargable("PAL-005", { estado_inventario: "disponible", ubicacion_tipo: "produccion" }),
-    "El pallet PAL-005 está en una ubicación no disponible y no se puede cargar.",
-  );
-});
-
-test("un pallet liberado, en ubicación disponible y aun así ausente: sin otro dato, se asume otra hoja", () => {
-  assert.equal(
-    mensajePalletNoCargable("PAL-006", { estado_inventario: "disponible", ubicacion_tipo: "disponible" }),
-    "El pallet PAL-006 no está disponible para cargar (puede estar en otra hoja activa).",
-  );
-});

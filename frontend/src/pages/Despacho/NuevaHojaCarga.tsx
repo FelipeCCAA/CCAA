@@ -4,10 +4,10 @@ import BuscadorCodigo from "../../components/operacion/BuscadorCodigo";
 import CampoEtiquetado from "../../components/operacion/CampoEtiquetado";
 import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
 import { claseBoton, claseCampo, mensajeDe } from "../../components/seccion/utilidades";
-import { buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, mensajePalletNoCargable, totalesCarga } from "../../services/despacho-reglas";
+import { buscarPalletPorCodigo, identificarGranel, leerCantidadChilena, totalesCarga } from "../../services/despacho-reglas";
 import { cantidad } from "../../services/formato";
 import {
-  buscarProductoTerminado, crearDespacho,
+  crearDespacho, obtenerCausaNoCargable,
   type ClienteDespacho, type ExistenciaProductoTerminado, type GranelDisponible,
 } from "../../services/inventario.service";
 
@@ -53,19 +53,21 @@ export default function NuevaHojaCarga({ clientes, disponibles, graneles, onCrea
   const escanear = async (codigo: string) => {
     const encontrado = buscarPalletPorCodigo(disponibles, codigo);
     if (!encontrado) {
-      // No está entre los cargables: se busca en bodega para decir por qué
-      // en vez del aviso genérico de siempre. Esa búsqueda exige el área de
-      // Bodega (`EscribeBodega`), así que quien despacha sin pertenecer a
-      // Bodega la recibe vacía o rechazada — y el aviso cae solo al genérico,
-      // sin que la pantalla se rompa por eso.
-      let hallado: ExistenciaProductoTerminado | null;
+      // No está entre los cargables: se le pregunta al backend por qué, con
+      // la misma regla que lo rechazaría al crear la hoja
+      // (`filtro_pallets_cargables`, vía `causa-no-cargable/`) en vez de
+      // deducirlo en el cliente. Antes se reusaba `buscarProductoTerminado`,
+      // que exige el área de Bodega (`EscribeBodega`): un 403 por no
+      // pertenecer a Bodega —el mismo caso que motivó `pallets-cargables/`—
+      // se confundía con «el pallet no existe», que puede ser falso.
       try {
-        const resultado = await buscarProductoTerminado({ q: codigo });
-        hallado = buscarPalletPorCodigo(resultado.results, codigo);
+        const diagnostico = await obtenerCausaNoCargable(codigo);
+        setAviso(diagnostico.motivo
+          ? `El pallet ${diagnostico.codigo} no se puede cargar: ${diagnostico.motivo}.`
+          : `El pallet ${codigo} no está disponible para cargar.`);
       } catch {
-        hallado = null;
+        setAviso(`El pallet ${codigo} no está disponible para cargar.`);
       }
-      setAviso(mensajePalletNoCargable(codigo, hallado));
       return;
     }
     setAviso(elegidos.includes(encontrado.pallet) ? `${encontrado.pallet_codigo} ya estaba en la hoja.` : `${encontrado.pallet_codigo} agregado.`);
