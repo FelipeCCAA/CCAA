@@ -10,6 +10,7 @@ import {
   obtenerBorradorLote,
   obtenerOpcionesInicioProduccion,
   sugerirCodigoLote,
+  type BorradorLote,
   type DatosBorradorLote,
   type EquipoInicioProduccion,
   type ValeDisponible,
@@ -78,6 +79,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [tocado, setTocado] = useState(false);
+  const [borradorPendiente, setBorradorPendiente] = useState<BorradorLote | null>(null);
 
   const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
   const datosBorrador: DatosBorradorLote = {
@@ -94,7 +96,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   };
   const borrador = useBorrador({
     datos: datosBorrador,
-    activo: tocado,
+    activo: tocado && borradorPendiente === null,
     crear: crearBorradorLote,
     actualizar: guardarBorradorLote,
     alError: (error) => setError(mensajeErrorProceso(error, "No se pudo autoguardar el borrador.")),
@@ -103,32 +105,42 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
   useEffect(() => {
     let vigente = true;
-    void obtenerBorradorLote().then(async (guardado) => {
-      if (!vigente || !guardado) return;
-      if (!window.confirm("Tienes un lote sin abrir. ¿Quieres continuarlo?")) {
-        await descartarBorradorLote(guardado.id);
-        return;
-      }
-      setCodigoLote(guardado.codigo_lote_propuesto);
-      setCodigoEditado(Boolean(guardado.codigo_lote_propuesto));
-      setVale(guardado.vale == null ? "" : String(guardado.vale));
-      setLitros(
-        guardado.litros_estandarizados_borrador == null
-          ? "" : String(guardado.litros_estandarizados_borrador)
-      );
-      setEquipo(guardado.equipo == null ? "" : String(guardado.equipo));
-      setOrden(guardado.orden == null ? "" : String(guardado.orden));
-      setFecha(guardado.fecha);
-      setOp(guardado.op);
-      setLinea(guardado.linea);
-      setTurno(guardado.turno);
-      setObservacion(guardado.observacion);
-      reanudar(guardado.id);
+    void obtenerBorradorLote().then((guardado) => {
+      if (!vigente) return;
+      setBorradorPendiente(guardado);
     }).catch(() => {
       if (vigente) setError("No se pudo consultar el borrador.");
     });
     return () => { vigente = false; };
-  }, [reanudar]);
+  }, []);
+
+  /* «Continuar» y «Descartar» son dos botones explícitos, no un diálogo nativo:
+     un `window.confirm` pone la opción destructiva en «Cancelar», que es la
+     tecla por defecto y la que gana el foco — justo al revés de lo que debería
+     costar más confirmar. */
+  const reanudarBorrador = (guardado: BorradorLote) => {
+    setCodigoLote(guardado.codigo_lote_propuesto);
+    setCodigoEditado(Boolean(guardado.codigo_lote_propuesto));
+    setVale(guardado.vale == null ? "" : String(guardado.vale));
+    setLitros(
+      guardado.litros_estandarizados_borrador == null
+        ? "" : String(guardado.litros_estandarizados_borrador)
+    );
+    setEquipo(guardado.equipo == null ? "" : String(guardado.equipo));
+    setOrden(guardado.orden == null ? "" : String(guardado.orden));
+    setFecha(guardado.fecha);
+    setOp(guardado.op);
+    setLinea(guardado.linea);
+    setTurno(guardado.turno);
+    setObservacion(guardado.observacion);
+    reanudar(guardado.id);
+    setBorradorPendiente(null);
+  };
+
+  const descartarPendiente = () => {
+    if (!borradorPendiente) return;
+    void descartarBorradorLote(borradorPendiente.id).then(() => setBorradorPendiente(null));
+  };
 
   useEffect(() => {
     obtenerOpcionesInicioProduccion()
@@ -280,6 +292,37 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
         </div>
 
+        {borradorPendiente ? (
+          <div className="px-6 py-6">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+              <h3 className="font-semibold text-amber-950">Tienes un lote sin abrir</h3>
+              <p className="mt-2 text-sm leading-6 text-amber-900">
+                Se guardó automáticamente el {new Intl.DateTimeFormat("es-CL", {
+                  dateStyle: "short", timeStyle: "short",
+                }).format(new Date(borradorPendiente.actualizado_en))}. Puedes continuarlo
+                o descartarlo. No ha abierto el proceso ni descontado leche.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => reanudarBorrador(borradorPendiente)}
+                  className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800"
+                >
+                  Continuar borrador
+                </button>
+                <button
+                  type="button"
+                  onClick={descartarPendiente}
+                  className="h-10 rounded-xl border border-red-300 px-5 text-sm font-semibold text-red-800 hover:bg-red-50"
+                >
+                  Descartar borrador
+                </button>
+                <button type="button" onClick={alCerrar} className="h-10 px-4 text-sm font-semibold text-slate-600">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        ) : (
         <form
           onSubmit={enviar}
           onChange={() => setTocado(true)}
@@ -578,6 +621,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
           </div>
 
         </form>
+        )}
 
       </div>
 

@@ -80,6 +80,7 @@ function FormularioVale({
   const [error, setError] = useState("");
   const [tocado, setTocado] = useState(false);
   const [sugerencias, setSugerencias] = useState<SugerenciaSilo[]>([]);
+  const [borradorPendiente, setBorradorPendiente] = useState<ValeEstandarizacion | null>(null);
   const productoElegido = productos.find((p) => p.id === Number(datos.producto));
   const rutaProducto = productoElegido?.familia === "polvo"
     ? "Silo estandarizado → evaporación → precondensado → secado → envase → Calidad → Inventario"
@@ -111,7 +112,7 @@ function FormularioVale({
   };
   const borrador = useBorrador({
     datos: datosBorrador,
-    activo: tocado,
+    activo: tocado && borradorPendiente === null,
     crear: crearBorradorVale,
     actualizar: guardarBorradorVale,
     alError: (error) => setError(mensajeDe(error, "No se pudo autoguardar el borrador.")),
@@ -120,37 +121,47 @@ function FormularioVale({
 
   useEffect(() => {
     let vigente = true;
-    void obtenerBorradorVale().then(async (guardado) => {
-      if (!vigente || !guardado) return;
-      if (!window.confirm("Tienes un vale sin confirmar. ¿Quieres continuarlo?")) {
-        await descartarBorradorVale(guardado.id);
-        return;
-      }
-      setDatos({
-        ...inicial,
-        producto: guardado.producto == null ? "" : String(guardado.producto),
-        rc_objetivo: guardado.rc_objetivo ?? "",
-        volumen: guardado.volumen ?? "",
-        silo_entera: guardado.silo_entera == null ? "" : String(guardado.silo_entera),
-        silo_descremada: guardado.silo_descremada == null ? "" : String(guardado.silo_descremada),
-        silo_crema: guardado.silo_crema == null ? "" : String(guardado.silo_crema),
-        silo_destino: guardado.silo_destino == null ? "" : String(guardado.silo_destino),
-        silo_sugerido_fifo: guardado.silo_sugerido_fifo == null ? "" : String(guardado.silo_sugerido_fifo),
-        motivo_desvio_fifo: guardado.motivo_desvio_fifo,
-        entera_grasa: guardado.entera_grasa ?? "",
-        entera_sng: guardado.entera_sng ?? "",
-        descremada_grasa: guardado.descremada_grasa ?? "",
-        descremada_sng: guardado.descremada_sng ?? "",
-        crema_grasa: guardado.crema_grasa ?? "",
-        crema_sng: guardado.crema_sng ?? "",
-        observaciones: guardado.observaciones,
-      });
-      reanudar(guardado.id);
+    void obtenerBorradorVale().then((guardado) => {
+      if (!vigente) return;
+      setBorradorPendiente(guardado);
     }).catch((e) => {
       if (vigente) setError(mensajeDe(e, "No se pudo consultar el borrador."));
     });
     return () => { vigente = false; };
-  }, [reanudar]);
+  }, []);
+
+  /* «Continuar» y «Descartar» son dos botones explícitos, no un diálogo nativo:
+     un `window.confirm` pone la opción destructiva en «Cancelar», que es la
+     tecla por defecto y la que gana el foco — justo al revés de lo que debería
+     costar más confirmar. */
+  const reanudarBorrador = (guardado: ValeEstandarizacion) => {
+    setDatos({
+      ...inicial,
+      producto: guardado.producto == null ? "" : String(guardado.producto),
+      rc_objetivo: guardado.rc_objetivo ?? "",
+      volumen: guardado.volumen ?? "",
+      silo_entera: guardado.silo_entera == null ? "" : String(guardado.silo_entera),
+      silo_descremada: guardado.silo_descremada == null ? "" : String(guardado.silo_descremada),
+      silo_crema: guardado.silo_crema == null ? "" : String(guardado.silo_crema),
+      silo_destino: guardado.silo_destino == null ? "" : String(guardado.silo_destino),
+      silo_sugerido_fifo: guardado.silo_sugerido_fifo == null ? "" : String(guardado.silo_sugerido_fifo),
+      motivo_desvio_fifo: guardado.motivo_desvio_fifo,
+      entera_grasa: guardado.entera_grasa ?? "",
+      entera_sng: guardado.entera_sng ?? "",
+      descremada_grasa: guardado.descremada_grasa ?? "",
+      descremada_sng: guardado.descremada_sng ?? "",
+      crema_grasa: guardado.crema_grasa ?? "",
+      crema_sng: guardado.crema_sng ?? "",
+      observaciones: guardado.observaciones,
+    });
+    reanudar(guardado.id);
+    setBorradorPendiente(null);
+  };
+
+  const descartarPendiente = () => {
+    if (!borradorPendiente) return;
+    void descartarBorradorVale(borradorPendiente.id).then(() => setBorradorPendiente(null));
+  };
 
   useEffect(() => {
     const entera = silos.find((item) => item.id === Number(datos.silo_entera));
@@ -289,6 +300,58 @@ function FormularioVale({
       setOcupado(false);
     }
   };
+
+  if (borradorPendiente) {
+    return (
+      <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-4">
+        <div className="my-6 w-full max-w-3xl rounded-2xl bg-white p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">
+                Estandarización
+              </p>
+              <h2 className="mt-1 text-xl font-semibold">Nuevo vale</h2>
+            </div>
+            <button
+              type="button"
+              onClick={onCerrar}
+              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-6">
+            <h3 className="font-semibold text-amber-950">Tienes un vale sin confirmar</h3>
+            <p className="mt-2 text-sm leading-6 text-amber-900">
+              Se guardó automáticamente el {new Intl.DateTimeFormat("es-CL", {
+                dateStyle: "short", timeStyle: "short",
+              }).format(new Date(borradorPendiente.actualizado_en))}. Puedes continuarlo
+              o descartarlo. No ha transferido leche ni reservado el código.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => reanudarBorrador(borradorPendiente)}
+                className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800"
+              >
+                Continuar borrador
+              </button>
+              <button
+                type="button"
+                onClick={descartarPendiente}
+                className="h-10 rounded-xl border border-red-300 px-5 text-sm font-semibold text-red-800 hover:bg-red-50"
+              >
+                Descartar borrador
+              </button>
+              <button type="button" onClick={onCerrar} className="h-10 px-4 text-sm font-semibold text-slate-600">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-4">
