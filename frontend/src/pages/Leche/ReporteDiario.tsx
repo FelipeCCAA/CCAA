@@ -10,6 +10,7 @@ import {
   type PeriodoResumenRecepcion,
   type ResumenDiarioRecepcion,
 } from "../../services/recepcion.service";
+import { cantidad } from "../../services/formato";
 
 
 const fechaLocal = (fecha = new Date()) => {
@@ -186,7 +187,7 @@ function ReporteDiario() {
                       <td className="px-4 py-3 tabular-nums">{item.kg_romana === null ? <Falta /> : numero.format(Number(item.kg_romana))}</td>
                       <td className="px-4 py-3">{item.silo || <Falta />}</td>
                       <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{item.estado_etiqueta}</span></td>
-                      <td className="px-4 py-3 text-xs text-slate-700">{item.crioscopias.length ? item.crioscopias.map((m) => <div key={m.modulo}>M{m.modulo}: {m.valor ?? <Falta />}</div>) : <Falta />}</td>
+                      <td className="px-4 py-3 text-xs text-slate-700">{item.crioscopias.length ? item.crioscopias.map((m) => <div key={m.modulo}>M{m.modulo}: {m.valor === null ? <Falta /> : cantidad(m.valor, undefined, 3)}</div>) : <Falta />}</td>
                       <td className="px-4 py-3 tabular-nums">{item.permanencia_horas === null ? <span className="text-xs text-amber-700">{item.permanencia_motivo}</span> : `${numero.format(item.permanencia_horas)} h`}</td>
                       <td className="px-4 py-3 tabular-nums">{item.horas_a_pagar === null ? <Falta /> : `${item.horas_a_pagar} h`}</td>
                     </tr>

@@ -12,6 +12,7 @@ import { obtenerProductos, type Producto } from "../../services/produccion.servi
 import type { Silo } from "../../services/recepcion.service";
 import { puedeEscribir } from "../../services/sesion";
 import { mensajeDe, numero } from "../../components/seccion/utilidades";
+import { cantidad } from "../../services/formato";
 import { Aviso, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import Cronometro from "./Cronometro";
 import FormularioVale from "./FormularioVale";
@@ -26,10 +27,9 @@ const TONO: Record<string, string> = {
   anulado: "bg-rose-50 text-rose-700",
 };
 
-const rc = (valor: number | string | null | undefined) =>
-  valor === null || valor === undefined || valor === ""
-    ? "—"
-    : Number(valor).toFixed(4);
+// RC es una razón sin unidad: 3 decimales fijos y coma, como el resto de
+// las cantidades de la planta (CLAUDE.md, «Decisiones vigentes»).
+const rc = (valor: number | string | null | undefined) => cantidad(valor, undefined, 3);
 
 
 function Estandarizacion() {

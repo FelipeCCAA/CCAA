@@ -13,6 +13,7 @@ import {
   type ResponsableRecepcion,
   type Silo,
 } from "../../services/recepcion.service";
+import { cantidad } from "../../services/formato";
 
 
 export type AccionFlujo = "muestra" | "calidad" | "silo" | "crioscopia";
@@ -162,7 +163,7 @@ function AccionRecepcion({ accion, recepcion, silos, responsables, alCerrar, alG
               </div>
               <div><p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-600">Controles del camión</p><div className="grid grid-cols-2 gap-4 sm:grid-cols-3">{CONTROLES_NUMERICOS.map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta} {control.unidad && <span className="font-normal text-slate-600">({control.unidad})</span>}</label><input aria-label={control.etiqueta} type="number" step="any" className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} /></div>)}</div></div>
               <div className="grid gap-4 sm:grid-cols-3">{CONTROLES_OPCION.map((control) => <div key={control.clave}><label className={etiqueta}>{control.etiqueta}</label><select aria-label={control.etiqueta} className={campo} value={controles[control.clave] ?? ""} onChange={(e) => cambiarControl(control.clave, e.target.value)} required={control.clave === "delvo"}><option value="">Sin informar</option>{control.valores.map((valor) => <option key={valor} value={valor}>{valor}</option>)}</select></div>)}</div>
-              {recepcion.modulos.length > 0 && <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="mb-3 text-xs font-bold uppercase tracking-wider text-violet-700">Crioscopía registrada por módulo</p><div className="flex flex-wrap gap-3 text-sm">{recepcion.modulos.map((m) => <span key={m.id} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-violet-900 ring-1 ring-violet-200">M{m.numero}: {m.crioscopia ?? "—"} °C</span>)}</div></div>}
+              {recepcion.modulos.length > 0 && <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="mb-3 text-xs font-bold uppercase tracking-wider text-violet-700">Crioscopía registrada por módulo</p><div className="flex flex-wrap gap-3 text-sm">{recepcion.modulos.map((m) => <span key={m.id} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-violet-900 ring-1 ring-violet-200">M{m.numero}: {cantidad(m.crioscopia, "°C", 3)}</span>)}</div></div>}
               <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-amber-600" checked={retencionManual} onChange={(e) => setRetencionManual(e.target.checked)} /><span><span className="block text-sm font-semibold text-slate-800">Retener por observación operacional</span><span className="mt-1 block text-xs leading-5 text-slate-600">Úsalo para sello roto, contaminación visible u otra condición no representada por un análisis.</span></span></label>
               {retencionManual && <div><label className={etiqueta}>Motivo de retención *</label><textarea aria-label="Motivo de retención" className={`${campo} h-auto py-3`} rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} required /></div>}
             </div>}

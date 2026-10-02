@@ -15,6 +15,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from auditoria.registro import crear_en_lote_con_auditoria
+from .dominio import formato_cantidad
 from .models import ValeEstandarizacion
 from maestros.models import Silo
 from procesos.models import ReservaSiloProceso
@@ -94,7 +95,8 @@ def transferir(*, vale_id, usuario):
 
     if _saldo(entera) - litros_origen_reservados(silo_id=entera.pk) < vale.litros_entera:
         raise ValidationError(
-            f"{entera.codigo} no tiene {vale.litros_entera} L de leche entera disponibles."
+            f"{entera.codigo} no tiene {formato_cantidad(vale.litros_entera)} L "
+            "de leche entera disponibles."
         )
     if vale.litros_descremada and (
         descremada is None
@@ -103,7 +105,8 @@ def transferir(*, vale_id, usuario):
     ):
         codigo = descremada.codigo if descremada else "el TK seleccionado"
         raise ValidationError(
-            f"{codigo} no tiene {vale.litros_descremada} L de leche descremada disponibles."
+            f"{codigo} no tiene {formato_cantidad(vale.litros_descremada)} L "
+            "de leche descremada disponibles."
         )
     if vale.litros_crema and (
         crema is None
@@ -112,12 +115,13 @@ def transferir(*, vale_id, usuario):
     ):
         codigo = crema.codigo if crema else "el TK de crema seleccionado"
         raise ValidationError(
-            f"{codigo} no tiene {vale.litros_crema} L de crema disponibles."
+            f"{codigo} no tiene {formato_cantidad(vale.litros_crema)} L de crema disponibles."
         )
     if _saldo(destino) + vale.volumen > destino.capacidad_l:
         disponible = destino.capacidad_l - _saldo(destino)
         raise ValidationError(
-            f"{destino.codigo} solo tiene {disponible} L de capacidad disponible."
+            f"{destino.codigo} solo tiene {formato_cantidad(disponible)} L de "
+            "capacidad disponible."
         )
 
     ahora = timezone.now()

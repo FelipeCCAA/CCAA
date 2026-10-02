@@ -19,6 +19,7 @@ import { obtenerEjecucionesOperativas, type EjecucionOperativa } from "../../ser
 import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
 import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { useBorrador } from "../../hooks/useBorrador";
+import { cantidad } from "../../services/formato";
 
 
 /*
@@ -557,9 +558,9 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                   <span>Producción</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-600">
-                  Vale {valeSeleccionado.codigo} · RC objetivo {valeSeleccionado.rc_objetivo}
+                  Vale {valeSeleccionado.codigo} · RC objetivo {cantidad(valeSeleccionado.rc_objetivo, undefined, 3)}
                   {valeSeleccionado.rc_real != null
-                    ? ` · RC liberado ${valeSeleccionado.rc_real.toFixed(4)}`
+                    ? ` · RC liberado ${cantidad(valeSeleccionado.rc_real, undefined, 3)}`
                     : ""}
                   {` · ${Number(valeSeleccionado.litros_disponibles).toLocaleString("es-CL")} L disponibles`}
                 </p>

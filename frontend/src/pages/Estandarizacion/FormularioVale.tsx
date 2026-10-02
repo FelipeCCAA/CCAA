@@ -13,6 +13,7 @@ import {
 } from "../../services/recepcion.service";
 import { mensajeDe } from "../../components/seccion/utilidades";
 import { useBorrador } from "../../hooks/useBorrador";
+import { cantidad } from "../../services/formato";
 
 /*
   Nuevo vale, en dos tiempos: **primero se calcula, después se guarda**.
@@ -554,7 +555,7 @@ function FormularioVale({
                   {mezcla.crema > 0 && ` + ${mezcla.crema.toLocaleString("es-CL")} L de crema`}
                 </p>
                 <p className="mt-1">
-                  RC esperado {mezcla.rc_esperado?.toFixed(4)} ·{" "}
+                  RC esperado {cantidad(mezcla.rc_esperado, undefined, 3)} ·{" "}
                   {mezcla.grasa_esperada}% MG · {mezcla.sng_esperado}% SNG
                 </p>
                 {mezcla.avisos.map((aviso) => (

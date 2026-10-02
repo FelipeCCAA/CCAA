@@ -24,6 +24,31 @@ Fuente: `docs/REGLAS_DE_PLANTA.md` §3, extraído del flujo de fábrica §10.
 
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
+
+
+def formato_cantidad(valor: Decimal | float | int | str, decimales: int = 3) -> str:
+    """
+    Un número en formato chileno (punto de miles, coma decimal) para
+    interpolar dentro de un mensaje ya armado por el backend —un motivo de
+    rechazo al transferir, un aviso—.
+
+    `str(Decimal("8000.00"))` imprime «8000.00»: en Chile eso se lee ocho mil,
+    no ocho coma cero cero. Una cantidad que la pantalla muestra **sola**, sin
+    texto alrededor, no usa esto: pasa por `cantidad()` en
+    `frontend/src/services/formato.ts`. Réplica de
+    `produccion.dominio.formato_cantidad`; no se comparte entre apps para no
+    acoplar dos módulos que hoy no se conocen por una función de cinco líneas.
+    """
+    numero = Decimal(str(valor))
+    entero, _, parte_decimal = f"{numero:,.{decimales}f}".partition(".")
+    parte_decimal = parte_decimal.rstrip("0")
+    # Python separa miles con coma y decimales con punto; en Chile es al
+    # revés. Se arma por partes en vez de intercambiar los dos símbolos a la
+    # vez: una traducción simultánea no encadena, así que la coma de miles
+    # recién puesta nunca se volvería a convertir en punto.
+    entero = entero.replace(",", ".")
+    return f"{entero},{parte_decimal}" if parte_decimal else entero
 
 
 @dataclass(frozen=True)

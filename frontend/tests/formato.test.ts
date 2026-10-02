@@ -23,3 +23,14 @@ test("lo que no es un número se muestra como raya", () => {
   assert.equal(cantidad("", "un"), "—");
   assert.equal(cantidad("abc", "un"), "—");
 });
+
+test("con decimales fijos no se recortan los ceros", () => {
+  // La crioscopía pierde su cifra significativa si "-0,510" se muestra "-0,51".
+  assert.equal(cantidad(-0.512, "°C", 3), "-0,512 °C");
+  assert.equal(cantidad(-0.51, "°C", 3), "-0,510 °C");
+});
+
+test("decimales fijos también redondean, no solo rellenan", () => {
+  assert.equal(cantidad(0.2010, undefined, 3), "0,201");
+  assert.equal(cantidad("0.3", undefined, 3), "0,300");
+});

@@ -507,8 +507,9 @@ def registrar_envasado(
         tipo="envasado_pendiente_calidad",
         titulo="Producto envasado pendiente de Calidad",
         mensaje=(
-            f"Lote {lote.codigo_lote}: {kg_total} kg envasados en "
-            f"{len(creados)} unidad(es) logística(s). Revisa su liberación final."
+            f"Lote {lote.codigo_lote}: {dominio.formato_cantidad(kg_total)} kg "
+            f"envasados en {len(creados)} unidad(es) logística(s). Revisa su "
+            "liberación final."
         ),
         documento_tipo="produccion.RegistroEnvase",
         documento_id=registro.pk,

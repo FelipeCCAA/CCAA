@@ -16,6 +16,7 @@ import { obtenerSesion } from "../../services/sesion";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
 import { Aviso, Estado, Indicador, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import { useCarga } from "../../components/seccion/utilidades";
+import { cantidad } from "../../services/formato";
 import ResultadoProcesoCalidadCard from "./ResultadoProcesoCalidadCard";
 
 const INSPECCIONES_CERRADAS = ["aprobada", "observada", "rechazada", "bloqueada"];
@@ -393,7 +394,7 @@ function CentroCalidad() {
             <p className="text-sm font-semibold text-sky-900">¿Saco dañado, excedente o material recuperable?</p>
             <p className="mt-1 text-xs text-sky-700">También puedes identificar rework sobre un lote liberado sin cambiar su liberación comercial completa.</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <select value={loteAdicionalRework} onChange={(e) => setLoteAdicionalRework(e.target.value)} className="min-w-64 flex-1 rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm"><option value="">Seleccionar lote liberado…</option>{liberados.filter((fila) => !fila.rework).map((fila) => <option key={fila.lote.id} value={fila.lote.id}>{fila.lote.codigo_lote} · {fila.lote.producto_nombre} · {fila.lote.kg_producidos} kg</option>)}</select>
+              <select value={loteAdicionalRework} onChange={(e) => setLoteAdicionalRework(e.target.value)} className="min-w-64 flex-1 rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm"><option value="">Seleccionar lote liberado…</option>{liberados.filter((fila) => !fila.rework).map((fila) => <option key={fila.lote.id} value={fila.lote.id}>{fila.lote.codigo_lote} · {fila.lote.producto_nombre} · {cantidad(fila.lote.kg_producidos, "kg")}</option>)}</select>
               <button type="button" disabled={!loteAdicionalRework} onClick={() => { const fila = liberados.find((item) => item.lote.id === Number(loteAdicionalRework)); if (fila) abrirRework(fila, "aprobado"); }} className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Evaluar rework</button>
             </div>
           </div>
@@ -405,8 +406,8 @@ function CentroCalidad() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-slate-800">{fila.lote.producto_nombre} · {fila.lote.codigo_lote}</p>
-                    <p className="text-sm text-slate-600">{fila.lote.kg_producidos} kg producidos</p>
-                    {fila.rework && <><p className="mt-1 text-xs text-slate-600">Rework: {fila.rework.cantidad_kg} kg · {fila.rework.motivo}</p><p className="mt-1 text-xs text-slate-500">Decidió {fila.rework.decidido_por ?? "Calidad"}{fila.rework.decidido_en ? ` · ${new Date(fila.rework.decidido_en).toLocaleString("es-CL")}` : ""}{fila.rework.observacion_calidad ? ` · ${fila.rework.observacion_calidad}` : ""}</p></>}
+                    <p className="text-sm text-slate-600">{cantidad(fila.lote.kg_producidos, "kg")} producidos</p>
+                    {fila.rework && <><p className="mt-1 text-xs text-slate-600">Rework: {cantidad(fila.rework.cantidad_kg, "kg")} · {fila.rework.motivo}</p><p className="mt-1 text-xs text-slate-500">Decidió {fila.rework.decidido_por ?? "Calidad"}{fila.rework.decidido_en ? ` · ${new Date(fila.rework.decidido_en).toLocaleString("es-CL")}` : ""}{fila.rework.observacion_calidad ? ` · ${fila.rework.observacion_calidad}` : ""}</p></>}
                   </div>
                   <Estado valor={fila.rework?.estado ?? "pendiente_rework"} />
                 </div>

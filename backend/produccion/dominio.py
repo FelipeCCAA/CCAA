@@ -513,6 +513,30 @@ def evaluar_pcc1(control: Any, lecturas: Iterable[Any] = ()) -> EvaluacionPcc1:
     )
 
 
+def formato_cantidad(valor: Decimal | float | int | str, decimales: int = 3) -> str:
+    """
+    Un número en formato chileno (punto de miles, coma decimal) para
+    interpolar dentro de un mensaje ya armado por el backend.
+
+    `str(Decimal("1500.000"))` imprime «1500.000»: en Chile eso se lee mil
+    quinientos, no mil con tres decimales. Los avisos y motivos de bloqueo que
+    arma este módulo interpolan directamente un `Decimal` del modelo, así que
+    pasan por aquí. Una cantidad que la pantalla muestra **sola**, sin texto
+    alrededor, no usa esto: pasa por `cantidad()` en
+    `frontend/src/services/formato.ts`, que es donde vive esa regla para todo
+    lo que el backend entrega como dato (no como texto).
+    """
+    numero = Decimal(str(valor))
+    entero, _, parte_decimal = f"{numero:,.{decimales}f}".partition(".")
+    parte_decimal = parte_decimal.rstrip("0")
+    # Python separa miles con coma y decimales con punto; en Chile es al
+    # revés. Se arma por partes en vez de intercambiar los dos símbolos a la
+    # vez: una traducción simultánea no encadena, así que la coma de miles
+    # recién puesta nunca se volvería a convertir en punto.
+    entero = entero.replace(",", ".")
+    return f"{entero},{parte_decimal}" if parte_decimal else entero
+
+
 @dataclass(frozen=True)
 class DecisionApertura:
     """Si de este vale puede nacer un lote, y por qué no."""
@@ -568,8 +592,9 @@ def puede_abrir_lote_desde(vale, litros, consumido_por_otros_lotes=0) -> Decisio
         bloqueos.append("Los litros que toma el lote tienen que ser mayores que cero.")
     elif pedido > disponible:
         bloqueos.append(
-            f"El vale preparó {preparado} L y ya se usaron {ya_usado}: quedan "
-            f"{disponible} L y se piden {pedido}."
+            f"El vale preparó {formato_cantidad(preparado)} L y ya se usaron "
+            f"{formato_cantidad(ya_usado)}: quedan {formato_cantidad(disponible)} "
+            f"L y se piden {formato_cantidad(pedido)}."
         )
 
     return DecisionApertura(
