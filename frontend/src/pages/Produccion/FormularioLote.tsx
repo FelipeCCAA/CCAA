@@ -33,9 +33,10 @@ import { useBorrador } from "../../hooks/useBorrador";
   La leche se selecciona por su vale liberado. El vale trae los silos y el RC
   desde Estandarización; Producción no vuelve a escoger ese origen.
 
-  El código se compone del año, el día juliano, el SKU del producto y el
-  correlativo del día, y queda editable: el histórico de planta trae códigos
-  con otra forma y hay que poder registrarlos.
+  El código identifica la corrida, no el producto: CCAA + año + día juliano +
+  sigla del equipo + correlativo del día (p. ej. CCAA6232E1-01). Queda
+  editable: el histórico de planta trae códigos con otra forma y hay que
+  poder registrarlos.
 
   Los parámetros de calidad no están aquí: se miden sobre el producto
   terminado, así que se cargan desde la ficha del lote una vez cerrada la
@@ -446,15 +447,16 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                   setCodigoLote(e.target.value);
                   setCodigoEditado(true);
                 }}
-                placeholder="CCAA6197LEP25-01"
+                placeholder="CCAA6232E1-01"
                 required
               />
 
               <p className="mt-1.5 text-xs text-slate-600">
 
                 {notaCodigo ||
-                  "Se propone con el año, el día juliano, el SKU del producto " +
-                    "y el correlativo del día. Se puede cambiar."}
+                  "Se propone con el año, el día juliano, la sigla del equipo " +
+                    "y el correlativo del día. Identifica la corrida, no el " +
+                    "producto, y se puede cambiar."}
 
               </p>
 

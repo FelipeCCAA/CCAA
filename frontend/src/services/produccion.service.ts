@@ -430,10 +430,10 @@ export async function obtenerValesDisponibles(
 
 
 export interface CodigoSugerido {
-  /* null cuando el producto no tiene SKU cargado: se escribe a mano y el
+  /* null cuando el equipo no tiene sigla cargada: se escribe a mano y el
      motivo dice qué falta y dónde. */
   codigo: string | null;
-  /* Qué número de lote de ese producto es en la fecha. */
+  /* Qué número de lote de esa máquina es en la fecha. */
   correlativo: number;
   motivo: string | null;
 }
@@ -442,7 +442,8 @@ export interface CodigoSugerido {
 /**
  * El código que le tocaría a este lote.
  *
- * Se compone de año, día juliano, SKU del producto y correlativo del día. El
+ * Se compone de año, día juliano, sigla del equipo y correlativo del día
+ * (p. ej. CCAA6232E1-01). Identifica la corrida, no el producto. El
  * correlativo lo cuenta el servidor a partir de los lotes que ya existen:
  * preguntárselo al operador sería pedirle un dato que el sistema ya tiene.
  *
