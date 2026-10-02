@@ -1308,6 +1308,26 @@ class AnalisisViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     serializer_class = AnalisisSerializer
     permission_classes = [EscribeAnalisisCalidad]
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Un análisis no se elimina: sustenta el checklist y la liberación del
+        lote (`Liberacion.analisis_lote`, con `on_delete=PROTECT` cuando hay
+        liberación enganchada; sin ella se borraría igual).
+
+        El modelo no tiene estado —no hay un «anulado» que proponer—, así que
+        la corrección es un `PATCH` sobre `valores`, no una acción nueva.
+        """
+        return Response(
+            {
+                "detail": (
+                    "Un análisis no se elimina: sustenta el checklist y la "
+                    "liberación del lote. Corrígelo con un PATCH si el dato "
+                    "está mal."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     def get_queryset(self):
         consulta = super().get_queryset()
 

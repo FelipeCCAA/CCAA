@@ -94,6 +94,26 @@ class RegistroCalidadViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
 
         return consulta
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Un registro de calidad no se elimina: es un hueco en el checklist del
+        lote, no un documento ausente — y nada distingue las dos cosas si la
+        fila desaparece.
+
+        No tiene estado «anulado»; el equivalente de deshacerlo ya existe y es
+        volver a `borrador` con un `PATCH`, que `_guardar_con_firma` usa para
+        limpiar la firma.
+        """
+        return Response(
+            {
+                "detail": (
+                    "Un registro de calidad no se elimina: vuelve a borrador "
+                    "con un PATCH si hay que corregirlo."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     def perform_create(self, serializer):
         self._guardar_con_firma(serializer)
 
@@ -153,6 +173,26 @@ class LiberacionViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             consulta = consulta.filter(estado=estado)
 
         return consulta
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        El expediente de liberación no se elimina: existe desde que el lote se
+        produce, y que no tenga fila no es lo mismo que decir que nadie lo ha
+        tramitado (ver el docstring de la clase).
+
+        No es un documento que se anule: es el registro de la decisión. Para
+        reabrir una liberación firmada, la vía real es
+        `expedientes/<lote>/revisar/`.
+        """
+        return Response(
+            {
+                "detail": (
+                    "El expediente de liberación no se elimina. Para reabrir "
+                    "una liberación firmada usa expedientes/<lote>/revisar/."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
 
 # --------------------------------------------------------------- expedientes

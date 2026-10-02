@@ -165,6 +165,33 @@ class AnalisisSiloAPITests(BaseAPIRecepcion):
         self.assertEqual(respuesta.data["faltantes_para_vale"], [])
         self.assertEqual(respuesta.data["silo_codigo"], "SILO 1")
 
+    def test_no_se_puede_borrar_un_analisis_confirmado(self):
+        """
+        El análisis del silo está protegido por `on_delete=PROTECT` desde los
+        vales que lo usaron, pero eso solo evita el borrado cuando hay un vale
+        enganchado: sin vale, se borraría igual, dejando sin respaldo la
+        trazabilidad que el formato exige. Se anula, no se borra; hoy no hay
+        una acción de anular para un análisis ya confirmado.
+        """
+        creado = self.cliente.post(
+            "/api/recepcion/analisis-silo/",
+            {
+                "silo": self.silo.id,
+                "tomado_en": "2026-07-15T09:40:00Z",
+                "grasa": "4.35",
+                "sng": "8.90",
+                "inhibidores_resultado": "negativo",
+                "metodo": "delvo_sp",
+                "hora_lectura": "10:15",
+            },
+            format="json",
+        ).data
+
+        respuesta = self.cliente.delete(f"/api/recepcion/analisis-silo/{creado['id']}/")
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertTrue(AnalisisSilo.objects.filter(pk=creado["id"]).exists())
+
     def test_el_analista_es_quien_lo_registra(self):
         respuesta = self.cliente.post(
             "/api/recepcion/analisis-silo/",

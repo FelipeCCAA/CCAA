@@ -115,6 +115,26 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             return [DecideCalidadRecepcion()]
         return super().get_permissions()
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Una recepción no se elimina: sus `MovimientoSilo.origen_id` quedan
+        huérfanos (es un entero suelto, sin FK que lo impida ni avise).
+
+        A diferencia del lote y el vale, hoy no hay una acción para anular una
+        recepción ya confirmada —`descartar-borrador` exige que siga en
+        `borrador`—, así que el mensaje no promete una que no existe.
+        """
+        return Response(
+            {
+                "detail": (
+                    "Una recepción no se elimina: sustenta movimientos de silo "
+                    "y la trazabilidad del camión. Anular una recepción "
+                    "confirmada es una decisión de Calidad todavía sin tomar."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     @action(detail=True, methods=["get"])
     def destino(self, request, pk=None):
         """Movimientos posteriores en que aparece leche de esta recepción."""
@@ -1601,6 +1621,28 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
     # la recepción del camión. Recepción conserva acceso por operación y
     # Calidad puede generar la evidencia que luego usa para liberar el silo.
     permission_classes = [DecideCalidadRecepcion]
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Un análisis de silo no se elimina: puede componer un vale de
+        estandarización (`ValeEstandarizacion.analisis_entera/_descremada`,
+        con `on_delete=PROTECT`) o simplemente desaparecer de la trazabilidad
+        sin dejar rastro si no lo usó ninguno.
+
+        Hoy no hay una acción para anular uno ya confirmado —solo
+        `descartar-borrador`, que exige que siga en `borrador`—, así que el
+        mensaje no promete una que no existe.
+        """
+        return Response(
+            {
+                "detail": (
+                    "Un análisis de silo no se elimina: puede sustentar un "
+                    "vale de estandarización. Anular uno confirmado es una "
+                    "decisión de Calidad todavía sin tomar."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     def get_queryset(self):
         consulta = super().get_queryset().exclude(

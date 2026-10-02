@@ -431,6 +431,25 @@ class LotesAPITests(BaseAPI):
         self.assertEqual(desviacion["desvio"], "alto")
         self.assertEqual(desviacion["muestra"], "M-01")
 
+    def test_un_analisis_confirmado_no_se_elimina(self):
+        """
+        `calidad.Liberacion.analisis_lote` lo referencia con
+        `on_delete=PROTECT`, pero un análisis sin liberación todavía (o sin
+        esa referencia puesta) se borraría igual, dejando el checklist del
+        lote sin su evidencia. No existe una acción de anulación para este
+        registro: se corrige con un `PATCH`, no se elimina.
+        """
+        lote = self._lote()
+        analisis = Analisis.objects.create(
+            lote=lote, fecha=lote.fecha, muestra="M-1",
+            valores={"humedad": 3.0, "mg": 27.0},
+        )
+
+        respuesta = self.cliente.delete(f"/api/produccion/analisis/{analisis.id}/")
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertTrue(Analisis.objects.filter(pk=analisis.id).exists())
+
     def test_la_ficha_de_un_lote_incluye_sus_analisis(self):
         lote = self._lote()
         Analisis.objects.create(

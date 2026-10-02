@@ -42,6 +42,11 @@ class AnalisisAdmin(admin.ModelAdmin):
     date_hierarchy = "fecha"
     autocomplete_fields = ["lote", "especificacion"]
 
+    def has_delete_permission(self, request, obj=None):
+        # Un análisis se corrige, no se borra: sustenta el checklist y la
+        # liberación del lote.
+        return False
+
 
 class ControlProcesoLecturaInline(admin.TabularInline):
     """El detalle horario se carga desde su control, como en el formato."""

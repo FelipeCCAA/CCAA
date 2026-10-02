@@ -17,6 +17,11 @@ class RegistroCalidadAdmin(admin.ModelAdmin):
     autocomplete_fields = ["lote", "documento"]
     date_hierarchy = "completado_en"
 
+    def has_delete_permission(self, request, obj=None):
+        # Un registro de calidad se corrige volviéndolo a borrador, no se
+        # borra: tampoco desde aquí.
+        return False
+
 
 @admin.register(Liberacion)
 class LiberacionAdmin(admin.ModelAdmin):
@@ -27,3 +32,8 @@ class LiberacionAdmin(admin.ModelAdmin):
     search_fields = ["lote__codigo_lote", "motivo_concesion"]
     autocomplete_fields = ["lote"]
     date_hierarchy = "autorizada_en"
+
+    def has_delete_permission(self, request, obj=None):
+        # El expediente de liberación no se borra: existe mientras exista el
+        # lote, y es el registro de la decisión, no un documento que se anule.
+        return False

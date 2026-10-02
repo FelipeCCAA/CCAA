@@ -266,6 +266,21 @@ class FlujoRecepcionTests(BaseAPIRecepcion):
 
         self.assertEqual(Recepcion.objects.first().operador.username, "op")
 
+    def test_no_se_puede_borrar_una_recepcion_confirmada(self):
+        """
+        Borrar una recepción deja huérfanos sus `MovimientoSilo.origen_id`
+        —una referencia suelta, sin FK que lo impida—. Se anula, no se borra,
+        igual que el lote y el vale; hoy no hay una acción para anular una
+        recepción ya confirmada (`descartar-borrador` exige que siga en
+        borrador), así que el mensaje no promete una que no existe.
+        """
+        creada = self._crear().json()
+
+        respuesta = self.cliente.delete(f"/api/recepcion/recepciones/{creada['id']}/")
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertTrue(Recepcion.objects.filter(pk=creada["id"]).exists())
+
     def test_tomar_muestra_identifica_modulo_y_responsable(self):
         creada = self._crear().json()
         respuesta = self.cliente.post(

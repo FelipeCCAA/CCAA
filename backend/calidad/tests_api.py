@@ -593,6 +593,20 @@ class NoHayPuertaDeAtrasTests(BaseAPI):
 
         self.assertIn("liberar/", str(respuesta.json()))
 
+    def test_el_expediente_no_se_elimina(self):
+        """
+        `Liberacion` es el expediente de autorización del lote: existe desde
+        que el lote se produce. Borrarlo no tiene un equivalente de «anular»
+        —no es un documento que se emite y se descarta, es el registro de la
+        decisión—, así que se bloquea sin ofrecer una acción que no existe.
+        """
+        liberacion = self._expediente_pendiente()
+
+        respuesta = self.cliente.delete(f"/api/calidad/liberaciones/{liberacion.id}/")
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertTrue(Liberacion.objects.filter(pk=liberacion.id).exists())
+
     def test_anotar_la_observacion_si_se_permite(self):
         """Cerrar la puerta no es tapiar la ventana: el expediente se anota."""
         liberacion = self._expediente_pendiente()
@@ -726,6 +740,29 @@ class RegistroAPITests(BaseAPI):
         registro = RegistroCalidad.objects.get()
         self.assertIsNone(registro.completado_por)
         self.assertIsNone(registro.completado_en)
+
+    def test_un_registro_completado_no_se_elimina(self):
+        """
+        `RegistroCalidad` no tiene estado «anulado»: el equivalente de
+        deshacerlo es volver a borrador con un `PATCH`, que ya limpia la firma
+        (`test_al_volver_a_borrador_se_limpia_la_firma`). Borrarlo en vez de
+        corregirlo dejaría un hueco en el checklist del lote.
+        """
+        creado = self.cliente.post(
+            "/api/calidad/registros/",
+            {
+                "lote": self.lote.id,
+                "documento": self.ficha.id,
+                "estado": "completado",
+                "valores": {"lote": "CCAA6140N", "mg": 28.0},
+            },
+            format="json",
+        ).json()
+
+        respuesta = self.cliente.delete(f"/api/calidad/registros/{creado['id']}/")
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertTrue(RegistroCalidad.objects.filter(pk=creado["id"]).exists())
 
     def test_un_formulario_observado_debe_decir_que_se_observo(self):
         respuesta = self.cliente.post(

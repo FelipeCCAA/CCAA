@@ -57,6 +57,11 @@ class RecepcionAdmin(admin.ModelAdmin):
     ]
     inlines = [ModuloRecepcionInline]
 
+    def has_delete_permission(self, request, obj=None):
+        # Una recepción se anula, no se borra: tampoco desde aquí. Borrarla
+        # deja huérfanos los `MovimientoSilo.origen_id` que generó.
+        return False
+
 
 @admin.register(MovimientoSilo)
 class MovimientoSiloAdmin(admin.ModelAdmin):
@@ -73,3 +78,7 @@ class AnalisisSiloAdmin(admin.ModelAdmin):
     date_hierarchy = "tomado_en"
     search_fields = ("silo__codigo", "observacion")
     autocomplete_fields = ("silo",)
+
+    def has_delete_permission(self, request, obj=None):
+        # Un análisis de silo se anula, no se borra: puede sustentar un vale.
+        return False
