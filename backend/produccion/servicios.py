@@ -21,6 +21,8 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from config.formato import formato_cantidad
+
 from . import dominio
 from .models import Lote, PalletProducto, RegistroEnvase
 
@@ -507,7 +509,7 @@ def registrar_envasado(
         tipo="envasado_pendiente_calidad",
         titulo="Producto envasado pendiente de Calidad",
         mensaje=(
-            f"Lote {lote.codigo_lote}: {dominio.formato_cantidad(kg_total)} kg "
+            f"Lote {lote.codigo_lote}: {formato_cantidad(kg_total)} kg "
             f"envasados en {len(creados)} unidad(es) logística(s). Revisa su "
             "liberación final."
         ),

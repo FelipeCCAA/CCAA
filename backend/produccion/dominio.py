@@ -17,9 +17,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from typing import Any, Iterable, Sequence
 
 from config.formato import formato_cantidad
-from typing import Any, Iterable, Sequence
 
 
 # ---------------------------------------------------------------- resultados
@@ -513,8 +513,6 @@ def evaluar_pcc1(control: Any, lecturas: Iterable[Any] = ()) -> EvaluacionPcc1:
         incumplimientos=incumplimientos,
         sin_lecturas=not propias,
     )
-
-
 
 
 @dataclass(frozen=True)

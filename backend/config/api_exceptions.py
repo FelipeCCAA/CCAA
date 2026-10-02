@@ -71,7 +71,10 @@ def respuesta_error_integridad(error):
     la pila, antes de que la excepción llegue hasta aquí, así que no hay
     escritura a medias que esta respuesta pudiera confirmar.
     """
-    logger.exception("IntegrityError no anticipado por ningún serializer")
+    # `logger.exception` lee la excepción en curso con `sys.exc_info()`; acá
+    # se recibe `error` como argumento, no necesariamente dentro del mismo
+    # `except` que la originó, así que se pasa explícito con `exc_info`.
+    logger.error("IntegrityError no anticipado por ningún serializer", exc_info=error)
     # La unicidad se reconoce por el SQLSTATE 23505 que trae el error del
     # driver, no por el texto: el servidor puede responder en español
     # («llave duplicada viola restricción de unicidad»). El texto queda solo

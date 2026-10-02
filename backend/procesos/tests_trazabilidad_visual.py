@@ -183,3 +183,72 @@ class TrazabilidadVisualTests(TestCase):
         self.assertEqual(enlace_b["ejecucion"]["codigo"], "EJ-DOS-2")
         self.assertEqual(enlace_b["entrada"]["cantidad"], Decimal("50.000"))
         self.assertEqual(enlace_b["salida"]["cantidad"], Decimal("40.000"))
+
+    def test_hacia_adelante_cada_enlace_lleva_su_propia_cantidad_y_ejecucion(self):
+        # El mismo defecto que arriba, mirado hacia adelante: un lote que
+        # alimenta dos ejecuciones distintas tiene que cuantificar cada rama
+        # con su propia entrada y salida, no la última que el bucle recorrió.
+        mandante = Mandante.objects.create(nombre="Un origen, dos corridas")
+        producto = Producto.objects.create(
+            nombre="Producto compartido hacia adelante", familia=Producto.Familia.POLVO,
+            mandante=mandante,
+        )
+        origen = Lote.objects.create(
+            codigo_lote="ADEL-ORIGEN", producto=producto, fecha=date(2026, 9, 21),
+            kg_producidos=Decimal("150"),
+        )
+        destino_a = Lote.objects.create(
+            codigo_lote="ADEL-DESTINO-A", producto=producto, fecha=date(2026, 9, 21),
+            kg_producidos=Decimal("70"),
+        )
+        destino_b = Lote.objects.create(
+            codigo_lote="ADEL-DESTINO-B", producto=producto, fecha=date(2026, 9, 21),
+            kg_producidos=Decimal("45"),
+        )
+        proceso = Proceso.objects.create(codigo="adel", nombre="Hacia adelante")
+        etapa = EtapaProceso.objects.create(
+            proceso=proceso, codigo="transformar-adel", nombre="Transformación adelante",
+            tipo=EtapaProceso.Tipo.OTRO, orden=1,
+        )
+        ejecucion_1 = EjecucionProceso.objects.create(
+            codigo="EJ-ADEL-1", etapa=etapa, responsable=self.usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion_1, lote=origen,
+            cantidad=Decimal("90"), unidad="kg",
+        )
+        SalidaProceso.objects.create(
+            ejecucion=ejecucion_1, lote=destino_a,
+            cantidad=Decimal("70"), unidad="kg",
+        )
+        ejecucion_2 = EjecucionProceso.objects.create(
+            codigo="EJ-ADEL-2", etapa=etapa, responsable=self.usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion_2, lote=origen,
+            cantidad=Decimal("60"), unidad="kg",
+        )
+        SalidaProceso.objects.create(
+            ejecucion=ejecucion_2, lote=destino_b,
+            cantidad=Decimal("45"), unidad="kg",
+        )
+
+        respuesta = self.cliente.get(
+            "/api/procesos/trazabilidad/lotes/ADEL-ORIGEN/?direccion=adelante"
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        enlaces = {
+            enlace["destino"]: enlace for enlace in respuesta.data["enlaces"]
+        }
+        self.assertEqual(len(enlaces), 2)
+
+        enlace_a = enlaces[destino_a.pk]
+        self.assertEqual(enlace_a["ejecucion"]["codigo"], "EJ-ADEL-1")
+        self.assertEqual(enlace_a["entrada"]["cantidad"], Decimal("90.000"))
+        self.assertEqual(enlace_a["salida"]["cantidad"], Decimal("70.000"))
+
+        enlace_b = enlaces[destino_b.pk]
+        self.assertEqual(enlace_b["ejecucion"]["codigo"], "EJ-ADEL-2")
+        self.assertEqual(enlace_b["entrada"]["cantidad"], Decimal("60.000"))
+        self.assertEqual(enlace_b["salida"]["cantidad"], Decimal("45.000"))
