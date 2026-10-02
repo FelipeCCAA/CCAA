@@ -10,6 +10,9 @@ from rest_framework.views import exception_handler as drf_exception_handler
 
 logger = logging.getLogger(__name__)
 
+# SQLSTATE de PostgreSQL para una violación de unicidad.
+UNIQUE_VIOLATION = "23505"
+
 
 def _detalle_validacion(error):
     if hasattr(error, "message_dict"):
@@ -69,8 +72,15 @@ def respuesta_error_integridad(error):
     escritura a medias que esta respuesta pudiera confirmar.
     """
     logger.exception("IntegrityError no anticipado por ningún serializer")
+    # La unicidad se reconoce por el SQLSTATE 23505 que trae el error del
+    # driver, no por el texto: el servidor puede responder en español
+    # («llave duplicada viola restricción de unicidad»). El texto queda solo
+    # de respaldo, para un error construido sin causa de la base.
+    sqlstate = getattr(error.__cause__, "pgcode", None)
     texto = str(error).casefold()
-    es_unicidad = "unique" in texto or "duplicate key" in texto
+    es_unicidad = sqlstate == UNIQUE_VIOLATION if sqlstate else (
+        "unique" in texto or "duplicate key" in texto
+    )
     if es_unicidad:
         codigo = "REGISTRO_DUPLICADO"
         estado = status.HTTP_409_CONFLICT

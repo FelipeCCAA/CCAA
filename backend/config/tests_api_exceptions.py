@@ -1,6 +1,7 @@
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
-from django.test import SimpleTestCase
+from django.db import IntegrityError, transaction
+from django.test import SimpleTestCase, TestCase
 
 from .api_exceptions import api_exception_handler
 
@@ -59,6 +60,27 @@ class ApiExceptionHandlerTests(SimpleTestCase):
             ),
             {},
         )
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertEqual(respuesta.data["code"], "REGISTRO_DUPLICADO")
+
+
+class IntegridadContraLaBaseRealTests(TestCase):
+    """
+    El error de verdad, no uno armado a mano: el PostgreSQL de planta puede
+    responder en español («llave duplicada viola restricción de unicidad»), así
+    que la unicidad se reconoce por el SQLSTATE y no por el texto.
+    """
+
+    def test_una_unicidad_violada_en_la_base_es_conflicto_409(self):
+        User.objects.create(username="duplicado-integridad")
+        try:
+            with transaction.atomic():
+                User.objects.create(username="duplicado-integridad")
+        except IntegrityError as error:
+            respuesta = api_exception_handler(error, {})
+        else:
+            self.fail("La base debió rechazar el usuario repetido.")
 
         self.assertEqual(respuesta.status_code, 409)
         self.assertEqual(respuesta.data["code"], "REGISTRO_DUPLICADO")
