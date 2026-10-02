@@ -125,6 +125,25 @@ class BorradorLoteTests(BaseApertura):
         self.assertEqual(respuesta.status_code, 200, respuesta.json())
         self.assertEqual(respuesta.json()["producto"], self.polvo.id)
 
+    def test_kg_producidos_negativos_en_el_autoguardado_no_rompe(self):
+        """
+        El CHECK `lote_kg_no_negativos` protege la base, pero no explica nada:
+        sin tope en el serializer, `kg_producidos=-500` llegaba intacto hasta
+        el `UPDATE` y PostgreSQL respondía con un `IntegrityError` sin
+        traducir — 500 en vez de un 400 legible.
+        """
+        borrador = self.crear_borrador()
+        self.cliente.raise_request_exception = False
+
+        respuesta = self.cliente.patch(
+            f"/api/produccion/lotes/{borrador['id']}/guardar-borrador/",
+            {"kg_producidos": "-500"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, getattr(respuesta, "data", None))
+        self.assertIn("kg_producidos", respuesta.data)
+
     def test_no_confirma_si_la_maquina_esta_reservada_en_preparacion(self):
         proceso = Proceso.objects.create(codigo="secado-prueba", nombre="Secado prueba")
         etapa = EtapaProceso.objects.create(

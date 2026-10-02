@@ -97,7 +97,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     activo: tocado,
     crear: crearBorradorLote,
     actualizar: guardarBorradorLote,
-    alError: () => setError("No se pudo autoguardar el borrador."),
+    alError: (error) => setError(mensajeErrorProceso(error, "No se pudo autoguardar el borrador.")),
   });
   const { reanudar } = borrador;
 

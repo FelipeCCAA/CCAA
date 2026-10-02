@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.test import SimpleTestCase
 
 from .api_exceptions import api_exception_handler
@@ -34,3 +35,30 @@ class ApiExceptionHandlerTests(SimpleTestCase):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertEqual(respuesta.data["code"], "TRANSICION_NO_PERMITIDA")
+
+    def test_integrity_error_no_termina_en_500(self):
+        respuesta = api_exception_handler(
+            IntegrityError(
+                'new row for relation "lote" violates check constraint '
+                '"lote_kg_no_negativos"'
+            ),
+            {},
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.data["code"], "ERROR_INTEGRIDAD")
+        # El texto crudo de PostgreSQL —nombres de tabla y de restricción— no
+        # sale en la respuesta: se queda en el log.
+        self.assertNotIn("lote_kg_no_negativos", respuesta.data["message"])
+
+    def test_integrity_error_de_unicidad_es_conflicto_409(self):
+        respuesta = api_exception_handler(
+            IntegrityError(
+                "duplicate key value violates unique constraint "
+                '"lote_codigo_unico_sucursal"'
+            ),
+            {},
+        )
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertEqual(respuesta.data["code"], "REGISTRO_DUPLICADO")

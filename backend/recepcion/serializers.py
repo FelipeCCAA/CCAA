@@ -65,6 +65,18 @@ class ControlInhibidoresSerializer(serializers.ModelSerializer):
 
 
 class RecepcionSerializer(serializers.ModelSerializer):
+    # El CHECK `recepcion_litros_no_negativos` protege la base, pero PostgreSQL
+    # no sabe explicarle al operador por qué falló: `litros=-500` llegaba
+    # intacto hasta el `UPDATE` y volvía como `IntegrityError`, un 500 sin
+    # mensaje útil. `min_value=0` (y no 0.01) porque el borrador puede
+    # guardarse con litros en cero antes de confirmarse — la exigencia de
+    # «mayor que cero» es de `Recepcion.motivos_para_confirmar`, no de acá.
+    litros = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        error_messages={"min_value": "Los litros no pueden ser negativos."},
+    )
     vehiculo_placa = serializers.CharField(source="vehiculo.placa", read_only=True)
     silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
     operador_nombre = serializers.CharField(

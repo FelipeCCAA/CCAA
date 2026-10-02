@@ -9,7 +9,11 @@ interface Opciones<T, R extends DocumentoConId> {
   activo: boolean;
   crear: (datos: T) => Promise<R>;
   actualizar: (id: number, datos: T) => Promise<R>;
-  alError?: () => void;
+  // Recibe el error para que quien lo use pueda mostrar el mensaje del
+  // servidor (`mensajeDe`) en vez de uno genérico: un 400 de validación
+  // —p. ej. litros negativos— trae un motivo concreto, y tragárselo deja al
+  // operador sin saber qué corregir.
+  alError?: (error: unknown) => void;
   demora?: number;
 }
 
@@ -77,7 +81,7 @@ export function useBorrador<T, R extends DocumentoConId>({
       setEstado("guardado");
     } catch (error) {
       setEstado("error");
-      errorRef.current?.();
+      errorRef.current?.(error);
       if (opciones.propagarError) throw error;
     } finally {
       enCurso.current = null;

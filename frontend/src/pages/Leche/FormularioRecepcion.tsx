@@ -12,6 +12,7 @@ import {
   type Recepcion, type Vehiculo,
 } from "../../services/recepcion.service";
 import { obtenerCargasPendientes, type CargaEsperada } from "../../services/recoleccion.service";
+import { mensajeDe } from "../../components/seccion/utilidades";
 import { useBorrador } from "../../hooks/useBorrador";
 
 interface Props {
@@ -216,7 +217,7 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
     activo: tocado && borradorPendiente === null,
     crear: crearBorradorRecepcion,
     actualizar: guardarBorradorRecepcion,
-    alError: () => setError("No se pudo autoguardar el borrador."),
+    alError: (error) => setError(mensajeDe(error, "No se pudo autoguardar el borrador.")),
   });
 
   const reanudarBorrador = (documento: Recepcion) => {

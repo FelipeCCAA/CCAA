@@ -98,7 +98,7 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
     activo: tocado && borradorPendiente === null,
     crear: crearBorradorAnalisisSilo,
     actualizar: guardarBorradorAnalisisSilo,
-    alError: () => setError("No se pudo autoguardar el análisis."),
+    alError: (error) => setError(mensajeDe(error, "No se pudo autoguardar el análisis.")),
   });
 
   const reanudar = (documento: Analisis) => {

@@ -114,7 +114,7 @@ function FormularioVale({
     activo: tocado,
     crear: crearBorradorVale,
     actualizar: guardarBorradorVale,
-    alError: () => setError("No se pudo autoguardar el borrador."),
+    alError: (error) => setError(mensajeDe(error, "No se pudo autoguardar el borrador.")),
   });
   const { reanudar } = borrador;
 

@@ -74,6 +74,31 @@ class BorradorRecepcionTests(BaseAPIRecepcion):
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(respuesta.data["count"], 0)
 
+    def test_litros_negativos_en_el_autoguardado_no_rompe(self):
+        """
+        El CHECK `recepcion_litros_no_negativos` protege la base, pero no al
+        operador: sin tope en el serializer, `litros=-500` llegaba intacto
+        hasta el `UPDATE` y PostgreSQL respondía con un `IntegrityError` que
+        DRF no sabía traducir — 500, con «No se pudo autoguardar el borrador»
+        como único mensaje en pantalla.
+        """
+        creado = self.cliente.post(
+            f"{self.url}crear-borrador/", {"guia": "BORR-NEG"}, format="json"
+        ).data
+        self.cliente.raise_request_exception = False
+
+        respuesta = self.cliente.patch(
+            f"{self.url}{creado['id']}/guardar-borrador/",
+            {"litros": "-500"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("litros", respuesta.data)
+        self.assertEqual(
+            Recepcion.objects.get(pk=creado["id"]).litros, Decimal("0")
+        )
+
     def test_descartar_anula_sin_borrar(self):
         creado = self.cliente.post(
             f"{self.url}crear-borrador/", {"guia": "DESCARTAR"}, format="json"

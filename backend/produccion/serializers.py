@@ -259,6 +259,20 @@ class LoteSerializer(serializers.ModelSerializer):
     litros_estandarizados = serializers.DecimalField(
         max_digits=12, decimal_places=2, write_only=True, required=False
     )
+    # El CHECK `lote_kg_no_negativos` protege la base, pero no explica nada:
+    # sin tope aquí, `kg_producidos=-500` llegaba intacto hasta el `UPDATE` y
+    # volvía como `IntegrityError` sin traducir. Sigue siendo nulable — el
+    # lote se abre sin kilos y recién los declara al cerrar la corrida — y
+    # `dominio.puede_declarar_producido` es quien exige que sean mayores que
+    # cero al pasar a «producido»; acá solo se descarta lo imposible.
+    kg_producidos = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        min_value=Decimal("0"),
+        error_messages={"min_value": "Los kilos producidos no pueden ser negativos."},
+    )
     litros_procesados = serializers.SerializerMethodField()
     habilitado_envasado = serializers.SerializerMethodField()
     bloqueo_envasado = serializers.SerializerMethodField()
