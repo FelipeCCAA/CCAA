@@ -82,6 +82,8 @@ function FormularioVale({
   const [tocado, setTocado] = useState(false);
   const [sugerencias, setSugerencias] = useState<SugerenciaSilo[]>([]);
   const [borradorPendiente, setBorradorPendiente] = useState<ValeEstandarizacion | null>(null);
+  const [descartando, setDescartando] = useState(false);
+  const [errorBorrador, setErrorBorrador] = useState("");
   const productoElegido = productos.find((p) => p.id === Number(datos.producto));
   const rutaProducto = productoElegido?.familia === "polvo"
     ? "Silo estandarizado → evaporación → precondensado → secado → envase → Calidad → Inventario"
@@ -159,9 +161,17 @@ function FormularioVale({
     setBorradorPendiente(null);
   };
 
-  const descartarPendiente = () => {
-    if (!borradorPendiente) return;
-    void descartarBorradorVale(borradorPendiente.id).then(() => setBorradorPendiente(null));
+  const descartarPendiente = async () => {
+    if (!borradorPendiente || descartando) return;
+    setErrorBorrador("");
+    setDescartando(true);
+    try {
+      await descartarBorradorVale(borradorPendiente.id);
+      setBorradorPendiente(null);
+    } catch (error) {
+      setErrorBorrador(mensajeDe(error, "No se pudo descartar el borrador."));
+      setDescartando(false);
+    }
   };
 
   useEffect(() => {
@@ -330,21 +340,28 @@ function FormularioVale({
               }).format(new Date(borradorPendiente.actualizado_en))}. Puedes continuarlo
               o descartarlo. No ha transferido leche ni reservado el código.
             </p>
+            {errorBorrador && (
+              <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {errorBorrador}
+              </div>
+            )}
             <div className="mt-5 flex flex-wrap gap-3">
               <button
                 type="button"
                 autoFocus
+                disabled={descartando}
                 onClick={() => reanudarBorrador(borradorPendiente)}
-                className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800"
+                className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Continuar borrador
               </button>
               <button
                 type="button"
+                disabled={descartando}
                 onClick={descartarPendiente}
-                className="h-10 rounded-xl border border-red-300 px-5 text-sm font-semibold text-red-800 hover:bg-red-50"
+                className="h-10 rounded-xl border border-red-300 px-5 text-sm font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Descartar borrador
+                {descartando ? "Descartando…" : "Descartar borrador"}
               </button>
               <button type="button" onClick={onCerrar} className="h-10 px-4 text-sm font-semibold text-slate-600">Cerrar</button>
             </div>
@@ -555,7 +572,7 @@ function FormularioVale({
                   {mezcla.crema > 0 && ` + ${mezcla.crema.toLocaleString("es-CL")} L de crema`}
                 </p>
                 <p className="mt-1">
-                  RC esperado {cantidad(mezcla.rc_esperado, undefined, 3)} ·{" "}
+                  RC esperado {cantidad(mezcla.rc_esperado, undefined, 4)} ·{" "}
                   {mezcla.grasa_esperada}% MG · {mezcla.sng_esperado}% SNG
                 </p>
                 {mezcla.avisos.map((aviso) => (

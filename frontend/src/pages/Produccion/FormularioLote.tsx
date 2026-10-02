@@ -82,6 +82,8 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
   const [error, setError] = useState("");
   const [tocado, setTocado] = useState(false);
   const [borradorPendiente, setBorradorPendiente] = useState<BorradorLote | null>(null);
+  const [descartando, setDescartando] = useState(false);
+  const [errorBorrador, setErrorBorrador] = useState("");
 
   const numeroONull = (valor: string) => valor === "" ? null : Number(valor);
   const datosBorrador: DatosBorradorLote = {
@@ -139,9 +141,17 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     setBorradorPendiente(null);
   };
 
-  const descartarPendiente = () => {
-    if (!borradorPendiente) return;
-    void descartarBorradorLote(borradorPendiente.id).then(() => setBorradorPendiente(null));
+  const descartarPendiente = async () => {
+    if (!borradorPendiente || descartando) return;
+    setErrorBorrador("");
+    setDescartando(true);
+    try {
+      await descartarBorradorLote(borradorPendiente.id);
+      setBorradorPendiente(null);
+    } catch (error) {
+      setErrorBorrador(mensajeErrorProceso(error, "No se pudo descartar el borrador."));
+      setDescartando(false);
+    }
   };
 
   useEffect(() => {
@@ -304,21 +314,28 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                 }).format(new Date(borradorPendiente.actualizado_en))}. Puedes continuarlo
                 o descartarlo. No ha abierto el proceso ni descontado leche.
               </p>
+              {errorBorrador && (
+                <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {errorBorrador}
+                </div>
+              )}
               <div className="mt-5 flex flex-wrap gap-3">
                 <button
                   type="button"
                   autoFocus
+                  disabled={descartando}
                   onClick={() => reanudarBorrador(borradorPendiente)}
-                  className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800"
+                  className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Continuar borrador
                 </button>
                 <button
                   type="button"
+                  disabled={descartando}
                   onClick={descartarPendiente}
-                  className="h-10 rounded-xl border border-red-300 px-5 text-sm font-semibold text-red-800 hover:bg-red-50"
+                  className="h-10 rounded-xl border border-red-300 px-5 text-sm font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Descartar borrador
+                  {descartando ? "Descartando…" : "Descartar borrador"}
                 </button>
                 <button type="button" onClick={alCerrar} className="h-10 px-4 text-sm font-semibold text-slate-600">Cerrar</button>
               </div>
@@ -558,9 +575,9 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                   <span>Producción</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-600">
-                  Vale {valeSeleccionado.codigo} · RC objetivo {cantidad(valeSeleccionado.rc_objetivo, undefined, 3)}
+                  Vale {valeSeleccionado.codigo} · RC objetivo {cantidad(valeSeleccionado.rc_objetivo, undefined, 4)}
                   {valeSeleccionado.rc_real != null
-                    ? ` · RC liberado ${cantidad(valeSeleccionado.rc_real, undefined, 3)}`
+                    ? ` · RC liberado ${cantidad(valeSeleccionado.rc_real, undefined, 4)}`
                     : ""}
                   {` · ${Number(valeSeleccionado.litros_disponibles).toLocaleString("es-CL")} L disponibles`}
                 </p>
