@@ -15,7 +15,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from auditoria.registro import crear_en_lote_con_auditoria
-from .dominio import formato_cantidad
+from config.formato import formato_cantidad
 from .models import ValeEstandarizacion
 from maestros.models import Silo
 from procesos.models import ReservaSiloProceso
