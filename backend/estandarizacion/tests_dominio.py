@@ -212,6 +212,16 @@ class EvaluarRcTests(TestCase):
         self.assertEqual(resultado.agregar, "descremada")
         self.assertIn("sobra", resultado.motivo)
 
+    def test_el_motivo_usa_coma_decimal_con_cuatro_cifras_fijas(self):
+        # El RC se guarda con 4 decimales exactos (CLAUDE.md, «RC con 4
+        # decimales»): recortar un cero final en el mensaje dejaría «0,201»
+        # donde la pantalla dice «0,2010», la misma discrepancia que motivó
+        # este punto.
+        resultado = evaluar_rc(grasa=2.20, sng=8.9, rc_objetivo=0.201)
+
+        self.assertIn("El RC real es 0,2472", resultado.motivo)
+        self.assertIn("objetivo 0,2010", resultado.motivo)
+
     def test_con_grasa_de_menos_pide_entera(self):
         resultado = evaluar_rc(grasa=1.30, sng=8.9, rc_objetivo=0.201)
 

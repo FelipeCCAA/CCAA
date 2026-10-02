@@ -27,9 +27,10 @@ const TONO: Record<string, string> = {
   anulado: "bg-rose-50 text-rose-700",
 };
 
-// RC es una razón sin unidad: 3 decimales fijos y coma, como el resto de
-// las cantidades de la planta (CLAUDE.md, «Decisiones vigentes»).
-const rc = (valor: number | string | null | undefined) => cantidad(valor, undefined, 3);
+// RC es una razón sin unidad: 4 decimales fijos y coma, los mismos con que se
+// guarda `rc_objetivo` y con que el dominio arma su mensaje — con menos, la
+// misma pantalla podía decir 0,202 en una parte y 0.2015 en otra.
+const rc = (valor: number | string | null | undefined) => cantidad(valor, undefined, 4);
 
 
 function Estandarizacion() {

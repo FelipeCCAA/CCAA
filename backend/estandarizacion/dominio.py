@@ -24,7 +24,8 @@ Fuente: `docs/REGLAS_DE_PLANTA.md` §3, extraído del flujo de fábrica §10.
 
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+
+from config.formato import formato_cantidad
 
 
 @dataclass(frozen=True)
@@ -310,7 +311,8 @@ def evaluar_rc(
         desvio,
         agregar="descremada" if desvio > 0 else "entera",
         motivo=(
-            f"El RC real es {rc_real:.4f} y el objetivo {rc_objetivo:.4f}: "
+            f"El RC real es {formato_cantidad(rc_real, decimales=4, fijos=True)} y "
+            f"el objetivo {formato_cantidad(rc_objetivo, decimales=4, fijos=True)}: "
             f"{'sobra' if desvio > 0 else 'falta'} grasa. Agrega leche "
             f"{'descremada' if desvio > 0 else 'entera'}, reagita y vuelve a "
             "analizar."

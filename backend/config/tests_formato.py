@@ -29,3 +29,13 @@ class FormatoCantidadTests(SimpleTestCase):
 
     def test_el_tope_de_decimales_es_configurable(self):
         self.assertEqual(formato_cantidad(Decimal("0.3456"), decimales=2), "0,35")
+
+    def test_fijos_conserva_los_ceros_finales(self):
+        # El RC se guarda con 4 decimales exactos: recortar el cero final de
+        # «0,2010» lo deja en «0,201», una cifra significativa menos que la
+        # que el dominio comparó contra la tolerancia.
+        self.assertEqual(formato_cantidad(Decimal("0.2010"), decimales=4, fijos=True), "0,2010")
+        self.assertEqual(formato_cantidad(Decimal("0.2"), decimales=4, fijos=True), "0,2000")
+
+    def test_fijos_tambien_redondea(self):
+        self.assertEqual(formato_cantidad(Decimal("0.20156"), decimales=4, fijos=True), "0,2016")
