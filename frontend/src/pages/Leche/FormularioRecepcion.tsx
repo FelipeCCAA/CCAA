@@ -14,6 +14,7 @@ import {
 import { obtenerCargasPendientes, type CargaEsperada } from "../../services/recoleccion.service";
 import { mensajeDe } from "../../components/seccion/utilidades";
 import { useBorrador } from "../../hooks/useBorrador";
+import { obtenerSesion } from "../../services/sesion";
 
 interface Props {
   vehiculos: Vehiculo[];
@@ -29,6 +30,10 @@ interface ModuloFormulario {
 }
 
 const hoy = () => new Date().toISOString().slice(0, 10);
+// Hora local (no UTC): el camión llega a la hora de Chile, no a la de
+// Greenwich. `toTimeString()` ya da los componentes locales.
+const horaActual = () => new Date().toTimeString().slice(0, 5);
+const TURNOS_VALIDOS = ["A", "B", "C"];
 const nuevoModulo = (clave: number, numero: number): ModuloFormulario => ({
   clave,
   numero,
@@ -127,7 +132,20 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
   useEffect(() => {
     void obtenerCatalogosFlujo().then(setCatalogos).catch(() => setCatalogos(null));
     void obtenerCargasPendientes().then(setCargasEsperadas).catch(() => setCargasEsperadas([]));
-    void obtenerBorradorRecepcion().then(setBorradorPendiente).catch(() => undefined);
+    void obtenerBorradorRecepcion().then((guardado) => {
+      setBorradorPendiente(guardado);
+      if (guardado) return;
+
+      // Solo cuando no hay borrador que retomar: lo que el operador ya
+      // guardó manda sobre lo que trae la sesión. El turno se precarga desde
+      // el perfil y la hora de arribo con la de este momento, para no
+      // obligar a teclear a mano lo que el sistema ya sabe.
+      const turnoPerfil = obtenerSesion()?.usuario.perfil?.turno;
+      if (turnoPerfil && TURNOS_VALIDOS.includes(turnoPerfil)) {
+        setTurno((actual) => actual || turnoPerfil);
+      }
+      setHoraArriboPorteria((actual) => actual || horaActual());
+    }).catch(() => undefined);
   }, []);
 
   const muestraNumeroDeUso = Boolean(uso && catalogos?.usos_numerados.includes(uso));
