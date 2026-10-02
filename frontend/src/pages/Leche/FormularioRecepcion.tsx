@@ -126,6 +126,8 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
   const [error, setError] = useState("");
   const [tocado, setTocado] = useState(false);
   const [borradorPendiente, setBorradorPendiente] = useState<Recepcion | null>(null);
+  const [descartando, setDescartando] = useState(false);
+  const [errorBorrador, setErrorBorrador] = useState("");
 
   // Los catálogos de los desplegables se sirven desde el backend y van
   // aparte: si este endpoint falla, el resto del formulario sigue usable.
@@ -277,6 +279,19 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
     setBorradorPendiente(null);
   };
 
+  const descartarPendiente = async () => {
+    if (!borradorPendiente || descartando) return;
+    setErrorBorrador("");
+    setDescartando(true);
+    try {
+      await descartarBorradorRecepcion(borradorPendiente.id);
+      setBorradorPendiente(null);
+    } catch (error) {
+      setErrorBorrador(mensajeDe(error, "No se pudo descartar el borrador."));
+      setDescartando(false);
+    }
+  };
+
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
     evento.preventDefault();
     setError("");
@@ -324,9 +339,14 @@ function FormularioRecepcion({ vehiculos, alCerrar, alGuardar }: Props) {
                 }).format(new Date(borradorPendiente.actualizado_en))}. Puedes continuarla
                 o descartarla. No ha movido saldo ni enviado avisos.
               </p>
+              {errorBorrador && (
+                <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {errorBorrador}
+                </div>
+              )}
               <div className="mt-5 flex flex-wrap gap-3">
-                <button type="button" onClick={() => reanudarBorrador(borradorPendiente)} className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800">Continuar borrador</button>
-                <button type="button" onClick={() => void descartarBorradorRecepcion(borradorPendiente.id).then(() => setBorradorPendiente(null))} className="h-10 rounded-xl border border-amber-300 px-5 text-sm font-semibold text-amber-900 hover:bg-amber-100">Descartar</button>
+                <button type="button" disabled={descartando} onClick={() => reanudarBorrador(borradorPendiente)} className="h-10 rounded-xl bg-amber-700 px-5 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60">Continuar borrador</button>
+                <button type="button" disabled={descartando} onClick={descartarPendiente} className="h-10 rounded-xl border border-amber-300 px-5 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60">{descartando ? "Descartando…" : "Descartar"}</button>
                 <button type="button" onClick={alCerrar} className="h-10 px-4 text-sm font-semibold text-slate-600">Cerrar</button>
               </div>
             </div>

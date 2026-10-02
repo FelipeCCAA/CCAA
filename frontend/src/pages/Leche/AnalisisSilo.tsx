@@ -57,6 +57,8 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
   const [tocado, setTocado] = useState(false);
   const [siloBorradorConsultado, setSiloBorradorConsultado] = useState<number | null>(null);
   const [borradorPendiente, setBorradorPendiente] = useState<Analisis | null>(null);
+  const [descartando, setDescartando] = useState(false);
+  const [errorBorrador, setErrorBorrador] = useState("");
   const consultandoBorrador = siloBorradorConsultado !== siloId;
 
   useEffect(() => {
@@ -114,6 +116,19 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
     borrador.reanudar(documento.id);
     setTocado(false);
     setBorradorPendiente(null);
+  };
+
+  const descartarPendiente = async () => {
+    if (!borradorPendiente || descartando) return;
+    setErrorBorrador("");
+    setDescartando(true);
+    try {
+      await descartarBorradorAnalisisSilo(borradorPendiente.id);
+      setBorradorPendiente(null);
+    } catch (error) {
+      setErrorBorrador(mensajeDe(error, "No se pudo descartar el borrador."));
+      setDescartando(false);
+    }
   };
 
   async function guardar() {
@@ -178,9 +193,14 @@ function AnalisisSiloPanel({ siloId, siloCodigo }: Props) {
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
           <strong>Análisis sin terminar.</strong> Puedes continuar los valores
           guardados o descartarlos; todavía no cuentan como muestra vigente.
+          {errorBorrador && (
+            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+              {errorBorrador}
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => reanudar(borradorPendiente)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white">Continuar</button>
-            <button type="button" onClick={() => void descartarBorradorAnalisisSilo(borradorPendiente.id).then(() => setBorradorPendiente(null))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold">Descartar</button>
+            <button type="button" disabled={descartando} onClick={() => reanudar(borradorPendiente)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Continuar</button>
+            <button type="button" disabled={descartando} onClick={descartarPendiente} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60">{descartando ? "Descartando…" : "Descartar"}</button>
           </div>
         </div>
       )}
