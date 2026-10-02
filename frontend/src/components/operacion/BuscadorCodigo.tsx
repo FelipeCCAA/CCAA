@@ -32,6 +32,7 @@ export default function BuscadorCodigo({ etiqueta, ayuda, ocupado = false, onBus
   }, []);
 
   const buscar = () => {
+    if (ocupado) return;
     const limpio = texto.trim();
     if (limpio) onBuscar(limpio);
     campo.current?.select();
