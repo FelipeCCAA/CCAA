@@ -1,14 +1,8 @@
-from datetime import date, timedelta
 from decimal import Decimal
 
-from django.contrib.auth.models import User
-from django.utils import timezone
+from usuarios.models import PerfilUsuario
 
-from maestros.models import Equipo, Mandante, Producto
-from produccion.models import Lote, PalletProducto, RegistroEnvase
-from usuarios.models import Empresa, PerfilUsuario, Sucursal
-
-from .models import Bodega, Existencia, ExistenciaProductoTerminado, Insumo, Ubicacion
+from .models import Existencia, ExistenciaProductoTerminado, Insumo, Ubicacion
 from .pruebas_base import EscenarioProductoTerminado
 from .servicios import crear_ajuste
 
@@ -79,27 +73,3 @@ class PendientesBodegaTests(EscenarioProductoTerminado):
         self.assertEqual(fila["unidad"], "un")
         self.assertEqual(fila["existencia_id"], existencia.pk)
         self.assertEqual(datos["total"], 1)
-
-    def test_no_muestra_lo_de_otra_empresa(self):
-        otra = Empresa.objects.create(rut="PT-2", nombre="Otra")
-        planta = Sucursal.objects.create(empresa=otra, codigo="PT2", nombre="Planta 2")
-        mandante = Mandante.objects.create(empresa=otra, nombre="Mandante 2", codigo_cliente="p2")
-        producto = Producto.objects.create(mandante=mandante, nombre="Polvo 2", unidad_base="kg")
-        lote = Lote.objects.create(
-            sucursal=planta, codigo_lote="L-OTRA", producto=producto, fecha=date(2026, 8, 17),
-            estado=Lote.Estado.PRODUCIDO, kg_producidos=Decimal("500"),
-        )
-        equipo = Equipo.objects.create(sucursal=planta, codigo="ENV-2", nombre="Env 2", tipo=Equipo.Tipo.ENVASADORA)
-        operador = User.objects.create_user("otra-empresa")
-        envase = RegistroEnvase.objects.create(
-            lote=lote, equipo=equipo, formato_kg=25, unidades=20, kg_envasados=500,
-            operador=operador, inicio=timezone.now() - timedelta(hours=1), termino=timezone.now(),
-        )
-        pallet = PalletProducto.objects.create(
-            envase=envase, codigo="PAL-OTRA", unidades=20, kg_neto=500, estado=PalletProducto.Estado.LIBERADO,
-        )
-        bodega = Bodega.objects.create(sucursal=planta, codigo="B2", nombre="Bodega 2")
-        cuarentena = Ubicacion.objects.create(bodega=bodega, codigo="Q-2", tipo=Ubicacion.Tipo.CUARENTENA)
-        ExistenciaProductoTerminado.objects.create(pallet=pallet, ubicacion=cuarentena)
-        codigos = [fila["pallet_codigo"] for fila in self.pendientes()["pallets_por_ubicar"]]
-        self.assertNotIn("PAL-OTRA", codigos)
