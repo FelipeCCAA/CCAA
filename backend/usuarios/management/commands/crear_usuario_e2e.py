@@ -35,8 +35,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from config.seguridad import ENTORNOS_ENDURECIDOS
-from usuarios.models import PerfilUsuario, Rol
-from usuarios.tenancy import unica_empresa_activa
+from usuarios.models import Empresa, PerfilUsuario, Rol
+from usuarios.tenancy import CODIGO_SUCURSAL_INICIAL, unica_empresa_activa
 
 USUARIO = "e2e_auditoria"
 CLAVE_POR_OMISION = "auditoria-e2e-ccaa"
@@ -71,8 +71,8 @@ class Command(BaseCommand):
                 "desarrollo o pruebas."
             )
 
-        empresa = unica_empresa_activa()
-        if empresa is None or not empresa.activa:
+        empresa = self._registro_tecnico()
+        if empresa is None:
             raise CommandError(
                 "Falta el registro técnico histórico requerido por el perfil."
             )
@@ -129,3 +129,23 @@ class Command(BaseCommand):
             self.stdout.write(f'    $env:E2E_CLAVE = "{clave}"')
             self.stdout.write("    npm run auditoria")
             self.stdout.write("")
+
+    def _registro_tecnico(self):
+        """
+        La empresa que el perfil exige por esquema, esté activa o no.
+
+        CCAA opera como una sola organización (`CLAUDE.md`, 2026-08-17): la
+        empresa del perfil es un registro técnico histórico que no concede
+        alcance ni filtra datos, así que su estado `activa` no decide nada aquí.
+        Se prefiere la activa canónica; si no la hay, el registro interno
+        sembrado (`INTERNA`) aunque esté inactivo, y si tampoco, cualquiera.
+        """
+        activa = unica_empresa_activa()
+        if activa is not None and activa.activa:
+            return activa
+        return (
+            Empresa.objects.filter(sucursales__codigo=CODIGO_SUCURSAL_INICIAL)
+            .order_by("pk")
+            .first()
+            or Empresa.objects.order_by("pk").first()
+        )
