@@ -1319,13 +1319,63 @@ def cerrar_estandarizacion(*, vale):
     return ejecucion
 
 
-@transaction.atomic
-def iniciar_condensacion(*, corrida_id, usuario):
+def motivos_para_iniciar_condensacion(corrida, *, origen=None, destino=None):
+    """
+    Lo que impide iniciar esta corrida, en el orden en que el inicio lo
+    comprueba. Lista vacía: se puede iniciar.
+
+    Es la única implementación de esas reglas: `iniciar_condensacion` lanza el
+    primer motivo, y el puesto de Evaporación los muestra junto a un botón
+    deshabilitado. Con dos copias, la pantalla habilitaría «Iniciar» sobre una
+    corrida que el servidor rechaza.
+    """
     from inventario.servicios import motivo_equipo_no_habilitado
     from maestros.models import Silo
     from produccion.models import OrdenProduccion
-    from recepcion.models import MovimientoSilo
     from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+
+    origen = origen or corrida.silo_origen
+    destino = destino or corrida.silo_destino
+    motivos = []
+    if corrida.orden.estado not in {
+        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
+    }:
+        motivos.append("La orden debe estar programada o en proceso.")
+    if not corrida.ejecucion.equipo_id:
+        motivos.append("La corrida requiere un evaporador asignado.")
+    else:
+        impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
+        if impedimento:
+            motivos.append(impedimento)
+    motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos_silo:
+        motivos.append(f"{origen.codigo}: " + " ".join(motivos_silo))
+    if reservas_activas_silo(
+        silo_id=origen.pk, tipo=ReservaSiloProceso.Tipo.DESTINO,
+        excluir_ejecucion_id=corrida.ejecucion_id,
+    ).exists():
+        motivos.append(f"{origen.codigo} esta reservado como destino de otra ejecucion.")
+    try:
+        exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=corrida.ejecucion_id)
+    except ValidationError as error:
+        motivos.extend(error.messages)
+    if not destino.activo or destino.estado in {
+        Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+    }:
+        motivos.append(f"{destino.codigo} no admite precondensado.")
+    elif saldo_silo(destino) + corrida.litros_entrada > destino.capacidad_l:
+        motivos.append(
+            f"{destino.codigo} no tiene capacidad para reservar {corrida.litros_entrada} L."
+        )
+    return motivos
+
+
+@transaction.atomic
+def iniciar_condensacion(*, corrida_id, usuario):
+    from maestros.models import Silo
+    from produccion.models import OrdenProduccion
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import saldo_silo
     from .models import EntradaProceso
 
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
@@ -1341,15 +1391,6 @@ def iniciar_condensacion(*, corrida_id, usuario):
     if corrida.estado != CorridaCondensacion.Estado.BORRADOR:
         raise ValidationError("Solo una corrida en borrador puede iniciarse.")
     corrida.clean()
-    if corrida.orden.estado not in {
-        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
-    }:
-        raise ValidationError("La orden debe estar programada o en proceso.")
-    if not corrida.ejecucion.equipo_id:
-        raise ValidationError("La corrida requiere un evaporador asignado.")
-    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
-    if impedimento:
-        raise ValidationError(impedimento)
 
     silos = {
         silo.pk: silo
@@ -1359,34 +1400,9 @@ def iniciar_condensacion(*, corrida_id, usuario):
     }
     origen = silos[corrida.silo_origen_id]
     destino = silos[corrida.silo_destino_id]
-    motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
-    if motivos_silo:
-        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos_silo))
-    if reservas_activas_silo(
-        silo_id=origen.pk, tipo=ReservaSiloProceso.Tipo.DESTINO,
-        excluir_ejecucion_id=corrida.ejecucion_id,
-    ).exists():
-        raise ValidationError(
-            f"{origen.codigo} esta reservado como destino de otra ejecucion."
-        )
-    exigir_destino_sin_reserva(
-        silo=destino, excluir_ejecucion_id=corrida.ejecucion_id,
-    )
-    if not destino.activo or destino.estado in {
-        Silo.Estado.BLOQUEADO_CALIDAD,
-        Silo.Estado.EN_CIP,
-        Silo.Estado.FUERA_SERVICIO,
-    }:
-        raise ValidationError({
-            "silo_destino": f"{destino.codigo} no admite precondensado."
-        })
-    if saldo_silo(destino) + corrida.litros_entrada > destino.capacidad_l:
-        raise ValidationError({
-            "silo_destino": (
-                f"{destino.codigo} no tiene capacidad para reservar "
-                f"{corrida.litros_entrada} L."
-            )
-        })
+    motivos = motivos_para_iniciar_condensacion(corrida, origen=origen, destino=destino)
+    if motivos:
+        raise ValidationError(motivos[0])
 
     # Tras integrar el lote con el motor de procesos aparecieron dos caminos
     # representando el mismo hecho: abrir el lote ya consumía el silo y dejaba
