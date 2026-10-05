@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { AlertTriangle, Factory, FlaskConical, Gauge, PackageCheck, Plus, Search, type LucideIcon } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 
@@ -71,6 +71,9 @@ const FilaLote = memo(function FilaLote({
 
 function Produccion() {
 
+  const [parametros] = useSearchParams();
+  const seccionSolicitada = parametros.get("seccion");
+
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
@@ -88,6 +91,16 @@ function Produccion() {
   const [historialActivo, setHistorialActivo] = useState(false);
   const [resumenOperacional, setResumenOperacional] = useState<ResumenOperacionalProduccion | null>(null);
   const [resumenNoDisponible, setResumenNoDisponible] = useState(false);
+
+  // Mismo mecanismo que Procesos.tsx: HashRouter no procesa un segundo `#`,
+  // así que el menú llega con `?seccion=` y acá se traduce a un scroll.
+  useEffect(() => {
+    if (!seccionSolicitada) return;
+    const temporizador = window.setTimeout(() => {
+      document.getElementById(seccionSolicitada)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(temporizador);
+  }, [seccionSolicitada]);
 
   // Solo Producción y Administración registran lotes. El resto consulta.
   const puedeEditar = puedeEscribir("produccion");
@@ -264,7 +277,7 @@ function Produccion() {
 
         <div id="continuidad"><SalidasIntermedias onCambio={cargarResumenOperacional} /></div>
 
-        {veCondensacion && <div id="evaporacion"><EvaporadoresProduccion /></div>}
+        {veCondensacion && <div id="evaporacion" className="scroll-mt-6"><EvaporadoresProduccion /></div>}
 
         {/* Filtros */}
 

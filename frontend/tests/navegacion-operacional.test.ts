@@ -135,6 +135,37 @@ test("la ubicación distingue subprocesos que comparten una URL", () => {
   );
 });
 
+test("Evaporación y Trazabilidad usan ?seccion=, no un segundo # que HashRouter no procesa", () => {
+  // Calidad, y no Condensación: su inicio es /calidad, así que "Panel de
+  // producción" (ruta /produccion) sigue en su menú y no se filtra por ser
+  // su propia entrada de inicio (criterio ya fijado más arriba, con
+  // Administración y /dashboard).
+  const calidad = usuarioDeArea("calidad", "Calidad", "calidad");
+  const navegacion = navegacionPara(calidad);
+  const evaporacion = navegacion.grupos
+    .flatMap((grupo) => grupo.enlaces)
+    .find((enlace) => enlace.etiqueta === "Evaporación");
+  const trazabilidad = navegacion.grupos
+    .flatMap((grupo) => grupo.enlaces)
+    .find((enlace) => enlace.etiqueta === "Trazabilidad productiva");
+  const panel = navegacion.grupos
+    .flatMap((grupo) => grupo.enlaces)
+    .find((enlace) => enlace.etiqueta === "Panel de producción");
+  assert.equal(evaporacion?.ruta, "/produccion?seccion=evaporacion");
+  assert.equal(trazabilidad?.ruta, "/procesos?seccion=trazabilidad");
+
+  // Visitar la sección no debe marcar a la vez el panel general: antes el
+  // resguardo solo miraba `hashActual`, y con `?seccion=` quedaban los dos
+  // enlaces activos en /produccion.
+  assert.ok(evaporacion && esEnlaceOperacionalActual(
+    evaporacion, "/produccion", "?seccion=evaporacion",
+  ));
+  assert.ok(panel && !esEnlaceOperacionalActual(
+    panel, "/produccion", "?seccion=evaporacion",
+  ));
+  assert.ok(panel && esEnlaceOperacionalActual(panel, "/produccion", ""));
+});
+
 test("las URLs compatibles conservan el contexto operacional", () => {
   const usuario = usuarioDeArea("calidad", "Calidad", "calidad");
   const contexto = contextoOperacionalPara(usuario, "/liberacion");

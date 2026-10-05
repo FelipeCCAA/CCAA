@@ -53,7 +53,9 @@ export default function TrazabilidadProceso() {
   return (
     <>
       {error && <ErrorState mensaje={error} />}
-    <section id="trazabilidad" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6">
+    {/* El scroll de ?seccion= busca "proceso-<seccion>" (ver Procesos.tsx); con
+        solo "trazabilidad" el enlace del menú nunca encontraba el elemento. */}
+    <section id="proceso-trazabilidad" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6">
       <div className="flex items-center gap-3"><GitBranch className="h-5 w-5 text-green-700" /><div><h2 className="text-lg font-semibold">Trazabilidad visual</h2><p className="mt-1 text-xs text-slate-600">Carga el detalle solamente al seleccionar un lote, una corrida/ejecución o una salida.</p></div></div>
       <form onSubmit={buscar} className="mt-5 flex flex-col gap-3 sm:flex-row">
         <select aria-label="Tipo de referencia" value={tipoReferencia} onChange={(e) => setTipoReferencia(e.target.value as TipoReferenciaTrazabilidad)} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5"><option value="lote">Lote o pallet</option><option value="ejecucion">Corrida / ejecución</option><option value="salida">Salida de proceso</option></select>
