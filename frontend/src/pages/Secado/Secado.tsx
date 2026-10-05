@@ -107,7 +107,7 @@ export default function Secado() {
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Puesto operacional</p>
             <h1 className="mt-1 text-3xl font-bold text-slate-900">Secado</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600">Seguimiento y cierre de las corridas que nacen automáticamente al abrir un lote en una torre.</p>
+            <p className="mt-2 max-w-2xl text-sm text-slate-600">Seguimiento y cierre de las corridas que nacen al preparar, desde Producción, la continuación del concentrado que Calidad ya liberó.</p>
           </div>
           <div className="flex flex-wrap gap-2">{puedeOperar && <button type="button" onClick={() => setIniciandoExterno(true)} className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-800"><Plus className="h-4 w-4" />Alimentación externa</button>}<button type="button" onClick={() => void cargar()} disabled={cargando} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />Actualizar Secado</button></div>
         </header>

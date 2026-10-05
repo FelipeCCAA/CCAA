@@ -105,7 +105,7 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
 
   await test.step("1 · se abre el lote sobre un evaporador", async () => {
     await irA(page, "/produccion");
-    await page.getByRole("button", { name: "Iniciar lote desde vale" }).click();
+    await page.getByRole("button", { name: "Abrir lote desde vale" }).click();
 
     await expect(page.getByText("Vale estandarizado liberado")).toBeVisible();
 
@@ -271,7 +271,9 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
     ).toEqual([]);
 
     await trasGuardar(page, "confirmar-borrador", async () => {
-      await page.getByRole("button", { name: "Abrir proceso" }).last().click();
+      // Exacto: "Abrir lote" es ahora substring de "Abrir lote desde vale",
+      // el botón que abrió este mismo formulario y sigue en el DOM detrás.
+      await page.getByRole("button", { name: "Abrir lote", exact: true }).click();
     });
   });
 

@@ -279,7 +279,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
             <h2 className="text-lg font-semibold text-slate-800">
 
-              Abrir proceso de producción
+              Abrir lote desde vale
 
             </h2>
 
@@ -634,7 +634,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
               className="rounded-xl bg-green-700 px-6 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-60"
             >
 
-              {guardando ? "Abriendo…" : "Abrir proceso"}
+              {guardando ? "Abriendo…" : "Abrir lote"}
 
             </button>
 

@@ -231,7 +231,7 @@ function Produccion() {
 
               <Plus className="h-5 w-5" />
 
-              Iniciar lote desde vale
+              Abrir lote desde vale
 
             </button>
 
