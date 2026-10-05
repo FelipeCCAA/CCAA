@@ -41,3 +41,25 @@ def calcular_balance_descremacion(
     return BalanceDescremacion(
         esperada_descremada, esperada_crema, merma, desvio, tuple(avisos)
     )
+
+
+# Pantalla donde se trabaja cada etapa, para los enlaces de los avisos.
+# Misma tabla que `rutaDeEtapa` en `frontend/src/services/planta-ahora.ts`:
+# si divergen, un aviso lleva a una sección que no existe.
+RUTAS_POR_ETAPA = {
+    "recepcion": "/leche",
+    "estandarizacion": "/estandarizacion",
+    "descremacion": "/procesos?seccion=descremacion",
+    "evaporacion": "/produccion?seccion=evaporacion",
+    "condensacion": "/produccion?seccion=evaporacion",
+    "secado": "/secado",
+    "envasado": "/envasado",
+    "mantequilla": "/procesos?seccion=mantequilla",
+    "transferencia": "/produccion",
+    "otro": "/produccion",
+}
+
+
+def ruta_de_etapa(tipo: str) -> str:
+    """La pantalla donde se trabaja una etapa; el panel de producción si no se conoce."""
+    return RUTAS_POR_ETAPA.get(tipo, "/produccion")

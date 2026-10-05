@@ -562,16 +562,14 @@ def notificar_handoff_salida_liberada(salida):
         siguiente = siguiente_etapa_para_salida(salida=salida)
         if siguiente is None:
             return
-        if siguiente.tipo == EtapaProceso.Tipo.SECADO:
-            area = PerfilUsuario.Area.SECADO
-            accion_url = "/secado"
-        else:
-            area = PerfilUsuario.Area.CONDENSACION
-            accion_url = (
-                "/estandarizacion"
-                if siguiente.tipo == EtapaProceso.Tipo.ESTANDARIZACION
-                else f"/procesos?seccion={siguiente.tipo}"
-            )
+        from .dominio import ruta_de_etapa
+
+        area = (
+            PerfilUsuario.Area.SECADO
+            if siguiente.tipo == EtapaProceso.Tipo.SECADO
+            else PerfilUsuario.Area.CONDENSACION
+        )
+        accion_url = ruta_de_etapa(siguiente.tipo)
         accion = f"{siguiente.nombre} ya puede preparar la continuación."
 
     lote = salida.lote.codigo_lote if salida.lote_id else "sin lote asignado"
