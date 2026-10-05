@@ -62,6 +62,7 @@ from .servicios import (
     estado_puesto_evaporacion,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     preparar_continuacion, siguiente_etapa_para_salida,
+    silos_con_saldo,
     sugerir_plan_descremacion,
     tipos_equipo_para_etapa, transicionar_ejecucion,
 )
@@ -207,20 +208,7 @@ class CorridaCondensacionViewSet(
             campo_empresa="sucursal__empresa_id",
         )
         silos = filtrar_por_scope(
-            Silo.objects.filter(activo=True).annotate(
-                ingresos=Coalesce(
-                    Sum("movimientos__litros", filter=Q(movimientos__tipo="ingreso")),
-                    Value(0), output_field=DecimalField(),
-                ),
-                salidas=Coalesce(
-                    Sum("movimientos__litros", filter=Q(movimientos__tipo="salida")),
-                    Value(0), output_field=DecimalField(),
-                ),
-                ajustes=Coalesce(
-                    Sum("movimientos__litros", filter=Q(movimientos__tipo="ajuste")),
-                    Value(0), output_field=DecimalField(),
-                ),
-            ),
+            silos_con_saldo(Silo.objects.filter(activo=True)),
             request.user, campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
         )
@@ -242,7 +230,7 @@ class CorridaCondensacionViewSet(
                 {
                     "id": silo.pk, "codigo": silo.codigo,
                     "estado": silo.get_estado_display(), "capacidad_l": silo.capacidad_l,
-                    "saldo_l": silo.ingresos - silo.salidas + silo.ajustes,
+                    "saldo_l": silo.saldo_l,
                 }
                 for silo in silos
             ],

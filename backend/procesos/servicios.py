@@ -4,7 +4,8 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, F, Prefetch, Q, Sum
+from django.db.models import Case, Count, DecimalField, F, Prefetch, Q, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from auditoria.registro import (
@@ -173,6 +174,31 @@ def exigir_destino_sin_reserva(*, silo, excluir_ejecucion_id=None):
                 f"{silo.codigo} esta reservado por {reserva.ejecucion.codigo}."
             )
         })
+
+
+def silos_con_saldo(queryset):
+    """Anota cada silo de `queryset` con su saldo real, en una sola consulta.
+
+    Misma regla que `recepcion.servicios.saldo_silo` —ingreso y ajuste suman,
+    salida resta—, pero como anotación agrupada por silo en vez de una
+    consulta aparte por cada uno: sobre un listado (opciones de destino del
+    puesto, por ejemplo) una consulta por fila crece con la planta.
+    """
+    from recepcion.models import MovimientoSilo
+
+    return queryset.annotate(
+        saldo_l=Coalesce(
+            Sum(Case(
+                When(
+                    movimientos__tipo=MovimientoSilo.Tipo.SALIDA,
+                    then=-F("movimientos__litros"),
+                ),
+                default=F("movimientos__litros"),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )),
+            Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
+        )
+    )
 
 
 def adquirir_equipo(*, equipo_id, ejecucion_id=None):
@@ -1383,9 +1409,14 @@ def estado_puesto_evaporacion(usuario):
     de una sola corrida (la en proceso manda sobre la preparada), con los
     motivos que impiden iniciarla calculados por la misma función que decide
     al iniciar; los destinos que el cierre aceptará; y las corridas de hoy.
+
+    `en_calidad` es aparte de `corrida`: una corrida nueva preparada en el
+    mismo evaporador no oculta que la anterior sigue esperando a Calidad —la
+    máquina física está libre para empezar, pero el destino de esa corrida
+    anterior puede seguir bloqueado. Cuando la fila misma está
+    `esperando_calidad`, `en_calidad` es esa misma corrida.
     """
     from maestros.models import Equipo, Silo
-    from recepcion.servicios import saldo_silo
     from usuarios.tenancy import filtrar_por_scope
 
     equipos = filtrar_por_scope(
@@ -1422,33 +1453,44 @@ def estado_puesto_evaporacion(usuario):
             "iniciada_en": corrida.iniciada_en,
         }
 
+    def resumen_en_calidad(corrida):
+        return {
+            "id": corrida.pk, "codigo": corrida.ejecucion.codigo,
+            "lote_codigo": corrida.lote.codigo_lote if corrida.lote_id else None,
+        }
+
     evaporadores = []
     for equipo in equipos:
         corrida = activas.get(equipo.pk)
+        corrida_en_calidad = esperando.get(equipo.pk)
         if corrida is not None:
             en_curso = corrida.estado == CorridaCondensacion.Estado.EN_PROCESO
             estado = "en_curso" if en_curso else "preparada"
             motivos = [] if en_curso else motivos_para_iniciar_condensacion(corrida)
-        elif equipo.pk in esperando:
-            corrida, estado, motivos = esperando[equipo.pk], "esperando_calidad", []
+        elif corrida_en_calidad is not None:
+            corrida, estado, motivos = corrida_en_calidad, "esperando_calidad", []
         else:
             estado, motivos = "disponible", []
         evaporadores.append({
             "equipo_id": equipo.pk, "codigo": equipo.codigo, "nombre": equipo.nombre,
             "estado": estado,
             "corrida": resumen(corrida) if corrida is not None else None,
+            "en_calidad": (
+                resumen_en_calidad(corrida_en_calidad)
+                if corrida_en_calidad is not None else None
+            ),
             "motivos_para_iniciar": motivos,
         })
 
-    destinos = []
-    for silo in filtrar_por_scope(
-        Silo.objects.filter(activo=True, estado=Silo.Estado.DISPONIBLE).order_by("codigo"),
-        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-    ):
-        destinos.append({
-            "id": silo.pk, "codigo": silo.codigo,
-            "libre_l": silo.capacidad_l - saldo_silo(silo),
-        })
+    destinos = [
+        {"id": silo.pk, "codigo": silo.codigo, "libre_l": silo.capacidad_l - silo.saldo_l}
+        for silo in filtrar_por_scope(
+            silos_con_saldo(
+                Silo.objects.filter(activo=True, estado=Silo.Estado.DISPONIBLE)
+            ).order_by("codigo"),
+            usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+    ]
 
     hoy = timezone.localdate()
     corridas_de_hoy = [
@@ -1460,7 +1502,10 @@ def estado_puesto_evaporacion(usuario):
         }
         for corrida in corridas.filter(
             Q(iniciada_en__date=hoy) | Q(finalizada_en__date=hoy)
-            | Q(estado=CorridaCondensacion.Estado.BORRADOR)
+            | Q(
+                estado=CorridaCondensacion.Estado.BORRADOR,
+                ejecucion__creada_en__date=hoy,
+            )
         ).order_by("-pk")
     ]
     return {"evaporadores": evaporadores, "destinos": destinos, "corridas_de_hoy": corridas_de_hoy}

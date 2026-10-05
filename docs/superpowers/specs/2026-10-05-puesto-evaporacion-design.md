@@ -74,6 +74,7 @@ pantalla ofrece lo que el backend va a rechazar» en `CLAUDE.md`). La validació
     "corrida": { "id": 41, "codigo": "EJ-PROD-87", "lote_codigo": "CCAA6278SH3-01",
                   "silo_origen": "TK 3", "silo_destino": "SILO 6",
                   "litros_entrada": "20000.00", "iniciada_en": null },
+    "en_calidad": null,
     "motivos_para_iniciar": ["El silo TK 3 no tiene un análisis confirmado y vigente."]
   }],
   "destinos": [{ "id": 6, "codigo": "SILO 6", "libre_l": "48000.00" }],
@@ -86,6 +87,11 @@ pantalla ofrece lo que el backend va a rechazar» en `CLAUDE.md`). La validació
   `borrador`; sin corrida activa, `disponible`; con la ejecución en `pendiente_control`,
   `esperando_calidad`. La lógica que hoy vive en `frontend/src/services/estado-evaporador.ts`
   pasa aquí.
+- `en_calidad` es un dato aparte de `corrida`: la corrida con ejecución `pendiente_control` en esa
+  máquina, aunque la fila ya muestre una `preparada` o `en_curso` nueva. La máquina física puede
+  estar libre para empezar mientras el destino de la corrida anterior sigue esperando a Calidad;
+  ocultar eso detrás de la corrida nueva escondería que ese silo sigue bloqueado. Cuando la fila
+  misma es `esperando_calidad`, `en_calidad` es esa misma corrida.
 - `motivos_para_iniciar` (solo para `preparada`) lo calcula una función nueva
   `motivos_para_iniciar_condensacion(corrida)` en `procesos/servicios.py`, extraída de
   `iniciar_condensacion`: estado de la orden, equipo habilitado (`motivo_equipo_no_habilitado`),

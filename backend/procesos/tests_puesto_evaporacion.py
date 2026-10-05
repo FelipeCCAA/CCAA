@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -5,7 +6,7 @@ from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Silo
 from procesos.models import CorridaCondensacion, EjecucionProceso
-from recepcion.models import AnalisisSilo
+from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import PerfilUsuario, Rol
 
 from .tests_condensacion import FlujoCondensacionTests
@@ -58,6 +59,7 @@ class PuestoEvaporacionTests(FlujoCondensacionTests):
         self.ejecucion.save(update_fields=["estado"])
         fila = self.fila(self.puesto(), self.equipo)
         self.assertEqual(fila["estado"], "esperando_calidad")
+        self.assertEqual(fila["en_calidad"]["codigo"], self.ejecucion.codigo)
 
     def test_los_destinos_ofrecidos_son_solo_disponibles(self):
         bloqueado = Silo.objects.create(
@@ -67,6 +69,55 @@ class PuestoEvaporacionTests(FlujoCondensacionTests):
         codigos = [item["codigo"] for item in self.puesto()["destinos"]]
         self.assertIn(self.destino.codigo, codigos)
         self.assertNotIn(bloqueado.codigo, codigos)
+
+    def test_libre_l_del_destino_resta_salidas_y_suma_ingresos(self):
+        """El `libre_l` de un destino usa la misma regla que `saldo_silo`."""
+        MovimientoSilo.objects.create(
+            silo=self.destino, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=400, fecha_hora=timezone.now(),
+        )
+        MovimientoSilo.objects.create(
+            silo=self.destino, tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=150, fecha_hora=timezone.now(),
+        )
+        destino = next(
+            item for item in self.puesto()["destinos"] if item["codigo"] == self.destino.codigo
+        )
+        # capacidad 1000, saldo 400 - 150 = 250 -> libre 750.
+        self.assertEqual(destino["libre_l"], Decimal("750.00"))
+
+    def test_una_preparada_nueva_no_oculta_la_corrida_que_espera_calidad(self):
+        """Una corrida preparada no borra que la anterior sigue en Calidad."""
+        ejecucion_anterior = EjecucionProceso.objects.create(
+            codigo="EJ-COND-ESPERA",
+            etapa=self.ejecucion.etapa,
+            sucursal=self.planta,
+            equipo=self.equipo,
+            responsable=self.usuario,
+            estado=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        )
+        CorridaCondensacion.objects.create(
+            ejecucion=ejecucion_anterior,
+            orden=self.orden,
+            lote=self.lote,
+            silo_origen=self.origen,
+            silo_destino=self.destino,
+            litros_entrada=600,
+            estado=CorridaCondensacion.Estado.CERRADA,
+        )
+
+        fila = self.fila(self.puesto(), self.equipo)
+
+        self.assertEqual(fila["estado"], "preparada")
+        self.assertEqual(fila["corrida"]["id"], self.corrida.pk)
+        self.assertEqual(fila["en_calidad"]["codigo"], ejecucion_anterior.codigo)
+
+    def test_corridas_de_hoy_no_incluye_un_borrador_de_otro_dia(self):
+        EjecucionProceso.objects.filter(pk=self.ejecucion.pk).update(
+            creada_en=timezone.now() - timedelta(days=2)
+        )
+        codigos = [item["codigo"] for item in self.puesto()["corridas_de_hoy"]]
+        self.assertNotIn(self.ejecucion.codigo, codigos)
 
     def test_un_usuario_de_calidad_puede_leer_el_puesto(self):
         calidad = self._crear_usuario_calidad()
