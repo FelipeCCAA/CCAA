@@ -8,7 +8,17 @@ from .models import Lote
 from .tests_apertura import BaseApertura
 
 
-class BorradorLoteTests(BaseApertura):
+class BaseBorradorLote(BaseApertura):
+    """
+    El montaje del borrador, sin pruebas propias.
+
+    Separado de `BorradorLoteTests` para que otras fixtures (por ejemplo, la
+    de confirmar sobre un evaporador) puedan reutilizar el vale y los
+    ayudantes sin heredar también sus `test_*`: unittest ejecuta los métodos
+    de prueba de toda la cadena de herencia, y heredar la clase con pruebas
+    las corre otra vez bajo el `setUp` de la subclase.
+    """
+
     def setUp(self):
         super().setUp()
         self.vale = ValeEstandarizacion.objects.create(
@@ -65,6 +75,8 @@ class BorradorLoteTests(BaseApertura):
             "observacion": "Corrida de prueba",
         }
 
+
+class BorradorLoteTests(BaseBorradorLote):
     def test_el_borrador_parcial_se_recupera_y_no_aparece_como_lote(self):
         borrador = self.crear_borrador(observacion="A medio completar")
 

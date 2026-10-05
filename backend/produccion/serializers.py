@@ -486,7 +486,11 @@ class LoteSerializer(serializers.ModelSerializer):
                         "Indica cuántos litros del vale entran a la corrida."
                     )
                 })
-            if not datos.get("linea"):
+            # La línea solo existe para las torres Egron (E1/E2); un
+            # evaporador no tiene línea que declarar. Misma regla que usa el
+            # borrador guiado (`Lote.motivos_para_confirmar`), para no
+            # mantenerla en dos lugares.
+            if dominio.exige_linea(equipo) and not datos.get("linea"):
                 raise serializers.ValidationError({
                     "linea": "Selecciona la línea de producción."
                 })

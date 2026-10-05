@@ -188,6 +188,29 @@ class FlujoIntegradoApiTests(TestCase):
         self.assertEqual(ejecucion["lote_codigo"], lote.codigo_lote)
         self.assertEqual(ejecucion["entradas"][0]["silo_codigo"], "SILO 2")
 
+    def test_sin_linea_la_torre_no_abre(self):
+        """
+        La torre de este fixture exige línea (E1/E2); el evaporador no —ver
+        `AperturaDirectaSobreEvaporadorApiTests`—. Misma regla
+        (`dominio.exige_linea`) en los dos caminos que abren un lote.
+        """
+        respuesta = self.cliente.post(
+            "/api/produccion/lotes/",
+            {
+                "codigo_lote": "CCAA6225LEP-02",
+                "producto": self.producto.pk,
+                "vale": self.vale.pk,
+                "litros_estandarizados": "1000",
+                "fecha": "2026-08-13",
+                "equipo": self.equipo.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("linea", respuesta.data)
+        self.assertFalse(Lote.objects.filter(codigo_lote="CCAA6225LEP-02").exists())
+
     def test_rechaza_el_contrato_antiguo_que_pedia_silo(self):
         respuesta = self.cliente.post(
             "/api/produccion/lotes/",
@@ -250,3 +273,90 @@ class FlujoIntegradoApiTests(TestCase):
         self.assertEqual(flujo["recepciones"][0]["guia"], "G-100")
         self.assertEqual(flujo["estandarizacion"]["vale_codigo"], "VE-100")
         self.assertEqual(flujo["produccion"]["equipo"], "Torre Egron 1")
+
+
+class AperturaDirectaSobreEvaporadorApiTests(TestCase):
+    """
+    El alta directa desde el vale (`POST /api/produccion/lotes/`) sigue la
+    misma regla de línea que el borrador guiado: un evaporador abre sin ella.
+    """
+
+    def setUp(self):
+        self.empresa = Empresa.objects.create(rut="76.000.200-1", nombre="CCAA evaporador")
+        self.planta = Sucursal.objects.create(
+            empresa=self.empresa, codigo="PLEV", nombre="Planta evaporador"
+        )
+        mandante = Mandante.objects.create(
+            empresa=self.empresa, nombre="Cliente evaporador", codigo_cliente="cliente-evap"
+        )
+        self.producto = Producto.objects.create(
+            mandante=mandante, codigo="LEPV", nombre="Leche en polvo evaporador"
+        )
+        self.origen = Silo.objects.create(
+            sucursal=self.planta, codigo="SILO EV 1", tipo=Silo.Tipo.SILO,
+            capacidad_l=100000,
+        )
+        self.destino = Silo.objects.create(
+            sucursal=self.planta, codigo="SILO EV 2", tipo=Silo.Tipo.SILO,
+            capacidad_l=100000,
+        )
+        self.evaporador = Equipo.objects.create(
+            sucursal=self.planta, codigo="EV-DIRECTO", nombre="Evaporador directo",
+            tipo=Equipo.Tipo.EVAPORADOR,
+        )
+        proceso = Proceso.objects.create(
+            codigo="polvo-directo-evaporador", nombre="Polvo directo por evaporador"
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="estandarizacion-directo-evap",
+            nombre="Estandarización",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION,
+            orden=1,
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso,
+            codigo="evaporacion-directo-evap",
+            nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.EVAPORACION,
+            orden=2,
+        )
+        RutaProducto.objects.create(
+            sucursal=self.planta, producto=self.producto, proceso=proceso,
+        )
+        self.vale = ValeEstandarizacion.objects.create(
+            codigo="VE-200", fecha=date(2026, 8, 13), producto=self.producto,
+            rc_objetivo="0.4000", volumen="20000", silo_entera=self.origen,
+            silo_destino=self.destino, entera_grasa="3.60", entera_sng="8.60",
+            descremada_grasa="0.05", descremada_sng="8.90",
+            litros_entera="20000", litros_descremada="0",
+            grasa_real="3.44", sng_real="8.61",
+            estado=ValeEstandarizacion.Estado.LIBERADO,
+        )
+        usuario = User.objects.create_user("produccion-evap-directo", password="x")
+        PerfilUsuario.objects.create(
+            usuario=usuario, rol=Rol.PRODUCCION, area=PerfilUsuario.Area.CONDENSACION,
+            empresa=self.empresa, sucursal=self.planta,
+            alcance=PerfilUsuario.Alcance.SUCURSAL,
+        )
+        self.cliente = APIClient()
+        self.cliente.force_authenticate(usuario)
+
+    def test_el_evaporador_abre_sin_linea(self):
+        respuesta = self.cliente.post(
+            "/api/produccion/lotes/",
+            {
+                "codigo_lote": "CCAA6225EVD-01",
+                "producto": self.producto.pk,
+                "vale": self.vale.pk,
+                "litros_estandarizados": "1000",
+                "fecha": "2026-08-13",
+                "equipo": self.evaporador.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        lote = Lote.objects.get(codigo_lote="CCAA6225EVD-01")
+        self.assertEqual(lote.equipo, self.evaporador)
+        self.assertEqual(lote.linea, "")

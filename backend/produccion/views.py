@@ -622,12 +622,23 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 {"silo_destino": "Elige el silo de destino del concentrado."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        silo_destino_id = None
         if es_evaporador:
+            # Se convierte ANTES de filtrar: un `silo_destino` ilegible
+            # ("abc", una lista, un objeto) no es un error de las reglas de
+            # negocio que corren más abajo, y no debe confundirse con uno.
+            try:
+                silo_destino_id = int(silo_destino)
+            except (TypeError, ValueError):
+                return Response(
+                    {"silo_destino": "El silo de destino no es válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             silos_del_alcance = filtrar_por_scope(
                 Silo.objects.all(), request.user, campo_sucursal="sucursal_id",
                 campo_empresa="sucursal__empresa_id",
             )
-            if not silos_del_alcance.filter(pk=silo_destino).exists():
+            if not silos_del_alcance.filter(pk=silo_destino_id).exists():
                 return Response(
                     {"silo_destino": "El silo de destino no es válido."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -657,15 +668,10 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
                     crear_condensacion_guiada(
                         lote_id=confirmado.pk,
-                        silo_destino_id=int(silo_destino),
+                        silo_destino_id=silo_destino_id,
                         usuario=request.user,
                     )
-        except (DjangoValidationError, ValueError) as error:
-            if isinstance(error, ValueError):
-                return Response(
-                    {"silo_destino": "El silo de destino no es válido."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        except DjangoValidationError as error:
             detalle = error.message_dict if hasattr(error, "message_dict") else {
                 "motivos": error.messages
             }

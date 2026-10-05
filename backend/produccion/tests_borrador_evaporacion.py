@@ -1,23 +1,28 @@
 from decimal import Decimal
 
 from maestros.models import Equipo, Silo
-from procesos.models import CorridaCondensacion, EtapaProceso, Proceso, RutaProducto
+from procesos.models import (
+    CorridaCondensacion,
+    EjecucionProceso,
+    EtapaProceso,
+    Proceso,
+    RutaProducto,
+)
 from produccion.models import Lote, OrdenProduccion
 from recepcion.models import MovimientoSilo
 
-from .tests_borrador import BorradorLoteTests
+from .tests_borrador import BaseBorradorLote
 
 
-class ConfirmarSobreEvaporadorTests(BorradorLoteTests):
+class ConfirmarSobreEvaporadorTests(BaseBorradorLote):
     """Abrir el lote sobre un evaporador también prepara su corrida: todo o nada."""
 
     def setUp(self):
         super().setUp()
-        # No se borra la ruta de BorradorLoteTests (torre → secado directo):
-        # las pruebas heredadas de esa clase siguen corriendo aquí y la
-        # necesitan. Esta es una ruta adicional, para el mismo producto, que
-        # pasa por evaporación antes de secar — `proceso` distingue a las dos,
-        # así que conviven sin chocar con `ruta_producto_proceso_unica_planta`.
+        # `BaseBorradorLote` no trae pruebas propias (ver su docstring), así
+        # que esta fixture puede reemplazar la ruta torre → secado directo
+        # por la ruta real del evaporador sin romper ninguna prueba heredada.
+        RutaProducto.objects.filter(producto=self.polvo).delete()
         proceso = Proceso.objects.create(codigo="ruta-evap", nombre="Polvo por evaporador")
         for orden, (codigo, tipo) in enumerate([
             ("estandarizar", EtapaProceso.Tipo.ESTANDARIZACION),
@@ -91,11 +96,26 @@ class ConfirmarSobreEvaporadorTests(BorradorLoteTests):
         self.assertEqual(Lote.objects.get(pk=borrador_id).estado, Lote.Estado.BORRADOR)
         self.assertEqual(MovimientoSilo.objects.count(), 0)
         self.assertFalse(CorridaCondensacion.objects.exists())
+        # Todo o nada también para la máquina: una corrida que no llegó a
+        # crearse no puede dejar el evaporador ocupado para la próxima.
+        self.assertFalse(
+            EjecucionProceso.objects.filter(equipo=self.evaporador).exists()
+        )
 
     def test_destino_inexistente_responde_400(self):
         borrador_id = self.borrador_sobre_evaporador()
 
         respuesta = self.confirmar(borrador_id, silo_destino=999999)
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("silo_destino", respuesta.json())
+        self.assertEqual(Lote.objects.get(pk=borrador_id).estado, Lote.Estado.BORRADOR)
+        self.assertEqual(MovimientoSilo.objects.count(), 0)
+
+    def test_destino_malformado_responde_400(self):
+        borrador_id = self.borrador_sobre_evaporador()
+
+        respuesta = self.confirmar(borrador_id, silo_destino="abc")
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("silo_destino", respuesta.json())
