@@ -614,22 +614,58 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         motivos = lote.motivos_para_confirmar()
         if motivos:
             return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            confirmado = servicios_produccion.abrir_lote_desde_vale(
-                vale=lote.vale,
-                codigo_lote=lote.codigo_lote_propuesto.strip(),
-                fecha=lote.fecha,
-                litros=lote.litros_estandarizados_borrador,
-                usuario=request.user,
-                lote_borrador=lote,
-                op=lote.op,
-                orden=lote.orden,
-                equipo=lote.equipo,
-                linea=lote.linea,
-                turno=lote.turno,
-                observacion=lote.observacion,
+
+        es_evaporador = bool(lote.equipo_id) and lote.equipo.tipo == Equipo.Tipo.EVAPORADOR
+        silo_destino = request.data.get("silo_destino")
+        if es_evaporador and not silo_destino:
+            return Response(
+                {"silo_destino": "Elige el silo de destino del concentrado."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        except DjangoValidationError as error:
+        if es_evaporador:
+            silos_del_alcance = filtrar_por_scope(
+                Silo.objects.all(), request.user, campo_sucursal="sucursal_id",
+                campo_empresa="sucursal__empresa_id",
+            )
+            if not silos_del_alcance.filter(pk=silo_destino).exists():
+                return Response(
+                    {"silo_destino": "El silo de destino no es válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        try:
+            # Transacción interna: si la corrida falla después de abrir el lote,
+            # la excepción revierte las dos cosas antes de llegar al `except`.
+            # Sin ella, el `return Response(400)` de abajo confirmaría el lote
+            # abierto y la leche descontada sin corrida (trampa de CLAUDE.md).
+            with transaction.atomic():
+                confirmado = servicios_produccion.abrir_lote_desde_vale(
+                    vale=lote.vale,
+                    codigo_lote=lote.codigo_lote_propuesto.strip(),
+                    fecha=lote.fecha,
+                    litros=lote.litros_estandarizados_borrador,
+                    usuario=request.user,
+                    lote_borrador=lote,
+                    op=lote.op,
+                    orden=lote.orden,
+                    equipo=lote.equipo,
+                    linea=lote.linea,
+                    turno=lote.turno,
+                    observacion=lote.observacion,
+                )
+                if es_evaporador:
+                    from procesos.servicios import crear_condensacion_guiada
+
+                    crear_condensacion_guiada(
+                        lote_id=confirmado.pk,
+                        silo_destino_id=int(silo_destino),
+                        usuario=request.user,
+                    )
+        except (DjangoValidationError, ValueError) as error:
+            if isinstance(error, ValueError):
+                return Response(
+                    {"silo_destino": "El silo de destino no es válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             detalle = error.message_dict if hasattr(error, "message_dict") else {
                 "motivos": error.messages
             }

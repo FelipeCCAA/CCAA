@@ -142,7 +142,7 @@ class Lote(DocumentoBorradorMixin, models.Model):
     ESTADO_CONFIRMADO = Estado.EN_PROCESO
     CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
         "codigo_lote_propuesto", "producto", "vale", "equipo", "fecha",
-        "linea", "litros_estandarizados_borrador",
+        "litros_estandarizados_borrador",
     )
     CAMPOS_POR_PASO = {
         "apertura": (
@@ -290,7 +290,15 @@ class Lote(DocumentoBorradorMixin, models.Model):
         return f"BORRADOR-{uuid.uuid4().hex[:8].upper()}"
 
     def motivos_para_confirmar(self):
+        from maestros.models import Equipo
+
         motivos = super().motivos_para_confirmar()
+        # La línea es un dato de las torres Egron (E1/E2): un evaporador no
+        # tiene línea que declarar, y exigirla ahí bloquearía un borrador que
+        # ya está completo para su máquina.
+        if self.equipo_id and self.equipo.tipo == Equipo.Tipo.TORRE and not self.linea:
+            etiqueta = self._meta.get_field("linea").verbose_name
+            motivos.append(f"Falta {str(etiqueta).lower()}.")
         codigo = self.codigo_lote_propuesto.strip()
         if codigo and type(self).objects.exclude(pk=self.pk).filter(
             sucursal_id=self.sucursal_id, codigo_lote=codigo

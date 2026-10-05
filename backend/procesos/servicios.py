@@ -740,6 +740,13 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
     if entrada is None:
         raise ValidationError({"lote": "La ejecución no tiene una entrada trazable en litros."})
     destino = Silo.objects.select_for_update().get(pk=silo_destino_id)
+    if not destino.activo or destino.estado != Silo.Estado.DISPONIBLE:
+        raise ValidationError({
+            "silo_destino": (
+                f"{destino.codigo} no está disponible para recibir el concentrado "
+                f"({destino.get_estado_display().lower()})."
+            )
+        })
     corrida = CorridaCondensacion(
         ejecucion=ejecucion, orden=lote.orden, lote=lote,
         silo_origen=entrada.silo, silo_destino=destino,

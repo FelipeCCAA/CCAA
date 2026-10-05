@@ -624,6 +624,25 @@ class FlujoCondensacionTests(TestCase):
             [item["id"] for item in respuesta.data["lotes"]], [self.lote.pk]
         )
 
+    def test_alta_guiada_rechaza_un_destino_bloqueado_por_calidad(self):
+        self.corrida.delete()
+        self.lote.ejecucion = self.ejecucion
+        self.lote.save(update_fields=["ejecucion"])
+        EntradaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=self.origen,
+            cantidad=Decimal("600"), unidad="L",
+        )
+        self.destino.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        self.destino.save(update_fields=["estado"])
+
+        with self.assertRaises(ValidationError) as error:
+            crear_condensacion_guiada(
+                lote_id=self.lote.pk, silo_destino_id=self.destino.pk, usuario=self.usuario,
+            )
+
+        self.assertIn(self.destino.codigo, str(error.exception))
+        self.assertFalse(CorridaCondensacion.objects.filter(lote=self.lote).exists())
+
     def test_no_adopta_una_ejecucion_activa_sin_consumo(self):
         self.lote.ejecucion = self.ejecucion
         self.lote.save(update_fields=["ejecucion"])
