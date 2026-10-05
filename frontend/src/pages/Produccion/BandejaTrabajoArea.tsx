@@ -4,16 +4,24 @@ import { Link } from "react-router-dom";
 
 import StatusBadge from "../../components/ui/StatusBadge";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
+import { rutaDeEtapa } from "../../services/planta-ahora";
 import {
   obtenerEjecucionesOperativas,
   transicionarEjecucion,
   type EjecucionOperativa,
 } from "../../services/procesos.service";
 
+/*
+  La tabla de destinos por etapa es `rutaDeEtapa` (servicio compartido con el
+  panel "Planta Ahora"): antes esta bandeja armaba su propia ruta con
+  `/procesos?seccion=${etapa_tipo}`, que para "envasado" o "transferencia"
+  apunta a una sección que no existe, y para "evaporacion"/"condensacion"
+  apuntaba a la sección equivocada (la de /procesos, no la de /produccion).
+  Dos tablas para el mismo hecho divergían en los casos que no son
+  descremación o mantequilla.
+*/
 function destinoDe(ejecucion: EjecucionOperativa) {
-  if (ejecucion.etapa_tipo === "secado") return "/secado";
-  if (ejecucion.etapa_tipo === "estandarizacion") return "/estandarizacion";
-  return `/procesos?seccion=${ejecucion.etapa_tipo}`;
+  return rutaDeEtapa(ejecucion.etapa_tipo);
 }
 
 export default function BandejaTrabajoArea() {
