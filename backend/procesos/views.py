@@ -59,6 +59,7 @@ from .servicios import (
     crear_secado_desde_inventario,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
+    estado_puesto_evaporacion,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
     preparar_continuacion, siguiente_etapa_para_salida,
     sugerir_plan_descremacion,
@@ -177,6 +178,11 @@ class CorridaCondensacionViewSet(
     def _respuesta_error(error):
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
         return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Evaporación: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_evaporacion(request.user))
 
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):

@@ -1377,6 +1377,95 @@ def motivos_para_iniciar_condensacion(corrida, *, origen=None, destino=None):
     return motivos
 
 
+def estado_puesto_evaporacion(usuario):
+    """
+    Lo que el puesto de Evaporación dibuja: un estado por evaporador, derivado
+    de una sola corrida (la en proceso manda sobre la preparada), con los
+    motivos que impiden iniciarla calculados por la misma función que decide
+    al iniciar; los destinos que el cierre aceptará; y las corridas de hoy.
+    """
+    from maestros.models import Equipo, Silo
+    from recepcion.servicios import saldo_silo
+    from usuarios.tenancy import filtrar_por_scope
+
+    equipos = filtrar_por_scope(
+        Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.EVAPORADOR).order_by("nombre"),
+        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    )
+    corridas = CorridaCondensacion.objects.select_related(
+        "ejecucion__equipo", "orden", "lote", "silo_origen", "silo_destino",
+    ).filter(ejecucion__equipo__in=equipos)
+    activas = {}
+    for corrida in corridas.filter(
+        estado__in=[CorridaCondensacion.Estado.EN_PROCESO, CorridaCondensacion.Estado.BORRADOR]
+    ).order_by("pk"):
+        actual = activas.get(corrida.ejecucion.equipo_id)
+        if actual is None or (
+            corrida.estado == CorridaCondensacion.Estado.EN_PROCESO
+            and actual.estado != CorridaCondensacion.Estado.EN_PROCESO
+        ):
+            activas[corrida.ejecucion.equipo_id] = corrida
+    esperando = {
+        corrida.ejecucion.equipo_id: corrida
+        for corrida in corridas.filter(
+            ejecucion__estado=EjecucionProceso.Estado.PENDIENTE_CONTROL
+        ).order_by("pk")
+    }
+
+    def resumen(corrida):
+        return {
+            "id": corrida.pk, "codigo": corrida.ejecucion.codigo,
+            "lote_codigo": corrida.lote.codigo_lote if corrida.lote_id else None,
+            "silo_origen": corrida.silo_origen.codigo,
+            "silo_destino": corrida.silo_destino.codigo,
+            "litros_entrada": corrida.litros_entrada,
+            "iniciada_en": corrida.iniciada_en,
+        }
+
+    evaporadores = []
+    for equipo in equipos:
+        corrida = activas.get(equipo.pk)
+        if corrida is not None:
+            en_curso = corrida.estado == CorridaCondensacion.Estado.EN_PROCESO
+            estado = "en_curso" if en_curso else "preparada"
+            motivos = [] if en_curso else motivos_para_iniciar_condensacion(corrida)
+        elif equipo.pk in esperando:
+            corrida, estado, motivos = esperando[equipo.pk], "esperando_calidad", []
+        else:
+            estado, motivos = "disponible", []
+        evaporadores.append({
+            "equipo_id": equipo.pk, "codigo": equipo.codigo, "nombre": equipo.nombre,
+            "estado": estado,
+            "corrida": resumen(corrida) if corrida is not None else None,
+            "motivos_para_iniciar": motivos,
+        })
+
+    destinos = []
+    for silo in filtrar_por_scope(
+        Silo.objects.filter(activo=True, estado=Silo.Estado.DISPONIBLE).order_by("codigo"),
+        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ):
+        destinos.append({
+            "id": silo.pk, "codigo": silo.codigo,
+            "libre_l": silo.capacidad_l - saldo_silo(silo),
+        })
+
+    hoy = timezone.localdate()
+    corridas_de_hoy = [
+        {
+            "id": corrida.pk, "codigo": corrida.ejecucion.codigo,
+            "equipo": corrida.ejecucion.equipo.nombre if corrida.ejecucion.equipo_id else None,
+            "lote_codigo": corrida.lote.codigo_lote if corrida.lote_id else None,
+            "estado": corrida.estado, "estado_etiqueta": corrida.get_estado_display(),
+        }
+        for corrida in corridas.filter(
+            Q(iniciada_en__date=hoy) | Q(finalizada_en__date=hoy)
+            | Q(estado=CorridaCondensacion.Estado.BORRADOR)
+        ).order_by("-pk")
+    ]
+    return {"evaporadores": evaporadores, "destinos": destinos, "corridas_de_hoy": corridas_de_hoy}
+
+
 @transaction.atomic
 def iniciar_condensacion(*, corrida_id, usuario):
     from maestros.models import Silo

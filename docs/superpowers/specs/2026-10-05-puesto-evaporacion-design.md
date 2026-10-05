@@ -64,7 +64,7 @@ pantalla ofrece lo que el backend va a rechazar» en `CLAUDE.md`). La validació
 
 ### 3.3 Estado del puesto
 
-`GET produccion/evaporacion/puesto/` devuelve una fila por evaporador activo:
+`GET procesos/condensaciones/puesto/` devuelve una fila por evaporador activo:
 
 ```json
 {
@@ -76,6 +76,7 @@ pantalla ofrece lo que el backend va a rechazar» en `CLAUDE.md`). La validació
                   "litros_entrada": "20000.00", "iniciada_en": null },
     "motivos_para_iniciar": ["El silo TK 3 no tiene un análisis confirmado y vigente."]
   }],
+  "destinos": [{ "id": 6, "codigo": "SILO 6", "libre_l": "48000.00" }],
   "corridas_de_hoy": [{ "id": 40, "codigo": "EJ-PROD-86", "equipo": "veb",
                         "lote_codigo": "CCAA6278VB-01", "estado": "cerrada" }]
 }
