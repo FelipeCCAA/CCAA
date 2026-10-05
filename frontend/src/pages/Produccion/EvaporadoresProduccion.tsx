@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Factory, RefreshCw } from "lucide-react";
 
-import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import { obtenerEquipos, type Equipo } from "../../services/maestros.service";
 import {
   iniciarCondensacion,
@@ -10,9 +9,25 @@ import {
   type CorridaCondensacion,
   type EjecucionOperativa,
 } from "../../services/procesos.service";
-import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
+import { tarjetaEvaporador, type EstadoTarjetaEvaporador } from "../../services/estado-evaporador";
 import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import CierreCondensacion from "../Procesos/CierreCondensacion";
+
+const ESTILOS_BORDE: Record<EstadoTarjetaEvaporador, string> = {
+  disponible: "border-slate-200",
+  preparada: "border-amber-300",
+  ejecucion: "border-blue-400 ring-1 ring-blue-200",
+  pausada: "border-amber-400 ring-1 ring-amber-200",
+  bloqueada: "border-rose-400 ring-1 ring-rose-200",
+};
+
+const ESTILOS_BADGE: Record<EstadoTarjetaEvaporador, string> = {
+  disponible: "bg-emerald-100 text-emerald-800",
+  preparada: "bg-amber-100 text-amber-900",
+  ejecucion: "bg-blue-100 text-blue-900",
+  pausada: "bg-amber-100 text-amber-900",
+  bloqueada: "bg-rose-100 text-rose-900",
+};
 
 export default function EvaporadoresProduccion() {
   const [abierto, setAbierto] = useState(false);
@@ -97,8 +112,6 @@ export default function EvaporadoresProduccion() {
     );
   }
 
-  const ocupaciones = ocupacionesPorEquipo(ejecuciones);
-
   return (
     <section className="mb-8">
       {cerrando && <CierreCondensacion corrida={cerrando} onCerrar={() => setCerrando(null)} onCerrada={async () => { if (!await refrescarPanel()) setError("La salida se registró, pero no se pudo actualizar la disponibilidad."); setCerrando(null); }} />}
@@ -109,18 +122,15 @@ export default function EvaporadoresProduccion() {
       {error && <p className="mb-3 text-sm text-rose-700">{error}</p>}
       <div className="grid gap-4 md:grid-cols-3">
         {equipos.map((equipo) => {
-          const ocupacion = ocupaciones.get(equipo.id);
-          const corridaActiva = corridas.find((corrida) =>
-            corrida.equipo_id === equipo.id && ["borrador", "en_proceso"].includes(corrida.estado),
-          );
-          const pendienteCalidad = corridas.find((corrida) =>
-            corrida.equipo_id === equipo.id && corrida.estado === "pendiente_calidad",
-          );
+          const tarjeta = tarjetaEvaporador(equipo.id, corridas, ejecuciones);
+          const { corridaActiva, pendienteCalidad } = tarjeta;
           return (
-            <article key={equipo.id} className={`rounded-2xl border bg-white p-5 ${ocupacion?.disponibilidad === "ocupado" ? "border-blue-400 ring-1 ring-blue-200" : ocupacion ? "border-amber-300" : "border-slate-200"}`}>
+            <article key={equipo.id} className={`rounded-2xl border bg-white p-5 ${ESTILOS_BORDE[tarjeta.estado]}`}>
               <div className="flex items-center justify-between gap-3">
                 <span className="rounded-xl bg-blue-50 p-2 text-blue-700"><Factory className="h-5 w-5" /></span>
-                <EstadoEquipo estado={ocupacion?.estado} ejecucion={ocupacion?.ejecucion} />
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold uppercase ${ESTILOS_BADGE[tarjeta.estado]}`}>
+                  {tarjeta.etiqueta}{corridaActiva ? ` · ${corridaActiva.ejecucion_codigo}` : ""}
+                </span>
               </div>
               <h3 className="mt-4 font-bold text-slate-900">{equipo.codigo} · {equipo.nombre}</h3>
               {corridaActiva ? (
@@ -128,8 +138,10 @@ export default function EvaporadoresProduccion() {
                   <p>{corridaActiva.silo_origen_codigo} → {corridaActiva.silo_destino_codigo}</p>
                   <p><b>{Number(corridaActiva.litros_entrada).toLocaleString("es-CL")} L</b> · lote {corridaActiva.lote_codigo}</p>
                   <p className="text-xs">Corrida {corridaActiva.ejecucion_codigo}</p>
-                  {corridaActiva.estado === "borrador" && <button onClick={() => void iniciar(corridaActiva)} disabled={accionando !== null} className="mt-3 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{accionando === corridaActiva.id ? "Iniciando…" : "Iniciar evaporación"}</button>}
-                  {corridaActiva.estado === "en_proceso" && <button onClick={() => setCerrando(corridaActiva)} disabled={accionando !== null} className="mt-3 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Registrar salida y cerrar</button>}
+                  {tarjeta.estado === "preparada" && <button onClick={() => void iniciar(corridaActiva)} disabled={accionando !== null} className="mt-3 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{accionando === corridaActiva.id ? "Iniciando…" : "Iniciar evaporación"}</button>}
+                  {tarjeta.estado === "ejecucion" && <button onClick={() => setCerrando(corridaActiva)} disabled={accionando !== null} className="mt-3 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Registrar salida y cerrar</button>}
+                  {tarjeta.estado === "pausada" && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">La corrida está pausada; reanúdala desde Seguimiento antes de poder cerrarla.</p>}
+                  {tarjeta.estado === "bloqueada" && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-900">La corrida está bloqueada; resuelve el bloqueo desde Seguimiento antes de continuar.</p>}
                 </div>
               ) : <p className="mt-3 text-sm text-slate-500">Sin corrida físicamente activa.</p>}
               {pendienteCalidad && <p className="mt-3 rounded-lg bg-violet-50 px-3 py-2 text-xs font-medium text-violet-800">{pendienteCalidad.ejecucion_codigo} espera Calidad; no reserva el evaporador.</p>}
