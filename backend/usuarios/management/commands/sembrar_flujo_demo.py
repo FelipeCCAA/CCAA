@@ -210,10 +210,13 @@ class Command(BaseCommand):
             producto=producto, sucursal=sucursal,
             etapa_previa_tipo=EtapaProceso.Tipo.ESTANDARIZACION,
         )
+        # Los tipos que la apertura acepta (`abre_desde_vale`): una torre o un
+        # punto de carga se rechazarían al abrir el lote.
         tipos = {
             tipo
-            for etapa in iniciales if etapa.tipo != EtapaProceso.Tipo.SECADO
+            for etapa in iniciales
             for tipo in tipos_equipo_para_etapa(etapa.tipo)
+            if servicios_produccion.abre_desde_vale(tipo)
         }
         if not tipos:
             raise CommandError(
@@ -221,10 +224,18 @@ class Command(BaseCommand):
                 "una etapa que abra el lote fuera de la torre. Un lote en torre nace "
                 "desde el puesto de Secado: configura la ruta con Evaporación."
             )
-        return (
+        equipo = (
             Equipo.objects.filter(activo=True, tipo__in=tipos)
             .exclude(sigla="").order_by("orden", "pk").first()
         )
+        if equipo is None:
+            nombres = ", ".join(sorted(Equipo.Tipo(tipo).label for tipo in tipos))
+            raise CommandError(
+                f"Para abrir el lote de {producto.nombre} hace falta una máquina activa "
+                f"de tipo {nombres} con sigla (la sigla es parte del código de lote). "
+                "Cárgala en Maestros › Máquinas."
+            )
+        return equipo
 
     def _recepcionar(self, contexto):
         """Un camión con dos módulos, hasta dejar la leche en el silo."""
@@ -390,9 +401,7 @@ class Command(BaseCommand):
 
     def _producir(self, contexto, vale):
         producto = contexto["producto"]
-        equipo = contexto["equipo"]
-        if equipo is None:
-            raise CommandError("Hace falta un equipo activo con sigla para generar el código de lote.")
+        equipo = contexto["equipo"]  # `_equipo_de_apertura` nunca devuelve `None`.
         codigo = generar_codigo_lote(
             fecha=self.fecha, sigla=equipo.sigla, correlativo=1
         )

@@ -824,15 +824,16 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         from procesos.servicios import ESTADOS_QUE_OCUPAN_EQUIPO
 
         entradas = self._vales_operativos(request)
+        # Solo los tipos que la apertura acepta (`abre_desde_vale`, la regla de
+        # `exigir_apertura_fuera_de_secado`): una torre se alimenta desde el
+        # puesto de Secado, y un punto de carga caería en Secado y se rechazaría.
         tipos_iniciales = {
             tipo
             for entrada in entradas
             for etapa in entrada["etapas_iniciales"]
             for tipo in etapa["tipos_equipo"]
+            if servicios_produccion.abre_desde_vale(tipo)
         }
-        # Una torre no abre lotes desde el vale: se alimenta desde el puesto
-        # de Secado.
-        tipos_iniciales.discard(Equipo.Tipo.TORRE)
 
         cip_en_curso = CicloCIP.objects.filter(
             equipo_id=OuterRef("pk"), estado=CicloCIP.Estado.EN_CURSO,

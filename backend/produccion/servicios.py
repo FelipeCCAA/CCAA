@@ -67,6 +67,19 @@ def tipo_etapa_de_apertura(equipo):
     }.get(equipo.tipo if equipo else None, EtapaProceso.Tipo.SECADO)
 
 
+def abre_desde_vale(tipo_equipo):
+    """
+    ¿Un equipo de este tipo puede abrir un lote desde el vale? La misma regla
+    que `exigir_apertura_fuera_de_secado` rechaza y con la que `opciones-
+    inicio` decide qué máquinas ofrecer: con dos reglas, la pantalla ofrecía
+    puntos de carga que el servidor rechazaba al confirmar.
+    """
+    from maestros.models import Equipo
+    from procesos.models import EtapaProceso
+
+    return tipo_etapa_de_apertura(Equipo(tipo=tipo_equipo)) != EtapaProceso.Tipo.SECADO
+
+
 def exigir_apertura_fuera_de_secado(equipo):
     """
     Un lote desde el vale nunca abre una corrida de Secado: la torre se
@@ -77,9 +90,8 @@ def exigir_apertura_fuera_de_secado(equipo):
     comando— pueda saltársela.
     """
     from maestros.models import Equipo
-    from procesos.models import EtapaProceso
 
-    if tipo_etapa_de_apertura(equipo) != EtapaProceso.Tipo.SECADO:
+    if equipo is not None and abre_desde_vale(equipo.tipo):
         return
     if equipo is None:
         raise ValidationError({"equipo": "Selecciona la máquina de la corrida."})

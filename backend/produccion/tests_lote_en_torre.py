@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 
+from maestros.models import Equipo
 from procesos.models import CorridaSecado, EjecucionProceso, EtapaProceso
 from recepcion.models import MovimientoSilo
 
@@ -78,7 +79,16 @@ class LoteEnTorreTests(BaseBorradorLote):
         self.assertFalse(Lote.objects.filter(codigo_lote="CCAA6197E1-09").exists())
         self.assertNadaCreado()
 
+    def ofrecidos(self):
+        respuesta = self.cliente.get("/api/produccion/lotes/opciones-inicio/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        return {equipo["id"] for equipo in respuesta.data["equipos"]}
+
     def test_opciones_inicio_no_ofrece_torres_aunque_la_ruta_empiece_en_secado(self):
+        # Control positivo: con la ruta en Envasado la línea sí se ofrece, así
+        # que el «no se ofrece» de abajo no es una lista vacía por otra causa.
+        self.assertIn(self.linea_envasado.id, self.ofrecidos())
+
         EtapaProceso.objects.filter(codigo="primera-borrador").update(
             tipo=EtapaProceso.Tipo.SECADO
         )
@@ -89,3 +99,36 @@ class LoteEnTorreTests(BaseBorradorLote):
         ofrecidos = {equipo["id"] for equipo in respuesta.data["equipos"]}
         self.assertNotIn(self.equipo.id, ofrecidos)
         self.assertNotIn(self.otro_equipo.id, ofrecidos)
+
+    def test_opciones_inicio_no_ofrece_maquinas_que_el_servidor_rechaza(self):
+        """
+        Una ruta que empieza en Transferencia pide máquinas de carga, y abrir
+        un lote desde el vale sobre una de ellas cae en Secado y se rechaza
+        (`abre_desde_vale`): ofrecerla es ofrecer un rechazo.
+        """
+        carga = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="carga-borrador", nombre="Punto de carga",
+            tipo=Equipo.Tipo.CARGA, sigla="C1",
+        )
+        EtapaProceso.objects.filter(codigo="primera-borrador").update(
+            tipo=EtapaProceso.Tipo.TRANSFERENCIA
+        )
+
+        self.assertNotIn(carga.id, self.ofrecidos())
+        with self.assertRaises(ValidationError):
+            servicios.abrir_lote_desde_vale(
+                vale=self.vale, codigo_lote="CARGA-SRV", fecha=date(2026, 7, 16),
+                litros=Decimal("1000"), equipo=carga,
+            )
+
+    def test_abre_desde_vale_es_la_regla_de_la_guarda(self):
+        for tipo in Equipo.Tipo.values:
+            with self.subTest(tipo=tipo):
+                self.assertEqual(
+                    servicios.abre_desde_vale(tipo),
+                    servicios.tipo_etapa_de_apertura(Equipo(tipo=tipo)) != EtapaProceso.Tipo.SECADO,
+                )
+        self.assertEqual(
+            {tipo for tipo in Equipo.Tipo.values if servicios.abre_desde_vale(tipo)},
+            {Equipo.Tipo.EVAPORADOR, Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA},
+        )

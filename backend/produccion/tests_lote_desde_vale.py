@@ -179,7 +179,39 @@ class AperturaTests(BaseValeLote):
         self.assertFalse(Lote.objects.exists())
         self.assertFalse(MovimientoSilo.objects.exists())
 
-    def test_una_torre_no_salta_la_evaporacion_ni_se_ofrece(self):
+    def test_una_linea_no_salta_la_evaporacion_de_la_ruta(self):
+        """
+        Estandarización → Evaporación → Envasado: una línea pide Envasado,
+        que no es la etapa inicial después del vale. Lo rechaza
+        `exigir_etapa_inicial_para_producto`, no la guarda de la torre.
+        """
+        evaporacion = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.EVAPORACION)
+        evaporacion.orden = 2
+        evaporacion.save(update_fields=["orden"])
+        EtapaProceso.objects.create(
+            proceso=self.ruta.proceso, codigo="estandarizacion", nombre="Estandarización",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION, orden=1,
+        )
+        EtapaProceso.objects.create(
+            proceso=self.ruta.proceso, codigo="envasado", nombre="Envasado",
+            tipo=EtapaProceso.Tipo.ENVASADO, orden=3,
+        )
+        linea = Equipo.objects.create(
+            sucursal=self.planta, codigo="LINEA-SALTO", nombre="Línea de envasado",
+            tipo=Equipo.Tipo.LINEA,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "no permite comenzar directamente"):
+            servicios.abrir_lote_desde_vale(
+                vale=self._vale(), producto=self.producto, codigo_lote="SALTO-ENVASADO",
+                fecha=date(2026, 8, 12), litros=Decimal("1000"), equipo=linea,
+                usuario=self.operador,
+            )
+
+        self.assertFalse(Lote.objects.filter(codigo_lote="SALTO-ENVASADO").exists())
+        self.assertFalse(MovimientoSilo.objects.filter(origen_tipo="lote").exists())
+
+    def test_una_torre_se_rechaza_y_solo_se_ofrecen_los_evaporadores_iniciales(self):
         evaporacion = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.EVAPORACION)
         evaporacion.orden = 2
         evaporacion.save(update_fields=["orden"])
