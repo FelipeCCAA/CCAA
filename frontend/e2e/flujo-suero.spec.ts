@@ -26,8 +26,10 @@ test("suero externo termina como Big Bag disponible en Inventario", async ({ pag
     await usarSesionArea(page, "e2e_secado");
     await irA(page, "/produccion/secado");
     const torre = page.getByRole("article").filter({ hasText: /TOR-SUERO-E2E/i });
-    await expect(torre).toContainText("Disponible", { timeout: 20_000 });
-    await torre.getByRole("button", { name: "Tomar concentrado" }).click();
+    // Libre = ofrece tomar habilitado; «Disponible» también lo dice una torre en CIP.
+    const libre = torre.filter({ has: page.getByRole("button", { name: "Tomar concentrado", disabled: false }) });
+    await expect(libre).toBeVisible({ timeout: 20_000 });
+    await libre.getByRole("button", { name: "Tomar concentrado" }).click();
     const modal = page.getByRole("dialog");
     await modal.getByLabel("Alimentación externa").check();
     await elegirOpcion(campo(modal, "Orden / producto"), /Suero en polvo E2E/i);

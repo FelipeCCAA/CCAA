@@ -52,7 +52,11 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
   if (reanudarDesde <= 2) await test.step("2 · Secado toma el concentrado en su puesto y lo inicia", async () => {
     await usarSesionArea(page, "e2e_secado");
     await irA(page, "/produccion/secado");
-    const libre = page.getByRole("article").filter({ hasText: "Disponible" }).first();
+    // La torre libre es la que ofrece tomar habilitado: «Disponible» también
+    // lo dice una torre en CIP, que no se puede tomar.
+    const libre = page.getByRole("article")
+      .filter({ has: page.getByRole("button", { name: "Tomar concentrado", disabled: false }) })
+      .first();
     await expect(libre).toBeVisible({ timeout: 20_000 });
     await libre.getByRole("button", { name: "Tomar concentrado" }).click();
     const modal = page.getByRole("dialog");
