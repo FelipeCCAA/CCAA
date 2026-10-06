@@ -1421,10 +1421,27 @@ def estado_puesto_evaporacion(usuario):
     ofrece «Analizar silo» solo ahí. Adivinarlo leyendo el texto del motivo
     se habría roto con el primer cambio de redacción; esto lo tipa en vez de
     describirlo en prosa.
+
+    Una corrida `borrador`/`en_proceso` cuya ejecución ya terminó
+    (`cerrada`/`cancelada`) es un huérfano —de un E2E abortado o de datos
+    viejos— y no cuenta como ocupación: la máquina física ya quedó libre
+    aunque la corrida nunca se puso al día. No se reutiliza
+    `ESTADOS_QUE_OCUPAN_EQUIPO` tal cual porque esa lista excluye `borrador`
+    (y esta función sí trata un borrador como preparación legítima, igual
+    que `FlujoCondensacionTests` siembra su ejecución); lo único que de
+    verdad libera el equipo aquí es que la ejecución haya llegado a un
+    estado terminal. Un lote `anulado` cuya ejecución *no* llegó a terminal
+    sigue contando como ocupación — ese es el defecto #3 abierto en
+    «La pantalla ofrece lo que el backend va a rechazar» (`CLAUDE.md`), no
+    uno que esta función resuelva.
     """
     from maestros.models import Equipo, Silo
     from recepcion.servicios import motivos_silo_no_disponible
     from usuarios.tenancy import filtrar_por_scope
+
+    ESTADOS_EJECUCION_TERMINALES = (
+        EjecucionProceso.Estado.CERRADA, EjecucionProceso.Estado.CANCELADA,
+    )
 
     equipos = filtrar_por_scope(
         Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.EVAPORADOR).order_by("nombre"),
@@ -1436,6 +1453,8 @@ def estado_puesto_evaporacion(usuario):
     activas = {}
     for corrida in corridas.filter(
         estado__in=[CorridaCondensacion.Estado.EN_PROCESO, CorridaCondensacion.Estado.BORRADOR]
+    ).exclude(
+        ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES
     ).order_by("pk"):
         actual = activas.get(corrida.ejecucion.equipo_id)
         if actual is None or (
@@ -1517,6 +1536,9 @@ def estado_puesto_evaporacion(usuario):
                 estado=CorridaCondensacion.Estado.BORRADOR,
                 ejecucion__creada_en__date=hoy,
             )
+        ).exclude(
+            estado=CorridaCondensacion.Estado.BORRADOR,
+            ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES,
         ).order_by("-pk")
     ]
     return {"evaporadores": evaporadores, "destinos": destinos, "corridas_de_hoy": corridas_de_hoy}

@@ -132,6 +132,31 @@ class PuestoEvaporacionTests(FlujoCondensacionTests):
         codigos = [item["codigo"] for item in self.puesto()["corridas_de_hoy"]]
         self.assertNotIn(self.ejecucion.codigo, codigos)
 
+    def test_un_borrador_con_ejecucion_cerrada_es_huerfano_y_la_maquina_queda_disponible(self):
+        """Un E2E abortado o un dato viejo no debe mostrar la máquina ocupada."""
+        self.ejecucion.estado = EjecucionProceso.Estado.CERRADA
+        self.ejecucion.save(update_fields=["estado"])
+        fila = self.fila(self.puesto(), self.equipo)
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertIsNone(fila["corrida"])
+
+    def test_un_borrador_con_ejecucion_cancelada_es_huerfano_y_la_maquina_queda_disponible(self):
+        self.ejecucion.estado = EjecucionProceso.Estado.CANCELADA
+        self.ejecucion.save(update_fields=["estado"])
+        fila = self.fila(self.puesto(), self.equipo)
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertIsNone(fila["corrida"])
+
+    def test_un_en_proceso_con_ejecucion_cerrada_es_huerfano_y_la_maquina_queda_disponible(self):
+        self.corrida.estado = CorridaCondensacion.Estado.EN_PROCESO
+        self.corrida.iniciada_en = timezone.now()
+        self.corrida.save(update_fields=["estado", "iniciada_en"])
+        self.ejecucion.estado = EjecucionProceso.Estado.CERRADA
+        self.ejecucion.save(update_fields=["estado"])
+        fila = self.fila(self.puesto(), self.equipo)
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertIsNone(fila["corrida"])
+
     def test_un_usuario_de_calidad_puede_leer_el_puesto(self):
         calidad = self._crear_usuario_calidad()
         fila = self.fila(self.puesto(calidad), self.equipo)
