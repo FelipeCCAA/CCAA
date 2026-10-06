@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { accionDeTorre, situacionDeCorrida } from "../src/services/puesto-secado.ts";
+import { accionDeTorre, corridaCancelable, situacionDeCorrida } from "../src/services/puesto-secado.ts";
 
 const base = {
   equipo_id: 1, codigo: "e1", nombre: "Torre 1", corrida: null,
-  motivos_para_iniciar: [] as string[], resolver_en: null, avisos: [] as string[],
+  motivos_para_iniciar: [] as string[], motivos_para_tomar: [] as string[],
+  resolver_en: null, avisos: [] as string[],
   falta_inspeccion: false, en_calidad: null,
 };
 const corrida = {
@@ -15,6 +16,13 @@ const corrida = {
 
 test("una torre disponible ofrece tomar concentrado", () => {
   assert.deepEqual(accionDeTorre({ ...base, estado: "disponible" }), { tipo: "tomar", habilitada: true, motivo: null });
+});
+
+test("una torre disponible en CIP no se toma y dice por qué", () => {
+  const fila = { ...base, estado: "disponible" as const, motivos_para_tomar: ["Torre 1 está en CIP: no puede producir mientras se asea."] };
+  assert.deepEqual(accionDeTorre(fila), {
+    tipo: "tomar", habilitada: false, motivo: "Torre 1 está en CIP: no puede producir mientras se asea.",
+  });
 });
 
 test("una preparada sin motivos se puede iniciar", () => {
@@ -44,9 +52,30 @@ test("en curso ofrece cerrar, salvo bloqueada", () => {
   assert.match(accionDeTorre(bloqueada).motivo ?? "", /bloqueada/);
 });
 
+test("solo una preparada con corrida se puede cancelar, aunque tenga motivos para no iniciar", () => {
+  assert.equal(corridaCancelable({ ...base, estado: "preparada", corrida }), 12);
+  assert.equal(
+    corridaCancelable({ ...base, estado: "preparada", corrida, motivos_para_iniciar: ["Torre 1 está en CIP."] }),
+    12,
+  );
+  assert.equal(corridaCancelable({ ...base, estado: "preparada", corrida: { ...corrida, id: null } }), null);
+  assert.equal(corridaCancelable({ ...base, estado: "en_curso", corrida: { ...corrida, ejecucion_estado: "ejecucion" } }), null);
+  assert.equal(corridaCancelable({ ...base, estado: "disponible" }), null);
+});
+
 test("la situación de una corrida sale de bandejaDeSecado", () => {
   assert.equal(situacionDeCorrida("ejecucion"), "En la torre");
+  assert.equal(situacionDeCorrida("pausada"), "En la torre");
   assert.equal(situacionDeCorrida("cerrada", "pendiente"), "Esperando Calidad");
   assert.equal(situacionDeCorrida("cerrada", "liberado"), "Terminada");
   assert.equal(situacionDeCorrida("cancelada"), "Cancelada");
+});
+
+test("una preparada se nombra «Preparada», no «En la torre»", () => {
+  assert.equal(situacionDeCorrida("preparacion"), "Preparada");
+});
+
+test("un estado que no se conoce no se nombra «Cancelada»: usa la etiqueta del servidor", () => {
+  assert.equal(situacionDeCorrida("borrador", "no_requerida", "Borrador"), "Borrador");
+  assert.equal(situacionDeCorrida("estado_nuevo"), "estado_nuevo");
 });

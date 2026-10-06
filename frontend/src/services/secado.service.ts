@@ -83,6 +83,9 @@ export interface TorrePuesto {
   estado: EstadoTorre;
   corrida: CorridaTorre | null;
   motivos_para_iniciar: string[];
+  /* Por qué no se puede tomar concentrado para una torre disponible (CIP). */
+  motivos_para_tomar: string[];
+  /* Dónde se resuelve el primer motivo; `null` si no hay pantalla que lo arregle. */
   resolver_en: string | null;
   avisos: string[];
   falta_inspeccion: boolean;
@@ -140,6 +143,22 @@ export async function obtenerPuestoSecado(): Promise<PuestoSecado> {
 
 export async function iniciarSecado(id: number): Promise<CorridaSecado> {
   const { data } = await api.post<CorridaSecado>(`procesos/secados/${id}/iniciar/`);
+  return data;
+}
+
+export interface CancelacionPreparacion {
+  ejecucion_id: number;
+  ejecucion_codigo: string;
+  estado: string;
+}
+
+/* Suelta una torre preparada sin iniciarla; el concentrado vuelve a ofrecerse. */
+export async function cancelarPreparacionSecado(
+  id: number, motivo: string,
+): Promise<CancelacionPreparacion> {
+  const { data } = await api.post<CancelacionPreparacion>(
+    `procesos/secados/${id}/cancelar-preparacion/`, { motivo },
+  );
   return data;
 }
 

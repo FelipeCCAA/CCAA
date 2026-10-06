@@ -55,7 +55,9 @@ export default function TomarConcentrado({ torres, concentrados, torreInicial, a
     return () => { window.clearTimeout(tarea); controller.abort(); };
   }, [fuente, opciones]);
 
-  const libres = torres.filter((item) => item.estado === "disponible");
+  // Disponible y sin motivo para no tomarla (CIP): la misma regla con que
+  // el servidor rechazaría la preparación.
+  const libres = torres.filter((item) => item.estado === "disponible" && item.motivos_para_tomar.length === 0);
   const torreElegida = libres.find((item) => item.equipo_id === Number(torre));
   const concentrado = concentrados.find((item) => item.salida_id === Number(salidaId));
   const ordenElegida = opciones?.ordenes.find((item) => item.id === Number(orden));
@@ -177,7 +179,7 @@ export default function TomarConcentrado({ torres, concentrados, torreInicial, a
             <input required type="number" min="0.001" step="0.001" max={maximo} value={valor} onChange={(e) => setValor(e.target.value)} className={campo} />
           </label>
         </fieldset>
-        {libres.length === 0 && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No hay torres disponibles: todas están preparadas o en curso.</p>}
+        {libres.length === 0 && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No hay torres disponibles: todas están preparadas, en curso o en CIP.</p>}
 
         {error && !revisando && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>}
         {revisando ? (

@@ -7,7 +7,8 @@ import { cantidad } from "../../services/formato";
 import { puedeOperarSecado } from "../../services/permisos-secado";
 import { situacionDeCorrida } from "../../services/puesto-secado";
 import {
-  buscarSecados, iniciarSecado, obtenerPuestoSecado, obtenerSecado, type CorridaSecado,
+  buscarSecados, cancelarPreparacionSecado, iniciarSecado, obtenerPuestoSecado, obtenerSecado,
+  type CorridaSecado,
 } from "../../services/secado.service";
 import { obtenerSesion } from "../../services/sesion";
 import TablaConsulta from "../Inventario/TablaConsulta";
@@ -50,6 +51,18 @@ export default function PuestoSecado() {
       setIniciando(null);
     }
   };
+
+  /* La tarjeta muestra el error en su confirmación: por eso aquí se relanza. */
+  const cancelarPreparacion = async (corridaId: number, motivo: string) => {
+    setMensaje("");
+    setError("");
+    const cancelada = await cancelarPreparacionSecado(corridaId, motivo);
+    setMensaje(`Preparación ${cancelada.ejecucion_codigo} cancelada; la torre queda disponible.`);
+    await puesto.recargar();
+  };
+
+  /* Etiqueta del servidor para un estado que el historial no nombra. */
+  const etiquetaDe = (estado: string) => puesto.datos?.estados.find((o) => o.valor === estado)?.etiqueta;
 
   const prepararCierre = async (corridaId: number) => {
     setMensaje("");
@@ -99,6 +112,7 @@ export default function PuestoSecado() {
               onTomar={(equipoId) => { setMensaje(""); setTomando({ equipoId }); }}
               onIniciar={(id) => void iniciar(id)}
               onCerrar={(id) => void prepararCierre(id)}
+              onCancelar={cancelarPreparacion}
             />
           ))}
         </section>
@@ -111,7 +125,7 @@ export default function PuestoSecado() {
               {puesto.datos.corridas_de_hoy.map((c) => (
                 <li key={c.id} className="flex flex-wrap justify-between gap-2 px-5 py-3 text-sm">
                   <span>Lote <span className="font-mono">{c.lote_codigo}</span> · {c.equipo ?? "—"}</span>
-                  <span className="text-slate-700">{situacionDeCorrida(c.estado, c.estado_calidad)}</span>
+                  <span className="text-slate-700">{situacionDeCorrida(c.estado, c.estado_calidad, etiquetaDe(c.estado))}</span>
                 </li>
               ))}
             </ul>
@@ -136,7 +150,7 @@ export default function PuestoSecado() {
               { titulo: "Producto", celda: (f) => f.producto_nombre },
               { titulo: "Inicio", celda: (f) => fecha(f.iniciada_en) },
               { titulo: "Polvo", numerica: true, celda: (f) => cantidad(f.kg_polvo, "kg") },
-              { titulo: "Situación", celda: (f) => situacionDeCorrida(f.estado, f.estado_calidad) },
+              { titulo: "Situación", celda: (f) => situacionDeCorrida(f.estado, f.estado_calidad, f.estado_etiqueta) },
             ]}
           />
         </section>
