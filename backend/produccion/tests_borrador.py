@@ -176,3 +176,22 @@ class BorradorLoteTests(BaseBorradorLote):
         self.assertIn("ocupado", str(respuesta.json()).lower())
         self.assertEqual(MovimientoSilo.objects.count(), 0)
 
+
+    def test_una_torre_sin_linea_no_confirma(self):
+        """
+        Misma regla (`dominio.exige_linea`) que el alta directa
+        (`test_sin_linea_la_torre_no_abre`): una torre Egron declara su
+        línea, y el borrador no puede saltársela.
+        """
+        datos = self.datos_completos()
+        datos["linea"] = ""
+        borrador = self.crear_borrador(**datos)
+
+        respuesta = self.cliente.post(
+            f"/api/produccion/lotes/{borrador['id']}/confirmar-borrador/"
+        )
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("Falta línea.", respuesta.json()["motivos"])
+        self.assertEqual(Lote.objects.get(pk=borrador["id"]).estado, Lote.Estado.BORRADOR)
+        self.assertEqual(MovimientoSilo.objects.count(), 0)
