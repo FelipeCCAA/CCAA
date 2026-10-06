@@ -17,7 +17,7 @@ const ROTULO = {
 export default function TarjetaEvaporador({ fila, ocupado, puedeOperar, onAbrir, onIniciar, onCerrar }: {
   fila: EvaporadorPuesto;
   ocupado: boolean;
-  /* Quien no puede escribir en producción ve el mismo estado, la misma
+  /* Quien no opera la evaporación ve el mismo estado, la misma
      corrida, el mismo "en Calidad" y el mismo motivo -son lectura-, pero
      ningún botón: ninguno le resultaría en algo distinto de un 403. */
   puedeOperar: boolean;

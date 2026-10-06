@@ -6,7 +6,8 @@ import { mensajeErrorProceso } from "../../services/errores-proceso";
 import {
   iniciarCondensacion, obtenerCondensacion, obtenerPuestoEvaporacion, type CorridaCondensacion,
 } from "../../services/procesos.service";
-import { puedeEscribir } from "../../services/sesion";
+import { puedeOperarEvaporacion } from "../../services/permisos-evaporacion";
+import { obtenerSesion } from "../../services/sesion";
 import CierreCondensacion from "../Procesos/CierreCondensacion";
 import TarjetaEvaporador from "./TarjetaEvaporador";
 
@@ -30,10 +31,11 @@ export default function PuestoEvaporacion() {
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
 
-  // Mismo criterio que el antiguo /procesos: solo Condensación (y Secado,
-  // que comparte el permiso de escritura de "produccion") opera. El resto
-  // ve exactamente lo mismo, sin los botones.
-  const puedeOperar = puedeEscribir("produccion");
+  // Mismo criterio que el servidor (`procesos.permisos.puede_operar_tipo`
+  // con la etapa de Condensación, en abrir, iniciar y cerrar): opera
+  // Condensación, o Administración. Secado escribe lotes pero no opera el
+  // evaporador. El resto ve exactamente lo mismo, sin los botones.
+  const puedeOperar = puedeOperarEvaporacion(obtenerSesion()?.usuario);
 
   const iniciar = async (corridaId: number) => {
     setMensaje("");
@@ -69,7 +71,7 @@ export default function PuestoEvaporacion() {
             <h1 className="mt-1 text-3xl font-bold text-slate-900">Evaporación</h1>
             <p className="mt-2 max-w-2xl text-slate-600">Abre el lote desde el vale y elige el destino del concentrado; luego inicia y cierra la corrida desde la tarjeta del evaporador.</p>
             {!puedeOperar && (
-              <p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">Vista de consulta: las acciones las registra Producción.</p>
+              <p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">Vista de consulta: las acciones las registra Condensación.</p>
             )}
           </div>
           <div className="flex items-center gap-2">
