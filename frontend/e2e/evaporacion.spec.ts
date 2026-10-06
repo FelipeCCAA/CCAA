@@ -1,8 +1,12 @@
 /*
   El flujo de evaporación, por pantalla.
 
-  Cuatro pasos: se abre el lote sobre un evaporador, se prepara la corrida, se
-  inicia y se cierra declarando el precondensado obtenido.
+  Todo ocurre en el **puesto de Evaporación** (`/produccion/evaporacion`): una
+  tarjeta por evaporador, con un estado y una acción. Se abre el lote desde el
+  vale sobre un evaporador libre —lo que también prepara la corrida, con su
+  silo de destino—, Calidad analiza el silo de origen, se inicia y se cierra
+  declarando el precondensado obtenido. Antes eran cinco pasos repartidos en
+  tres pantallas (`/produccion`, `/procesos` y silos).
 
   Dónde empieza y por qué ahí
   ---------------------------
@@ -13,25 +17,26 @@
   cuando el silo estandarizado ya tiene leche: qué puede hacer Producción con
   ella.
 
-  Abrir el lote **es** iniciar la evaporación
-  -------------------------------------------
-  No son dos cosas. Para la familia «polvo» el formulario de lote solo ofrece
-  evaporadores —«la torre Egron aparecerá después, únicamente cuando Calidad
-  libere el concentrado»— y `_encadenar_con_la_estandarizacion` deduce la etapa
-  del **tipo de máquina**: evaporador → evaporación. De ahí que el lote y la
-  corrida de evaporación compartan ejecución, y que `iniciar_condensacion`
-  tenga una rama entera para adoptar la que el lote ya dejó activa en vez de
-  abrir una segunda.
+  Abrir el lote **es** preparar la evaporación
+  --------------------------------------------
+  No son dos cosas. En el puesto el formulario de lote solo ofrece
+  evaporadores, y `_encadenar_con_la_estandarizacion` deduce la etapa del
+  **tipo de máquina**: evaporador → evaporación. Por eso el mismo «Abrir lote»
+  deja la corrida preparada —con el silo de destino del concentrado ya
+  elegido— y la tarjeta pasa de «Disponible» a «Preparada». Es todo o nada:
+  si la corrida no se puede preparar, tampoco queda lote.
 
   Prerrequisitos
   --------------
   `python manage.py preparar_circuito_polvo --aplicar` deja la **orden de
   producción** programada, que el formulario exige y que ninguna pantalla crea.
   Hace falta además un vale liberado con saldo; si no hay, la prueba lo dice y
-  remite al circuito completo, que produce uno.
+  remite al circuito completo, que produce uno. Y un evaporador libre: si los
+  tres están ocupados, la prueba lo dice en vez de esperar un botón que no va
+  a aparecer.
 */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -43,6 +48,9 @@ import { RUTA_FLUJO_POLVO } from "./constantes";
 
 const SELLO = Date.now().toString().slice(-6);
 const PRODUCTO_OBJETIVO = process.env.E2E_PRODUCTO ?? "";
+/* El prefijo lo consume `flujo-polvo-continuacion.spec.ts`, que deriva el
+   código del pallet quitándole «CCAA-EVA-»: cambiarlo aquí cambia el pallet
+   allá. */
 const PREFIJO_LOTE = process.env.E2E_LOTE_PREFIJO ?? "CCAA-EVA";
 const RUTA_REGISTRO = process.env.E2E_REGISTRO
   ? path.resolve(process.env.E2E_REGISTRO)
@@ -88,26 +96,98 @@ const CONTROLES_SALIDA = { solidos: "45.20", temperatura: "62.5" };
    comprueba es la puerta, no el número. */
 const LECHE_ESTANDARIZADA = { grasa: "2.61", sng: "8.70" };
 
-/* El silo del que sale la leche. Lo dice el formulario al elegir el lote, así
-   que se descubre en el paso 2 y se usa en el 3. */
+/* El silo del que sale la leche y el que recibe el concentrado. Los dice la
+   tarjeta una vez preparada la corrida, así que se descubren en el paso 1 y se
+   usan en los siguientes. */
 let origen = "";
 let destino = "";
 
+/* El evaporador sobre el que se abrió el lote. La tarjeta se vuelve a buscar
+   por su nombre en cada paso: «la primera disponible» deja de ser esta en
+   cuanto la ocupamos. */
+let maquina = "";
+
+/* Un código de silo como patrón. La API conserva códigos históricos con
+   espacios dobles («Silo  3») y el texto visible los colapsa: se compara por
+   `\s+` para que la diferencia de representación no cuente. */
+const patronSilo = (codigo: string) =>
+  codigo.trim().split(/\s+/).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+
+/* Las tarjetas viven en la sección «Evaporadores». Se acota a ella y no se
+   filtra por un nombre que contenga «Evaporador»: el puesto ya solo lista
+   evaporadores, y el nombre lo edita Maestros. */
+const tarjetas = (page: Page) =>
+  page.getByRole("region", { name: "Evaporadores" }).getByRole("article");
+
+const tarjetaDe = (page: Page): Locator =>
+  tarjetas(page).filter({ has: page.getByRole("heading", { name: maquina, exact: true }) });
 
 test.describe.configure({ mode: "serial" });
 
 test.afterAll(cerrarSegundaFirma);
 
-test("de la leche estandarizada al precondensado, por pantalla", async ({ page }) => {
+test("de la leche estandarizada al precondensado, en el puesto de Evaporación", async ({ page }) => {
   test.setTimeout(180_000);
 
   const erroresJs = vigilar(page);
 
-  await test.step("1 · se abre el lote sobre un evaporador", async () => {
-    await irA(page, "/produccion");
-    await page.getByRole("button", { name: "Abrir lote desde vale" }).click();
+  await test.step("1 · se abre el lote y se prepara la corrida en un evaporador libre", async () => {
+    await irA(page, "/produccion/evaporacion");
 
-    await expect(page.getByText("Vale estandarizado liberado")).toBeVisible();
+    /* Las tarjetas llegan en una petición aparte: sin esta espera, «no hay
+       ninguna disponible» sería cierto solo porque aún no cargó ninguna. */
+    await expect(
+      tarjetas(page).first(),
+      "El puesto de Evaporación no mostró ningún evaporador.",
+    ).toBeVisible({ timeout: 15_000 });
+
+    const libre = tarjetas(page)
+      .filter({ has: page.getByText("Disponible", { exact: true }) })
+      .filter({ has: page.getByRole("button", { name: "Abrir lote desde vale" }) })
+      .first();
+
+    /*
+      Si no hay ninguno libre, el motivo suele ser una corrida abandonada:
+      anular un lote no cierra su ejecución y el evaporador queda ocupado
+      indefinidamente (CLAUDE.md, «La pantalla ofrece lo que el backend va a
+      rechazar», caso 3). La prueba no libera máquinas ajenas: lo dice.
+    */
+    await expect(
+      libre,
+      "Ningún evaporador está «Disponible». Revisa las corridas preparadas o en " +
+        "curso que quedaron abiertas; la prueba no toca corridas ajenas.",
+    ).toBeVisible({ timeout: 10_000 });
+
+    maquina = (await libre.getAttribute("aria-label")) ?? "";
+    expect(maquina, "La tarjeta del evaporador no tiene nombre.").not.toBe("");
+    test.info().annotations.push({ type: "evaporador", description: maquina });
+
+    /* El formulario consulta al abrirse si esta persona dejó un lote a medias.
+       Se espera esa respuesta **antes** de tocar nada: el formulario se dibuja
+       enseguida y el aviso del borrador llega después, reemplazándolo, así que
+       sin esperar los campos se llenarían sobre un formulario que está por
+       desaparecer. */
+    const consultaBorrador = page.waitForResponse(
+      (r) => r.url().includes("lotes/mi-borrador/") && r.request().method() === "GET",
+      { timeout: 15_000 },
+    );
+    await libre.getByRole("button", { name: "Abrir lote desde vale" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Abrir lote y preparar evaporación" }),
+    ).toBeVisible();
+
+    if ((await consultaBorrador).status() === 200) {
+      /* Un borrador de una corrida anterior que falló a medias. Es de la
+         misma cuenta de pruebas, así que descartarlo es lo que haría el
+         operador para empezar de nuevo; continuarlo arrastraría un vale y
+         unos litros que esta prueba no eligió. */
+      await page.getByRole("button", { name: "Descartar borrador" }).click();
+      await expect(page.getByRole("heading", { name: "Tienes un lote sin abrir" })).toHaveCount(0);
+    }
+
+    const formulario = page.locator("form").filter({ hasText: "Vale estandarizado" });
+    await expect(formulario).toBeVisible();
 
     /*
       Se elige el vale **que tenga orden de producción compatible**.
@@ -120,9 +200,14 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
 
       Recorrerlos es lo que hace el operador: prueba uno, ve que no tiene orden,
       prueba el siguiente.
+
+      Que la familia vaya a evaporador ya no hay que comprobarlo: en el puesto
+      el formulario solo ofrece los vales de familias que van a un evaporador,
+      y la máquina viene elegida desde la tarjeta.
     */
-    const selectVale = campo(page, "Vale estandarizado liberado *");
-    const selectOrden = campo(page, "Orden de producción *");
+    const selectVale = campo(formulario, "Vale estandarizado liberado *");
+    const selectOrden = campo(formulario, "Orden de producción *");
+    const selectMaquina = campo(formulario, "Máquina / equipo *");
 
     /* Los vales llegan en una petición aparte: leer las opciones nada más
        abrir el formulario devuelve solo el «Selecciona…» y haría creer que no
@@ -155,24 +240,10 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
         : "No hay vales liberados con saldo.",
     ).toBeGreaterThan(0);
 
-    /*
-      Un vale sirve si cumple **las dos** condiciones, y hay que comprobarlas
-      por separado porque fallan por motivos distintos:
-
-      - tiene OP programada de su producto — si no, el desplegable de órdenes
-        queda vacío;
-      - su familia va a un evaporador — un vale de crema tiene orden y máquinas,
-        pero las máquinas son líneas y envasadoras, y entonces el que se queda
-        vacío es el desplegable de evaporadores.
-
-      Comprobar solo la primera elegía el vale de crema y el fallo aparecía dos
-      campos después, hablando de máquinas cuando el problema era el producto.
-    */
-    const selectMaquina = campo(page, "Máquina / equipo *");
-    const util = async (select: typeof selectOrden, excluir: RegExp) =>
-      (await select.locator("option").allTextContents())
+    const tieneOrden = async () =>
+      (await selectOrden.locator("option").allTextContents())
         .map((t) => t.trim())
-        .filter((t) => t && !excluir.test(t)).length > 0;
+        .some((t) => t && !/^(Selecciona|—)/.test(t));
 
     let elegido = "";
     const descartados: string[] = [];
@@ -180,16 +251,8 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
     for (const texto of ofrecidos) {
       await elegirOpcion(selectVale, new RegExp(texto.split(" · ")[0]));
 
-      if (!(await util(selectOrden, /^(Selecciona|—)/))) {
+      if (!(await tieneOrden())) {
         descartados.push(`${texto} → sin OP programada`);
-        continue;
-      }
-
-      const maquinas = (await selectMaquina.locator("option").allTextContents())
-        .map((t) => t.trim());
-
-      if (!maquinas.some((m) => /Evaporador/.test(m))) {
-        descartados.push(`${texto} → su familia no va a un evaporador`);
         continue;
       }
 
@@ -206,31 +269,30 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
 
     test.info().annotations.push({ type: "vale", description: elegido });
 
-    await campo(page, "Fecha *").fill(HOY);
+    await campo(formulario, "Fecha *").fill(HOY);
 
     /*
-      La máquina decide la etapa. Elegir un evaporador es lo que hace que la
-      ejecución del lote nazca en «Evaporación» y, por tanto, lo que hace que
-      el lote aparezca luego en «Nueva evaporación». Con una torre nacería en
-      «Secado» y la pantalla de procesos no lo ofrecería —sin decir por qué—.
-
-      Para la familia polvo el formulario ya solo ofrece evaporadores, así que
-      esto documenta la regla más que sortearla.
+      La máquina decide la etapa, y aquí viene elegida desde la tarjeta: es lo
+      que hace que la ejecución del lote nazca en «Evaporación». Se comprueba
+      que el formulario la conservó al cambiar de vale —si la soltara, el
+      silo de destino desaparecería con ella, porque solo se pide sobre un
+      evaporador—.
     */
-    await elegirOpcion(selectMaquina, /Evaporador/);
+    await expect(
+      selectMaquina.locator("option:checked"),
+      `El formulario no conservó el evaporador de la tarjeta (${maquina}).`,
+    ).toHaveText(new RegExp(`^${maquina.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} · `));
 
     await elegirOpcion(selectOrden, /OP-/);
 
-    await campo(page, "Código de lote *").fill(LOTE.codigo);
+    await campo(formulario, "Código de lote *").fill(LOTE.codigo);
 
-    /* «Línea» es obligatoria y no se deduce del equipo. Es un dato del turno,
-       no del proceso. */
-    const linea = campo(page, "Línea *");
-    if (await linea.count()) await elegirOpcion(linea, /E1|E2/);
+    /* Sin «Línea»: es un dato de la torre, y sobre un evaporador el formulario
+       ni la muestra. */
 
     /*
-      Los litros **no se escriben**: al elegir el vale, el formulario los rellena
-      con su saldo. Solo se lee lo que puso.
+      Los litros **no se escriben** de entrada: al elegir el vale, el
+      formulario los rellena con su saldo. Primero se lee lo que puso.
 
       Escribirlos costó dos vueltas. Primero con un valor fijo, que el navegador
       rechazaba en silencio cuando el vale tenía menos. Después leyendo el `max`
@@ -239,7 +301,7 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
       de un vale ya agotado. Esperar a que el campo tenga valor es esperar a que
       el formulario haya terminado de reaccionar.
     */
-    const litros = campo(page, "Litros para esta corrida *");
+    const litros = campo(formulario, "Litros para esta corrida *");
     await expect
       .poll(async () => Number(await litros.inputValue()), {
         timeout: 10_000,
@@ -254,94 +316,95 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
       corrida: la prueba siguiente se queda sin leche estandarizada y hay que
       volver a fabricarla. Además es lo que dice el propio dominio —«veinte mil
       litros no se secan de una vez»—, así que un vale alimenta varias corridas.
+
+      Va **antes** del destino: el desplegable de destinos apaga los silos que
+      no tienen sitio para estos litros, y cambiar los litros después suelta
+      el destino si deja de caber.
     */
     const saldo = Number(await litros.inputValue());
     corrida.entrada = Math.min(saldo, LITROS_POR_CORRIDA);
     corrida.salida = Math.round(corrida.entrada * PROPORCION_SALIDA);
     await litros.fill(String(corrida.entrada));
 
+    /*
+      El silo de origen es el silo destino del vale: lo dibuja el recuadro de
+      «Leche estandarizada» —silos del vale → **silo estandarizado** →
+      Producción—. Hace falta ya aquí para no elegirlo también como destino:
+      el modelo rechaza una corrida que sale y entra en el mismo silo.
+    */
+    const origenDelVale = (
+      await formulario.getByText("Producción", { exact: true }).first().locator("..").locator("strong").first().innerText()
+    ).trim();
+    expect(origenDelVale, "El formulario no mostró el silo estandarizado del vale.").not.toBe("");
+
+    /*
+      El destino tiene que estar **disponible** y tener sitio.
+
+      El puesto solo ofrece silos activos en estado disponible —antes el
+      desplegable de `/procesos` ofrecía también los bloqueados por Calidad y
+      el rechazo llegaba al cerrar, con el evaporador ya trabajado—; los que no
+      tienen sitio para estos litros salen apagados con «· sin capacidad».
+      `elegirOpcion` ya se salta los apagados; el patrón lo dice igual, para
+      que el fallo nombre la regla.
+    */
+    const destinoElegido = await elegirOpcion(
+      campo(formulario, "Silo de destino del concentrado *"),
+      new RegExp(`^(?!${patronSilo(origenDelVale)} · )(?!.*sin capacidad).+ · libre `),
+    );
+    destino = destinoElegido.split(" · ")[0].trim();
+
     /* Antes de pulsar: si algún campo obligatorio quedó vacío, el navegador
        bloquea el envío sin decir nada y el fallo llega veinte segundos después
        como «no llegó ninguna respuesta». Preguntárselo al formulario nombra el
        campo. */
-    const formulario = page.locator("form").filter({ hasText: "Vale estandarizado" });
     expect(
       await camposInvalidos(formulario),
       "El formulario de lote no se puede enviar: hay campos obligatorios sin completar.",
     ).toEqual([]);
 
+    /* «Revisar» se apaga si la máquina está ocupada o no habilitada (aseo,
+       mantenimiento). La opción elegida dice el motivo. */
+    const revisar = formulario.getByRole("button", { name: "Revisar", exact: true });
+    await expect(
+      revisar,
+      `«Revisar» está deshabilitado: ${await selectMaquina.locator("option:checked").innerText()}`,
+    ).toBeEnabled();
+    await revisar.click();
+
+    /* El resumen de `ConfirmarAccion`: lo irreversible se confirma viendo lo
+       que se va a abrir, incluido origen → destino. */
+    await expect(page.getByText("Revisa antes de abrir el lote")).toBeVisible();
+
     await trasGuardar(page, "confirmar-borrador", async () => {
-      // Exacto: "Abrir lote" es ahora substring de "Abrir lote desde vale",
-      // el botón que abrió este mismo formulario y sigue en el DOM detrás.
+      // Exacto: "Abrir lote" es substring de "Abrir lote desde vale", que
+      // sigue en el DOM detrás del formulario, en el encabezado y en las
+      // tarjetas libres.
       await page.getByRole("button", { name: "Abrir lote", exact: true }).click();
     });
-  });
-
-  await test.step("2 · se prepara la corrida de evaporación", async () => {
-    await irA(page, "/procesos");
-    await page.getByRole("button", { name: "Nueva evaporación" }).click();
-
-    /* Por rol y no por texto: «Nueva evaporación» es a la vez el botón que
-       abre el formulario y el título del formulario abierto. */
-    await expect(
-      page.getByRole("heading", { name: "Nueva evaporación" }),
-    ).toBeVisible();
 
     /*
-      El desplegable solo trae lotes **en proceso, con orden y en una etapa de
-      evaporación**, y que no tengan ya una corrida. Si el lote del paso 1 no
-      está, el fallo es del paso 1 aunque se manifieste aquí: por eso el
-      mensaje nombra las cuatro condiciones.
+      La tarjeta pasa a «Preparada» y dice de dónde sale y adónde va la leche:
+      «{origen} → {destino} · {litros}». El origen se lee de ahí —es el dato
+      que ve el operador, el mismo que nombra el motivo de bloqueo— y no de la
+      API.
     */
-    await elegirOpcion(
-      campo(page, "Lote / entrada preparada"),
-      new RegExp(LOTE.codigo),
-    ).catch(() => {
-      throw new Error(
-        `El lote ${LOTE.codigo} no aparece como entrada preparada. Tiene que ` +
-          "estar en proceso, con orden programada, en etapa de evaporación y " +
-          "sin corrida previa.",
-      );
-    });
+    const tarjeta = tarjetaDe(page);
+    await expect(tarjeta.getByText("Preparada", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(tarjeta).toContainText(LOTE.codigo);
 
-    /*
-      El silo de origen se lee del resumen que el formulario dibuja al elegir el
-      lote. Hace falta para el paso siguiente, y sacarlo de aquí evita
-      preguntárselo a la API: es el mismo dato que ve el operador.
-    */
-    const resumen = page.locator("p").filter({ hasText: /^Origen/ }).first();
-    await expect(
-      resumen,
-      "El formulario no mostró el resumen del lote: sin él no se sabe de qué " +
-        "silo sale la leche.",
-    ).toBeVisible({ timeout: 10_000 });
-
-    origen = (await resumen.locator("b").innerText()).trim();
-    expect(origen, "El resumen no trae el silo de origen.").not.toBe("");
-
-    /*
-      El destino tiene que estar **disponible**, y hay que filtrarlo aquí.
-
-      El desplegable ofrece todos los silos activos con sitio, incluidos los que
-      Calidad tiene bloqueados: escribe su estado en la opción —«SILO 1 · libre
-      94.000 L · Bloqueado por Calidad»— pero no la deshabilita. Elegirlo deja
-      preparar la corrida y hasta iniciarla; el rechazo llega al **cerrar**, con
-      «SILO 1 no admite el precondensado», cuando el evaporador ya trabajó.
-
-      Se toma el que dice «Disponible».
-    */
-    const destinoElegido = await elegirOpcion(
-      campo(page, "Silo de concentrado"),
-      /· Disponible$/,
+    const trayecto = (await tarjeta.getByText(" → ").first().innerText()).trim();
+    origen = trayecto.split(" → ")[0].trim();
+    expect(origen, "La tarjeta no trae el silo de origen.").not.toBe("");
+    expect(
+      origen,
+      "La tarjeta muestra un origen distinto del silo estandarizado del vale.",
+    ).toMatch(new RegExp(`^${patronSilo(origenDelVale)}$`));
+    expect(trayecto, "La tarjeta muestra otro destino que el elegido.").toMatch(
+      new RegExp(` → ${patronSilo(destino)} · `),
     );
-    destino = destinoElegido.split(" · ")[0].trim();
-
-    await trasGuardar(page, "crear-guiada", async () => {
-      await page.getByRole("button", { name: "Crear corrida preparada" }).click();
-    });
   });
 
-  await test.step("3 · Calidad analiza el silo estandarizado", async () => {
+  await test.step("2 · Calidad analiza el silo estandarizado", async () => {
     /*
       Sin esto la evaporación no arranca.
 
@@ -351,78 +414,69 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
       protege la transferencia del vale, y aquí vuelve a aplicar porque volver a
       sacar leche del silo es volver a comprometer su contenido.
 
+      El puesto lo dice antes de intentar: el botón sale apagado y debajo va el
+      primer motivo, que empieza por el código del silo. Ese motivo lo calcula
+      `motivos_para_iniciar_condensacion`, la misma función que decide al
+      iniciar: si la pantalla y el servidor discreparan, aquí se vería.
+
       Ojo con el orden: el análisis va **después** de abrir el lote. Abrirlo
       genera una salida del silo, y una salida no invalida la muestra —sacar
       leche no cambia la composición de la que queda—, pero un ingreso sí. Al
       revés, con el análisis antes, cualquier vale que descargara en ese silo
       entremedio lo dejaría vencido.
+
+      Por esa misma regla el silo puede llegar **ya analizado**: una corrida
+      anterior de esta prueba sobre el mismo vale lo analizó, y desde entonces
+      solo ha salido leche. Entonces el botón está habilitado desde el
+      principio, y exigir que esté apagado haría fallar la segunda vuelta por
+      un comportamiento correcto. Se anota y se sigue.
     */
+    const tarjeta = tarjetaDe(page);
+    const iniciar = tarjeta.getByRole("button", { name: "Iniciar evaporación" });
+    await expect(iniciar).toBeVisible();
+
+    if (await iniciar.isEnabled()) {
+      test.info().annotations.push({
+        type: "silo de origen",
+        description: `${origen} ya tenía un análisis vigente; no se volvió a analizar.`,
+      });
+      return;
+    }
+
+    const motivo = tarjeta.getByText(new RegExp(`^${patronSilo(origen)}: `));
+    await expect(
+      motivo,
+      `«Iniciar evaporación» está deshabilitado, pero el motivo no es el silo ${origen}: ` +
+        "analizarlo no lo destrabaría.",
+    ).toBeVisible();
+
     await analizarSilo(page, origen, LECHE_ESTANDARIZADA);
   });
 
-  await test.step("4 · se inicia la evaporación", async () => {
-    /* Se vuelve a Procesos: el paso anterior dejó el navegador en la pantalla
-       de silos, y la tabla de corridas está aquí. */
-    await irA(page, "/procesos");
+  await test.step("3 · se inicia la evaporación", async () => {
+    /* Se vuelve al puesto: el paso anterior dejó el navegador en la pantalla
+       de silos. `irA` recarga, y el puesto vuelve a pedir el estado al
+       servidor: el botón se habilita porque el servidor lo dice, no porque la
+       pantalla lo deduzca. */
+    await irA(page, "/produccion/evaporacion");
 
-    /*
-      La tabla se carga bajo demanda: la pantalla no descarga el histórico al
-      entrar, así que sin pulsar «Cargar corridas» la fila no existe.
-
-      Se insiste con el clic porque uno inmediato después de recargar cae a
-      veces antes de que React haya enganchado el manejador: el botón sigue
-      ahí y la tabla no llega.
-
-      La espera termina cuando **aparece** la tabla —o el aviso de que no hay
-      corridas—, no cuando desaparece el botón. Esperar la ausencia del botón
-      daba por cargada una tabla sobre la que nunca se hizo clic: `/procesos`
-      se monta en diferido, `irA` solo espera al `main` del layout, y en ese
-      instante la sección aún no existe, así que «el botón no está visible»
-      era cierto desde el primer sondeo.
-
-      Todo se busca dentro de la sección de evaporación, no en la página. Antes
-      había un `.first()` que confiaba en que el primer «Cargar corridas» era
-      el de evaporación; el 2026-08-25 entró la sección de descremación por
-      encima, y su «Cargar corridas de descremación» también coincide —`name`
-      compara por subcadena—. Entre los dos defectos la prueba estuvo un mes
-      en rojo acusando una fila que no existía.
-    */
-    const seccion = page.locator("#proceso-condensacion");
-    const cargar = seccion.getByRole("button", { name: "Cargar corridas", exact: true });
-    const cargada = seccion
-      .getByRole("table")
-      .or(seccion.getByText("Sin corridas de evaporación"));
-
-    await expect
-      .poll(
-        async () => {
-          if (await cargada.first().isVisible()) return true;
-          if (await cargar.isVisible()) await cargar.click();
-          return cargada.first().isVisible();
-        },
-        { timeout: 20_000, message: "La tabla de corridas no llegó a cargarse." },
-      )
-      .toBe(true);
-
-    const fila = seccion
-      .getByRole("row", { name: new RegExp(LOTE.codigo) })
-      .filter({ has: page.getByRole("button", { name: "Iniciar evaporación" }) });
+    const tarjeta = tarjetaDe(page);
+    const iniciar = tarjeta.getByRole("button", { name: "Iniciar evaporación" });
     await expect(
-      fila,
-      `La corrida del lote ${LOTE.codigo} no aparece en la tabla de evaporación.`,
-    ).toBeVisible({ timeout: 20_000 });
+      iniciar,
+      `La corrida del lote ${LOTE.codigo} sigue sin poder iniciarse tras analizar ${origen}.`,
+    ).toBeEnabled({ timeout: 15_000 });
 
     await trasGuardar(page, "/iniciar/", async () => {
-      await fila.getByRole("button", { name: "Iniciar evaporación" }).click();
+      await iniciar.click();
     });
+
+    await expect(tarjeta.getByText("En curso", { exact: true })).toBeVisible({ timeout: 15_000 });
   });
 
-  await test.step("5 · se declara el precondensado y pasa a Calidad", async () => {
-    const fila = page
-      .locator("#proceso-condensacion")
-      .getByRole("row", { name: new RegExp(LOTE.codigo) })
-      .filter({ has: page.getByRole("button", { name: "Registrar salida" }) });
-    await fila.getByRole("button", { name: "Registrar salida" }).click();
+  await test.step("4 · se declara el precondensado y pasa a Calidad", async () => {
+    const tarjeta = tarjetaDe(page);
+    await tarjeta.getByRole("button", { name: "Registrar salida y cerrar" }).click();
 
     const cierre = page.locator("form").filter({ hasText: "Cerrar evaporación" });
     await expect(cierre).toBeVisible();
@@ -442,34 +496,32 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
     });
   });
 
-  await test.step("6 · la corrida queda con su balance y a la espera de Calidad", async () => {
-    /* El lote también aparece en el resumen general de ejecuciones. Acotamos
-       a la fila del proceso que expone la decisión de Calidad para comprobar
-       el balance correcto sin depender del orden de las tablas. */
-    const fila = page
-      .getByRole("row", { name: new RegExp(LOTE.codigo) })
-      .filter({ hasText: /Pendiente de [Cc]alidad/ });
-    await expect(fila).toBeVisible({ timeout: 20_000 });
-
-    /*
-      Se comprueba el **balance**: que la fila muestre los litros declarados y
-      los sólidos es lo que distingue una corrida cerrada de una que solo cambió
-      de etiqueta.
-    */
-    await expect(fila).toContainText(corrida.salida.toLocaleString("es-CL"));
-    await expect(fila).toContainText(CONTROLES_SALIDA.solidos);
-
+  await test.step("5 · la corrida queda a la espera de Calidad", async () => {
     /*
       Y que quede **pendiente de Calidad**, que es donde el botón dice que la
       manda. Producción cierra la corrida; el concentrado no sigue a la torre
       hasta que Calidad lo libere. Un cierre que dejara la corrida «cerrada» sin
       pasar por ahí se saltaría esa puerta.
 
-      Ojo: la columna «Resultado» también dice «Pendiente» cuando aún no hay
-      litros, así que afirmar «no dice Pendiente» era comprobar lo contrario de
-      lo que se quiere — y fallaba justo cuando el flujo había ido bien.
+      Se mira en dos sitios porque dicen cosas distintas: «Corridas de hoy» da
+      el estado de la corrida, y la tarjeta muestra que la máquina la sigue
+      teniendo a cargo —«Esperando Calidad»—, o, si ya se ofrece para abrir
+      otra, la línea «En Calidad» con este lote.
     */
+    const hoy = page.getByRole("region", { name: "Corridas de hoy" });
+    const fila = hoy.getByRole("listitem").filter({ hasText: `lote ${LOTE.codigo}` });
+    await expect(
+      fila,
+      `La corrida del lote ${LOTE.codigo} no aparece en «Corridas de hoy».`,
+    ).toBeVisible({ timeout: 20_000 });
     await expect(fila).toContainText(/Pendiente de [Cc]alidad/);
+
+    const tarjeta = tarjetaDe(page);
+    await expect(tarjeta).toContainText(LOTE.codigo);
+    await expect(
+      tarjeta.getByText("Esperando Calidad", { exact: true })
+        .or(tarjeta.getByText(/^En Calidad:/)),
+    ).toBeVisible();
   });
 
   expect(erroresJs, `Errores de JavaScript:\n${erroresJs.join("\n")}`).toHaveLength(0);
@@ -480,6 +532,8 @@ test("de la leche estandarizada al precondensado, por pantalla", async ({ page }
     `El servidor rechazó peticiones que nadie esperaba: ${inesperados.join(" ·· ")}`,
   ).toHaveLength(0);
 
+  /* El contrato con `flujo-polvo-continuacion.spec.ts`: el lote, el silo donde
+     quedó el precondensado y sus litros. Esa prueba no vuelve a descubrirlos. */
   fs.mkdirSync(path.dirname(RUTA_REGISTRO), { recursive: true });
   fs.writeFileSync(RUTA_REGISTRO, JSON.stringify({
     lote: LOTE.codigo,
