@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Beaker, Factory, X } from "lucide-react";
 
@@ -66,6 +66,57 @@ interface Props {
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
+/*
+  Ruta de producto → tipo de máquina. Vive a nivel de módulo porque
+  `reanudarBorrador` necesita evaluarla contra el vale que guardó el
+  borrador, antes de que el cuerpo del componente recalcule sus valores
+  derivados para el render.
+*/
+const RUTA_POR_FAMILIA: Record<string, { ruta: string; tipos: string[]; ayuda: string }> = {
+  polvo: {
+    ruta: "Leche estandarizada → Evaporación → Torre Egron → Envasado 25 kg",
+    tipos: ["evaporador"],
+    ayuda: "Esta apertura inicia la evaporación. La torre Egron aparecerá después, únicamente cuando Calidad libere el concentrado.",
+  },
+  liquido: {
+    ruta: "Leche estandarizada → Evaporación / concentración → Producto a granel",
+    tipos: ["evaporador", "carga"],
+    ayuda: "Selecciona el evaporador o punto de carga que ejecuta esta corrida.",
+  },
+  crema: {
+    ruta: "Leche estandarizada → Separación / proceso → Envasado o granel",
+    tipos: ["linea", "envasadora"],
+    ayuda: "Selecciona solo la línea o envasadora de crema correspondiente.",
+  },
+  otro: {
+    ruta: "Proceso definido para el producto → Envasado",
+    tipos: ["linea", "envasadora", "carga"],
+    ayuda: "Selecciona la máquina final definida para este producto.",
+  },
+};
+
+/*
+  Mismo filtro de máquinas en los dos lugares que lo necesitan: el que pinta
+  el desplegable y el que valida, al reanudar un borrador, si la máquina que
+  quedó guardada todavía es válida para el modo y el vale actuales. Una sola
+  función evita que las dos reglas se desalineen — que es justo el defecto
+  que se corrige aquí: un borrador cruzado entre Producción y el puesto de
+  Evaporación podía confirmarse con una máquina que el modo actual ya no
+  ofrece.
+*/
+function equiposCompatiblesDe(
+  equipos: EquipoInicioProduccion[],
+  modo: "evaporacion" | "resto",
+  familia: string | undefined,
+): EquipoInicioProduccion[] {
+  const ruta = familia ? RUTA_POR_FAMILIA[familia] : null;
+  return equipos.filter((item) => {
+    if (!item.activo) return false;
+    if (modo === "evaporacion") return item.tipo === "evaporador";
+    return item.tipo !== "evaporador" && (!ruta || ruta.tipos.includes(item.tipo));
+  });
+}
+
 
 function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, destinos = [] }: Props) {
 
@@ -79,6 +130,13 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
   const [observacion, setObservacion] = useState("");
   const [siloDestino, setSiloDestino] = useState("");
   const [paso, setPaso] = useState<"datos" | "resumen">("datos");
+  /* Distingue un borrador recién reanudado para avisar, solo en ese caso,
+     que la disponibilidad del silo de destino pudo cambiar desde que se
+     guardó. */
+  const [vieneDeBorrador, setVieneDeBorrador] = useState(false);
+  const idLinea = useId();
+  const idSiloDestino = useId();
+  const idSiloDestinoAyuda = useId();
 
   /* Una vez que el operador escribe el código, la sugerencia deja de pisarlo:
      lo que escribió a mano gana. */
@@ -94,7 +152,13 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
   const [ordenes, setOrdenes] = useState<Awaited<ReturnType<typeof obtenerOpcionesInicioProduccion>>["ordenes"]>([]);
 
   const [guardando, setGuardando] = useState(false);
+  /* `error` es del paso de datos: validación y autoguardado. `errorEnvio` es
+     del resumen y solo lo ve `ConfirmarAccion`; separarlos evita que un
+     aviso de autoguardado ya resuelto se vea «colgado» en la pantalla de
+     confirmación, o que un rechazo de la confirmación aparezca en un paso
+     que el operador ya dejó atrás. */
   const [error, setError] = useState("");
+  const [errorEnvio, setErrorEnvio] = useState("");
   const [tocado, setTocado] = useState(false);
   const [borradorPendiente, setBorradorPendiente] = useState<BorradorLote | null>(null);
   const [descartando, setDescartando] = useState(false);
@@ -145,11 +209,30 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
       guardado.litros_estandarizados_borrador == null
         ? "" : String(guardado.litros_estandarizados_borrador)
     );
-    setEquipo(guardado.equipo == null ? "" : String(guardado.equipo));
+
+    /* El borrador es uno por usuario y lo comparten los dos caminos que
+       abren un lote: Producción y el puesto de Evaporación. Si lo que
+       quedó guardado no es válido para el modo o el vale con que se
+       reanuda — un evaporador en "resto", o cualquier otra máquina en
+       "evaporacion" —, se descarta en vez de arrastrarlo: de lo contrario
+       viajaría intacto hasta `confirmar-borrador/` sin pasar nunca por el
+       filtro del desplegable. */
+    const valeGuardado = vales.find((item) => item.id === guardado.vale);
+    const compatiblesDelBorrador = equiposCompatiblesDe(equipos, modo, valeGuardado?.producto_familia);
+    const equipoValido = guardado.equipo != null
+      && compatiblesDelBorrador.some((item) => item.id === guardado.equipo);
+    const equipoFinal = equipoValido ? String(guardado.equipo) : (equipoInicial ? String(equipoInicial) : "");
+    fijarEquipo(equipoFinal, compatiblesDelBorrador);
+    /* `fijarEquipo` ya soltó la línea si la máquina final no es una torre;
+       solo si lo es tiene sentido restaurar la que trajo el borrador. */
+    const equipoFinalEsTorre = compatiblesDelBorrador.find((item) => String(item.id) === equipoFinal)?.tipo === "torre";
+    if (equipoFinalEsTorre) setLinea(guardado.linea);
+    setSiloDestino("");
+    setVieneDeBorrador(true);
+
     setOrden(guardado.orden == null ? "" : String(guardado.orden));
     setFecha(guardado.fecha);
     setOp(guardado.op);
-    setLinea(guardado.linea);
     setTurno(guardado.turno);
     setObservacion(guardado.observacion);
     reanudar(guardado.id);
@@ -227,7 +310,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
   const confirmarEnvio = async () => {
     if (guardando) return;
 
-    setError("");
+    setErrorEnvio("");
     setGuardando(true);
 
     try {
@@ -250,7 +333,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
           // Se conserva el rechazo original; la disponibilidad podrá actualizarse al reabrir.
         }
       }
-      setError(mensaje);
+      setErrorEnvio(mensaje);
 
       setGuardando(false);
 
@@ -261,45 +344,25 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
   const campo =
     "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-green-600";
   const valeSeleccionado = vales.find((item) => item.id === Number(vale));
-  const rutaPorFamilia: Record<string, { ruta: string; tipos: string[]; ayuda: string }> = {
-    polvo: {
-      ruta: "Leche estandarizada → Evaporación → Torre Egron → Envasado 25 kg",
-      tipos: ["evaporador"],
-      ayuda: "Esta apertura inicia la evaporación. La torre Egron aparecerá después, únicamente cuando Calidad libere el concentrado.",
-    },
-    liquido: {
-      ruta: "Leche estandarizada → Evaporación / concentración → Producto a granel",
-      tipos: ["evaporador", "carga"],
-      ayuda: "Selecciona el evaporador o punto de carga que ejecuta esta corrida.",
-    },
-    crema: {
-      ruta: "Leche estandarizada → Separación / proceso → Envasado o granel",
-      tipos: ["linea", "envasadora"],
-      ayuda: "Selecciona solo la línea o envasadora de crema correspondiente.",
-    },
-    otro: {
-      ruta: "Proceso definido para el producto → Envasado",
-      tipos: ["linea", "envasadora", "carga"],
-      ayuda: "Selecciona la máquina final definida para este producto.",
-    },
-  };
-  const ruta = valeSeleccionado ? rutaPorFamilia[valeSeleccionado.producto_familia] : null;
+  const ruta = valeSeleccionado ? RUTA_POR_FAMILIA[valeSeleccionado.producto_familia] : null;
   /* En el puesto de Evaporación el formulario solo ofrece evaporadores; en
      el resto se excluyen, porque esos lotes se abren desde su propio puesto. */
-  const equiposCompatibles = equipos.filter((item) => {
-    if (!item.activo) return false;
-    if (modo === "evaporacion") return item.tipo === "evaporador";
-    return item.tipo !== "evaporador" && (!ruta || ruta.tipos.includes(item.tipo));
-  });
+  const equiposCompatibles = equiposCompatiblesDe(equipos, modo, valeSeleccionado?.producto_familia);
   /* Mismo criterio sobre los vales: en evaporación solo los que van a un
      evaporador; en el resto, la familia polvo se excluye porque esa leche
      solo va a evaporador. */
   const valesVisibles = vales.filter((item) => {
-    if (modo === "evaporacion") return rutaPorFamilia[item.producto_familia]?.tipos.includes("evaporador") ?? false;
+    if (modo === "evaporacion") return RUTA_POR_FAMILIA[item.producto_familia]?.tipos.includes("evaporador") ?? false;
     return item.producto_familia !== "polvo";
   });
   const ocupaciones = ocupacionesPorEquipo(ejecuciones);
-  const equipoSeleccionado = equipos.find((item) => item.id === Number(equipo));
+  /* De `equiposCompatibles`, no de la lista completa: así una máquina que el
+     modo actual no ofrece —un evaporador en "resto", cualquier otra cosa en
+     "evaporacion"— nunca queda "seleccionada" aunque el estado `equipo`
+     arrastre un id inválido (lo que `reanudarBorrador` ya evita, pero esta
+     es la garantía que no depende de que ese otro camino esté siempre
+     impecable). */
+  const equipoSeleccionado = equiposCompatibles.find((item) => item.id === Number(equipo));
   const ocupacionSeleccionada = equipoSeleccionado
     ? ocupaciones.get(equipoSeleccionado.id)
     : undefined;
@@ -312,6 +375,33 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
     && equiposCompatibles.length === 0;
   const destinoSeleccionado = destinos.find((item) => String(item.id) === siloDestino);
   const titulo = modo === "evaporacion" ? "Abrir lote y preparar evaporación" : "Abrir lote desde vale";
+  /* Solo tiene sentido mientras el destino sigue sin elegirse: en cuanto el
+     operador escoge uno, ya no es "lo que quedó del borrador". */
+  const avisoSiloDestino = vieneDeBorrador && !siloDestino;
+
+  /* Fija el equipo y, en el mismo gesto, la línea que le corresponde: si la
+     máquina elegida no es una torre, la línea no tiene nada que decir y se
+     suelta ahí mismo — no en un efecto que la corrija después del render,
+     porque eso es un segundo paso reactivo para algo que ya se sabe en el
+     momento del cambio. */
+  const fijarEquipo = (id: string, compatibles: EquipoInicioProduccion[]) => {
+    setEquipo(id);
+    const elegido = compatibles.find((item) => String(item.id) === id);
+    if (elegido?.tipo !== "torre") setLinea("");
+  };
+
+  /* Mismo criterio con el silo de destino: si los litros que se escriben ya
+     no caben en el que estaba elegido, se suelta en el propio cambio de
+     litros, sea que venga del campo de litros o de un vale que trae los
+     suyos. */
+  const litrosCambian = (valor: string) => {
+    setLitros(valor);
+    if (!siloDestino) return;
+    const litrosNumero = valor === "" ? null : Number(valor);
+    if (litrosNumero === null) return;
+    const destino = destinos.find((item) => String(item.id) === siloDestino);
+    if (destino && Number(destino.libre_l) < litrosNumero) setSiloDestino("");
+  };
 
   const filasResumen = (): FilaResumen[] => [
     { etiqueta: "Vale", valor: valeSeleccionado ? `${valeSeleccionado.codigo} · ${valeSeleccionado.producto_nombre}` : "—" },
@@ -409,9 +499,9 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
               filas={filasResumen()}
               textoConfirmar={guardando ? "Abriendo…" : "Abrir lote"}
               ocupado={guardando}
-              error={error}
+              error={errorEnvio}
               onConfirmar={() => void confirmarEnvio()}
-              onVolver={() => { setPaso("datos"); setError(""); }}
+              onVolver={() => { setPaso("datos"); setErrorEnvio(""); }}
             />
           </div>
         ) : (
@@ -434,9 +524,22 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
                   const id = e.target.value;
                   const elegido = vales.find((item) => item.id === Number(id));
                   setVale(id);
-                  setEquipo("");
+
+                  /* En el puesto de Evaporación la máquina viene elegida desde
+                     la tarjeta: cambiar de vale no debe soltarla si sigue
+                     siendo compatible. En el resto, el tipo de máquina
+                     depende de la familia del vale, así que corresponde
+                     volver a elegir. */
+                  const compatiblesDelNuevoVale = equiposCompatiblesDe(equipos, modo, elegido?.producto_familia);
+                  if (modo === "evaporacion") {
+                    const sigueSiendoValida = compatiblesDelNuevoVale.some((item) => String(item.id) === equipo);
+                    fijarEquipo(sigueSiendoValida ? equipo : (equipoInicial ? String(equipoInicial) : ""), compatiblesDelNuevoVale);
+                  } else {
+                    fijarEquipo("", compatiblesDelNuevoVale);
+                  }
+
                   setOrden("");
-                  setLitros(elegido?.litros_disponibles ?? "");
+                  litrosCambian(elegido?.litros_disponibles ?? "");
                 }}
                 required
               >
@@ -447,7 +550,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
 
                   <option key={item.id} value={item.id}>
 
-                    {item.codigo} · {item.producto_nombre} · {Number(item.litros_disponibles).toLocaleString("es-CL")} L
+                    {item.codigo} · {item.producto_nombre} · {cantidad(item.litros_disponibles, "L")}
 
                   </option>
 
@@ -493,9 +596,10 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
             {esTorre && (
               <div>
 
-                <label className={etiquetaCampo}>Línea *</label>
+                <label htmlFor={idLinea} className={etiquetaCampo}>Línea *</label>
 
                 <select
+                  id={idLinea}
                   className={campo}
                   value={linea}
                   onChange={(e) => setLinea(e.target.value)}
@@ -518,7 +622,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
               <select
                 className={campo}
                 value={equipo}
-                onChange={(e) => setEquipo(e.target.value)}
+                onChange={(e) => fijarEquipo(e.target.value, equiposCompatibles)}
                 required
               >
                 <option value="">Selecciona una máquina…</option>
@@ -529,7 +633,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
                 ))}
               </select>
               {equipoSeleccionado && <div className="mt-2"><EstadoEquipo estado={ocupacionSeleccionada?.estado} ejecucion={ocupacionSeleccionada?.ejecucion} /></div>}
-              {valeSeleccionado && equiposCompatibles.length === 0 && <p className="mt-1.5 text-xs text-amber-700">No hay una máquina activa configurada para esta familia. Revísala en Maestros.</p>}
+              {valeSeleccionado && equiposCompatibles.length === 0 && !soloHayEvaporadores && <p className="mt-1.5 text-xs text-amber-700">No hay una máquina activa configurada para esta familia. Revísala en Maestros.</p>}
               {advertenciaAseo && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><strong>Advertencia de aseo (no bloquea):</strong> {advertenciaAseo}</div>}
 
             </div>
@@ -537,12 +641,14 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
             {esEvaporador && (
               <div className="sm:col-span-2">
 
-                <label className={etiquetaCampo}>Silo de destino del concentrado *</label>
+                <label htmlFor={idSiloDestino} className={etiquetaCampo}>Silo de destino del concentrado *</label>
 
                 <select
+                  id={idSiloDestino}
                   className={campo}
                   value={siloDestino}
                   onChange={(e) => setSiloDestino(e.target.value)}
+                  aria-describedby={(destinos.length === 0 || avisoSiloDestino) ? idSiloDestinoAyuda : undefined}
                   required
                 >
                   <option value="">Selecciona un silo…</option>
@@ -556,11 +662,15 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
                     );
                   })}
                 </select>
-                {destinos.length === 0 && (
-                  <p className="mt-1.5 text-xs text-amber-700">
+                {destinos.length === 0 ? (
+                  <p id={idSiloDestinoAyuda} className="mt-1.5 text-xs text-amber-700">
                     No hay silos disponibles para recibir el concentrado.
                   </p>
-                )}
+                ) : avisoSiloDestino ? (
+                  <p id={idSiloDestinoAyuda} className="mt-1.5 text-xs text-amber-700">
+                    Vuelve a elegir el silo de destino: la disponibilidad pudo cambiar.
+                  </p>
+                ) : null}
 
               </div>
             )}
@@ -665,7 +775,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
                   max={valeSeleccionado?.litros_disponibles}
                   className={campo}
                   value={litros}
-                  onChange={(e) => setLitros(e.target.value)}
+                  onChange={(e) => litrosCambian(e.target.value)}
                   required
                   disabled={!valeSeleccionado}
                 />
@@ -742,11 +852,11 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
 
             <button
               type="submit"
-              disabled={guardando || Boolean(ocupacionSeleccionada) || !equipoSeleccionado?.habilitado}
+              disabled={Boolean(ocupacionSeleccionada) || !equipoSeleccionado?.habilitado}
               className="rounded-xl bg-green-700 px-6 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-60"
             >
 
-              {guardando ? "Abriendo…" : "Abrir lote"}
+              Revisar
 
             </button>
 
