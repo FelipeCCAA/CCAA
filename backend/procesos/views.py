@@ -56,14 +56,13 @@ from .servicios import (
     genealogia_lote,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
-    crear_secado_desde_inventario,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
     estado_puesto_evaporacion,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
     inicio_reservado_al_puesto,
     MENSAJE_INICIO_SECADO_EN_PUESTO,
-    preparar_continuacion, siguiente_etapa_para_salida,
+    preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
     sugerir_plan_descremacion,
     tipos_equipo_para_etapa, transicionar_ejecucion,
@@ -846,8 +845,8 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             ],
         })
 
-    @action(detail=False, methods=["post"], url_path="iniciar-desde-inventario")
-    def iniciar_desde_inventario(self, request):
+    @action(detail=False, methods=["post"], url_path="preparar-desde-inventario")
+    def preparar_desde_inventario(self, request):
         from inventario.models import Existencia
         from maestros.models import Equipo
         from produccion.models import OrdenProduccion
@@ -869,7 +868,7 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                 Equipo.objects.all(), request.user,
                 campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
             ).get(pk=datos["equipo"])
-            corrida = crear_secado_desde_inventario(
+            corrida = preparar_secado_desde_inventario(
                 orden=orden, existencia=existencia, equipo=equipo,
                 codigo_lote=datos["codigo_lote"], cantidad=datos["cantidad"],
                 usuario=request.user,

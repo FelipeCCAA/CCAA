@@ -979,6 +979,21 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
             f"La salida tiene {disponible} {salida.unidad} disponibles."
         )
 
+    if etapa.tipo == EtapaProceso.Tipo.SECADO:
+        # `CorridaSecado.lote` es uno a uno: un lote se seca en una sola
+        # corrida. Sin estos dos rechazos, la segunda toma reventaba con un
+        # IntegrityError y una salida sin lote dejaba una preparación sin
+        # corrida, que el puesto no puede iniciar.
+        if not salida.lote_id:
+            raise ValidationError(
+                "Secado necesita el lote del concentrado: esta salida no tiene lote."
+            )
+        if CorridaSecado.objects.filter(lote_id=salida.lote_id).exists():
+            raise ValidationError(
+                f"El lote {salida.lote.codigo_lote} ya tiene una corrida de Secado; "
+                "un lote se seca en una sola corrida."
+            )
+
     ejecucion = EjecucionProceso(
         codigo=f"CONT-{salida.pk}-{uuid.uuid4().hex[:8].upper()}",
         etapa=etapa,
@@ -2543,14 +2558,12 @@ def iniciar_secado(*, corrida_id, usuario):
 
 
 @transaction.atomic
-def crear_secado_desde_inventario(
+def preparar_secado_desde_inventario(
     *, orden, existencia, equipo, codigo_lote, cantidad, usuario,
 ):
-    """Inicia Secado desde una materia prima externa liberada y trazable."""
+    """Prepara una torre con materia prima externa liberada; el inicio es `iniciar_secado`."""
     from inventario.models import Existencia, Insumo, Ubicacion
-    from inventario.servicios import (
-        advertencia_aseo_equipo, motivo_equipo_no_habilitado, registrar_salida,
-    )
+    from inventario.servicios import motivo_equipo_no_habilitado, registrar_salida
     from maestros.models import Equipo
     from produccion.models import Lote, OrdenProduccion
 
@@ -2616,20 +2629,18 @@ def crear_secado_desde_inventario(
     codigo = str(codigo_lote).strip()
     if not codigo:
         raise ValidationError({"codigo_lote": "Ingresa el codigo del lote de salida."})
-    advertencia = advertencia_aseo_equipo(equipo)
     lote = Lote(
         sucursal=orden.sucursal, codigo_lote=codigo,
         codigo_lote_propuesto=codigo, op=orden.codigo, orden=orden,
         producto=orden.producto, equipo=equipo, fecha=timezone.localdate(),
         estado=Lote.Estado.EN_PROCESO,
-        observacion=(f"[ADVERTENCIA ASEO AL INICIO] {advertencia}" if advertencia else ""),
     )
     lote.full_clean()
     lote.save()
     ejecucion = EjecucionProceso(
         codigo=f"EJ-SEC-EXT-{lote.pk}", etapa=etapa, ruta_producto=ruta,
         sucursal=orden.sucursal, equipo=equipo, responsable=usuario,
-        estado=EjecucionProceso.Estado.EJECUCION, inicio=timezone.now(),
+        estado=EjecucionProceso.Estado.PREPARACION,
     )
     ejecucion.full_clean()
     ejecucion.save()
@@ -2653,8 +2664,8 @@ def crear_secado_desde_inventario(
         orden.estado = OrdenProduccion.Estado.EN_PROCESO
         orden.save(update_fields=["estado"])
     EventoProceso.objects.create(
-        ejecucion=ejecucion, usuario=usuario, tipo="inicio_secado_externo",
-        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        ejecucion=ejecucion, usuario=usuario, tipo="preparacion_secado_externo",
+        estado_nuevo=EjecucionProceso.Estado.PREPARACION,
         motivo=(
             f"Lote externo {existencia.lote.codigo}; {cantidad} kg de "
             f"{existencia.lote.insumo.nombre}."

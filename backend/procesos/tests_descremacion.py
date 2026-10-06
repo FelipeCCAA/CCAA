@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from calidad.models import LiberacionProceso
 from maestros.models import Equipo, Especificacion, Mandante, Producto, Silo
+from produccion.models import Lote
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
@@ -566,9 +567,15 @@ class CierreDescremacionTests(TestCase):
             nombre="Torre rama",
             tipo=Equipo.Tipo.TORRE,
         )
+        # Secado mueve el lote a la torre (`CorridaSecado.lote`): una salida
+        # sin lote no tiene qué secar, y `preparar_continuacion` la rechaza.
+        lote_rama = Lote.objects.create(
+            sucursal=self.sucursal, codigo_lote="RAMA-SEC-1",
+            producto=self.producto_descremada, fecha=timezone.localdate(),
+        )
         salida = SalidaProceso.objects.create(
             ejecucion=self.ejecucion,
-            lote=None,
+            lote=lote_rama,
             silo=self.descremada,
             producto=self.producto_descremada,
             ruta_producto=ruta,

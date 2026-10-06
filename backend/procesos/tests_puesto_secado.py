@@ -217,6 +217,37 @@ class IniciarSecadoTests(BasePuestoSecado):
         self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
 
 
+class PrepararSecadoTests(BasePuestoSecado):
+    def test_preparar_continuacion_hacia_secado_exige_el_permiso_de_secado(self):
+        antes = EjecucionProceso.objects.count()
+
+        respuesta = self.cliente(self.condensador).post(
+            f"/api/procesos/salidas/{self.salida.pk}/preparar-continuacion/",
+            {"etapa": self.etapa_secado.pk, "equipo": self.torre.pk, "cantidad": "100"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertEqual(EjecucionProceso.objects.count(), antes)
+
+    def test_un_lote_se_seca_en_una_sola_corrida(self):
+        self.preparar(cantidad="400")
+
+        with self.assertRaises(ValidationError) as error:
+            self.preparar(cantidad="300", torre=self.otra_torre)
+
+        self.assertIn("ya tiene una corrida de Secado", error.exception.messages[0])
+
+    def test_una_salida_sin_lote_no_se_prepara_para_secado(self):
+        self.salida.lote = None
+        self.salida.save(update_fields=["lote"])
+
+        with self.assertRaises(ValidationError) as error:
+            self.preparar()
+
+        self.assertIn("no tiene lote", error.exception.messages[0])
+
+
 class InicioGenericoCerradoTests(BasePuestoSecado):
     def transicionar(self, ejecucion, estado, motivo=""):
         ejecucion.refresh_from_db()

@@ -288,7 +288,7 @@ class InicioSecadoDesdeInventarioTests(TestCase):
         self.cliente = APIClient()
         self.cliente.force_authenticate(self.usuario)
 
-    def test_inicia_secado_con_lote_externo_liberado_y_descuenta_stock(self):
+    def test_prepara_secado_con_lote_externo_liberado_y_descuenta_stock(self):
         opciones = self.cliente.get(
             "/api/procesos/secados/opciones-alimentacion-externa/"
         )
@@ -297,7 +297,7 @@ class InicioSecadoDesdeInventarioTests(TestCase):
         self.assertEqual(opciones.data["ordenes"][0]["insumo_origen_id"], self.insumo.pk)
 
         respuesta = self.cliente.post(
-            "/api/procesos/secados/iniciar-desde-inventario/",
+            "/api/procesos/secados/preparar-desde-inventario/",
             {
                 "orden": self.orden.pk, "existencia": self.existencia.pk,
                 "equipo": self.torre.pk, "codigo_lote": "SUE-POL-001",
@@ -308,6 +308,12 @@ class InicioSecadoDesdeInventarioTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         corrida = CorridaSecado.objects.get(pk=respuesta.data["id"])
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+        self.assertIsNone(corrida.ejecucion.inicio)
+        inicio = self.cliente.post(f"/api/procesos/secados/{corrida.pk}/iniciar/")
+        self.assertEqual(inicio.status_code, 200, inicio.data)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.EJECUCION)
         entrada = corrida.ejecucion.entradas.get()
         self.assertEqual(entrada.lote_inventario, self.lote_externo)
         self.assertEqual(entrada.cantidad, Decimal("700.000"))
@@ -330,7 +336,7 @@ class InicioSecadoDesdeInventarioTests(TestCase):
         self.lote_externo.save(update_fields=["estado_calidad"])
 
         respuesta = self.cliente.post(
-            "/api/procesos/secados/iniciar-desde-inventario/",
+            "/api/procesos/secados/preparar-desde-inventario/",
             {
                 "orden": self.orden.pk, "existencia": self.existencia.pk,
                 "equipo": self.torre.pk, "codigo_lote": "SUE-POL-002",
@@ -343,6 +349,46 @@ class InicioSecadoDesdeInventarioTests(TestCase):
         self.assertFalse(Lote.objects.filter(codigo_lote="SUE-POL-002").exists())
         self.existencia.refresh_from_db()
         self.assertEqual(self.existencia.cantidad_fisica, Decimal("1000.000"))
+
+    def test_el_nombre_que_iniciaba_ya_no_existe(self):
+        respuesta = self.cliente.post(
+            "/api/procesos/secados/iniciar-desde-inventario/",
+            {
+                "orden": self.orden.pk, "existencia": self.existencia.pk,
+                "equipo": self.torre.pk, "codigo_lote": "SUE-POL-404",
+                "cantidad": "10.000",
+            },
+            format="json",
+        )
+
+        # Desviación 2 del brief: el router resuelve este tramo como la ruta
+        # de detalle (`secados/<pk>/`) con `pk="iniciar-desde-inventario"`, y
+        # esa ruta no mapea POST a ninguna acción, así que DRF responde 405
+        # en vez de 404. El efecto que importa es el mismo: el nombre viejo
+        # ya no crea nada.
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertFalse(Lote.objects.filter(codigo_lote="SUE-POL-404").exists())
+
+    def test_si_calidad_rechaza_el_lote_externo_despues_de_preparar_no_inicia(self):
+        from .servicios import motivos_para_iniciar_secado
+
+        respuesta = self.cliente.post(
+            "/api/procesos/secados/preparar-desde-inventario/",
+            {
+                "orden": self.orden.pk, "existencia": self.existencia.pk,
+                "equipo": self.torre.pk, "codigo_lote": "SUE-POL-REC",
+                "cantidad": "100.000",
+            },
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.lote_externo.estado_calidad = LoteInventario.EstadoCalidad.RECHAZADO
+        self.lote_externo.save(update_fields=["estado_calidad"])
+        corrida = CorridaSecado.objects.get(pk=respuesta.data["id"])
+
+        self.assertIn("PROV-SUE-001", motivos_para_iniciar_secado(corrida)[0])
+        inicio = self.cliente.post(f"/api/procesos/secados/{corrida.pk}/iniciar/")
+        self.assertEqual(inicio.status_code, 400, inicio.data)
 
     def test_endpoint_generico_no_omite_el_descuento_de_inventario(self):
         respuesta = self.cliente.post(

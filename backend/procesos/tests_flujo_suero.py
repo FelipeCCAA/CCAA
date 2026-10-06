@@ -228,7 +228,7 @@ class FlujoSueroCompletoTests(TestCase):
         existencia = Existencia.objects.get(lote=detalle.lote, ubicacion=self.disponible)
 
         inicio = self._cliente(self.secador).post(
-            "/api/procesos/secados/iniciar-desde-inventario/",
+            "/api/procesos/secados/preparar-desde-inventario/",
             {
                 "orden": self.orden_produccion.pk, "existencia": existencia.pk,
                 "equipo": self.torre.pk, "codigo_lote": "SUERO-POLVO-E2E",
@@ -240,6 +240,9 @@ class FlujoSueroCompletoTests(TestCase):
         corrida = CorridaSecado.objects.get(pk=inicio.data["id"])
         existencia.refresh_from_db()
         self.assertEqual(existencia.cantidad_fisica, Decimal("200.000"))
+
+        iniciada = self._cliente(self.secador).post(f"/api/procesos/secados/{corrida.pk}/iniciar/")
+        self.assertEqual(iniciada.status_code, 200, iniciada.data)
 
         cierre = self._cliente(self.secador).post(
             f"/api/procesos/secados/{corrida.pk}/cerrar/",
