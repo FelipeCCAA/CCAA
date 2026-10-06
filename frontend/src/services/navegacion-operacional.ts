@@ -152,8 +152,11 @@ export function esRutaOperacionalActual(
   if (destino.hash) return hashActual === destino.hash;
 
   // Los accesos generales no se marcan junto a un subproceso específico.
-  // Evaporación y Trazabilidad viven con `?seccion=`, no con un segundo `#`:
-  // HashRouter no procesa ese segundo `#`, así que nunca bajaba a su sección.
+  // Descremación, Mantequilla y Trazabilidad viven en /procesos con
+  // `?seccion=`, no con un segundo `#`: HashRouter no procesa ese segundo
+  // `#`, así que nunca bajaba a su sección. Evaporación ya no es una de
+  // ellas: desde que tiene su propio puesto (/produccion/evaporacion) es un
+  // pathname distinto, no una sección de /produccion o /procesos.
   if (pathnameActual === "/procesos" && searchActual) return false;
   if (pathnameActual === "/produccion" && searchActual) return false;
   return true;

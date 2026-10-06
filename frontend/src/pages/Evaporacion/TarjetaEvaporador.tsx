@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 
+import { puedeAccederModulo } from "../../services/access-control";
 import { cantidad } from "../../services/formato";
 import type { EvaporadorPuesto } from "../../services/procesos.service";
 import { accionDeEvaporador } from "../../services/puesto-evaporacion";
+import { obtenerSesion } from "../../services/sesion";
 
 const ROTULO = {
   disponible: "Disponible",
@@ -12,9 +14,13 @@ const ROTULO = {
 } as const;
 
 /* Una tarjeta, un estado, una acción. Lo que dice lo decidió el servidor. */
-export default function TarjetaEvaporador({ fila, ocupado, onAbrir, onIniciar, onCerrar }: {
+export default function TarjetaEvaporador({ fila, ocupado, puedeOperar, onAbrir, onIniciar, onCerrar }: {
   fila: EvaporadorPuesto;
   ocupado: boolean;
+  /* Quien no puede escribir en producción ve el mismo estado, la misma
+     corrida, el mismo "en Calidad" y el mismo motivo -son lectura-, pero
+     ningún botón: ninguno le resultaría en algo distinto de un 403. */
+  puedeOperar: boolean;
   onAbrir: (equipoId: number) => void;
   onIniciar: (corridaId: number) => void;
   onCerrar: (corridaId: number) => void;
@@ -27,6 +33,12 @@ export default function TarjetaEvaporador({ fila, ocupado, onAbrir, onIniciar, o
      pendiente-. Se omite cuando el estado ya es "esperando_calidad": ahí
      `corrida` es esa misma corrida y repetirla sería redundante. */
   const mostrarEnCalidad = fila.en_calidad && fila.estado !== "esperando_calidad";
+  /* "Ir a silos" solo cuando el motivo es justamente el silo de origen -lo
+     dice el backend con `bloqueo_silo_origen`, no un adivine sobre el texto
+     del motivo- y solo si el usuario puede entrar al módulo que lo analiza:
+     un operador de Condensación sin acceso a Recepción se encontraría con
+     «Acceso restringido» en vez de con el silo. */
+  const puedeIrASilos = puedeAccederModulo(obtenerSesion()?.usuario, "recepcion");
   return (
     <article aria-label={fila.nombre} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5">
       <header className="flex items-start justify-between gap-3">
@@ -46,23 +58,30 @@ export default function TarjetaEvaporador({ fila, ocupado, onAbrir, onIniciar, o
           {fila.en_calidad.lote_codigo ? ` · lote ${fila.en_calidad.lote_codigo}` : ""}
         </p>
       )}
-      {accion.tipo === "abrir" && (
+      {accion.tipo === "abrir" && puedeOperar && (
         <button type="button" onClick={() => onAbrir(fila.equipo_id)} className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800">Abrir lote desde vale</button>
       )}
       {accion.tipo === "iniciar" && corrida && (
         <>
-          <button type="button" disabled={!accion.habilitada || ocupado} onClick={() => onIniciar(corrida.id)} className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-40">
-            {ocupado ? "Iniciando…" : "Iniciar evaporación"}
-          </button>
+          {puedeOperar && (
+            <button type="button" disabled={!accion.habilitada || ocupado} onClick={() => onIniciar(corrida.id)} className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-40">
+              {ocupado ? "Iniciando…" : "Iniciar evaporación"}
+            </button>
+          )}
           {accion.motivo && (
             <p className="text-sm text-amber-900">
-              {accion.motivo}{" "}
-              <Link to="/silos" className="font-semibold underline">Ir a silos</Link>
+              {accion.motivo}
+              {fila.bloqueo_silo_origen && puedeIrASilos && (
+                <>
+                  {" "}
+                  <Link to="/leche/silos" className="font-semibold underline">Analizar silo {fila.bloqueo_silo_origen}</Link>
+                </>
+              )}
             </p>
           )}
         </>
       )}
-      {accion.tipo === "cerrar" && corrida && (
+      {accion.tipo === "cerrar" && corrida && puedeOperar && (
         <button type="button" onClick={() => onCerrar(corrida.id)} className="rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white hover:bg-green-800">Registrar salida y cerrar</button>
       )}
     </article>

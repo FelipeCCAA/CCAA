@@ -28,12 +28,25 @@ class PuestoEvaporacionTests(FlujoCondensacionTests):
         self.assertEqual(fila["estado"], "preparada")
         self.assertEqual(fila["corrida"]["id"], self.corrida.pk)
         self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertIsNone(fila["bloqueo_silo_origen"])
 
     def test_sin_analisis_del_origen_la_preparada_dice_por_que(self):
         AnalisisSilo.objects.filter(silo=self.origen).delete()
         fila = self.fila(self.puesto(), self.equipo)
         self.assertEqual(fila["estado"], "preparada")
         self.assertIn(self.origen.codigo, fila["motivos_para_iniciar"][0])
+        self.assertEqual(fila["bloqueo_silo_origen"], self.origen.codigo)
+
+    def test_un_motivo_que_no_es_del_origen_no_marca_bloqueo_silo_origen(self):
+        """Un destino sin capacidad no es un problema del silo de origen: la
+        pantalla no debe ofrecer «Analizar silo» para algo que un análisis no
+        resuelve."""
+        self.destino.estado = Silo.Estado.EN_CIP
+        self.destino.save(update_fields=["estado"])
+        fila = self.fila(self.puesto(), self.equipo)
+        self.assertEqual(fila["estado"], "preparada")
+        self.assertTrue(fila["motivos_para_iniciar"])
+        self.assertIsNone(fila["bloqueo_silo_origen"])
 
     def test_en_proceso_manda_sobre_una_preparada_del_mismo_equipo(self):
         self.corrida.estado = CorridaCondensacion.Estado.EN_PROCESO

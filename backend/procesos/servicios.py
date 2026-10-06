@@ -1415,8 +1415,15 @@ def estado_puesto_evaporacion(usuario):
     máquina física está libre para empezar, pero el destino de esa corrida
     anterior puede seguir bloqueado. Cuando la fila misma está
     `esperando_calidad`, `en_calidad` es esa misma corrida.
+
+    `bloqueo_silo_origen` nombra el silo cuando el motivo de una preparada es
+    el silo de origen y no otra cosa (equipo, orden, destino): la pantalla
+    ofrece «Analizar silo» solo ahí. Adivinarlo leyendo el texto del motivo
+    se habría roto con el primer cambio de redacción; esto lo tipa en vez de
+    describirlo en prosa.
     """
     from maestros.models import Equipo, Silo
+    from recepcion.servicios import motivos_silo_no_disponible
     from usuarios.tenancy import filtrar_por_scope
 
     equipos = filtrar_por_scope(
@@ -1467,10 +1474,13 @@ def estado_puesto_evaporacion(usuario):
             en_curso = corrida.estado == CorridaCondensacion.Estado.EN_PROCESO
             estado = "en_curso" if en_curso else "preparada"
             motivos = [] if en_curso else motivos_para_iniciar_condensacion(corrida)
+            bloqueo_silo_origen = None
+            if not en_curso and motivos_silo_no_disponible(corrida.silo_origen, para="proceso"):
+                bloqueo_silo_origen = corrida.silo_origen.codigo
         elif corrida_en_calidad is not None:
-            corrida, estado, motivos = corrida_en_calidad, "esperando_calidad", []
+            corrida, estado, motivos, bloqueo_silo_origen = corrida_en_calidad, "esperando_calidad", [], None
         else:
-            estado, motivos = "disponible", []
+            estado, motivos, bloqueo_silo_origen = "disponible", [], None
         evaporadores.append({
             "equipo_id": equipo.pk, "codigo": equipo.codigo, "nombre": equipo.nombre,
             "estado": estado,
@@ -1480,6 +1490,7 @@ def estado_puesto_evaporacion(usuario):
                 if corrida_en_calidad is not None else None
             ),
             "motivos_para_iniciar": motivos,
+            "bloqueo_silo_origen": bloqueo_silo_origen,
         })
 
     destinos = [

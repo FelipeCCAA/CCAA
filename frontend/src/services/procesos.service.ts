@@ -110,6 +110,11 @@ export interface EvaporadorPuesto {
      la tarjeta esté mostrando otro estado: la máquina puede volver a
      ofrecerse para abrir mientras esa corrida sigue pendiente. */
   en_calidad: { id: number; codigo: string; lote_codigo: string | null } | null;
+  /* El código del silo de origen, solo cuando el motivo que impide iniciar
+     es justamente ese silo (sin análisis vigente, en CIP, etc.). El backend
+     lo tipa en vez de dejar que la pantalla lo adivine leyendo el texto del
+     motivo. */
+  bloqueo_silo_origen: string | null;
 }
 
 export interface DestinoConcentrado {
