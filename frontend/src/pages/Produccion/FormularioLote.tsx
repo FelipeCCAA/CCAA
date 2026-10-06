@@ -27,7 +27,7 @@ import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-pro
 import { useBorrador } from "../../hooks/useBorrador";
 import { cantidad } from "../../services/formato";
 import { destinosDelConcentrado } from "../../services/puesto-evaporacion";
-import { equiposCompatiblesDe } from "../../services/equipos-apertura";
+import { equiposCompatiblesDe, RUTA_POR_FAMILIA, tiposDeFamilia } from "../../services/equipos-apertura";
 
 
 /*
@@ -67,39 +67,6 @@ interface Props {
 
 
 const hoy = () => new Date().toISOString().slice(0, 10);
-
-/*
-  Ruta de producto → tipo de máquina. Vive a nivel de módulo porque
-  `reanudarBorrador` necesita evaluarla contra el vale que guardó el
-  borrador, antes de que el cuerpo del componente recalcule sus valores
-  derivados para el render.
-*/
-const RUTA_POR_FAMILIA: Record<string, { ruta: string; tipos: string[]; ayuda: string }> = {
-  polvo: {
-    ruta: "Leche estandarizada → Evaporación → Torre Egron → Envasado 25 kg",
-    tipos: ["evaporador"],
-    ayuda: "Esta apertura inicia la evaporación. La torre Egron aparecerá después, únicamente cuando Calidad libere el concentrado.",
-  },
-  liquido: {
-    ruta: "Leche estandarizada → Evaporación / concentración → Producto a granel",
-    tipos: ["evaporador", "carga"],
-    ayuda: "Selecciona el evaporador o punto de carga que ejecuta esta corrida.",
-  },
-  crema: {
-    ruta: "Leche estandarizada → Separación / proceso → Envasado o granel",
-    tipos: ["linea", "envasadora"],
-    ayuda: "Selecciona solo la línea o envasadora de crema correspondiente.",
-  },
-  otro: {
-    ruta: "Proceso definido para el producto → Envasado",
-    tipos: ["linea", "envasadora", "carga"],
-    ayuda: "Selecciona la máquina final definida para este producto.",
-  },
-};
-
-const tiposDeFamilia = (familia: string | undefined) =>
-  (familia ? RUTA_POR_FAMILIA[familia]?.tipos ?? null : null);
-
 
 function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, destinos = [] }: Props) {
 
