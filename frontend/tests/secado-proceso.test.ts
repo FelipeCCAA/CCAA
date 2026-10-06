@@ -7,12 +7,9 @@ import {
 } from "../src/services/secado-proceso.ts";
 
 /*
-  Aquí no se prueban `estadoFisicoSecado` ni `siguienteAccionSecado`.
-
-  Son tablas de estado → frase: comprobar que devuelven la cadena escrita dos
-  líneas más arriba no dice si el sistema funciona, solo que nadie corrigió una
-  errata. Lo que sí decide algo —qué bandeja recibe cada corrida, y si el
-  balance cierra— está cubierto abajo.
+  Lo que decide algo —qué bandeja recibe cada corrida, y si el balance
+  cierra— está cubierto abajo. `situacionDeCorrida` (puesto-secado) nombra
+  la bandeja; su prueba vive en puesto-secado.test.ts.
 */
 
 test("clasifica las corridas sin confundir estado físico con Calidad", () => {

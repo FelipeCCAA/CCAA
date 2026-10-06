@@ -53,7 +53,6 @@ const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
 const Aseos = lazy(() => import("../pages/Inocuidad/Aseos"));
 const Inventario = lazy(() => import("../pages/Inventario/Inventario"));
 const Envasado = lazy(() => import("../pages/Envasado/Envasado"));
-const Secado = lazy(() => import("../pages/Secado/Secado"));
 
 /*
   Compras vuelve a ser alcanzable (quedó huérfana en 2430350). Lo de bodega
@@ -220,7 +219,7 @@ function RoutesApp(){
                     </Route>
 
                     <Route element={<RutaModulo modulo="secado" />}>
-                        <Route path="/secado" element={diferido(<Secado />)} />
+                        <Route path="/secado" element={<Navigate to="/produccion" replace />} />
                     </Route>
 
                     <Route element={<RutaModulo modulo="envasado" />}>
