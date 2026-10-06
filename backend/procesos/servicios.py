@@ -1008,6 +1008,13 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
                 f"El lote {salida.lote.codigo_lote} ya tiene una corrida de Secado; "
                 "un lote se seca en una sola corrida."
             )
+        # Una regla con la alimentación externa (`preparar_secado_desde_
+        # inventario`): una torre en CIP no se prepara.
+        from inventario.servicios import motivo_equipo_no_habilitado
+
+        impedimento = motivo_equipo_no_habilitado(equipo)
+        if impedimento:
+            raise ValidationError({"equipo": impedimento})
 
     ejecucion = EjecucionProceso(
         codigo=f"CONT-{salida.pk}-{uuid.uuid4().hex[:8].upper()}",
@@ -2523,12 +2530,21 @@ def inicio_reservado_al_puesto(ejecucion, estado_nuevo):
     )
 
 
-def motivos_para_iniciar_secado(corrida, *, ejecucion=None):
+# Dónde se resuelve cada motivo, como dato: la pantalla enlaza ahí sin leer
+# el texto. Un motivo sin destino (sin saldo, sin torre) no tiene pantalla
+# que lo arregle y viaja con `None`.
+RESOLVER_CIP = "/calidad/inocuidad"
+RESOLVER_CALIDAD = "/calidad"
+
+
+def motivos_tipados_para_iniciar_secado(corrida, *, ejecucion=None):
     """
-    Lo que impide iniciar esta corrida de Secado. Lista vacía: se puede.
+    Lo que impide iniciar esta corrida de Secado, como pares
+    `(motivo, resolver_en)`. Lista vacía: se puede.
 
     Es la única implementación de esas reglas: `iniciar_secado` lanza el primer
-    motivo y el puesto los muestra junto a un botón deshabilitado. Un aseo
+    motivo (vía `motivos_para_iniciar_secado`) y el puesto los muestra junto a
+    un botón deshabilitado, enlazando a donde se resuelve el primero. Un aseo
     observado o una inspección pre-operativa que falta **no** están aquí: son
     avisos (`avisos_de_torre`), no bloquean.
     """
@@ -2538,21 +2554,22 @@ def motivos_para_iniciar_secado(corrida, *, ejecucion=None):
     ejecucion = ejecucion or corrida.ejecucion
     motivos = []
     if ejecucion.estado != EjecucionProceso.Estado.PREPARACION:
-        motivos.append(
+        motivos.append((
             f"{ejecucion.codigo} no está preparada: está "
-            f"{ejecucion.get_estado_display().lower()}."
-        )
+            f"{ejecucion.get_estado_display().lower()}.",
+            None,
+        ))
     entradas = list(ejecucion.entradas.select_related(
         "salida_origen__silo", "lote_inventario",
     ))
     if not entradas:
-        motivos.append("Para iniciar se requiere al menos una entrada de proceso.")
+        motivos.append(("Para iniciar se requiere al menos una entrada de proceso.", None))
     if not ejecucion.equipo_id:
-        motivos.append("La corrida requiere una torre asignada.")
+        motivos.append(("La corrida requiere una torre asignada.", None))
     else:
         impedimento = motivo_equipo_no_habilitado(ejecucion.equipo)
         if impedimento:
-            motivos.append(impedimento)
+            motivos.append((impedimento, RESOLVER_CIP))
     for entrada in entradas:
         salida = entrada.salida_origen
         if salida is not None:
@@ -2560,20 +2577,32 @@ def motivos_para_iniciar_secado(corrida, *, ejecucion=None):
             decision = getattr(salida, "liberacion_calidad", None)
             estado = decision.estado if decision is not None else None
             if estado == LiberacionProceso.Estado.RECHAZADO:
-                motivos.append(f"Calidad rechazó el concentrado de {nombre}.")
+                motivos.append((f"Calidad rechazó el concentrado de {nombre}.", RESOLVER_CALIDAD))
             elif estado != LiberacionProceso.Estado.LIBERADO:
-                motivos.append(f"El concentrado de {nombre} no está liberado por Calidad.")
+                motivos.append((
+                    f"El concentrado de {nombre} no está liberado por Calidad.",
+                    RESOLVER_CALIDAD,
+                ))
             if disponible_de_salida(salida) < 0:
-                motivos.append(
-                    f"El concentrado de {nombre} ya no tiene saldo: otra ejecución lo consumió."
-                )
+                motivos.append((
+                    f"El concentrado de {nombre} ya no tiene saldo: otra ejecución lo consumió.",
+                    None,
+                ))
         elif entrada.lote_inventario_id and not entrada.lote_inventario.utilizable:
             # El stock ya salió de bodega al preparar; lo que puede cambiar
             # después es la decisión de Calidad sobre el lote del proveedor.
-            motivos.append(
-                f"El lote externo {entrada.lote_inventario.codigo} ya no está liberado por Calidad."
-            )
+            motivos.append((
+                f"El lote externo {entrada.lote_inventario.codigo} ya no está liberado por Calidad.",
+                RESOLVER_CALIDAD,
+            ))
     return motivos
+
+
+def motivos_para_iniciar_secado(corrida, *, ejecucion=None):
+    """Los textos de `motivos_tipados_para_iniciar_secado`. Lista vacía: se puede."""
+    return [
+        motivo for motivo, _ in motivos_tipados_para_iniciar_secado(corrida, ejecucion=ejecucion)
+    ]
 
 
 def avisos_de_torre(torre, *, hoy=None):
@@ -2616,6 +2645,24 @@ def avisos_de_torre(torre, *, hoy=None):
     return avisos
 
 
+def _marcar_aseo_en_el_lote(corrida, torre):
+    """
+    Deja en la observación del lote la misma marca que `abrir_lote_desde_vale`
+    pone al abrir sobre una máquina con aseo observado: la ficha del lote
+    (`DetalleLote`, paso «Aseo») la lee de ahí.
+    """
+    from inventario.servicios import advertencia_aseo_equipo
+    from produccion.models import Lote
+
+    advertencia = advertencia_aseo_equipo(torre)
+    if not advertencia:
+        return
+    lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
+    marca = f"[ADVERTENCIA ASEO AL INICIO] {advertencia}"
+    lote.observacion = "\n".join(parte for parte in (lote.observacion.strip(), marca) if parte)
+    lote.save(update_fields=["observacion"])
+
+
 @transaction.atomic
 def iniciar_secado(*, corrida_id, usuario):
     """
@@ -2633,6 +2680,7 @@ def iniciar_secado(*, corrida_id, usuario):
     if motivos:
         raise ValidationError(motivos[0])
     avisos = avisos_de_torre(ejecucion.equipo)
+    _marcar_aseo_en_el_lote(corrida, ejecucion.equipo)
     transicionar_ejecucion(
         ejecucion_id=ejecucion.pk,
         estado_nuevo=EjecucionProceso.Estado.EJECUCION,
@@ -2741,9 +2789,14 @@ def estado_puesto_secado(usuario):
     filas = []
     for torre in torres:
         ejecucion = activas.get(torre.pk)
-        motivos, resolver_en = [], None
+        motivos, motivos_para_tomar, resolver_en = [], [], None
         if ejecucion is None:
             estado = "disponible"
+            # La misma regla con que `preparar_continuacion` y
+            # `preparar_secado_desde_inventario` rechazan la torre.
+            impedimento = motivo_equipo_no_habilitado(torre)
+            if impedimento:
+                motivos_para_tomar, resolver_en = [impedimento], RESOLVER_CIP
         elif ejecucion.estado == EjecucionProceso.Estado.PREPARACION:
             estado = "preparada"
             corrida = getattr(ejecucion, "corrida_secado", None)
@@ -2755,13 +2808,10 @@ def estado_puesto_secado(usuario):
                     "cancela esa ejecución en Procesos y vuelve a tomar el concentrado."
                 ]
             else:
-                motivos = motivos_para_iniciar_secado(corrida, ejecucion=ejecucion)
-                if motivos:
-                    # Dónde se resuelve, como dato: la pantalla no adivina
-                    # leyendo el texto del motivo.
-                    resolver_en = (
-                        "/calidad/inocuidad" if motivo_equipo_no_habilitado(torre) else "/calidad"
-                    )
+                tipados = motivos_tipados_para_iniciar_secado(corrida, ejecucion=ejecucion)
+                motivos = [motivo for motivo, _ in tipados]
+                # El enlace es del primer motivo, que es el que la tarjeta muestra.
+                resolver_en = tipados[0][1] if tipados else None
         else:
             estado = "en_curso"
         avisos = [] if estado == "en_curso" else avisos_de_torre(torre)
@@ -2771,6 +2821,7 @@ def estado_puesto_secado(usuario):
             "estado": estado,
             "corrida": resumen(ejecucion) if ejecucion is not None else None,
             "motivos_para_iniciar": motivos,
+            "motivos_para_tomar": motivos_para_tomar,
             "resolver_en": resolver_en,
             "avisos": avisos,
             "falta_inspeccion": AVISO_INSPECCION_PREOPERATIVA in avisos,
@@ -2781,8 +2832,21 @@ def estado_puesto_secado(usuario):
         })
 
     concentrados = []
+    # Descarta en la consulta lo que no puede seguir a Secado: el proceso de
+    # la ruta (o el de origen, sin ruta) no tiene un Secado activo después de
+    # la etapa que produjo la salida. Es un filtro grueso, no la regla: la
+    # decide `siguiente_etapa_para_salida`, abajo, sobre lo que queda.
+    secado_por_delante = EtapaProceso.objects.filter(
+        tipo=EtapaProceso.Tipo.SECADO, activa=True, proceso_id=OuterRef("proceso_de_ruta"),
+    ).filter(
+        ~Q(proceso_id=OuterRef("ejecucion__etapa__proceso_id"))
+        | Q(orden__gt=OuterRef("ejecucion__etapa__orden"))
+    )
     salidas = filtrar_por_scope(
-        SalidaProceso.objects.filter(
+        SalidaProceso.objects.annotate(
+            proceso_de_ruta=Coalesce("ruta_producto__proceso_id", "ejecucion__etapa__proceso_id"),
+        ).filter(
+            Exists(secado_por_delante),
             liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
             silo__isnull=False, lote__isnull=False, lote__corrida_secado__isnull=True,
             destino__in=[

@@ -3,7 +3,9 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -13,8 +15,11 @@ from maestros.models import DocumentoLiberacion, Equipo, Mandante, Producto, Sil
 from produccion.models import Lote, OrdenProduccion
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
+from inventario.servicios import motivo_equipo_no_habilitado
+
 from .models import (
-    CorridaSecado, EjecucionProceso, EtapaProceso, Proceso, RutaProducto, SalidaProceso,
+    CorridaSecado, EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, RutaProducto,
+    SalidaProceso,
 )
 from .servicios import (
     AVISO_INSPECCION_PREOPERATIVA, CODIGO_INSPECCION_PREOPERATIVA,
@@ -185,6 +190,35 @@ class IniciarSecadoTests(BasePuestoSecado):
         )
         self.assertEqual(motivos_para_iniciar_secado(corrida), [])
 
+    def test_un_aseo_observado_queda_marcado_en_el_lote_al_iniciar(self):
+        """La ficha del lote lee la marca para su paso «Aseo» (DetalleLote)."""
+        corrida = self.preparar()
+        CicloCIP.objects.create(
+            sucursal=self.planta, area=PerfilUsuario.Area.SECADO, equipo=self.torre,
+            inicio=timezone.now() - timedelta(hours=3), estado=CicloCIP.Estado.OBSERVADO,
+        )
+
+        iniciar_secado(corrida_id=corrida.pk, usuario=self.secador)
+
+        self.lote.refresh_from_db()
+        self.assertIn(
+            "[ADVERTENCIA ASEO AL INICIO] El último aseo de Torre PS 1 quedó observado.",
+            self.lote.observacion,
+        )
+
+    def test_un_aseo_conforme_no_marca_el_lote(self):
+        corrida = self.preparar()
+        CicloCIP.objects.create(
+            sucursal=self.planta, area=PerfilUsuario.Area.SECADO, equipo=self.torre,
+            inicio=timezone.now() - timedelta(hours=3), estado=CicloCIP.Estado.COMPLETADO,
+            verificacion=CicloCIP.Verificacion.CONFORME,
+        )
+
+        iniciar_secado(corrida_id=corrida.pk, usuario=self.secador)
+
+        self.lote.refresh_from_db()
+        self.assertNotIn("[ADVERTENCIA ASEO", self.lote.observacion)
+
     def test_si_calidad_rechazo_el_concentrado_no_inicia(self):
         corrida = self.preparar()
         self.liberacion.estado = LiberacionProceso.Estado.RECHAZADO
@@ -238,6 +272,22 @@ class PrepararSecadoTests(BasePuestoSecado):
 
         self.assertIn("ya tiene una corrida de Secado", error.exception.messages[0])
 
+    def test_una_torre_en_cip_no_se_prepara(self):
+        """Misma regla que la alimentación externa: `motivo_equipo_no_habilitado`."""
+        CicloCIP.objects.create(
+            sucursal=self.planta, area=PerfilUsuario.Area.SECADO, equipo=self.torre,
+            inicio=timezone.now() - timedelta(hours=1), estado=CicloCIP.Estado.EN_CURSO,
+        )
+        antes = EjecucionProceso.objects.count()
+
+        with self.assertRaises(ValidationError) as error:
+            self.preparar()
+
+        self.assertEqual(
+            error.exception.messages[0], motivo_equipo_no_habilitado(self.torre)
+        )
+        self.assertEqual(EjecucionProceso.objects.count(), antes)
+
     def test_una_salida_sin_lote_no_se_prepara_para_secado(self):
         self.salida.lote = None
         self.salida.save(update_fields=["lote"])
@@ -262,6 +312,19 @@ class PuestoSecadoTests(BasePuestoSecado):
         self.assertEqual(fila["estado"], "disponible")
         self.assertIsNone(fila["corrida"])
         self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertEqual(fila["motivos_para_tomar"], [])
+
+    def test_una_torre_disponible_en_cip_dice_por_que_no_se_toma(self):
+        CicloCIP.objects.create(
+            sucursal=self.planta, area=PerfilUsuario.Area.SECADO, equipo=self.torre,
+            inicio=timezone.now() - timedelta(hours=1), estado=CicloCIP.Estado.EN_CURSO,
+        )
+        datos = self.puesto()
+        fila = self.fila(datos, self.torre)
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertEqual(fila["motivos_para_tomar"], [motivo_equipo_no_habilitado(self.torre)])
+        self.assertEqual(fila["resolver_en"], "/calidad/inocuidad")
+        self.assertEqual(self.fila(datos, self.otra_torre)["motivos_para_tomar"], [])
 
     def test_una_preparada_lista_para_iniciar(self):
         corrida = self.preparar(cantidad="600")
@@ -291,6 +354,39 @@ class PuestoSecadoTests(BasePuestoSecado):
         fila = self.fila(self.puesto(), self.torre)
         self.assertTrue(any("rechazó" in motivo for motivo in fila["motivos_para_iniciar"]))
         self.assertEqual(fila["resolver_en"], "/calidad")
+
+    def test_cip_y_rechazo_juntos_se_resuelven_donde_dice_el_primer_motivo(self):
+        self.preparar()
+        CicloCIP.objects.create(
+            sucursal=self.planta, area=PerfilUsuario.Area.SECADO, equipo=self.torre,
+            inicio=timezone.now() - timedelta(hours=1), estado=CicloCIP.Estado.EN_CURSO,
+        )
+        self.liberacion.estado = LiberacionProceso.Estado.RECHAZADO
+        self.liberacion.save(update_fields=["estado"])
+
+        fila = self.fila(self.puesto(), self.torre)
+
+        self.assertIn("CIP", fila["motivos_para_iniciar"][0])
+        self.assertTrue(any("rechazó" in motivo for motivo in fila["motivos_para_iniciar"]))
+        self.assertEqual(fila["resolver_en"], "/calidad/inocuidad")
+
+    def test_sin_saldo_no_se_resuelve_en_calidad(self):
+        corrida = self.preparar(cantidad="600")
+        otra = EjecucionProceso.objects.create(
+            codigo="EJ-OTRA-TOMA", etapa=self.etapa_secado, sucursal=self.planta,
+            equipo=self.otra_torre, estado=EjecucionProceso.Estado.EJECUCION,
+            inicio=timezone.now(),
+        )
+        EntradaProceso.objects.create(
+            ejecucion=otra, silo=self.silo, salida_origen=self.salida,
+            cantidad=Decimal("600"), unidad="L",
+        )
+
+        fila = self.fila(self.puesto(), self.torre)
+
+        self.assertEqual(fila["corrida"]["id"], corrida.pk)
+        self.assertIn("ya no tiene saldo", fila["motivos_para_iniciar"][0])
+        self.assertIsNone(fila["resolver_en"])
 
     def test_en_ejecucion_pausada_o_bloqueada_esta_en_curso(self):
         corrida = self.preparar()
@@ -353,6 +449,51 @@ class PuestoSecadoTests(BasePuestoSecado):
         # Con saldo (600 L) pero su lote ya tiene corrida: no se vuelve a ofrecer.
         self.assertEqual(self.puesto()["concentrados"], [])
 
+    def test_los_concentrados_que_no_van_a_secado_no_se_recorren_uno_a_uno(self):
+        """
+        El histórico de salidas liberadas crece cada día: las que no siguen a
+        Secado se descartan en la consulta, no una por una en Python.
+        """
+        proceso = Proceso.objects.create(codigo="crema-puesto-sec", nombre="Crema")
+        evaporacion = EtapaProceso.objects.create(
+            proceso=proceso, codigo="ev-cr", nombre="Evaporación crema",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=1,
+        )
+        EtapaProceso.objects.create(
+            proceso=proceso, codigo="env-cr", nombre="Envasado crema",
+            tipo=EtapaProceso.Tipo.ENVASADO, orden=2,
+        )
+        ruta = RutaProducto.objects.create(
+            sucursal=self.planta, producto=self.producto, proceso=proceso, prioridad=2,
+        )
+
+        def salida_sin_secado(numero):
+            lote = self._lote(f"CCAA6279CR-{numero:02d}")
+            ejecucion = EjecucionProceso.objects.create(
+                codigo=f"EJ-CR-{numero}", etapa=evaporacion, sucursal=self.planta,
+                equipo=self.evaporador, estado=EjecucionProceso.Estado.CERRADA,
+            )
+            salida = SalidaProceso.objects.create(
+                ejecucion=ejecucion, lote=lote, silo=self.silo, producto=self.producto,
+                ruta_producto=ruta, destino=SalidaProceso.Destino.PENDIENTE,
+                cantidad=Decimal("500"), unidad="L",
+            )
+            LiberacionProceso.objects.create(
+                salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
+            )
+
+        salida_sin_secado(1)
+        with CaptureQueriesContext(connection) as una:
+            datos = self.puesto()
+        for numero in range(2, 7):
+            salida_sin_secado(numero)
+        with CaptureQueriesContext(connection) as seis:
+            otra_vez = self.puesto()
+
+        self.assertEqual([c["salida_id"] for c in datos["concentrados"]], [self.salida.pk])
+        self.assertEqual([c["salida_id"] for c in otra_vez["concentrados"]], [self.salida.pk])
+        self.assertEqual(len(seis.captured_queries), len(una.captured_queries))
+
     def test_no_se_ofrece_un_concentrado_sin_liberar(self):
         self.liberacion.estado = LiberacionProceso.Estado.PENDIENTE
         self.liberacion.save(update_fields=["estado"])
@@ -386,9 +527,16 @@ class PuestoSecadoTests(BasePuestoSecado):
 
         por_lote = self.cliente().get("/api/procesos/secados/", {"q": self.lote.codigo_lote})
         por_estado = self.cliente().get("/api/procesos/secados/", {"estado": "ejecucion"})
+        preparadas = self.cliente().get("/api/procesos/secados/", {"estado": "preparacion"})
 
         self.assertEqual([c["id"] for c in por_lote.data["results"]], [corrida.pk])
         self.assertEqual(por_estado.data["results"], [])
+        # Control positivo: el filtro de estado sí deja pasar lo que coincide.
+        self.assertEqual(
+            sorted(c["id"] for c in preparadas.data["results"]),
+            sorted(CorridaSecado.objects.values_list("pk", flat=True)),
+        )
+        self.assertEqual(len(preparadas.data["results"]), 2)
 
 
 class InicioGenericoCerradoTests(BasePuestoSecado):
