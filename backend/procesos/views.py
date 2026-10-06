@@ -60,7 +60,9 @@ from .servicios import (
     definir_destino_salida,
     diagnosticar_integridad_produccion,
     estado_puesto_evaporacion,
-    iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
+    iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
+    inicio_reservado_al_puesto,
+    MENSAJE_INICIO_SECADO_EN_PUESTO,
     preparar_continuacion, siguiente_etapa_para_salida,
     silos_con_saldo,
     sugerir_plan_descremacion,
@@ -886,6 +888,15 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
+    def iniciar(self, request, pk=None):
+        """Inicia una corrida preparada: el único camino de inicio de Secado."""
+        try:
+            corrida = iniciar_secado(corrida_id=self.get_object().pk, usuario=request.user)
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
         entrada = CierreSecadoSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -1049,7 +1060,11 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                 ),
                 "cambio_estado_en": ejecucion.cambio_estado_en,
                 "acciones_permitidas": (
-                    sorted(EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set()))
+                    sorted(
+                        accion
+                        for accion in EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set())
+                        if not inicio_reservado_al_puesto(ejecucion, accion)
+                    )
                     if puede_operar_tipo(request.user, ejecucion.etapa.tipo)
                     else []
                 ),
@@ -1092,9 +1107,14 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                 {"version": ["Envía la versión visible de la ejecución."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        actual = self.get_object()
+        if inicio_reservado_al_puesto(actual, request.data.get("estado", "")):
+            return respuesta_error_dominio(
+                DjangoValidationError(MENSAJE_INICIO_SECADO_EN_PUESTO)
+            )
         try:
             ejecucion = transicionar_ejecucion(
-                ejecucion_id=self.get_object().pk,
+                ejecucion_id=actual.pk,
                 estado_nuevo=request.data.get("estado", ""),
                 motivo=request.data.get("motivo", ""),
                 usuario=request.user,

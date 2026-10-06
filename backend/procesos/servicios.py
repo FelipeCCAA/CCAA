@@ -37,6 +37,14 @@ ESTADOS_EJECUCION_TERMINALES = frozenset({
     EjecucionProceso.Estado.CANCELADA,
 })
 
+# Registro de planta que la torre pide antes de operar. Avisa, no bloquea:
+# que bloquee lo decide Calidad, y sería sobre `avisos_de_torre`.
+CODIGO_INSPECCION_PREOPERATIVA = "CCAA.Sec.FORM.003"
+AVISO_INSPECCION_PREOPERATIVA = (
+    f"Falta la inspección pre-operativa de hoy ({CODIGO_INSPECCION_PREOPERATIVA})."
+)
+MENSAJE_INICIO_SECADO_EN_PUESTO = "Las corridas de secado se inician desde el puesto de Secado."
+
 
 class ConflictoVersionEjecucion(Exception):
     """El operador actuó sobre una versión que otro turno ya modificó."""
@@ -210,6 +218,24 @@ def motivos_destino_concentrado(destino, litros, *, excluir_ejecucion_id=None):
     elif saldo_silo(destino) + litros > destino.capacidad_l:
         motivos.append(f"{destino.codigo} no tiene capacidad para reservar {litros} L.")
     return motivos
+
+
+def disponible_de_salida(salida):
+    """
+    Lo que queda de una salida para continuar: su cantidad menos lo que otras
+    ejecuciones ya tomaron como origen y lo comprometido en despachos a granel
+    autorizados o despachados.
+
+    Una cantidad, una consulta: `preparar_continuacion` rechaza con esta misma
+    función y el puesto de Secado ofrece con ella. Con dos cuentas, la pantalla
+    ofrecía litros que el formulario, ya completo, rechazaba (caso 1 de «La
+    pantalla ofrece lo que el backend va a rechazar», CLAUDE.md).
+    """
+    consumido = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
+    comprometido = salida.detalles_despacho_granel.filter(
+        despacho__estado__in=["autorizado", "despachado"]
+    ).aggregate(total=Sum("cantidad"))["total"] or 0
+    return salida.cantidad - consumido - comprometido
 
 
 def silos_con_saldo(queryset):
@@ -947,11 +973,7 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         raise ValidationError("Ingresa una cantidad válida.") from error
     if cantidad <= 0:
         raise ValidationError("La cantidad debe ser mayor que cero.")
-    consumido = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
-    comprometido_despacho = salida.detalles_despacho_granel.filter(
-        despacho__estado__in=["autorizado", "despachado"]
-    ).aggregate(total=Sum("cantidad"))["total"] or 0
-    disponible = salida.cantidad - consumido - comprometido_despacho
+    disponible = disponible_de_salida(salida)
     if cantidad > disponible:
         raise ValidationError(
             f"La salida tiene {disponible} {salida.unidad} disponibles."
@@ -2377,6 +2399,147 @@ def cerrar_mantequilla(
         )
 
     return corrida
+
+
+def inicio_reservado_al_puesto(ejecucion, estado_nuevo):
+    """
+    ¿Es este paso el inicio de una corrida de Secado? Ese paso solo lo da
+    `iniciar_secado`, que es quien aplica `motivos_para_iniciar_secado`.
+    Reanudar (`pausada`/`bloqueada` → `ejecucion`) no es iniciar: sigue por la
+    transición genérica, o una torre pausada no tendría cómo volver.
+    """
+    return (
+        estado_nuevo == EjecucionProceso.Estado.EJECUCION
+        and ejecucion.estado == EjecucionProceso.Estado.PREPARACION
+        and ejecucion.etapa.tipo == EtapaProceso.Tipo.SECADO
+    )
+
+
+def motivos_para_iniciar_secado(corrida, *, ejecucion=None):
+    """
+    Lo que impide iniciar esta corrida de Secado. Lista vacía: se puede.
+
+    Es la única implementación de esas reglas: `iniciar_secado` lanza el primer
+    motivo y el puesto los muestra junto a un botón deshabilitado. Un aseo
+    observado o una inspección pre-operativa que falta **no** están aquí: son
+    avisos (`avisos_de_torre`), no bloquean.
+    """
+    from calidad.models import LiberacionProceso
+    from inventario.servicios import motivo_equipo_no_habilitado
+
+    ejecucion = ejecucion or corrida.ejecucion
+    motivos = []
+    if ejecucion.estado != EjecucionProceso.Estado.PREPARACION:
+        motivos.append(
+            f"{ejecucion.codigo} no está preparada: está "
+            f"{ejecucion.get_estado_display().lower()}."
+        )
+    entradas = list(ejecucion.entradas.select_related(
+        "salida_origen__silo", "lote_inventario",
+    ))
+    if not entradas:
+        motivos.append("Para iniciar se requiere al menos una entrada de proceso.")
+    if not ejecucion.equipo_id:
+        motivos.append("La corrida requiere una torre asignada.")
+    else:
+        impedimento = motivo_equipo_no_habilitado(ejecucion.equipo)
+        if impedimento:
+            motivos.append(impedimento)
+    for entrada in entradas:
+        salida = entrada.salida_origen
+        if salida is not None:
+            nombre = salida.silo.codigo if salida.silo_id else f"la salida {salida.pk}"
+            decision = getattr(salida, "liberacion_calidad", None)
+            estado = decision.estado if decision is not None else None
+            if estado == LiberacionProceso.Estado.RECHAZADO:
+                motivos.append(f"Calidad rechazó el concentrado de {nombre}.")
+            elif estado != LiberacionProceso.Estado.LIBERADO:
+                motivos.append(f"El concentrado de {nombre} no está liberado por Calidad.")
+            if disponible_de_salida(salida) < 0:
+                motivos.append(
+                    f"El concentrado de {nombre} ya no tiene saldo: otra ejecución lo consumió."
+                )
+        elif entrada.lote_inventario_id and not entrada.lote_inventario.utilizable:
+            # El stock ya salió de bodega al preparar; lo que puede cambiar
+            # después es la decisión de Calidad sobre el lote del proveedor.
+            motivos.append(
+                f"El lote externo {entrada.lote_inventario.codigo} ya no está liberado por Calidad."
+            )
+    return motivos
+
+
+def avisos_de_torre(torre, *, hoy=None):
+    """
+    Lo que conviene saber antes de operar la torre y **no bloquea**: el último
+    aseo con advertencia y la falta de una inspección pre-operativa completa
+    de hoy. «Hay inspección» se decide como en el expediente del lote
+    (`cubre_al_lote` + `registro_completo`), pero acotado a **esta** torre.
+    """
+    from types import SimpleNamespace
+
+    from calidad.dominio import cubre_al_lote, registro_completo
+    from calidad.models import RegistroEquipo
+    from inventario.servicios import advertencia_aseo_equipo
+    from maestros.models import DocumentoLiberacion
+
+    avisos = []
+    aseo = advertencia_aseo_equipo(torre)
+    if aseo:
+        avisos.append(aseo)
+    empresa_id = torre.sucursal.empresa_id if torre.sucursal_id else None
+    documento = DocumentoLiberacion.objects.filter(
+        empresa_id=empresa_id, codigo=CODIGO_INSPECCION_PREOPERATIVA, activo=True,
+    ).first()
+    if documento is None:
+        # Sin el documento configurado no hay dónde registrar la inspección:
+        # avisar de algo imposible de cumplir solo enseña a ignorar el aviso.
+        return avisos
+    jornada = SimpleNamespace(fecha=hoy or timezone.localdate(), turno="")
+    # Basta mirar el último mes: la frecuencia más larga que se deduce sola es
+    # la semanal (`cubre_al_lote`); `segun_programa` declara su vigencia.
+    registros = RegistroEquipo.objects.filter(
+        documento=documento, equipo=torre, fecha__lte=jornada.fecha,
+    ).order_by("-fecha")[:31]
+    if not any(
+        cubre_al_lote(registro, documento, jornada) and registro_completo(registro, documento)
+        for registro in registros
+    ):
+        avisos.append(AVISO_INSPECCION_PREOPERATIVA)
+    return avisos
+
+
+@transaction.atomic
+def iniciar_secado(*, corrida_id, usuario):
+    """
+    Pasa una corrida de Secado preparada a ejecución. Recalcula los motivos
+    con la ejecución bloqueada —entre que el puesto los mostró y el clic pudo
+    entrar un CIP o un rechazo de Calidad— y deja los avisos en el evento.
+    """
+    corrida = CorridaSecado.objects.select_for_update(of=("self",)).get(pk=corrida_id)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .select_related("etapa", "equipo__sucursal")
+        .get(pk=corrida.ejecucion_id)
+    )
+    motivos = motivos_para_iniciar_secado(corrida, ejecucion=ejecucion)
+    if motivos:
+        raise ValidationError(motivos[0])
+    avisos = avisos_de_torre(ejecucion.equipo)
+    transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk,
+        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        usuario=usuario,
+        motivo=(
+            "Advertencia no bloqueante: " + " ".join(avisos)
+            if avisos else "Inicio desde el puesto de Secado."
+        ),
+    )
+    return (
+        CorridaSecado.objects.select_related(
+            "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
+            "finalizada_por",
+        ).prefetch_related("ejecucion__salidas__liberacion_calidad").get(pk=corrida.pk)
+    )
 
 
 @transaction.atomic
