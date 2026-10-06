@@ -559,9 +559,10 @@ export async function guardarBorradorLote(id: number, datos: DatosBorradorLote) 
   return data;
 }
 
-export async function confirmarBorradorLote(id: number) {
+export async function confirmarBorradorLote(id: number, siloDestino?: number) {
   const { data } = await api.post<Lote>(
     `produccion/lotes/${id}/confirmar-borrador/`,
+    siloDestino ? { silo_destino: siloDestino } : undefined,
   );
   return data;
 }

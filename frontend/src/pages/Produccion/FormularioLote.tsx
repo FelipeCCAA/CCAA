@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ArrowRight, Beaker, Factory, X } from "lucide-react";
 
 import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
+import ConfirmarAccion, { type FilaResumen } from "../../components/operacion/ConfirmarAccion";
 import {
   confirmarBorradorLote,
   crearBorradorLote,
@@ -15,7 +17,11 @@ import {
   type EquipoInicioProduccion,
   type ValeDisponible,
 } from "../../services/produccion.service";
-import { obtenerEjecucionesOperativas, type EjecucionOperativa } from "../../services/procesos.service";
+import {
+  obtenerEjecucionesOperativas,
+  type DestinoConcentrado,
+  type EjecucionOperativa,
+} from "../../services/procesos.service";
 import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
 import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { useBorrador } from "../../hooks/useBorrador";
@@ -48,22 +54,31 @@ import { cantidad } from "../../services/formato";
 interface Props {
   alCerrar: () => void;
   alGuardar: () => void;
+  /* "evaporacion": el formulario se abre desde el puesto de Evaporación,
+     sobre un evaporador ya elegido. "resto" (por defecto): el camino actual
+     desde Producción, que ahora excluye los evaporadores — se abren en su
+     propio puesto. */
+  modo?: "evaporacion" | "resto";
+  equipoInicial?: number;
+  destinos?: DestinoConcentrado[];
 }
 
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 
-function FormularioLote({ alCerrar, alGuardar }: Props) {
+function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, destinos = [] }: Props) {
 
   const [codigoLote, setCodigoLote] = useState("");
   const [fecha, setFecha] = useState(hoy());
   const [op, setOp] = useState("");
   const [orden, setOrden] = useState("");
   const [linea, setLinea] = useState("");
-  const [equipo, setEquipo] = useState("");
+  const [equipo, setEquipo] = useState(equipoInicial ? String(equipoInicial) : "");
   const [turno, setTurno] = useState("");
   const [observacion, setObservacion] = useState("");
+  const [siloDestino, setSiloDestino] = useState("");
+  const [paso, setPaso] = useState<"datos" | "resumen">("datos");
 
   /* Una vez que el operador escribe el código, la sugerencia deja de pisarlo:
      lo que escribió a mano gana. */
@@ -196,8 +211,20 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     return () => clearTimeout(temporizador);
   }, [sugerir]);
 
-  const enviar = async (e: React.FormEvent<HTMLFormElement>) => {
+  const revisar = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (guardando) return;
+
+    if (esEvaporador && !siloDestino) {
+      setError("Elige el silo de destino del concentrado.");
+      return;
+    }
+
+    setError("");
+    setPaso("resumen");
+  };
+
+  const confirmarEnvio = async () => {
     if (guardando) return;
 
     setError("");
@@ -207,7 +234,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
       const borradorId = await borrador.guardarAhora({ propagarError: true });
       if (borradorId === null) throw new Error("El borrador no alcanzó a guardarse.");
-      await confirmarBorradorLote(borradorId);
+      await confirmarBorradorLote(borradorId, esEvaporador ? Number(siloDestino) : undefined);
       borrador.reiniciar();
 
       alGuardar();
@@ -257,9 +284,20 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     },
   };
   const ruta = valeSeleccionado ? rutaPorFamilia[valeSeleccionado.producto_familia] : null;
-  const equiposCompatibles = equipos.filter(
-    (item) => item.activo && (!ruta || ruta.tipos.includes(item.tipo)),
-  );
+  /* En el puesto de Evaporación el formulario solo ofrece evaporadores; en
+     el resto se excluyen, porque esos lotes se abren desde su propio puesto. */
+  const equiposCompatibles = equipos.filter((item) => {
+    if (!item.activo) return false;
+    if (modo === "evaporacion") return item.tipo === "evaporador";
+    return item.tipo !== "evaporador" && (!ruta || ruta.tipos.includes(item.tipo));
+  });
+  /* Mismo criterio sobre los vales: en evaporación solo los que van a un
+     evaporador; en el resto, la familia polvo se excluye porque esa leche
+     solo va a evaporador. */
+  const valesVisibles = vales.filter((item) => {
+    if (modo === "evaporacion") return rutaPorFamilia[item.producto_familia]?.tipos.includes("evaporador") ?? false;
+    return item.producto_familia !== "polvo";
+  });
   const ocupaciones = ocupacionesPorEquipo(ejecuciones);
   const equipoSeleccionado = equipos.find((item) => item.id === Number(equipo));
   const ocupacionSeleccionada = equipoSeleccionado
@@ -267,6 +305,29 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
     : undefined;
   const ordenesCompatibles = ordenes.filter((item) => item.producto === valeSeleccionado?.producto);
   const advertenciaAseo = equipoSeleccionado?.advertencia_aseo ?? "";
+  const esEvaporador = equipoSeleccionado?.tipo === "evaporador";
+  const esTorre = equipoSeleccionado?.tipo === "torre";
+  const soloHayEvaporadores = modo === "resto"
+    && valeSeleccionado?.producto_familia === "liquido"
+    && equiposCompatibles.length === 0;
+  const destinoSeleccionado = destinos.find((item) => String(item.id) === siloDestino);
+  const titulo = modo === "evaporacion" ? "Abrir lote y preparar evaporación" : "Abrir lote desde vale";
+
+  const filasResumen = (): FilaResumen[] => [
+    { etiqueta: "Vale", valor: valeSeleccionado ? `${valeSeleccionado.codigo} · ${valeSeleccionado.producto_nombre}` : "—" },
+    { etiqueta: "Máquina", valor: equipoSeleccionado ? `${equipoSeleccionado.nombre} · ${equipoSeleccionado.tipo_etiqueta}` : "—" },
+    { etiqueta: "Orden", valor: ordenes.find((item) => item.id === Number(orden))?.codigo ?? "—" },
+    {
+      etiqueta: "Origen → destino",
+      valor: valeSeleccionado
+        ? `${valeSeleccionado.silo_entera_codigo}` +
+          `${valeSeleccionado.silo_descremada_codigo ? ` + ${valeSeleccionado.silo_descremada_codigo}` : ""}` +
+          ` → ${esEvaporador ? (destinoSeleccionado?.codigo ?? "—") : valeSeleccionado.silo_destino_codigo}`
+        : "—",
+    },
+    { etiqueta: "Código de lote", valor: codigoLote },
+    { etiqueta: "Litros", valor: cantidad(litros, "L") },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
@@ -279,7 +340,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
             <h2 className="text-lg font-semibold text-slate-800">
 
-              Abrir lote desde vale
+              {titulo}
 
             </h2>
 
@@ -341,9 +402,21 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
               </div>
             </div>
           </div>
+        ) : paso === "resumen" ? (
+          <div className="px-6 py-6">
+            <ConfirmarAccion
+              titulo="Revisa antes de abrir el lote"
+              filas={filasResumen()}
+              textoConfirmar={guardando ? "Abriendo…" : "Abrir lote"}
+              ocupado={guardando}
+              error={error}
+              onConfirmar={() => void confirmarEnvio()}
+              onVolver={() => { setPaso("datos"); setError(""); }}
+            />
+          </div>
         ) : (
         <form
-          onSubmit={enviar}
+          onSubmit={revisar}
           onChange={() => setTocado(true)}
           className="px-6 py-6"
         >
@@ -370,7 +443,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
                 <option value="">Selecciona un vale con saldo…</option>
 
-                {vales.map((item) => (
+                {valesVisibles.map((item) => (
 
                   <option key={item.id} value={item.id}>
 
@@ -382,7 +455,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
               </select>
 
-              {vales.length === 0 && (
+              {valesVisibles.length === 0 && (
                 <p className="mt-1.5 text-xs text-amber-700">
                   No hay vales liberados con saldo. Libera uno en Estandarización.
                 </p>
@@ -394,6 +467,12 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                 </p>
               )}
               {ruta && <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800"><strong>Ruta del producto:</strong> {ruta.ruta}<br />{ruta.ayuda}</div>}
+              {soloHayEvaporadores && (
+                <p className="mt-2 text-xs text-amber-700">
+                  Los productos que van a evaporador se abren en el puesto de Evaporación.{" "}
+                  <Link to="/produccion/evaporacion" className="font-medium underline">Ir al puesto de Evaporación</Link>
+                </p>
+              )}
 
             </div>
 
@@ -411,24 +490,26 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
             </div>
 
-            <div>
+            {esTorre && (
+              <div>
 
-              <label className={etiquetaCampo}>Línea *</label>
+                <label className={etiquetaCampo}>Línea *</label>
 
-              <select
-                className={campo}
-                value={linea}
-                onChange={(e) => setLinea(e.target.value)}
-                required
-              >
+                <select
+                  className={campo}
+                  value={linea}
+                  onChange={(e) => setLinea(e.target.value)}
+                  required
+                >
 
-                <option value="">—</option>
-                <option value="E1">E1</option>
-                <option value="E2">E2</option>
+                  <option value="">—</option>
+                  <option value="E1">E1</option>
+                  <option value="E2">E2</option>
 
-              </select>
+                </select>
 
-            </div>
+              </div>
+            )}
 
             <div className="sm:col-span-2">
 
@@ -452,6 +533,37 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
               {advertenciaAseo && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><strong>Advertencia de aseo (no bloquea):</strong> {advertenciaAseo}</div>}
 
             </div>
+
+            {esEvaporador && (
+              <div className="sm:col-span-2">
+
+                <label className={etiquetaCampo}>Silo de destino del concentrado *</label>
+
+                <select
+                  className={campo}
+                  value={siloDestino}
+                  onChange={(e) => setSiloDestino(e.target.value)}
+                  required
+                >
+                  <option value="">Selecciona un silo…</option>
+                  {destinos.map((item) => {
+                    const litrosNumero = litros === "" ? null : Number(litros);
+                    const sinCapacidad = litrosNumero !== null && Number(item.libre_l) < litrosNumero;
+                    return (
+                      <option key={item.id} value={item.id} disabled={sinCapacidad}>
+                        {item.codigo} · libre {cantidad(item.libre_l, "L")}{sinCapacidad ? " · sin capacidad" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                {destinos.length === 0 && (
+                  <p className="mt-1.5 text-xs text-amber-700">
+                    No hay silos disponibles para recibir el concentrado.
+                  </p>
+                )}
+
+              </div>
+            )}
 
             <div className="sm:col-span-2">
 

@@ -87,6 +87,60 @@ export interface CorridaCondensacion {
   finalizada_en: string | null;
 }
 
+export type EstadoEvaporador = "disponible" | "preparada" | "en_curso" | "esperando_calidad";
+
+export interface CorridaPuesto {
+  id: number;
+  codigo: string;
+  lote_codigo: string | null;
+  silo_origen: string;
+  silo_destino: string;
+  litros_entrada: string;
+  iniciada_en: string | null;
+}
+
+export interface EvaporadorPuesto {
+  equipo_id: number;
+  codigo: string;
+  nombre: string;
+  estado: EstadoEvaporador;
+  corrida: CorridaPuesto | null;
+  motivos_para_iniciar: string[];
+  /* Nombra una corrida que quedó esperando a Calidad en esta máquina, aunque
+     la tarjeta esté mostrando otro estado: la máquina puede volver a
+     ofrecerse para abrir mientras esa corrida sigue pendiente. */
+  en_calidad: { id: number; codigo: string; lote_codigo: string | null } | null;
+}
+
+export interface DestinoConcentrado {
+  id: number;
+  codigo: string;
+  libre_l: string;
+}
+
+export interface PuestoEvaporacion {
+  evaporadores: EvaporadorPuesto[];
+  destinos: DestinoConcentrado[];
+  corridas_de_hoy: {
+    id: number;
+    codigo: string;
+    equipo: string | null;
+    lote_codigo: string | null;
+    estado: string;
+    estado_etiqueta: string;
+  }[];
+}
+
+export async function obtenerPuestoEvaporacion(): Promise<PuestoEvaporacion> {
+  const { data } = await api.get<PuestoEvaporacion>("procesos/condensaciones/puesto/");
+  return data;
+}
+
+export async function obtenerCondensacion(id: number): Promise<CorridaCondensacion> {
+  const { data } = await api.get<CorridaCondensacion>(`procesos/condensaciones/${id}/`);
+  return data;
+}
+
 export interface CorridaMantequilla {
   id: number;
   ejecucion_codigo: string;
