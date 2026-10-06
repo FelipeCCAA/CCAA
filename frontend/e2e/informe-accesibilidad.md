@@ -9,7 +9,7 @@ demasiados pasos: eso lo contesta ver a un operario usándola.
 
 ## Resumen
 
-- Pantallas auditadas: **34**
+- Pantallas auditadas: **35**
 - Reglas incumplidas: **3**
 - Elementos afectados: **19**
 
