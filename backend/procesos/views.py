@@ -12,6 +12,7 @@ from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.response import Response
 
 from config.api_exceptions import respuesta_error_dominio
+from inventario.views import FiltraConsultaMixin
 
 from usuarios.permisos import ConfiguraProcesos
 from usuarios.tenancy import (
@@ -58,7 +59,7 @@ from .servicios import (
     crear_entrada_proceso, crear_mantequilla_guiada,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
-    estado_puesto_evaporacion,
+    estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
     inicio_reservado_al_puesto,
     MENSAJE_INICIO_SECADO_EN_PUESTO,
@@ -741,23 +742,33 @@ class CorridaMantequillaViewSet(
         return Response(self.get_serializer(corrida).data)
 
 
-class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+class CorridaSecadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "ejecucion__sucursal_id"
     tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
     queryset = CorridaSecado.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
         "finalizada_por",
-    ).prefetch_related("ejecucion__salidas__liberacion_calidad")
+    ).prefetch_related("ejecucion__salidas__liberacion_calidad").order_by("-pk")
     serializer_class = CorridaSecadoSerializer
     permission_classes = [OperaProcesoPorEtapa]
     tipo_etapa_operacional = EtapaProceso.Tipo.SECADO
     http_method_names = ["get", "post", "head", "options"]
+    # Historial del puesto: se filtra en el servidor porque la lista está
+    # paginada (mismo contrato que Existencias y el historial de Despacho).
+    busqueda_en = ("lote__codigo_lote", "ejecucion__codigo", "lote__producto__nombre")
+    filtro_estado = "ejecucion__estado"
+    filtro_fecha = "ejecucion__creada_en"
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
             "POST",
             detail="La corrida de Secado nace al abrir el lote desde su vale.",
         )
+
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Secado: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_secado(request.user))
 
     @action(detail=False, methods=["get"], url_path="opciones-alimentacion-externa")
     def opciones_alimentacion_externa(self, request):

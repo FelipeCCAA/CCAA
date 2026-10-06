@@ -248,6 +248,149 @@ class PrepararSecadoTests(BasePuestoSecado):
         self.assertIn("no tiene lote", error.exception.messages[0])
 
 
+class PuestoSecadoTests(BasePuestoSecado):
+    def puesto(self, usuario=None):
+        respuesta = self.cliente(usuario).get("/api/procesos/secados/puesto/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        return respuesta.data
+
+    def fila(self, datos, torre):
+        return next(item for item in datos["torres"] if item["equipo_id"] == torre.pk)
+
+    def test_una_torre_sin_ejecucion_esta_disponible(self):
+        fila = self.fila(self.puesto(), self.torre)
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertIsNone(fila["corrida"])
+        self.assertEqual(fila["motivos_para_iniciar"], [])
+
+    def test_una_preparada_lista_para_iniciar(self):
+        corrida = self.preparar(cantidad="600")
+        fila = self.fila(self.puesto(), self.torre)
+        self.assertEqual(fila["estado"], "preparada")
+        self.assertEqual(fila["corrida"]["id"], corrida.pk)
+        self.assertEqual(fila["corrida"]["lote_codigo"], self.lote.codigo_lote)
+        self.assertEqual(fila["corrida"]["origen"], self.silo.codigo)
+        self.assertEqual(fila["corrida"]["cantidad"], "600.000")
+        self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertIsNone(fila["resolver_en"])
+
+    def test_una_preparada_con_motivo_dice_por_que_y_donde_se_resuelve(self):
+        self.preparar()
+        CicloCIP.objects.create(
+            sucursal=self.planta, area=PerfilUsuario.Area.SECADO, equipo=self.torre,
+            inicio=timezone.now() - timedelta(hours=1), estado=CicloCIP.Estado.EN_CURSO,
+        )
+        fila = self.fila(self.puesto(), self.torre)
+        self.assertIn("CIP", fila["motivos_para_iniciar"][0])
+        self.assertEqual(fila["resolver_en"], "/calidad/inocuidad")
+
+    def test_el_concentrado_rechazado_aparece_como_motivo(self):
+        self.preparar()
+        self.liberacion.estado = LiberacionProceso.Estado.RECHAZADO
+        self.liberacion.save(update_fields=["estado"])
+        fila = self.fila(self.puesto(), self.torre)
+        self.assertTrue(any("rechazó" in motivo for motivo in fila["motivos_para_iniciar"]))
+        self.assertEqual(fila["resolver_en"], "/calidad")
+
+    def test_en_ejecucion_pausada_o_bloqueada_esta_en_curso(self):
+        corrida = self.preparar()
+        iniciar_secado(corrida_id=corrida.pk, usuario=self.secador)
+        for estado in ("ejecucion", "pausada", "bloqueada"):
+            EjecucionProceso.objects.filter(pk=corrida.ejecucion_id).update(estado=estado)
+            with self.subTest(estado=estado):
+                fila = self.fila(self.puesto(), self.torre)
+                self.assertEqual(fila["estado"], "en_curso")
+                self.assertEqual(fila["corrida"]["ejecucion_estado"], estado)
+
+    def test_inspeccion_completa_de_hoy_no_avisa(self):
+        self.inspeccion_de(self.torre)
+        fila = self.fila(self.puesto(), self.torre)
+        self.assertNotIn(AVISO_INSPECCION_PREOPERATIVA, fila["avisos"])
+        self.assertFalse(fila["falta_inspeccion"])
+
+    def test_sin_inspeccion_de_hoy_avisa(self):
+        fila = self.fila(self.puesto(), self.torre)
+        self.assertIn(AVISO_INSPECCION_PREOPERATIVA, fila["avisos"])
+        self.assertTrue(fila["falta_inspeccion"])
+
+    def test_la_inspeccion_de_ayer_no_cubre_hoy(self):
+        self.inspeccion_de(self.torre, fecha=timezone.localdate() - timedelta(days=1))
+        self.assertIn(AVISO_INSPECCION_PREOPERATIVA, self.fila(self.puesto(), self.torre)["avisos"])
+
+    def test_una_inspeccion_incompleta_no_cubre(self):
+        self.inspeccion_de(self.torre, valores={})
+        self.assertIn(AVISO_INSPECCION_PREOPERATIVA, self.fila(self.puesto(), self.torre)["avisos"])
+
+    def test_la_inspeccion_de_otra_torre_no_cubre_esta(self):
+        self.inspeccion_de(self.otra_torre)
+        self.assertIn(AVISO_INSPECCION_PREOPERATIVA, self.fila(self.puesto(), self.torre)["avisos"])
+
+    def test_polvo_pendiente_en_calidad_se_informa_y_la_torre_queda_libre(self):
+        lote = self._lote("CCAA6278PS-01")
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-SEC-CAL", etapa=self.etapa_secado, sucursal=self.planta,
+            equipo=self.torre, estado=EjecucionProceso.Estado.CERRADA,
+        )
+        corrida = CorridaSecado.objects.create(ejecucion=ejecucion, orden=self.orden, lote=lote)
+        salida = SalidaProceso.objects.create(
+            ejecucion=ejecucion, lote=lote, producto=self.producto,
+            naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+            destino=SalidaProceso.Destino.PENDIENTE, cantidad=Decimal("300"), unidad="kg",
+        )
+        LiberacionProceso.objects.create(salida=salida)
+        fila = self.fila(self.puesto(), self.torre)
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertEqual(fila["en_calidad"], {"id": corrida.pk, "lote_codigo": lote.codigo_lote})
+
+    def test_concentrados_solo_con_saldo_y_secado_como_siguiente_etapa(self):
+        datos = self.puesto()
+        self.assertEqual([c["salida_id"] for c in datos["concentrados"]], [self.salida.pk])
+        concentrado = datos["concentrados"][0]
+        self.assertEqual(concentrado["etapa_id"], self.etapa_secado.pk)
+        self.assertEqual(concentrado["disponible"], "1000.000")
+
+        self.preparar(cantidad="400")
+        # Con saldo (600 L) pero su lote ya tiene corrida: no se vuelve a ofrecer.
+        self.assertEqual(self.puesto()["concentrados"], [])
+
+    def test_no_se_ofrece_un_concentrado_sin_liberar(self):
+        self.liberacion.estado = LiberacionProceso.Estado.PENDIENTE
+        self.liberacion.save(update_fields=["estado"])
+        self.assertEqual(self.puesto()["concentrados"], [])
+
+    def test_corridas_de_hoy_sin_huerfanos(self):
+        corrida = self.preparar()
+        iniciar_secado(corrida_id=corrida.pk, usuario=self.secador)
+        huerfano_lote = self._lote("CCAA6279PS-99")
+        huerfana = EjecucionProceso.objects.create(
+            codigo="EJ-SEC-HUERFANA", etapa=self.etapa_secado, sucursal=self.planta,
+            equipo=self.otra_torre, estado=EjecucionProceso.Estado.CANCELADA,
+        )
+        CorridaSecado.objects.create(ejecucion=huerfana, orden=self.orden, lote=huerfano_lote)
+
+        datos = self.puesto()
+
+        self.assertEqual(
+            [(c["id"], c["equipo"], c["estado"]) for c in datos["corridas_de_hoy"]],
+            [(corrida.pk, self.torre.codigo, "ejecucion")],
+        )
+        self.assertEqual(self.fila(datos, self.otra_torre)["estado"], "disponible")
+
+    def test_calidad_lee_el_puesto(self):
+        self.assertIn("torres", self.puesto(self.calidad))
+
+    def test_el_historial_filtra_en_el_servidor(self):
+        corrida = self.preparar()
+        otro = self._lote("CCAA6280PS-01")
+        self.preparar(salida=self._concentrado(otro), torre=self.otra_torre)
+
+        por_lote = self.cliente().get("/api/procesos/secados/", {"q": self.lote.codigo_lote})
+        por_estado = self.cliente().get("/api/procesos/secados/", {"estado": "ejecucion"})
+
+        self.assertEqual([c["id"] for c in por_lote.data["results"]], [corrida.pk])
+        self.assertEqual(por_estado.data["results"], [])
+
+
 class InicioGenericoCerradoTests(BasePuestoSecado):
     def transicionar(self, ejecucion, estado, motivo=""):
         ejecucion.refresh_from_db()

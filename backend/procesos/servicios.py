@@ -2557,6 +2557,193 @@ def iniciar_secado(*, corrida_id, usuario):
     )
 
 
+def estado_calidad_secado(corrida):
+    """La decisión de Calidad sobre el polvo de una corrida, o `no_requerida`."""
+    if not corrida.ejecucion.etapa.requiere_calidad:
+        return "no_requerida"
+    salida = next(
+        (
+            salida for salida in corrida.ejecucion.salidas.all()
+            if salida.lote_id == corrida.lote_id
+            and salida.naturaleza == SalidaProceso.Naturaleza.PRINCIPAL
+        ),
+        None,
+    )
+    decision = getattr(salida, "liberacion_calidad", None) if salida else None
+    return decision.estado if decision else "pendiente"
+
+
+def estado_puesto_secado(usuario):
+    """
+    Lo que el puesto de Secado dibuja: un estado por torre derivado de su
+    ejecución de Secado activa (la que ocupa el equipo; una en curso manda
+    sobre una preparada), con los motivos que impiden iniciar calculados por
+    la misma función que decide al iniciar; los concentrados que se pueden
+    tomar, con el saldo que `preparar_continuacion` va a aceptar; y las
+    corridas de hoy. La pantalla no recalcula nada de esto.
+
+    Las ejecuciones `cerrada`/`cancelada` no ocupan la torre: un huérfano de
+    un E2E abortado no deja la máquina tomada (`ESTADOS_QUE_OCUPAN_EQUIPO`).
+    """
+    from calidad.models import LiberacionProceso
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from maestros.models import Equipo
+    from usuarios.tenancy import filtrar_por_scope
+
+    torres = list(filtrar_por_scope(
+        Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.TORRE)
+        .select_related("sucursal").order_by("codigo"),
+        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ))
+    ids = [torre.pk for torre in torres]
+
+    activas = {}
+    for ejecucion in (
+        EjecucionProceso.objects.filter(
+            etapa__tipo=EtapaProceso.Tipo.SECADO, equipo_id__in=ids,
+            estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+        )
+        .select_related("etapa", "equipo", "corrida_secado__lote")
+        .prefetch_related("entradas__silo", "entradas__lote_inventario")
+        .order_by("pk")
+    ):
+        actual = activas.get(ejecucion.equipo_id)
+        if actual is None or (
+            actual.estado == EjecucionProceso.Estado.PREPARACION
+            and ejecucion.estado != EjecucionProceso.Estado.PREPARACION
+        ):
+            activas[ejecucion.equipo_id] = ejecucion
+
+    en_calidad = {}
+    for corrida in (
+        CorridaSecado.objects.filter(
+            ejecucion__equipo_id__in=ids,
+            ejecucion__salidas__naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+            ejecucion__salidas__liberacion_calidad__estado=LiberacionProceso.Estado.PENDIENTE,
+        ).select_related("ejecucion", "lote").order_by("pk")
+    ):
+        en_calidad[corrida.ejecucion.equipo_id] = corrida
+
+    def resumen(ejecucion):
+        corrida = getattr(ejecucion, "corrida_secado", None)
+        entrada = next(iter(ejecucion.entradas.all()), None)
+        origen = None
+        if entrada is not None and entrada.silo_id:
+            origen = entrada.silo.codigo
+        elif entrada is not None and entrada.lote_inventario_id:
+            origen = entrada.lote_inventario.codigo
+        return {
+            "id": corrida.pk if corrida else None,
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "ejecucion_estado": ejecucion.estado,
+            "lote_codigo": corrida.lote.codigo_lote if corrida else None,
+            "origen": origen,
+            # Texto, como en los serializers: el tipo del frontend es `string`.
+            "cantidad": str(entrada.cantidad) if entrada else None,
+            "unidad": entrada.unidad if entrada else None,
+            "iniciada_en": ejecucion.inicio,
+        }
+
+    filas = []
+    for torre in torres:
+        ejecucion = activas.get(torre.pk)
+        motivos, resolver_en = [], None
+        if ejecucion is None:
+            estado = "disponible"
+        elif ejecucion.estado == EjecucionProceso.Estado.PREPARACION:
+            estado = "preparada"
+            corrida = getattr(ejecucion, "corrida_secado", None)
+            if corrida is None:
+                motivos = [
+                    f"{ejecucion.codigo} no tiene lote de Secado: cancélala y vuelve "
+                    "a tomar el concentrado."
+                ]
+            else:
+                motivos = motivos_para_iniciar_secado(corrida, ejecucion=ejecucion)
+                if motivos:
+                    # Dónde se resuelve, como dato: la pantalla no adivina
+                    # leyendo el texto del motivo.
+                    resolver_en = (
+                        "/calidad/inocuidad" if motivo_equipo_no_habilitado(torre) else "/calidad"
+                    )
+        else:
+            estado = "en_curso"
+        avisos = [] if estado == "en_curso" else avisos_de_torre(torre)
+        pendiente = en_calidad.get(torre.pk)
+        filas.append({
+            "equipo_id": torre.pk, "codigo": torre.codigo, "nombre": torre.nombre,
+            "estado": estado,
+            "corrida": resumen(ejecucion) if ejecucion is not None else None,
+            "motivos_para_iniciar": motivos,
+            "resolver_en": resolver_en,
+            "avisos": avisos,
+            "falta_inspeccion": AVISO_INSPECCION_PREOPERATIVA in avisos,
+            "en_calidad": (
+                {"id": pendiente.pk, "lote_codigo": pendiente.lote.codigo_lote}
+                if pendiente is not None else None
+            ),
+        })
+
+    concentrados = []
+    salidas = filtrar_por_scope(
+        SalidaProceso.objects.filter(
+            liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
+            silo__isnull=False, lote__isnull=False, lote__corrida_secado__isnull=True,
+            destino__in=[
+                SalidaProceso.Destino.PENDIENTE,
+                SalidaProceso.Destino.SIGUIENTE_PROCESO,
+                SalidaProceso.Destino.ESTANDARIZACION,
+            ],
+        ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA)
+        .select_related("ejecucion__etapa", "silo", "lote__producto", "ruta_producto")
+        .order_by("lote__codigo_lote", "pk"),
+        usuario, campo_sucursal="ejecucion__sucursal_id",
+        campo_empresa="ejecucion__sucursal__empresa_id",
+    )
+    for salida in salidas:
+        siguiente = siguiente_etapa_para_salida(salida=salida)
+        if siguiente is None or siguiente.tipo != EtapaProceso.Tipo.SECADO:
+            continue
+        disponible = disponible_de_salida(salida)
+        if disponible <= 0:
+            continue
+        concentrados.append({
+            "salida_id": salida.pk, "etapa_id": siguiente.pk,
+            "lote_codigo": salida.lote.codigo_lote,
+            "producto": salida.lote.producto.nombre if salida.lote.producto_id else "",
+            "silo": salida.silo.codigo,
+            "disponible": str(disponible), "unidad": salida.unidad,
+        })
+
+    hoy = timezone.localdate()
+    corridas_de_hoy = [
+        {
+            "id": corrida.pk,
+            "equipo": corrida.ejecucion.equipo.codigo if corrida.ejecucion.equipo_id else None,
+            "lote_codigo": corrida.lote.codigo_lote,
+            "estado": corrida.ejecucion.estado,
+            "estado_calidad": estado_calidad_secado(corrida),
+        }
+        # Iniciadas o cerradas hoy: una preparación que nunca empezó no es
+        # trabajo del día, y un huérfano cancelado sin iniciar tampoco.
+        for corrida in CorridaSecado.objects.filter(ejecucion__equipo_id__in=ids)
+        .filter(Q(ejecucion__inicio__date=hoy) | Q(finalizada_en__date=hoy))
+        .select_related("ejecucion__etapa", "ejecucion__equipo", "lote")
+        .prefetch_related("ejecucion__salidas__liberacion_calidad")
+        .order_by("-pk")
+    ]
+    return {
+        "torres": filas,
+        "concentrados": concentrados,
+        "corridas_de_hoy": corridas_de_hoy,
+        "estados": [
+            {"valor": valor, "etiqueta": etiqueta}
+            for valor, etiqueta in EjecucionProceso.Estado.choices
+        ],
+    }
+
+
 @transaction.atomic
 def preparar_secado_desde_inventario(
     *, orden, existencia, equipo, codigo_lote, cantidad, usuario,

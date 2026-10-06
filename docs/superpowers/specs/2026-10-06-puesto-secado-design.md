@@ -59,19 +59,27 @@ Tomadas con el usuario el 2026-10-06.
   "torres": [{
     "equipo_id": 7, "codigo": "e1", "nombre": "Torre de secado Egron 1",
     "estado": "disponible | preparada | en_curso",
-    "corrida": { "id": 12, "lote_codigo": "CCAA6279VB-01", "origen": "SILO 6",
-                  "cantidad": "18000.00", "unidad": "L", "iniciada_en": null },
+    "corrida": { "id": 12, "ejecucion_id": 90, "ejecucion_codigo": "CONT-40-AB12CD34",
+                  "ejecucion_estado": "preparacion", "lote_codigo": "CCAA6279VB-01",
+                  "origen": "SILO 6", "cantidad": "18000.00", "unidad": "L",
+                  "iniciada_en": null },
     "motivos_para_iniciar": ["La torre e1 está en CIP."],
+    "resolver_en": "/calidad/inocuidad | /calidad | null",
     "avisos": ["Falta la inspección pre-operativa de hoy (CCAA.Sec.FORM.003)."],
+    "falta_inspeccion": true,
     "en_calidad": { "id": 11, "lote_codigo": "CCAA6278VB-01" }
   }],
-  "concentrados": [{ "salida_id": 40, "lote_codigo": "CCAA6279VB-01",
+  "concentrados": [{ "salida_id": 40, "etapa_id": 5, "lote_codigo": "CCAA6279VB-01",
                      "producto": "Leche entera en polvo", "silo": "SILO 6",
                      "disponible": "18000.00", "unidad": "L" }],
   "corridas_de_hoy": [{ "id": 11, "equipo": "e1", "lote_codigo": "CCAA6278VB-01",
-                        "estado": "cerrada", "estado_calidad": "pendiente" }]
+                        "estado": "cerrada", "estado_calidad": "pendiente" }],
+  "estados": [{ "valor": "preparacion", "etiqueta": "Preparación" }]
 }
 ```
+
+Las claves extra existen para no adivinar: `etapa_id` lo exige `preparar-continuacion`; el
+enlace y el aviso de inspección viajan tipados.
 
 - **Estado por torre**, derivado de su `EjecucionProceso` de Secado no terminal:
   `preparacion` → `preparada`; `ejecucion`, `pausada` o `bloqueada` → `en_curso`; sin
@@ -117,17 +125,24 @@ Tomadas con el usuario el 2026-10-06.
   única implementación** de las reglas de inicio de Secado:
   - la ejecución está en `preparacion`;
   - tiene al menos una entrada;
-  - la torre está habilitada (`motivo_equipo_no_habilitado`: no en CIP, último aseo no
-    observado);
+  - la torre está habilitada (`motivo_equipo_no_habilitado`: no en CIP);
   - la alimentación sigue disponible: la salida de origen no fue rechazada por Calidad ni
     quedó consumida por otra ejecución entre la preparación y el inicio (para la externa, el
     lote de proveedor sigue liberado y con saldo).
+
+  El aseo observado no está en esta lista: avisa (`avisos_de_torre`), no bloquea.
 - `iniciar` toma la ejecución con `select_for_update`, recalcula los motivos, lanza el
   primero si los hay (400) y, si no, transiciona a `ejecucion`. Los avisos van al `motivo`
   del `EventoProceso`, como hoy el aseo con advertencia.
-- **Un solo camino de inicio**: `ejecuciones/{id}/transicionar/` rechaza pasar a `ejecucion`
-  una ejecución de etapa Secado con «Las corridas de secado se inician desde el puesto de
-  Secado.». Las demás transiciones genéricas (pausar, bloquear, cancelar) siguen disponibles.
+- **Un solo camino de inicio**: `ejecuciones/{id}/transicionar/` rechaza pasar de
+  `preparacion` a `ejecucion` en una ejecución de etapa Secado con «Las corridas de secado se
+  inician desde el puesto de Secado.». Las demás transiciones genéricas (pausar, bloquear,
+  cancelar) siguen disponibles, y **reanudar desde `pausada` o `bloqueada` sigue
+  disponible**: ese paso no es iniciar (`inicio_reservado_al_puesto`), y una torre pausada
+  necesita cómo volver.
+- Una salida sin lote o un lote que ya tiene corrida de Secado no se preparan
+  (`CorridaSecado.lote` es uno a uno): `preparar_continuacion` los rechaza antes de reservar
+  la torre.
 
 ### 3.4 Permisos
 
@@ -178,10 +193,10 @@ de cierre (`cerrar_lote_producido`) y la liberación del polvo por Calidad.
 
 - **Backend**:
   - `puesto/`: los tres estados por torre; `motivos_para_iniciar` vacío y con motivo (CIP,
-    aseo observado, salida de origen rechazada); aviso de inspección —sin registro hoy:
-    aviso; con registro completo hoy: sin aviso; con registro de ayer: aviso; con registro
-    incompleto hoy: aviso—; `en_calidad` con polvo pendiente; `concentrados` solo con saldo y
-    con Secado como siguiente etapa; huérfanos fuera.
+    salida de origen rechazada); aseo observado: aviso, no motivo; aviso de inspección —sin
+    registro hoy: aviso; con registro completo hoy: sin aviso; con registro de ayer: aviso;
+    con registro incompleto hoy: aviso—; `en_calidad` con polvo pendiente; `concentrados`
+    solo con saldo y con Secado como siguiente etapa; huérfanos fuera.
   - `iniciar`: con motivos → 400 y la ejecución sigue en `preparacion`; sin motivos →
     `ejecucion`, con el aviso en el evento; sin permiso de Secado → 403.
   - `preparar-desde-inventario` deja la corrida en `preparacion`; `iniciar-desde-inventario`
