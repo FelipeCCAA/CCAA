@@ -6,7 +6,7 @@ import type { PlantaAhora } from "../src/services/procesos.service.ts";
 
 test("cada etapa abre su puesto operacional y conserva un destino seguro", () => {
   assert.equal(rutaDeEtapa("descremacion"), "/procesos?seccion=descremacion");
-  assert.equal(rutaDeEtapa("secado"), "/secado");
+  assert.equal(rutaDeEtapa("secado"), "/produccion/secado");
   assert.equal(rutaDeEtapa("etapa_futura"), "/produccion");
 });
 
@@ -21,7 +21,7 @@ test("todos los etapa_tipo reales (EtapaProceso.Tipo) llevan a un destino que ex
   assert.equal(rutaDeEtapa("descremacion"), "/procesos?seccion=descremacion");
   assert.equal(rutaDeEtapa("evaporacion"), "/produccion/evaporacion");
   assert.equal(rutaDeEtapa("condensacion"), "/produccion/evaporacion");
-  assert.equal(rutaDeEtapa("secado"), "/secado");
+  assert.equal(rutaDeEtapa("secado"), "/produccion/secado");
   assert.equal(rutaDeEtapa("envasado"), "/envasado");
   assert.equal(rutaDeEtapa("mantequilla"), "/procesos?seccion=mantequilla");
   assert.equal(rutaDeEtapa("transferencia"), "/produccion");

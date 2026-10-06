@@ -63,7 +63,7 @@ export function destinoInicial(usuario: Usuario): string {
     return puedeDespachar(usuario) ? "/despacho" : "/inventario";
   }
   const porArea: Record<string, string> = {
-    recepcion: "/leche", condensacion: "/produccion", secado: "/secado",
+    recepcion: "/leche", condensacion: "/produccion", secado: "/produccion/secado",
     envase: "/envasado", calidad: "/calidad", aseo: "/calidad/inocuidad",
     bodega: "/bodega", compras: "/abastecimiento",
   };

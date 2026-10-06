@@ -55,7 +55,7 @@ const GRUPOS: GrupoOperacional[] = [
       { etiqueta: "Estandarización", ruta: "/estandarizacion", modulo: "estandarizacion", icono: "estandarizacion", nivel: "proceso" },
       { etiqueta: "Descremado", ruta: "/procesos?seccion=descremacion", modulo: "procesos", icono: "procesos", nivel: "proceso", areas: ["condensacion", "calidad"] },
       { etiqueta: "Evaporación", ruta: "/produccion/evaporacion", modulo: "produccion", icono: "produccion", nivel: "proceso", areas: ["condensacion", "calidad"] },
-      { etiqueta: "Secado", ruta: "/secado", modulo: "secado", icono: "secado", nivel: "proceso", areas: ["secado", "calidad"] },
+      { etiqueta: "Secado", ruta: "/produccion/secado", modulo: "secado", icono: "secado", nivel: "proceso", areas: ["secado", "calidad"], alias: ["/secado"] },
       { etiqueta: "Mantequilla", ruta: "/procesos?seccion=mantequilla", modulo: "procesos", icono: "procesos", nivel: "proceso", areas: ["condensacion", "calidad"] },
       { etiqueta: "Trazabilidad productiva", ruta: "/procesos?seccion=trazabilidad", modulo: "procesos", icono: "procesos" },
       { etiqueta: "Planificación", ruta: "/planificacion", modulo: "planificacion", icono: "planificacion" },

@@ -6,7 +6,7 @@ const RUTAS_ETAPA: Record<string, string> = {
   descremacion: "/procesos?seccion=descremacion",
   evaporacion: "/produccion/evaporacion",
   condensacion: "/produccion/evaporacion",
-  secado: "/secado",
+  secado: "/produccion/secado",
   envasado: "/envasado",
   mantequilla: "/procesos?seccion=mantequilla",
   transferencia: "/produccion",

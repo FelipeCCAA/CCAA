@@ -167,7 +167,7 @@ export default function BandejaTrabajoArea() {
 
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <Link to={destinoDe(ejecucion)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-emerald-500">
-                    Abrir tarea <ArrowRight className="h-4 w-4" />
+                    {ejecucion.etapa_tipo === "secado" && ejecucion.estado === "preparacion" ? "Iniciar en el puesto de Secado" : "Abrir tarea"} <ArrowRight className="h-4 w-4" />
                   </Link>
                   {puedeIniciar && (
                     <button

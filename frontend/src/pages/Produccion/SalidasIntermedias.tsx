@@ -231,6 +231,14 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                   {salida.acciones_permitidas.find((accion) => accion.codigo === "iniciar_mantequilla")?.etiqueta}
                   <ArrowRight className="h-4 w-4" />
                 </Link>
+              ) : salida.acciones_permitidas.some((accion) => accion.codigo === "continuar_secado") ? (
+                <Link
+                  to="/produccion/secado"
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  Tomar en el puesto de Secado
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               ) : preparando === salida.id ? (
                 <div className="mt-4 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                   <label className="block text-xs font-semibold text-slate-700">

@@ -57,7 +57,7 @@ test("Secado entra a su puesto y no recibe accesos operacionales de Condensació
   const navegacion = navegacionPara(usuario);
   const produccion = etiquetas(usuario, "Producción");
 
-  assert.equal(navegacion.inicio.ruta, "/secado");
+  assert.equal(navegacion.inicio.ruta, "/produccion/secado");
   assert.ok(!produccion.includes("Descremado"));
   assert.ok(!produccion.includes("Evaporación"));
   assert.ok(!produccion.includes("Mantequilla"));
