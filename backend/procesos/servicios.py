@@ -4,7 +4,9 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Case, Count, DecimalField, F, Prefetch, Q, Sum, Value, When
+from django.db.models import (
+    Case, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Sum, Value, When,
+)
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -25,6 +27,14 @@ ESTADOS_QUE_OCUPAN_EQUIPO = frozenset({
     EjecucionProceso.Estado.EJECUCION,
     EjecucionProceso.Estado.PAUSADA,
     EjecucionProceso.Estado.BLOQUEADA,
+})
+
+# Una ejecución en estos estados ya terminó: su corrida, si sigue en
+# `borrador`/`en_proceso`, es un huérfano (E2E abortado, dato viejo) y no
+# ocupa la máquina ni cuenta como trabajo del día en el puesto de Evaporación.
+ESTADOS_EJECUCION_TERMINALES = frozenset({
+    EjecucionProceso.Estado.CERRADA,
+    EjecucionProceso.Estado.CANCELADA,
 })
 
 
@@ -174,6 +184,32 @@ def exigir_destino_sin_reserva(*, silo, excluir_ejecucion_id=None):
                 f"{silo.codigo} esta reservado por {reserva.ejecucion.codigo}."
             )
         })
+
+
+def motivos_destino_concentrado(destino, litros, *, excluir_ejecucion_id=None):
+    """
+    Por qué `destino` no puede recibir `litros` de concentrado: reservado por
+    otra ejecución, en un estado que no admite precondensado, o sin capacidad.
+
+    Una sola regla para preparar (`crear_condensacion_guiada`) y para iniciar
+    (`motivos_para_iniciar_condensacion`): con dos, el puesto preparaba una
+    corrida que «Iniciar» rechazaba después, con el lote ya abierto.
+    """
+    from maestros.models import Silo
+    from recepcion.servicios import saldo_silo
+
+    motivos = []
+    try:
+        exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=excluir_ejecucion_id)
+    except ValidationError as error:
+        motivos.extend(error.messages)
+    if not destino.activo or destino.estado in {
+        Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+    }:
+        motivos.append(f"{destino.codigo} no admite precondensado.")
+    elif saldo_silo(destino) + litros > destino.capacidad_l:
+        motivos.append(f"{destino.codigo} no tiene capacidad para reservar {litros} L.")
+    return motivos
 
 
 def silos_con_saldo(queryset):
@@ -773,10 +809,16 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
                 f"({destino.get_estado_display().lower()})."
             )
         })
+    litros_entrada = entrada.cantidad.quantize(Decimal("0.01"))
+    motivos = motivos_destino_concentrado(
+        destino, litros_entrada, excluir_ejecucion_id=ejecucion.pk,
+    )
+    if motivos:
+        raise ValidationError({"silo_destino": motivos})
     corrida = CorridaCondensacion(
         ejecucion=ejecucion, orden=lote.orden, lote=lote,
         silo_origen=entrada.silo, silo_destino=destino,
-        litros_entrada=entrada.cantidad.quantize(Decimal("0.01")),
+        litros_entrada=litros_entrada,
     )
     corrida.full_clean()
     corrida.save()
@@ -1363,9 +1405,8 @@ def motivos_para_iniciar_condensacion(corrida, *, origen=None, destino=None):
     corrida que el servidor rechaza.
     """
     from inventario.servicios import motivo_equipo_no_habilitado
-    from maestros.models import Silo
     from produccion.models import OrdenProduccion
-    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+    from recepcion.servicios import motivos_silo_no_disponible
 
     origen = origen or corrida.silo_origen
     destino = destino or corrida.silo_destino
@@ -1388,18 +1429,9 @@ def motivos_para_iniciar_condensacion(corrida, *, origen=None, destino=None):
         excluir_ejecucion_id=corrida.ejecucion_id,
     ).exists():
         motivos.append(f"{origen.codigo} esta reservado como destino de otra ejecucion.")
-    try:
-        exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=corrida.ejecucion_id)
-    except ValidationError as error:
-        motivos.extend(error.messages)
-    if not destino.activo or destino.estado in {
-        Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
-    }:
-        motivos.append(f"{destino.codigo} no admite precondensado.")
-    elif saldo_silo(destino) + corrida.litros_entrada > destino.capacidad_l:
-        motivos.append(
-            f"{destino.codigo} no tiene capacidad para reservar {corrida.litros_entrada} L."
-        )
+    motivos.extend(motivos_destino_concentrado(
+        destino, corrida.litros_entrada, excluir_ejecucion_id=corrida.ejecucion_id,
+    ))
     return motivos
 
 
@@ -1430,7 +1462,8 @@ def estado_puesto_evaporacion(usuario):
     (y esta función sí trata un borrador como preparación legítima, igual
     que `FlujoCondensacionTests` siembra su ejecución); lo único que de
     verdad libera el equipo aquí es que la ejecución haya llegado a un
-    estado terminal. Un lote `anulado` cuya ejecución *no* llegó a terminal
+    estado terminal (`ESTADOS_EJECUCION_TERMINALES`, el mismo criterio que
+    saca a los huérfanos de `corridas_de_hoy`). Un lote `anulado` cuya ejecución *no* llegó a terminal
     sigue contando como ocupación — ese es el defecto #3 abierto en
     «La pantalla ofrece lo que el backend va a rechazar» (`CLAUDE.md`), no
     uno que esta función resuelva.
@@ -1438,10 +1471,6 @@ def estado_puesto_evaporacion(usuario):
     from maestros.models import Equipo, Silo
     from recepcion.servicios import motivos_silo_no_disponible
     from usuarios.tenancy import filtrar_por_scope
-
-    ESTADOS_EJECUCION_TERMINALES = (
-        EjecucionProceso.Estado.CERRADA, EjecucionProceso.Estado.CANCELADA,
-    )
 
     equipos = filtrar_por_scope(
         Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.EVAPORADOR).order_by("nombre"),
@@ -1475,7 +1504,8 @@ def estado_puesto_evaporacion(usuario):
             "lote_codigo": corrida.lote.codigo_lote if corrida.lote_id else None,
             "silo_origen": corrida.silo_origen.codigo,
             "silo_destino": corrida.silo_destino.codigo,
-            "litros_entrada": corrida.litros_entrada,
+            # Texto, como en los serializers: el tipo del frontend es `string`.
+            "litros_entrada": str(corrida.litros_entrada),
             "iniciada_en": corrida.iniciada_en,
         }
 
@@ -1512,11 +1542,24 @@ def estado_puesto_evaporacion(usuario):
             "bloqueo_silo_origen": bloqueo_silo_origen,
         })
 
+    # Un silo con una reserva activa no se ofrece: `exigir_destino_sin_reserva`
+    # lo rechaza entero, sin importar cuántos litros queden libres, así que
+    # restarle lo reservado al `libre_l` seguiría ofreciendo un destino que el
+    # backend no acepta. Las corridas solo preparadas no reservan (la reserva
+    # nace al iniciar), y la capacidad la vuelve a comprobar
+    # `crear_condensacion_guiada` con el saldo bloqueado.
+    reservados = ReservaSiloProceso.objects.filter(
+        silo=OuterRef("pk"), estado=ReservaSiloProceso.Estado.ACTIVA,
+    )
     destinos = [
-        {"id": silo.pk, "codigo": silo.codigo, "libre_l": silo.capacidad_l - silo.saldo_l}
+        {
+            "id": silo.pk, "codigo": silo.codigo,
+            "libre_l": str(silo.capacidad_l - silo.saldo_l),
+        }
         for silo in filtrar_por_scope(
             silos_con_saldo(
                 Silo.objects.filter(activo=True, estado=Silo.Estado.DISPONIBLE)
+                .exclude(Exists(reservados))
             ).order_by("codigo"),
             usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
@@ -1537,7 +1580,11 @@ def estado_puesto_evaporacion(usuario):
                 ejecucion__creada_en__date=hoy,
             )
         ).exclude(
-            estado=CorridaCondensacion.Estado.BORRADOR,
+            # Mismo criterio que la ocupación de arriba: un huérfano no es
+            # trabajo del día, ni preparado ni «En proceso».
+            estado__in=[
+                CorridaCondensacion.Estado.BORRADOR, CorridaCondensacion.Estado.EN_PROCESO,
+            ],
             ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES,
         ).order_by("-pk")
     ]

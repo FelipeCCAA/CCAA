@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from maestros.models import Equipo, Silo
-from procesos.models import CorridaCondensacion, EjecucionProceso
+from procesos.models import CorridaCondensacion, EjecucionProceso, ReservaSiloProceso
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import PerfilUsuario, Rol
 
@@ -96,8 +96,50 @@ class PuestoEvaporacionTests(FlujoCondensacionTests):
         destino = next(
             item for item in self.puesto()["destinos"] if item["codigo"] == self.destino.codigo
         )
-        # capacidad 1000, saldo 400 - 150 = 250 -> libre 750.
-        self.assertEqual(destino["libre_l"], Decimal("750.00"))
+        # capacidad 1000, saldo 400 - 150 = 250 -> libre 750. Como texto,
+        # igual que los serializers: el tipo del frontend dice `string`.
+        self.assertEqual(destino["libre_l"], "750.00")
+
+    def test_litros_entrada_de_la_corrida_viajan_como_texto(self):
+        fila = self.fila(self.puesto(), self.equipo)
+        self.assertEqual(fila["corrida"]["litros_entrada"], "600.00")
+
+    def test_un_destino_reservado_por_otra_ejecucion_no_se_ofrece(self):
+        """`crear_condensacion_guiada` lo rechazaría (`exigir_destino_sin_reserva`):
+        ofrecerlo es la pantalla prometiendo lo que el backend no acepta."""
+        otra = EjecucionProceso.objects.create(
+            codigo="EJ-RESERVA-PUESTO", etapa=self.ejecucion.etapa,
+            sucursal=self.planta, responsable=self.usuario,
+        )
+        ReservaSiloProceso.objects.create(
+            ejecucion=otra, silo=self.destino,
+            tipo=ReservaSiloProceso.Tipo.DESTINO, cantidad_planificada=Decimal("100"),
+        )
+        codigos = [item["codigo"] for item in self.puesto()["destinos"]]
+        self.assertNotIn(self.destino.codigo, codigos)
+
+    def test_corridas_de_hoy_no_incluye_un_huerfano_iniciado_hoy(self):
+        """Mismo criterio que la ocupación: una corrida en proceso cuya
+        ejecución ya terminó no es «En proceso» hoy."""
+        self.corrida.estado = CorridaCondensacion.Estado.EN_PROCESO
+        self.corrida.iniciada_en = timezone.now()
+        self.corrida.save(update_fields=["estado", "iniciada_en"])
+        self.ejecucion.estado = EjecucionProceso.Estado.CANCELADA
+        self.ejecucion.save(update_fields=["estado"])
+        codigos = [item["codigo"] for item in self.puesto()["corridas_de_hoy"]]
+        self.assertNotIn(self.ejecucion.codigo, codigos)
+
+    def test_corridas_de_hoy_conserva_una_cerrada_hoy(self):
+        """Una corrida terminada de verdad (ejecución cerrada tras Calidad)
+        sigue siendo parte del día: lo que se excluye son los huérfanos."""
+        self.corrida.estado = CorridaCondensacion.Estado.CERRADA
+        self.corrida.iniciada_en = timezone.now()
+        self.corrida.finalizada_en = timezone.now()
+        self.corrida.save(update_fields=["estado", "iniciada_en", "finalizada_en"])
+        self.ejecucion.estado = EjecucionProceso.Estado.CERRADA
+        self.ejecucion.save(update_fields=["estado"])
+        codigos = [item["codigo"] for item in self.puesto()["corridas_de_hoy"]]
+        self.assertIn(self.ejecucion.codigo, codigos)
 
     def test_una_preparada_nueva_no_oculta_la_corrida_que_espera_calidad(self):
         """Una corrida preparada no borra que la anterior sigue en Calidad."""
