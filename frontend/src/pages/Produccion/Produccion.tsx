@@ -6,8 +6,8 @@ import {
   useEffect,
   useState,
 } from "react";
-import { AlertTriangle, Factory, FlaskConical, Gauge, PackageCheck, Plus, Search, type LucideIcon } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { AlertTriangle, ArrowRight, Factory, FlaskConical, Gauge, PackageCheck, Plus, Search, type LucideIcon } from "lucide-react";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 
 import EtiquetaCalidad from "../../components/EtiquetaCalidad/EtiquetaCalidad";
 
@@ -25,7 +25,6 @@ import {
   obtenerResumenOperacional,
   type ResumenOperacionalProduccion,
 } from "../../services/procesos.service";
-import EvaporadoresProduccion from "./EvaporadoresProduccion";
 import SalidasIntermedias from "./SalidasIntermedias";
 import BandejaTrabajoArea from "./BandejaTrabajoArea";
 
@@ -91,16 +90,6 @@ function Produccion() {
   const [historialActivo, setHistorialActivo] = useState(false);
   const [resumenOperacional, setResumenOperacional] = useState<ResumenOperacionalProduccion | null>(null);
   const [resumenNoDisponible, setResumenNoDisponible] = useState(false);
-
-  // Mismo mecanismo que Procesos.tsx: HashRouter no procesa un segundo `#`,
-  // así que el menú llega con `?seccion=` y acá se traduce a un scroll.
-  useEffect(() => {
-    if (!seccionSolicitada) return;
-    const temporizador = window.setTimeout(() => {
-      document.getElementById(seccionSolicitada)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
-    return () => window.clearTimeout(temporizador);
-  }, [seccionSolicitada]);
 
   // Solo Producción y Administración registran lotes. El resto consulta.
   const puedeEditar = puedeEscribir("produccion");
@@ -195,6 +184,15 @@ function Produccion() {
     { etiqueta: "Bloqueos", valor: resumenOperacional?.bloqueos, Icono: AlertTriangle, tono: "text-rose-700" },
   ];
 
+  // La evaporación se opera en su propio puesto; un enlace guardado o una
+  // notificación ya emitida con `?seccion=` sigue aterrizando ahí. Va
+  // después de todos los hooks del componente, no al principio de la
+  // función: un `return` anterior a ellos los dejaría sin llamar en este
+  // render, que es justo lo que evita la regla de los hooks.
+  if (seccionSolicitada === "evaporacion" || seccionSolicitada === "condensacion") {
+    return <Navigate to="/produccion/evaporacion" replace />;
+  }
+
   return (
     <div className="px-8 py-10">
 
@@ -268,7 +266,7 @@ function Produccion() {
           <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
             <Link to="/procesos?seccion=descremacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">1. Descremación<span className="mt-1 block text-xs font-normal text-slate-500">Leche → descremada + crema</span></Link>
             <Link to="/estandarizacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">2. Estandarización<span className="mt-1 block text-xs font-normal text-slate-500">Mezcla → vale intermedio</span></Link>
-            <Link to="/produccion?seccion=evaporacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-blue-400">3. Evaporación<span className="mt-1 block text-xs font-normal text-slate-500">Vale → concentrado</span></Link>
+            <Link to="/produccion/evaporacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-blue-400">3. Evaporación<span className="mt-1 block text-xs font-normal text-slate-500">Vale → concentrado</span></Link>
             <Link to="/secado" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-amber-400">4. Secado<span className="mt-1 block text-xs font-normal text-slate-500">Concentrado → polvo granel</span></Link>
             <Link to="/procesos?seccion=mantequilla" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-yellow-400">Mantequilla<span className="mt-1 block text-xs font-normal text-slate-500">Crema → mantequilla granel</span></Link>
             <Link to="/procesos" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-violet-400">Seguimiento<span className="mt-1 block text-xs font-normal text-slate-500">Activos y trazabilidad</span></Link>
@@ -277,7 +275,15 @@ function Produccion() {
 
         <div id="continuidad"><SalidasIntermedias onCambio={cargarResumenOperacional} /></div>
 
-        {veCondensacion && <div id="evaporacion" className="scroll-mt-6"><EvaporadoresProduccion /></div>}
+        {veCondensacion && (
+          <Link
+            to="/produccion/evaporacion"
+            className="mb-8 flex items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50/60 p-5 font-semibold text-blue-900 hover:border-blue-400"
+          >
+            Evaporación: abrir, iniciar y cerrar corridas en su puesto
+            <ArrowRight className="h-5 w-5" />
+          </Link>
+        )}
 
         {/* Filtros */}
 
@@ -490,6 +496,7 @@ function Produccion() {
       >
         {formularioAbierto && (
           <FormularioLote
+            modo="resto"
             alCerrar={() => setFormularioAbierto(false)}
             alGuardar={cargarLotes}
           />
