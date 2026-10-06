@@ -57,6 +57,7 @@ export const PANTALLAS_PRIVADAS: Pantalla[] = [
   { ruta: "/inocuidad/aseos", nombre: "Inocuidad · Aseos" },
   { ruta: "/produccion", nombre: "Producción" },
   { ruta: "/produccion/evaporacion", nombre: "Producción · Evaporación" },
+  { ruta: "/produccion/secado", nombre: "Producción · Secado" },
 
   /* Leche cruda: el viaje del producto, de la ruta de recolección al silo. */
   { ruta: "/leche", nombre: "Leche · Panel" },

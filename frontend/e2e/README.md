@@ -86,7 +86,9 @@ El recorrido completo esta separado por puestos: `circuito-polvo.spec.ts`
 recibe los camiones y termina con el vale de Estandarizacion liberado;
 `evaporacion.spec.ts` abre el lote y produce precondensado; finalmente,
 `flujo-polvo-continuacion.spec.ts` recorre Calidad, Secado, Envasado,
-liberacion comercial y Bodega/Inventario.
+liberacion comercial y Bodega/Inventario. Secado toma el concentrado, lo
+inicia y registra el balance **en su puesto** (`/produccion/secado`): una
+tarjeta por torre, con una sola acción por estado.
 
 Vive en el mismo directorio que la auditoría pero es otra cosa: **escribe**.
 Cada corrida deja recepciones, análisis, un vale, un lote y un pallet en la base
@@ -311,8 +313,8 @@ rechazar**.
 ## Circuito visual de Suero y Big Bag
 
 El proyecto `flujo-suero` comprueba por pantalla la parte específica que no
-recorre el circuito de leche: lote externo liberado → Secado → Calidad
-intermedia → Big Bag de 700 kg → Calidad final → Inventario. Sus pesos y rangos
+recorre el circuito de leche: lote externo liberado → torre preparada → Secado
+iniciado en el puesto (`/produccion/secado`) → Calidad intermedia → Big Bag de 700 kg → Calidad final → Inventario. Sus pesos y rangos
 son datos E2E identificados como simulados, no parámetros oficiales de planta.
 
 ```powershell
