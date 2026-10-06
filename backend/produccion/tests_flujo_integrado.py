@@ -277,8 +277,12 @@ class FlujoIntegradoApiTests(TestCase):
 
 class AperturaDirectaSobreEvaporadorApiTests(TestCase):
     """
-    El alta directa desde el vale (`POST /api/produccion/lotes/`) sigue la
-    misma regla de línea que el borrador guiado: un evaporador abre sin ella.
+    El alta directa desde el vale (`POST /api/produccion/lotes/`) no abre
+    lotes sobre un evaporador: ese lote nace con su corrida de evaporación,
+    y eso solo lo hace el puesto de Evaporación (`confirmar-borrador` con
+    `silo_destino`). Por aquí quedaba un lote sin corrida que ningún puesto
+    mostraba. Que el evaporador no exige línea lo cubre el borrador
+    (`ConfirmarSobreEvaporadorTests`).
     """
 
     def setUp(self):
@@ -342,7 +346,7 @@ class AperturaDirectaSobreEvaporadorApiTests(TestCase):
         self.cliente = APIClient()
         self.cliente.force_authenticate(usuario)
 
-    def test_el_evaporador_abre_sin_linea(self):
+    def test_el_alta_directa_rechaza_un_evaporador(self):
         respuesta = self.cliente.post(
             "/api/produccion/lotes/",
             {
@@ -356,7 +360,9 @@ class AperturaDirectaSobreEvaporadorApiTests(TestCase):
             format="json",
         )
 
-        self.assertEqual(respuesta.status_code, 201, respuesta.data)
-        lote = Lote.objects.get(codigo_lote="CCAA6225EVD-01")
-        self.assertEqual(lote.equipo, self.evaporador)
-        self.assertEqual(lote.linea, "")
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("puesto de Evaporación", str(respuesta.data["equipo"]))
+        self.assertFalse(Lote.objects.filter(codigo_lote="CCAA6225EVD-01").exists())
+        self.assertFalse(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE
+        ).exists())
