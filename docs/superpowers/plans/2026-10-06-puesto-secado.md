@@ -4,7 +4,7 @@
 
 **Goal:** Un solo puesto, `/produccion/secado`, donde se toma el concentrado (o la alimentación externa) para una torre, se inicia el secado y se cierra el balance, en vez de 3 pasos en 3 pantallas.
 
-**Architecture:** El backend agrega `motivos_para_iniciar_secado` (única implementación de las reglas de inicio), `iniciar_secado` y la acción `secados/{id}/iniciar/`; cierra el inicio genérico (`ejecuciones/{id}/transicionar/` de `preparacion` a `ejecucion` en Secado); convierte la alimentación externa en una preparación (`preparar-desde-inventario`); y sirve el estado del puesto en `secados/puesto/`, con el saldo de cada concentrado calculado por la misma función que `preparar_continuacion`. El frontend agrega la página del puesto (tarjetas por torre que pintan lo que manda el servidor, formulario guiado «Tomar concentrado», corridas de hoy e historial con filtros de servidor) y retira `/secado`, el modal de alimentación externa y Secado de «Materiales intermedios liberados».
+**Architecture:** El backend agrega `motivos_para_iniciar_secado` (única implementación de las reglas de inicio), `iniciar_secado` y la acción `secados/{id}/iniciar/`; cierra el inicio genérico (`ejecuciones/{id}/transicionar/` de `preparacion` a `ejecucion` en Secado); convierte la alimentación externa en una preparación (`preparar-desde-inventario`); y sirve el estado del puesto en `secados/puesto/`, con el saldo de cada concentrado calculado por la misma función que `preparar_continuacion`. El frontend agrega la página del puesto (tarjetas por torre que pintan lo que manda el servidor, formulario guiado «Tomar concentrado», corridas de hoy e historial con filtros de servidor) y retira `/secado`, el modal de alimentación externa y Secado de «Materiales intermedios liberados». Por último cierra el cuarto camino de inicio: un lote desde un vale ya no se abre en una torre (guarda en `abrir_lote_desde_vale`, mensajes en `confirmar-borrador` y en el alta directa), así que una torre solo se alimenta desde el puesto.
 
 **Tech Stack:** Django 6 + DRF + PostgreSQL; React 19 + TypeScript + react-router (HashRouter); `node --test`; Playwright.
 
@@ -19,6 +19,7 @@
 - `motivos_para_iniciar_secado(corrida)` es **la única implementación** de las reglas de inicio de Secado: `iniciar_secado` la usa y `secados/puesto/` la sirve.
 - Mensaje exacto del inicio genérico rechazado: «Las corridas de secado se inician desde el puesto de Secado.» Solo para `preparacion` → `ejecucion`; pausar, bloquear, cancelar y **reanudar** (`pausada`/`bloqueada` → `ejecucion`) siguen por `transicionar`.
 - Aviso de inspección exacto: «Falta la inspección pre-operativa de hoy (CCAA.Sec.FORM.003).» **Avisa, no bloquea.** Se decide con `calidad.dominio.cubre_al_lote` + `registro_completo` sobre los `RegistroEquipo` de esa torre y la fecha local de hoy.
+- **Un lote en torre nace solo desde el puesto de Secado.** Abrir un lote desde un vale sobre una torre (`Equipo.Tipo.TORRE`) se rechaza en todos los caminos —servicio `abrir_lote_desde_vale`, `confirmar-borrador` y alta directa `POST produccion/lotes/`— con `{"equipo": "Los lotes en torre nacen desde el puesto de Secado."}` y sin escribir nada. Los lotes históricos sin vale no cambian.
 - Preparar, iniciar y cerrar exigen el permiso de la etapa Secado (`procesos.permisos.puede_operar_tipo(usuario, EtapaProceso.Tipo.SECADO)`) en todos los caminos; leer el puesto: áreas Secado y Calidad, y administradores.
 - La tarjeta de la torre **pinta lo que manda el servidor**; una sola acción por estado: «Tomar concentrado», «Iniciar secado», «Registrar balance y cerrar». Línea informativa «Polvo de {lote} esperando Calidad». Confirmación del formulario con `ConfirmarAccion` y botón «Preparar torre».
 - `bandejaDeSecado` sigue siendo el único clasificador de corridas.
@@ -35,12 +36,12 @@
 2. **El saldo de una salida tiene tres implementaciones**: `preparar_continuacion` (usos como origen + despacho a granel autorizado/despachado, `servicios.py:950-956`), `SalidaProcesoViewSet.disponibles` (usos + `MovimientoSilo` de salida por lote/silo, sin despacho, `views.py:1339-1373`) y `consultas_planta` (solo usos). La Task 1 extrae `disponible_de_salida(salida)` de `preparar_continuacion` y el puesto usa esa. `disponibles` queda como está: deja de ofrecer Secado (Task 5) y unificarla es otro cambio.
 3. **Un aseo observado no es motivo, es aviso.** `motivo_equipo_no_habilitado` solo bloquea un CIP en curso; el observado lo informa `advertencia_aseo_equipo` y `procesos/tests.py::test_un_aseo_observado_avisa_pero_no_bloquea` lo fija. La prueba «motivo por aseo observado» de la spec §5 se escribe como **aviso**.
 4. **Reanudar también es pasar a `ejecucion`.** `EjecucionProceso.TRANSICIONES` permite `pausada → ejecucion` y `bloqueada → ejecucion`; rechazar todo paso a `ejecucion` dejaría una torre pausada sin forma de reanudarse. Se rechaza solo `preparacion → ejecucion` de Secado, y **en la vista** `transicionar` (no en `transicionar_ejecucion`, que el propio `iniciar_secado` usa y que `EquipoHabilitadoPorAseoTests` prueba con etapa Secado). `operativas` deja de ofrecer `ejecucion` para esas mismas ejecuciones.
-5. **Ningún comando de siembra inicia Secado por `transicionar`.** `sembrar_flujo_demo` abre el lote sobre una torre con `abrir_lote_desde_vale` (ejecución nacida en `ejecucion`); `preparar_circuito_polvo` no toca ejecuciones de Secado. El único uso por API en pruebas es `tests_permisos_operacionales.test_transicion_exige_version_y_rechaza_una_obsoleta` (se migra a reanudar).
+5. **Ningún comando de siembra inicia Secado por `transicionar`.** `sembrar_flujo_demo` abría el lote sobre una torre con `abrir_lote_desde_vale` (ejecución nacida en `ejecucion`; la Task 6 lo migra, ver punto 10); `preparar_circuito_polvo` no toca ejecuciones de Secado. El único uso por API en pruebas es `tests_permisos_operacionales.test_transicion_exige_version_y_rechaza_una_obsoleta` (se migra a reanudar).
 6. **La alimentación externa descuenta bodega al preparar** (`registrar_salida` en `crear_secado_desde_inventario`). «Sigue con saldo» al iniciar no tiene nada que comprobar: el saldo ya salió. El motivo comprueba solo que el lote de proveedor siga utilizable (`LoteInventario.utilizable`). Cancelar una preparación externa no devuelve el stock: comportamiento existente, fuera de alcance, queda anotado.
 7. **`CorridaSecado.lote` es `OneToOne`.** Una segunda toma parcial del mismo concentrado revienta con `IntegrityError` en el `get_or_create` de `preparar_continuacion`, y una salida **sin lote** crea una ejecución de Secado sin `CorridaSecado`, que con el inicio genérico cerrado quedaría imposible de iniciar. La Task 2 agrega a `preparar_continuacion` (solo etapa Secado) dos rechazos con mensaje, y el puesto no ofrece concentrados cuyo lote ya tenga corrida de Secado. `tests_descremacion.test_continuacion_usa_la_primera_etapa_de_la_ruta_de_la_rama` (salida sin lote → Secado) se ajusta dándole lote.
 8. **`preparar_continuacion` no mira la decisión de Calidad** de la salida (la trae con `select_related` y no la usa). `motivos_para_iniciar_secado` sí: «Calidad rechazó…» / «…no está liberado por Calidad».
 9. **`RegistroEquipo` por torre y empresa.** El expediente (`calidad/views.py:342`) no filtra por equipo; el puesto sí (`equipo=torre`, «de esa torre» según la spec). `DocumentoLiberacion` es único por `(empresa, codigo)`: se busca el de la empresa de la torre; si la empresa no tiene el documento, no hay aviso (no hay dónde registrarlo).
-10. **Hay un cuarto camino de inicio fuera de alcance:** abrir un lote desde un vale **sobre una torre** (`produccion.servicios._encadenar_con_la_estandarizacion`) crea la ejecución de Secado directamente en `ejecucion`, sin `adquirir_equipo`, sin estas reglas y sin el permiso de Secado (`confirmar-borrador` solo exige permiso sobre evaporadores). El puesto la muestra como `en_curso`. Se anota para un cambio posterior; esta spec no lo menciona.
+10. **Había un cuarto camino de inicio, y este plan lo cierra (Task 6, decisión del usuario 2026-10-06).** Abrir un lote desde un vale sobre una torre (`produccion.servicios._encadenar_con_la_estandarizacion`) creaba la ejecución de Secado directamente en `ejecucion`, sin estas reglas y sin el permiso de Secado (`confirmar-borrador` solo exige permiso sobre evaporadores). Peor: el mapa máquina → etapa de `_encadenar` cae **por defecto en Secado**, así que un equipo `None`, `carga`, `descremadora` u `otro` también abría una ejecución de Secado. La guarda vive en el **servicio** (`exigir_apertura_fuera_de_secado`, primera línea de `abrir_lote_desde_vale`, antes de bloquear el vale y de cualquier escritura): rechaza toda apertura cuya etapa resuelta sea Secado; las vistas repiten el mensaje para la torre con la forma `{"equipo": "<texto>"}`. Consecuencias: `opciones-inicio` deja de ofrecer torres; `FormularioLote` (modo `resto`) tampoco las ofrece aunque la familia no tenga ruta; `dominio.exige_linea` queda inalcanzable en los caminos con vale (las torres ya no llegan ahí) —borrarlo es otro cambio—; y 5 archivos de pruebas más `sembrar_flujo_demo` que abrían en torre o sin máquina se migran (ver «Usos a migrar»).
 11. **Claves extra en el JSON** (necesarias, no decorativas): `concentrados[].etapa_id` (lo exige `preparar-continuacion`), `corrida.{ejecucion_id, ejecucion_codigo, ejecucion_estado}`, `torres[].falta_inspeccion` y `torres[].resolver_en` (el enlace sale de un dato tipado, no de leer el texto del motivo), y `estados` (catálogo del filtro del historial, servido por el backend).
 12. `iniciar` responde **400** (spec); el `iniciar` de Evaporación responde 409. Se respeta la spec.
 
@@ -48,14 +49,15 @@
 
 | Uso | Dónde | Tarea |
 |---|---|---|
-| `iniciar-desde-inventario` / `iniciar_desde_inventario` | `backend/procesos/views.py:847-886`; `backend/procesos/tests_secado.py:300,333`; `backend/procesos/tests_flujo_suero.py:231`; `frontend/src/services/secado.service.ts:88-95`; `frontend/e2e/flujo-suero.spec.ts:35` | 2, 4, 6 |
+| `iniciar-desde-inventario` / `iniciar_desde_inventario` | `backend/procesos/views.py:847-886`; `backend/procesos/tests_secado.py:300,333`; `backend/procesos/tests_flujo_suero.py:231`; `frontend/src/services/secado.service.ts:88-95`; `frontend/e2e/flujo-suero.spec.ts:35` | 2, 4, 7 |
 | `crear_secado_desde_inventario` | `backend/procesos/servicios.py:2383`; import en `backend/procesos/views.py:59` | 2 |
 | `iniciarSecadoExterno` / `InicioSecadoExterno` | `frontend/src/pages/Secado/InicioSecadoExterno.tsx` (se elimina); `frontend/src/pages/Secado/Secado.tsx:11,147` (se elimina) | 4, 5 |
 | `preparar_continuacion` con etapa Secado | `backend/procesos/tests.py:440` (falla antes, sin cambio), `:478` (con lote, sin cambio); `backend/procesos/tests_descremacion.py:604` (salida sin lote → **se ajusta**), `:845` (con lote, sin cambio) | 2 |
-| `transicionar` a `ejecucion` de una ejecución de Secado | API: `backend/procesos/tests_permisos_operacionales.py:255-281` (**se migra**); servicio (no afectado, la regla vive en la vista): `backend/procesos/tests.py:865-872`; pantallas: `frontend/src/pages/Produccion/BandejaTrabajoArea.tsx:69,129`, `frontend/src/pages/Procesos/Procesos.tsx:75,210`; E2E: `frontend/e2e/flujo-polvo-continuacion.spec.ts:66-72`. `sembrar_flujo_demo` y `preparar_circuito_polvo`: sin usos | 1, 5, 6 |
+| `transicionar` a `ejecucion` de una ejecución de Secado | API: `backend/procesos/tests_permisos_operacionales.py:255-281` (**se migra**); servicio (no afectado, la regla vive en la vista): `backend/procesos/tests.py:865-872`; pantallas: `frontend/src/pages/Produccion/BandejaTrabajoArea.tsx:69,129`, `frontend/src/pages/Procesos/Procesos.tsx:75,210`; E2E: `frontend/e2e/flujo-polvo-continuacion.spec.ts:66-72`. `sembrar_flujo_demo` y `preparar_circuito_polvo`: sin usos | 1, 5, 7 |
+| Abrir un lote desde un vale **en torre o sin máquina** (cuarto camino) | Servicio `abrir_lote_desde_vale`: `backend/produccion/tests_lote_desde_vale.py` (`_abrir` sin equipo ×7, `test_abrir_en_torre_crea_la_corrida_especializada_de_secado` :92, `test_no_permite_saltar_la_etapa_inicial_posterior_al_vale` :176), `backend/procesos/tests_estandarizacion.py:212,282` (sin equipo), `backend/usuarios/management/commands/sembrar_flujo_demo.py:171,368` (primer equipo con sigla, podía ser torre). `confirmar-borrador`: `backend/produccion/tests_borrador.py` (`BaseBorradorLote.datos_completos` en torre E1; `test_no_confirma_si_la_maquina_esta_reservada_en_preparacion`; `test_una_torre_sin_linea_no_confirma`), heredado por `backend/produccion/tests_borrador_evaporacion.py` (sobrescribe la máquina: sin cambio). Alta directa: `backend/produccion/tests_flujo_integrado.py` (`FlujoIntegradoApiTests`, torre «Torre Egron 1», `test_sin_linea_la_torre_no_abre`). Opciones: `produccion/views.py::opciones_inicio`. Frontend: `FormularioLote.equiposCompatiblesDe`. Sin usos: `preparar_circuito_polvo`, `preparar_circuito_suero` (crea una torre pero la alimenta por inventario), e2e (`evaporacion.spec.ts` abre en evaporador) | 6 |
 | `acciones_permitidas` de `operativas` | `backend/procesos/views.py:1037-1041`; `tests_permisos_operacionales.test_bandeja_operativa…` (sigue verde: queda `cancelada`) | 1 |
-| Enlaces a `/secado` | `frontend/src/app/routes.tsx:223`; `frontend/src/services/navegacion-operacional.ts:58`; `frontend/src/services/planta-ahora.ts:9`; `frontend/src/services/access-control.ts:66`; `frontend/src/pages/Produccion/Produccion.tsx:270`; `frontend/src/pages/Leche/Silos.tsx:338`; `backend/procesos/dominio.py:55`; `backend/procesos/tests_destinos.py:24`; `frontend/tests/navegacion-operacional.test.ts:60`; `frontend/tests/planta-ahora.test.ts:9,24`; `frontend/e2e/flujo-polvo-continuacion.spec.ts:75`; `frontend/e2e/flujo-suero.spec.ts:27`. (`frontend/tests/notificaciones-operacionales.test.ts:16` usa «/secado» como texto opaco: sin cambio) | 5, 6 |
-| «Continuar a Secado» | `backend/procesos/views.py:1433` (etiqueta se queda); `backend/procesos/tests_descremacion.py:601` (sin cambio); `frontend/src/pages/Produccion/SalidasIntermedias.tsx` (nueva rama de enlace); `frontend/e2e/flujo-polvo-continuacion.spec.ts:59` | 5, 6 |
+| Enlaces a `/secado` | `frontend/src/app/routes.tsx:223`; `frontend/src/services/navegacion-operacional.ts:58`; `frontend/src/services/planta-ahora.ts:9`; `frontend/src/services/access-control.ts:66`; `frontend/src/pages/Produccion/Produccion.tsx:270`; `frontend/src/pages/Leche/Silos.tsx:338`; `backend/procesos/dominio.py:55`; `backend/procesos/tests_destinos.py:24`; `frontend/tests/navegacion-operacional.test.ts:60`; `frontend/tests/planta-ahora.test.ts:9,24`; `frontend/e2e/flujo-polvo-continuacion.spec.ts:75`; `frontend/e2e/flujo-suero.spec.ts:27`. (`frontend/tests/notificaciones-operacionales.test.ts:16` usa «/secado» como texto opaco: sin cambio) | 5, 7 |
+| «Continuar a Secado» | `backend/procesos/views.py:1433` (etiqueta se queda); `backend/procesos/tests_descremacion.py:601` (sin cambio); `frontend/src/pages/Produccion/SalidasIntermedias.tsx` (nueva rama de enlace); `frontend/e2e/flujo-polvo-continuacion.spec.ts:59` | 5, 7 |
 | `bandejaDeSecado` | `frontend/src/pages/Secado/Secado.tsx:34` (se elimina) → `situacionDeCorrida` en `frontend/src/services/puesto-secado.ts`; `frontend/tests/secado-proceso.test.ts` (sin cambio) | 4, 5 |
 | `estadoFisicoSecado`, `siguienteAccionSecado`, `obtenerSecados` | solo `Secado.tsx` → se eliminan | 4, 5 |
 | `CorridaSecadoSerializer.get_estado_calidad` | `backend/procesos/serializers.py:397-409` → delega en `estado_calidad_secado` | 3 |
@@ -78,7 +80,12 @@
 | `frontend/src/app/routes.tsx`, `services/navegacion-operacional.ts`, `services/planta-ahora.ts`, `services/access-control.ts` + tests | ruta, menú, destino | 5 |
 | `frontend/src/pages/Produccion/SalidasIntermedias.tsx`, `Produccion.tsx`, `BandejaTrabajoArea.tsx`, `pages/Procesos/Procesos.tsx`, `pages/Leche/Silos.tsx` | retirar Secado | 5 |
 | `CLAUDE.md` | decisión nueva | 5 |
-| `frontend/e2e/flujo-polvo-continuacion.spec.ts`, `flujo-suero.spec.ts`, `rutas.ts`, `README.md` | E2E | 6 |
+| `backend/produccion/servicios.py` | `MENSAJE_LOTE_EN_TORRE`, `tipo_etapa_de_apertura`, `exigir_apertura_fuera_de_secado`; `abrir_lote_desde_vale` y `_encadenar_con_la_estandarizacion` la usan | 6 |
+| `backend/produccion/views.py` (`confirmar_borrador`, `opciones_inicio`), `backend/produccion/serializers.py` (`LoteSerializer.validate`) | rechazo en torre; sin torres en opciones | 6 |
+| `backend/produccion/tests_lote_en_torre.py` | nuevo | 6 |
+| `backend/produccion/tests_borrador.py`, `tests_flujo_integrado.py`, `tests_lote_desde_vale.py`, `backend/procesos/tests_estandarizacion.py`, `backend/usuarios/management/commands/sembrar_flujo_demo.py` | migrar aperturas en torre / sin máquina | 6 |
+| `frontend/src/services/equipos-apertura.ts` + `frontend/tests/equipos-apertura.test.ts`; `frontend/src/pages/Produccion/FormularioLote.tsx` | filtro único de máquinas, sin torres | 6 |
+| `frontend/e2e/flujo-polvo-continuacion.spec.ts`, `flujo-suero.spec.ts`, `rutas.ts`, `README.md` | E2E | 7 |
 
 ---
 
@@ -1994,7 +2001,7 @@ export default function PuestoSecado() {
 - [ ] **Step 6: `CLAUDE.md`** — en «Decisiones vigentes», justo después del punto «Evaporación tiene puesto propio», agrega:
 
 ```markdown
-- **Secado tiene puesto propio** (desde 2026-10-06, `docs/superpowers/specs/2026-10-06-puesto-secado-design.md`): `/produccion/secado`; `/secado` redirige. En Secado no se abre lote: «Tomar concentrado» mueve a la torre el lote que salió del evaporador (`preparar-continuacion`) o crea el de la alimentación externa (`secados/preparar-desde-inventario/`), y **las dos fuentes solo preparan**. «Iniciar» lo habilita el servidor: `motivos_para_iniciar_secado` es la única implementación de esas reglas, la usa `iniciar_secado` (`secados/{id}/iniciar/`) y la sirve `secados/puesto/`; `ejecuciones/{id}/transicionar/` rechaza pasar una ejecución de Secado de `preparacion` a `ejecucion` («Las corridas de secado se inician desde el puesto de Secado.»), pero reanudar una pausada o bloqueada sigue por ahí. La inspección pre-operativa (`CCAA.Sec.FORM.003`) y el aseo observado **avisan, no bloquean**. El saldo de un concentrado es `disponible_de_salida`, la misma función con la que `preparar_continuacion` rechaza. Un lote se seca en una sola corrida (`CorridaSecado.lote` es uno a uno): una salida sin lote o un lote ya secado no se preparan. Queda fuera un cuarto camino: abrir un lote desde un vale **sobre una torre** nace en ejecución, sin estas reglas.
+- **Secado tiene puesto propio** (desde 2026-10-06, `docs/superpowers/specs/2026-10-06-puesto-secado-design.md`): `/produccion/secado`; `/secado` redirige. En Secado no se abre lote: «Tomar concentrado» mueve a la torre el lote que salió del evaporador (`preparar-continuacion`) o crea el de la alimentación externa (`secados/preparar-desde-inventario/`), y **las dos fuentes solo preparan**. «Iniciar» lo habilita el servidor: `motivos_para_iniciar_secado` es la única implementación de esas reglas, la usa `iniciar_secado` (`secados/{id}/iniciar/`) y la sirve `secados/puesto/`; `ejecuciones/{id}/transicionar/` rechaza pasar una ejecución de Secado de `preparacion` a `ejecucion` («Las corridas de secado se inician desde el puesto de Secado.»), pero reanudar una pausada o bloqueada sigue por ahí. La inspección pre-operativa (`CCAA.Sec.FORM.003`) y el aseo observado **avisan, no bloquean**. El saldo de un concentrado es `disponible_de_salida`, la misma función con la que `preparar_continuacion` rechaza. Un lote se seca en una sola corrida (`CorridaSecado.lote` es uno a uno): una salida sin lote o un lote ya secado no se preparan. **Un lote en torre nace solo desde el puesto**: abrir un lote desde un vale sobre una torre se rechaza en todos los caminos («Los lotes en torre nacen desde el puesto de Secado.»), y la guarda vive en el servicio (`produccion.servicios.exigir_apertura_fuera_de_secado`, primera línea de `abrir_lote_desde_vale`): rechaza toda apertura cuya etapa resuelta sea Secado, porque el mapa máquina → etapa caía por defecto en Secado y un equipo sin tipo conocido también abría una corrida en la torre. `opciones-inicio` y `FormularioLote` no ofrecen torres; `sembrar_flujo_demo` abre en la primera etapa de la ruta que no sea Secado.
 ```
 
 - [ ] **Step 7: Verificar** — frontend `npx tsc -b --pretty false`, `npx eslint .`, `npm test`; backend `cd backend && DJANGO_ENV=test ./.venv/Scripts/python.exe manage.py test procesos --noinput`.
@@ -2008,7 +2015,429 @@ git commit -m "feat(secado): puesto de Secado; Secado sale de /secado y de los m
 
 ---
 
-### Task 6: E2E y aceptación (controlador + implementador)
+### Task 6: Un lote en torre nace solo desde el puesto (cierra el cuarto camino)
+
+**Files:**
+- Modify: `backend/produccion/servicios.py` (`abrir_lote_desde_vale` ~60, `_encadenar_con_la_estandarizacion` ~170)
+- Modify: `backend/produccion/views.py` (`confirmar_borrador` ~606, `opciones_inicio` ~812)
+- Modify: `backend/produccion/serializers.py` (`LoteSerializer.validate`, bloque que rechaza evaporadores ~489)
+- Create: `backend/produccion/tests_lote_en_torre.py`
+- Modify (migrar): `backend/produccion/tests_borrador.py`, `backend/produccion/tests_flujo_integrado.py`, `backend/produccion/tests_lote_desde_vale.py`, `backend/procesos/tests_estandarizacion.py`, `backend/usuarios/management/commands/sembrar_flujo_demo.py`
+- Create: `frontend/src/services/equipos-apertura.ts`, `frontend/tests/equipos-apertura.test.ts`
+- Modify: `frontend/src/pages/Produccion/FormularioLote.tsx`
+
+**Interfaces:**
+- Consumes: nada de las tareas anteriores (es independiente; va antes del E2E porque la Task 7 corre la suite completa).
+- Produces (en `produccion/servicios.py`):
+  - `MENSAJE_LOTE_EN_TORRE = "Los lotes en torre nacen desde el puesto de Secado."`
+  - `tipo_etapa_de_apertura(equipo) -> str` (`EtapaProceso.Tipo`): el mapa máquina → etapa que hoy vive en línea dentro de `_encadenar_con_la_estandarizacion`, sin cambios de comportamiento (por defecto, Secado).
+  - `exigir_apertura_fuera_de_secado(equipo) -> None`: lanza `ValidationError({"equipo": ...})` si la etapa resuelta es Secado. `None` → «Selecciona la máquina de la corrida.»; torre → `MENSAJE_LOTE_EN_TORRE`; otro tipo → «{nombre} no abre lotes desde un vale: Secado se alimenta desde su puesto.»
+  - `POST produccion/lotes/{id}/confirmar-borrador/` en torre → 400 `{"equipo": "Los lotes en torre nacen desde el puesto de Secado."}`; `POST produccion/lotes/` con vale en torre → 400 con ese texto en `equipo`; `GET produccion/lotes/opciones-inicio/` no lista torres.
+  - `frontend/src/services/equipos-apertura.ts`: `equiposCompatiblesDe<T extends { activo: boolean; tipo: string }>(equipos: T[], modo: "evaporacion" | "resto", tiposRuta: readonly string[] | null): T[]`.
+
+- [ ] **Step 1: Pruebas que fallan (RED)** — crea `backend/produccion/tests_lote_en_torre.py`:
+
+```python
+from datetime import date
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError
+
+from procesos.models import CorridaSecado, EjecucionProceso, EtapaProceso
+from recepcion.models import MovimientoSilo
+
+from . import servicios
+from .models import Lote
+from .servicios import MENSAJE_LOTE_EN_TORRE
+from .tests_borrador import BaseBorradorLote
+
+
+class LoteEnTorreTests(BaseBorradorLote):
+    """
+    Un lote en torre nace solo desde el puesto de Secado: tomando el
+    concentrado que Calidad liberó, no abriéndolo desde el vale. Por los tres
+    caminos que abren un lote, el rechazo no deja nada escrito.
+    """
+
+    def assertNadaCreado(self):
+        self.assertEqual(MovimientoSilo.objects.count(), 0)
+        self.assertFalse(EjecucionProceso.objects.filter(equipo=self.equipo).exists())
+        self.assertFalse(CorridaSecado.objects.exists())
+
+    def datos_torre(self):
+        return {**self.datos_completos(), "equipo": self.equipo.id, "linea": "E1"}
+
+    def test_el_servicio_no_abre_un_lote_en_torre(self):
+        with self.assertRaises(ValidationError) as error:
+            servicios.abrir_lote_desde_vale(
+                vale=self.vale, codigo_lote="TORRE-SRV", fecha=date(2026, 7, 16),
+                litros=Decimal("1000"), equipo=self.equipo,
+            )
+
+        self.assertEqual(error.exception.message_dict["equipo"], [MENSAJE_LOTE_EN_TORRE])
+        self.assertFalse(Lote.objects.filter(codigo_lote="TORRE-SRV").exists())
+        self.assertNadaCreado()
+
+    def test_el_servicio_no_abre_un_lote_sin_maquina(self):
+        """Sin máquina, el mapa máquina → etapa caía en Secado por defecto."""
+        with self.assertRaises(ValidationError) as error:
+            servicios.abrir_lote_desde_vale(
+                vale=self.vale, codigo_lote="SIN-MAQUINA", fecha=date(2026, 7, 16),
+                litros=Decimal("1000"),
+            )
+
+        self.assertIn("equipo", error.exception.message_dict)
+        self.assertFalse(Lote.objects.filter(codigo_lote="SIN-MAQUINA").exists())
+        self.assertNadaCreado()
+
+    def test_confirmar_borrador_en_torre_responde_400_sin_tocar_nada(self):
+        borrador = self.crear_borrador(**self.datos_torre())
+
+        respuesta = self.cliente.post(
+            f"/api/produccion/lotes/{borrador['id']}/confirmar-borrador/"
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.json())
+        self.assertEqual(respuesta.json(), {"equipo": MENSAJE_LOTE_EN_TORRE})
+        self.assertEqual(Lote.objects.get(pk=borrador["id"]).estado, Lote.Estado.BORRADOR)
+        self.assertNadaCreado()
+
+    def test_el_alta_directa_rechaza_una_torre(self):
+        respuesta = self.cliente.post(
+            "/api/produccion/lotes/",
+            {
+                "codigo_lote": "CCAA6197E1-09", "producto": self.polvo.id,
+                "vale": self.vale.id, "litros_estandarizados": "1000",
+                "fecha": "2026-07-16", "linea": "E1", "equipo": self.equipo.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn(MENSAJE_LOTE_EN_TORRE, str(respuesta.data["equipo"]))
+        self.assertFalse(Lote.objects.filter(codigo_lote="CCAA6197E1-09").exists())
+        self.assertNadaCreado()
+
+    def test_opciones_inicio_no_ofrece_torres_aunque_la_ruta_empiece_en_secado(self):
+        EtapaProceso.objects.filter(codigo="primera-borrador").update(
+            tipo=EtapaProceso.Tipo.SECADO
+        )
+
+        respuesta = self.cliente.get("/api/produccion/lotes/opciones-inicio/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        ofrecidos = {equipo["id"] for equipo in respuesta.data["equipos"]}
+        self.assertNotIn(self.equipo.id, ofrecidos)
+        self.assertNotIn(self.otro_equipo.id, ofrecidos)
+```
+
+`frontend/tests/equipos-apertura.test.ts`:
+
+```ts
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { equiposCompatiblesDe } from "../src/services/equipos-apertura.ts";
+
+const equipos = [
+  { id: 1, tipo: "evaporador", activo: true },
+  { id: 2, tipo: "torre", activo: true },
+  { id: 3, tipo: "linea", activo: true },
+  { id: 4, tipo: "linea", activo: false },
+];
+const ids = (lista: { id: number }[]) => lista.map((item) => item.id);
+
+test("en Producción no se ofrecen torres aunque la familia no tenga ruta", () => {
+  assert.deepEqual(ids(equiposCompatiblesDe(equipos, "resto", null)), [3]);
+});
+
+test("en Producción no se ofrecen torres aunque la ruta las nombre", () => {
+  assert.deepEqual(ids(equiposCompatiblesDe(equipos, "resto", ["torre", "linea"])), [3]);
+});
+
+test("el puesto de Evaporación ofrece solo evaporadores activos", () => {
+  assert.deepEqual(ids(equiposCompatiblesDe(equipos, "evaporacion", null)), [1]);
+});
+```
+
+- [ ] **Step 2: Verificar que fallan**
+
+Run: `cd backend && DJANGO_ENV=test ./.venv/Scripts/python.exe manage.py test produccion.tests_lote_en_torre --noinput`
+Expected: ERROR `ImportError: cannot import name 'MENSAJE_LOTE_EN_TORRE'`; tras agregar solo la constante, FAIL: el servicio, `confirmar-borrador` y el alta directa abren el lote en la torre, y `opciones-inicio` la ofrece.
+Run: `cd frontend && npm test` → FAIL (módulo `equipos-apertura` inexistente).
+
+- [ ] **Step 3: Guarda en el servicio** — en `produccion/servicios.py`, arriba de `abrir_lote_desde_vale`:
+
+```python
+MENSAJE_LOTE_EN_TORRE = "Los lotes en torre nacen desde el puesto de Secado."
+
+
+def tipo_etapa_de_apertura(equipo):
+    """
+    La etapa que abre un lote desde el vale según su máquina. Por defecto,
+    Secado: es lo que hacía el mapa en línea de `_encadenar_con_la_
+    estandarizacion`, y por eso la guarda de abajo mira la etapa resuelta y
+    no solo si la máquina es una torre.
+    """
+    from maestros.models import Equipo
+    from procesos.models import EtapaProceso
+
+    return {
+        Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
+        Equipo.Tipo.TORRE: EtapaProceso.Tipo.SECADO,
+        Equipo.Tipo.ENVASADORA: EtapaProceso.Tipo.ENVASADO,
+        Equipo.Tipo.LINEA: EtapaProceso.Tipo.ENVASADO,
+    }.get(equipo.tipo if equipo else None, EtapaProceso.Tipo.SECADO)
+
+
+def exigir_apertura_fuera_de_secado(equipo):
+    """
+    Un lote desde el vale nunca abre una corrida de Secado: la torre se
+    alimenta desde el puesto de Secado, con el concentrado que Calidad liberó
+    (`preparar_continuacion` + `iniciar_secado`). Abrirlo aquí creaba la
+    corrida directamente en ejecución, sin las reglas de inicio ni el permiso
+    de Secado. Va en el servicio para que ningún llamador —vista, serializer,
+    comando— pueda saltársela.
+    """
+    from maestros.models import Equipo
+    from procesos.models import EtapaProceso
+
+    if tipo_etapa_de_apertura(equipo) != EtapaProceso.Tipo.SECADO:
+        return
+    if equipo is None:
+        raise ValidationError({"equipo": "Selecciona la máquina de la corrida."})
+    if equipo.tipo == Equipo.Tipo.TORRE:
+        raise ValidationError({"equipo": MENSAJE_LOTE_EN_TORRE})
+    raise ValidationError({
+        "equipo": f"{equipo.nombre} no abre lotes desde un vale: Secado se alimenta desde su puesto."
+    })
+```
+
+En `abrir_lote_desde_vale`, como **primera instrucción** del cuerpo (antes de `vale = ValeEstandarizacion.objects.select_for_update()…`, así que no se escribe ni se bloquea nada):
+
+```python
+    exigir_apertura_fuera_de_secado(extra.get("equipo"))
+```
+
+En `_encadenar_con_la_estandarizacion`, reemplaza el diccionario `tipo_etapa = {…}.get(…)` por `tipo_etapa = tipo_etapa_de_apertura(lote.equipo)`. El bloque `if tipo_etapa == EtapaProceso.Tipo.SECADO: CorridaSecado.objects.get_or_create(…)` queda inalcanzable: bórralo junto con su import.
+
+- [ ] **Step 4: Mensajes en las vistas**
+  - `produccion/views.py::confirmar_borrador`: justo después del `if lote is None: return …` y **antes** de `motivos = lote.motivos_para_confirmar()`:
+
+```python
+        # La vista está decorada con `transaction.atomic`: este `return`
+        # confirma la transacción, y es seguro porque hasta aquí solo se tomó
+        # el candado del borrador, sin escribir (trampa de CLAUDE.md).
+        if lote.equipo_id and lote.equipo.tipo == Equipo.Tipo.TORRE:
+            return Response(
+                {"equipo": servicios_produccion.MENSAJE_LOTE_EN_TORRE},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+```
+
+  - `produccion/serializers.py::LoteSerializer.validate`, inmediatamente después del `if equipo is not None and equipo.tipo == Equipo.Tipo.EVAPORADOR: raise …`:
+
+```python
+            # Y uno en torre nace solo desde el puesto de Secado. `validate`
+            # corre antes de `create`: no queda nada escrito.
+            if equipo is not None and equipo.tipo == Equipo.Tipo.TORRE:
+                from .servicios import MENSAJE_LOTE_EN_TORRE
+
+                raise serializers.ValidationError({"equipo": MENSAJE_LOTE_EN_TORRE})
+```
+
+  - `produccion/views.py::opciones_inicio`: después de construir `tipos_iniciales`, agrega `tipos_iniciales.discard(Equipo.Tipo.TORRE)` con el comentario «Una torre no abre lotes desde el vale: se alimenta desde el puesto de Secado.» (`equipos_compatibles` sale de `opciones_equipos`, así que queda acotado solo).
+
+- [ ] **Step 5: Un solo filtro de máquinas en el frontend** — crea `frontend/src/services/equipos-apertura.ts`:
+
+```ts
+/*
+  Qué máquinas ofrece el formulario de lote. Una sola función para el
+  desplegable y para validar, al reanudar un borrador, si la máquina guardada
+  sigue valiendo (antes vivía dentro de `FormularioLote`).
+
+  En Producción (`resto`) no se ofrecen evaporadores —se abren en el puesto de
+  Evaporación— ni torres —un lote en torre nace solo desde el puesto de
+  Secado—, aunque la familia no tenga ruta o la ruta las nombre: el servidor
+  rechaza las dos (`exigir_apertura_fuera_de_secado`).
+*/
+export function equiposCompatiblesDe<T extends { activo: boolean; tipo: string }>(
+  equipos: T[],
+  modo: "evaporacion" | "resto",
+  tiposRuta: readonly string[] | null,
+): T[] {
+  return equipos.filter((item) => {
+    if (!item.activo) return false;
+    if (modo === "evaporacion") return item.tipo === "evaporador";
+    if (item.tipo === "evaporador" || item.tipo === "torre") return false;
+    return !tiposRuta || tiposRuta.includes(item.tipo);
+  });
+}
+```
+
+En `FormularioLote.tsx`: borra la función local `equiposCompatiblesDe` (y su comentario, que pasa al servicio), importa `import { equiposCompatiblesDe } from "../../services/equipos-apertura";`, agrega junto a `RUTA_POR_FAMILIA`:
+
+```ts
+const tiposDeFamilia = (familia: string | undefined) =>
+  (familia ? RUTA_POR_FAMILIA[familia]?.tipos ?? null : null);
+```
+
+y cambia las tres llamadas (`~222`, `~351`, `~541`) a `equiposCompatiblesDe(equipos, modo, tiposDeFamilia(<familia>))` con la misma familia que reciben hoy.
+
+- [ ] **Step 6: Migrar `tests_borrador.py`** (`BaseBorradorLote`, también base de `tests_lote_en_torre`):
+  - Importa `Equipo` desde `maestros.models`.
+  - En `setUp`, la etapa de la ruta pasa a `codigo="primera-borrador", nombre="Envasado", tipo=EtapaProceso.Tipo.ENVASADO` y agrega:
+
+```python
+        # La máquina de la corrida es una línea: un lote desde el vale ya no
+        # se abre en torre (nace del puesto de Secado) ni en evaporador
+        # (puesto de Evaporación, `ConfirmarSobreEvaporadorTests`).
+        self.linea_envasado = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="l1-borrador", nombre="Línea 1",
+            tipo=Equipo.Tipo.LINEA, sigla="L1",
+        )
+```
+
+  - `datos_completos`: `"codigo_lote_propuesto": "CCAA6197L1-01"`, `"equipo": self.linea_envasado.id`, `"linea": ""`. En `test_confirmar_convierte_el_mismo_registro_y_descuenta_una_vez`, el código esperado pasa a `"CCAA6197L1-01"`.
+  - `test_no_confirma_si_la_maquina_esta_reservada_en_preparacion`: la `EjecucionProceso` «EJ-OCUPADA» usa `equipo=self.linea_envasado` y una etapa `tipo=EtapaProceso.Tipo.ENVASADO`.
+  - Borra `test_una_torre_sin_linea_no_confirma`: una torre ya no llega a los motivos (la reemplaza `LoteEnTorreTests.test_confirmar_borrador_en_torre_responde_400_sin_tocar_nada`).
+  - `tests_borrador_evaporacion.py` hereda `BaseBorradorLote` y reemplaza ruta y máquina: sin cambio.
+
+- [ ] **Step 7: Migrar `tests_flujo_integrado.py`** (`FlujoIntegradoApiTests`):
+  - `self.equipo = Equipo.objects.create(sucursal=self.planta, codigo="LINEA-1", nombre="Línea 1", tipo=Equipo.Tipo.LINEA)`; la segunda etapa de la ruta pasa a `codigo="envasado-flujo-integrado", nombre="Envasado", tipo=EtapaProceso.Tipo.ENVASADO`.
+  - `_abrir`: quita `"linea": "E1"`.
+  - `test_procesos_muestra_recepcion_estandarizacion_y_produccion`: `assertEqual(flujo["produccion"]["equipo"], "Línea 1")`.
+  - Reemplaza `test_sin_linea_la_torre_no_abre` por:
+
+```python
+    def test_el_alta_directa_rechaza_una_torre(self):
+        """Un lote en torre nace solo desde el puesto de Secado."""
+        torre = Equipo.objects.create(
+            sucursal=self.planta, codigo="EGRON-1", nombre="Torre Egron 1",
+            tipo=Equipo.Tipo.TORRE,
+        )
+        respuesta = self.cliente.post(
+            "/api/produccion/lotes/",
+            {
+                "codigo_lote": "CCAA6225LEP-02", "producto": self.producto.pk,
+                "vale": self.vale.pk, "litros_estandarizados": "1000",
+                "fecha": "2026-08-13", "linea": "E1", "equipo": torre.pk,
+            },
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("puesto de Secado", str(respuesta.data["equipo"]))
+        self.assertFalse(Lote.objects.filter(codigo_lote="CCAA6225LEP-02").exists())
+        self.assertFalse(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE
+        ).exists())
+```
+
+- [ ] **Step 8: Migrar `tests_lote_desde_vale.py`**:
+  - `BaseValeLote.setUp`: la etapa de la ruta pasa a `codigo="evaporacion", nombre="Evaporación", tipo=EtapaProceso.Tipo.EVAPORACION, orden=1`.
+  - `_abrir` crea su propio evaporador, porque `adquirir_equipo` no deja dos corridas abiertas en la misma máquina y `test_un_vale_alimenta_varias_corridas_hasta_agotarse` abre dos:
+
+```python
+    def _abrir(self, vale, litros, codigo="CCAA6224010102010201-01"):
+        evaporador = Equipo.objects.create(
+            sucursal=self.planta, codigo=f"EV-{codigo}", nombre=f"Evaporador {codigo}",
+            tipo=Equipo.Tipo.EVAPORADOR,
+        )
+        return servicios.abrir_lote_desde_vale(
+            vale=vale,
+            producto=self.producto,
+            codigo_lote=codigo,
+            fecha=date(2026, 8, 12),
+            litros=litros,
+            equipo=evaporador,
+        )
+```
+
+  - Reemplaza `test_abrir_en_torre_crea_la_corrida_especializada_de_secado` por:
+
+```python
+    def test_abrir_en_torre_se_rechaza_sin_crear_nada(self):
+        torre = Equipo.objects.create(
+            sucursal=self.planta, codigo="TORRE-1", nombre="Torre 1",
+            tipo=Equipo.Tipo.TORRE,
+        )
+
+        with self.assertRaisesMessage(ValidationError, servicios.MENSAJE_LOTE_EN_TORRE):
+            servicios.abrir_lote_desde_vale(
+                vale=self._vale(), producto=self.producto, codigo_lote="SEC-TORRE",
+                fecha=date(2026, 8, 12), litros=Decimal("1000.00"),
+                equipo=torre, usuario=self.operador,
+            )
+
+        self.assertFalse(Lote.objects.filter(codigo_lote="SEC-TORRE").exists())
+        self.assertFalse(MovimientoSilo.objects.exists())
+        self.assertFalse(CorridaSecado.objects.exists())
+```
+
+  - `test_no_permite_saltar_la_etapa_inicial_posterior_al_vale` → renómbrala `test_una_torre_no_salta_la_evaporacion_ni_se_ofrece`. Su montaje cambia: en vez de mover la etapa de Secado, `evaporacion = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.EVAPORACION); evaporacion.orden = 2; evaporacion.save(update_fields=["orden"])`, crea la de Estandarización (`orden=1`) y una de Secado (`codigo="secado", tipo=EtapaProceso.Tipo.SECADO, orden=3`), y **quita** la creación de una segunda etapa de Evaporación (ya existe). El `assertRaisesMessage` pasa a `servicios.MENSAJE_LOTE_EN_TORRE`. Las aserciones de `opciones-inicio` (`etapas_iniciales == [evaporacion.pk]`, equipos = evaporadores activos) se quedan.
+
+- [ ] **Step 9: Migrar `procesos/tests_estandarizacion.py`** (`BaseCadena`, abre sin máquina):
+  - `self.etapa_secado` pasa a `self.etapa_produccion = EtapaProceso.objects.create(proceso=proceso, codigo="eva", nombre="Evaporación", tipo=EtapaProceso.Tipo.EVAPORACION, orden=2)` y agrega `self.evaporador = Equipo.objects.create(sucursal=self.planta, codigo="EV-CADENA", nombre="Evaporador cadena", tipo=Equipo.Tipo.EVAPORADOR)` (importa `Equipo` si falta).
+  - `_cadena` y `test_sin_kilos_no_se_cierra_la_corrida`: agrega `equipo=self.evaporador` a `abrir_lote_desde_vale`.
+  - Reemplaza `etapa=self.etapa_secado` por `etapa=self.etapa_produccion` y la variable `secado` por `produccion` en `test_quedan_las_dos_etapas_encadenadas` y `test_sin_kilos_no_se_cierra_la_corrida`; el docstring de esta última pasa a «Un lote sin kilos declarados es uno cuya corrida todavía no termina.».
+
+- [ ] **Step 10: Migrar `sembrar_flujo_demo`** — el recorrido completo hasta la torre (iniciar la condensación exige un análisis del silo de origen con dos firmas, cerrarla, que Calidad libere el concentrado con su análisis, `preparar_continuacion` e `iniciar_secado`) duplicaría en el comando lo que ya recorren el E2E (`circuito → evaporacion → flujo-polvo`) y `tests_puesto_secado`, y lo ataría a cuatro reglas más que no son de lo que trata este sembrado (recepción → vale → lote analizado). Se queda en la **primera etapa de la ruta que no sea Secado**:
+  - Imports: `from procesos.models import EtapaProceso` y `from procesos.servicios import etapas_iniciales_para_producto, tipos_equipo_para_etapa`.
+  - En `_contexto`, reemplaza la línea `equipo = Equipo.objects.filter(activo=True).exclude(sigla="")…first()` por `equipo = self._equipo_de_apertura(especificacion.producto, sucursal)` y agrega el método:
+
+```python
+    def _equipo_de_apertura(self, producto, sucursal):
+        """
+        La máquina de la primera etapa de la ruta después de Estandarización,
+        que no sea Secado: un lote en torre nace solo desde el puesto de
+        Secado, con el concentrado que Calidad liberó. Ese tramo lo recorren
+        el E2E y `procesos.tests_puesto_secado`; aquí se sembraría con cuatro
+        reglas más (análisis con dos firmas, cierre de la condensación,
+        liberación) que no son de lo que trata este sembrado.
+        """
+        iniciales = etapas_iniciales_para_producto(
+            producto=producto, sucursal=sucursal,
+            etapa_previa_tipo=EtapaProceso.Tipo.ESTANDARIZACION,
+        )
+        tipos = {
+            tipo
+            for etapa in iniciales if etapa.tipo != EtapaProceso.Tipo.SECADO
+            for tipo in tipos_equipo_para_etapa(etapa.tipo)
+        }
+        if not tipos:
+            raise CommandError(
+                f"La ruta de {producto.nombre} no tiene después de Estandarización "
+                "una etapa que abra el lote fuera de la torre. Un lote en torre nace "
+                "desde el puesto de Secado: configura la ruta con Evaporación."
+            )
+        return (
+            Equipo.objects.filter(activo=True, tipo__in=tipos)
+            .exclude(sigla="").order_by("orden", "pk").first()
+        )
+```
+
+  - En `_producir`, quita `linea="E1"` de `abrir_lote_desde_vale` (la línea es de las torres). El resto —kilos declarados y `registrar_produccion`— queda igual: cierra la corrida de la primera etapa con su salida, como hacía con la torre. Actualiza el docstring del módulo con una línea: «El lote se abre en la primera etapa de la ruta que no sea Secado (ver `_equipo_de_apertura`).»
+  - Verifica sin escribir: `cd backend && ./.venv/Scripts/python.exe manage.py sembrar_flujo_demo` (simula y revierte) → termina con «Simulación: nada se guardó» en una base con la ruta de polvo sembrada; si la ruta configurada empieza en Secado, el mensaje del `CommandError` lo dice.
+
+- [ ] **Step 11: Verificar**
+
+Run: `cd backend && DJANGO_ENV=test ./.venv/Scripts/python.exe manage.py test produccion procesos estandarizacion usuarios --noinput`
+Expected: OK.
+Run: `cd frontend && npm test && npx tsc -b --pretty false && npx eslint src/pages/Produccion/FormularioLote.tsx src/services tests`
+Expected: PASS / sin errores.
+Comprueba que no queda ningún uso: `grep -rn "Tipo.TORRE" backend/produccion backend/usuarios/management` solo muestra la guarda, el serializer, `opciones_inicio` y las pruebas de rechazo. Relee el punto «Secado tiene puesto propio» que la Task 5 agregó a `CLAUDE.md` y confirma que describe lo implementado.
+
+- [ ] **Step 12: Commit**
+
+```bash
+git add backend/produccion/servicios.py backend/produccion/views.py backend/produccion/serializers.py backend/produccion/tests_lote_en_torre.py backend/produccion/tests_borrador.py backend/produccion/tests_flujo_integrado.py backend/produccion/tests_lote_desde_vale.py backend/procesos/tests_estandarizacion.py backend/usuarios/management/commands/sembrar_flujo_demo.py frontend/src/services/equipos-apertura.ts frontend/tests/equipos-apertura.test.ts frontend/src/pages/Produccion/FormularioLote.tsx
+git commit -m "feat(produccion): un lote en torre nace solo desde el puesto de Secado"
+```
+
+---
+
+### Task 7: E2E y aceptación (controlador + implementador)
 
 **Files:**
 - Modify: `frontend/e2e/flujo-polvo-continuacion.spec.ts` (pasos 2 y 3), `frontend/e2e/flujo-suero.spec.ts` (pasos 1 y 2), `frontend/e2e/rutas.ts`, `frontend/e2e/README.md`
@@ -2157,9 +2586,10 @@ git commit -m "test(e2e): el secado se recorre en su puesto, desde concentrado y
 | §4.1 «Lo que se retira»: redirección `/secado`, menú, `rutaDeEtapa`, `ruta_de_etapa`, Secado fuera de materiales intermedios, bandejas genéricas con enlace, modal externo integrado | 4 (eliminar modal), 5 |
 | §5 pruebas backend (todas las listadas) | 1, 2, 3 |
 | §5 pruebas frontend (`accionDeTorre`, `puedeOperarSecado`, `bandejaDeSecado` sin cambios) | 4 |
-| §5 E2E (`flujo-polvo-continuacion`, cadena 4/4, `flujo-suero`, `rutas.ts`) | 6 |
-| §6 riesgos: búsqueda de usos de `transicionar` e `iniciar-desde-inventario` | sección «Usos a migrar»; 1, 2, 4, 6 |
-| §7 fuera de alcance | respetado; el cuarto camino de inicio queda anotado (desviación 10) |
+| §5 E2E (`flujo-polvo-continuacion`, cadena 4/4, `flujo-suero`, `rutas.ts`) | 7 |
+| §6 riesgos: búsqueda de usos de `transicionar` e `iniciar-desde-inventario` | sección «Usos a migrar»; 1, 2, 4, 7 |
+| §3.3 «un solo camino de inicio», extendido por decisión del usuario: un lote en torre nace solo desde el puesto (servicio, `confirmar-borrador`, alta directa; `opciones-inicio` y `FormularioLote` sin torres; `sembrar_flujo_demo` y pruebas migrados; RED primero, nada creado) | 6 (desviación 10) |
+| §7 fuera de alcance | respetado; el cuarto camino de inicio **se cierra** en la Task 6 por decisión del usuario |
 | `CLAUDE.md` «Secado tiene puesto propio» junto al de Evaporación | 5 |
 
-Tipos y nombres cruzados verificados: `motivos_para_iniciar_secado`, `avisos_de_torre`, `iniciar_secado`, `disponible_de_salida`, `inicio_reservado_al_puesto`, `preparar_secado_desde_inventario`, `estado_puesto_secado`, `estado_calidad_secado` (backend); `TorrePuesto`, `ConcentradoPuesto`, `PuestoSecado`, `accionDeTorre`, `situacionDeCorrida`, `puedeOperarSecado`, `obtenerPuestoSecado`, `iniciarSecado`, `prepararSecadoExterno`, `buscarSecados` (frontend) se usan con la misma firma en todas las tareas.
+Tipos y nombres cruzados verificados: `motivos_para_iniciar_secado`, `avisos_de_torre`, `iniciar_secado`, `disponible_de_salida`, `inicio_reservado_al_puesto`, `preparar_secado_desde_inventario`, `estado_puesto_secado`, `estado_calidad_secado` (backend); `TorrePuesto`, `ConcentradoPuesto`, `PuestoSecado`, `accionDeTorre`, `situacionDeCorrida`, `puedeOperarSecado`, `obtenerPuestoSecado`, `iniciarSecado`, `prepararSecadoExterno`, `buscarSecados` (frontend) se usan con la misma firma en todas las tareas; `MENSAJE_LOTE_EN_TORRE`, `tipo_etapa_de_apertura`, `exigir_apertura_fuera_de_secado` (backend) y `equiposCompatiblesDe(equipos, modo, tiposRuta)` (frontend) solo en la Task 6.
