@@ -42,8 +42,8 @@ class FlujoIntegradoApiTests(TestCase):
             capacidad_l=100000,
         )
         self.equipo = Equipo.objects.create(
-            sucursal=self.planta, codigo="EGRON-1", nombre="Torre Egron 1",
-            tipo=Equipo.Tipo.TORRE,
+            sucursal=self.planta, codigo="LINEA-1", nombre="Línea 1",
+            tipo=Equipo.Tipo.LINEA,
         )
         proceso = Proceso.objects.create(
             codigo="polvo-flujo-integrado", nombre="Polvo flujo integrado"
@@ -57,9 +57,9 @@ class FlujoIntegradoApiTests(TestCase):
         )
         EtapaProceso.objects.create(
             proceso=proceso,
-            codigo="secado-flujo-integrado",
-            nombre="Secado",
-            tipo=EtapaProceso.Tipo.SECADO,
+            codigo="envasado-flujo-integrado",
+            nombre="Envasado",
+            tipo=EtapaProceso.Tipo.ENVASADO,
             orden=2,
         )
         RutaProducto.objects.create(
@@ -96,7 +96,6 @@ class FlujoIntegradoApiTests(TestCase):
                 "vale": self.vale.pk,
                 "litros_estandarizados": "12000",
                 "fecha": "2026-08-13",
-                "linea": "E1",
                 "equipo": self.equipo.pk,
             },
             format="json",
@@ -188,28 +187,28 @@ class FlujoIntegradoApiTests(TestCase):
         self.assertEqual(ejecucion["lote_codigo"], lote.codigo_lote)
         self.assertEqual(ejecucion["entradas"][0]["silo_codigo"], "SILO 2")
 
-    def test_sin_linea_la_torre_no_abre(self):
-        """
-        La torre de este fixture exige línea (E1/E2); el evaporador no —ver
-        `AperturaDirectaSobreEvaporadorApiTests`—. Misma regla
-        (`dominio.exige_linea`) en los dos caminos que abren un lote.
-        """
+    def test_el_alta_directa_rechaza_una_torre(self):
+        """Un lote en torre nace solo desde el puesto de Secado."""
+        torre = Equipo.objects.create(
+            sucursal=self.planta, codigo="EGRON-1", nombre="Torre Egron 1",
+            tipo=Equipo.Tipo.TORRE,
+        )
         respuesta = self.cliente.post(
             "/api/produccion/lotes/",
             {
-                "codigo_lote": "CCAA6225LEP-02",
-                "producto": self.producto.pk,
-                "vale": self.vale.pk,
-                "litros_estandarizados": "1000",
-                "fecha": "2026-08-13",
-                "equipo": self.equipo.pk,
+                "codigo_lote": "CCAA6225LEP-02", "producto": self.producto.pk,
+                "vale": self.vale.pk, "litros_estandarizados": "1000",
+                "fecha": "2026-08-13", "linea": "E1", "equipo": torre.pk,
             },
             format="json",
         )
 
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("linea", respuesta.data)
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("puesto de Secado", str(respuesta.data["equipo"]))
         self.assertFalse(Lote.objects.filter(codigo_lote="CCAA6225LEP-02").exists())
+        self.assertFalse(MovimientoSilo.objects.filter(
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE
+        ).exists())
 
     def test_rechaza_el_contrato_antiguo_que_pedia_silo(self):
         respuesta = self.cliente.post(
@@ -272,7 +271,7 @@ class FlujoIntegradoApiTests(TestCase):
         flujo = respuesta.data["flujo"]
         self.assertEqual(flujo["recepciones"][0]["guia"], "G-100")
         self.assertEqual(flujo["estandarizacion"]["vale_codigo"], "VE-100")
-        self.assertEqual(flujo["produccion"]["equipo"], "Torre Egron 1")
+        self.assertEqual(flujo["produccion"]["equipo"], "Línea 1")
 
 
 class AperturaDirectaSobreEvaporadorApiTests(TestCase):

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from estandarizacion.models import ValeEstandarizacion
+from maestros.models import Equipo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, RutaProducto
 from recepcion.models import MovimientoSilo
 
@@ -42,9 +43,9 @@ class BaseBorradorLote(BaseApertura):
         )
         EtapaProceso.objects.create(
             proceso=proceso,
-            codigo="evaporar-borrador",
-            nombre="Evaporación",
-            tipo=EtapaProceso.Tipo.SECADO,
+            codigo="primera-borrador",
+            nombre="Envasado",
+            tipo=EtapaProceso.Tipo.ENVASADO,
             orden=1,
         )
         RutaProducto.objects.create(
@@ -52,6 +53,13 @@ class BaseBorradorLote(BaseApertura):
             producto=self.polvo,
             proceso=proceso,
             prioridad=1,
+        )
+        # La máquina de la corrida es una línea: un lote desde el vale ya no
+        # se abre en torre (nace del puesto de Secado) ni en evaporador
+        # (puesto de Evaporación, `ConfirmarSobreEvaporadorTests`).
+        self.linea_envasado = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="l1-borrador", nombre="Línea 1",
+            tipo=Equipo.Tipo.LINEA, sigla="L1",
         )
 
     def crear_borrador(self, **datos):
@@ -63,13 +71,13 @@ class BaseBorradorLote(BaseApertura):
 
     def datos_completos(self):
         return {
-            "codigo_lote_propuesto": "CCAA6197E1-01",
+            "codigo_lote_propuesto": "CCAA6197L1-01",
             "producto": self.polvo.id,
             "vale": self.vale.id,
             "litros_estandarizados_borrador": "12000.00",
-            "equipo": self.equipo.id,
+            "equipo": self.linea_envasado.id,
             "fecha": "2026-07-16",
-            "linea": "E1",
+            "linea": "",
             "turno": "A",
             "op": "OP-101",
             "observacion": "Corrida de prueba",
@@ -122,7 +130,7 @@ class BorradorLoteTests(BaseBorradorLote):
 
         self.assertEqual(respuesta.status_code, 200, respuesta.json())
         self.assertEqual(respuesta.json()["id"], borrador["id"])
-        self.assertEqual(respuesta.json()["codigo_lote"], "CCAA6197E1-01")
+        self.assertEqual(respuesta.json()["codigo_lote"], "CCAA6197L1-01")
         self.assertEqual(respuesta.json()["estado"], Lote.Estado.EN_PROCESO)
         movimiento = MovimientoSilo.objects.get(origen_id=borrador["id"])
         self.assertEqual(movimiento.litros, Decimal("12000.00"))
@@ -157,14 +165,14 @@ class BorradorLoteTests(BaseBorradorLote):
         self.assertIn("kg_producidos", respuesta.data)
 
     def test_no_confirma_si_la_maquina_esta_reservada_en_preparacion(self):
-        proceso = Proceso.objects.create(codigo="secado-prueba", nombre="Secado prueba")
+        proceso = Proceso.objects.create(codigo="envasado-prueba", nombre="Envasado prueba")
         etapa = EtapaProceso.objects.create(
-            proceso=proceso, codigo="secado", nombre="Secado",
-            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+            proceso=proceso, codigo="envasado", nombre="Envasado",
+            tipo=EtapaProceso.Tipo.ENVASADO, orden=1,
         )
         EjecucionProceso.objects.create(
             codigo="EJ-OCUPADA", etapa=etapa, sucursal=self.sucursal,
-            equipo=self.equipo, estado=EjecucionProceso.Estado.PREPARACION,
+            equipo=self.linea_envasado, estado=EjecucionProceso.Estado.PREPARACION,
         )
         borrador = self.crear_borrador(**self.datos_completos())
 
@@ -174,24 +182,4 @@ class BorradorLoteTests(BaseBorradorLote):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("ocupado", str(respuesta.json()).lower())
-        self.assertEqual(MovimientoSilo.objects.count(), 0)
-
-
-    def test_una_torre_sin_linea_no_confirma(self):
-        """
-        Misma regla (`dominio.exige_linea`) que el alta directa
-        (`test_sin_linea_la_torre_no_abre`): una torre Egron declara su
-        línea, y el borrador no puede saltársela.
-        """
-        datos = self.datos_completos()
-        datos["linea"] = ""
-        borrador = self.crear_borrador(**datos)
-
-        respuesta = self.cliente.post(
-            f"/api/produccion/lotes/{borrador['id']}/confirmar-borrador/"
-        )
-
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("Falta línea.", respuesta.json()["motivos"])
-        self.assertEqual(Lote.objects.get(pk=borrador["id"]).estado, Lote.Estado.BORRADOR)
         self.assertEqual(MovimientoSilo.objects.count(), 0)

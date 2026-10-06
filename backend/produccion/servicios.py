@@ -46,6 +46,50 @@ def litros_ya_tomados(vale, excluyendo=None):
     return Decimal(str(total or 0))
 
 
+MENSAJE_LOTE_EN_TORRE = "Los lotes en torre nacen desde el puesto de Secado."
+
+
+def tipo_etapa_de_apertura(equipo):
+    """
+    La etapa que abre un lote desde el vale según su máquina. Por defecto,
+    Secado: es lo que hacía el mapa en línea de `_encadenar_con_la_
+    estandarizacion`, y por eso la guarda de abajo mira la etapa resuelta y
+    no solo si la máquina es una torre.
+    """
+    from maestros.models import Equipo
+    from procesos.models import EtapaProceso
+
+    return {
+        Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
+        Equipo.Tipo.TORRE: EtapaProceso.Tipo.SECADO,
+        Equipo.Tipo.ENVASADORA: EtapaProceso.Tipo.ENVASADO,
+        Equipo.Tipo.LINEA: EtapaProceso.Tipo.ENVASADO,
+    }.get(equipo.tipo if equipo else None, EtapaProceso.Tipo.SECADO)
+
+
+def exigir_apertura_fuera_de_secado(equipo):
+    """
+    Un lote desde el vale nunca abre una corrida de Secado: la torre se
+    alimenta desde el puesto de Secado, con el concentrado que Calidad liberó
+    (`preparar_continuacion` + `iniciar_secado`). Abrirlo aquí creaba la
+    corrida directamente en ejecución, sin las reglas de inicio ni el permiso
+    de Secado. Va en el servicio para que ningún llamador —vista, serializer,
+    comando— pueda saltársela.
+    """
+    from maestros.models import Equipo
+    from procesos.models import EtapaProceso
+
+    if tipo_etapa_de_apertura(equipo) != EtapaProceso.Tipo.SECADO:
+        return
+    if equipo is None:
+        raise ValidationError({"equipo": "Selecciona la máquina de la corrida."})
+    if equipo.tipo == Equipo.Tipo.TORRE:
+        raise ValidationError({"equipo": MENSAJE_LOTE_EN_TORRE})
+    raise ValidationError({
+        "equipo": f"{equipo.nombre} no abre lotes desde un vale: Secado se alimenta desde su puesto."
+    })
+
+
 @transaction.atomic
 def abrir_lote_desde_vale(
     *, vale, codigo_lote, fecha, litros, usuario=None, producto=None,
@@ -62,6 +106,10 @@ def abrir_lote_desde_vale(
     de destino para secarse— pero ya no es una elección del lote: el silo y el
     tope los pone el vale.
     """
+    # Antes de bloquear o escribir nada: un lote en torre nace solo desde el
+    # puesto de Secado.
+    exigir_apertura_fuera_de_secado(extra.get("equipo"))
+
     from estandarizacion.models import ValeEstandarizacion
     from recepcion.models import MovimientoSilo
 
@@ -175,16 +223,10 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     incompleta se informa y la transacción revierte también lote y movimiento:
     nunca se permite producción física sin su ejecución trazable.
     """
-    from maestros.models import Equipo
     from procesos.models import EjecucionProceso, EntradaProceso, EtapaProceso
     from procesos.servicios import exigir_etapa_inicial_para_producto, ruta_para_etapa
 
-    tipo_etapa = {
-        Equipo.Tipo.EVAPORADOR: EtapaProceso.Tipo.EVAPORACION,
-        Equipo.Tipo.TORRE: EtapaProceso.Tipo.SECADO,
-        Equipo.Tipo.ENVASADORA: EtapaProceso.Tipo.ENVASADO,
-        Equipo.Tipo.LINEA: EtapaProceso.Tipo.ENVASADO,
-    }.get(lote.equipo.tipo if lote.equipo else None, EtapaProceso.Tipo.SECADO)
+    tipo_etapa = tipo_etapa_de_apertura(lote.equipo)
 
     etapa = exigir_etapa_inicial_para_producto(
         producto=lote.producto,
@@ -217,14 +259,6 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
         cantidad=Decimal(str(litros)),
         unidad="L",
     )
-
-    if tipo_etapa == EtapaProceso.Tipo.SECADO:
-        from procesos.models import CorridaSecado
-
-        CorridaSecado.objects.get_or_create(
-            ejecucion=ejecucion,
-            defaults={"orden": lote.orden, "lote": lote},
-        )
 
     # **Sin salida todavía.** Los kilos no se saben al abrir el lote: se
     # declaran al terminar la corrida, que es la misma razón por la que

@@ -611,6 +611,14 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 {"detail": "El borrador no existe o ya fue confirmado."},
                 status=status.HTTP_409_CONFLICT,
             )
+        # La vista está decorada con `transaction.atomic`: este `return`
+        # confirma la transacción, y es seguro porque hasta aquí solo se tomó
+        # el candado del borrador, sin escribir (trampa de CLAUDE.md).
+        if lote.equipo_id and lote.equipo.tipo == Equipo.Tipo.TORRE:
+            return Response(
+                {"equipo": servicios_produccion.MENSAJE_LOTE_EN_TORRE},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         motivos = lote.motivos_para_confirmar()
         if motivos:
             return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
@@ -822,6 +830,9 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             for etapa in entrada["etapas_iniciales"]
             for tipo in etapa["tipos_equipo"]
         }
+        # Una torre no abre lotes desde el vale: se alimenta desde el puesto
+        # de Secado.
+        tipos_iniciales.discard(Equipo.Tipo.TORRE)
 
         cip_en_curso = CicloCIP.objects.filter(
             equipo_id=OuterRef("pk"), estado=CicloCIP.Estado.EN_CURSO,

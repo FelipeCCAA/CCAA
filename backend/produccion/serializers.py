@@ -498,6 +498,12 @@ class LoteSerializer(serializers.ModelSerializer):
                         "puesto de Evaporación."
                     )
                 })
+            # Y uno en torre nace solo desde el puesto de Secado. `validate`
+            # corre antes de `create`: no queda nada escrito.
+            if equipo is not None and equipo.tipo == Equipo.Tipo.TORRE:
+                from .servicios import MENSAJE_LOTE_EN_TORRE
+
+                raise serializers.ValidationError({"equipo": MENSAJE_LOTE_EN_TORRE})
             # La línea solo existe para las torres Egron (E1/E2); un
             # evaporador no tiene línea que declarar. Misma regla que usa el
             # borrador guiado (`Lote.motivos_para_confirmar`), para no

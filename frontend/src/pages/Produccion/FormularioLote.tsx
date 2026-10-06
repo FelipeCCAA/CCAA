@@ -27,6 +27,7 @@ import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-pro
 import { useBorrador } from "../../hooks/useBorrador";
 import { cantidad } from "../../services/formato";
 import { destinosDelConcentrado } from "../../services/puesto-evaporacion";
+import { equiposCompatiblesDe } from "../../services/equipos-apertura";
 
 
 /*
@@ -96,27 +97,8 @@ const RUTA_POR_FAMILIA: Record<string, { ruta: string; tipos: string[]; ayuda: s
   },
 };
 
-/*
-  Mismo filtro de máquinas en los dos lugares que lo necesitan: el que pinta
-  el desplegable y el que valida, al reanudar un borrador, si la máquina que
-  quedó guardada todavía es válida para el modo y el vale actuales. Una sola
-  función evita que las dos reglas se desalineen — que es justo el defecto
-  que se corrige aquí: un borrador cruzado entre Producción y el puesto de
-  Evaporación podía confirmarse con una máquina que el modo actual ya no
-  ofrece.
-*/
-function equiposCompatiblesDe(
-  equipos: EquipoInicioProduccion[],
-  modo: "evaporacion" | "resto",
-  familia: string | undefined,
-): EquipoInicioProduccion[] {
-  const ruta = familia ? RUTA_POR_FAMILIA[familia] : null;
-  return equipos.filter((item) => {
-    if (!item.activo) return false;
-    if (modo === "evaporacion") return item.tipo === "evaporador";
-    return item.tipo !== "evaporador" && (!ruta || ruta.tipos.includes(item.tipo));
-  });
-}
+const tiposDeFamilia = (familia: string | undefined) =>
+  (familia ? RUTA_POR_FAMILIA[familia]?.tipos ?? null : null);
 
 
 function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, destinos = [] }: Props) {
@@ -219,7 +201,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
        viajaría intacto hasta `confirmar-borrador/` sin pasar nunca por el
        filtro del desplegable. */
     const valeGuardado = vales.find((item) => item.id === guardado.vale);
-    const compatiblesDelBorrador = equiposCompatiblesDe(equipos, modo, valeGuardado?.producto_familia);
+    const compatiblesDelBorrador = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(valeGuardado?.producto_familia));
     const equipoValido = guardado.equipo != null
       && compatiblesDelBorrador.some((item) => item.id === guardado.equipo);
     const equipoFinal = equipoValido ? String(guardado.equipo) : (equipoInicial ? String(equipoInicial) : "");
@@ -347,8 +329,9 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
   const valeSeleccionado = vales.find((item) => item.id === Number(vale));
   const ruta = valeSeleccionado ? RUTA_POR_FAMILIA[valeSeleccionado.producto_familia] : null;
   /* En el puesto de Evaporación el formulario solo ofrece evaporadores; en
-     el resto se excluyen, porque esos lotes se abren desde su propio puesto. */
-  const equiposCompatibles = equiposCompatiblesDe(equipos, modo, valeSeleccionado?.producto_familia);
+     el resto se excluyen, igual que las torres, porque esos lotes se abren
+     desde su propio puesto (Evaporación o Secado). */
+  const equiposCompatibles = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(valeSeleccionado?.producto_familia));
   /* Mismo criterio sobre los vales: en evaporación solo los que van a un
      evaporador; en el resto, la familia polvo se excluye porque esa leche
      solo va a evaporador. */
@@ -538,7 +521,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
                      siendo compatible. En el resto, el tipo de máquina
                      depende de la familia del vale, así que corresponde
                      volver a elegir. */
-                  const compatiblesDelNuevoVale = equiposCompatiblesDe(equipos, modo, elegido?.producto_familia);
+                  const compatiblesDelNuevoVale = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(elegido?.producto_familia));
                   if (modo === "evaporacion") {
                     const sigueSiendoValida = compatiblesDelNuevoVale.some((item) => String(item.id) === equipo);
                     fijarEquipo(sigueSiendoValida ? equipo : (equipoInicial ? String(equipoInicial) : ""), compatiblesDelNuevoVale);
