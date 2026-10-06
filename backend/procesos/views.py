@@ -61,7 +61,7 @@ from .servicios import (
     diagnosticar_integridad_produccion,
     estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
-    inicio_reservado_al_puesto,
+    cancelar_preparacion_secado, inicio_reservado_al_puesto,
     MENSAJE_INICIO_SECADO_EN_PUESTO,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
@@ -762,7 +762,7 @@ class CorridaSecadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.Mo
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
             "POST",
-            detail="La corrida de Secado nace al abrir el lote desde su vale.",
+            detail="La corrida de Secado nace en el puesto de Secado.",
         )
 
     @action(detail=False, methods=["get"])
@@ -905,6 +905,22 @@ class CorridaSecadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.Mo
         except DjangoValidationError as error:
             return respuesta_error_dominio(error)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta una torre preparada sin iniciarla: el concentrado vuelve a ofrecerse."""
+        try:
+            ejecucion = cancelar_preparacion_secado(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):

@@ -18,8 +18,8 @@ from .models import (
 )
 from .servicios import (
     AVISO_INSPECCION_PREOPERATIVA, CODIGO_INSPECCION_PREOPERATIVA,
-    MENSAJE_INICIO_SECADO_EN_PUESTO, iniciar_secado, motivos_para_iniciar_secado,
-    preparar_continuacion,
+    MENSAJE_INICIO_SECADO_EN_PUESTO, disponible_de_salida, iniciar_secado,
+    motivos_para_iniciar_secado, preparar_continuacion, transicionar_ejecucion,
 )
 
 
@@ -428,3 +428,111 @@ class InicioGenericoCerradoTests(BasePuestoSecado):
         fila = next(item for item in bandeja.data if item["id"] == corrida.ejecucion_id)
         self.assertNotIn("ejecucion", fila["acciones_permitidas"])
         self.assertIn("cancelada", fila["acciones_permitidas"])
+
+
+class CancelarPreparacionTests(BasePuestoSecado):
+    """
+    Una torre preparada se puede soltar sin iniciarla: la preparación se
+    deshace y el concentrado vuelve a ofrecerse entero, porque no llegó a
+    entrar a la torre.
+    """
+
+    def cancelar(self, corrida, motivo="Se tomó el concentrado equivocado.", usuario=None):
+        return self.cliente(usuario).post(
+            f"/api/procesos/secados/{corrida.pk}/cancelar-preparacion/",
+            {"motivo": motivo}, format="json",
+        )
+
+    def test_cancelar_libera_la_torre_y_el_concentrado_se_vuelve_a_tomar(self):
+        corrida = self.preparar(cantidad="600")
+        ejecucion_id = corrida.ejecucion_id
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        ejecucion = EjecucionProceso.objects.get(pk=ejecucion_id)
+        self.assertEqual(ejecucion.estado, EjecucionProceso.Estado.CANCELADA)
+        evento = ejecucion.eventos.get(estado_nuevo=EjecucionProceso.Estado.CANCELADA)
+        self.assertEqual(evento.motivo, "Se tomó el concentrado equivocado.")
+        self.assertEqual(disponible_de_salida(self.salida), Decimal("1000"))
+        datos = self.cliente().get("/api/procesos/secados/puesto/").data
+        fila = next(item for item in datos["torres"] if item["equipo_id"] == self.torre.pk)
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertEqual(
+            [(c["salida_id"], c["disponible"]) for c in datos["concentrados"]],
+            [(self.salida.pk, "1000.000")],
+        )
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.ejecucion_id, self.salida.ejecucion_id)
+
+        otra = self.preparar(cantidad="1000", torre=self.otra_torre)
+        iniciar_secado(corrida_id=otra.pk, usuario=self.secador)
+
+        otra.ejecucion.refresh_from_db()
+        self.assertEqual(otra.ejecucion.estado, EjecucionProceso.Estado.EJECUCION)
+        self.assertEqual(otra.lote_id, self.lote.pk)
+
+    def test_cancelar_por_la_transicion_generica_tambien_libera_el_concentrado(self):
+        corrida = self.preparar(cantidad="600")
+        ejecucion = corrida.ejecucion
+
+        transicionar_ejecucion(
+            ejecucion_id=ejecucion.pk, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.secador, motivo="Cancelada desde la bandeja.",
+        )
+
+        self.assertFalse(CorridaSecado.objects.filter(lote=self.lote).exists())
+        self.assertEqual(disponible_de_salida(self.salida), Decimal("1000"))
+        self.preparar(cantidad="1000")
+
+    def test_sin_motivo_no_cancela(self):
+        corrida = self.preparar()
+
+        respuesta = self.cancelar(corrida, motivo="   ")
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertEqual(respuesta.data["message"], "Indica el motivo de la cancelación.")
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+    def test_una_corrida_iniciada_no_se_cancela_como_preparacion(self):
+        corrida = self.preparar()
+        iniciar_secado(corrida_id=corrida.pk, usuario=self.secador)
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("solo se cancela una torre preparada", respuesta.data["message"].lower())
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.EJECUCION)
+        self.assertEqual(disponible_de_salida(self.salida), Decimal("400"))
+
+    def test_sin_permiso_de_secado_responde_403(self):
+        corrida = self.preparar()
+
+        respuesta = self.cancelar(corrida, usuario=self.condensador)
+
+        self.assertEqual(respuesta.status_code, 403)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+    def test_una_corrida_cancelada_despues_de_iniciar_sigue_consumiendo(self):
+        """Lo que entró a la torre ya no vuelve al silo aunque se cancele."""
+        corrida = self.preparar(cantidad="600")
+        iniciar_secado(corrida_id=corrida.pk, usuario=self.secador)
+
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.secador, motivo="Falla de la torre.",
+        )
+
+        self.assertEqual(disponible_de_salida(self.salida), Decimal("400"))
+        self.assertTrue(CorridaSecado.objects.filter(pk=corrida.pk).exists())
+
+    def test_la_corrida_no_se_crea_por_la_api_generica(self):
+        respuesta = self.cliente().post("/api/procesos/secados/", {}, format="json")
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertEqual(
+            str(respuesta.data["detail"]), "La corrida de Secado nace en el puesto de Secado."
+        )

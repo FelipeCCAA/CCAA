@@ -390,6 +390,37 @@ class InicioSecadoDesdeInventarioTests(TestCase):
         inicio = self.cliente.post(f"/api/procesos/secados/{corrida.pk}/iniciar/")
         self.assertEqual(inicio.status_code, 400, inicio.data)
 
+    def test_cancelar_una_preparacion_externa_no_devuelve_el_stock(self):
+        """
+        Desviación 6: el stock salió de bodega al preparar y cancelar no lo
+        devuelve. El lote de salida, que nació con la preparación, se anula.
+        """
+        respuesta = self.cliente.post(
+            "/api/procesos/secados/preparar-desde-inventario/",
+            {
+                "orden": self.orden.pk, "existencia": self.existencia.pk,
+                "equipo": self.torre.pk, "codigo_lote": "SUE-POL-CAN",
+                "cantidad": "100.000",
+            },
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+
+        cancelacion = self.cliente.post(
+            f"/api/procesos/secados/{respuesta.data['id']}/cancelar-preparacion/",
+            {"motivo": "Torre equivocada."}, format="json",
+        )
+
+        self.assertEqual(cancelacion.status_code, 200, cancelacion.data)
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.cantidad_fisica, Decimal("900.000"))
+        lote = Lote.objects.get(codigo_lote="SUE-POL-CAN")
+        self.assertEqual(lote.estado, Lote.Estado.ANULADO)
+        self.assertIn("no vuelve a bodega", lote.observacion)
+        self.assertFalse(EjecucionProceso.objects.filter(
+            equipo=self.torre, estado__in=["preparacion", "ejecucion"],
+        ).exists())
+
     def test_endpoint_generico_no_omite_el_descuento_de_inventario(self):
         respuesta = self.cliente.post(
             "/api/procesos/entradas/",

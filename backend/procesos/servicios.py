@@ -37,6 +37,15 @@ ESTADOS_EJECUCION_TERMINALES = frozenset({
     EjecucionProceso.Estado.CANCELADA,
 })
 
+# Una ejecución cancelada sin haber iniciado: se reservó la máquina y el
+# material, pero nada entró a la máquina. Sus entradas quedan como rastro y no
+# consumen saldo (`disponible_de_salida`).
+PREPARACION_CANCELADA = Q(
+    ejecucion__estado=EjecucionProceso.Estado.CANCELADA,
+    ejecucion__inicio__isnull=True,
+)
+MENSAJE_MOTIVO_CANCELACION = "Indica el motivo de la cancelación."
+
 # Registro de planta que la torre pide antes de operar. Avisa, no bloquea:
 # que bloquee lo decide Calidad, y sería sobre `avisos_de_torre`.
 CODIGO_INSPECCION_PREOPERATIVA = "CCAA.Sec.FORM.003"
@@ -230,8 +239,14 @@ def disponible_de_salida(salida):
     función y el puesto de Secado ofrece con ella. Con dos cuentas, la pantalla
     ofrecía litros que el formulario, ya completo, rechazaba (caso 1 de «La
     pantalla ofrece lo que el backend va a rechazar», CLAUDE.md).
+
+    Una preparación cancelada no cuenta: nunca llegó a la máquina
+    (`PREPARACION_CANCELADA`). Una ejecución cancelada después de iniciar sí:
+    lo que entró a la torre no vuelve al silo.
     """
-    consumido = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
+    consumido = salida.usos_como_origen.exclude(
+        PREPARACION_CANCELADA
+    ).aggregate(total=Sum("cantidad"))["total"] or 0
     comprometido = salida.detalles_despacho_granel.filter(
         despacho__estado__in=["autorizado", "despachado"]
     ).aggregate(total=Sum("cantidad"))["total"] or 0
@@ -1107,6 +1122,14 @@ def transicionar_ejecucion(
     ejecucion.estado = estado_nuevo
     ejecucion.version += 1
     ejecucion.save()
+    if (
+        estado_nuevo == EjecucionProceso.Estado.CANCELADA
+        and anterior == EjecucionProceso.Estado.PREPARACION
+        and ejecucion.etapa.tipo == EtapaProceso.Tipo.SECADO
+    ):
+        # Aquí y no en la acción del puesto: cancelar desde la bandeja
+        # genérica tiene que soltar el concentrado igual.
+        _deshacer_preparacion_secado(ejecucion, motivo)
     if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
         actualizar_queryset_con_auditoria(
             ReservaSiloProceso.objects.filter(
@@ -2416,6 +2439,76 @@ def cerrar_mantequilla(
     return corrida
 
 
+def _deshacer_preparacion_secado(ejecucion, motivo):
+    """
+    Lo que una preparación de Secado dejó escrito, deshecho al cancelarla.
+
+    La `CorridaSecado` se borra: es uno a uno con el lote, así que mientras
+    exista el concentrado no se puede volver a tomar —ni ofrecer
+    (`lote__corrida_secado__isnull`), ni aceptar en `preparar_continuacion`—,
+    y en preparación no guarda nada medido. El rastro queda en la ejecución
+    cancelada (su entrada y el evento con el motivo) y en la auditoría, que
+    registra el borrado. Las entradas no se borran: dejan de contar por
+    `PREPARACION_CANCELADA`.
+
+    El lote vuelve a apuntar a la ejecución que produjo el concentrado. Un
+    lote externo nació con la preparación y se anula; el stock que salió de
+    bodega al preparar **no** vuelve (Desviación 6 del plan del puesto).
+    """
+    from produccion.models import Lote
+
+    corrida = CorridaSecado.objects.filter(ejecucion=ejecucion).first()
+    if corrida is None:
+        return
+    lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
+    corrida.delete()
+    if lote.ejecucion_id != ejecucion.pk:
+        return
+    entrada = ejecucion.entradas.select_related("salida_origen__ejecucion").first()
+    origen = entrada.salida_origen.ejecucion if entrada and entrada.salida_origen_id else None
+    if origen is not None:
+        lote.ejecucion = origen
+        lote.equipo = origen.equipo
+        lote.save(update_fields=["ejecucion", "equipo"])
+        return
+    marca = (
+        f"[ANULACIÓN] Preparación de Secado cancelada: {motivo} "
+        "La materia prima descontada no vuelve a bodega."
+    )
+    lote.estado = Lote.Estado.ANULADO
+    lote.observacion = "\n".join(parte for parte in (lote.observacion.strip(), marca) if parte)
+    lote.save(update_fields=["estado", "observacion"])
+
+
+@transaction.atomic
+def cancelar_preparacion_secado(*, corrida_id, usuario, motivo):
+    """
+    Suelta una torre preparada sin iniciarla. Solo desde `preparacion`: una
+    corrida que ya inició se cierra con su balance. La transición genérica
+    libera la torre y las reservas, y deshace la preparación.
+    """
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError(MENSAJE_MOTIVO_CANCELACION)
+    corrida = CorridaSecado.objects.select_for_update(of=("self",)).get(pk=corrida_id)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .get(pk=corrida.ejecucion_id)
+    )
+    if ejecucion.estado != EjecucionProceso.Estado.PREPARACION:
+        raise ValidationError(
+            f"Solo se cancela una torre preparada: {ejecucion.codigo} está "
+            f"{ejecucion.get_estado_display().lower()}. Una corrida iniciada se "
+            "cierra registrando su balance."
+        )
+    return transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk,
+        estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+        usuario=usuario,
+        motivo=motivo,
+    )
+
+
 def inicio_reservado_al_puesto(ejecucion, estado_nuevo):
     """
     ¿Es este paso el inicio de una corrida de Secado? Ese paso solo lo da
@@ -2655,9 +2748,11 @@ def estado_puesto_secado(usuario):
             estado = "preparada"
             corrida = getattr(ejecucion, "corrida_secado", None)
             if corrida is None:
+                # Sin corrida no hay `secados/{id}/cancelar-preparacion/`: la
+                # ejecución se cancela desde la bandeja de Procesos.
                 motivos = [
-                    f"{ejecucion.codigo} no tiene lote de Secado: cancélala y vuelve "
-                    "a tomar el concentrado."
+                    f"{ejecucion.codigo} no tiene lote de Secado y no puede iniciarse: "
+                    "cancela esa ejecución en Procesos y vuelve a tomar el concentrado."
                 ]
             else:
                 motivos = motivos_para_iniciar_secado(corrida, ejecucion=ejecucion)
