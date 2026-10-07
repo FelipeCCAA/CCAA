@@ -816,3 +816,43 @@ class AnularLoteSueltaLaTorreTests(BasePuestoSecado):
         self.lote.refresh_from_db()
         self.assertEqual(self.lote.estado, Lote.Estado.ANULADO)
         self.assertEqual(self.lote.observacion.count("[ANULACIÓN]"), 1)
+
+    def anular(self, usuario=None, motivo="El concentrado no sirve."):
+        return self.cliente(usuario).patch(
+            f"/api/produccion/lotes/{self.lote.pk}/",
+            {"estado": "anulado", "motivo_anulacion": motivo}, format="json",
+        )
+
+    def test_el_concentrado_de_un_lote_anulado_no_se_vuelve_a_ofrecer(self):
+        """
+        Cancelar la preparación devuelve el saldo al concentrado
+        (`PREPARACION_CANCELADA`), pero su lote está anulado: no se ofrece ni
+        se prepara, en ninguna de las cuentas.
+        """
+        from .consultas_planta import contar_materiales_listos
+
+        listos_con_el = contar_materiales_listos()
+        self.preparar(cantidad="600")
+
+        self.assertEqual(self.anular().status_code, 200)
+
+        datos = self.cliente().get("/api/procesos/secados/puesto/").data
+        self.assertNotIn(self.salida.pk, [c["salida_id"] for c in datos["concentrados"]])
+        disponibles = self.cliente(self.calidad).get("/api/procesos/salidas/disponibles/").data
+        self.assertNotIn(self.salida.pk, [item["id"] for item in disponibles])
+        self.assertEqual(contar_materiales_listos(), listos_con_el - 1)
+        with self.assertRaises(ValidationError) as error:
+            self.preparar(cantidad="600", torre=self.otra_torre)
+        self.assertIn("anulado", str(error.exception))
+
+    def test_condensacion_no_anula_el_lote_de_una_torre_preparada(self):
+        """Anular suelta la torre: lo decide quien opera Secado (I-1)."""
+        corrida = self.preparar(cantidad="600")
+
+        respuesta = self.anular(self.condensador)
+
+        self.assertEqual(respuesta.status_code, 403, respuesta.data)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+        self.lote.refresh_from_db()
+        self.assertNotEqual(self.lote.estado, Lote.Estado.ANULADO)

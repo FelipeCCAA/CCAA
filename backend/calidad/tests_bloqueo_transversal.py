@@ -73,3 +73,28 @@ class BloqueoTransversalTests(TestCase):
         )
         self.assertEqual(respuesta.status_code, 400)
         self.assertFalse(Liberacion.objects.exists())
+
+    def test_el_silo_que_solo_recibio_una_devolucion_no_se_bloquea(self):
+        """
+        Una devolución (`produccion.servicios.devolver_leche_del_lote`) es la
+        leche cruda que el lote nunca procesó: el silo no guarda producto del
+        lote, así que bloquear el lote no lo alcanza.
+        """
+        devuelto = Silo.objects.create(
+            sucursal=self.silo.sucursal, codigo="S-DEV", tipo=Silo.Tipo.SILO,
+            capacidad_l=1000,
+        )
+        MovimientoSilo.objects.create(
+            silo=devuelto, lote=self.lote, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=50, fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.DEVOLUCION, origen_id=self.lote.pk,
+        )
+
+        respuesta = self.cliente.post(
+            f"/api/calidad/expedientes/{self.lote.pk}/bloquear/",
+            {"motivo": "Desviación microbiológica confirmada"}, format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        devuelto.refresh_from_db()
+        self.assertEqual(devuelto.estado, Silo.Estado.DISPONIBLE)

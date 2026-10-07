@@ -7,7 +7,9 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .models import EjecucionProceso, EtapaProceso, SalidaProceso
-from .servicios import ESTADOS_QUE_OCUPAN_EQUIPO, preparacion_cancelada
+from .servicios import (
+    ESTADOS_QUE_OCUPAN_EQUIPO, preparacion_cancelada, salida_de_lote_anulado,
+)
 
 
 ESTADOS_ACTIVOS = (
@@ -33,7 +35,10 @@ def contar_materiales_listos() -> int:
 
     salidas = SalidaProceso.objects.filter(
         liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
-    ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA)
+    ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA).exclude(
+        # Material de un lote anulado: no está listo para nada.
+        salida_de_lote_anulado()
+    )
     cero = Value(Decimal("0"))
     decimal = DecimalField(max_digits=14, decimal_places=3)
     continuables = (

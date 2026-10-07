@@ -61,6 +61,19 @@ def puede_operar_tipo(usuario, tipo):
     return tipos is None or tipo in tipos
 
 
+def puede_cancelar_tipo(usuario, tipo):
+    """
+    ¿Puede cancelar una ejecución de esta etapa, por ejemplo al anular su lote?
+
+    Cancelar suelta la máquina y deshace la preparación: es operar la etapa.
+    Solo se exige para las etapas que algún área opera
+    (`TIPOS_OPERABLES_POR_AREA`); las demás —envasado, por ejemplo— no tienen
+    dueño en este mapa y las sigue gobernando el permiso de escribir lotes.
+    """
+    operadas = set().union(*TIPOS_OPERABLES_POR_AREA.values())
+    return tipo not in operadas or puede_operar_tipo(usuario, tipo)
+
+
 class OperaProcesoPorEtapa(EscribeProduccion):
     """Permite escribir solamente sobre las etapas operadas por el area."""
 

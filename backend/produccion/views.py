@@ -944,14 +944,53 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         actual = self.get_object()
         antes = actual.estado
 
-        if request.data.get("estado") == Lote.Estado.ANULADO and actual.ejecucion_id:
+        if (
+            request.data.get("estado") == Lote.Estado.ANULADO
+            and antes != Lote.Estado.ANULADO
+            and actual.ejecucion_id
+        ):
             # Anular cancela la ejecución (`servicios.anular_lote`). Sus
             # candados se toman antes de escribir el lote y en el orden de los
             # puestos —corrida, después ejecución—: si no, un inicio
             # simultáneo los pediría cruzados.
-            from procesos.servicios import bloquear_para_cancelar
+            from procesos.models import EjecucionProceso
+            from procesos.permisos import puede_cancelar_tipo
+            from procesos.servicios import (
+                ESTADOS_EJECUCION_TERMINALES, bloquear_para_cancelar,
+            )
 
             bloquear_para_cancelar(actual.ejecucion_id)
+            # Se relee bajo el candado: lo leído antes pudo cambiar mientras
+            # se esperaba (una preparación de Secado cancelada devuelve el
+            # lote a la ejecución del evaporador).
+            ejecucion_id = Lote.objects.filter(pk=actual.pk).values_list(
+                "ejecucion_id", flat=True
+            ).first()
+            if ejecucion_id != actual.ejecucion_id and ejecucion_id:
+                bloquear_para_cancelar(ejecucion_id)
+            ejecucion = (
+                EjecucionProceso.objects.select_related("etapa")
+                .filter(pk=ejecucion_id).first()
+            )
+            # Cancelar la ejecución suelta la máquina y deshace la
+            # preparación: es lo mismo que «Cancelar preparación» del puesto,
+            # y pide el mismo permiso de la etapa. Sin esto, Secado —que
+            # escribe lotes— anulaba por aquí un lote sobre el evaporador que
+            # el puesto le niega. El `return` dentro de la transacción es
+            # seguro: hasta aquí solo se tomaron candados, sin escribir.
+            if (
+                ejecucion is not None
+                and ejecucion.estado not in ESTADOS_EJECUCION_TERMINALES
+                and not puede_cancelar_tipo(request.user, ejecucion.etapa.tipo)
+            ):
+                return Response(
+                    {"detail": (
+                        f"Anular este lote cancela su corrida de "
+                        f"{ejecucion.etapa.get_tipo_display().lower()}, y tu área "
+                        "no opera esa etapa."
+                    )},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         respuesta = super().update(request, *args, **kwargs)
 

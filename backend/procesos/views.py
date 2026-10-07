@@ -64,6 +64,7 @@ from .servicios import (
     cancelar_preparacion_evaporacion, cancelar_preparacion_secado,
     inicio_reservado_al_puesto,
     MENSAJE_INICIO_SECADO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
+    salida_de_lote_anulado,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
     sugerir_plan_descremacion,
@@ -1395,6 +1396,8 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 ],
             ).exclude(
                 naturaleza=SalidaProceso.Naturaleza.MERMA
+            ).exclude(
+                salida_de_lote_anulado()
             ).select_related(
                 "ejecucion__etapa__proceso", "ejecucion__equipo", "silo",
                 "lote__producto", "liberacion_calidad__analisis_silo",

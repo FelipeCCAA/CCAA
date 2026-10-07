@@ -54,6 +54,24 @@ def preparacion_cancelada(prefijo=""):
 
 
 PREPARACION_CANCELADA = preparacion_cancelada()
+
+
+def salida_de_lote_anulado(prefijo=""):
+    """
+    Una salida cuyo lote se anuló. Cancelar la preparación le devuelve el
+    saldo (`PREPARACION_CANCELADA`), pero ese material ya no es de ningún
+    lote vivo: no se ofrece (puesto de Secado, `salidas/disponibles`,
+    «materiales listos») ni se prepara (`preparar_continuacion`). Un solo
+    `Q` para las cuatro cuentas.
+    """
+    from produccion.models import Lote
+
+    return Q(**{f"{prefijo}lote__estado": Lote.Estado.ANULADO})
+
+
+MENSAJE_SALIDA_DE_LOTE_ANULADO = (
+    "El lote {codigo} está anulado: su material no se ofrece ni se prepara."
+)
 MENSAJE_MOTIVO_CANCELACION = "Indica el motivo de la cancelación."
 
 # Registro de planta que la torre pide antes de operar. Avisa, no bloquea:
@@ -998,6 +1016,10 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         raise ValidationError("Ingresa una cantidad válida.") from error
     if cantidad <= 0:
         raise ValidationError("La cantidad debe ser mayor que cero.")
+    if SalidaProceso.objects.filter(pk=salida.pk).filter(salida_de_lote_anulado()).exists():
+        raise ValidationError(
+            MENSAJE_SALIDA_DE_LOTE_ANULADO.format(codigo=salida.lote.codigo_lote)
+        )
     disponible = disponible_de_salida(salida)
     if cantidad > disponible:
         raise ValidationError(
@@ -2634,19 +2656,23 @@ def _deshacer_preparacion_evaporacion(ejecucion, motivo, usuario):
     if corrida is None or corrida.estado != CorridaCondensacion.Estado.BORRADOR:
         return
     lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
-    devolver_leche_del_lote(
+    devuelta = devolver_leche_del_lote(
         lote=lote, silo=corrida.silo_origen, usuario=usuario,
         motivo=f"preparación de Evaporación {ejecucion.codigo} cancelada.",
     )
     corrida.estado = CorridaCondensacion.Estado.CANCELADA
     corrida.save(update_fields=["estado"])
     if lote.ejecucion_id == ejecucion.pk:
+        # Solo se dice que la leche volvió si hubo devolución: un lote sin
+        # salida del silo (o ya devuelta) no tiene leche que devolver.
+        leche = (
+            f"La leche volvió a {corrida.silo_origen.codigo}."
+            if devuelta is not None
+            else "No había leche descontada que devolver."
+        )
         anular_lote(
             lote=lote,
-            motivo=(
-                f"Preparación de Evaporación cancelada: {_con_punto(motivo)} "
-                f"La leche volvió a {corrida.silo_origen.codigo}."
-            ),
+            motivo=f"Preparación de Evaporación cancelada: {_con_punto(motivo)} {leche}",
             usuario=usuario,
         )
 
@@ -3024,6 +3050,7 @@ def estado_puesto_secado(usuario):
                 SalidaProceso.Destino.ESTANDARIZACION,
             ],
         ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA)
+        .exclude(salida_de_lote_anulado())
         .select_related("ejecucion__etapa", "silo", "lote__producto", "ruta_producto")
         .order_by("lote__codigo_lote", "pk"),
         usuario, campo_sucursal="ejecucion__sucursal_id",

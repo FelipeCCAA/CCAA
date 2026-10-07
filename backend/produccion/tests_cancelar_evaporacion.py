@@ -259,3 +259,56 @@ class OpcionesInicioSirvenLaReglaTests(BaseBorradorLote):
         # `carga`, `descremadora` y `otro` tienen su propio flujo.
         self.assertEqual(esperados, {"evaporador", "envasadora", "linea"})
 
+
+
+class AnularExigeElPermisoDeLaEtapaTests(ConEvaporadorPreparado):
+    """
+    Anular un lote con su ejecución abierta la cancela: suelta la máquina y
+    devuelve la leche. Es lo mismo que «Cancelar preparación», así que pide el
+    mismo permiso — si no, Secado (que escribe lotes) hacía por el `PATCH` lo
+    que el puesto le niega con 403.
+    """
+
+    def anular(self, cliente):
+        return cliente.patch(
+            f"/api/produccion/lotes/{self.lote.pk}/",
+            {"estado": "anulado", "motivo_anulacion": "La corrida no se hará."},
+            format="json",
+        )
+
+    def test_secado_no_anula_un_lote_sobre_el_evaporador(self):
+        respuesta = self.anular(self._cliente_de_area(PerfilUsuario.Area.SECADO))
+
+        self.assertEqual(respuesta.status_code, 403, respuesta.json())
+        self.assertNadaCambio()
+        self.assertEqual(self.fila_del_puesto()["estado"], "preparada")
+
+    def test_condensacion_si_lo_anula(self):
+        respuesta = self.anular(self.cliente)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.json())
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.estado, Lote.Estado.ANULADO)
+
+
+class MarcaDeLaAnulacionTests(ConEvaporadorPreparado):
+    def test_la_marca_dice_que_la_leche_volvio_solo_si_volvio(self):
+        self.assertEqual(self.cancelar().status_code, 200)
+        self.lote.refresh_from_db()
+        self.assertIn(f"La leche volvió a {self.silo_b.codigo}.", self.lote.observacion)
+
+    def test_sin_leche_descontada_no_dice_que_volvio(self):
+        from recepcion.models import AtribucionRecepcion
+
+        salida = MovimientoSilo.objects.get(
+            tipo=MovimientoSilo.Tipo.SALIDA, origen_id=self.lote.pk,
+        )
+        # Un lote sin consumo de silo (dato histórico): nada que devolver.
+        AtribucionRecepcion.objects.filter(movimiento=salida).delete()
+        MovimientoSilo.objects.filter(pk=salida.pk).delete()
+
+        self.assertEqual(self.cancelar().status_code, 200)
+
+        self.lote.refresh_from_db()
+        self.assertNotIn("La leche volvió", self.lote.observacion)
+        self.assertIn("No había leche descontada que devolver.", self.lote.observacion)
