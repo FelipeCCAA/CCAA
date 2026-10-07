@@ -7,7 +7,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .models import EjecucionProceso, EtapaProceso, SalidaProceso
-from .servicios import ESTADOS_QUE_OCUPAN_EQUIPO
+from .servicios import ESTADOS_QUE_OCUPAN_EQUIPO, preparacion_cancelada
 
 
 ESTADOS_ACTIVOS = (
@@ -45,8 +45,15 @@ def contar_materiales_listos() -> int:
             ]
         )
         .annotate(
+            # Misma regla que `disponible_de_salida`: una preparación
+            # cancelada no tomó nada del material.
             comprometido=Coalesce(
-                Sum("usos_como_origen__cantidad"), cero, output_field=decimal
+                Sum(
+                    "usos_como_origen__cantidad",
+                    filter=~preparacion_cancelada("usos_como_origen__"),
+                ),
+                cero,
+                output_field=decimal,
             )
         )
         .filter(cantidad__gt=F("comprometido"))

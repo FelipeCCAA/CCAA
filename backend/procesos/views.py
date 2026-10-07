@@ -62,7 +62,7 @@ from .servicios import (
     estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
     cancelar_preparacion_secado, inicio_reservado_al_puesto,
-    MENSAJE_INICIO_SECADO_EN_PUESTO,
+    MENSAJE_INICIO_SECADO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
     sugerir_plan_descremacion,
@@ -1382,7 +1382,16 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 "ejecucion__etapa__proceso", "ejecucion__equipo", "silo",
                 "lote__producto", "liberacion_calidad__analisis_silo",
                 "ruta_producto__proceso",
-            ).annotate(consumido=Sum("usos_como_origen__cantidad"))
+            # Los usos se descuentan con la regla de `disponible_de_salida`:
+            # una preparación cancelada no tomó nada. Esta cuenta difiere de
+            # aquella en dos cosas, a propósito: suma además los consumos
+            # físicos del lote en el silo (movimientos de salida) y los kg
+            # trazables, porque sirve también al balance en kg; y no resta
+            # despachos a granel, que esta lista no ofrece consumir.
+            ).annotate(consumido=Sum(
+                "usos_como_origen__cantidad",
+                filter=~preparacion_cancelada("usos_como_origen__"),
+            ))
         )
         silo_id = request.query_params.get("silo")
         if silo_id:
@@ -1412,7 +1421,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             for fila in EntradaProceso.objects.filter(
                 lote_id__in={clave[0] for clave in claves_material},
                 unidad__iexact="kg",
-            ).values("lote_id").annotate(total=Sum("cantidad"))
+            ).exclude(PREPARACION_CANCELADA).values("lote_id").annotate(total=Sum("cantidad"))
         }
         for salida in salidas:
             salida.consumido_trazable = (
