@@ -27,6 +27,7 @@ from .servicios import (
     cerrar_descremacion,
     iniciar_descremacion,
     preparar_continuacion,
+    preparar_descremacion,
     transicionar_ejecucion,
 )
 
@@ -118,7 +119,7 @@ class CierreDescremacionTests(TestCase):
             orden=1,
         )
         ejecucion = EjecucionProceso.objects.create(
-            codigo="EJ-DES-1",
+            codigo="EJ-DES-FIJA-1",
             etapa=etapa,
             sucursal=sucursal,
             equipo=equipo,
@@ -142,6 +143,10 @@ class CierreDescremacionTests(TestCase):
             plan_confirmado_por=self.usuario,
             plan_confirmado_en=timezone.now(),
         )
+
+    def preparar_fixture(self):
+        """La fixture nace `borrador` por ORM; se prepara por el mismo camino que la API."""
+        preparar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
 
     def test_alta_guiada_crea_ejecucion_y_corrida_en_una_operacion(self):
         PerfilUsuario.objects.create(
@@ -201,11 +206,9 @@ class CierreDescremacionTests(TestCase):
         respuesta = cliente.post(
             "/api/procesos/descremaciones/crear-guiada/",
             {
-                "codigo": "EJ-DES-GUIADA",
                 "etapa": self.ejecucion.etapa_id,
                 "equipo": self.ejecucion.equipo_id,
                 "silo_entera": self.origen.pk,
-                "analisis_entrada": self.corrida.analisis_entrada_id,
                 "litros_entrada": "500",
                 "silo_descremada": self.descremada.pk,
                 "estanque_crema": self.crema.pk,
@@ -224,7 +227,15 @@ class CierreDescremacionTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         guiada = CorridaDescremacion.objects.get(pk=respuesta.data["id"])
-        self.assertEqual(guiada.ejecucion.codigo, "EJ-DES-GUIADA")
+        self.assertEqual(guiada.ejecucion.codigo, f"EJ-DES-{guiada.pk}")
+        self.assertEqual(guiada.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+        self.assertEqual(guiada.analisis_entrada, self.corrida.analisis_entrada)
+        self.assertEqual(
+            ReservaSiloProceso.objects.filter(
+                ejecucion=guiada.ejecucion, estado=ReservaSiloProceso.Estado.ACTIVA,
+            ).count(),
+            3,
+        )
         self.assertEqual(guiada.ejecucion.responsable, self.usuario)
         self.assertEqual(guiada.grasa_entrada, self.corrida.analisis_entrada.grasa)
         self.assertEqual(guiada.sng_entrada, self.corrida.analisis_entrada.sng)
@@ -401,15 +412,16 @@ class CierreDescremacionTests(TestCase):
         self.assertEqual(respuesta.status_code, 409, respuesta.data)
         self.assertIn("producto_descremada", respuesta.data)
 
-    def test_inicio_reserva_origen_y_capacidad_y_cierre_consume_reservas(self):
-        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+    def test_preparar_reserva_iniciar_no_agrega_y_cerrar_consume(self):
+        self.preparar_fixture()
         self.assertEqual(
             ReservaSiloProceso.objects.filter(
-                ejecucion=self.ejecucion,
-                estado=ReservaSiloProceso.Estado.ACTIVA,
+                ejecucion=self.ejecucion, estado=ReservaSiloProceso.Estado.ACTIVA,
             ).count(),
             3,
         )
+        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        self.assertEqual(ReservaSiloProceso.objects.filter(ejecucion=self.ejecucion).count(), 3)
 
         cerrar_descremacion(
             corrida_id=self.corrida.pk,
@@ -430,7 +442,7 @@ class CierreDescremacionTests(TestCase):
         )
 
     def test_cancelar_libera_las_reservas_de_tk(self):
-        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        self.preparar_fixture()
 
         transicionar_ejecucion(
             ejecucion_id=self.ejecucion.pk,
@@ -454,17 +466,18 @@ class CierreDescremacionTests(TestCase):
             {ReservaSiloProceso.Estado.LIBERADA},
         )
 
-    def test_no_inicia_si_el_plan_supera_capacidad_del_tk(self):
+    def test_no_prepara_si_el_plan_supera_capacidad_del_tk(self):
         self.crema.capacidad_l = Decimal("50")
         self.crema.save(update_fields=["capacidad_l"])
 
         with self.assertRaisesMessage(ValidationError, "no tiene capacidad"):
-            iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+            self.preparar_fixture()
 
         self.assertFalse(
             ReservaSiloProceso.objects.filter(ejecucion=self.ejecucion).exists()
         )
-        self.assertFalse(self.ejecucion.entradas.exists())
+        self.ejecucion.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.BORRADOR)
 
     def test_un_tk_con_reserva_activa_no_se_asigna_a_otra_corrida(self):
         self.corrida.litros_entrada = Decimal("500")
@@ -477,7 +490,7 @@ class CierreDescremacionTests(TestCase):
                 "litros_crema_plan",
             ]
         )
-        iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        self.preparar_fixture()
         segundo_equipo = Equipo.objects.create(
             sucursal=self.sucursal,
             codigo="DES-2",
@@ -485,7 +498,7 @@ class CierreDescremacionTests(TestCase):
             tipo=Equipo.Tipo.DESCREMADORA,
         )
         segunda_ejecucion = EjecucionProceso.objects.create(
-            codigo="EJ-DES-2",
+            codigo="EJ-DES-FIJA-2",
             etapa=self.ejecucion.etapa,
             sucursal=self.sucursal,
             equipo=segundo_equipo,
@@ -510,13 +523,14 @@ class CierreDescremacionTests(TestCase):
         )
 
         with self.assertRaisesMessage(ValidationError, "ya está reservado"):
-            iniciar_descremacion(corrida_id=segunda.pk, usuario=self.usuario)
+            preparar_descremacion(corrida_id=segunda.pk, usuario=self.usuario)
 
         self.assertFalse(
             ReservaSiloProceso.objects.filter(ejecucion=segunda_ejecucion).exists()
         )
 
     def test_cierre_genera_dos_saldos_y_hereda_fifo_en_una_operacion(self):
+        self.preparar_fixture()
         iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
         resultado = cerrar_descremacion(
             corrida_id=self.corrida.pk,
@@ -707,6 +721,7 @@ class CierreDescremacionTests(TestCase):
             sucursal=self.sucursal,
             responsable=self.usuario,
         )
+        self.preparar_fixture()
         iniciar_descremacion(corrida_id=self.corrida.pk, usuario=self.usuario)
         cerrar_descremacion(
             corrida_id=self.corrida.pk,

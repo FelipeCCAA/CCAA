@@ -489,7 +489,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="crear-guiada")
     def crear_guiada(self, request):
         from maestros.models import Equipo, Producto, Silo
-        from recepcion.models import AnalisisSilo
 
         entrada = CrearDescremacionGuiadaSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -498,7 +497,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
         equipos = Equipo.objects.all()
         productos = Producto.objects.all()
         rutas = RutaProducto.objects.filter(activa=True)
-        analisis = AnalisisSilo.objects.all()
         ids_validos = (
             silos.filter(pk=datos["silo_entera"]).exists()
             and silos.filter(pk=datos["silo_descremada"]).exists()
@@ -506,7 +504,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
             and equipos.filter(pk=datos["equipo"]).exists()
             and productos.filter(pk=datos["producto_descremada"]).exists()
             and productos.filter(pk=datos["producto_crema"]).exists()
-            and analisis.filter(pk=datos["analisis_entrada"]).exists()
             and (
                 not datos.get("ruta_descremada")
                 or rutas.filter(pk=datos["ruta_descremada"]).exists()
@@ -523,9 +520,8 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
             )
         try:
             corrida = crear_descremacion_guiada(
-                codigo=datos["codigo"], etapa_id=datos["etapa"],
+                etapa_id=datos["etapa"],
                 equipo_id=datos["equipo"], silo_entera_id=datos["silo_entera"],
-                analisis_entrada_id=datos["analisis_entrada"],
                 litros_entrada=datos["litros_entrada"],
                 silo_descremada_id=datos["silo_descremada"],
                 estanque_crema_id=datos["estanque_crema"],

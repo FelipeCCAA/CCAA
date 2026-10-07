@@ -45,11 +45,15 @@ class CrearMantequillaGuiadaSerializer(serializers.Serializer):
 
 
 class CrearDescremacionGuiadaSerializer(serializers.Serializer):
-    codigo = serializers.CharField(max_length=60)
+    """
+    Preparar un descremado. `codigo` y `analisis_entrada` no se reciben: el
+    código lo asigna el servidor (`EJ-DES-{id}`) y el análisis es el último
+    confirmado del silo. Si llegan, DRF los ignora.
+    """
+
     etapa = serializers.IntegerField(min_value=1)
     equipo = serializers.IntegerField(min_value=1)
     silo_entera = serializers.IntegerField(min_value=1)
-    analisis_entrada = serializers.IntegerField(min_value=1)
     litros_entrada = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=1)
     silo_descremada = serializers.IntegerField(min_value=1)
     estanque_crema = serializers.IntegerField(min_value=1)
