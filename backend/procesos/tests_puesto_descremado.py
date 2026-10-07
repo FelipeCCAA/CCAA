@@ -16,8 +16,9 @@ from .models import (
     CorridaDescremacion, EjecucionProceso, EtapaProceso, Proceso, ReservaSiloProceso,
 )
 from .servicios import (
-    RESOLVER_CIP, RESOLVER_SILOS, iniciar_descremacion,
-    motivos_para_iniciar_descremacion, motivos_tipados_para_iniciar_descremacion,
+    MENSAJE_INICIO_DESCREMADO_EN_PUESTO, MENSAJE_MOTIVO_CANCELACION, RESOLVER_CIP,
+    RESOLVER_SILOS, iniciar_descremacion, motivos_para_iniciar_descremacion,
+    motivos_tipados_para_iniciar_descremacion, transicionar_ejecucion,
 )
 
 
@@ -337,3 +338,160 @@ class IniciarDescremadoTests(BasePuestoDescremado):
         self.assertEqual(self.iniciar(corrida, self.secador).status_code, 403)
         corrida.ejecucion.refresh_from_db()
         self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+
+class InicioGenericoCerradoDescremadoTests(BasePuestoDescremado):
+    def transicionar(self, ejecucion, estado, motivo=""):
+        ejecucion.refresh_from_db()
+        return self.cliente().post(
+            f"/api/procesos/ejecuciones/{ejecucion.pk}/transicionar/",
+            {"estado": estado, "version": ejecucion.version, "motivo": motivo},
+            format="json",
+        )
+
+    def test_transicionar_no_inicia_una_preparada(self):
+        corrida = self.preparada()
+
+        respuesta = self.transicionar(corrida.ejecucion, "ejecucion")
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertEqual(respuesta.data["message"], MENSAJE_INICIO_DESCREMADO_EN_PUESTO)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+    def test_pausar_y_reanudar_siguen_por_transicionar(self):
+        corrida = self.en_curso()
+
+        pausa = self.transicionar(corrida.ejecucion, "pausada")
+        reanudar = self.transicionar(corrida.ejecucion, "ejecucion")
+
+        self.assertEqual(pausa.status_code, 200, pausa.data)
+        self.assertEqual(reanudar.status_code, 200, reanudar.data)
+
+    def test_la_bandeja_no_ofrece_iniciar_una_preparada(self):
+        corrida = self.preparada()
+
+        bandeja = self.cliente().get("/api/procesos/ejecuciones/operativas/")
+
+        fila = next(item for item in bandeja.data if item["id"] == corrida.ejecucion_id)
+        self.assertNotIn("ejecucion", fila["acciones_permitidas"])
+        self.assertIn("cancelada", fila["acciones_permitidas"])
+
+    def test_el_alta_directa_de_corridas_esta_cerrada(self):
+        respuesta = self.cliente().post("/api/procesos/descremaciones/", {}, format="json")
+
+        self.assertEqual(respuesta.status_code, 405)
+
+    def test_el_alta_generica_de_ejecuciones_esta_cerrada(self):
+        respuesta = self.cliente().post(
+            "/api/procesos/ejecuciones/",
+            {"codigo": "EJ-DES-GENERICA", "etapa": self.etapa.pk, "equipo": self.descremadora.pk},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertFalse(EjecucionProceso.objects.filter(codigo="EJ-DES-GENERICA").exists())
+
+
+class CancelarPreparacionDescremadoTests(BasePuestoDescremado):
+    def cancelar(self, corrida, motivo="TK equivocado", usuario=None):
+        return self.cliente(usuario).post(
+            f"/api/procesos/descremaciones/{corrida.pk}/cancelar-preparacion/",
+            {"motivo": motivo}, format="json",
+        )
+
+    def corrida_heredada(self):
+        """Una corrida `borrador` del modal viejo: ejecución en borrador, sin reservas."""
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-DES-HEREDADA", etapa=self.etapa, sucursal=self.planta,
+            equipo=self.descremadora, responsable=self.condensador,
+        )
+        return CorridaDescremacion.objects.create(
+            ejecucion=ejecucion, silo_entera=self.origen, analisis_entrada=self.analisis,
+            litros_entrada=Decimal("1000"), grasa_entrada=Decimal("2.61"),
+            sng_entrada=Decimal("8.70"), silo_descremada=self.tk_descremada,
+            estanque_crema=self.tk_crema, producto_descremada=self.producto_descremada,
+            producto_crema=self.producto_crema, litros_descremada_plan=Decimal("970"),
+            litros_crema_plan=Decimal("25"), plan_confirmado_por=self.condensador,
+            plan_confirmado_en=timezone.now(),
+        )
+
+    def test_cancelar_suelta_reservas_y_maquina_y_anula_la_corrida(self):
+        corrida = self.preparada()
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data, {
+            "ejecucion_id": corrida.ejecucion_id,
+            "ejecucion_codigo": corrida.ejecucion.codigo,
+            "estado": EjecucionProceso.Estado.CANCELADA,
+        })
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.estado, CorridaDescremacion.Estado.ANULADA)
+        self.assertEqual(corrida.motivo_anulacion, "TK equivocado.")
+        self.assertEqual(
+            set(ReservaSiloProceso.objects.filter(ejecucion_id=corrida.ejecucion_id)
+                .values_list("estado", flat=True)),
+            {ReservaSiloProceso.Estado.LIBERADA},
+        )
+        # La misma descremadora y los mismos TK se vuelven a preparar.
+        self.preparada()
+
+    def test_sin_motivo_no_cancela(self):
+        corrida = self.preparada()
+
+        respuesta = self.cancelar(corrida, motivo="  ")
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertEqual(respuesta.data["message"], MENSAJE_MOTIVO_CANCELACION)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+    def test_una_corrida_en_curso_no_se_cancela_desde_el_puesto(self):
+        corrida = self.en_curso()
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("se cierra registrando sus salidas", respuesta.data["message"])
+
+    def test_cancelar_desde_la_bandeja_generica_deja_lo_mismo(self):
+        corrida = self.preparada()
+
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.condensador, motivo="Desde la bandeja",
+        )
+
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.estado, CorridaDescremacion.Estado.ANULADA)
+        self.assertEqual(corrida.motivo_anulacion, "Desde la bandeja.")
+        self.assertFalse(self.reservas(corrida).exists())
+
+    def test_una_corrida_en_curso_cancelada_por_la_bandeja_queda_anulada(self):
+        corrida = self.en_curso()
+
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.condensador, motivo="Falla eléctrica",
+        )
+
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.estado, CorridaDescremacion.Estado.ANULADA)
+
+    def test_una_preparacion_heredada_en_borrador_se_cancela(self):
+        corrida = self.corrida_heredada()
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.estado, CorridaDescremacion.Estado.ANULADA)
+
+    def test_secado_no_cancela(self):
+        corrida = self.preparada()
+
+        self.assertEqual(self.cancelar(corrida, usuario=self.secador).status_code, 403)
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.estado, CorridaDescremacion.Estado.BORRADOR)

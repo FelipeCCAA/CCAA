@@ -61,9 +61,10 @@ from .servicios import (
     diagnosticar_integridad_produccion,
     estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
-    cancelar_preparacion_evaporacion, cancelar_preparacion_secado,
+    cancelar_preparacion_descremacion, cancelar_preparacion_evaporacion,
+    cancelar_preparacion_secado,
     inicio_reservado_al_puesto,
-    MENSAJE_INICIO_SECADO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
+    MENSAJES_INICIO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
     salida_de_lote_anulado,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
@@ -322,6 +323,11 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
     tipo_etapa_operacional = EtapaProceso.Tipo.DESCREMACION
     http_method_names = ["get", "post", "head", "options"]
 
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed(
+            "POST", detail="La corrida de descremado nace en el puesto de Descremado.",
+        )
+
     @staticmethod
     def _error(error, codigo=status.HTTP_400_BAD_REQUEST):
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
@@ -548,6 +554,22 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as error:
             return self._error(error, status.HTTP_409_CONFLICT)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta una descremadora preparada: reservas liberadas, corrida anulada."""
+        try:
+            ejecucion = cancelar_preparacion_descremacion(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
@@ -966,19 +988,14 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def create(self, request, *args, **kwargs):
-        tipo = EtapaProceso.objects.filter(
-            pk=request.data.get("etapa")
-        ).values_list("tipo", flat=True).first()
-        if tipo != EtapaProceso.Tipo.DESCREMACION:
-            raise MethodNotAllowed(
-                "POST",
-                detail=(
-                    "La ejecucion debe crearse desde la accion especializada "
-                    "del proceso. El alta generica solo conserva compatibilidad "
-                    "temporal con Descremacion."
-                ),
-            )
-        return super().create(request, *args, **kwargs)
+        # Una ejecución nace en la acción especializada de su proceso
+        # (crear-guiada, preparar-continuacion, abrir un lote…). La excepción
+        # de Descremación creaba una ejecución sin corrida que podía ocupar la
+        # descremadora sin pasar por el puesto.
+        raise MethodNotAllowed(
+            "POST",
+            detail="La ejecución debe crearse desde la acción especializada del proceso.",
+        )
 
     def get_queryset(self):
         queryset = EjecucionProceso.objects.select_related(
@@ -998,14 +1015,6 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
         return filtrar_por_scope(
             queryset, self.request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-
-    def perform_create(self, serializer):
-        serializer.save(
-            responsable=self.request.user,
-            sucursal=sucursal_para_escritura(
-                self.request.user, serializer.validated_data
-            ),
         )
 
     def perform_update(self, serializer):
@@ -1154,7 +1163,7 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
         actual = self.get_object()
         if inicio_reservado_al_puesto(actual, request.data.get("estado", "")):
             return respuesta_error_dominio(
-                DjangoValidationError(MENSAJE_INICIO_SECADO_EN_PUESTO)
+                DjangoValidationError(MENSAJES_INICIO_EN_PUESTO[actual.etapa.tipo])
             )
         try:
             ejecucion = transicionar_ejecucion(

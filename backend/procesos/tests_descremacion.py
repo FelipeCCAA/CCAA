@@ -465,6 +465,8 @@ class CierreDescremacionTests(TestCase):
             ),
             {ReservaSiloProceso.Estado.LIBERADA},
         )
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaDescremacion.Estado.ANULADA)
 
     def test_no_prepara_si_el_plan_supera_capacidad_del_tk(self):
         self.crema.capacidad_l = Decimal("50")
