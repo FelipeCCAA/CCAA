@@ -2530,10 +2530,10 @@ def _devolver_orden_a_programada(orden_id, *, ejecucion, lote):
     orden = OrdenProduccion.objects.select_for_update(of=("self",)).get(pk=orden_id)
     if orden.estado != OrdenProduccion.Estado.EN_PROCESO:
         return
-    # Un lote no anulado es uno en proceso o ya producido: en los dos casos la
-    # orden ya empezó por otro lado.
+    # Un lote en proceso o ya producido dice que la orden empezó por otro
+    # lado. Un borrador no: es un formulario autoguardado, no producción.
     if Lote.objects.filter(orden=orden).exclude(pk=lote.pk).exclude(
-        estado=Lote.Estado.ANULADO
+        estado__in=[Lote.Estado.ANULADO, Lote.Estado.BORRADOR]
     ).exists():
         return
     for corridas in (
@@ -2544,6 +2544,10 @@ def _devolver_orden_a_programada(orden_id, *, ejecucion, lote):
             ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES
         ).exists():
             return
+    # `en_proceso → programada` no está en `OrdenProduccion.TRANSICIONES`, a
+    # propósito: esa tabla es la que valida el PATCH de la API, y agregarla
+    # dejaría a cualquiera devolver a mano una orden en curso. Aquí no es una
+    # decisión del usuario sino deshacer lo que la preparación cancelada hizo.
     orden.estado = OrdenProduccion.Estado.PROGRAMADA
     orden.save(update_fields=["estado"])
 

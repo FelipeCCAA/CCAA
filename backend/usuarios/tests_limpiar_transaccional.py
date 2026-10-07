@@ -9,6 +9,7 @@ from datetime import date
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from django.apps import apps
 from django.conf import settings
@@ -126,12 +127,43 @@ class LimpiarTransaccionalTests(TestCase):
         maestros = (Producto, Mandante, Silo, Equipo, Proceso, EtapaProceso)
         antes = {modelo: modelo.objects.count() for modelo in maestros}
 
-        call_command("limpiar_transaccional", aplicar=True, stdout=StringIO())
+        salida = StringIO()
+
+        call_command("limpiar_transaccional", aplicar=True, stdout=salida)
 
         for modelo in self.transaccionales:
             self.assertFalse(modelo.objects.exists(), modelo._meta.label)
         for modelo, cuantos in antes.items():
             self.assertEqual(modelo.objects.count(), cuantos, modelo._meta.label)
+        self.assertIn("manage.py preparar_circuito_polvo --aplicar", salida.getvalue())
+
+    def test_development_contra_una_base_remota_no_corre(self):
+        remota = {
+            "entorno": "development", "motor": "django.db.backends.postgresql",
+            "host": "db.remota.example", "puerto": "5432", "base": "ccaa",
+        }
+        with patch(
+            "usuarios.management.commands.limpiar_transaccional.datos_conexion",
+            return_value=remota,
+        ):
+            with self.assertRaisesMessage(CommandError, "host local"):
+                call_command("limpiar_transaccional", aplicar=True, stdout=StringIO())
+
+        self.assertTrue(Lote.objects.exists())
+
+    def test_una_base_que_parece_productiva_no_corre(self):
+        productiva = {
+            "entorno": "qa", "motor": "django.db.backends.postgresql",
+            "host": "postgres-production.internal", "puerto": "5432", "base": "ccaa",
+        }
+        with patch(
+            "usuarios.management.commands.limpiar_transaccional.datos_conexion",
+            return_value=productiva,
+        ):
+            with self.assertRaisesMessage(CommandError, "parece productiva"):
+                call_command("limpiar_transaccional", aplicar=True, stdout=StringIO())
+
+        self.assertTrue(Lote.objects.exists())
 
     def test_sin_aplicar_solo_cuenta(self):
         salida = StringIO()
@@ -141,6 +173,7 @@ class LimpiarTransaccionalTests(TestCase):
         for modelo in self.transaccionales:
             self.assertTrue(modelo.objects.exists(), modelo._meta.label)
         self.assertIn("Nada se escribió", salida.getvalue())
+        self.assertNotIn("preparar_circuito_polvo", salida.getvalue())
         self.assertIn("procesos.CorridaSecado", salida.getvalue())
 
     def test_no_corre_en_un_entorno_endurecido(self):

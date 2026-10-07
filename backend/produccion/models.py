@@ -44,6 +44,10 @@ class OrdenProduccion(models.Model):
         CERRADA = "cerrada", "Cerrada"
         CANCELADA = "cancelada", "Cancelada"
 
+    # Valida el PATCH de la API (`OrdenProduccionSerializer.validate`).
+    # `en_proceso → programada` falta a propósito: solo la hace el sistema al
+    # cancelar la única preparación externa de Secado
+    # (`procesos.servicios._devolver_orden_a_programada`), nunca un usuario.
     TRANSICIONES = {
         Estado.BORRADOR: [Estado.PROGRAMADA, Estado.CANCELADA],
         Estado.PROGRAMADA: [Estado.EN_PROCESO, Estado.CANCELADA],

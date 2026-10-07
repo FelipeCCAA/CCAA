@@ -452,6 +452,19 @@ class InicioSecadoDesdeInventarioTests(TestCase):
         self.orden.refresh_from_db()
         self.assertEqual(self.orden.estado, OrdenProduccion.Estado.PROGRAMADA)
 
+    def test_un_lote_en_borrador_no_retiene_la_orden_en_proceso(self):
+        """Un borrador autoguardado no es producción empezada."""
+        Lote.objects.create(
+            sucursal=self.planta, codigo_lote="SUE-POL-BOR", producto=self.producto,
+            orden=self.orden, fecha=timezone.localdate(), estado=Lote.Estado.BORRADOR,
+        )
+        corrida_id = self.preparar_externo("SUE-POL-OP3")
+
+        self.cancelar_externo(corrida_id)
+
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenProduccion.Estado.PROGRAMADA)
+
     def test_la_orden_con_otro_lote_vivo_sigue_en_proceso(self):
         Lote.objects.create(
             sucursal=self.planta, codigo_lote="SUE-POL-PROD", producto=self.producto,

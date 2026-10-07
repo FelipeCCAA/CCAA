@@ -24,7 +24,8 @@ está en ninguna de las dos: cada modelo nuevo obliga a decidir qué es.
 Sin `--aplicar` solo cuenta lo que borraría. Es la misma forma que
 `cargar_productos`: una orden destructiva que se ejecuta a ciegas es una que
 tarde o temprano se ejecuta sobre lo que no era. Nunca corre en un entorno
-endurecido (`config.seguridad.ENTORNOS_ENDURECIDOS`).
+endurecido (`config.seguridad.ENTORNOS_ENDURECIDOS`), y pasa por la misma
+puerta de destino que `reset_datos_operacionales` (`validar_destino`).
 
 La auditoría se borra también **a propósito**: es el registro de los cambios que
 estamos borrando, y dejarla convertiría el expediente en una lista de
@@ -39,7 +40,14 @@ from django.db import connection, transaction
 from config.seguridad import ENTORNOS_ENDURECIDOS
 from usuarios.management.commands.reset_datos_operacionales import (
     MODELOS_OPERACIONALES,
+    datos_conexion,
     tablas_para_reset,
+    validar_destino,
+)
+
+AVISO_PREPARAR_CIRCUITOS = (
+    "Vuelve a preparar los circuitos: manage.py preparar_circuito_polvo --aplicar "
+    "(y preparar_circuito_suero)."
 )
 
 
@@ -116,6 +124,11 @@ class Command(BaseCommand):
                 f"DJANGO_ENV={settings.DJANGO_ENV}: este comando borra la operación "
                 "de la planta y solo corre en desarrollo o pruebas."
             )
+        # La misma puerta que `reset_datos_operacionales`: PostgreSQL, host
+        # local en desarrollo, ninguna marca de producción en la conexión. El
+        # entorno solo no basta: `DJANGO_ENV=development` apuntando a una base
+        # remota pasaba.
+        validar_destino(datos_conexion())
         aplicar = opciones["aplicar"]
         modelos = modelos_a_borrar()
         # Se calcula también sin `--aplicar`: si una tabla conservada apunta a
@@ -144,5 +157,9 @@ class Command(BaseCommand):
         verbo = "Borrados" if aplicar else "Se borrarían"
         self.stdout.write(self.style.SUCCESS(f"{verbo} {total} registros."))
 
-        if not aplicar:
+        if aplicar:
+            # Lo borrado incluye la configuración que los circuitos E2E dejan
+            # en planta (órdenes, existencias de embalaje).
+            self.stdout.write(AVISO_PREPARAR_CIRCUITOS)
+        else:
             self.stdout.write("Nada se escribió. Repite con --aplicar.")
