@@ -180,6 +180,23 @@ class CierreDescremacionSerializer(serializers.Serializer):
     controles = serializers.JSONField(required=False, default=dict)
 
 
+class RevisarCierreDescremacionSerializer(serializers.Serializer):
+    """El cuerpo de `cerrar/`, todo opcional: se pide mientras se teclea."""
+
+    litros_descremada = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True, default=None,
+    )
+    grasa_descremada = serializers.DecimalField(
+        max_digits=6, decimal_places=3, required=False, allow_null=True, default=None,
+    )
+    litros_crema = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True, default=None,
+    )
+    grasa_crema = serializers.DecimalField(
+        max_digits=6, decimal_places=3, required=False, allow_null=True, default=None,
+    )
+
+
 class CorridaDescremacionSerializer(serializers.ModelSerializer):
     ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
     equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)

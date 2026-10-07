@@ -495,3 +495,113 @@ class CancelarPreparacionDescremadoTests(BasePuestoDescremado):
         self.assertEqual(self.cancelar(corrida, usuario=self.secador).status_code, 403)
         corrida.refresh_from_db()
         self.assertEqual(corrida.estado, CorridaDescremacion.Estado.BORRADOR)
+
+
+class LimitesDelCierreTests(BasePuestoDescremado):
+    def cuerpo(self, **cambios):
+        datos = {
+            "litros_descremada": "970", "grasa_descremada": "0.06",
+            "litros_crema": "25", "grasa_crema": "42",
+        }
+        datos.update(cambios)
+        return datos
+
+    def revisar(self, corrida, datos, usuario=None):
+        return self.cliente(usuario).post(
+            f"/api/procesos/descremaciones/{corrida.pk}/revisar-cierre/", datos, format="json",
+        )
+
+    def cerrar(self, corrida, datos, usuario=None):
+        return self.cliente(usuario).post(
+            f"/api/procesos/descremaciones/{corrida.pk}/cerrar/", datos, format="json",
+        )
+
+    def crema_a(self, corrida, destino):
+        CorridaDescremacion.objects.filter(pk=corrida.pk).update(destino_crema=destino)
+
+    def test_revisar_cierre_avisa_y_no_escribe(self):
+        corrida = self.en_curso()
+
+        respuesta = self.revisar(corrida, self.cuerpo(grasa_descremada="0.15"))
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(
+            [aviso["codigo"] for aviso in respuesta.data["avisos_limites"]],
+            ["grasa_descremada_alta"],
+        )
+        self.assertEqual(respuesta.data["merma_l"], "5.00")
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.estado, CorridaDescremacion.Estado.EN_CURSO)
+        self.assertIsNone(corrida.grasa_descremada)
+        self.assertEqual(corrida.controles, {})
+        self.assertFalse(MovimientoSilo.objects.filter(operacion_id=corrida.operacion_id).exists())
+
+    def test_revisar_con_campos_vacios_no_avisa(self):
+        corrida = self.en_curso()
+
+        respuesta = self.revisar(corrida, {"grasa_descremada": None, "litros_crema": None})
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data, {
+            "avisos_limites": [], "avisos_balance": [], "merma_l": None, "desvio_grasa_kg": None,
+        })
+
+    def test_la_crema_fuera_de_rango_avisa_solo_si_va_a_despacho(self):
+        corrida = self.en_curso()
+
+        self.crema_a(corrida, CorridaDescremacion.DestinoRama.DESPACHO_DIRECTO)
+        a_despacho = self.revisar(corrida, self.cuerpo(grasa_crema="41"))
+        self.crema_a(corrida, CorridaDescremacion.DestinoRama.SIGUIENTE_PROCESO)
+        a_mantequilla = self.revisar(corrida, self.cuerpo(grasa_crema="41"))
+
+        self.assertEqual(
+            [aviso["codigo"] for aviso in a_despacho.data["avisos_limites"]],
+            ["grasa_crema_fuera_de_rango"],
+        )
+        self.assertEqual(a_mantequilla.data["avisos_limites"], [])
+
+    def test_cerrar_guarda_los_avisos_y_el_cliente_no_los_pisa(self):
+        corrida = self.en_curso()
+
+        respuesta = self.cerrar(corrida, self.cuerpo(
+            grasa_descremada="0.15", controles={"avisos_limites": [], "ph_salida": "6.7"},
+        ))
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.controles["avisos_limites"], [{
+            "codigo": "grasa_descremada_alta",
+            "mensaje": "Grasa de la descremada 0,15 % sobre el límite de 0,1 %.",
+        }])
+        self.assertEqual(corrida.controles["ph_salida"], "6.7")
+        evento = corrida.ejecucion.eventos.get(
+            estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        )
+        self.assertIn("0,15 %", evento.motivo)
+
+    def test_descremada_en_el_limite_cierra_sin_aviso(self):
+        corrida = self.en_curso()
+
+        self.cerrar(corrida, self.cuerpo(grasa_descremada="0.10"))
+
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.controles["avisos_limites"], [])
+
+    def test_crema_de_despacho_fuera_de_rango_queda_al_cerrar(self):
+        corrida = self.en_curso()
+        self.crema_a(corrida, CorridaDescremacion.DestinoRama.DESPACHO_DIRECTO)
+
+        respuesta = self.cerrar(corrida, self.cuerpo(grasa_crema="41"))
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        corrida.refresh_from_db()
+        self.assertEqual(
+            [aviso["codigo"] for aviso in corrida.controles["avisos_limites"]],
+            ["grasa_crema_fuera_de_rango"],
+        )
+
+    def test_secado_no_revisa_ni_cierra(self):
+        corrida = self.en_curso()
+
+        self.assertEqual(self.revisar(corrida, self.cuerpo(), self.secador).status_code, 403)
+        self.assertEqual(self.cerrar(corrida, self.cuerpo(), self.secador).status_code, 403)

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -13,7 +13,7 @@ from produccion.models import Lote
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
-from .dominio import calcular_balance_descremacion
+from .dominio import avisos_limites_descremacion, calcular_balance_descremacion
 from .models import (
     CorridaDescremacion,
     EjecucionProceso,
@@ -41,6 +41,56 @@ class BalanceDescremacionTests(TestCase):
             balance.descremada_esperada_l, Decimal("902.25564"), places=4
         )
         self.assertEqual(balance.avisos, ())
+
+
+class LimitesDescremacionTests(SimpleTestCase):
+    """REGLAS_DE_PLANTA §2: avisan, no bloquean. Endurecerlos es de Calidad."""
+
+    def codigos(self, **datos):
+        base = {"grasa_descremada": None, "grasa_crema": None, "crema_a_despacho": False}
+        return [codigo for codigo, _ in avisos_limites_descremacion(**{**base, **datos})]
+
+    def test_descremada_sobre_el_limite_avisa(self):
+        self.assertEqual(self.codigos(grasa_descremada="0.15"), ["grasa_descremada_alta"])
+        self.assertEqual(self.codigos(grasa_descremada="0.11"), ["grasa_descremada_alta"])
+
+    def test_descremada_en_el_limite_no_avisa(self):
+        self.assertEqual(self.codigos(grasa_descremada="0.10"), [])
+        self.assertEqual(self.codigos(grasa_descremada="0.05"), [])
+
+    def test_crema_a_despacho_fuera_de_rango_avisa(self):
+        for grasa in ("41", "41.99", "43.01"):
+            with self.subTest(grasa=grasa):
+                self.assertEqual(
+                    self.codigos(grasa_crema=grasa, crema_a_despacho=True),
+                    ["grasa_crema_fuera_de_rango"],
+                )
+
+    def test_crema_a_despacho_en_los_bordes_no_avisa(self):
+        for grasa in ("42", "42.5", "43"):
+            with self.subTest(grasa=grasa):
+                self.assertEqual(self.codigos(grasa_crema=grasa, crema_a_despacho=True), [])
+
+    def test_la_crema_que_no_va_a_despacho_no_tiene_limite(self):
+        self.assertEqual(self.codigos(grasa_crema="41", crema_a_despacho=False), [])
+
+    def test_un_valor_ausente_no_avisa(self):
+        self.assertEqual(self.codigos(crema_a_despacho=True), [])
+
+    def test_los_mensajes_se_leen_como_en_planta(self):
+        self.assertEqual(
+            avisos_limites_descremacion(
+                grasa_descremada=Decimal("0.150"), grasa_crema=Decimal("41.00"),
+                crema_a_despacho=True,
+            ),
+            [
+                ("grasa_descremada_alta", "Grasa de la descremada 0,15 % sobre el límite de 0,1 %."),
+                (
+                    "grasa_crema_fuera_de_rango",
+                    "Grasa de la crema para despacho 41 % fuera del rango 42–43 %.",
+                ),
+            ],
+        )
 
 
 class CierreDescremacionTests(TestCase):

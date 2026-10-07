@@ -36,6 +36,7 @@ from .serializers import (
     CorridaSecadoSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
+    RevisarCierreDescremacionSerializer,
     RutaProductoSerializer, SugerirDescremacionSerializer,
 )
 from .consultas_planta import consultar_planta_ahora, resumen_operacional_produccion
@@ -55,6 +56,7 @@ from .servicios import (
     ConflictoVersionEjecucion,
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
     genealogia_lote,
+    revisar_cierre_descremacion,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
     definir_destino_salida,
@@ -570,6 +572,13 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
             "ejecucion_codigo": ejecucion.codigo,
             "estado": ejecucion.estado,
         })
+
+    @action(detail=True, methods=["post"], url_path="revisar-cierre")
+    def revisar_cierre(self, request, pk=None):
+        """Avisos del cierre con lo tecleado hasta ahora; no escribe nada."""
+        entrada = RevisarCierreDescremacionSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        return Response(revisar_cierre_descremacion(self.get_object(), **entrada.validated_data))
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):

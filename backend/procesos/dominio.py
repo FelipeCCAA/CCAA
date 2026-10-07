@@ -43,6 +43,50 @@ def calcular_balance_descremacion(
     )
 
 
+# Límites físicos de la descremación (docs/REGLAS_DE_PLANTA.md §2). Avisan,
+# no bloquean: endurecerlos —que la grasa alta impida cerrar o retenga el
+# TK— es decisión de Calidad y se hace aquí y en quien llama a
+# `avisos_limites_descremacion`, no en una segunda regla.
+LIMITE_GRASA_DESCREMADA = Decimal("0.1")  # %
+RANGO_GRASA_CREMA_DESPACHO = (Decimal("42"), Decimal("43"))  # %
+
+
+def _porcentaje(valor):
+    """`Decimal("0.150")` → «0,15»: como se lee en planta."""
+    return f"{valor.normalize():f}".replace(".", ",")
+
+
+def avisos_limites_descremacion(*, grasa_descremada, grasa_crema, crema_a_despacho):
+    """
+    Los límites físicos que no cumple el cierre, como `(codigo, mensaje)`.
+
+    Un valor ausente no avisa: todavía no se tecleó. El límite de la crema es
+    el de «crema para despacho»: solo aplica si va a despacho directo; para
+    Mantequilla o Estandarización el documento no da límite y no se inventa.
+    Las RPM no están: no hay sensor ni campo, y en el documento son una
+    alarma del arranque, no una medición del cierre.
+    """
+    avisos = []
+    if grasa_descremada is not None:
+        grasa = Decimal(str(grasa_descremada))
+        if grasa > LIMITE_GRASA_DESCREMADA:
+            avisos.append((
+                "grasa_descremada_alta",
+                f"Grasa de la descremada {_porcentaje(grasa)} % sobre el límite de "
+                f"{_porcentaje(LIMITE_GRASA_DESCREMADA)} %.",
+            ))
+    if grasa_crema is not None and crema_a_despacho:
+        grasa = Decimal(str(grasa_crema))
+        minimo, maximo = RANGO_GRASA_CREMA_DESPACHO
+        if not minimo <= grasa <= maximo:
+            avisos.append((
+                "grasa_crema_fuera_de_rango",
+                f"Grasa de la crema para despacho {_porcentaje(grasa)} % fuera del rango "
+                f"{_porcentaje(minimo)}–{_porcentaje(maximo)} %.",
+            ))
+    return avisos
+
+
 # Pantalla donde se trabaja cada etapa, para los enlaces de los avisos.
 # Misma tabla que `rutaDeEtapa` en `frontend/src/services/planta-ahora.ts`:
 # si divergen, un aviso lleva a una sección que no existe.

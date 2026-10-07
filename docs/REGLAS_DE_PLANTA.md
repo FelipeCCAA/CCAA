@@ -146,17 +146,27 @@ La transición a `CERRADA` pasa ahora por la acción `cerrar/`, que consulta
 
 | Parámetro | Valor | Estado |
 |---|---|---|
-| RPM de la descremadora | **1.395 RPM** | No implementado |
-| Materia grasa de leche descremada | **≤ 0,1 %** | No implementado |
-| Materia grasa de crema para despacho | **42 % – 43 %** | No implementado |
+| RPM de la descremadora | **1.395 RPM** | No implementado: no hay sensor ni campo, y en el documento es una alarma del arranque, no una medición del cierre |
+| Materia grasa de leche descremada | **≤ 0,1 %** | **Aviso** (desde 2026-10-07): `procesos.dominio.avisos_limites_descremacion` |
+| Materia grasa de crema para despacho | **42 % – 43 %** | **Aviso**, solo si la crema va a despacho directo; para Mantequilla o Estandarización el documento no da límite y no se inventa |
 
 Si no alcanza las RPM: quitar alarma, reintentar, informar a Mantenimiento.
 
 Control cada hora sobre descremadora, pasteurizador, bombas, válvulas,
-conexiones, caudalímetros, temperaturas, fugas y obstrucciones.
+conexiones, caudalímetros, temperaturas, fugas y obstrucciones. No
+implementado: es un registro periódico y se cargaría como plantilla de
+`RegistroEquipo` (`/registros`), no en el puesto.
 
-**No existe el proceso de descremación en el sistema.** Ninguno de estos
-valores tiene dónde vivir todavía.
+**El proceso existe** desde la migración `procesos.0008` (`CorridaDescremacion`)
+y se opera en el puesto de Descremado (`/produccion/descremado`). Los dos
+límites de grasa **avisan, no bloquean**: el puesto los muestra mientras se
+teclea el cierre (`descremaciones/{id}/revisar-cierre/`, que no escribe) y el
+cierre los guarda en `controles["avisos_limites"]` y en el motivo del evento
+que pasa la ejecución a Calidad. Endurecerlos —que la grasa alta impida cerrar
+o retenga el TK— es decisión de Calidad, y se hace en esa función y en quien
+la llama, no en una segunda regla. Los límites son constantes de planta, no la
+`Especificacion` del producto: la especificación la aplica Calidad al liberar
+sobre el análisis del TK.
 
 ---
 
@@ -396,6 +406,7 @@ del camión contra lo que esas cargas esperaban.
 | ¿Dieciocho roles con permisos por acción, o el modelo actual de rol × área? | TI |
 | Qué controles de recepción son obligatorios además del Delvo | Calidad |
 | ¿Cuánto vale un aseo? Sin ventana de caducidad, un CIP viejo habilita igual | Calidad |
+| ¿Los límites de grasa de la descremación bloquean el cierre o retienen el TK, en vez de avisar? | Calidad |
 
 ---
 

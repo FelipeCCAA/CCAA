@@ -2333,6 +2333,44 @@ def iniciar_descremacion(*, corrida_id, usuario):
     ).get(pk=corrida.pk)
 
 
+def revisar_cierre_descremacion(
+    corrida, *, litros_descremada=None, grasa_descremada=None,
+    litros_crema=None, grasa_crema=None,
+):
+    """
+    Lo que el cierre avisaría con estos valores, sin escribir nada. El
+    formulario lo pide mientras se teclea (el patrón de `calcular/` del vale):
+    la misma función de límites que `cerrar_descremacion` guarda y el mismo
+    balance. El cliente no calcula nada por su cuenta.
+    """
+    from .dominio import avisos_limites_descremacion, calcular_balance_descremacion
+
+    limites = avisos_limites_descremacion(
+        grasa_descremada=grasa_descremada, grasa_crema=grasa_crema,
+        crema_a_despacho=(
+            corrida.destino_crema == CorridaDescremacion.DestinoRama.DESPACHO_DIRECTO
+        ),
+    )
+    avisos_balance, merma, desvio = [], None, None
+    if grasa_descremada is not None and grasa_crema is not None:
+        con_litros = litros_descremada is not None and litros_crema is not None
+        balance = calcular_balance_descremacion(
+            corrida.litros_entrada, corrida.grasa_entrada, corrida.sng_entrada,
+            grasa_descremada, grasa_crema,
+            litros_descremada=litros_descremada if con_litros else None,
+            litros_crema=litros_crema if con_litros else None,
+        )
+        avisos_balance = list(balance.avisos)
+        merma, desvio = balance.merma_declarada_l, balance.desvio_grasa_kg
+    return {
+        "avisos_limites": [{"codigo": codigo, "mensaje": mensaje} for codigo, mensaje in limites],
+        "avisos_balance": avisos_balance,
+        # Texto, como en los serializers: el tipo del frontend es `string`.
+        "merma_l": None if merma is None else str(merma.quantize(Decimal("0.01"))),
+        "desvio_grasa_kg": None if desvio is None else str(desvio.quantize(Decimal("0.001"))),
+    }
+
+
 @transaction.atomic
 def cerrar_descremacion(
     *, corrida_id, usuario, litros_descremada, grasa_descremada,
@@ -2342,7 +2380,7 @@ def cerrar_descremacion(
     from produccion.models import Lote
     from recepcion.models import MovimientoSilo
     from recepcion.servicios import heredar_atribuciones, motivos_silo_no_disponible, saldo_silo
-    from .dominio import calcular_balance_descremacion
+    from .dominio import avisos_limites_descremacion, calcular_balance_descremacion
     from .models import SalidaProceso
 
     corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
@@ -2477,9 +2515,23 @@ def cerrar_descremacion(
         corrida.litros_entrada, corrida.grasa_entrada, corrida.sng_entrada, gd, gc,
         litros_descremada=ld, litros_crema=lc,
     )
+    limites = avisos_limites_descremacion(
+        grasa_descremada=gd, grasa_crema=gc,
+        crema_a_despacho=(
+            corrida.destino_crema == CorridaDescremacion.DestinoRama.DESPACHO_DIRECTO
+        ),
+    )
     corrida.litros_descremada, corrida.grasa_descremada = ld, gd
     corrida.litros_crema, corrida.grasa_crema = lc, gc
-    corrida.controles = {**(controles or {}), "avisos_balance": list(balance.avisos)}
+    corrida.controles = {
+        **(controles or {}),
+        # Después de lo que manda el cliente: los avisos los escribe el
+        # servidor y no se pueden pisar por `controles`.
+        "avisos_balance": list(balance.avisos),
+        "avisos_limites": [
+            {"codigo": codigo, "mensaje": mensaje} for codigo, mensaje in limites
+        ],
+    }
     corrida.estado = CorridaDescremacion.Estado.CERRADA
     corrida.finalizada_por = usuario
     corrida.finalizada_en = ahora
@@ -2487,6 +2539,8 @@ def cerrar_descremacion(
     transicionar_ejecucion(
         ejecucion_id=corrida.ejecucion_id,
         estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
+        # Lo que lee la auditoría de la ejecución.
+        motivo=" ".join(mensaje for _, mensaje in limites),
     )
     if corrida.ejecucion.etapa.requiere_calidad:
         actualizar_queryset_con_auditoria(
