@@ -8,6 +8,7 @@ import {
 import { mensajeErrorProceso } from "../../services/errores-proceso";
 import { cantidad } from "../../services/formato";
 import { cerrarDescremacion, type CorridaDescremacion } from "../../services/procesos.service";
+import { avisosDeCierre } from "../../services/puesto-descremado";
 
 type Campos = Record<keyof ValoresCierreDescremado, string>;
 const VACIO: Campos = { litros_descremada: "", grasa_descremada: "", litros_crema: "", grasa_crema: "" };
@@ -36,6 +37,10 @@ export default function CierreDescremado({ corrida, alCerrar, alCompletarse }: {
 }) {
   const [campos, setCampos] = useState<Campos>(VACIO);
   const [revision, setRevision] = useState<RevisionCierreDescremado | null>(null);
+  // Pendiente desde la tecla hasta que responde la revisión de lo tecleado:
+  // mientras tanto, la anterior ya no habla de lo que se va a cerrar.
+  const [revisionPendiente, setRevisionPendiente] = useState(true);
+  const [errorRevision, setErrorRevision] = useState(false);
   const [revisando, setRevisando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -47,18 +52,28 @@ export default function CierreDescremado({ corrida, alCerrar, alCompletarse }: {
     // Con retardo: una consulta por pausa al teclear, no una por tecla.
     const tarea = window.setTimeout(() => {
       revisarCierreDescremado(corrida.id, aValores(campos))
-        .then((datos) => { if (vigente) setRevision(datos); })
-        .catch(() => { if (vigente) setRevision(null); });
+        .then((datos) => {
+          if (!vigente) return;
+          setRevision(datos);
+          setErrorRevision(false);
+          setRevisionPendiente(false);
+        })
+        .catch(() => {
+          if (!vigente) return;
+          setRevision(null);
+          setErrorRevision(true);
+          setRevisionPendiente(false);
+        });
     }, 400);
     return () => { vigente = false; window.clearTimeout(tarea); };
   }, [corrida.id, campos]);
 
-  const limites = revision?.avisos_limites.map((aviso) => aviso.mensaje) ?? [];
-  const avisos = [...limites, ...(revision?.avisos_balance ?? [])];
+  const panel = avisosDeCierre({ revision, error: errorRevision, pendiente: revisionPendiente });
   const completo = Object.values(campos).every((valor) => valor.trim() !== "" && Number(valor) >= 0)
     && Number(campos.litros_descremada) > 0 && Number(campos.litros_crema) > 0;
   const cambiar = (clave: keyof Campos) => (evento: ChangeEvent<HTMLInputElement>) => {
     const valor = evento.target.value;
+    setRevisionPendiente(true);
     setCampos((actual) => ({ ...actual, [clave]: valor }));
   };
 
@@ -107,11 +122,10 @@ export default function CierreDescremado({ corrida, alCerrar, alCompletarse }: {
           <Campo texto="Grasa crema (%)"><input required type="number" min="0" step="0.001" value={campos.grasa_crema} onChange={cambiar("grasa_crema")} className={control} /></Campo>
         </fieldset>
 
-        <section aria-label="Avisos del cierre" aria-live="polite" className={`rounded-xl px-4 py-3 text-sm ${avisos.length ? "bg-amber-50 text-amber-900" : "bg-slate-50 text-slate-600"}`}>
-          {avisos.length > 0
-            ? <ul className="space-y-1">{avisos.map((aviso) => <li key={aviso}>{aviso}</li>)}</ul>
-            : <p>Sin avisos con lo registrado.</p>}
-          {revision?.merma_l && <p className="mt-1">Diferencia volumétrica: {cantidad(revision.merma_l, "L")}</p>}
+        <section aria-label="Avisos del cierre" aria-live="polite" className={`rounded-xl px-4 py-3 text-sm ${panel.avisos.length || errorRevision ? "bg-amber-50 text-amber-900" : "bg-slate-50 text-slate-600"}`}>
+          {panel.avisos.length > 0 && <ul className="space-y-1">{panel.avisos.map((aviso) => <li key={aviso}>{aviso}</li>)}</ul>}
+          {panel.mensaje && <p>{panel.mensaje}</p>}
+          {panel.vigente && revision?.merma_l && <p className="mt-1">Diferencia volumétrica: {cantidad(revision.merma_l, "L")}</p>}
         </section>
 
         {error && !revisando && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>}
@@ -123,7 +137,7 @@ export default function CierreDescremado({ corrida, alCerrar, alCompletarse }: {
               { etiqueta: "Leche descremada", valor: `${corrida.silo_descremada_codigo} · ${cantidad(campos.litros_descremada, "L")} · ${campos.grasa_descremada} % MG` },
               { etiqueta: "Crema", valor: `${corrida.estanque_crema_codigo} · ${cantidad(campos.litros_crema, "L")} · ${campos.grasa_crema} % MG` },
             ]}
-            advertencia={limites.length ? limites.join(" ") : undefined}
+            advertencia={panel.advertencia}
             textoConfirmar="Confirmar salidas y cerrar"
             ocupado={guardando}
             error={error}

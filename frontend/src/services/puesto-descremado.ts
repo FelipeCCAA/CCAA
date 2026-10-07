@@ -1,4 +1,4 @@
-import type { DescremadoraPuesto } from "./descremado.service.ts";
+import type { DescremadoraPuesto, RevisionCierreDescremado } from "./descremado.service.ts";
 
 /* Un solo mapa de «dónde se resuelve» para los puestos (Desviación 17). */
 export { moduloDeResolver } from "./puesto-secado.ts";
@@ -75,4 +75,51 @@ export function situacionDeCorrida(estado: string, estadoEjecucion: string, etiq
     default:
       return etiqueta ?? estado;
   }
+}
+
+export interface AvisosCierre {
+  /* Avisos de una revisión que corresponde a lo tecleado; nunca de una vieja. */
+  avisos: string[];
+  /* Lo que el panel dice en vez de la lista, o `null` si hay avisos que mostrar. */
+  mensaje: string | null;
+  /* ¿La revisión corresponde a lo que se va a cerrar? */
+  vigente: boolean;
+  /* Qué repite la confirmación: los límites vigentes, o que se calculan al cerrar. */
+  advertencia: string | undefined;
+}
+
+const SE_CALCULAN_AL_CERRAR = "Los avisos no alcanzaron a revisarse con lo registrado: el servidor los calcula al cerrar.";
+
+/*
+  Qué dice el panel de avisos del cierre. «Sin avisos» es una afirmación del
+  servidor, así que solo se dice con una revisión en la mano: si la consulta
+  falló o va en camino tras una tecla, la revisión anterior ya no habla de lo
+  que se va a cerrar y no se muestra. Los avisos no deciden nada —el servidor
+  los vuelve a calcular y los guarda al cerrar—, pero un «sin avisos» falso
+  confirma un cierre que sí los tenía.
+*/
+export function avisosDeCierre({ revision, error, pendiente }: {
+  revision: RevisionCierreDescremado | null;
+  error: boolean;
+  pendiente: boolean;
+}): AvisosCierre {
+  if (pendiente) {
+    return { avisos: [], mensaje: "Revisando avisos…", vigente: false, advertencia: SE_CALCULAN_AL_CERRAR };
+  }
+  if (error || !revision) {
+    return {
+      avisos: [],
+      mensaje: error ? "No se pudieron revisar los avisos; el servidor los vuelve a calcular al cerrar." : "Revisando avisos…",
+      vigente: false,
+      advertencia: SE_CALCULAN_AL_CERRAR,
+    };
+  }
+  const limites = revision.avisos_limites.map((aviso) => aviso.mensaje);
+  const avisos = [...limites, ...revision.avisos_balance];
+  return {
+    avisos,
+    mensaje: avisos.length ? null : "Sin avisos con lo registrado.",
+    vigente: true,
+    advertencia: limites.length ? limites.join(" ") : undefined,
+  };
 }

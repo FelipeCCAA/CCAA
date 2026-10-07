@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  accionDeDescremadora, corridaCancelable, moduloDeResolver, situacionDeCorrida,
+  accionDeDescremadora, avisosDeCierre, corridaCancelable, moduloDeResolver, situacionDeCorrida,
 } from "../src/services/puesto-descremado.ts";
 
 const base = {
@@ -77,4 +77,45 @@ test("la situación de una corrida para la lista y el historial", () => {
 test("los motivos del silo se resuelven en Silos, módulo de Recepción", () => {
   assert.equal(moduloDeResolver("/silos"), "recepcion");
   assert.equal(moduloDeResolver("/calidad/inocuidad"), "inocuidad");
+});
+
+const revisionVacia = { avisos_limites: [], avisos_balance: [], merma_l: null, desvio_grasa_kg: null };
+
+test("los avisos del cierre solo dicen «sin avisos» si el servidor respondió", () => {
+  const vacia = avisosDeCierre({ revision: revisionVacia, error: false, pendiente: false });
+  assert.equal(vacia.mensaje, "Sin avisos con lo registrado.");
+  assert.deepEqual(vacia.avisos, []);
+  assert.equal(vacia.vigente, true);
+  assert.equal(vacia.advertencia, undefined);
+
+  const sinRespuesta = avisosDeCierre({ revision: null, error: false, pendiente: false });
+  assert.notEqual(sinRespuesta.mensaje, "Sin avisos con lo registrado.");
+  assert.equal(sinRespuesta.vigente, false);
+});
+
+test("si la revisión falla, se dice y la confirmación avisa que el servidor los calcula al cerrar", () => {
+  const fallo = avisosDeCierre({ revision: null, error: true, pendiente: false });
+  assert.equal(fallo.mensaje, "No se pudieron revisar los avisos; el servidor los vuelve a calcular al cerrar.");
+  assert.deepEqual(fallo.avisos, []);
+  assert.equal(fallo.vigente, false);
+  assert.match(fallo.advertencia ?? "", /el servidor los calcula al cerrar/);
+});
+
+test("mientras se teclea no se muestran avisos viejos", () => {
+  const vieja = {
+    ...revisionVacia,
+    avisos_limites: [{ codigo: "grasa_descremada_alta", mensaje: "Grasa alta" }],
+    avisos_balance: ["Balance descuadrado"],
+  };
+  const pendiente = avisosDeCierre({ revision: vieja, error: false, pendiente: true });
+  assert.deepEqual(pendiente.avisos, []);
+  assert.equal(pendiente.vigente, false);
+  assert.equal(pendiente.mensaje, "Revisando avisos…");
+  assert.match(pendiente.advertencia ?? "", /el servidor los calcula al cerrar/);
+
+  const lista = avisosDeCierre({ revision: vieja, error: false, pendiente: false });
+  assert.deepEqual(lista.avisos, ["Grasa alta", "Balance descuadrado"]);
+  assert.equal(lista.mensaje, null);
+  // La confirmación repite solo los límites: el balance no es un aviso de calidad.
+  assert.equal(lista.advertencia, "Grasa alta");
 });

@@ -267,7 +267,7 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
               <h3 className="font-semibold text-slate-900">Reparto planificado</h3>
               <p className="text-xs text-slate-600">El sistema sugiere por balance de materia grasa; el operador confirma o ajusta. Estos litros se reservan en los TK.</p>
             </div>
-            <button type="button" disabled={calculando || revisando || !origen?.analisis} onClick={() => void calcular()} className="rounded-xl border border-sky-700 bg-white px-4 py-2 text-sm font-semibold text-sky-800 disabled:opacity-50">{calculando ? "Calculando…" : "Calcular sugerencia"}</button>
+            <button type="button" disabled={calculando || revisando || !origen?.analisis || !productoDescremada || !productoCrema} onClick={() => void calcular()} className="rounded-xl border border-sky-700 bg-white px-4 py-2 text-sm font-semibold text-sky-800 disabled:opacity-50">{calculando ? "Calculando…" : "Calcular sugerencia"}</button>
           </div>
           {sugerencia && (
             <fieldset className="mt-4 grid gap-3 sm:grid-cols-2" disabled={revisando}>
