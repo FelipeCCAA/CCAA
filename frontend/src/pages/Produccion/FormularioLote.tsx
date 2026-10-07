@@ -98,6 +98,8 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
   const [vale, setVale] = useState("");
   const [litros, setLitros] = useState("");
   const [equipos, setEquipos] = useState<EquipoInicioProduccion[]>([]);
+  // Qué tipos abren lote desde un vale: lo sirve `opciones-inicio`.
+  const [tiposQueAbren, setTiposQueAbren] = useState<string[]>([]);
   const [ejecuciones, setEjecuciones] = useState<EjecucionOperativa[]>([]);
   const [ordenes, setOrdenes] = useState<Awaited<ReturnType<typeof obtenerOpcionesInicioProduccion>>["ordenes"]>([]);
 
@@ -168,7 +170,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
        viajaría intacto hasta `confirmar-borrador/` sin pasar nunca por el
        filtro del desplegable. */
     const valeGuardado = vales.find((item) => item.id === guardado.vale);
-    const compatiblesDelBorrador = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(valeGuardado?.producto_familia));
+    const compatiblesDelBorrador = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(valeGuardado?.producto_familia), tiposQueAbren);
     const equipoValido = guardado.equipo != null
       && compatiblesDelBorrador.some((item) => item.id === guardado.equipo);
     const equipoFinal = equipoValido ? String(guardado.equipo) : (equipoInicial ? String(equipoInicial) : "");
@@ -207,11 +209,13 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
       .then((opciones) => {
         setVales(opciones.entradas);
         setEquipos(opciones.equipos);
+        setTiposQueAbren(opciones.tipos_que_abren_desde_vale ?? []);
         setOrdenes(opciones.ordenes);
       })
       .catch(() => {
         setVales([]);
         setEquipos([]);
+        setTiposQueAbren([]);
         setOrdenes([]);
       });
     obtenerEjecucionesOperativas().then(setEjecuciones).catch(() => setEjecuciones([]));
@@ -298,7 +302,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
   /* En el puesto de Evaporación el formulario solo ofrece evaporadores; en
      el resto se excluyen, igual que las torres, porque esos lotes se abren
      desde su propio puesto (Evaporación o Secado). */
-  const equiposCompatibles = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(valeSeleccionado?.producto_familia));
+  const equiposCompatibles = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(valeSeleccionado?.producto_familia), tiposQueAbren);
   /* Mismo criterio sobre los vales: en evaporación solo los que van a un
      evaporador; en el resto, la familia polvo se excluye porque esa leche
      solo va a evaporador. */
@@ -488,7 +492,7 @@ function FormularioLote({ alCerrar, alGuardar, modo = "resto", equipoInicial, de
                      siendo compatible. En el resto, el tipo de máquina
                      depende de la familia del vale, así que corresponde
                      volver a elegir. */
-                  const compatiblesDelNuevoVale = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(elegido?.producto_familia));
+                  const compatiblesDelNuevoVale = equiposCompatiblesDe(equipos, modo, tiposDeFamilia(elegido?.producto_familia), tiposQueAbren);
                   if (modo === "evaporacion") {
                     const sigueSiendoValida = compatiblesDelNuevoVale.some((item) => String(item.id) === equipo);
                     fijarEquipo(sigueSiendoValida ? equipo : (equipoInicial ? String(equipoInicial) : ""), compatiblesDelNuevoVale);

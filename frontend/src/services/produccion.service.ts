@@ -405,6 +405,8 @@ export interface EquipoInicioProduccion extends Equipo {
 export interface OpcionesInicioProduccion {
   entradas: ValeDisponible[];
   equipos: EquipoInicioProduccion[];
+  /* La regla de `abre_desde_vale`, servida (`equiposCompatiblesDe`). */
+  tipos_que_abren_desde_vale: string[];
   ordenes: {
     id: number; codigo: string; producto: number; producto_nombre: string;
     cantidad_planificada: string; unidad: string; estado: string;

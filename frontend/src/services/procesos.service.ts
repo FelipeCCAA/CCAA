@@ -558,6 +558,16 @@ export async function iniciarCondensacion(id: number): Promise<CorridaCondensaci
   return data;
 }
 
+/* Suelta un evaporador preparado: anula el lote y devuelve la leche al silo. */
+export async function cancelarPreparacionCondensacion(
+  id: number, motivo: string,
+): Promise<{ ejecucion_id: number; ejecucion_codigo: string; estado: string }> {
+  const { data } = await api.post<{ ejecucion_id: number; ejecucion_codigo: string; estado: string }>(
+    `procesos/condensaciones/${id}/cancelar-preparacion/`, { motivo },
+  );
+  return data;
+}
+
 export async function cerrarCondensacion(id: number, datos: {
   litros_precondensado: number;
   flujo_promedio?: number;

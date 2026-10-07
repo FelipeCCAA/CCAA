@@ -2,10 +2,20 @@ import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 
 import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
+import { puedeAccederModulo } from "../../services/access-control";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
 import { cantidad } from "../../services/formato";
-import { accionDeTorre, corridaCancelable } from "../../services/puesto-secado";
+import { accionDeTorre, corridaCancelable, moduloDeResolver } from "../../services/puesto-secado";
 import type { TorrePuesto } from "../../services/secado.service";
+import { obtenerSesion } from "../../services/sesion";
+
+/* ¿Lleva el enlace a un módulo en el que el usuario puede entrar? Si no, se
+   omite: «Acceso restringido» no resuelve nada (igual que «Analizar silo» en
+   Evaporación). */
+function puedeIr(ruta: string): boolean {
+  const modulo = moduloDeResolver(ruta);
+  return modulo !== null && puedeAccederModulo(obtenerSesion()?.usuario, modulo);
+}
 
 const ROTULO = { disponible: "Disponible", preparada: "Preparada", en_curso: "En curso" } as const;
 
@@ -28,6 +38,9 @@ export default function TarjetaTorre({ fila, ocupado, puedeOperar, onTomar, onIn
   const corridaId = corrida?.id ?? null;
   const cancelable = corridaCancelable(fila);
   const idMotivo = useId();
+  const idMotivoAccion = useId();
+  /* El botón deshabilitado anuncia por qué: el motivo visible lo describe. */
+  const describe = accion.motivo ? idMotivoAccion : undefined;
   const [cancelando, setCancelando] = useState<"no" | "motivo" | "confirmar">("no");
   const [motivo, setMotivo] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -77,26 +90,26 @@ export default function TarjetaTorre({ fila, ocupado, puedeOperar, onTomar, onIn
         <p className="text-sm text-violet-800">Polvo de <span className="font-mono">{fila.en_calidad.lote_codigo}</span> esperando Calidad</p>
       )}
       {accion.tipo === "tomar" && puedeOperar && (
-        <button type="button" disabled={!accion.habilitada} onClick={() => onTomar(fila.equipo_id)} className="rounded-xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-40">Tomar concentrado</button>
+        <button type="button" disabled={!accion.habilitada} aria-describedby={describe} onClick={() => onTomar(fila.equipo_id)} className="rounded-xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-40">Tomar concentrado</button>
       )}
       {accion.tipo === "iniciar" && puedeOperar && corridaId !== null && (
-        <button type="button" disabled={!accion.habilitada || ocupado || cancelando !== "no"} onClick={() => onIniciar(corridaId)} className="rounded-xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-40">
+        <button type="button" disabled={!accion.habilitada || ocupado || cancelando !== "no"} aria-describedby={describe} onClick={() => onIniciar(corridaId)} className="rounded-xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-40">
           {ocupado ? "Iniciando…" : "Iniciar secado"}
         </button>
       )}
       {accion.tipo === "cerrar" && puedeOperar && corridaId !== null && (
-        <button type="button" disabled={!accion.habilitada} onClick={() => onCerrar(corridaId)} className="rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-40">Registrar balance y cerrar</button>
+        <button type="button" disabled={!accion.habilitada} aria-describedby={describe} onClick={() => onCerrar(corridaId)} className="rounded-xl bg-green-700 px-4 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-40">Registrar balance y cerrar</button>
       )}
       {accion.motivo && (
-        <p className="text-sm text-red-800">
+        <p id={idMotivoAccion} className="text-sm text-red-800">
           {accion.motivo}
-          {fila.resolver_en && <>{" "}<Link to={fila.resolver_en} className="font-semibold underline">Ver dónde se resuelve</Link></>}
+          {fila.resolver_en && puedeIr(fila.resolver_en) && <>{" "}<Link to={fila.resolver_en} className="font-semibold underline">Ver dónde se resuelve</Link></>}
         </p>
       )}
       {fila.avisos.length > 0 && (
         <ul className="space-y-1 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {fila.avisos.map((aviso) => <li key={aviso}>{aviso}</li>)}
-          {fila.falta_inspeccion && (
+          {fila.falta_inspeccion && puedeIr("/registros") && (
             <li><Link to="/registros" className="font-semibold underline">Registrar la inspección pre-operativa</Link></li>
           )}
         </ul>
