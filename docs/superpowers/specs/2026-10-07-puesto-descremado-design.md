@@ -175,7 +175,8 @@ Cualquier `ValidationError` revierte todo: ni corrida, ni reservas, ni máquina 
     para="proceso")`: análisis confirmado y vigente, **dos firmas**, inhibidores, 48 h,
     estado, CIP) → `RESOLVER_SILOS`;
   - **el análisis con que se preparó sigue siendo el vigente del silo** y sigue
-    confirmado, con la misma grasa y SNG congeladas → `RESOLVER_SILOS` (nuevo, ver §8);
+    confirmado, con la misma grasa y SNG congeladas → sin enlace: se resuelve cancelando
+    y volviendo a preparar (§8.13);
   - origen y destinos siguen pasando `motivos_origen_descremacion` y
     `motivos_destino_descremacion`, excluyendo las reservas de la propia ejecución;
   - las tres reservas propias siguen activas.
@@ -468,3 +469,13 @@ general, sin detenerse a preguntar):
 12. **URL de preparar**: se conserva `crear-guiada/` (Evaporación también la conservó); el
     nombre no promete iniciar, a diferencia de `iniciar-desde-inventario` en Secado, que se
     renombró por eso.
+13. **Ajustes del plan** (`docs/superpowers/plans/2026-10-07-puesto-descremado.md`,
+    «Desviaciones»): `motivos_origen_descremacion`/`motivos_destino_descremacion` se
+    extrajeron de `iniciar_descremacion` (no existían), junto con
+    `motivos_para_preparar_desde_silo` y `recepcion.servicios.ultimo_analisis_confirmado`;
+    `EJ-DES-{pk}` usa el id de la corrida; `POST ejecuciones/` también se cerró (405),
+    porque creaba ejecuciones de Descremación sin corrida; «Descremar» del silo dejó de
+    deshabilitarse por los motivos de inicio y siempre lleva al puesto; el motivo
+    «análisis superado» viaja con `resolver_en = null` (se arregla cancelando y volviendo
+    a preparar, no analizando); cancelar por la bandeja genérica anula también una corrida
+    en curso; `corrida.estado`, `estados` y `ejecucion_estado` son claves extra.

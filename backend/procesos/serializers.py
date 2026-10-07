@@ -199,6 +199,9 @@ class RevisarCierreDescremacionSerializer(serializers.Serializer):
 
 class CorridaDescremacionSerializer(serializers.ModelSerializer):
     ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
+    # El historial distingue «Preparada» de «Esperando Calidad» con el estado
+    # de la ejecución, no solo con el de la corrida.
+    ejecucion_estado = serializers.CharField(source="ejecucion.estado", read_only=True)
     equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)
     silo_entera_codigo = serializers.CharField(source="silo_entera.codigo", read_only=True)
     silo_descremada_codigo = serializers.CharField(source="silo_descremada.codigo", read_only=True)

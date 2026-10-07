@@ -605,3 +605,207 @@ class LimitesDelCierreTests(BasePuestoDescremado):
 
         self.assertEqual(self.revisar(corrida, self.cuerpo(), self.secador).status_code, 403)
         self.assertEqual(self.cerrar(corrida, self.cuerpo(), self.secador).status_code, 403)
+
+
+class PuestoDescremadoTests(BasePuestoDescremado):
+    def puesto(self, usuario=None):
+        respuesta = self.cliente(usuario).get("/api/procesos/descremaciones/puesto/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        return respuesta.data
+
+    def fila(self, datos, equipo):
+        return next(item for item in datos["descremadoras"] if item["equipo_id"] == equipo.pk)
+
+    def ids(self, filas, *objetos):
+        propios = {objeto.pk for objeto in objetos}
+        return [fila["id"] for fila in filas if fila["id"] in propios]
+
+    def test_una_descremadora_sin_ejecucion_esta_disponible(self):
+        fila = self.fila(self.puesto(), self.descremadora)
+
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertIsNone(fila["corrida"])
+        self.assertEqual(fila["motivos_para_tomar"], [])
+        self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertIsNone(fila["en_calidad"])
+
+    def test_una_preparada_trae_su_plan_y_puede_iniciarse(self):
+        corrida = self.preparada()
+
+        fila = self.fila(self.puesto(), self.descremadora)
+
+        self.assertEqual(fila["estado"], "preparada")
+        self.assertEqual(fila["corrida"]["id"], corrida.pk)
+        self.assertEqual(fila["corrida"]["ejecucion_codigo"], f"EJ-DES-{corrida.pk}")
+        self.assertEqual(fila["corrida"]["estado"], "borrador")
+        self.assertEqual(fila["corrida"]["silo_entera"], self.origen.codigo)
+        self.assertEqual(fila["corrida"]["litros_entrada"], "1000.00")
+        self.assertEqual(fila["corrida"]["silo_descremada"], self.tk_descremada.codigo)
+        self.assertEqual(fila["corrida"]["litros_descremada_plan"], "970.00")
+        self.assertEqual(fila["corrida"]["estanque_crema"], self.tk_crema.codigo)
+        self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertIsNone(fila["resolver_en"])
+
+    def test_una_preparada_sin_segunda_firma_dice_por_que_y_donde(self):
+        self.analizar(self.origen, minutos=30, segunda_firma=False)
+        self.preparada()
+
+        fila = self.fila(self.puesto(), self.descremadora)
+
+        self.assertIn("firma de realización y visualización", fila["motivos_para_iniciar"][0])
+        self.assertEqual(fila["resolver_en"], "/silos")
+
+    def test_una_preparada_en_cip_se_resuelve_en_inocuidad(self):
+        self.preparada()
+        self.cip(self.descremadora)
+
+        fila = self.fila(self.puesto(), self.descremadora)
+
+        self.assertIn("CIP", fila["motivos_para_iniciar"][0])
+        self.assertEqual(fila["resolver_en"], "/calidad/inocuidad")
+
+    def test_una_descremadora_en_cip_no_se_toma(self):
+        self.cip(self.descremadora)
+
+        fila = self.fila(self.puesto(), self.descremadora)
+
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertIn("CIP", fila["motivos_para_tomar"][0])
+        self.assertEqual(fila["resolver_en"], "/calidad/inocuidad")
+
+    def test_un_aseo_observado_es_aviso_no_motivo(self):
+        self.preparada()
+        self.cip(self.descremadora, estado=CicloCIP.Estado.OBSERVADO, horas=3)
+
+        fila = self.fila(self.puesto(), self.descremadora)
+
+        self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertTrue(fila["avisos"])
+
+    def test_ejecucion_pausada_o_bloqueada_esta_en_curso(self):
+        # «En curso manda sobre preparada» no se puede sembrar: la base impide
+        # dos ocupaciones del mismo equipo (Desviación 10).
+        corrida = self.en_curso()
+        for estado in ("ejecucion", "pausada", "bloqueada"):
+            EjecucionProceso.objects.filter(pk=corrida.ejecucion_id).update(estado=estado)
+            with self.subTest(estado=estado):
+                fila = self.fila(self.puesto(), self.descremadora)
+                self.assertEqual(fila["estado"], "en_curso")
+                self.assertEqual(fila["corrida"]["ejecucion_estado"], estado)
+                self.assertEqual(fila["motivos_para_iniciar"], [])
+
+    def test_un_huerfano_con_ejecucion_terminada_no_ocupa(self):
+        corrida = self.preparada()
+        EjecucionProceso.objects.filter(pk=corrida.ejecucion_id).update(
+            estado=EjecucionProceso.Estado.CANCELADA,
+        )
+
+        datos = self.puesto()
+
+        self.assertEqual(self.fila(datos, self.descremadora)["estado"], "disponible")
+        self.assertEqual(self.ids(datos["corridas_de_hoy"], corrida), [])
+
+    def test_en_calidad_informa_los_tk_retenidos(self):
+        self.etapa.requiere_calidad = True
+        self.etapa.save(update_fields=["requiere_calidad"])
+        corrida = self.en_curso()
+        cierre = self.cliente().post(
+            f"/api/procesos/descremaciones/{corrida.pk}/cerrar/",
+            {"litros_descremada": "970", "grasa_descremada": "0.06",
+             "litros_crema": "25", "grasa_crema": "42"},
+            format="json",
+        )
+        self.assertEqual(cierre.status_code, 200, cierre.data)
+
+        fila = self.fila(self.puesto(), self.descremadora)
+
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertEqual(fila["en_calidad"], {
+            "id": corrida.pk, "ejecucion_codigo": corrida.ejecucion.codigo,
+            "tanques": [self.tk_descremada.codigo, self.tk_crema.codigo],
+        })
+
+    def test_destinos_sin_bloqueados_en_cip_ni_reservados(self):
+        self.otro_tk_descremada.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        self.otro_tk_descremada.save(update_fields=["estado"])
+        self.otro_tk_crema.estado = Silo.Estado.EN_CIP
+        self.otro_tk_crema.save(update_fields=["estado"])
+
+        datos = self.puesto()
+
+        self.assertEqual(
+            self.ids(datos["destinos_descremada"], self.tk_descremada, self.otro_tk_descremada),
+            [self.tk_descremada.pk],
+        )
+        self.assertEqual(
+            self.ids(datos["destinos_crema"], self.tk_crema, self.otro_tk_crema),
+            [self.tk_crema.pk],
+        )
+        tk = next(d for d in datos["destinos_descremada"] if d["id"] == self.tk_descremada.pk)
+        self.assertEqual(tk["libre_l"], "30000.00")
+
+        self.preparada()
+        datos = self.puesto()
+
+        self.assertEqual(self.ids(datos["destinos_descremada"], self.tk_descremada), [])
+        self.assertEqual(self.ids(datos["destinos_crema"], self.tk_crema), [])
+
+    def test_origenes_con_el_analisis_que_usara_preparar(self):
+        sin_analisis = self._silo("SILO-PD-SIN", Silo.Tipo.SILO, 10000)
+        MovimientoSilo.objects.create(
+            silo=sin_analisis, tipo=MovimientoSilo.Tipo.INGRESO, litros=500,
+            fecha_hora=timezone.now() - timedelta(hours=1),
+            origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+        )
+        vacio = self._silo("SILO-PD-VACIO", Silo.Tipo.SILO, 10000)
+
+        origenes = {item["id"]: item for item in self.puesto()["origenes"]}
+
+        self.assertEqual(origenes[self.origen.pk]["analisis"]["id"], self.analisis.pk)
+        self.assertEqual(origenes[self.origen.pk]["saldo_l"], "20000.00")
+        self.assertIsNone(origenes[self.origen.pk]["motivo"])
+        self.assertIsNone(origenes[sin_analisis.pk]["analisis"])
+        self.assertIn("no tiene un análisis confirmado", origenes[sin_analisis.pk]["motivo"])
+        self.assertNotIn(vacio.pk, origenes)
+
+    def test_corridas_de_hoy_sin_huerfanos(self):
+        en_curso = self.en_curso()
+        huerfana = self.preparada(
+            equipo=self.otra_descremadora.pk, silo_descremada=self.otro_tk_descremada.pk,
+            estanque_crema=self.otro_tk_crema.pk,
+        )
+        EjecucionProceso.objects.filter(pk=huerfana.ejecucion_id).update(
+            estado=EjecucionProceso.Estado.CANCELADA,
+        )
+
+        datos = self.puesto()
+
+        propias = [c for c in datos["corridas_de_hoy"] if c["id"] in {en_curso.pk, huerfana.pk}]
+        self.assertEqual(
+            [(c["id"], c["estado"], c["estado_ejecucion"]) for c in propias],
+            [(en_curso.pk, "en_curso", "ejecucion")],
+        )
+        self.assertEqual(self.fila(datos, self.otra_descremadora)["estado"], "disponible")
+
+    def test_calidad_lee_el_puesto(self):
+        datos = self.puesto(self.calidad)
+
+        self.assertIn("descremadoras", datos)
+        self.assertIn("borrador", [estado["valor"] for estado in datos["estados"]])
+
+    def test_el_historial_filtra_en_el_servidor(self):
+        primera = self.en_curso()
+        segunda = self.preparada(
+            equipo=self.otra_descremadora.pk, silo_descremada=self.otro_tk_descremada.pk,
+            estanque_crema=self.otro_tk_crema.pk,
+        )
+
+        por_tk = self.cliente().get(
+            "/api/procesos/descremaciones/", {"q": self.otro_tk_descremada.codigo},
+        )
+        por_estado = self.cliente().get("/api/procesos/descremaciones/", {"estado": "en_curso"})
+
+        self.assertEqual(self.ids(por_tk.data["results"], primera, segunda), [segunda.pk])
+        self.assertEqual(self.ids(por_estado.data["results"], primera, segunda), [primera.pk])
+        fila = next(c for c in por_estado.data["results"] if c["id"] == primera.pk)
+        self.assertEqual(fila["ejecucion_estado"], "ejecucion")

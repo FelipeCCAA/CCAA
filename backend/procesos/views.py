@@ -61,7 +61,7 @@ from .servicios import (
     crear_entrada_proceso, crear_mantequilla_guiada,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
-    estado_puesto_evaporacion, estado_puesto_secado,
+    estado_puesto_descremado, estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
     cancelar_preparacion_descremacion, cancelar_preparacion_evaporacion,
     cancelar_preparacion_secado,
@@ -313,17 +313,27 @@ class CorridaCondensacionViewSet(
         return Response(self.get_serializer(corrida).data)
 
 
-class CorridaDescremacionViewSet(viewsets.ModelViewSet):
+class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
     queryset = CorridaDescremacion.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "analisis_entrada",
         "producto_descremada", "producto_crema",
         "silo_entera", "silo_descremada", "estanque_crema",
         "iniciada_por", "finalizada_por",
-    )
+    ).order_by("-pk")
     serializer_class = CorridaDescremacionSerializer
     permission_classes = [OperaProcesoPorEtapa]
     tipo_etapa_operacional = EtapaProceso.Tipo.DESCREMACION
     http_method_names = ["get", "post", "head", "options"]
+    # Historial del puesto: se filtra en el servidor porque la lista está
+    # paginada (mismo contrato que Secado, Existencias y Despacho).
+    busqueda_en = (
+        "ejecucion__codigo", "silo_entera__codigo",
+        "silo_descremada__codigo", "estanque_crema__codigo",
+    )
+    filtro_estado = "estado"
+    filtro_fecha = "ejecucion__creada_en"
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
@@ -334,6 +344,11 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
     def _error(error, codigo=status.HTTP_400_BAD_REQUEST):
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
         return Response(detalle, status=codigo)
+
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Descremado: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_descremado(request.user))
 
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):
