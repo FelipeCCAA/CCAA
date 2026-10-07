@@ -93,7 +93,7 @@ def avisos_limites_descremacion(*, grasa_descremada, grasa_crema, crema_a_despac
 RUTAS_POR_ETAPA = {
     "recepcion": "/leche",
     "estandarizacion": "/estandarizacion",
-    "descremacion": "/procesos?seccion=descremacion",
+    "descremacion": "/produccion/descremado",
     "evaporacion": "/produccion/evaporacion",
     "condensacion": "/produccion/evaporacion",
     "secado": "/produccion/secado",

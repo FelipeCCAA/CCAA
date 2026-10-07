@@ -809,3 +809,12 @@ class PuestoDescremadoTests(BasePuestoDescremado):
         self.assertEqual(self.ids(por_estado.data["results"], primera, segunda), [primera.pk])
         fila = next(c for c in por_estado.data["results"] if c["id"] == primera.pk)
         self.assertEqual(fila["ejecucion_estado"], "ejecucion")
+
+    def test_opciones_alta_ya_no_sirve_maquinas_ni_destinos(self):
+        respuesta = self.cliente().get("/api/procesos/descremaciones/opciones-alta/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        for clave in ("equipos", "silos_descremada", "estanques_crema"):
+            self.assertNotIn(clave, respuesta.data)
+        for clave in ("etapas", "productos_descremada", "productos_crema", "rutas", "bloqueos"):
+            self.assertIn(clave, respuesta.data)

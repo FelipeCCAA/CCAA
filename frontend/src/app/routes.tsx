@@ -73,6 +73,7 @@ const AbastecimientoDetalleLote = lazy(
 const AbastecimientoRecepcion = lazy(() => import("../pages/Abastecimiento/Recepcion"));
 
 const PuestoEvaporacion = lazy(() => import("../pages/Evaporacion/PuestoEvaporacion"));
+const PuestoDescremado = lazy(() => import("../pages/Descremado/PuestoDescremado"));
 const PuestoSecado = lazy(() => import("../pages/Secado/PuestoSecado"));
 
 const PuestoBodega = lazy(() => import("../pages/Bodega/PuestoBodega"));
@@ -217,6 +218,7 @@ function RoutesApp(){
                     <Route element={<RutaModulo modulo="produccion" />}>
                         <Route path="/produccion" element={diferido(<Produccion />)} />
                         <Route path="/produccion/evaporacion" element={diferido(<PuestoEvaporacion />)} />
+                        <Route path="/produccion/descremado" element={diferido(<PuestoDescremado />)} />
                     </Route>
 
                     <Route element={<RutaModulo modulo="secado" />}>

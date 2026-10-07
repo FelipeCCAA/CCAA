@@ -332,19 +332,13 @@ class CierreDescremacionTests(TestCase):
         self.assertEqual(respuesta.data["grasa_crema_objetivo"], Decimal("40"))
         self.assertTrue(respuesta.data["requiere_confirmacion_operador"])
 
-    def test_opciones_alta_entrega_solo_maestros_compatibles(self):
+    def test_opciones_alta_entrega_solo_productos_compatibles(self):
         PerfilUsuario.objects.create(
             usuario=self.usuario,
             empresa=self.sucursal.empresa,
             sucursal=self.sucursal,
             rol=Rol.PRODUCCION,
             area=PerfilUsuario.Area.CONDENSACION,
-        )
-        Equipo.objects.create(
-            sucursal=self.sucursal,
-            codigo="EQ-NO-DES",
-            nombre="Equipo no compatible",
-            tipo=Equipo.Tipo.EVAPORADOR,
         )
         cliente = APIClient()
         cliente.force_authenticate(self.usuario)
@@ -353,16 +347,8 @@ class CierreDescremacionTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 200, respuesta.data)
         self.assertEqual(
-            [item["id"] for item in respuesta.data["equipos"]],
-            [self.ejecucion.equipo_id],
-        )
-        self.assertEqual(
             [item["id"] for item in respuesta.data["productos_descremada"]],
             [self.producto_descremada.pk],
-        )
-        self.assertEqual(
-            [item["id"] for item in respuesta.data["silos_descremada"]],
-            [self.descremada.pk],
         )
         self.assertEqual(respuesta.data["bloqueos"], [])
 

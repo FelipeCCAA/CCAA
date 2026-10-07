@@ -264,7 +264,7 @@ function Produccion() {
         <section className="mb-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Flujo por proceso</p>
           <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
-            <Link to="/procesos?seccion=descremacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">1. Descremación<span className="mt-1 block text-xs font-normal text-slate-500">Leche → descremada + crema</span></Link>
+            <Link to="/produccion/descremado" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">1. Descremación<span className="mt-1 block text-xs font-normal text-slate-500">Leche → descremada + crema</span></Link>
             <Link to="/estandarizacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-emerald-400">2. Estandarización<span className="mt-1 block text-xs font-normal text-slate-500">Mezcla → vale intermedio</span></Link>
             <Link to="/produccion/evaporacion" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-blue-400">3. Evaporación<span className="mt-1 block text-xs font-normal text-slate-500">Vale → concentrado</span></Link>
             <Link to="/produccion/secado" className="rounded-xl border border-slate-200 bg-white p-3 font-semibold text-slate-800 hover:border-amber-400">4. Secado<span className="mt-1 block text-xs font-normal text-slate-500">Concentrado → polvo granel</span></Link>

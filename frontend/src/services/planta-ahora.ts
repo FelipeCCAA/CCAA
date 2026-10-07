@@ -3,7 +3,7 @@ import type { PlantaAhora } from "./procesos.service";
 const RUTAS_ETAPA: Record<string, string> = {
   recepcion: "/leche",
   estandarizacion: "/estandarizacion",
-  descremacion: "/procesos?seccion=descremacion",
+  descremacion: "/produccion/descremado",
   evaporacion: "/produccion/evaporacion",
   condensacion: "/produccion/evaporacion",
   secado: "/produccion/secado",

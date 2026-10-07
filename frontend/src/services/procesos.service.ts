@@ -355,9 +355,6 @@ export interface OpcionesAltaMantequilla {
 
 export interface OpcionesAltaDescremacion {
   etapas: EtapaProceso[];
-  equipos: { id: number; nombre: string; tipo: string; ocupado_por: string | null }[];
-  silos_descremada: { id: number; codigo: string; tipo: string; activo: boolean }[];
-  estanques_crema: { id: number; codigo: string; tipo: string; activo: boolean }[];
   productos_descremada: {
     id: number;
     nombre: string;
@@ -594,11 +591,6 @@ export async function obtenerEtapas(): Promise<Pagina<EtapaProceso>> {
   return data;
 }
 
-export async function obtenerDescremaciones(): Promise<Pagina<CorridaDescremacion>> {
-  const { data } = await api.get<Pagina<CorridaDescremacion>>("procesos/descremaciones/");
-  return data;
-}
-
 export async function obtenerOpcionesAltaDescremacion(): Promise<OpcionesAltaDescremacion> {
   const { data } = await api.get<OpcionesAltaDescremacion>(
     "procesos/descremaciones/opciones-alta/",
@@ -689,24 +681,6 @@ export async function definirDestinoSalida(
   });
 }
 
-export async function crearDescremacionGuiada(datos: {
-  codigo: string; etapa: number; equipo: number; silo_entera: number;
-  analisis_entrada: number; litros_entrada: number;
-  silo_descremada: number; estanque_crema: number;
-  producto_descremada: number; producto_crema: number;
-  litros_descremada_plan: number; litros_crema_plan: number;
-  plan_confirmado: true;
-  ruta_descremada: number; ruta_crema: number;
-  destino_descremada: "estandarizacion";
-  destino_crema: "siguiente_proceso" | "estandarizacion" | "despacho_directo";
-}): Promise<CorridaDescremacion> {
-  const { data } = await api.post<CorridaDescremacion>(
-    "procesos/descremaciones/crear-guiada/",
-    datos,
-  );
-  return data;
-}
-
 export interface SugerenciaDescremacion {
   litros_descremada_sugeridos: string;
   litros_crema_sugeridos: string;
@@ -726,11 +700,6 @@ export async function sugerirBalanceDescremacion(datos: {
   const { data } = await api.post<SugerenciaDescremacion>(
     "procesos/descremaciones/sugerir-balance/", datos,
   );
-  return data;
-}
-
-export async function iniciarDescremacion(id: number): Promise<CorridaDescremacion> {
-  const { data } = await api.post<CorridaDescremacion>(`procesos/descremaciones/${id}/iniciar/`);
   return data;
 }
 

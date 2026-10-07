@@ -352,7 +352,10 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
 
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):
-        """Catálogos operacionales mínimos y faltantes para iniciar descremación."""
+        """Catálogos operacionales mínimos y faltantes para iniciar descremación.
+
+        Máquinas y destinos los sirve `puesto/` con la regla de destino: una sola fuente.
+        """
         from maestros.models import Equipo, Especificacion, Producto, Silo
 
         etapas = EtapaProceso.objects.filter(
@@ -395,13 +398,6 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
             proceso__activo=True,
             producto_id__in=ids_productos,
         ).select_related("producto", "proceso").prefetch_related("proceso__etapas")
-        ocupaciones = {
-            ejecucion.equipo_id: ejecucion.codigo
-            for ejecucion in EjecucionProceso.objects.filter(
-                estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
-                equipo_id__in=equipos.values_list("pk", flat=True),
-            ).only("equipo_id", "codigo")
-        }
         silos_descremada = silos.filter(tipo=Silo.Tipo.TK_LD)
         estanques_crema = silos.filter(tipo=Silo.Tipo.TK_CREMA)
 
@@ -428,23 +424,6 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
             "etapas": [
                 {"id": item.pk, "nombre": item.nombre, "tipo": item.tipo, "activa": item.activa}
                 for item in etapas
-            ],
-            "equipos": [
-                {
-                    "id": item.pk,
-                    "nombre": item.nombre,
-                    "tipo": item.tipo,
-                    "ocupado_por": ocupaciones.get(item.pk),
-                }
-                for item in equipos
-            ],
-            "silos_descremada": [
-                {"id": item.pk, "codigo": item.codigo, "tipo": item.tipo, "activo": item.activo}
-                for item in silos_descremada
-            ],
-            "estanques_crema": [
-                {"id": item.pk, "codigo": item.codigo, "tipo": item.tipo, "activo": item.activo}
-                for item in estanques_crema
             ],
             "productos_descremada": [
                 {

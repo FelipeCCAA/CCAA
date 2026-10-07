@@ -356,7 +356,8 @@ function Silos({ soloPrincipales = false }: SilosProps) {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <AccionSilo texto="Tomar muestra" icono={Beaker} onClick={() => document.getElementById("analisis-silo")?.scrollIntoView({ behavior: "smooth" })} />
               <AccionSilo texto="Estandarizar" icono={FlaskConical} destino={`/estandarizacion?silo=${seleccionado.silo_id}`} bloqueado={bloqueoSeleccionado} />
-              {seleccionado.tipo === "silo" && <AccionSilo texto="Descremar" icono={GitBranch} destino={`/procesos?accion=descremar&silo=${seleccionado.silo_id}`} bloqueado={bloqueoSeleccionado} />}
+              {/* Sin «bloqueado»: preparar no exige firmas ni análisis vigente para entrar; el puesto lo dice con `origenes[].motivo`. */}
+              {seleccionado.tipo === "silo" && <AccionSilo texto="Descremar" icono={GitBranch} destino={`/produccion/descremado?silo=${seleccionado.silo_id}`} />}
               <AccionSilo texto="Despachar" icono={Truck} onClick={() => setDespachando(true)} bloqueado={bloqueoSeleccionado} />
             </div>
             <div className="mt-4">
