@@ -30,6 +30,16 @@ export function accionDeEvaporador(fila: EvaporadorPuesto): {
 }
 
 /*
+  La corrida que «Cancelar preparación» soltaría, o `null` si la tarjeta no
+  ofrece cancelar. Espejo de `cancelar_preparacion_evaporacion`: solo una
+  corrida preparada (en borrador). Los motivos que impiden iniciar no impiden
+  cancelar: suelen ser justo la razón.
+*/
+export function corridaCancelable(fila: EvaporadorPuesto): number | null {
+  return fila.estado === "preparada" ? fila.corrida?.id ?? null : null;
+}
+
+/*
   Destinos que se ofrecen para el concentrado de un vale: todos menos el silo
   del que el lote saca la leche (`silo_destino_codigo` del vale).
   `CorridaCondensacion.clean` rechaza origen == destino, así que ofrecerlo

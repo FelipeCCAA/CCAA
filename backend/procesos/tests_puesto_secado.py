@@ -684,3 +684,175 @@ class CancelarPreparacionTests(BasePuestoSecado):
         self.assertEqual(
             str(respuesta.data["detail"]), "La corrida de Secado nace en el puesto de Secado."
         )
+
+
+class SaldoTrasCancelarTests(BasePuestoSecado):
+    """
+    Una preparación cancelada no consumió nada: el concentrado vuelve con su
+    saldo completo en todas las cuentas, no solo en `disponible_de_salida`.
+    """
+
+    def cancelar_preparacion(self, cantidad="1000"):
+        corrida = self.preparar(cantidad=cantidad)
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.secador, motivo="Torre equivocada.",
+        )
+        return corrida
+
+    def test_la_salida_vuelve_a_salidas_disponibles(self):
+        self.cancelar_preparacion()
+
+        respuesta = self.cliente().get("/api/procesos/salidas/disponibles/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        filas = respuesta.data if isinstance(respuesta.data, list) else respuesta.data["results"]
+        self.assertIn(self.salida.pk, [fila["id"] for fila in filas])
+
+    def test_la_salida_vuelve_a_contar_en_materiales_listos(self):
+        from .consultas_planta import contar_materiales_listos
+
+        antes = contar_materiales_listos()
+        self.cancelar_preparacion()
+
+        self.assertEqual(contar_materiales_listos(), antes)
+
+    def test_una_toma_vigente_sigue_restando_en_materiales_listos(self):
+        from .consultas_planta import contar_materiales_listos
+
+        antes = contar_materiales_listos()
+        self.preparar(cantidad="1000")
+
+        self.assertEqual(contar_materiales_listos(), antes - 1)
+
+    def test_una_salida_cuya_toma_se_cancelo_puede_cambiar_de_destino(self):
+        from uuid import uuid4
+
+        from .servicios import definir_destino_salida
+
+        self.cancelar_preparacion()
+        self.salida.refresh_from_db()
+
+        salida = definir_destino_salida(
+            salida_id=self.salida.pk, destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+            destino_anterior=self.salida.destino, operacion_id=uuid4(),
+            usuario=self.secador,
+        )
+
+        self.assertEqual(salida.destino, SalidaProceso.Destino.DESPACHO_DIRECTO)
+
+    def test_una_salida_con_toma_vigente_no_cambia_de_destino(self):
+        from uuid import uuid4
+
+        from .servicios import definir_destino_salida
+
+        self.preparar(cantidad="600")
+        self.salida.refresh_from_db()
+
+        with self.assertRaisesMessage(ValidationError, "ya fue consumida"):
+            definir_destino_salida(
+                salida_id=self.salida.pk, destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
+                destino_anterior=self.salida.destino, operacion_id=uuid4(),
+                usuario=self.secador,
+            )
+
+
+class OrdenDeCandadosAlCancelarTests(BasePuestoSecado):
+    """
+    Cancelar por la transición genérica toma los candados en el mismo orden
+    que `iniciar_secado` y `cancelar_preparacion_secado`: primero la corrida,
+    después la ejecución. Con el orden cruzado, un inicio y una cancelación
+    simultáneos podían esperarse el uno al otro hasta el deadlock.
+    """
+
+    def test_la_transicion_generica_bloquea_la_corrida_antes_que_la_ejecucion(self):
+        corrida = self.preparar()
+        tabla_corrida = CorridaSecado._meta.db_table
+        tabla_ejecucion = EjecucionProceso._meta.db_table
+
+        with CaptureQueriesContext(connection) as consultas:
+            transicionar_ejecucion(
+                ejecucion_id=corrida.ejecucion_id,
+                estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+                usuario=self.secador, motivo="Cancelada desde la bandeja.",
+            )
+
+        candados = [
+            consulta["sql"] for consulta in consultas.captured_queries
+            if "FOR UPDATE" in consulta["sql"]
+        ]
+        primero_corrida = next(
+            i for i, sql in enumerate(candados) if f'FROM "{tabla_corrida}"' in sql
+        )
+        primero_ejecucion = next(
+            i for i, sql in enumerate(candados) if f'FROM "{tabla_ejecucion}"' in sql
+        )
+        self.assertLess(primero_corrida, primero_ejecucion)
+
+
+class AnularLoteSueltaLaTorreTests(BasePuestoSecado):
+    """
+    Caso 3 de «La pantalla ofrece lo que el backend va a rechazar»: anular el
+    lote cierra su ejecución. Antes la torre preparada quedaba ocupada por una
+    corrida de un lote que ya no existía para nadie.
+    """
+
+    def test_anular_el_lote_de_una_torre_preparada_la_deja_disponible(self):
+        corrida = self.preparar(cantidad="600")
+        ejecucion_id = corrida.ejecucion_id
+
+        respuesta = self.cliente().patch(
+            f"/api/produccion/lotes/{self.lote.pk}/",
+            {"estado": "anulado", "motivo_anulacion": "El concentrado no sirve."},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        ejecucion = EjecucionProceso.objects.get(pk=ejecucion_id)
+        self.assertEqual(ejecucion.estado, EjecucionProceso.Estado.CANCELADA)
+        datos = self.cliente().get("/api/procesos/secados/puesto/").data
+        fila = next(item for item in datos["torres"] if item["equipo_id"] == self.torre.pk)
+        self.assertEqual(fila["estado"], "disponible")
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.estado, Lote.Estado.ANULADO)
+        self.assertEqual(self.lote.observacion.count("[ANULACIÓN]"), 1)
+
+    def anular(self, usuario=None, motivo="El concentrado no sirve."):
+        return self.cliente(usuario).patch(
+            f"/api/produccion/lotes/{self.lote.pk}/",
+            {"estado": "anulado", "motivo_anulacion": motivo}, format="json",
+        )
+
+    def test_el_concentrado_de_un_lote_anulado_no_se_vuelve_a_ofrecer(self):
+        """
+        Cancelar la preparación devuelve el saldo al concentrado
+        (`PREPARACION_CANCELADA`), pero su lote está anulado: no se ofrece ni
+        se prepara, en ninguna de las cuentas.
+        """
+        from .consultas_planta import contar_materiales_listos
+
+        listos_con_el = contar_materiales_listos()
+        self.preparar(cantidad="600")
+
+        self.assertEqual(self.anular().status_code, 200)
+
+        datos = self.cliente().get("/api/procesos/secados/puesto/").data
+        self.assertNotIn(self.salida.pk, [c["salida_id"] for c in datos["concentrados"]])
+        disponibles = self.cliente(self.calidad).get("/api/procesos/salidas/disponibles/").data
+        self.assertNotIn(self.salida.pk, [item["id"] for item in disponibles])
+        self.assertEqual(contar_materiales_listos(), listos_con_el - 1)
+        with self.assertRaises(ValidationError) as error:
+            self.preparar(cantidad="600", torre=self.otra_torre)
+        self.assertIn("anulado", str(error.exception))
+
+    def test_condensacion_no_anula_el_lote_de_una_torre_preparada(self):
+        """Anular suelta la torre: lo decide quien opera Secado (I-1)."""
+        corrida = self.preparar(cantidad="600")
+
+        respuesta = self.anular(self.condensador)
+
+        self.assertEqual(respuesta.status_code, 403, respuesta.data)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+        self.lote.refresh_from_db()
+        self.assertNotEqual(self.lote.estado, Lote.Estado.ANULADO)

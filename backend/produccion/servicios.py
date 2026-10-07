@@ -42,8 +42,133 @@ def litros_ya_tomados(vale, excluyendo=None):
         origen_id__in=lotes.values_list("pk", flat=True),
         silo=vale.silo_destino,
     ).aggregate(total=Sum("litros"))["total"]
+    # Lo que volvió al silo al cancelar una preparación (`devolver_leche_del_
+    # lote`) ya no lo tiene ningún lote: el vale lo recupera.
+    devuelto = MovimientoSilo.objects.filter(
+        tipo=MovimientoSilo.Tipo.INGRESO,
+        origen_tipo=MovimientoSilo.OrigenTipo.DEVOLUCION,
+        lote_id__in=lotes.values_list("pk", flat=True),
+        silo=vale.silo_destino,
+    ).aggregate(total=Sum("litros"))["total"]
 
-    return Decimal(str(total or 0))
+    return Decimal(str(total or 0)) - Decimal(str(devuelto or 0))
+
+
+@transaction.atomic
+def devolver_leche_del_lote(*, lote, silo, usuario, motivo):
+    """
+    Devuelve al silo la leche que el lote sacó y nunca llegó a procesarse.
+
+    Es un asiento compensatorio —un ingreso de devolución—, no el borrado de
+    la salida: el libro de un silo no se edita (`MovimientoSilo.save`), y la
+    salida original es parte de la trazabilidad del lote anulado. Hereda las
+    atribuciones FIFO de esa salida, así que la leche vuelve con las
+    recepciones de las que venía.
+
+    Si no cabe, o el silo no puede recibir (en CIP, fuera de servicio,
+    inactivo), lanza: la cancelación entera se revierte y el operador sabe
+    qué impide devolverla. Devolver dos veces no devuelve el doble.
+    """
+    from maestros.models import Silo
+    from recepcion.models import MovimientoSilo
+    from recepcion.servicios import heredar_atribuciones, saldo_silo
+
+    silo = Silo.objects.select_for_update().get(pk=silo.pk)
+    salidas = list(MovimientoSilo.objects.filter(
+        tipo=MovimientoSilo.Tipo.SALIDA,
+        origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+        origen_id=lote.pk,
+        silo=silo,
+    ).order_by("fecha_hora", "pk"))
+    sacado = sum((salida.litros for salida in salidas), Decimal("0"))
+    devuelto = MovimientoSilo.objects.filter(
+        tipo=MovimientoSilo.Tipo.INGRESO,
+        origen_tipo=MovimientoSilo.OrigenTipo.DEVOLUCION,
+        lote=lote,
+        silo=silo,
+    ).aggregate(total=Sum("litros"))["total"] or Decimal("0")
+    pendiente = sacado - devuelto
+    if pendiente <= 0:
+        return None
+
+    if not silo.activo or silo.estado in {Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO}:
+        estado = "inactivo" if not silo.activo else silo.get_estado_display().lower()
+        raise ValidationError(
+            f"No se puede devolver la leche a {silo.codigo}: está {estado}."
+        )
+    libre = silo.capacidad_l - saldo_silo(silo)
+    if pendiente > libre:
+        raise ValidationError(
+            f"No se puede devolver la leche a {silo.codigo}: excedería su "
+            f"capacidad (vuelven {pendiente} L y quedan {libre} L libres)."
+        )
+
+    ingreso = MovimientoSilo.objects.create(
+        silo=silo,
+        tipo=MovimientoSilo.Tipo.INGRESO,
+        litros=pendiente,
+        fecha_hora=timezone.now(),
+        origen_tipo=MovimientoSilo.OrigenTipo.DEVOLUCION,
+        origen_id=lote.pk,
+        lote=lote,
+        producto=lote.producto,
+        equipo=lote.equipo,
+        usuario=usuario,
+        motivo=f"Devolución de la leche del lote {lote.codigo_lote}: {motivo}",
+    )
+    heredar_atribuciones(ingreso, salidas)
+    return ingreso
+
+
+@transaction.atomic
+def anular_lote(*, lote, motivo, usuario):
+    """
+    La anulación de un lote: una sola, para el `PATCH` y para los puestos.
+
+    Marca la observación, deja el lote `anulado` y cierra su ejecución si
+    todavía ocupa la máquina. Sin esto último el equipo quedaba «ocupado por
+    otra corrida» para siempre (caso 3 de «La pantalla ofrece lo que el
+    backend va a rechazar», `CLAUDE.md`). La ejecución se cancela por
+    `transicionar_ejecucion`, así que suelta reservas y deshace la
+    preparación de la etapa —en Evaporación eso devuelve la leche; en una
+    corrida que ya consumió, no se inventa ninguna devolución—.
+
+    Un lote ya anulado se deja como está: los puestos llegan aquí también
+    desde la transición genérica, después de que el `PATCH` lo anuló.
+    """
+    from procesos.models import EjecucionProceso
+    from procesos.servicios import ejecucion_cancelable, transicionar_ejecucion
+
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({
+            "motivo_anulacion": "Indica el motivo de la anulación. El historial no se elimina."
+        })
+    lote = Lote.objects.select_for_update(of=("self",)).get(pk=lote.pk)
+    if lote.estado == Lote.Estado.ANULADO:
+        return lote
+    marca = f"[ANULACIÓN] {motivo}"
+    lote.observacion = "\n".join(
+        parte for parte in (lote.observacion.strip(), marca) if parte
+    )
+    lote.estado = Lote.Estado.ANULADO
+    lote.save(update_fields=["estado", "observacion"])
+
+    ejecucion = (
+        EjecucionProceso.objects.filter(pk=lote.ejecucion_id)
+        .values_list("estado", flat=True).first()
+    )
+    # `pendiente_control` no se cancela (`EjecucionProceso.TRANSICIONES`):
+    # el material ya salió y espera a Calidad, que es quien lo decide.
+    if ejecucion is not None and ejecucion_cancelable(ejecucion):
+        transicionar_ejecucion(
+            ejecucion_id=lote.ejecucion_id,
+            estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=usuario,
+            motivo=f"Lote {lote.codigo_lote} anulado: {motivo}",
+        )
+        lote.refresh_from_db()
+    return lote
 
 
 MENSAJE_LOTE_EN_TORRE = "Los lotes en torre nacen desde el puesto de Secado."

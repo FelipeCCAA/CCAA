@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { accionDeTorre, corridaCancelable, situacionDeCorrida } from "../src/services/puesto-secado.ts";
+import { accionDeTorre, corridaCancelable, moduloDeResolver, situacionDeCorrida } from "../src/services/puesto-secado.ts";
 
 const base = {
   equipo_id: 1, codigo: "e1", nombre: "Torre 1", corrida: null,
@@ -78,4 +78,12 @@ test("una preparada se nombra «Preparada», no «En la torre»", () => {
 test("un estado que no se conoce no se nombra «Cancelada»: usa la etiqueta del servidor", () => {
   assert.equal(situacionDeCorrida("borrador", "no_requerida", "Borrador"), "Borrador");
   assert.equal(situacionDeCorrida("estado_nuevo"), "estado_nuevo");
+});
+
+test("cada «dónde se resuelve» sabe a qué módulo lleva", () => {
+  assert.equal(moduloDeResolver("/calidad/inocuidad"), "inocuidad");
+  assert.equal(moduloDeResolver("/calidad"), "calidad");
+  assert.equal(moduloDeResolver("/registros"), "registros");
+  // Un destino que no se conoce no se ofrece: no se sabe si se puede entrar.
+  assert.equal(moduloDeResolver("/otra-cosa"), null);
 });

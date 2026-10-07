@@ -61,8 +61,10 @@ from .servicios import (
     diagnosticar_integridad_produccion,
     estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
-    cancelar_preparacion_secado, inicio_reservado_al_puesto,
-    MENSAJE_INICIO_SECADO_EN_PUESTO,
+    cancelar_preparacion_evaporacion, cancelar_preparacion_secado,
+    inicio_reservado_al_puesto,
+    MENSAJE_INICIO_SECADO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
+    salida_de_lote_anulado,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
     sugerir_plan_descremacion,
@@ -275,6 +277,22 @@ class CorridaCondensacionViewSet(
             detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
             return Response(detalle, status=status.HTTP_409_CONFLICT)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta un evaporador preparado: anula el lote y devuelve la leche al silo."""
+        try:
+            ejecucion = cancelar_preparacion_evaporacion(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
@@ -600,7 +618,11 @@ class CorridaMantequillaViewSet(
             salidas_proceso__liberacion_calidad__estado="liberado",
         ).annotate(
                 kg_usados=Coalesce(
-                    Sum("entradas_proceso__cantidad", filter=Q(entradas_proceso__unidad__iexact="kg")),
+                    Sum(
+                        "entradas_proceso__cantidad",
+                        filter=Q(entradas_proceso__unidad__iexact="kg")
+                        & ~preparacion_cancelada("entradas_proceso__"),
+                    ),
                     Value(0), output_field=DecimalField(),
                 )
             ).distinct()
@@ -1378,11 +1400,22 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 ],
             ).exclude(
                 naturaleza=SalidaProceso.Naturaleza.MERMA
+            ).exclude(
+                salida_de_lote_anulado()
             ).select_related(
                 "ejecucion__etapa__proceso", "ejecucion__equipo", "silo",
                 "lote__producto", "liberacion_calidad__analisis_silo",
                 "ruta_producto__proceso",
-            ).annotate(consumido=Sum("usos_como_origen__cantidad"))
+            # Los usos se descuentan con la regla de `disponible_de_salida`:
+            # una preparación cancelada no tomó nada. Esta cuenta difiere de
+            # aquella en dos cosas, a propósito: suma además los consumos
+            # físicos del lote en el silo (movimientos de salida) y los kg
+            # trazables, porque sirve también al balance en kg; y no resta
+            # despachos a granel, que esta lista no ofrece consumir.
+            ).annotate(consumido=Sum(
+                "usos_como_origen__cantidad",
+                filter=~preparacion_cancelada("usos_como_origen__"),
+            ))
         )
         silo_id = request.query_params.get("silo")
         if silo_id:
@@ -1412,7 +1445,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             for fila in EntradaProceso.objects.filter(
                 lote_id__in={clave[0] for clave in claves_material},
                 unidad__iexact="kg",
-            ).values("lote_id").annotate(total=Sum("cantidad"))
+            ).exclude(PREPARACION_CANCELADA).values("lote_id").annotate(total=Sum("cantidad"))
         }
         for salida in salidas:
             salida.consumido_trazable = (

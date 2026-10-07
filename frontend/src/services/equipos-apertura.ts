@@ -1,19 +1,7 @@
 /*
-  Tipos de máquina sobre los que el servidor abre un lote desde un vale:
-  espejo de `produccion.servicios.abre_desde_vale` (la regla de
-  `exigir_apertura_fuera_de_secado`). Cualquier otro —torre, punto de carga,
-  descremadora, otro— cae en Secado y se rechaza al confirmar. El servidor ya
-  filtra `opciones-inicio` con esa regla; esta lista solo evita que una
-  familia pida, ni por error, algo que el servidor no va a aceptar.
-  `produccion.tests_lote_en_torre.test_abre_desde_vale_es_la_regla_de_la_guarda`
-  fija el conjunto del lado del servidor.
-*/
-export const TIPOS_QUE_ABREN_DESDE_VALE: readonly string[] = ["evaporador", "envasadora", "linea"];
-
-/*
   Ruta de producto → tipo de máquina. Vive aquí, y no en `FormularioLote`,
   porque `reanudarBorrador` la evalúa contra el vale que guardó el borrador
-  y porque así se puede probar contra `TIPOS_QUE_ABREN_DESDE_VALE`.
+  y porque así se puede probar contra los tipos que sirve el servidor.
 */
 export const RUTA_POR_FAMILIA: Record<string, { ruta: string; tipos: string[]; ayuda: string }> = {
   polvo: {
@@ -47,20 +35,24 @@ export const tiposDeFamilia = (familia: string | undefined): string[] | null =>
   sigue valiendo (antes vivía dentro de `FormularioLote`).
 
   En Producción (`resto`) no se ofrecen evaporadores —se abren en el puesto de
-  Evaporación— ni nada que el servidor no abra desde un vale
-  (`TIPOS_QUE_ABREN_DESDE_VALE`): ni torres —un lote en torre nace solo desde
-  el puesto de Secado— ni puntos de carga, aunque la familia no tenga ruta o
-  la ruta los nombre.
+  Evaporación— ni nada que el servidor no abra desde un vale: ni torres —un
+  lote en torre nace solo desde el puesto de Secado— ni puntos de carga,
+  descremadoras u «otro», aunque la familia no tenga ruta o la ruta los nombre.
+
+  `tiposQueAbren` es `tipos_que_abren_desde_vale` de `opciones-inicio`: la
+  regla de `produccion.servicios.abre_desde_vale`, servida. Antes había una
+  copia aquí, y una copia ofrece tarde o temprano lo que el servidor rechaza.
 */
 export function equiposCompatiblesDe<T extends { activo: boolean; tipo: string }>(
   equipos: T[],
   modo: "evaporacion" | "resto",
   tiposRuta: readonly string[] | null,
+  tiposQueAbren: readonly string[],
 ): T[] {
   return equipos.filter((item) => {
     if (!item.activo) return false;
     if (modo === "evaporacion") return item.tipo === "evaporador";
-    if (item.tipo === "evaporador" || !TIPOS_QUE_ABREN_DESDE_VALE.includes(item.tipo)) return false;
+    if (item.tipo === "evaporador" || !tiposQueAbren.includes(item.tipo)) return false;
     return !tiposRuta || tiposRuta.includes(item.tipo);
   });
 }

@@ -37,12 +37,51 @@ ESTADOS_EJECUCION_TERMINALES = frozenset({
     EjecucionProceso.Estado.CANCELADA,
 })
 
+
+def ejecucion_cancelable(estado):
+    """
+    ¿Se puede cancelar una ejecución en este estado? Lo dice
+    `EjecucionProceso.TRANSICIONES`: ni las terminales ni `pendiente_control`
+    —el material ya salió y lo decide Calidad—. Una sola regla para
+    `anular_lote`, que cancela, y para el `PATCH` del lote, que pide el permiso
+    de la etapa solo cuando va a cancelar.
+    """
+    return EjecucionProceso.Estado.CANCELADA in EjecucionProceso.TRANSICIONES.get(estado, set())
+
 # Una ejecución cancelada sin haber iniciado: se reservó la máquina y el
 # material, pero nada entró a la máquina. Sus entradas quedan como rastro y no
 # consumen saldo (`disponible_de_salida`).
-PREPARACION_CANCELADA = Q(
-    ejecucion__estado=EjecucionProceso.Estado.CANCELADA,
-    ejecucion__inicio__isnull=True,
+def preparacion_cancelada(prefijo=""):
+    """
+    `PREPARACION_CANCELADA` vista desde otro modelo: con
+    `prefijo="usos_como_origen__"` filtra los usos de una salida dentro de una
+    anotación (`Sum(..., filter=~preparacion_cancelada(prefijo))`). Un solo
+    `Q` para el saldo, la oferta y el cambio de destino.
+    """
+    return Q(**{
+        f"{prefijo}ejecucion__estado": EjecucionProceso.Estado.CANCELADA,
+        f"{prefijo}ejecucion__inicio__isnull": True,
+    })
+
+
+PREPARACION_CANCELADA = preparacion_cancelada()
+
+
+def salida_de_lote_anulado(prefijo=""):
+    """
+    Una salida cuyo lote se anuló. Cancelar la preparación le devuelve el
+    saldo (`PREPARACION_CANCELADA`), pero ese material ya no es de ningún
+    lote vivo: no se ofrece (puesto de Secado, `salidas/disponibles`,
+    «materiales listos») ni se prepara (`preparar_continuacion`). Un solo
+    `Q` para las cuatro cuentas.
+    """
+    from produccion.models import Lote
+
+    return Q(**{f"{prefijo}lote__estado": Lote.Estado.ANULADO})
+
+
+MENSAJE_SALIDA_DE_LOTE_ANULADO = (
+    "El lote {codigo} está anulado: su material no se ofrece ni se prepara."
 )
 MENSAJE_MOTIVO_CANCELACION = "Indica el motivo de la cancelación."
 
@@ -988,6 +1027,10 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         raise ValidationError("Ingresa una cantidad válida.") from error
     if cantidad <= 0:
         raise ValidationError("La cantidad debe ser mayor que cero.")
+    if SalidaProceso.objects.filter(pk=salida.pk).filter(salida_de_lote_anulado()).exists():
+        raise ValidationError(
+            MENSAJE_SALIDA_DE_LOTE_ANULADO.format(codigo=salida.lote.codigo_lote)
+        )
     disponible = disponible_de_salida(salida)
     if cantidad > disponible:
         raise ValidationError(
@@ -1056,10 +1099,37 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     )
 
 
+def bloquear_para_cancelar(ejecucion_id):
+    """
+    Los candados de una cancelación, en el orden de los puestos.
+
+    Mismo orden que `iniciar_secado`/`cancelar_preparacion_secado` e
+    `iniciar_condensacion`/`cancelar_preparacion_evaporacion`: la corrida
+    especializada primero, la ejecución después. Cancelar una preparación la
+    borra o la cancela (`_deshacer_preparacion_secado`,
+    `_deshacer_preparacion_evaporacion`); si este camino tomara la ejecución
+    antes, un inicio y una cancelación simultáneos se esperarían el uno al
+    otro en orden cruzado (deadlock). Sin corrida —otras etapas— la consulta
+    no bloquea nada; para quien ya la tiene, retomarla en la misma
+    transacción no espera. Solo vale dentro de una transacción.
+    """
+    for modelo in (CorridaSecado, CorridaCondensacion):
+        list(
+            modelo.objects.select_for_update(of=("self",))
+            .filter(ejecucion_id=ejecucion_id).values_list("pk", flat=True)
+        )
+    list(
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .filter(pk=ejecucion_id).values_list("pk", flat=True)
+    )
+
+
 @transaction.atomic
 def transicionar_ejecucion(
     *, ejecucion_id, estado_nuevo, usuario, motivo="", version_esperada=None
 ):
+    if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
+        bloquear_para_cancelar(ejecucion_id)
     ejecucion = (
         EjecucionProceso.objects.select_for_update()
         .select_related("etapa")
@@ -1136,7 +1206,13 @@ def transicionar_ejecucion(
     ):
         # Aquí y no en la acción del puesto: cancelar desde la bandeja
         # genérica tiene que soltar el concentrado igual.
-        _deshacer_preparacion_secado(ejecucion, motivo)
+        _deshacer_preparacion_secado(ejecucion, motivo, usuario)
+    if estado_nuevo == EjecucionProceso.Estado.CANCELADA and ejecucion.etapa.tipo in {
+        EtapaProceso.Tipo.EVAPORACION, EtapaProceso.Tipo.CONDENSACION,
+    }:
+        # Igual que Secado: por el puesto, por la bandeja genérica o al
+        # anular el lote, una corrida preparada devuelve su leche.
+        _deshacer_preparacion_evaporacion(ejecucion, motivo, usuario)
     if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
         actualizar_queryset_con_auditoria(
             ReservaSiloProceso.objects.filter(
@@ -1187,8 +1263,10 @@ def definir_destino_salida(
         )
     if destino not in salida.destinos_permitidos():
         raise ValidationError("El destino no es compatible con este producto intermedio.")
+    # Una preparación cancelada no tomó nada (`PREPARACION_CANCELADA`): la
+    # salida queda libre para cambiar de destino, igual que en su saldo.
     if (
-        salida.usos_como_origen.exists()
+        salida.usos_como_origen.exclude(PREPARACION_CANCELADA).exists()
         and destino != SalidaProceso.Destino.SIGUIENTE_PROCESO
     ):
         raise ValidationError(
@@ -1530,10 +1608,10 @@ def estado_puesto_evaporacion(usuario):
     que `FlujoCondensacionTests` siembra su ejecución); lo único que de
     verdad libera el equipo aquí es que la ejecución haya llegado a un
     estado terminal (`ESTADOS_EJECUCION_TERMINALES`, el mismo criterio que
-    saca a los huérfanos de `corridas_de_hoy`). Un lote `anulado` cuya ejecución *no* llegó a terminal
-    sigue contando como ocupación — ese es el defecto #3 abierto en
-    «La pantalla ofrece lo que el backend va a rechazar» (`CLAUDE.md`), no
-    uno que esta función resuelva.
+    saca a los huérfanos de `corridas_de_hoy`). Anular un lote cancela su
+    ejecución (`produccion.servicios.anular_lote`, caso 3 de «La pantalla
+    ofrece lo que el backend va a rechazar», `CLAUDE.md`), así que un lote
+    anulado ya no deja la máquina ocupada por este camino.
     """
     from maestros.models import Equipo, Silo
     from recepcion.servicios import motivos_silo_no_disponible
@@ -2225,9 +2303,10 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
     if impedimento:
         raise ValidationError(impedimento)
+    # Una preparación cancelada no tomó crema (`PREPARACION_CANCELADA`).
     utilizado = EntradaProceso.objects.filter(
         lote=corrida.lote_crema, unidad__iexact="kg"
-    ).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    ).exclude(PREPARACION_CANCELADA).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
     disponible = Decimal(str(corrida.lote_crema.kg_producidos or 0)) - utilizado
     if corrida.kg_crema > disponible:
         raise ValidationError(f"El lote de crema solo tiene {disponible} kg disponibles.")
@@ -2446,7 +2525,7 @@ def cerrar_mantequilla(
     return corrida
 
 
-def _deshacer_preparacion_secado(ejecucion, motivo):
+def _deshacer_preparacion_secado(ejecucion, motivo, usuario=None):
     """
     Lo que una preparación de Secado dejó escrito, deshecho al cancelarla.
 
@@ -2478,13 +2557,56 @@ def _deshacer_preparacion_secado(ejecucion, motivo):
         lote.equipo = origen.equipo
         lote.save(update_fields=["ejecucion", "equipo"])
         return
-    marca = (
-        f"[ANULACIÓN] Preparación de Secado cancelada: {motivo} "
-        "La materia prima descontada no vuelve a bodega."
+    from produccion.servicios import anular_lote
+
+    # La misma anulación que el `PATCH` del lote. Su ejecución ya es esta,
+    # cancelada, así que no vuelve a transicionarla; y si el `PATCH` ya lo
+    # anuló, no lo marca dos veces.
+    anular_lote(
+        lote=lote,
+        motivo=(
+            f"Preparación de Secado cancelada: {_con_punto(motivo)} "
+            "La materia prima descontada no vuelve a bodega."
+        ),
+        usuario=usuario,
     )
-    lote.estado = Lote.Estado.ANULADO
-    lote.observacion = "\n".join(parte for parte in (lote.observacion.strip(), marca) if parte)
-    lote.save(update_fields=["estado", "observacion"])
+    if corrida.orden_id:
+        _devolver_orden_a_programada(corrida.orden_id, ejecucion=ejecucion, lote=lote)
+
+
+def _devolver_orden_a_programada(orden_id, *, ejecucion, lote):
+    """
+    La alimentación externa pasa la orden a en proceso al preparar
+    (`preparar_secado_desde_inventario`). Si esa preparación era lo único que
+    la tenía ahí —ningún otro lote vivo de la orden, ninguna otra corrida sin
+    terminar—, cancelarla la devuelve a programada; si no, la orden quedaba en
+    proceso sin nada en proceso.
+    """
+    from produccion.models import Lote, OrdenProduccion
+
+    orden = OrdenProduccion.objects.select_for_update(of=("self",)).get(pk=orden_id)
+    if orden.estado != OrdenProduccion.Estado.EN_PROCESO:
+        return
+    # Un lote en proceso o ya producido dice que la orden empezó por otro
+    # lado. Un borrador no: es un formulario autoguardado, no producción.
+    if Lote.objects.filter(orden=orden).exclude(pk=lote.pk).exclude(
+        estado__in=[Lote.Estado.ANULADO, Lote.Estado.BORRADOR]
+    ).exists():
+        return
+    for corridas in (
+        orden.corridas_condensacion, orden.corridas_secado,
+        orden.corridas_descremacion, orden.corridas_mantequilla,
+    ):
+        if corridas.exclude(ejecucion=ejecucion).exclude(
+            ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES
+        ).exists():
+            return
+    # `en_proceso → programada` no está en `OrdenProduccion.TRANSICIONES`, a
+    # propósito: esa tabla es la que valida el PATCH de la API, y agregarla
+    # dejaría a cualquiera devolver a mano una orden en curso. Aquí no es una
+    # decisión del usuario sino deshacer lo que la preparación cancelada hizo.
+    orden.estado = OrdenProduccion.Estado.PROGRAMADA
+    orden.save(update_fields=["estado"])
 
 
 @transaction.atomic
@@ -2507,6 +2629,107 @@ def cancelar_preparacion_secado(*, corrida_id, usuario, motivo):
             f"Solo se cancela una torre preparada: {ejecucion.codigo} está "
             f"{ejecucion.get_estado_display().lower()}. Una corrida iniciada se "
             "cierra registrando su balance."
+        )
+    return transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk,
+        estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+        usuario=usuario,
+        motivo=motivo,
+    )
+
+
+def _con_punto(texto):
+    texto = (texto or "").strip()
+    return texto if texto.endswith((".", "!", "?")) else f"{texto}."
+
+
+def _deshacer_preparacion_evaporacion(ejecucion, motivo, usuario):
+    """
+    Lo que abrir el lote sobre un evaporador dejó escrito, deshecho al
+    cancelar su ejecución sin haber iniciado la corrida.
+
+    Abrir el lote sacó la leche del silo del vale (`abrir_lote_desde_vale`);
+    como la corrida no empezó, esa leche nunca entró al evaporador y vuelve al
+    mismo silo con un ingreso compensatorio (`devolver_leche_del_lote`). La
+    salida original no se borra. La corrida queda `cancelada` —no se borra
+    como la de Secado: no bloquea nada, y es el rastro de la preparación— y
+    el lote se anula con la misma anulación que el `PATCH`.
+
+    Una corrida que ya inició no devuelve nada: lo que entró al evaporador no
+    vuelve, y la anulación sigue el camino de siempre. Pero queda `cancelada`
+    con su ejecución: una corrida «en proceso» sobre una ejecución cancelada
+    no la está haciendo nadie.
+    """
+    from produccion.models import Lote
+    from produccion.servicios import anular_lote, devolver_leche_del_lote
+
+    corrida = (
+        CorridaCondensacion.objects.select_for_update(of=("self",))
+        .select_related("silo_origen").filter(ejecucion=ejecucion).first()
+    )
+    if corrida is None:
+        return
+    if corrida.estado == CorridaCondensacion.Estado.EN_PROCESO:
+        corrida.estado = CorridaCondensacion.Estado.CANCELADA
+        corrida.save(update_fields=["estado"])
+        return
+    if corrida.estado != CorridaCondensacion.Estado.BORRADOR:
+        return
+    lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
+    devuelta = devolver_leche_del_lote(
+        lote=lote, silo=corrida.silo_origen, usuario=usuario,
+        motivo=f"preparación de Evaporación {ejecucion.codigo} cancelada.",
+    )
+    corrida.estado = CorridaCondensacion.Estado.CANCELADA
+    corrida.save(update_fields=["estado"])
+    if lote.ejecucion_id == ejecucion.pk:
+        # Solo se dice que la leche volvió si hubo devolución: un lote sin
+        # salida del silo (o ya devuelta) no tiene leche que devolver.
+        leche = (
+            f"La leche volvió a {corrida.silo_origen.codigo}."
+            if devuelta is not None
+            else "No había leche descontada que devolver."
+        )
+        if lote.estado == Lote.Estado.ANULADO:
+            # Por el `PATCH` la anulación ya escribió su marca antes de llegar
+            # aquí, y `anular_lote` no vuelve a marcar un lote anulado: la
+            # devolución se agrega a esa marca, una sola vez.
+            if devuelta is not None:
+                lote.observacion = f"{_con_punto(lote.observacion.rstrip())} {leche}"
+                lote.save(update_fields=["observacion"])
+            return
+        anular_lote(
+            lote=lote,
+            motivo=f"Preparación de Evaporación cancelada: {_con_punto(motivo)} {leche}",
+            usuario=usuario,
+        )
+
+
+@transaction.atomic
+def cancelar_preparacion_evaporacion(*, corrida_id, usuario, motivo):
+    """
+    Suelta un evaporador preparado sin iniciarlo: anula el lote y devuelve la
+    leche al silo del vale. Solo desde una corrida en `borrador`: una que ya
+    inició se cierra declarando su precondensado. Simétrico a
+    `cancelar_preparacion_secado`; lo que se deshace lo hace la transición
+    genérica (`_deshacer_preparacion_evaporacion`).
+    """
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError(MENSAJE_MOTIVO_CANCELACION)
+    corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).get(pk=corrida_id)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .get(pk=corrida.ejecucion_id)
+    )
+    if (
+        corrida.estado != CorridaCondensacion.Estado.BORRADOR
+        or ejecucion.estado in ESTADOS_EJECUCION_TERMINALES
+    ):
+        raise ValidationError(
+            f"Solo se cancela un evaporador preparado: {ejecucion.codigo} está "
+            f"{corrida.get_estado_display().lower()}. Una corrida iniciada se "
+            "cierra declarando su precondensado."
         )
     return transicionar_ejecucion(
         ejecucion_id=ejecucion.pk,
@@ -2855,6 +3078,7 @@ def estado_puesto_secado(usuario):
                 SalidaProceso.Destino.ESTANDARIZACION,
             ],
         ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA)
+        .exclude(salida_de_lote_anulado())
         .select_related("ejecucion__etapa", "silo", "lote__producto", "ruta_producto")
         .order_by("lote__codigo_lote", "pk"),
         usuario, campo_sucursal="ejecucion__sucursal_id",

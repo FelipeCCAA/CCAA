@@ -4,7 +4,7 @@ import { Plus, RefreshCw } from "lucide-react";
 import { useCarga, mensajeDe } from "../../components/seccion/utilidades";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
 import {
-  iniciarCondensacion, obtenerCondensacion, obtenerPuestoEvaporacion, type CorridaCondensacion,
+  cancelarPreparacionCondensacion, iniciarCondensacion, obtenerCondensacion, obtenerPuestoEvaporacion, type CorridaCondensacion,
 } from "../../services/procesos.service";
 import { puedeOperarEvaporacion } from "../../services/permisos-evaporacion";
 import { obtenerSesion } from "../../services/sesion";
@@ -50,6 +50,15 @@ export default function PuestoEvaporacion() {
     } finally {
       setIniciando(null);
     }
+  };
+
+  /* La tarjeta muestra el error en su confirmación: por eso aquí se relanza. */
+  const cancelarPreparacion = async (corridaId: number, motivo: string) => {
+    setMensaje("");
+    setError("");
+    const cancelada = await cancelarPreparacionCondensacion(corridaId, motivo);
+    setMensaje(`Preparación ${cancelada.ejecucion_codigo} cancelada: el lote quedó anulado, la leche volvió al silo y el evaporador queda disponible.`);
+    await puesto.recargar();
   };
 
   const prepararCierre = async (corridaId: number) => {
@@ -113,6 +122,7 @@ export default function PuestoEvaporacion() {
               onAbrir={(equipoId) => { setMensaje(""); setAbriendoEn({ equipoId }); }}
               onIniciar={(id) => void iniciar(id)}
               onCerrar={(id) => void prepararCierre(id)}
+              onCancelar={cancelarPreparacion}
             />
           ))}
         </section>

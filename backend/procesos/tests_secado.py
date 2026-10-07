@@ -421,6 +421,82 @@ class InicioSecadoDesdeInventarioTests(TestCase):
             equipo=self.torre, estado__in=["preparacion", "ejecucion"],
         ).exists())
 
+    def preparar_externo(self, codigo_lote, cantidad="100.000"):
+        respuesta = self.cliente.post(
+            "/api/procesos/secados/preparar-desde-inventario/",
+            {
+                "orden": self.orden.pk, "existencia": self.existencia.pk,
+                "equipo": self.torre.pk, "codigo_lote": codigo_lote,
+                "cantidad": cantidad,
+            },
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        return respuesta.data["id"]
+
+    def cancelar_externo(self, corrida_id, motivo="Torre equivocada"):
+        cancelacion = self.cliente.post(
+            f"/api/procesos/secados/{corrida_id}/cancelar-preparacion/",
+            {"motivo": motivo}, format="json",
+        )
+        self.assertEqual(cancelacion.status_code, 200, cancelacion.data)
+
+    def test_cancelar_la_unica_preparacion_devuelve_la_orden_a_programada(self):
+        """La orden pasó a en proceso solo por esta preparación: vuelve atrás."""
+        corrida_id = self.preparar_externo("SUE-POL-OP1")
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenProduccion.Estado.EN_PROCESO)
+
+        self.cancelar_externo(corrida_id)
+
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenProduccion.Estado.PROGRAMADA)
+
+    def test_un_lote_en_borrador_no_retiene_la_orden_en_proceso(self):
+        """Un borrador autoguardado no es producción empezada."""
+        Lote.objects.create(
+            sucursal=self.planta, codigo_lote="SUE-POL-BOR", producto=self.producto,
+            orden=self.orden, fecha=timezone.localdate(), estado=Lote.Estado.BORRADOR,
+        )
+        corrida_id = self.preparar_externo("SUE-POL-OP3")
+
+        self.cancelar_externo(corrida_id)
+
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenProduccion.Estado.PROGRAMADA)
+
+    def test_la_orden_con_otro_lote_vivo_sigue_en_proceso(self):
+        Lote.objects.create(
+            sucursal=self.planta, codigo_lote="SUE-POL-PROD", producto=self.producto,
+            orden=self.orden, fecha=timezone.localdate(), estado=Lote.Estado.PRODUCIDO,
+            kg_producidos=Decimal("50"),
+        )
+        corrida_id = self.preparar_externo("SUE-POL-OP2")
+
+        self.cancelar_externo(corrida_id)
+
+        self.orden.refresh_from_db()
+        self.assertEqual(self.orden.estado, OrdenProduccion.Estado.EN_PROCESO)
+
+    def test_la_marca_de_anulacion_cierra_el_motivo_con_punto(self):
+        corrida_id = self.preparar_externo("SUE-POL-PUN")
+
+        self.cancelar_externo(corrida_id, motivo="Torre equivocada")
+
+        lote = Lote.objects.get(codigo_lote="SUE-POL-PUN")
+        self.assertIn(
+            "cancelada: Torre equivocada. La materia prima descontada", lote.observacion
+        )
+
+    def test_un_motivo_que_ya_termina_en_punto_no_lleva_dos(self):
+        corrida_id = self.preparar_externo("SUE-POL-PU2")
+
+        self.cancelar_externo(corrida_id, motivo="Torre equivocada.")
+
+        lote = Lote.objects.get(codigo_lote="SUE-POL-PU2")
+        self.assertIn("cancelada: Torre equivocada. La materia", lote.observacion)
+        self.assertNotIn("..", lote.observacion)
+
     def test_endpoint_generico_no_omite_el_descuento_de_inventario(self):
         respuesta = self.cliente.post(
             "/api/procesos/entradas/",

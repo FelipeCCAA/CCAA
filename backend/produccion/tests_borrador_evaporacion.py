@@ -20,8 +20,13 @@ from usuarios.models import PerfilUsuario, Rol
 from .tests_borrador import BaseBorradorLote
 
 
-class ConfirmarSobreEvaporadorTests(BaseBorradorLote):
-    """Abrir el lote sobre un evaporador también prepara su corrida: todo o nada."""
+class BaseEvaporadorDesdeVale(BaseBorradorLote):
+    """
+    Un vale liberado, un evaporador con su ruta real y un silo para el
+    concentrado, sin pruebas propias: así otras fixtures (cancelar la
+    preparación, anular el lote) lo reutilizan sin volver a correr las de
+    `ConfirmarSobreEvaporadorTests` (ver `BaseBorradorLote`).
+    """
 
     def setUp(self):
         super().setUp()
@@ -93,6 +98,10 @@ class ConfirmarSobreEvaporadorTests(BaseBorradorLote):
         return (cliente or self.cliente).post(
             f"/api/produccion/lotes/{borrador_id}/confirmar-borrador/", cuerpo, format="json",
         )
+
+
+class ConfirmarSobreEvaporadorTests(BaseEvaporadorDesdeVale):
+    """Abrir el lote sobre un evaporador también prepara su corrida: todo o nada."""
 
     def test_sin_destino_no_abre_nada(self):
         borrador_id = self.borrador_sobre_evaporador()

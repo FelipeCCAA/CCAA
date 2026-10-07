@@ -1460,8 +1460,12 @@ def bloquear(request, lote_id):
             ),
             estado=PalletProducto.Estado.BLOQUEADO,
         )
+        # Una devolución (`devolver_leche_del_lote`) es leche que el lote
+        # nunca procesó: ese silo no guarda producto del lote.
         silos_ids = MovimientoSilo.objects.filter(
             lote=lote, tipo=MovimientoSilo.Tipo.INGRESO
+        ).exclude(
+            origen_tipo=MovimientoSilo.OrigenTipo.DEVOLUCION
         ).values_list("silo_id", flat=True)
         actualizar_queryset_con_auditoria(
             Silo.objects.filter(pk__in=silos_ids),
