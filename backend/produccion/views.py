@@ -911,6 +911,12 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         return Response({
             "entradas": entradas,
             "equipos": opciones_equipos,
+            # La regla de `abre_desde_vale`, servida: el formulario la usa para
+            # filtrar y validar el borrador sin mantener su propia copia.
+            "tipos_que_abren_desde_vale": [
+                tipo for tipo in Equipo.Tipo.values
+                if servicios_produccion.abre_desde_vale(tipo)
+            ],
             "ordenes": [
                 {
                     "id": orden.pk,
@@ -935,7 +941,17 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         el servicio y nadie lo llamaba, así que la trazabilidad se cortaba
         justo donde el material se consume.
         """
-        antes = self.get_object().estado
+        actual = self.get_object()
+        antes = actual.estado
+
+        if request.data.get("estado") == Lote.Estado.ANULADO and actual.ejecucion_id:
+            # Anular cancela la ejecución (`servicios.anular_lote`). Sus
+            # candados se toman antes de escribir el lote y en el orden de los
+            # puestos —corrida, después ejecución—: si no, un inicio
+            # simultáneo los pediría cruzados.
+            from procesos.servicios import bloquear_para_cancelar
+
+            bloquear_para_cancelar(actual.ejecucion_id)
 
         respuesta = super().update(request, *args, **kwargs)
 

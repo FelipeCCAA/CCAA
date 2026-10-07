@@ -788,3 +788,31 @@ class OrdenDeCandadosAlCancelarTests(BasePuestoSecado):
             i for i, sql in enumerate(candados) if f'FROM "{tabla_ejecucion}"' in sql
         )
         self.assertLess(primero_corrida, primero_ejecucion)
+
+
+class AnularLoteSueltaLaTorreTests(BasePuestoSecado):
+    """
+    Caso 3 de «La pantalla ofrece lo que el backend va a rechazar»: anular el
+    lote cierra su ejecución. Antes la torre preparada quedaba ocupada por una
+    corrida de un lote que ya no existía para nadie.
+    """
+
+    def test_anular_el_lote_de_una_torre_preparada_la_deja_disponible(self):
+        corrida = self.preparar(cantidad="600")
+        ejecucion_id = corrida.ejecucion_id
+
+        respuesta = self.cliente().patch(
+            f"/api/produccion/lotes/{self.lote.pk}/",
+            {"estado": "anulado", "motivo_anulacion": "El concentrado no sirve."},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        ejecucion = EjecucionProceso.objects.get(pk=ejecucion_id)
+        self.assertEqual(ejecucion.estado, EjecucionProceso.Estado.CANCELADA)
+        datos = self.cliente().get("/api/procesos/secados/puesto/").data
+        fila = next(item for item in datos["torres"] if item["equipo_id"] == self.torre.pk)
+        self.assertEqual(fila["estado"], "disponible")
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.estado, Lote.Estado.ANULADO)
+        self.assertEqual(self.lote.observacion.count("[ANULACIÓN]"), 1)

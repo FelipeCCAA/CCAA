@@ -595,12 +595,15 @@ class LoteSerializer(serializers.ModelSerializer):
     def update(self, instancia, datos_validados):
         motivo = datos_validados.pop("motivo_anulacion", "").strip()
         motivo_correccion = datos_validados.pop("motivo_correccion", "").strip()
-        if motivo:
-            marca = f"[ANULACIÓN] {motivo}"
-            anterior = datos_validados.get("observacion", instancia.observacion).strip()
-            datos_validados["observacion"] = "\n".join(
-                parte for parte in (anterior, marca) if parte
-            )
+        anula = (
+            datos_validados.get("estado") == Lote.Estado.ANULADO
+            and instancia.estado != Lote.Estado.ANULADO
+        )
+        if anula:
+            # La anulación la hace `servicios.anular_lote`, la misma que usan
+            # los puestos: marca la observación y además cierra la ejecución.
+            # Aquí solo se guarda el resto del PATCH.
+            datos_validados.pop("estado")
         antes = {
             campo: getattr(instancia, campo)
             for campo in self.CAMPOS_SUSTANTIVOS
@@ -625,6 +628,20 @@ class LoteSerializer(serializers.ModelSerializer):
                     motivo=motivo_correccion,
                     cambios=diferencias,
                 )
+        if anula:
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            from .servicios import anular_lote
+
+            try:
+                actualizada = anular_lote(
+                    lote=actualizada, motivo=motivo,
+                    usuario=getattr(self.context.get("request"), "user", None),
+                )
+            except DjangoValidationError as error:
+                raise serializers.ValidationError(
+                    error.message_dict if hasattr(error, "message_dict")
+                    else {"detail": error.messages}
+                ) from error
         return actualizada
 
     def create(self, datos):

@@ -61,7 +61,8 @@ from .servicios import (
     diagnosticar_integridad_produccion,
     estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
-    cancelar_preparacion_secado, inicio_reservado_al_puesto,
+    cancelar_preparacion_evaporacion, cancelar_preparacion_secado,
+    inicio_reservado_al_puesto,
     MENSAJE_INICIO_SECADO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
@@ -275,6 +276,22 @@ class CorridaCondensacionViewSet(
             detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
             return Response(detalle, status=status.HTTP_409_CONFLICT)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta un evaporador preparado: anula el lote y devuelve la leche al silo."""
+        try:
+            ejecucion = cancelar_preparacion_evaporacion(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
