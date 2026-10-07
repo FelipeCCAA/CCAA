@@ -3,6 +3,7 @@ import axios, { type AxiosRequestConfig, type AxiosResponse, type InternalAxiosR
 import { cerrarSesion, guardarMotivoCierre, obtenerToken } from "./sesion";
 import { debeCerrarSesion, mensajeDeCierre } from "./auth-errors";
 import {
+    CacheLecturas,
     claveGet,
     esLecturaMiBorrador,
     LimitadorSolicitudes,
@@ -90,20 +91,17 @@ api.interceptors.response.use(
 );
 
 
+
 /*
   Volver entre módulos ya visitados no debe repetir inmediatamente las mismas
   lecturas. La caché es privada del navegador, dura diez segundos y conserva
   como máximo veinte respuestas. Toda escritura la vacía para no mostrar un
-  saldo anterior después de guardar.
+  saldo anterior después de guardar; una recarga pedida por una persona
+  («Actualizar») también, con `invalidarCacheLecturas`.
 */
 const CACHE_MS = 10_000;
 const CACHE_MAXIMA = 20;
-const cacheGet = new Map<string, {
-    vence: number;
-    respuesta: AxiosResponse;
-    url: string;
-}>();
-const getPendientes = new Map<string, Promise<AxiosResponse>>();
+const cacheGet = new CacheLecturas<AxiosResponse>(CACHE_MS, CACHE_MAXIMA);
 const getOriginal = api.get.bind(api);
 
 api.get = (function getControlado<T = unknown, R = AxiosResponse<T>, D = unknown>(
@@ -111,43 +109,28 @@ api.get = (function getControlado<T = unknown, R = AxiosResponse<T>, D = unknown
     config?: AxiosRequestConfig<D>,
 ): Promise<R> {
     const clave = claveGet(url, config?.params, obtenerToken());
-    const guardada = cacheGet.get(clave);
-    if (guardada && guardada.vence > Date.now()) {
-        return Promise.resolve(guardada.respuesta as R);
-    }
-    const pendiente = getPendientes.get(clave);
-    if (pendiente) return pendiente as Promise<R>;
-
-    const solicitud = getOriginal<T, AxiosResponse<T>, D>(url, config)
-        .then((respuesta) => {
-            if (cacheGet.size >= CACHE_MAXIMA) {
-                const primera = cacheGet.keys().next().value;
-                if (primera !== undefined) cacheGet.delete(primera);
-            }
-            cacheGet.set(clave, {
-                vence: Date.now() + CACHE_MS,
-                respuesta,
-                url,
-            });
-            return respuesta;
-        })
-        .finally(() => getPendientes.delete(clave));
-    getPendientes.set(clave, solicitud as Promise<AxiosResponse>);
-    return solicitud as Promise<R>;
+    return cacheGet.leer(
+        clave, url, () => getOriginal<T, AxiosResponse<T>, D>(url, config),
+    ) as Promise<R>;
 }) as typeof api.get;
+
+/*
+  La próxima lectura de cada recurso va a la red. Es para la recarga explícita:
+  el dato puede haber cambiado en otra sesión —otra persona firmó o liberó— y
+  esa escritura no pasó por este navegador, así que nada vació la caché.
+*/
+export function invalidarCacheLecturas(): void {
+    cacheGet.vaciar();
+}
 
 api.interceptors.response.use((respuesta) => {
     if (respuesta.config.method?.toLowerCase() === "get") return respuesta;
 
     const recursoBorrador = recursoDeEscrituraSoloBorrador(respuesta.config.url);
     if (recursoBorrador) {
-        for (const [clave, guardada] of cacheGet) {
-            if (esLecturaMiBorrador(guardada.url, recursoBorrador)) {
-                cacheGet.delete(clave);
-            }
-        }
+        cacheGet.quitar((url) => esLecturaMiBorrador(url, recursoBorrador));
     } else {
-        cacheGet.clear();
+        cacheGet.vaciar();
     }
     return respuesta;
 });
