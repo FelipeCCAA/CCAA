@@ -137,7 +137,7 @@ def anular_lote(*, lote, motivo, usuario):
     desde la transición genérica, después de que el `PATCH` lo anuló.
     """
     from procesos.models import EjecucionProceso
-    from procesos.servicios import ESTADOS_EJECUCION_TERMINALES, transicionar_ejecucion
+    from procesos.servicios import ejecucion_cancelable, transicionar_ejecucion
 
     motivo = (motivo or "").strip()
     if not motivo:
@@ -160,12 +160,7 @@ def anular_lote(*, lote, motivo, usuario):
     )
     # `pendiente_control` no se cancela (`EjecucionProceso.TRANSICIONES`):
     # el material ya salió y espera a Calidad, que es quien lo decide.
-    if (
-        ejecucion is not None
-        and ejecucion not in ESTADOS_EJECUCION_TERMINALES
-        and EjecucionProceso.Estado.CANCELADA
-        in EjecucionProceso.TRANSICIONES.get(ejecucion, set())
-    ):
+    if ejecucion is not None and ejecucion_cancelable(ejecucion):
         transicionar_ejecucion(
             ejecucion_id=lote.ejecucion_id,
             estado_nuevo=EjecucionProceso.Estado.CANCELADA,

@@ -15,7 +15,7 @@ from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
-    AutorizacionReproceso, CorridaMantequilla, EjecucionProceso,
+    AutorizacionReproceso, CorridaMantequilla, EjecucionProceso, EntradaProceso,
     EtapaProceso, Proceso, RutaProducto, SalidaProceso,
 )
 from .servicios import (
@@ -402,3 +402,49 @@ class MantequillaTests(TestCase):
             if item["id"] == self.lote_crema.pk
         )
         self.assertEqual(pendiente["estado_calidad"], "pendiente")
+
+    def _preparacion_cancelada_que_tomo_la_crema(self):
+        """
+        Una corrida que reservó la crema y se canceló sin iniciar: su entrada
+        queda como rastro pero no consumió nada (`PREPARACION_CANCELADA`).
+        """
+        cancelada = EjecucionProceso.objects.create(
+            codigo="EJ-MANT-CANCELADA", etapa=self.corrida.ejecucion.etapa,
+            sucursal=self.planta, estado=EjecucionProceso.Estado.CANCELADA,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=cancelada, lote=self.lote_crema,
+            cantidad=self.lote_crema.kg_producidos, unidad="kg",
+        )
+
+    def test_una_preparacion_cancelada_no_consume_la_crema_al_iniciar(self):
+        self._preparacion_cancelada_que_tomo_la_crema()
+
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaMantequilla.Estado.EN_PROCESO)
+
+    def test_una_preparacion_cancelada_no_resta_la_crema_ofrecida(self):
+        self._preparacion_cancelada_que_tomo_la_crema()
+        origen = EjecucionProceso.objects.create(
+            codigo="EJ-CREMA-LIBERADA-2", etapa=self.corrida.ejecucion.etapa,
+            sucursal=self.planta, estado=EjecucionProceso.Estado.CERRADA,
+        )
+        salida_crema = SalidaProceso.objects.create(
+            ejecucion=origen, lote=self.lote_crema, producto=self.lote_crema.producto,
+            cantidad=self.lote_crema.kg_producidos, unidad="kg",
+        )
+        LiberacionProceso.objects.create(
+            salida=salida_crema, estado=LiberacionProceso.Estado.LIBERADO,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+
+        respuesta = cliente.get("/api/procesos/mantequillas/opciones-alta/")
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        crema = next(
+            item for item in respuesta.data["cremas"] if item["id"] == self.lote_crema.pk
+        )
+        self.assertEqual(crema["disponible_kg"], self.lote_crema.kg_producidos)

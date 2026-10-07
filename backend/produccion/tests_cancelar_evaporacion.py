@@ -204,6 +204,49 @@ class AnularLoteSobreEvaporadorTests(ConEvaporadorPreparado):
         self.assertEqual(saldo_silo(self.silo_b), self.saldo_inicial)
         self.lote.refresh_from_db()
         self.assertEqual(self.lote.observacion.count("[ANULACIÓN]"), 1)
+        # Por el `PATCH` la marca se escribe antes de devolver la leche; igual
+        # tiene que decir que volvió, y una sola vez.
+        self.assertEqual(
+            self.lote.observacion.count(f"La leche volvió a {self.silo_b.codigo}."), 1
+        )
+
+    def test_anular_con_la_corrida_iniciada_la_cancela_sin_devolver_la_leche(self):
+        CorridaCondensacion.objects.filter(pk=self.corrida.pk).update(
+            estado=CorridaCondensacion.Estado.EN_PROCESO, iniciada_en=timezone.now(),
+        )
+
+        respuesta = self.anular()
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.json())
+        self.corrida.refresh_from_db()
+        self.ejecucion.refresh_from_db()
+        self.lote.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.CANCELADA)
+        # Una corrida en proceso con su ejecución cancelada no existe: la
+        # corrida queda cancelada con ella.
+        self.assertEqual(self.corrida.estado, CorridaCondensacion.Estado.CANCELADA)
+        # Lo que entró al evaporador no vuelve.
+        self.assertEqual(saldo_silo(self.silo_b), self.saldo_inicial - Decimal("12000"))
+        self.assertNotIn("La leche volvió", self.lote.observacion)
+
+    def test_sin_permiso_de_la_etapa_anula_si_la_ejecucion_espera_a_calidad(self):
+        """
+        `pendiente_control` no se cancela (`anular_lote` la deja): anular no
+        toca la corrida, así que no pide el permiso de su etapa.
+        """
+        EjecucionProceso.objects.filter(pk=self.ejecucion.pk).update(
+            estado=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        )
+
+        respuesta = self._cliente_de_area(PerfilUsuario.Area.SECADO).patch(
+            f"/api/produccion/lotes/{self.lote.pk}/",
+            {"estado": "anulado", "motivo_anulacion": "La corrida no se hará."},
+            format="json",
+        )
+
+        self.assertNotEqual(respuesta.status_code, 403, respuesta.json())
+        self.ejecucion.refresh_from_db()
+        self.assertEqual(self.ejecucion.estado, EjecucionProceso.Estado.PENDIENTE_CONTROL)
 
 
 class AnularLoteEnLineaTests(BaseBorradorLote):

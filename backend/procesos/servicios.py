@@ -37,6 +37,17 @@ ESTADOS_EJECUCION_TERMINALES = frozenset({
     EjecucionProceso.Estado.CANCELADA,
 })
 
+
+def ejecucion_cancelable(estado):
+    """
+    ¿Se puede cancelar una ejecución en este estado? Lo dice
+    `EjecucionProceso.TRANSICIONES`: ni las terminales ni `pendiente_control`
+    —el material ya salió y lo decide Calidad—. Una sola regla para
+    `anular_lote`, que cancela, y para el `PATCH` del lote, que pide el permiso
+    de la etapa solo cuando va a cancelar.
+    """
+    return EjecucionProceso.Estado.CANCELADA in EjecucionProceso.TRANSICIONES.get(estado, set())
+
 # Una ejecución cancelada sin haber iniciado: se reservó la máquina y el
 # material, pero nada entró a la máquina. Sus entradas quedan como rastro y no
 # consumen saldo (`disponible_de_salida`).
@@ -2292,9 +2303,10 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
     if impedimento:
         raise ValidationError(impedimento)
+    # Una preparación cancelada no tomó crema (`PREPARACION_CANCELADA`).
     utilizado = EntradaProceso.objects.filter(
         lote=corrida.lote_crema, unidad__iexact="kg"
-    ).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    ).exclude(PREPARACION_CANCELADA).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
     disponible = Decimal(str(corrida.lote_crema.kg_producidos or 0)) - utilizado
     if corrida.kg_crema > disponible:
         raise ValidationError(f"El lote de crema solo tiene {disponible} kg disponibles.")
@@ -2643,8 +2655,10 @@ def _deshacer_preparacion_evaporacion(ejecucion, motivo, usuario):
     como la de Secado: no bloquea nada, y es el rastro de la preparación— y
     el lote se anula con la misma anulación que el `PATCH`.
 
-    Una corrida que ya inició no se toca: lo que entró al evaporador no
-    vuelve, y la anulación sigue el camino de siempre.
+    Una corrida que ya inició no devuelve nada: lo que entró al evaporador no
+    vuelve, y la anulación sigue el camino de siempre. Pero queda `cancelada`
+    con su ejecución: una corrida «en proceso» sobre una ejecución cancelada
+    no la está haciendo nadie.
     """
     from produccion.models import Lote
     from produccion.servicios import anular_lote, devolver_leche_del_lote
@@ -2653,7 +2667,13 @@ def _deshacer_preparacion_evaporacion(ejecucion, motivo, usuario):
         CorridaCondensacion.objects.select_for_update(of=("self",))
         .select_related("silo_origen").filter(ejecucion=ejecucion).first()
     )
-    if corrida is None or corrida.estado != CorridaCondensacion.Estado.BORRADOR:
+    if corrida is None:
+        return
+    if corrida.estado == CorridaCondensacion.Estado.EN_PROCESO:
+        corrida.estado = CorridaCondensacion.Estado.CANCELADA
+        corrida.save(update_fields=["estado"])
+        return
+    if corrida.estado != CorridaCondensacion.Estado.BORRADOR:
         return
     lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
     devuelta = devolver_leche_del_lote(
@@ -2670,6 +2690,14 @@ def _deshacer_preparacion_evaporacion(ejecucion, motivo, usuario):
             if devuelta is not None
             else "No había leche descontada que devolver."
         )
+        if lote.estado == Lote.Estado.ANULADO:
+            # Por el `PATCH` la anulación ya escribió su marca antes de llegar
+            # aquí, y `anular_lote` no vuelve a marcar un lote anulado: la
+            # devolución se agrega a esa marca, una sola vez.
+            if devuelta is not None:
+                lote.observacion = f"{_con_punto(lote.observacion.rstrip())} {leche}"
+                lote.save(update_fields=["observacion"])
+            return
         anular_lote(
             lote=lote,
             motivo=f"Preparación de Evaporación cancelada: {_con_punto(motivo)} {leche}",

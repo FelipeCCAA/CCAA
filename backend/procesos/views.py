@@ -618,7 +618,11 @@ class CorridaMantequillaViewSet(
             salidas_proceso__liberacion_calidad__estado="liberado",
         ).annotate(
                 kg_usados=Coalesce(
-                    Sum("entradas_proceso__cantidad", filter=Q(entradas_proceso__unidad__iexact="kg")),
+                    Sum(
+                        "entradas_proceso__cantidad",
+                        filter=Q(entradas_proceso__unidad__iexact="kg")
+                        & ~preparacion_cancelada("entradas_proceso__"),
+                    ),
                     Value(0), output_field=DecimalField(),
                 )
             ).distinct()

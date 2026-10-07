@@ -955,9 +955,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             # simultáneo los pediría cruzados.
             from procesos.models import EjecucionProceso
             from procesos.permisos import puede_cancelar_tipo
-            from procesos.servicios import (
-                ESTADOS_EJECUCION_TERMINALES, bloquear_para_cancelar,
-            )
+            from procesos.servicios import bloquear_para_cancelar, ejecucion_cancelable
 
             bloquear_para_cancelar(actual.ejecucion_id)
             # Se relee bajo el candado: lo leído antes pudo cambiar mientras
@@ -977,10 +975,12 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             # y pide el mismo permiso de la etapa. Sin esto, Secado —que
             # escribe lotes— anulaba por aquí un lote sobre el evaporador que
             # el puesto le niega. El `return` dentro de la transacción es
-            # seguro: hasta aquí solo se tomaron candados, sin escribir.
+            # seguro: hasta aquí solo se tomaron candados, sin escribir. Se
+            # pide solo si de verdad se va a cancelar, con la misma regla que
+            # `anular_lote`: una ejecución en `pendiente_control` no se toca.
             if (
                 ejecucion is not None
-                and ejecucion.estado not in ESTADOS_EJECUCION_TERMINALES
+                and ejecucion_cancelable(ejecucion.estado)
                 and not puede_cancelar_tipo(request.user, ejecucion.etapa.tipo)
             ):
                 return Response(
