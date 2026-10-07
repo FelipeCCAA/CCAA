@@ -460,7 +460,8 @@ export function rechazosInesperados(): string[] {
 /** Registra el análisis del silo — CCAA.REC.FORM.005, el vale de trazabilidad. */
 export async function analizarSilo(
   pagina: Page, estanque: string, leche: { grasa: string; sng: string },
-) {
+  { segundaFirma = true }: { segundaFirma?: boolean } = {},
+): Promise<number> {
   await irA(pagina, "/leche/silos");
 
   /*
@@ -527,6 +528,10 @@ export async function analizarSilo(
   });
 
   const { id } = await respuesta.json();
+  /* Sin segunda firma el análisis queda confirmado pero no habilita procesar:
+     es el motivo de inicio que muestra el puesto de Descremado. Quien llama
+     firma después con `firmarVisualizacion(id)`. */
+  if (!segundaFirma) return id;
   await firmarVisualizacion(id);
 
   // La segunda firma pertenece a otra persona y se registra fuera de esta
@@ -545,6 +550,7 @@ export async function analizarSilo(
   }
   await expect(actualizado).toBeVisible({ timeout: 15_000 });
   await actualizado.click();
+  return id;
 }
 
 
