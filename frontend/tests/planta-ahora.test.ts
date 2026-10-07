@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rutaDeEtapa, totalEsperandoCalidad } from "../src/services/planta-ahora.ts";
+import { rutaDeEtapa, textoIniciarEnPuesto, totalEsperandoCalidad } from "../src/services/planta-ahora.ts";
 import type { PlantaAhora } from "../src/services/procesos.service.ts";
 
 test("cada etapa abre su puesto operacional y conserva un destino seguro", () => {
@@ -26,6 +26,14 @@ test("todos los etapa_tipo reales (EtapaProceso.Tipo) llevan a un destino que ex
   assert.equal(rutaDeEtapa("mantequilla"), "/procesos?seccion=mantequilla");
   assert.equal(rutaDeEtapa("transferencia"), "/produccion");
   assert.equal(rutaDeEtapa("otro"), "/produccion");
+});
+
+test("Secado y Descremado se inician en su puesto, espejo de MENSAJES_INICIO_EN_PUESTO", () => {
+  assert.equal(textoIniciarEnPuesto("secado", "preparacion"), "Iniciar en el puesto de Secado");
+  assert.equal(textoIniciarEnPuesto("descremacion", "preparacion"), "Iniciar en el puesto de Descremado");
+  // Reanudar no es iniciar, y las demás etapas siguen en la bandeja.
+  assert.equal(textoIniciarEnPuesto("descremacion", "pausada"), null);
+  assert.equal(textoIniciarEnPuesto("mantequilla", "preparacion"), null);
 });
 
 test("Calidad suma procesos y unidades logísticas sin mezclar otros bloqueos", () => {

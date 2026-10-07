@@ -73,15 +73,17 @@ export function situacionDeCorrida(estado: string, estadoCalidad?: string, etiqu
 
 /*
   A qué módulo lleva cada «dónde se resuelve» (`resolver_en` del servidor:
-  `RESOLVER_CIP`, `RESOLVER_CALIDAD`) y el enlace a la inspección. La
-  tarjeta enlaza solo si el usuario puede entrar a ese módulo: a un operador
-  de Secado sin acceso a Calidad el enlace lo dejaría en «Acceso
-  restringido». Un destino desconocido devuelve `null` y no se enlaza.
+  `RESOLVER_CIP`, `RESOLVER_CALIDAD`, `RESOLVER_SILOS`) y el enlace a la
+  inspección. La tarjeta enlaza solo si el usuario puede entrar a ese módulo:
+  a un operador de Secado sin acceso a Calidad el enlace lo dejaría en
+  «Acceso restringido». Un destino desconocido devuelve `null` y no se
+  enlaza.
 */
 const MODULO_POR_RUTA: Record<string, ModuloSistema> = {
   "/calidad/inocuidad": "inocuidad",
   "/calidad": "calidad",
   "/registros": "registros",
+  "/silos": "recepcion",
 };
 
 export function moduloDeResolver(ruta: string): ModuloSistema | null {

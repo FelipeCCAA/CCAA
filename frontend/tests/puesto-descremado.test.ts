@@ -1,0 +1,80 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  accionDeDescremadora, corridaCancelable, moduloDeResolver, situacionDeCorrida,
+} from "../src/services/puesto-descremado.ts";
+
+const base = {
+  equipo_id: 1, codigo: "des-01", nombre: "Descremadora 1", corrida: null,
+  motivos_para_tomar: [] as string[], motivos_para_iniciar: [] as string[],
+  resolver_en: null, avisos: [] as string[], en_calidad: null,
+};
+const corrida = {
+  id: 8, ejecucion_id: 120, ejecucion_codigo: "EJ-DES-8", ejecucion_estado: "preparacion",
+  estado: "borrador", silo_entera: "Silo 3", litros_entrada: "1000.00",
+  grasa_entrada: "2.610", sng_entrada: "8.700", silo_descremada: "Tk02",
+  litros_descremada_plan: "976.40", estanque_crema: "TkC2", litros_crema_plan: "23.60",
+  destino_crema: "siguiente_proceso", iniciada_en: null,
+};
+
+test("una descremadora disponible ofrece preparar", () => {
+  assert.deepEqual(accionDeDescremadora({ ...base, estado: "disponible" }), { tipo: "preparar", habilitada: true, motivo: null });
+});
+
+test("una descremadora en CIP no se prepara y dice por qué", () => {
+  const fila = { ...base, estado: "disponible" as const, motivos_para_tomar: ["Descremadora 1 está en CIP."] };
+  assert.deepEqual(accionDeDescremadora(fila), { tipo: "preparar", habilitada: false, motivo: "Descremadora 1 está en CIP." });
+});
+
+test("una preparada sin motivos se puede iniciar", () => {
+  assert.deepEqual(accionDeDescremadora({ ...base, estado: "preparada", corrida }), { tipo: "iniciar", habilitada: true, motivo: null });
+});
+
+test("una preparada con motivos muestra el primero y no habilita iniciar", () => {
+  const fila = { ...base, estado: "preparada" as const, corrida, motivos_para_iniciar: ["Silo 3: falta la segunda firma.", "otro"] };
+  assert.deepEqual(accionDeDescremadora(fila), { tipo: "iniciar", habilitada: false, motivo: "Silo 3: falta la segunda firma." });
+});
+
+test("los avisos no deshabilitan iniciar", () => {
+  const fila = { ...base, estado: "preparada" as const, corrida, avisos: ["Último aseo con observación."] };
+  assert.equal(accionDeDescremadora(fila).habilitada, true);
+});
+
+test("una preparación sin corrida no se puede iniciar", () => {
+  const fila = { ...base, estado: "preparada" as const, corrida: { ...corrida, id: null } };
+  assert.equal(accionDeDescremadora(fila).habilitada, false);
+});
+
+test("en curso ofrece cerrar solo en ejecución, espejo de cerrar_descremacion", () => {
+  const enCurso = { ...base, estado: "en_curso" as const, corrida: { ...corrida, estado: "en_curso", ejecucion_estado: "ejecucion" } };
+  assert.deepEqual(accionDeDescremadora(enCurso), { tipo: "cerrar", habilitada: true, motivo: null });
+  for (const ejecucion_estado of ["pausada", "bloqueada"]) {
+    const fila = { ...enCurso, corrida: { ...enCurso.corrida, ejecucion_estado } };
+    assert.equal(accionDeDescremadora(fila).habilitada, false);
+    assert.match(accionDeDescremadora(fila).motivo ?? "", new RegExp(ejecucion_estado));
+  }
+});
+
+test("se cancela una corrida en borrador con la ejecución preparada o heredada en borrador", () => {
+  assert.equal(corridaCancelable(corrida), 8);
+  assert.equal(corridaCancelable({ ...corrida, ejecucion_estado: "borrador" }), 8);
+  assert.equal(corridaCancelable({ ...corrida, estado: "en_curso", ejecucion_estado: "ejecucion" }), null);
+  assert.equal(corridaCancelable({ ...corrida, ejecucion_estado: "cancelada" }), null);
+  assert.equal(corridaCancelable({ ...corrida, id: null }), null);
+  assert.equal(corridaCancelable(null), null);
+});
+
+test("la situación de una corrida para la lista y el historial", () => {
+  assert.equal(situacionDeCorrida("borrador", "preparacion"), "Preparada");
+  assert.equal(situacionDeCorrida("en_curso", "ejecucion"), "En la descremadora");
+  assert.equal(situacionDeCorrida("cerrada", "pendiente_control"), "Esperando Calidad");
+  assert.equal(situacionDeCorrida("cerrada", "cerrada"), "Terminada");
+  assert.equal(situacionDeCorrida("anulada", "cancelada"), "Anulada");
+  assert.equal(situacionDeCorrida("borrador", "cancelada", "Borrador"), "Borrador");
+});
+
+test("los motivos del silo se resuelven en Silos, módulo de Recepción", () => {
+  assert.equal(moduloDeResolver("/silos"), "recepcion");
+  assert.equal(moduloDeResolver("/calidad/inocuidad"), "inocuidad");
+});
