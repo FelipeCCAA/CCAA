@@ -395,18 +395,9 @@ class CorridaSecadoSerializer(serializers.ModelSerializer):
     )
 
     def get_estado_calidad(self, corrida):
-        if not corrida.ejecucion.etapa.requiere_calidad:
-            return "no_requerida"
-        salida = next(
-            (
-                salida for salida in corrida.ejecucion.salidas.all()
-                if salida.lote_id == corrida.lote_id
-                and salida.naturaleza == SalidaProceso.Naturaleza.PRINCIPAL
-            ),
-            None,
-        )
-        decision = getattr(salida, "liberacion_calidad", None) if salida else None
-        return decision.estado if decision else "pendiente"
+        from .servicios import estado_calidad_secado
+
+        return estado_calidad_secado(corrida)
 
     class Meta:
         model = CorridaSecado

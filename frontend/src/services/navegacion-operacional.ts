@@ -54,8 +54,8 @@ const GRUPOS: GrupoOperacional[] = [
       { etiqueta: "Panel de producción", ruta: "/produccion", modulo: "produccion", icono: "produccion" },
       { etiqueta: "Estandarización", ruta: "/estandarizacion", modulo: "estandarizacion", icono: "estandarizacion", nivel: "proceso" },
       { etiqueta: "Descremado", ruta: "/procesos?seccion=descremacion", modulo: "procesos", icono: "procesos", nivel: "proceso", areas: ["condensacion", "calidad"] },
-      { etiqueta: "Evaporación", ruta: "/produccion?seccion=evaporacion", modulo: "produccion", icono: "produccion", nivel: "proceso", areas: ["condensacion", "calidad"] },
-      { etiqueta: "Secado", ruta: "/secado", modulo: "secado", icono: "secado", nivel: "proceso", areas: ["secado", "calidad"] },
+      { etiqueta: "Evaporación", ruta: "/produccion/evaporacion", modulo: "produccion", icono: "produccion", nivel: "proceso", areas: ["condensacion", "calidad"] },
+      { etiqueta: "Secado", ruta: "/produccion/secado", modulo: "secado", icono: "secado", nivel: "proceso", areas: ["secado", "calidad"], alias: ["/secado"] },
       { etiqueta: "Mantequilla", ruta: "/procesos?seccion=mantequilla", modulo: "procesos", icono: "procesos", nivel: "proceso", areas: ["condensacion", "calidad"] },
       { etiqueta: "Trazabilidad productiva", ruta: "/procesos?seccion=trazabilidad", modulo: "procesos", icono: "procesos" },
       { etiqueta: "Planificación", ruta: "/planificacion", modulo: "planificacion", icono: "planificacion" },
@@ -152,8 +152,11 @@ export function esRutaOperacionalActual(
   if (destino.hash) return hashActual === destino.hash;
 
   // Los accesos generales no se marcan junto a un subproceso específico.
-  // Evaporación y Trazabilidad viven con `?seccion=`, no con un segundo `#`:
-  // HashRouter no procesa ese segundo `#`, así que nunca bajaba a su sección.
+  // Descremación, Mantequilla y Trazabilidad viven en /procesos con
+  // `?seccion=`, no con un segundo `#`: HashRouter no procesa ese segundo
+  // `#`, así que nunca bajaba a su sección. Evaporación ya no es una de
+  // ellas: desde que tiene su propio puesto (/produccion/evaporacion) es un
+  // pathname distinto, no una sección de /produccion o /procesos.
   if (pathnameActual === "/procesos" && searchActual) return false;
   if (pathnameActual === "/produccion" && searchActual) return false;
   return true;

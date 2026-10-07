@@ -4,7 +4,10 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, F, Prefetch, Q, Sum
+from django.db.models import (
+    Case, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Sum, Value, When,
+)
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from auditoria.registro import (
@@ -25,6 +28,31 @@ ESTADOS_QUE_OCUPAN_EQUIPO = frozenset({
     EjecucionProceso.Estado.PAUSADA,
     EjecucionProceso.Estado.BLOQUEADA,
 })
+
+# Una ejecución en estos estados ya terminó: su corrida, si sigue en
+# `borrador`/`en_proceso`, es un huérfano (E2E abortado, dato viejo) y no
+# ocupa la máquina ni cuenta como trabajo del día en el puesto de Evaporación.
+ESTADOS_EJECUCION_TERMINALES = frozenset({
+    EjecucionProceso.Estado.CERRADA,
+    EjecucionProceso.Estado.CANCELADA,
+})
+
+# Una ejecución cancelada sin haber iniciado: se reservó la máquina y el
+# material, pero nada entró a la máquina. Sus entradas quedan como rastro y no
+# consumen saldo (`disponible_de_salida`).
+PREPARACION_CANCELADA = Q(
+    ejecucion__estado=EjecucionProceso.Estado.CANCELADA,
+    ejecucion__inicio__isnull=True,
+)
+MENSAJE_MOTIVO_CANCELACION = "Indica el motivo de la cancelación."
+
+# Registro de planta que la torre pide antes de operar. Avisa, no bloquea:
+# que bloquee lo decide Calidad, y sería sobre `avisos_de_torre`.
+CODIGO_INSPECCION_PREOPERATIVA = "CCAA.Sec.FORM.003"
+AVISO_INSPECCION_PREOPERATIVA = (
+    f"Falta la inspección pre-operativa de hoy ({CODIGO_INSPECCION_PREOPERATIVA})."
+)
+MENSAJE_INICIO_SECADO_EN_PUESTO = "Las corridas de secado se inician desde el puesto de Secado."
 
 
 class ConflictoVersionEjecucion(Exception):
@@ -173,6 +201,81 @@ def exigir_destino_sin_reserva(*, silo, excluir_ejecucion_id=None):
                 f"{silo.codigo} esta reservado por {reserva.ejecucion.codigo}."
             )
         })
+
+
+def motivos_destino_concentrado(destino, litros, *, excluir_ejecucion_id=None):
+    """
+    Por qué `destino` no puede recibir `litros` de concentrado: reservado por
+    otra ejecución, en un estado que no admite precondensado, o sin capacidad.
+
+    Una sola regla para preparar (`crear_condensacion_guiada`) y para iniciar
+    (`motivos_para_iniciar_condensacion`): con dos, el puesto preparaba una
+    corrida que «Iniciar» rechazaba después, con el lote ya abierto.
+    """
+    from maestros.models import Silo
+    from recepcion.servicios import saldo_silo
+
+    motivos = []
+    try:
+        exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=excluir_ejecucion_id)
+    except ValidationError as error:
+        motivos.extend(error.messages)
+    if not destino.activo or destino.estado in {
+        Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+    }:
+        motivos.append(f"{destino.codigo} no admite precondensado.")
+    elif saldo_silo(destino) + litros > destino.capacidad_l:
+        motivos.append(f"{destino.codigo} no tiene capacidad para reservar {litros} L.")
+    return motivos
+
+
+def disponible_de_salida(salida):
+    """
+    Lo que queda de una salida para continuar: su cantidad menos lo que otras
+    ejecuciones ya tomaron como origen y lo comprometido en despachos a granel
+    autorizados o despachados.
+
+    Una cantidad, una consulta: `preparar_continuacion` rechaza con esta misma
+    función y el puesto de Secado ofrece con ella. Con dos cuentas, la pantalla
+    ofrecía litros que el formulario, ya completo, rechazaba (caso 1 de «La
+    pantalla ofrece lo que el backend va a rechazar», CLAUDE.md).
+
+    Una preparación cancelada no cuenta: nunca llegó a la máquina
+    (`PREPARACION_CANCELADA`). Una ejecución cancelada después de iniciar sí:
+    lo que entró a la torre no vuelve al silo.
+    """
+    consumido = salida.usos_como_origen.exclude(
+        PREPARACION_CANCELADA
+    ).aggregate(total=Sum("cantidad"))["total"] or 0
+    comprometido = salida.detalles_despacho_granel.filter(
+        despacho__estado__in=["autorizado", "despachado"]
+    ).aggregate(total=Sum("cantidad"))["total"] or 0
+    return salida.cantidad - consumido - comprometido
+
+
+def silos_con_saldo(queryset):
+    """Anota cada silo de `queryset` con su saldo real, en una sola consulta.
+
+    Misma regla que `recepcion.servicios.saldo_silo` —ingreso y ajuste suman,
+    salida resta—, pero como anotación agrupada por silo en vez de una
+    consulta aparte por cada uno: sobre un listado (opciones de destino del
+    puesto, por ejemplo) una consulta por fila crece con la planta.
+    """
+    from recepcion.models import MovimientoSilo
+
+    return queryset.annotate(
+        saldo_l=Coalesce(
+            Sum(Case(
+                When(
+                    movimientos__tipo=MovimientoSilo.Tipo.SALIDA,
+                    then=-F("movimientos__litros"),
+                ),
+                default=F("movimientos__litros"),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )),
+            Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
+        )
+    )
 
 
 def adquirir_equipo(*, equipo_id, ejecucion_id=None):
@@ -740,10 +843,23 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
     if entrada is None:
         raise ValidationError({"lote": "La ejecución no tiene una entrada trazable en litros."})
     destino = Silo.objects.select_for_update().get(pk=silo_destino_id)
+    if not destino.activo or destino.estado != Silo.Estado.DISPONIBLE:
+        raise ValidationError({
+            "silo_destino": (
+                f"{destino.codigo} no está disponible para recibir el concentrado "
+                f"({destino.get_estado_display().lower()})."
+            )
+        })
+    litros_entrada = entrada.cantidad.quantize(Decimal("0.01"))
+    motivos = motivos_destino_concentrado(
+        destino, litros_entrada, excluir_ejecucion_id=ejecucion.pk,
+    )
+    if motivos:
+        raise ValidationError({"silo_destino": motivos})
     corrida = CorridaCondensacion(
         ejecucion=ejecucion, orden=lote.orden, lote=lote,
         silo_origen=entrada.silo, silo_destino=destino,
-        litros_entrada=entrada.cantidad.quantize(Decimal("0.01")),
+        litros_entrada=litros_entrada,
     )
     corrida.full_clean()
     corrida.save()
@@ -872,15 +988,33 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         raise ValidationError("Ingresa una cantidad válida.") from error
     if cantidad <= 0:
         raise ValidationError("La cantidad debe ser mayor que cero.")
-    consumido = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or 0
-    comprometido_despacho = salida.detalles_despacho_granel.filter(
-        despacho__estado__in=["autorizado", "despachado"]
-    ).aggregate(total=Sum("cantidad"))["total"] or 0
-    disponible = salida.cantidad - consumido - comprometido_despacho
+    disponible = disponible_de_salida(salida)
     if cantidad > disponible:
         raise ValidationError(
             f"La salida tiene {disponible} {salida.unidad} disponibles."
         )
+
+    if etapa.tipo == EtapaProceso.Tipo.SECADO:
+        # `CorridaSecado.lote` es uno a uno: un lote se seca en una sola
+        # corrida. Sin estos dos rechazos, la segunda toma reventaba con un
+        # IntegrityError y una salida sin lote dejaba una preparación sin
+        # corrida, que el puesto no puede iniciar.
+        if not salida.lote_id:
+            raise ValidationError(
+                "Secado necesita el lote del concentrado: esta salida no tiene lote."
+            )
+        if CorridaSecado.objects.filter(lote_id=salida.lote_id).exists():
+            raise ValidationError(
+                f"El lote {salida.lote.codigo_lote} ya tiene una corrida de Secado; "
+                "un lote se seca en una sola corrida."
+            )
+        # Una regla con la alimentación externa (`preparar_secado_desde_
+        # inventario`): una torre en CIP no se prepara.
+        from inventario.servicios import motivo_equipo_no_habilitado
+
+        impedimento = motivo_equipo_no_habilitado(equipo)
+        if impedimento:
+            raise ValidationError({"equipo": impedimento})
 
     ejecucion = EjecucionProceso(
         codigo=f"CONT-{salida.pk}-{uuid.uuid4().hex[:8].upper()}",
@@ -995,6 +1129,14 @@ def transicionar_ejecucion(
     ejecucion.estado = estado_nuevo
     ejecucion.version += 1
     ejecucion.save()
+    if (
+        estado_nuevo == EjecucionProceso.Estado.CANCELADA
+        and anterior == EjecucionProceso.Estado.PREPARACION
+        and ejecucion.etapa.tipo == EtapaProceso.Tipo.SECADO
+    ):
+        # Aquí y no en la acción del puesto: cancelar desde la bandeja
+        # genérica tiene que soltar el concentrado igual.
+        _deshacer_preparacion_secado(ejecucion, motivo)
     if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
         actualizar_queryset_con_auditoria(
             ReservaSiloProceso.objects.filter(
@@ -1319,13 +1461,209 @@ def cerrar_estandarizacion(*, vale):
     return ejecucion
 
 
+def motivos_para_iniciar_condensacion(corrida, *, origen=None, destino=None):
+    """
+    Lo que impide iniciar esta corrida, en el orden en que el inicio lo
+    comprueba. Lista vacía: se puede iniciar.
+
+    Es la única implementación de esas reglas: `iniciar_condensacion` lanza el
+    primer motivo, y el puesto de Evaporación los muestra junto a un botón
+    deshabilitado. Con dos copias, la pantalla habilitaría «Iniciar» sobre una
+    corrida que el servidor rechaza.
+    """
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from produccion.models import OrdenProduccion
+    from recepcion.servicios import motivos_silo_no_disponible
+
+    origen = origen or corrida.silo_origen
+    destino = destino or corrida.silo_destino
+    motivos = []
+    if corrida.orden.estado not in {
+        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
+    }:
+        motivos.append("La orden debe estar programada o en proceso.")
+    if not corrida.ejecucion.equipo_id:
+        motivos.append("La corrida requiere un evaporador asignado.")
+    else:
+        impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
+        if impedimento:
+            motivos.append(impedimento)
+    motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos_silo:
+        motivos.append(f"{origen.codigo}: " + " ".join(motivos_silo))
+    if reservas_activas_silo(
+        silo_id=origen.pk, tipo=ReservaSiloProceso.Tipo.DESTINO,
+        excluir_ejecucion_id=corrida.ejecucion_id,
+    ).exists():
+        motivos.append(f"{origen.codigo} esta reservado como destino de otra ejecucion.")
+    motivos.extend(motivos_destino_concentrado(
+        destino, corrida.litros_entrada, excluir_ejecucion_id=corrida.ejecucion_id,
+    ))
+    return motivos
+
+
+def estado_puesto_evaporacion(usuario):
+    """
+    Lo que el puesto de Evaporación dibuja: un estado por evaporador, derivado
+    de una sola corrida (la en proceso manda sobre la preparada), con los
+    motivos que impiden iniciarla calculados por la misma función que decide
+    al iniciar; los destinos que el cierre aceptará; y las corridas de hoy.
+
+    `en_calidad` es aparte de `corrida`: una corrida nueva preparada en el
+    mismo evaporador no oculta que la anterior sigue esperando a Calidad —la
+    máquina física está libre para empezar, pero el destino de esa corrida
+    anterior puede seguir bloqueado. Cuando la fila misma está
+    `esperando_calidad`, `en_calidad` es esa misma corrida.
+
+    `bloqueo_silo_origen` nombra el silo cuando el motivo de una preparada es
+    el silo de origen y no otra cosa (equipo, orden, destino): la pantalla
+    ofrece «Analizar silo» solo ahí. Adivinarlo leyendo el texto del motivo
+    se habría roto con el primer cambio de redacción; esto lo tipa en vez de
+    describirlo en prosa.
+
+    Una corrida `borrador`/`en_proceso` cuya ejecución ya terminó
+    (`cerrada`/`cancelada`) es un huérfano —de un E2E abortado o de datos
+    viejos— y no cuenta como ocupación: la máquina física ya quedó libre
+    aunque la corrida nunca se puso al día. No se reutiliza
+    `ESTADOS_QUE_OCUPAN_EQUIPO` tal cual porque esa lista excluye `borrador`
+    (y esta función sí trata un borrador como preparación legítima, igual
+    que `FlujoCondensacionTests` siembra su ejecución); lo único que de
+    verdad libera el equipo aquí es que la ejecución haya llegado a un
+    estado terminal (`ESTADOS_EJECUCION_TERMINALES`, el mismo criterio que
+    saca a los huérfanos de `corridas_de_hoy`). Un lote `anulado` cuya ejecución *no* llegó a terminal
+    sigue contando como ocupación — ese es el defecto #3 abierto en
+    «La pantalla ofrece lo que el backend va a rechazar» (`CLAUDE.md`), no
+    uno que esta función resuelva.
+    """
+    from maestros.models import Equipo, Silo
+    from recepcion.servicios import motivos_silo_no_disponible
+    from usuarios.tenancy import filtrar_por_scope
+
+    equipos = filtrar_por_scope(
+        Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.EVAPORADOR).order_by("nombre"),
+        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    )
+    corridas = CorridaCondensacion.objects.select_related(
+        "ejecucion__equipo", "orden", "lote", "silo_origen", "silo_destino",
+    ).filter(ejecucion__equipo__in=equipos)
+    activas = {}
+    for corrida in corridas.filter(
+        estado__in=[CorridaCondensacion.Estado.EN_PROCESO, CorridaCondensacion.Estado.BORRADOR]
+    ).exclude(
+        ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES
+    ).order_by("pk"):
+        actual = activas.get(corrida.ejecucion.equipo_id)
+        if actual is None or (
+            corrida.estado == CorridaCondensacion.Estado.EN_PROCESO
+            and actual.estado != CorridaCondensacion.Estado.EN_PROCESO
+        ):
+            activas[corrida.ejecucion.equipo_id] = corrida
+    esperando = {
+        corrida.ejecucion.equipo_id: corrida
+        for corrida in corridas.filter(
+            ejecucion__estado=EjecucionProceso.Estado.PENDIENTE_CONTROL
+        ).order_by("pk")
+    }
+
+    def resumen(corrida):
+        return {
+            "id": corrida.pk, "codigo": corrida.ejecucion.codigo,
+            "lote_codigo": corrida.lote.codigo_lote if corrida.lote_id else None,
+            "silo_origen": corrida.silo_origen.codigo,
+            "silo_destino": corrida.silo_destino.codigo,
+            # Texto, como en los serializers: el tipo del frontend es `string`.
+            "litros_entrada": str(corrida.litros_entrada),
+            "iniciada_en": corrida.iniciada_en,
+        }
+
+    def resumen_en_calidad(corrida):
+        return {
+            "id": corrida.pk, "codigo": corrida.ejecucion.codigo,
+            "lote_codigo": corrida.lote.codigo_lote if corrida.lote_id else None,
+        }
+
+    evaporadores = []
+    for equipo in equipos:
+        corrida = activas.get(equipo.pk)
+        corrida_en_calidad = esperando.get(equipo.pk)
+        if corrida is not None:
+            en_curso = corrida.estado == CorridaCondensacion.Estado.EN_PROCESO
+            estado = "en_curso" if en_curso else "preparada"
+            motivos = [] if en_curso else motivos_para_iniciar_condensacion(corrida)
+            bloqueo_silo_origen = None
+            if not en_curso and motivos_silo_no_disponible(corrida.silo_origen, para="proceso"):
+                bloqueo_silo_origen = corrida.silo_origen.codigo
+        elif corrida_en_calidad is not None:
+            corrida, estado, motivos, bloqueo_silo_origen = corrida_en_calidad, "esperando_calidad", [], None
+        else:
+            estado, motivos, bloqueo_silo_origen = "disponible", [], None
+        evaporadores.append({
+            "equipo_id": equipo.pk, "codigo": equipo.codigo, "nombre": equipo.nombre,
+            "estado": estado,
+            "corrida": resumen(corrida) if corrida is not None else None,
+            "en_calidad": (
+                resumen_en_calidad(corrida_en_calidad)
+                if corrida_en_calidad is not None else None
+            ),
+            "motivos_para_iniciar": motivos,
+            "bloqueo_silo_origen": bloqueo_silo_origen,
+        })
+
+    # Un silo con una reserva activa no se ofrece: `exigir_destino_sin_reserva`
+    # lo rechaza entero, sin importar cuántos litros queden libres, así que
+    # restarle lo reservado al `libre_l` seguiría ofreciendo un destino que el
+    # backend no acepta. Las corridas solo preparadas no reservan (la reserva
+    # nace al iniciar), y la capacidad la vuelve a comprobar
+    # `crear_condensacion_guiada` con el saldo bloqueado.
+    reservados = ReservaSiloProceso.objects.filter(
+        silo=OuterRef("pk"), estado=ReservaSiloProceso.Estado.ACTIVA,
+    )
+    destinos = [
+        {
+            "id": silo.pk, "codigo": silo.codigo,
+            "libre_l": str(silo.capacidad_l - silo.saldo_l),
+        }
+        for silo in filtrar_por_scope(
+            silos_con_saldo(
+                Silo.objects.filter(activo=True, estado=Silo.Estado.DISPONIBLE)
+                .exclude(Exists(reservados))
+            ).order_by("codigo"),
+            usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+    ]
+
+    hoy = timezone.localdate()
+    corridas_de_hoy = [
+        {
+            "id": corrida.pk, "codigo": corrida.ejecucion.codigo,
+            "equipo": corrida.ejecucion.equipo.nombre if corrida.ejecucion.equipo_id else None,
+            "lote_codigo": corrida.lote.codigo_lote if corrida.lote_id else None,
+            "estado": corrida.estado, "estado_etiqueta": corrida.get_estado_display(),
+        }
+        for corrida in corridas.filter(
+            Q(iniciada_en__date=hoy) | Q(finalizada_en__date=hoy)
+            | Q(
+                estado=CorridaCondensacion.Estado.BORRADOR,
+                ejecucion__creada_en__date=hoy,
+            )
+        ).exclude(
+            # Mismo criterio que la ocupación de arriba: un huérfano no es
+            # trabajo del día, ni preparado ni «En proceso».
+            estado__in=[
+                CorridaCondensacion.Estado.BORRADOR, CorridaCondensacion.Estado.EN_PROCESO,
+            ],
+            ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES,
+        ).order_by("-pk")
+    ]
+    return {"evaporadores": evaporadores, "destinos": destinos, "corridas_de_hoy": corridas_de_hoy}
+
+
 @transaction.atomic
 def iniciar_condensacion(*, corrida_id, usuario):
-    from inventario.servicios import motivo_equipo_no_habilitado
     from maestros.models import Silo
     from produccion.models import OrdenProduccion
     from recepcion.models import MovimientoSilo
-    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+    from recepcion.servicios import saldo_silo
     from .models import EntradaProceso
 
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
@@ -1341,15 +1679,6 @@ def iniciar_condensacion(*, corrida_id, usuario):
     if corrida.estado != CorridaCondensacion.Estado.BORRADOR:
         raise ValidationError("Solo una corrida en borrador puede iniciarse.")
     corrida.clean()
-    if corrida.orden.estado not in {
-        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
-    }:
-        raise ValidationError("La orden debe estar programada o en proceso.")
-    if not corrida.ejecucion.equipo_id:
-        raise ValidationError("La corrida requiere un evaporador asignado.")
-    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
-    if impedimento:
-        raise ValidationError(impedimento)
 
     silos = {
         silo.pk: silo
@@ -1359,34 +1688,9 @@ def iniciar_condensacion(*, corrida_id, usuario):
     }
     origen = silos[corrida.silo_origen_id]
     destino = silos[corrida.silo_destino_id]
-    motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
-    if motivos_silo:
-        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos_silo))
-    if reservas_activas_silo(
-        silo_id=origen.pk, tipo=ReservaSiloProceso.Tipo.DESTINO,
-        excluir_ejecucion_id=corrida.ejecucion_id,
-    ).exists():
-        raise ValidationError(
-            f"{origen.codigo} esta reservado como destino de otra ejecucion."
-        )
-    exigir_destino_sin_reserva(
-        silo=destino, excluir_ejecucion_id=corrida.ejecucion_id,
-    )
-    if not destino.activo or destino.estado in {
-        Silo.Estado.BLOQUEADO_CALIDAD,
-        Silo.Estado.EN_CIP,
-        Silo.Estado.FUERA_SERVICIO,
-    }:
-        raise ValidationError({
-            "silo_destino": f"{destino.codigo} no admite precondensado."
-        })
-    if saldo_silo(destino) + corrida.litros_entrada > destino.capacidad_l:
-        raise ValidationError({
-            "silo_destino": (
-                f"{destino.codigo} no tiene capacidad para reservar "
-                f"{corrida.litros_entrada} L."
-            )
-        })
+    motivos = motivos_para_iniciar_condensacion(corrida, origen=origen, destino=destino)
+    if motivos:
+        raise ValidationError(motivos[0])
 
     # Tras integrar el lote con el motor de procesos aparecieron dos caminos
     # representando el mismo hecho: abrir el lote ya consumía el silo y dejaba
@@ -2142,15 +2446,470 @@ def cerrar_mantequilla(
     return corrida
 
 
+def _deshacer_preparacion_secado(ejecucion, motivo):
+    """
+    Lo que una preparación de Secado dejó escrito, deshecho al cancelarla.
+
+    La `CorridaSecado` se borra: es uno a uno con el lote, así que mientras
+    exista el concentrado no se puede volver a tomar —ni ofrecer
+    (`lote__corrida_secado__isnull`), ni aceptar en `preparar_continuacion`—,
+    y en preparación no guarda nada medido. El rastro queda en la ejecución
+    cancelada (su entrada y el evento con el motivo) y en la auditoría, que
+    registra el borrado. Las entradas no se borran: dejan de contar por
+    `PREPARACION_CANCELADA`.
+
+    El lote vuelve a apuntar a la ejecución que produjo el concentrado. Un
+    lote externo nació con la preparación y se anula; el stock que salió de
+    bodega al preparar **no** vuelve (Desviación 6 del plan del puesto).
+    """
+    from produccion.models import Lote
+
+    corrida = CorridaSecado.objects.filter(ejecucion=ejecucion).first()
+    if corrida is None:
+        return
+    lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
+    corrida.delete()
+    if lote.ejecucion_id != ejecucion.pk:
+        return
+    entrada = ejecucion.entradas.select_related("salida_origen__ejecucion").first()
+    origen = entrada.salida_origen.ejecucion if entrada and entrada.salida_origen_id else None
+    if origen is not None:
+        lote.ejecucion = origen
+        lote.equipo = origen.equipo
+        lote.save(update_fields=["ejecucion", "equipo"])
+        return
+    marca = (
+        f"[ANULACIÓN] Preparación de Secado cancelada: {motivo} "
+        "La materia prima descontada no vuelve a bodega."
+    )
+    lote.estado = Lote.Estado.ANULADO
+    lote.observacion = "\n".join(parte for parte in (lote.observacion.strip(), marca) if parte)
+    lote.save(update_fields=["estado", "observacion"])
+
+
 @transaction.atomic
-def crear_secado_desde_inventario(
+def cancelar_preparacion_secado(*, corrida_id, usuario, motivo):
+    """
+    Suelta una torre preparada sin iniciarla. Solo desde `preparacion`: una
+    corrida que ya inició se cierra con su balance. La transición genérica
+    libera la torre y las reservas, y deshace la preparación.
+    """
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError(MENSAJE_MOTIVO_CANCELACION)
+    corrida = CorridaSecado.objects.select_for_update(of=("self",)).get(pk=corrida_id)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .get(pk=corrida.ejecucion_id)
+    )
+    if ejecucion.estado != EjecucionProceso.Estado.PREPARACION:
+        raise ValidationError(
+            f"Solo se cancela una torre preparada: {ejecucion.codigo} está "
+            f"{ejecucion.get_estado_display().lower()}. Una corrida iniciada se "
+            "cierra registrando su balance."
+        )
+    return transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk,
+        estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+        usuario=usuario,
+        motivo=motivo,
+    )
+
+
+def inicio_reservado_al_puesto(ejecucion, estado_nuevo):
+    """
+    ¿Es este paso el inicio de una corrida de Secado? Ese paso solo lo da
+    `iniciar_secado`, que es quien aplica `motivos_para_iniciar_secado`.
+    Reanudar (`pausada`/`bloqueada` → `ejecucion`) no es iniciar: sigue por la
+    transición genérica, o una torre pausada no tendría cómo volver.
+    """
+    return (
+        estado_nuevo == EjecucionProceso.Estado.EJECUCION
+        and ejecucion.estado == EjecucionProceso.Estado.PREPARACION
+        and ejecucion.etapa.tipo == EtapaProceso.Tipo.SECADO
+    )
+
+
+# Dónde se resuelve cada motivo, como dato: la pantalla enlaza ahí sin leer
+# el texto. Un motivo sin destino (sin saldo, sin torre) no tiene pantalla
+# que lo arregle y viaja con `None`.
+RESOLVER_CIP = "/calidad/inocuidad"
+RESOLVER_CALIDAD = "/calidad"
+
+
+def motivos_tipados_para_iniciar_secado(corrida, *, ejecucion=None):
+    """
+    Lo que impide iniciar esta corrida de Secado, como pares
+    `(motivo, resolver_en)`. Lista vacía: se puede.
+
+    Es la única implementación de esas reglas: `iniciar_secado` lanza el primer
+    motivo (vía `motivos_para_iniciar_secado`) y el puesto los muestra junto a
+    un botón deshabilitado, enlazando a donde se resuelve el primero. Un aseo
+    observado o una inspección pre-operativa que falta **no** están aquí: son
+    avisos (`avisos_de_torre`), no bloquean.
+    """
+    from calidad.models import LiberacionProceso
+    from inventario.servicios import motivo_equipo_no_habilitado
+
+    ejecucion = ejecucion or corrida.ejecucion
+    motivos = []
+    if ejecucion.estado != EjecucionProceso.Estado.PREPARACION:
+        motivos.append((
+            f"{ejecucion.codigo} no está preparada: está "
+            f"{ejecucion.get_estado_display().lower()}.",
+            None,
+        ))
+    entradas = list(ejecucion.entradas.select_related(
+        "salida_origen__silo", "lote_inventario",
+    ))
+    if not entradas:
+        motivos.append(("Para iniciar se requiere al menos una entrada de proceso.", None))
+    if not ejecucion.equipo_id:
+        motivos.append(("La corrida requiere una torre asignada.", None))
+    else:
+        impedimento = motivo_equipo_no_habilitado(ejecucion.equipo)
+        if impedimento:
+            motivos.append((impedimento, RESOLVER_CIP))
+    for entrada in entradas:
+        salida = entrada.salida_origen
+        if salida is not None:
+            nombre = salida.silo.codigo if salida.silo_id else f"la salida {salida.pk}"
+            decision = getattr(salida, "liberacion_calidad", None)
+            estado = decision.estado if decision is not None else None
+            if estado == LiberacionProceso.Estado.RECHAZADO:
+                motivos.append((f"Calidad rechazó el concentrado de {nombre}.", RESOLVER_CALIDAD))
+            elif estado != LiberacionProceso.Estado.LIBERADO:
+                motivos.append((
+                    f"El concentrado de {nombre} no está liberado por Calidad.",
+                    RESOLVER_CALIDAD,
+                ))
+            if disponible_de_salida(salida) < 0:
+                motivos.append((
+                    f"El concentrado de {nombre} ya no tiene saldo: otra ejecución lo consumió.",
+                    None,
+                ))
+        elif entrada.lote_inventario_id and not entrada.lote_inventario.utilizable:
+            # El stock ya salió de bodega al preparar; lo que puede cambiar
+            # después es la decisión de Calidad sobre el lote del proveedor.
+            motivos.append((
+                f"El lote externo {entrada.lote_inventario.codigo} ya no está liberado por Calidad.",
+                RESOLVER_CALIDAD,
+            ))
+    return motivos
+
+
+def motivos_para_iniciar_secado(corrida, *, ejecucion=None):
+    """Los textos de `motivos_tipados_para_iniciar_secado`. Lista vacía: se puede."""
+    return [
+        motivo for motivo, _ in motivos_tipados_para_iniciar_secado(corrida, ejecucion=ejecucion)
+    ]
+
+
+def avisos_de_torre(torre, *, hoy=None):
+    """
+    Lo que conviene saber antes de operar la torre y **no bloquea**: el último
+    aseo con advertencia y la falta de una inspección pre-operativa completa
+    de hoy. «Hay inspección» se decide como en el expediente del lote
+    (`cubre_al_lote` + `registro_completo`), pero acotado a **esta** torre.
+    """
+    from types import SimpleNamespace
+
+    from calidad.dominio import cubre_al_lote, registro_completo
+    from calidad.models import RegistroEquipo
+    from inventario.servicios import advertencia_aseo_equipo
+    from maestros.models import DocumentoLiberacion
+
+    avisos = []
+    aseo = advertencia_aseo_equipo(torre)
+    if aseo:
+        avisos.append(aseo)
+    empresa_id = torre.sucursal.empresa_id if torre.sucursal_id else None
+    documento = DocumentoLiberacion.objects.filter(
+        empresa_id=empresa_id, codigo=CODIGO_INSPECCION_PREOPERATIVA, activo=True,
+    ).first()
+    if documento is None:
+        # Sin el documento configurado no hay dónde registrar la inspección:
+        # avisar de algo imposible de cumplir solo enseña a ignorar el aviso.
+        return avisos
+    jornada = SimpleNamespace(fecha=hoy or timezone.localdate(), turno="")
+    # Basta mirar el último mes: la frecuencia más larga que se deduce sola es
+    # la semanal (`cubre_al_lote`); `segun_programa` declara su vigencia.
+    registros = RegistroEquipo.objects.filter(
+        documento=documento, equipo=torre, fecha__lte=jornada.fecha,
+    ).order_by("-fecha")[:31]
+    if not any(
+        cubre_al_lote(registro, documento, jornada) and registro_completo(registro, documento)
+        for registro in registros
+    ):
+        avisos.append(AVISO_INSPECCION_PREOPERATIVA)
+    return avisos
+
+
+def _marcar_aseo_en_el_lote(corrida, torre):
+    """
+    Deja en la observación del lote la misma marca que `abrir_lote_desde_vale`
+    pone al abrir sobre una máquina con aseo observado: la ficha del lote
+    (`DetalleLote`, paso «Aseo») la lee de ahí.
+    """
+    from inventario.servicios import advertencia_aseo_equipo
+    from produccion.models import Lote
+
+    advertencia = advertencia_aseo_equipo(torre)
+    if not advertencia:
+        return
+    lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
+    marca = f"[ADVERTENCIA ASEO AL INICIO] {advertencia}"
+    lote.observacion = "\n".join(parte for parte in (lote.observacion.strip(), marca) if parte)
+    lote.save(update_fields=["observacion"])
+
+
+@transaction.atomic
+def iniciar_secado(*, corrida_id, usuario):
+    """
+    Pasa una corrida de Secado preparada a ejecución. Recalcula los motivos
+    con la ejecución bloqueada —entre que el puesto los mostró y el clic pudo
+    entrar un CIP o un rechazo de Calidad— y deja los avisos en el evento.
+    """
+    corrida = CorridaSecado.objects.select_for_update(of=("self",)).get(pk=corrida_id)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .select_related("etapa", "equipo__sucursal")
+        .get(pk=corrida.ejecucion_id)
+    )
+    motivos = motivos_para_iniciar_secado(corrida, ejecucion=ejecucion)
+    if motivos:
+        raise ValidationError(motivos[0])
+    avisos = avisos_de_torre(ejecucion.equipo)
+    _marcar_aseo_en_el_lote(corrida, ejecucion.equipo)
+    transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk,
+        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        usuario=usuario,
+        motivo=(
+            "Advertencia no bloqueante: " + " ".join(avisos)
+            if avisos else "Inicio desde el puesto de Secado."
+        ),
+    )
+    return (
+        CorridaSecado.objects.select_related(
+            "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
+            "finalizada_por",
+        ).prefetch_related("ejecucion__salidas__liberacion_calidad").get(pk=corrida.pk)
+    )
+
+
+def estado_calidad_secado(corrida):
+    """La decisión de Calidad sobre el polvo de una corrida, o `no_requerida`."""
+    if not corrida.ejecucion.etapa.requiere_calidad:
+        return "no_requerida"
+    salida = next(
+        (
+            salida for salida in corrida.ejecucion.salidas.all()
+            if salida.lote_id == corrida.lote_id
+            and salida.naturaleza == SalidaProceso.Naturaleza.PRINCIPAL
+        ),
+        None,
+    )
+    decision = getattr(salida, "liberacion_calidad", None) if salida else None
+    return decision.estado if decision else "pendiente"
+
+
+def estado_puesto_secado(usuario):
+    """
+    Lo que el puesto de Secado dibuja: un estado por torre derivado de su
+    ejecución de Secado activa (la que ocupa el equipo; una en curso manda
+    sobre una preparada), con los motivos que impiden iniciar calculados por
+    la misma función que decide al iniciar; los concentrados que se pueden
+    tomar, con el saldo que `preparar_continuacion` va a aceptar; y las
+    corridas de hoy. La pantalla no recalcula nada de esto.
+
+    Las ejecuciones `cerrada`/`cancelada` no ocupan la torre: un huérfano de
+    un E2E abortado no deja la máquina tomada (`ESTADOS_QUE_OCUPAN_EQUIPO`).
+    """
+    from calidad.models import LiberacionProceso
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from maestros.models import Equipo
+    from usuarios.tenancy import filtrar_por_scope
+
+    torres = list(filtrar_por_scope(
+        Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.TORRE)
+        .select_related("sucursal").order_by("codigo"),
+        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ))
+    ids = [torre.pk for torre in torres]
+
+    activas = {}
+    for ejecucion in (
+        EjecucionProceso.objects.filter(
+            etapa__tipo=EtapaProceso.Tipo.SECADO, equipo_id__in=ids,
+            estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+        )
+        .select_related("etapa", "equipo", "corrida_secado__lote")
+        .prefetch_related("entradas__silo", "entradas__lote_inventario")
+        .order_by("pk")
+    ):
+        actual = activas.get(ejecucion.equipo_id)
+        if actual is None or (
+            actual.estado == EjecucionProceso.Estado.PREPARACION
+            and ejecucion.estado != EjecucionProceso.Estado.PREPARACION
+        ):
+            activas[ejecucion.equipo_id] = ejecucion
+
+    en_calidad = {}
+    for corrida in (
+        CorridaSecado.objects.filter(
+            ejecucion__equipo_id__in=ids,
+            ejecucion__salidas__naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+            ejecucion__salidas__liberacion_calidad__estado=LiberacionProceso.Estado.PENDIENTE,
+        ).select_related("ejecucion", "lote").order_by("pk")
+    ):
+        en_calidad[corrida.ejecucion.equipo_id] = corrida
+
+    def resumen(ejecucion):
+        corrida = getattr(ejecucion, "corrida_secado", None)
+        entrada = next(iter(ejecucion.entradas.all()), None)
+        origen = None
+        if entrada is not None and entrada.silo_id:
+            origen = entrada.silo.codigo
+        elif entrada is not None and entrada.lote_inventario_id:
+            origen = entrada.lote_inventario.codigo
+        return {
+            "id": corrida.pk if corrida else None,
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "ejecucion_estado": ejecucion.estado,
+            "lote_codigo": corrida.lote.codigo_lote if corrida else None,
+            "origen": origen,
+            # Texto, como en los serializers: el tipo del frontend es `string`.
+            "cantidad": str(entrada.cantidad) if entrada else None,
+            "unidad": entrada.unidad if entrada else None,
+            "iniciada_en": ejecucion.inicio,
+        }
+
+    filas = []
+    for torre in torres:
+        ejecucion = activas.get(torre.pk)
+        motivos, motivos_para_tomar, resolver_en = [], [], None
+        if ejecucion is None:
+            estado = "disponible"
+            # La misma regla con que `preparar_continuacion` y
+            # `preparar_secado_desde_inventario` rechazan la torre.
+            impedimento = motivo_equipo_no_habilitado(torre)
+            if impedimento:
+                motivos_para_tomar, resolver_en = [impedimento], RESOLVER_CIP
+        elif ejecucion.estado == EjecucionProceso.Estado.PREPARACION:
+            estado = "preparada"
+            corrida = getattr(ejecucion, "corrida_secado", None)
+            if corrida is None:
+                # Sin corrida no hay `secados/{id}/cancelar-preparacion/`: la
+                # ejecución se cancela desde la bandeja de Procesos.
+                motivos = [
+                    f"{ejecucion.codigo} no tiene lote de Secado y no puede iniciarse: "
+                    "cancela esa ejecución en Procesos y vuelve a tomar el concentrado."
+                ]
+            else:
+                tipados = motivos_tipados_para_iniciar_secado(corrida, ejecucion=ejecucion)
+                motivos = [motivo for motivo, _ in tipados]
+                # El enlace es del primer motivo, que es el que la tarjeta muestra.
+                resolver_en = tipados[0][1] if tipados else None
+        else:
+            estado = "en_curso"
+        avisos = [] if estado == "en_curso" else avisos_de_torre(torre)
+        pendiente = en_calidad.get(torre.pk)
+        filas.append({
+            "equipo_id": torre.pk, "codigo": torre.codigo, "nombre": torre.nombre,
+            "estado": estado,
+            "corrida": resumen(ejecucion) if ejecucion is not None else None,
+            "motivos_para_iniciar": motivos,
+            "motivos_para_tomar": motivos_para_tomar,
+            "resolver_en": resolver_en,
+            "avisos": avisos,
+            "falta_inspeccion": AVISO_INSPECCION_PREOPERATIVA in avisos,
+            "en_calidad": (
+                {"id": pendiente.pk, "lote_codigo": pendiente.lote.codigo_lote}
+                if pendiente is not None else None
+            ),
+        })
+
+    concentrados = []
+    # Descarta en la consulta lo que no puede seguir a Secado: el proceso de
+    # la ruta (o el de origen, sin ruta) no tiene un Secado activo después de
+    # la etapa que produjo la salida. Es un filtro grueso, no la regla: la
+    # decide `siguiente_etapa_para_salida`, abajo, sobre lo que queda.
+    secado_por_delante = EtapaProceso.objects.filter(
+        tipo=EtapaProceso.Tipo.SECADO, activa=True, proceso_id=OuterRef("proceso_de_ruta"),
+    ).filter(
+        ~Q(proceso_id=OuterRef("ejecucion__etapa__proceso_id"))
+        | Q(orden__gt=OuterRef("ejecucion__etapa__orden"))
+    )
+    salidas = filtrar_por_scope(
+        SalidaProceso.objects.annotate(
+            proceso_de_ruta=Coalesce("ruta_producto__proceso_id", "ejecucion__etapa__proceso_id"),
+        ).filter(
+            Exists(secado_por_delante),
+            liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
+            silo__isnull=False, lote__isnull=False, lote__corrida_secado__isnull=True,
+            destino__in=[
+                SalidaProceso.Destino.PENDIENTE,
+                SalidaProceso.Destino.SIGUIENTE_PROCESO,
+                SalidaProceso.Destino.ESTANDARIZACION,
+            ],
+        ).exclude(naturaleza=SalidaProceso.Naturaleza.MERMA)
+        .select_related("ejecucion__etapa", "silo", "lote__producto", "ruta_producto")
+        .order_by("lote__codigo_lote", "pk"),
+        usuario, campo_sucursal="ejecucion__sucursal_id",
+        campo_empresa="ejecucion__sucursal__empresa_id",
+    )
+    for salida in salidas:
+        siguiente = siguiente_etapa_para_salida(salida=salida)
+        if siguiente is None or siguiente.tipo != EtapaProceso.Tipo.SECADO:
+            continue
+        disponible = disponible_de_salida(salida)
+        if disponible <= 0:
+            continue
+        concentrados.append({
+            "salida_id": salida.pk, "etapa_id": siguiente.pk,
+            "lote_codigo": salida.lote.codigo_lote,
+            "producto": salida.lote.producto.nombre if salida.lote.producto_id else "",
+            "silo": salida.silo.codigo,
+            "disponible": str(disponible), "unidad": salida.unidad,
+        })
+
+    hoy = timezone.localdate()
+    corridas_de_hoy = [
+        {
+            "id": corrida.pk,
+            "equipo": corrida.ejecucion.equipo.codigo if corrida.ejecucion.equipo_id else None,
+            "lote_codigo": corrida.lote.codigo_lote,
+            "estado": corrida.ejecucion.estado,
+            "estado_calidad": estado_calidad_secado(corrida),
+        }
+        # Iniciadas o cerradas hoy: una preparación que nunca empezó no es
+        # trabajo del día, y un huérfano cancelado sin iniciar tampoco.
+        for corrida in CorridaSecado.objects.filter(ejecucion__equipo_id__in=ids)
+        .filter(Q(ejecucion__inicio__date=hoy) | Q(finalizada_en__date=hoy))
+        .select_related("ejecucion__etapa", "ejecucion__equipo", "lote")
+        .prefetch_related("ejecucion__salidas__liberacion_calidad")
+        .order_by("-pk")
+    ]
+    return {
+        "torres": filas,
+        "concentrados": concentrados,
+        "corridas_de_hoy": corridas_de_hoy,
+        "estados": [
+            {"valor": valor, "etiqueta": etiqueta}
+            for valor, etiqueta in EjecucionProceso.Estado.choices
+        ],
+    }
+
+
+@transaction.atomic
+def preparar_secado_desde_inventario(
     *, orden, existencia, equipo, codigo_lote, cantidad, usuario,
 ):
-    """Inicia Secado desde una materia prima externa liberada y trazable."""
+    """Prepara una torre con materia prima externa liberada; el inicio es `iniciar_secado`."""
     from inventario.models import Existencia, Insumo, Ubicacion
-    from inventario.servicios import (
-        advertencia_aseo_equipo, motivo_equipo_no_habilitado, registrar_salida,
-    )
+    from inventario.servicios import motivo_equipo_no_habilitado, registrar_salida
     from maestros.models import Equipo
     from produccion.models import Lote, OrdenProduccion
 
@@ -2216,20 +2975,18 @@ def crear_secado_desde_inventario(
     codigo = str(codigo_lote).strip()
     if not codigo:
         raise ValidationError({"codigo_lote": "Ingresa el codigo del lote de salida."})
-    advertencia = advertencia_aseo_equipo(equipo)
     lote = Lote(
         sucursal=orden.sucursal, codigo_lote=codigo,
         codigo_lote_propuesto=codigo, op=orden.codigo, orden=orden,
         producto=orden.producto, equipo=equipo, fecha=timezone.localdate(),
         estado=Lote.Estado.EN_PROCESO,
-        observacion=(f"[ADVERTENCIA ASEO AL INICIO] {advertencia}" if advertencia else ""),
     )
     lote.full_clean()
     lote.save()
     ejecucion = EjecucionProceso(
         codigo=f"EJ-SEC-EXT-{lote.pk}", etapa=etapa, ruta_producto=ruta,
         sucursal=orden.sucursal, equipo=equipo, responsable=usuario,
-        estado=EjecucionProceso.Estado.EJECUCION, inicio=timezone.now(),
+        estado=EjecucionProceso.Estado.PREPARACION,
     )
     ejecucion.full_clean()
     ejecucion.save()
@@ -2253,8 +3010,8 @@ def crear_secado_desde_inventario(
         orden.estado = OrdenProduccion.Estado.EN_PROCESO
         orden.save(update_fields=["estado"])
     EventoProceso.objects.create(
-        ejecucion=ejecucion, usuario=usuario, tipo="inicio_secado_externo",
-        estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        ejecucion=ejecucion, usuario=usuario, tipo="preparacion_secado_externo",
+        estado_nuevo=EjecucionProceso.Estado.PREPARACION,
         motivo=(
             f"Lote externo {existencia.lote.codigo}; {cantidad} kg de "
             f"{existencia.lote.insumo.nombre}."

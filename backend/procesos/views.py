@@ -12,6 +12,7 @@ from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.response import Response
 
 from config.api_exceptions import respuesta_error_dominio
+from inventario.views import FiltraConsultaMixin
 
 from usuarios.permisos import ConfiguraProcesos
 from usuarios.tenancy import (
@@ -56,11 +57,14 @@ from .servicios import (
     genealogia_lote,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
-    crear_secado_desde_inventario,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
-    iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla,
-    preparar_continuacion, siguiente_etapa_para_salida,
+    estado_puesto_evaporacion, estado_puesto_secado,
+    iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
+    cancelar_preparacion_secado, inicio_reservado_al_puesto,
+    MENSAJE_INICIO_SECADO_EN_PUESTO,
+    preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
+    silos_con_saldo,
     sugerir_plan_descremacion,
     tipos_equipo_para_etapa, transicionar_ejecucion,
 )
@@ -178,6 +182,11 @@ class CorridaCondensacionViewSet(
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
         return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Evaporación: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_evaporacion(request.user))
+
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):
         from maestros.models import Silo
@@ -201,20 +210,7 @@ class CorridaCondensacionViewSet(
             campo_empresa="sucursal__empresa_id",
         )
         silos = filtrar_por_scope(
-            Silo.objects.filter(activo=True).annotate(
-                ingresos=Coalesce(
-                    Sum("movimientos__litros", filter=Q(movimientos__tipo="ingreso")),
-                    Value(0), output_field=DecimalField(),
-                ),
-                salidas=Coalesce(
-                    Sum("movimientos__litros", filter=Q(movimientos__tipo="salida")),
-                    Value(0), output_field=DecimalField(),
-                ),
-                ajustes=Coalesce(
-                    Sum("movimientos__litros", filter=Q(movimientos__tipo="ajuste")),
-                    Value(0), output_field=DecimalField(),
-                ),
-            ),
+            silos_con_saldo(Silo.objects.filter(activo=True)),
             request.user, campo_sucursal="sucursal_id",
             campo_empresa="sucursal__empresa_id",
         )
@@ -236,7 +232,7 @@ class CorridaCondensacionViewSet(
                 {
                     "id": silo.pk, "codigo": silo.codigo,
                     "estado": silo.get_estado_display(), "capacidad_l": silo.capacidad_l,
-                    "saldo_l": silo.ingresos - silo.salidas + silo.ajustes,
+                    "saldo_l": silo.saldo_l,
                 }
                 for silo in silos
             ],
@@ -746,23 +742,33 @@ class CorridaMantequillaViewSet(
         return Response(self.get_serializer(corrida).data)
 
 
-class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
+class CorridaSecadoViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "ejecucion__sucursal_id"
     tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
     queryset = CorridaSecado.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
         "finalizada_por",
-    ).prefetch_related("ejecucion__salidas__liberacion_calidad")
+    ).prefetch_related("ejecucion__salidas__liberacion_calidad").order_by("-pk")
     serializer_class = CorridaSecadoSerializer
     permission_classes = [OperaProcesoPorEtapa]
     tipo_etapa_operacional = EtapaProceso.Tipo.SECADO
     http_method_names = ["get", "post", "head", "options"]
+    # Historial del puesto: se filtra en el servidor porque la lista está
+    # paginada (mismo contrato que Existencias y el historial de Despacho).
+    busqueda_en = ("lote__codigo_lote", "ejecucion__codigo", "lote__producto__nombre")
+    filtro_estado = "ejecucion__estado"
+    filtro_fecha = "ejecucion__creada_en"
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
             "POST",
-            detail="La corrida de Secado nace al abrir el lote desde su vale.",
+            detail="La corrida de Secado nace en el puesto de Secado.",
         )
+
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Secado: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_secado(request.user))
 
     @action(detail=False, methods=["get"], url_path="opciones-alimentacion-externa")
     def opciones_alimentacion_externa(self, request):
@@ -850,8 +856,8 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             ],
         })
 
-    @action(detail=False, methods=["post"], url_path="iniciar-desde-inventario")
-    def iniciar_desde_inventario(self, request):
+    @action(detail=False, methods=["post"], url_path="preparar-desde-inventario")
+    def preparar_desde_inventario(self, request):
         from inventario.models import Existencia
         from maestros.models import Equipo
         from produccion.models import OrdenProduccion
@@ -873,7 +879,7 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                 Equipo.objects.all(), request.user,
                 campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
             ).get(pk=datos["equipo"])
-            corrida = crear_secado_desde_inventario(
+            corrida = preparar_secado_desde_inventario(
                 orden=orden, existencia=existencia, equipo=equipo,
                 codigo_lote=datos["codigo_lote"], cantidad=datos["cantidad"],
                 usuario=request.user,
@@ -890,6 +896,31 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             )
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def iniciar(self, request, pk=None):
+        """Inicia una corrida preparada: el único camino de inicio de Secado."""
+        try:
+            corrida = iniciar_secado(corrida_id=self.get_object().pk, usuario=request.user)
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta una torre preparada sin iniciarla: el concentrado vuelve a ofrecerse."""
+        try:
+            ejecucion = cancelar_preparacion_secado(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
@@ -1055,7 +1086,11 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                 ),
                 "cambio_estado_en": ejecucion.cambio_estado_en,
                 "acciones_permitidas": (
-                    sorted(EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set()))
+                    sorted(
+                        accion
+                        for accion in EjecucionProceso.TRANSICIONES.get(ejecucion.estado, set())
+                        if not inicio_reservado_al_puesto(ejecucion, accion)
+                    )
                     if puede_operar_tipo(request.user, ejecucion.etapa.tipo)
                     else []
                 ),
@@ -1098,9 +1133,14 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
                 {"version": ["Envía la versión visible de la ejecución."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        actual = self.get_object()
+        if inicio_reservado_al_puesto(actual, request.data.get("estado", "")):
+            return respuesta_error_dominio(
+                DjangoValidationError(MENSAJE_INICIO_SECADO_EN_PUESTO)
+            )
         try:
             ejecucion = transicionar_ejecucion(
-                ejecucion_id=self.get_object().pk,
+                ejecucion_id=actual.pk,
                 estado_nuevo=request.data.get("estado", ""),
                 motivo=request.data.get("motivo", ""),
                 usuario=request.user,

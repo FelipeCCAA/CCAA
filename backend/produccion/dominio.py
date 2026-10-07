@@ -515,6 +515,22 @@ def evaluar_pcc1(control: Any, lecturas: Iterable[Any] = ()) -> EvaluacionPcc1:
     )
 
 
+def exige_linea(equipo) -> bool:
+    """
+    ¿Esta máquina exige declarar la línea del lote?
+
+    La línea (E1/E2) es un dato de las torres de secado Egron, no de
+    cualquier equipo: un evaporador no tiene línea que declarar. Los dos
+    caminos que abren un lote —el borrador guiado y el alta directa desde el
+    vale— llaman a esta misma función, para no mantener la regla en dos
+    lugares que puedan desalinearse.
+
+    Compara contra el valor de `Equipo.Tipo.TORRE` ("torre") y no contra el
+    modelo: este módulo es de funciones puras y no importa Django.
+    """
+    return getattr(equipo, "tipo", None) == "torre"
+
+
 @dataclass(frozen=True)
 class DecisionApertura:
     """Si de este vale puede nacer un lote, y por qué no."""

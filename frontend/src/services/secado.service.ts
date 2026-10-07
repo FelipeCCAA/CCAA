@@ -1,4 +1,5 @@
 import api from "./api";
+import { conFiltros, type Filtros } from "./paginacion";
 import type { Pagina } from "./procesos.service";
 
 export interface CorridaSecado {
@@ -53,7 +54,7 @@ export interface OpcionesSecadoExterno {
   }>;
 }
 
-export interface InicioSecadoExterno {
+export interface PreparacionSecadoExterno {
   orden: number;
   existencia: number;
   equipo: number;
@@ -61,9 +62,59 @@ export interface InicioSecadoExterno {
   cantidad: number;
 }
 
-export async function obtenerSecados(signal?: AbortSignal): Promise<Pagina<CorridaSecado>> {
-  const { data } = await api.get<Pagina<CorridaSecado>>("procesos/secados/", { signal });
-  return data;
+export type EstadoTorre = "disponible" | "preparada" | "en_curso";
+
+export interface CorridaTorre {
+  id: number | null;
+  ejecucion_id: number;
+  ejecucion_codigo: string;
+  ejecucion_estado: string;
+  lote_codigo: string | null;
+  origen: string | null;
+  cantidad: string | null;
+  unidad: string | null;
+  iniciada_en: string | null;
+}
+
+export interface TorrePuesto {
+  equipo_id: number;
+  codigo: string;
+  nombre: string;
+  estado: EstadoTorre;
+  corrida: CorridaTorre | null;
+  motivos_para_iniciar: string[];
+  /* Por qué no se puede tomar concentrado para una torre disponible (CIP). */
+  motivos_para_tomar: string[];
+  /* Dónde se resuelve el primer motivo; `null` si no hay pantalla que lo arregle. */
+  resolver_en: string | null;
+  avisos: string[];
+  falta_inspeccion: boolean;
+  en_calidad: { id: number; lote_codigo: string } | null;
+}
+
+export interface ConcentradoPuesto {
+  salida_id: number;
+  etapa_id: number;
+  lote_codigo: string;
+  producto: string;
+  silo: string;
+  disponible: string;
+  unidad: string;
+}
+
+export interface CorridaDeHoySecado {
+  id: number;
+  equipo: string | null;
+  lote_codigo: string;
+  estado: string;
+  estado_calidad: string;
+}
+
+export interface PuestoSecado {
+  torres: TorrePuesto[];
+  concentrados: ConcentradoPuesto[];
+  corridas_de_hoy: CorridaDeHoySecado[];
+  estados: { valor: string; etiqueta: string }[];
 }
 
 export async function obtenerSecado(id: number, signal?: AbortSignal): Promise<CorridaSecado> {
@@ -85,11 +136,43 @@ export async function obtenerOpcionesSecadoExterno(
   return data;
 }
 
-export async function iniciarSecadoExterno(
-  datos: InicioSecadoExterno,
+export async function obtenerPuestoSecado(): Promise<PuestoSecado> {
+  const { data } = await api.get<PuestoSecado>("procesos/secados/puesto/");
+  return data;
+}
+
+export async function iniciarSecado(id: number): Promise<CorridaSecado> {
+  const { data } = await api.post<CorridaSecado>(`procesos/secados/${id}/iniciar/`);
+  return data;
+}
+
+export interface CancelacionPreparacion {
+  ejecucion_id: number;
+  ejecucion_codigo: string;
+  estado: string;
+}
+
+/* Suelta una torre preparada sin iniciarla; el concentrado vuelve a ofrecerse. */
+export async function cancelarPreparacionSecado(
+  id: number, motivo: string,
+): Promise<CancelacionPreparacion> {
+  const { data } = await api.post<CancelacionPreparacion>(
+    `procesos/secados/${id}/cancelar-preparacion/`, { motivo },
+  );
+  return data;
+}
+
+export async function prepararSecadoExterno(
+  datos: PreparacionSecadoExterno,
 ): Promise<CorridaSecado> {
   const { data } = await api.post<CorridaSecado>(
-    "procesos/secados/iniciar-desde-inventario/", datos,
+    "procesos/secados/preparar-desde-inventario/", datos,
   );
+  return data;
+}
+
+/* Historial del puesto: filtros y página viajan al servidor. */
+export async function buscarSecados(filtros: Filtros = {}): Promise<Pagina<CorridaSecado>> {
+  const { data } = await api.get<Pagina<CorridaSecado>>(conFiltros("procesos/secados/", filtros));
   return data;
 }

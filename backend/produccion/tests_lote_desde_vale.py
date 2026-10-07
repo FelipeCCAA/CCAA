@@ -56,8 +56,8 @@ class BaseValeLote(TestCase):
         self.operador = User.objects.create_user(username="op", password="x")
         proceso = Proceso.objects.create(codigo="ruta-prueba", nombre="Ruta prueba")
         EtapaProceso.objects.create(
-            proceso=proceso, codigo="secado", nombre="Secado",
-            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+            proceso=proceso, codigo="evaporacion", nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=1,
         )
         self.ruta = RutaProducto.objects.create(
             sucursal=self.planta, producto=self.producto, proceso=proceso,
@@ -79,34 +79,40 @@ class BaseValeLote(TestCase):
         )
 
     def _abrir(self, vale, litros, codigo="CCAA6224010102010201-01"):
+        # Un evaporador por apertura: `adquirir_equipo` no deja dos corridas
+        # abiertas en la misma máquina, y un vale alimenta varias.
+        evaporador = Equipo.objects.create(
+            sucursal=self.planta, codigo=f"EV-{codigo}", nombre=f"Evaporador {codigo}",
+            tipo=Equipo.Tipo.EVAPORADOR,
+        )
         return servicios.abrir_lote_desde_vale(
             vale=vale,
             producto=self.producto,
             codigo_lote=codigo,
             fecha=date(2026, 8, 12),
             litros=litros,
+            equipo=evaporador,
         )
 
 
 class AperturaTests(BaseValeLote):
 
-    def test_abrir_en_torre_crea_la_corrida_especializada_de_secado(self):
+    def test_abrir_en_torre_se_rechaza_sin_crear_nada(self):
         torre = Equipo.objects.create(
             sucursal=self.planta, codigo="TORRE-1", nombre="Torre 1",
             tipo=Equipo.Tipo.TORRE,
         )
-        vale = self._vale()
 
-        lote = servicios.abrir_lote_desde_vale(
-            vale=vale, producto=self.producto, codigo_lote="SEC-ESPECIALIZADO",
-            fecha=date(2026, 8, 12), litros=Decimal("1000.00"),
-            equipo=torre, usuario=self.operador,
-        )
+        with self.assertRaisesMessage(ValidationError, servicios.MENSAJE_LOTE_EN_TORRE):
+            servicios.abrir_lote_desde_vale(
+                vale=self._vale(), producto=self.producto, codigo_lote="SEC-TORRE",
+                fecha=date(2026, 8, 12), litros=Decimal("1000.00"),
+                equipo=torre, usuario=self.operador,
+            )
 
-        corrida = CorridaSecado.objects.get(lote=lote)
-        self.assertEqual(corrida.ejecucion, lote.ejecucion)
-        self.assertEqual(corrida.ejecucion.equipo, torre)
-        self.assertIsNone(corrida.kg_polvo)
+        self.assertFalse(Lote.objects.filter(codigo_lote="SEC-TORRE").exists())
+        self.assertFalse(MovimientoSilo.objects.exists())
+        self.assertFalse(CorridaSecado.objects.exists())
 
     def test_el_lote_queda_atado_al_vale_y_descuenta_su_silo(self):
         vale = self._vale()
@@ -173,10 +179,42 @@ class AperturaTests(BaseValeLote):
         self.assertFalse(Lote.objects.exists())
         self.assertFalse(MovimientoSilo.objects.exists())
 
-    def test_no_permite_saltar_la_etapa_inicial_posterior_al_vale(self):
-        secado = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.SECADO)
-        secado.orden = 3
-        secado.save(update_fields=["orden"])
+    def test_una_linea_no_salta_la_evaporacion_de_la_ruta(self):
+        """
+        Estandarización → Evaporación → Envasado: una línea pide Envasado,
+        que no es la etapa inicial después del vale. Lo rechaza
+        `exigir_etapa_inicial_para_producto`, no la guarda de la torre.
+        """
+        evaporacion = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.EVAPORACION)
+        evaporacion.orden = 2
+        evaporacion.save(update_fields=["orden"])
+        EtapaProceso.objects.create(
+            proceso=self.ruta.proceso, codigo="estandarizacion", nombre="Estandarización",
+            tipo=EtapaProceso.Tipo.ESTANDARIZACION, orden=1,
+        )
+        EtapaProceso.objects.create(
+            proceso=self.ruta.proceso, codigo="envasado", nombre="Envasado",
+            tipo=EtapaProceso.Tipo.ENVASADO, orden=3,
+        )
+        linea = Equipo.objects.create(
+            sucursal=self.planta, codigo="LINEA-SALTO", nombre="Línea de envasado",
+            tipo=Equipo.Tipo.LINEA,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "no permite comenzar directamente"):
+            servicios.abrir_lote_desde_vale(
+                vale=self._vale(), producto=self.producto, codigo_lote="SALTO-ENVASADO",
+                fecha=date(2026, 8, 12), litros=Decimal("1000"), equipo=linea,
+                usuario=self.operador,
+            )
+
+        self.assertFalse(Lote.objects.filter(codigo_lote="SALTO-ENVASADO").exists())
+        self.assertFalse(MovimientoSilo.objects.filter(origen_tipo="lote").exists())
+
+    def test_una_torre_se_rechaza_y_solo_se_ofrecen_los_evaporadores_iniciales(self):
+        evaporacion = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.EVAPORACION)
+        evaporacion.orden = 2
+        evaporacion.save(update_fields=["orden"])
         EtapaProceso.objects.create(
             proceso=self.ruta.proceso,
             codigo="estandarizacion",
@@ -184,12 +222,12 @@ class AperturaTests(BaseValeLote):
             tipo=EtapaProceso.Tipo.ESTANDARIZACION,
             orden=1,
         )
-        evaporacion = EtapaProceso.objects.create(
+        EtapaProceso.objects.create(
             proceso=self.ruta.proceso,
-            codigo="evaporacion",
-            nombre="Evaporación",
-            tipo=EtapaProceso.Tipo.EVAPORACION,
-            orden=2,
+            codigo="secado",
+            nombre="Secado",
+            tipo=EtapaProceso.Tipo.SECADO,
+            orden=3,
         )
         evaporador = Equipo.objects.create(
             sucursal=self.planta,
@@ -205,7 +243,7 @@ class AperturaTests(BaseValeLote):
         )
         vale = self._vale()
 
-        with self.assertRaisesMessage(ValidationError, "no permite comenzar directamente"):
+        with self.assertRaisesMessage(ValidationError, servicios.MENSAJE_LOTE_EN_TORRE):
             servicios.abrir_lote_desde_vale(
                 vale=vale,
                 producto=self.producto,

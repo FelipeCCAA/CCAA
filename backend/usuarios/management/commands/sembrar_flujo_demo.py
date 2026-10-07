@@ -21,6 +21,8 @@ sembrar.
 El producto es el que **tiene especificación vigente**, para que el análisis del
 lote se pueda contrastar contra algo. Sin eso el expediente diría «sin
 especificación» y el sembrado no mostraría lo que se quiere mostrar.
+
+El lote se abre en la primera etapa de la ruta que no sea Secado (ver `_equipo_de_apertura`).
 """
 
 from datetime import date, time, timedelta
@@ -35,6 +37,8 @@ from estandarizacion import servicios
 from estandarizacion.dominio import Leche, calcular_mezcla
 from estandarizacion.models import ValeEstandarizacion
 from maestros.models import Equipo, Especificacion, Silo, Vehiculo
+from procesos.models import EtapaProceso
+from procesos.servicios import etapas_iniciales_para_producto, tipos_equipo_para_etapa
 from produccion.dominio import generar_codigo_lote
 from produccion import servicios as servicios_produccion
 from produccion.models import Analisis, Lote
@@ -168,7 +172,6 @@ class Command(BaseCommand):
         sucursal = Sucursal.objects.filter(activa=True).first()
         operador = User.objects.filter(is_active=True).order_by("pk").first()
         vehiculo = Vehiculo.objects.filter(activo=True).first()
-        equipo = Equipo.objects.filter(activo=True).exclude(sigla="").order_by("orden", "pk").first()
 
         silos = list(Silo.objects.filter(activo=True, tipo=Silo.Tipo.SILO).order_by("pk"))
         tanques = list(Silo.objects.filter(activo=True, tipo=Silo.Tipo.TK_LD).order_by("pk"))
@@ -177,6 +180,10 @@ class Command(BaseCommand):
             raise CommandError(
                 "Hacen falta al menos dos silos de leche y un TK de descremada."
             )
+
+        # La ruta se busca en la sucursal del silo de destino, que es la que
+        # el lote hereda del vale y contra la que el servicio la exige.
+        equipo = self._equipo_de_apertura(especificacion.producto, silos[1].sucursal)
 
         return {
             "especificacion": especificacion,
@@ -189,6 +196,46 @@ class Command(BaseCommand):
             "silo_destino": silos[1],
             "tanque": tanques[0],
         }
+
+    def _equipo_de_apertura(self, producto, sucursal):
+        """
+        La máquina de la primera etapa de la ruta después de Estandarización,
+        que no sea Secado: un lote en torre nace solo desde el puesto de
+        Secado, con el concentrado que Calidad liberó. Ese tramo lo recorren
+        el E2E y `procesos.tests_puesto_secado`; aquí se sembraría con cuatro
+        reglas más (análisis con dos firmas, cierre de la condensación,
+        liberación) que no son de lo que trata este sembrado.
+        """
+        iniciales = etapas_iniciales_para_producto(
+            producto=producto, sucursal=sucursal,
+            etapa_previa_tipo=EtapaProceso.Tipo.ESTANDARIZACION,
+        )
+        # Los tipos que la apertura acepta (`abre_desde_vale`): una torre o un
+        # punto de carga se rechazarían al abrir el lote.
+        tipos = {
+            tipo
+            for etapa in iniciales
+            for tipo in tipos_equipo_para_etapa(etapa.tipo)
+            if servicios_produccion.abre_desde_vale(tipo)
+        }
+        if not tipos:
+            raise CommandError(
+                f"La ruta de {producto.nombre} no tiene después de Estandarización "
+                "una etapa que abra el lote fuera de la torre. Un lote en torre nace "
+                "desde el puesto de Secado: configura la ruta con Evaporación."
+            )
+        equipo = (
+            Equipo.objects.filter(activo=True, tipo__in=tipos)
+            .exclude(sigla="").order_by("orden", "pk").first()
+        )
+        if equipo is None:
+            nombres = ", ".join(sorted(Equipo.Tipo(tipo).label for tipo in tipos))
+            raise CommandError(
+                f"Para abrir el lote de {producto.nombre} hace falta una máquina activa "
+                f"de tipo {nombres} con sigla (la sigla es parte del código de lote). "
+                "Cárgala en Maestros › Máquinas."
+            )
+        return equipo
 
     def _recepcionar(self, contexto):
         """Un camión con dos módulos, hasta dejar la leche en el silo."""
@@ -354,9 +401,7 @@ class Command(BaseCommand):
 
     def _producir(self, contexto, vale):
         producto = contexto["producto"]
-        equipo = contexto["equipo"]
-        if equipo is None:
-            raise CommandError("Hace falta un equipo activo con sigla para generar el código de lote.")
+        equipo = contexto["equipo"]  # `_equipo_de_apertura` nunca devuelve `None`.
         codigo = generar_codigo_lote(
             fecha=self.fecha, sigla=equipo.sigla, correlativo=1
         )
@@ -372,7 +417,6 @@ class Command(BaseCommand):
             fecha=self.fecha,
             litros=vale.volumen,
             equipo=equipo,
-            linea="E1",
             turno="A",
             hora_inicio=time(8, 0),
         )
@@ -384,7 +428,7 @@ class Command(BaseCommand):
         lote.estado = Lote.Estado.PRODUCIDO
         lote.save()
 
-        # Los kilos ya existen: la ejecucion de secado cierra con su salida, y
+        # Los kilos ya existen: la ejecucion de la primera etapa cierra con su salida, y
         # con eso la cadena queda recorrible de punta a punta.
         servicios_produccion.registrar_produccion(lote=lote)
 

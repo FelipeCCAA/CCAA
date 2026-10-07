@@ -53,7 +53,6 @@ const Procesos = lazy(() => import("../pages/Procesos/Procesos"));
 const Aseos = lazy(() => import("../pages/Inocuidad/Aseos"));
 const Inventario = lazy(() => import("../pages/Inventario/Inventario"));
 const Envasado = lazy(() => import("../pages/Envasado/Envasado"));
-const Secado = lazy(() => import("../pages/Secado/Secado"));
 
 /*
   Compras vuelve a ser alcanzable (quedó huérfana en 2430350). Lo de bodega
@@ -72,6 +71,9 @@ const AbastecimientoDetalleLote = lazy(
   () => import("../pages/Abastecimiento/DetalleLoteInventario"),
 );
 const AbastecimientoRecepcion = lazy(() => import("../pages/Abastecimiento/Recepcion"));
+
+const PuestoEvaporacion = lazy(() => import("../pages/Evaporacion/PuestoEvaporacion"));
+const PuestoSecado = lazy(() => import("../pages/Secado/PuestoSecado"));
 
 const PuestoBodega = lazy(() => import("../pages/Bodega/PuestoBodega"));
 const OperarBodega = lazy(() => import("../pages/Bodega/OperarBodega"));
@@ -214,10 +216,12 @@ function RoutesApp(){
 
                     <Route element={<RutaModulo modulo="produccion" />}>
                         <Route path="/produccion" element={diferido(<Produccion />)} />
+                        <Route path="/produccion/evaporacion" element={diferido(<PuestoEvaporacion />)} />
                     </Route>
 
                     <Route element={<RutaModulo modulo="secado" />}>
-                        <Route path="/secado" element={diferido(<Secado />)} />
+                        <Route path="/produccion/secado" element={diferido(<PuestoSecado />)} />
+                        <Route path="/secado" element={<Navigate to="/produccion/secado" replace />} />
                     </Route>
 
                     <Route element={<RutaModulo modulo="envasado" />}>

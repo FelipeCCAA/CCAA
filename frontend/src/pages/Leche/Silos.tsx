@@ -335,7 +335,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
                       ? `/estandarizacion?silo=${material.silo_id}`
                       : accion?.codigo === "iniciar_mantequilla"
                         ? "/procesos?seccion=mantequilla"
-                        : accion?.codigo === "continuar_secado" ? "/secado" : null;
+                        : accion?.codigo === "continuar_secado" ? "/produccion/secado" : null;
                   return <article key={material.id} className="rounded-lg bg-slate-50 px-3 py-3 text-xs text-slate-700">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div><b className="text-slate-900">{material.producto_nombre ?? material.resultado}</b><br />{material.lote_codigo ? `Lote ${material.lote_codigo} · ` : ""}{material.corrida_codigo}</div>

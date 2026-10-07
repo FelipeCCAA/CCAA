@@ -29,6 +29,8 @@ from maestros.models import Especificacion, Producto
 from usuarios.documentos import DocumentoBorradorMixin
 from usuarios.tenancy import sucursal_predeterminada_pruebas
 
+from . import dominio
+
 
 class OrdenProduccion(models.Model):
     """Compromiso operacional que conecta la semana planificada con sus lotes."""
@@ -142,7 +144,7 @@ class Lote(DocumentoBorradorMixin, models.Model):
     ESTADO_CONFIRMADO = Estado.EN_PROCESO
     CAMPOS_OBLIGATORIOS_AL_CONFIRMAR = (
         "codigo_lote_propuesto", "producto", "vale", "equipo", "fecha",
-        "linea", "litros_estandarizados_borrador",
+        "litros_estandarizados_borrador",
     )
     CAMPOS_POR_PASO = {
         "apertura": (
@@ -291,6 +293,13 @@ class Lote(DocumentoBorradorMixin, models.Model):
 
     def motivos_para_confirmar(self):
         motivos = super().motivos_para_confirmar()
+        # La línea es un dato de las torres Egron (E1/E2): un evaporador no
+        # tiene línea que declarar, y exigirla ahí bloquearía un borrador que
+        # ya está completo para su máquina. `dominio.exige_linea` es la misma
+        # regla que usa el alta directa desde el vale (`LoteSerializer`).
+        if self.equipo_id and dominio.exige_linea(self.equipo) and not self.linea:
+            etiqueta = self._meta.get_field("linea").verbose_name
+            motivos.append(f"Falta {str(etiqueta).lower()}.")
         codigo = self.codigo_lote_propuesto.strip()
         if codigo and type(self).objects.exclude(pk=self.pk).filter(
             sucursal_id=self.sucursal_id, codigo_lote=codigo

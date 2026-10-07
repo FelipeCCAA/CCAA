@@ -22,27 +22,36 @@ test("suero externo termina como Big Bag disponible en Inventario", async ({ pag
   let loteId = Number(process.env.E2E_LOTE_ID_SUERO ?? 0);
   const soloInventario = process.env.E2E_SOLO_INVENTARIO === "1";
 
-  if (!soloInventario) await test.step("1 · Secado consume un lote externo liberado", async () => {
+  if (!soloInventario) await test.step("1 · Secado prepara la torre con un lote externo y la inicia", async () => {
     await usarSesionArea(page, "e2e_secado");
-    await irA(page, "/secado");
-    await page.getByRole("button", { name: "Alimentación externa" }).click();
+    await irA(page, "/produccion/secado");
+    const torre = page.getByRole("article").filter({ hasText: /TOR-SUERO-E2E/i });
+    // Libre = ofrece tomar habilitado; «Disponible» también lo dice una torre en CIP.
+    const libre = torre.filter({ has: page.getByRole("button", { name: "Tomar concentrado", disabled: false }) });
+    await expect(libre).toBeVisible({ timeout: 20_000 });
+    await libre.getByRole("button", { name: "Tomar concentrado" }).click();
     const modal = page.getByRole("dialog");
+    await modal.getByLabel("Alimentación externa").check();
     await elegirOpcion(campo(modal, "Orden / producto"), /Suero en polvo E2E/i);
     await elegirOpcion(campo(modal, "Lote externo liberado"), /SUERO-EXTERNO-E2E/i);
-    await elegirOpcion(campo(modal, "Torre"), /TOR-SUERO-E2E/i);
     await campo(modal, "Código lote de salida").fill(lote);
-    await campo(modal, "Cantidad a alimentar").fill("800");
-    const respuesta = await trasGuardar(page, "/iniciar-desde-inventario/", async () => {
-      await modal.getByRole("button", { name: "Confirmar e iniciar Secado" }).click();
+    await campo(modal, "Cantidad").fill("800");
+    await modal.getByRole("button", { name: "Revisar y confirmar" }).click();
+    const respuesta = await trasGuardar(page, "/preparar-desde-inventario/", async () => {
+      await modal.getByRole("button", { name: "Preparar torre" }).click();
     });
     loteId = Number((await respuesta.json()).lote);
     expect(loteId).toBeGreaterThan(0);
-    await expect(page.locator("article").filter({ hasText: lote })).toContainText("Equipo ocupado");
+    await expect(torre).toContainText("Preparada", { timeout: 20_000 });
+    await trasGuardar(page, "/iniciar/", async () => {
+      await torre.getByRole("button", { name: "Iniciar secado" }).click();
+    });
+    await expect(torre).toContainText("En curso", { timeout: 20_000 });
   });
 
   if (!soloInventario) await test.step("2 · El operador registra el balance físico", async () => {
-    const tarjeta = page.locator("article").filter({ hasText: lote });
-    await tarjeta.getByRole("button", { name: "Registrar balance y cerrar corrida" }).click();
+    const torre = page.getByRole("article").filter({ hasText: /TOR-SUERO-E2E/i });
+    await torre.getByRole("button", { name: "Registrar balance y cerrar" }).click();
     const modal = page.getByRole("dialog");
     await expect(campo(modal, "Alimentación medida")).toHaveValue("800.000");
     await campo(modal, "Sólidos de entrada").fill("90");
@@ -54,8 +63,8 @@ test("suero externo termina como Big Bag disponible en Inventario", async ({ pag
     await trasGuardar(page, "/cerrar/", async () => {
       await modal.getByRole("button", { name: "Confirmar balance y cerrar" }).click();
     });
-    await page.getByRole("button", { name: /Esperando Calidad/ }).click();
-    await expect(page.locator("article").filter({ hasText: lote })).toContainText("Esperar decisión de Calidad");
+    const hoy = page.locator("section[aria-label='Corridas de hoy']");
+    await expect(hoy.getByRole("listitem").filter({ hasText: lote })).toContainText("Esperando Calidad");
   });
 
   if (!soloInventario) await test.step("3 · Calidad analiza y libera el producto de Secado", async () => {

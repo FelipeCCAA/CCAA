@@ -264,3 +264,26 @@ class ResultadoCalidadLoteTests(BaseCalidad):
         self._analisis({"humedad": 3.0, "mg": 27.0})
 
         self.assertEqual(self._resultado().etiqueta, "Conforme")
+
+
+class ExigeLineaTests(TestCase):
+    """
+    La regla pura, sola: la línea (E1/E2) es un dato de las torres Egron.
+
+    Los dos caminos que abren un lote —el borrador guiado y el alta directa
+    desde el vale— llaman a `dominio.exige_linea` en vez de repetir esta
+    comparación, así que fijarla aquí protege a los dos a la vez.
+    """
+
+    class _Equipo:
+        def __init__(self, tipo):
+            self.tipo = tipo
+
+    def test_una_torre_exige_linea(self):
+        self.assertTrue(dominio.exige_linea(self._Equipo("torre")))
+
+    def test_un_evaporador_no_exige_linea(self):
+        self.assertFalse(dominio.exige_linea(self._Equipo("evaporador")))
+
+    def test_sin_equipo_no_exige_linea(self):
+        self.assertFalse(dominio.exige_linea(None))

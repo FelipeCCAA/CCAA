@@ -39,25 +39,6 @@ export function bandejaDeSecado(
   return "historial";
 }
 
-export function estadoFisicoSecado(estado: EstadoEjecucionSecado): string {
-  if (estado === "preparacion") return "Equipo reservado";
-  if (["ejecucion", "pausada", "bloqueada"].includes(estado)) return "Equipo ocupado";
-  return "Equipo disponible";
-}
-
-export function siguienteAccionSecado(
-  estado: EstadoEjecucionSecado,
-  estadoCalidad: string = "no_requerida",
-): string {
-  if (estado === "preparacion") return "Iniciar la ejecución desde el flujo productivo";
-  if (estado === "ejecucion" || estado === "pausada") return "Registrar balance y cerrar corrida";
-  if (estado === "bloqueada") return "Resolver el bloqueo antes de continuar";
-  if (estadoCalidad === "pendiente" || estado === "pendiente_control") return "Esperar decisión de Calidad";
-  if (estadoCalidad === "rechazado") return "Resolver el rechazo informado por Calidad";
-  if (estado === "cerrada") return "Revisar continuidad del lote en Calidad";
-  return "Consultar el historial de la corrida";
-}
-
 /*
   El balance que la pantalla dibuja **mientras se teclea**, para que el operador
   vea si la corrida cierra antes de enviarla.

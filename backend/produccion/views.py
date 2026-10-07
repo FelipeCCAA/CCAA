@@ -611,24 +611,88 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 {"detail": "El borrador no existe o ya fue confirmado."},
                 status=status.HTTP_409_CONFLICT,
             )
+        # La vista está decorada con `transaction.atomic`: este `return`
+        # confirma la transacción, y es seguro porque hasta aquí solo se tomó
+        # el candado del borrador, sin escribir (trampa de CLAUDE.md).
+        if lote.equipo_id and lote.equipo.tipo == Equipo.Tipo.TORRE:
+            return Response(
+                {"equipo": servicios_produccion.MENSAJE_LOTE_EN_TORRE},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         motivos = lote.motivos_para_confirmar()
         if motivos:
             return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            confirmado = servicios_produccion.abrir_lote_desde_vale(
-                vale=lote.vale,
-                codigo_lote=lote.codigo_lote_propuesto.strip(),
-                fecha=lote.fecha,
-                litros=lote.litros_estandarizados_borrador,
-                usuario=request.user,
-                lote_borrador=lote,
-                op=lote.op,
-                orden=lote.orden,
-                equipo=lote.equipo,
-                linea=lote.linea,
-                turno=lote.turno,
-                observacion=lote.observacion,
+
+        es_evaporador = bool(lote.equipo_id) and lote.equipo.tipo == Equipo.Tipo.EVAPORADOR
+        if es_evaporador:
+            # Abrir sobre un evaporador también prepara la corrida, así que
+            # pide el mismo permiso que los endpoints de condensación.
+            # `EscribeProduccion` deja escribir lotes a Secado, que no opera
+            # el evaporador: sin esta puerta abría el lote y dejaba la corrida
+            # preparada, y recién «Iniciar» lo rechazaba.
+            from procesos.models import EtapaProceso
+            from procesos.permisos import puede_operar_tipo
+
+            if not puede_operar_tipo(request.user, EtapaProceso.Tipo.CONDENSACION):
+                return Response(
+                    {"detail": "Tu área no puede operar la evaporación."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        silo_destino = request.data.get("silo_destino")
+        if es_evaporador and not silo_destino:
+            return Response(
+                {"silo_destino": "Elige el silo de destino del concentrado."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
+        silo_destino_id = None
+        if es_evaporador:
+            # Se convierte ANTES de filtrar: un `silo_destino` ilegible
+            # ("abc", una lista, un objeto) no es un error de las reglas de
+            # negocio que corren más abajo, y no debe confundirse con uno.
+            try:
+                silo_destino_id = int(silo_destino)
+            except (TypeError, ValueError):
+                return Response(
+                    {"silo_destino": "El silo de destino no es válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            silos_del_alcance = filtrar_por_scope(
+                Silo.objects.all(), request.user, campo_sucursal="sucursal_id",
+                campo_empresa="sucursal__empresa_id",
+            )
+            if not silos_del_alcance.filter(pk=silo_destino_id).exists():
+                return Response(
+                    {"silo_destino": "El silo de destino no es válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        try:
+            # Transacción interna: si la corrida falla después de abrir el lote,
+            # la excepción revierte las dos cosas antes de llegar al `except`.
+            # Sin ella, el `return Response(400)` de abajo confirmaría el lote
+            # abierto y la leche descontada sin corrida (trampa de CLAUDE.md).
+            with transaction.atomic():
+                confirmado = servicios_produccion.abrir_lote_desde_vale(
+                    vale=lote.vale,
+                    codigo_lote=lote.codigo_lote_propuesto.strip(),
+                    fecha=lote.fecha,
+                    litros=lote.litros_estandarizados_borrador,
+                    usuario=request.user,
+                    lote_borrador=lote,
+                    op=lote.op,
+                    orden=lote.orden,
+                    equipo=lote.equipo,
+                    linea=lote.linea,
+                    turno=lote.turno,
+                    observacion=lote.observacion,
+                )
+                if es_evaporador:
+                    from procesos.servicios import crear_condensacion_guiada
+
+                    crear_condensacion_guiada(
+                        lote_id=confirmado.pk,
+                        silo_destino_id=silo_destino_id,
+                        usuario=request.user,
+                    )
         except DjangoValidationError as error:
             detalle = error.message_dict if hasattr(error, "message_dict") else {
                 "motivos": error.messages
@@ -760,11 +824,15 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         from procesos.servicios import ESTADOS_QUE_OCUPAN_EQUIPO
 
         entradas = self._vales_operativos(request)
+        # Solo los tipos que la apertura acepta (`abre_desde_vale`, la regla de
+        # `exigir_apertura_fuera_de_secado`): una torre se alimenta desde el
+        # puesto de Secado, y un punto de carga caería en Secado y se rechazaría.
         tipos_iniciales = {
             tipo
             for entrada in entradas
             for etapa in entrada["etapas_iniciales"]
             for tipo in etapa["tipos_equipo"]
+            if servicios_produccion.abre_desde_vale(tipo)
         }
 
         cip_en_curso = CicloCIP.objects.filter(

@@ -25,7 +25,7 @@ from django.utils import timezone
 
 from estandarizacion import servicios as estandarizacion
 from estandarizacion.models import ValeEstandarizacion
-from maestros.models import Mandante, Producto, Silo
+from maestros.models import Equipo, Mandante, Producto, Silo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, RutaProducto
 from procesos.servicios import genealogia_lote
 from procesos.views import _flujo_completo
@@ -72,9 +72,13 @@ class BaseCadena(TestCase):
             proceso=proceso, codigo="est", nombre="Estandarización",
             tipo=EtapaProceso.Tipo.ESTANDARIZACION, orden=1,
         )
-        self.etapa_secado = EtapaProceso.objects.create(
-            proceso=proceso, codigo="sec", nombre="Secado",
-            tipo=EtapaProceso.Tipo.SECADO, orden=2,
+        self.etapa_produccion = EtapaProceso.objects.create(
+            proceso=proceso, codigo="eva", nombre="Evaporación",
+            tipo=EtapaProceso.Tipo.EVAPORACION, orden=2,
+        )
+        self.evaporador = Equipo.objects.create(
+            sucursal=self.planta, codigo="EV-CADENA", nombre="Evaporador cadena",
+            tipo=Equipo.Tipo.EVAPORADOR,
         )
         self.ruta = RutaProducto.objects.create(
             sucursal=self.planta, producto=self.producto, proceso=proceso,
@@ -212,6 +216,7 @@ class CadenaCompletaTests(BaseCadena):
         lote = produccion.abrir_lote_desde_vale(
             vale=vale, producto=self.producto, codigo_lote="LOTE-1",
             fecha=date(2026, 8, 12), litros=Decimal("20000.00"),
+            equipo=self.evaporador,
         )
         lote.kg_producidos = Decimal("1700.00")
         lote.estado = lote.Estado.PRODUCIDO
@@ -225,10 +230,10 @@ class CadenaCompletaTests(BaseCadena):
 
         self.assertEqual(EjecucionProceso.objects.count(), 2)
 
-        secado = EjecucionProceso.objects.get(etapa=self.etapa_secado)
-        self.assertEqual(secado.entradas.get().silo, vale.silo_destino)
-        self.assertEqual(secado.salidas.get().lote, lote)
-        self.assertEqual(secado.estado, EjecucionProceso.Estado.CERRADA)
+        corrida = EjecucionProceso.objects.get(etapa=self.etapa_produccion)
+        self.assertEqual(corrida.entradas.get().silo, vale.silo_destino)
+        self.assertEqual(corrida.salidas.get().lote, lote)
+        self.assertEqual(corrida.estado, EjecucionProceso.Estado.CERRADA)
 
     def test_la_genealogia_no_revienta_con_una_entrada_de_silo(self):
         """
@@ -273,7 +278,7 @@ class CadenaCompletaTests(BaseCadena):
         self.assertGreater(flujo["litros_no_atribuibles"], 0)
 
     def test_sin_kilos_no_se_cierra_la_corrida(self):
-        """Un lote sin kilos declarados es uno que todavía está en la torre."""
+        """Un lote sin kilos declarados es uno cuya corrida todavía no termina."""
         from django.core.exceptions import ValidationError
 
         vale = self._vale()
@@ -282,11 +287,12 @@ class CadenaCompletaTests(BaseCadena):
         lote = produccion.abrir_lote_desde_vale(
             vale=vale, producto=self.producto, codigo_lote="LOTE-2",
             fecha=date(2026, 8, 12), litros=Decimal("1000.00"),
+            equipo=self.evaporador,
         )
 
         with self.assertRaises(ValidationError):
             produccion.registrar_produccion(lote=lote)
 
-        secado = EjecucionProceso.objects.get(etapa=self.etapa_secado)
-        self.assertEqual(secado.estado, EjecucionProceso.Estado.EJECUCION)
-        self.assertFalse(secado.salidas.exists())
+        corrida = EjecucionProceso.objects.get(etapa=self.etapa_produccion)
+        self.assertEqual(corrida.estado, EjecucionProceso.Estado.EJECUCION)
+        self.assertFalse(corrida.salidas.exists())

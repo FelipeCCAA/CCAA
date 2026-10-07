@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from estandarizacion.models import ValeEstandarizacion
+from maestros.models import Equipo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, RutaProducto
 from recepcion.models import MovimientoSilo
 
@@ -8,7 +9,17 @@ from .models import Lote
 from .tests_apertura import BaseApertura
 
 
-class BorradorLoteTests(BaseApertura):
+class BaseBorradorLote(BaseApertura):
+    """
+    El montaje del borrador, sin pruebas propias.
+
+    Separado de `BorradorLoteTests` para que otras fixtures (por ejemplo, la
+    de confirmar sobre un evaporador) puedan reutilizar el vale y los
+    ayudantes sin heredar también sus `test_*`: unittest ejecuta los métodos
+    de prueba de toda la cadena de herencia, y heredar la clase con pruebas
+    las corre otra vez bajo el `setUp` de la subclase.
+    """
+
     def setUp(self):
         super().setUp()
         self.vale = ValeEstandarizacion.objects.create(
@@ -32,9 +43,9 @@ class BorradorLoteTests(BaseApertura):
         )
         EtapaProceso.objects.create(
             proceso=proceso,
-            codigo="evaporar-borrador",
-            nombre="Evaporación",
-            tipo=EtapaProceso.Tipo.SECADO,
+            codigo="primera-borrador",
+            nombre="Envasado",
+            tipo=EtapaProceso.Tipo.ENVASADO,
             orden=1,
         )
         RutaProducto.objects.create(
@@ -42,6 +53,13 @@ class BorradorLoteTests(BaseApertura):
             producto=self.polvo,
             proceso=proceso,
             prioridad=1,
+        )
+        # La máquina de la corrida es una línea: un lote desde el vale ya no
+        # se abre en torre (nace del puesto de Secado) ni en evaporador
+        # (puesto de Evaporación, `ConfirmarSobreEvaporadorTests`).
+        self.linea_envasado = Equipo.objects.create(
+            sucursal=self.sucursal, codigo="l1-borrador", nombre="Línea 1",
+            tipo=Equipo.Tipo.LINEA, sigla="L1",
         )
 
     def crear_borrador(self, **datos):
@@ -53,18 +71,20 @@ class BorradorLoteTests(BaseApertura):
 
     def datos_completos(self):
         return {
-            "codigo_lote_propuesto": "CCAA6197E1-01",
+            "codigo_lote_propuesto": "CCAA6197L1-01",
             "producto": self.polvo.id,
             "vale": self.vale.id,
             "litros_estandarizados_borrador": "12000.00",
-            "equipo": self.equipo.id,
+            "equipo": self.linea_envasado.id,
             "fecha": "2026-07-16",
-            "linea": "E1",
+            "linea": "",
             "turno": "A",
             "op": "OP-101",
             "observacion": "Corrida de prueba",
         }
 
+
+class BorradorLoteTests(BaseBorradorLote):
     def test_el_borrador_parcial_se_recupera_y_no_aparece_como_lote(self):
         borrador = self.crear_borrador(observacion="A medio completar")
 
@@ -110,7 +130,7 @@ class BorradorLoteTests(BaseApertura):
 
         self.assertEqual(respuesta.status_code, 200, respuesta.json())
         self.assertEqual(respuesta.json()["id"], borrador["id"])
-        self.assertEqual(respuesta.json()["codigo_lote"], "CCAA6197E1-01")
+        self.assertEqual(respuesta.json()["codigo_lote"], "CCAA6197L1-01")
         self.assertEqual(respuesta.json()["estado"], Lote.Estado.EN_PROCESO)
         movimiento = MovimientoSilo.objects.get(origen_id=borrador["id"])
         self.assertEqual(movimiento.litros, Decimal("12000.00"))
@@ -145,14 +165,14 @@ class BorradorLoteTests(BaseApertura):
         self.assertIn("kg_producidos", respuesta.data)
 
     def test_no_confirma_si_la_maquina_esta_reservada_en_preparacion(self):
-        proceso = Proceso.objects.create(codigo="secado-prueba", nombre="Secado prueba")
+        proceso = Proceso.objects.create(codigo="envasado-prueba", nombre="Envasado prueba")
         etapa = EtapaProceso.objects.create(
-            proceso=proceso, codigo="secado", nombre="Secado",
-            tipo=EtapaProceso.Tipo.SECADO, orden=1,
+            proceso=proceso, codigo="envasado", nombre="Envasado",
+            tipo=EtapaProceso.Tipo.ENVASADO, orden=1,
         )
         EjecucionProceso.objects.create(
             codigo="EJ-OCUPADA", etapa=etapa, sucursal=self.sucursal,
-            equipo=self.equipo, estado=EjecucionProceso.Estado.PREPARACION,
+            equipo=self.linea_envasado, estado=EjecucionProceso.Estado.PREPARACION,
         )
         borrador = self.crear_borrador(**self.datos_completos())
 
@@ -163,4 +183,3 @@ class BorradorLoteTests(BaseApertura):
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("ocupado", str(respuesta.json()).lower())
         self.assertEqual(MovimientoSilo.objects.count(), 0)
-

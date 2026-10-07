@@ -253,10 +253,13 @@ class PermisosOperacionalesPorEtapaTests(TestCase):
         self.assertEqual(ejecucion.observaciones, "Dato del primer operador")
 
     def test_transicion_exige_version_y_rechaza_una_obsoleta(self):
+        # Pausada y no preparada: iniciar una corrida de Secado ya no pasa por
+        # `transicionar` (es del puesto), pero reanudarla sí. La prueba sigue
+        # midiendo el control de versión sobre una transición a `ejecucion`.
         ejecucion = EjecucionProceso.objects.create(
             sucursal=self.sucursal, codigo="EJ-SEC-VERSION-ESTADO",
             etapa=self.etapa_secado, equipo=self.torre, responsable=self.secado,
-            estado=EjecucionProceso.Estado.PREPARACION,
+            estado=EjecucionProceso.Estado.PAUSADA,
         )
         EntradaProceso.objects.create(
             ejecucion=ejecucion, lote=self.lote_origen, cantidad=100, unidad="kg"

@@ -49,33 +49,37 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     await expect(tarjeta).toHaveCount(0);
   });
 
-  if (reanudarDesde <= 2) await test.step("2 · Secado toma la siguiente etapa de la ruta", async () => {
+  if (reanudarDesde <= 2) await test.step("2 · Secado toma el concentrado en su puesto y lo inicia", async () => {
     await usarSesionArea(page, "e2e_secado");
-    await irA(page, "/produccion");
-    await page.getByRole("button", { name: "Consultar disponibles" }).click();
-    const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
-    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
-    await expect(tarjeta).toContainText("Secado");
-    await tarjeta.getByRole("button", { name: /Continuar a Secado/ }).click();
-    await expect(tarjeta.getByRole("combobox", { name: "Máquina" })).toContainText(/disponible/i);
-    const respuesta = await trasGuardar(page, "/preparar-continuacion/", async () => {
-      await tarjeta.getByRole("button", { name: "Confirmar preparación" }).click();
+    await irA(page, "/produccion/secado");
+    // La torre libre es la que ofrece tomar habilitado: «Disponible» también
+    // lo dice una torre en CIP, que no se puede tomar.
+    const libre = page.getByRole("article")
+      .filter({ has: page.getByRole("button", { name: "Tomar concentrado", disabled: false }) })
+      .first();
+    await expect(libre).toBeVisible({ timeout: 20_000 });
+    await libre.getByRole("button", { name: "Tomar concentrado" }).click();
+    const modal = page.getByRole("dialog");
+    await elegirOpcion(campo(modal, "Concentrado"), new RegExp(flujo.lote));
+    await modal.getByRole("button", { name: "Revisar y confirmar" }).click();
+    await trasGuardar(page, "/preparar-continuacion/", async () => {
+      await modal.getByRole("button", { name: "Preparar torre" }).click();
     });
-    const ejecucion = await respuesta.json();
 
-    await irA(page, "/procesos");
-    const fila = page.getByRole("row", { name: new RegExp(ejecucion.codigo) });
-    await expect(fila).toBeVisible({ timeout: 20_000 });
-    await trasGuardar(page, "/transicionar/", async () => {
-      await fila.getByRole("button", { name: "Iniciar" }).click();
-    });
+    // La torre queda preparada y «Iniciar secado» lo habilita el servidor.
+    const torre = page.getByRole("article").filter({ hasText: flujo.lote });
+    await expect(torre).toContainText("Preparada", { timeout: 20_000 });
+    const iniciar = torre.getByRole("button", { name: "Iniciar secado" });
+    await expect(iniciar).toBeEnabled();
+    await trasGuardar(page, "/iniciar/", async () => iniciar.click());
+    await expect(torre).toContainText("En curso", { timeout: 20_000 });
   });
 
   if (reanudarDesde <= 3) await test.step("3 · Secado registra un balance válido", async () => {
-    await irA(page, "/secado");
-    const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
-    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
-    await tarjeta.getByRole("button", { name: "Registrar balance y cerrar corrida" }).click();
+    await irA(page, "/produccion/secado");
+    const torre = page.getByRole("article").filter({ hasText: flujo.lote });
+    await expect(torre).toBeVisible({ timeout: 20_000 });
+    await torre.getByRole("button", { name: "Registrar balance y cerrar" }).click();
     const cierre = page.getByRole("dialog");
     await campo(cierre, "Alimentación medida").fill("1500");
     await campo(cierre, "Sólidos de entrada").fill("48");
@@ -90,7 +94,8 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     const corrida = await respuesta.json();
     loteId = Number(corrida.lote);
     expect(loteId).toBeGreaterThan(0);
-    await expect(page.getByRole("button", { name: /Esperando Calidad/ })).toContainText(/[1-9]\d*/);
+    const hoy = page.getByRole("region", { name: "Corridas de hoy" });
+    await expect(hoy.getByRole("listitem").filter({ hasText: flujo.lote })).toContainText("Esperando Calidad");
   });
 
   if (reanudarDesde <= 4) await test.step("4 · Calidad analiza y libera el polvo", async () => {

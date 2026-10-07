@@ -486,7 +486,29 @@ class LoteSerializer(serializers.ModelSerializer):
                         "Indica cuántos litros del vale entran a la corrida."
                     )
                 })
-            if not datos.get("linea"):
+            # Un lote sobre un evaporador nace con su corrida de evaporación,
+            # y eso lo hace solo el puesto (`confirmar-borrador` con
+            # `silo_destino`, que además exige el permiso de Condensación).
+            # Abrirlo por aquí dejaba un lote sin corrida que ningún puesto
+            # mostraba ni podía iniciar.
+            if equipo is not None and equipo.tipo == Equipo.Tipo.EVAPORADOR:
+                raise serializers.ValidationError({
+                    "equipo": (
+                        "Los lotes sobre un evaporador se abren desde el "
+                        "puesto de Evaporación."
+                    )
+                })
+            # Y uno en torre nace solo desde el puesto de Secado. `validate`
+            # corre antes de `create`: no queda nada escrito.
+            if equipo is not None and equipo.tipo == Equipo.Tipo.TORRE:
+                from .servicios import MENSAJE_LOTE_EN_TORRE
+
+                raise serializers.ValidationError({"equipo": MENSAJE_LOTE_EN_TORRE})
+            # La línea solo existe para las torres Egron (E1/E2); un
+            # evaporador no tiene línea que declarar. Misma regla que usa el
+            # borrador guiado (`Lote.motivos_para_confirmar`), para no
+            # mantenerla en dos lugares.
+            if dominio.exige_linea(equipo) and not datos.get("linea"):
                 raise serializers.ValidationError({
                     "linea": "Selecciona la línea de producción."
                 })

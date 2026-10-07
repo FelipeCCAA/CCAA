@@ -87,6 +87,65 @@ export interface CorridaCondensacion {
   finalizada_en: string | null;
 }
 
+export type EstadoEvaporador = "disponible" | "preparada" | "en_curso" | "esperando_calidad";
+
+export interface CorridaPuesto {
+  id: number;
+  codigo: string;
+  lote_codigo: string | null;
+  silo_origen: string;
+  silo_destino: string;
+  litros_entrada: string;
+  iniciada_en: string | null;
+}
+
+export interface EvaporadorPuesto {
+  equipo_id: number;
+  codigo: string;
+  nombre: string;
+  estado: EstadoEvaporador;
+  corrida: CorridaPuesto | null;
+  motivos_para_iniciar: string[];
+  /* Nombra una corrida que quedó esperando a Calidad en esta máquina, aunque
+     la tarjeta esté mostrando otro estado: la máquina puede volver a
+     ofrecerse para abrir mientras esa corrida sigue pendiente. */
+  en_calidad: { id: number; codigo: string; lote_codigo: string | null } | null;
+  /* El código del silo de origen, solo cuando el motivo que impide iniciar
+     es justamente ese silo (sin análisis vigente, en CIP, etc.). El backend
+     lo tipa en vez de dejar que la pantalla lo adivine leyendo el texto del
+     motivo. */
+  bloqueo_silo_origen: string | null;
+}
+
+export interface DestinoConcentrado {
+  id: number;
+  codigo: string;
+  libre_l: string;
+}
+
+export interface PuestoEvaporacion {
+  evaporadores: EvaporadorPuesto[];
+  destinos: DestinoConcentrado[];
+  corridas_de_hoy: {
+    id: number;
+    codigo: string;
+    equipo: string | null;
+    lote_codigo: string | null;
+    estado: string;
+    estado_etiqueta: string;
+  }[];
+}
+
+export async function obtenerPuestoEvaporacion(): Promise<PuestoEvaporacion> {
+  const { data } = await api.get<PuestoEvaporacion>("procesos/condensaciones/puesto/");
+  return data;
+}
+
+export async function obtenerCondensacion(id: number): Promise<CorridaCondensacion> {
+  const { data } = await api.get<CorridaCondensacion>(`procesos/condensaciones/${id}/`);
+  return data;
+}
+
 export interface CorridaMantequilla {
   id: number;
   ejecucion_codigo: string;
@@ -279,11 +338,6 @@ export interface Genealogia {
 
 export type TipoReferenciaTrazabilidad = TipoReferenciaTrazable;
 
-export interface OpcionesAltaCondensacion {
-  lotes: { id: number; codigo: string; producto: string; orden: string; ejecucion: string; equipo: string | null; origen: string; litros: string }[];
-  silos: { id: number; codigo: string; estado: string; capacidad_l: string; saldo_l: string }[];
-}
-
 export interface OpcionesAltaMantequilla {
   ordenes: { id: number; codigo: string; producto: string }[];
   cremas: { id: number; codigo: string; producto: string; disponible_kg: string }[];
@@ -412,11 +466,6 @@ export async function obtenerRutasProducto(): Promise<Pagina<RutaProducto>> {
   return data;
 }
 
-export async function obtenerCondensaciones(): Promise<Pagina<CorridaCondensacion>> {
-  const { data } = await api.get<Pagina<CorridaCondensacion>>("procesos/condensaciones/");
-  return data;
-}
-
 export async function obtenerProcesosMaestros(): Promise<Pagina<ProcesoMaestro>> {
   const { data } = await api.get<Pagina<ProcesoMaestro>>("procesos/procesos/");
   return data;
@@ -521,18 +570,6 @@ export async function cerrarCondensacion(id: number, datos: {
   const { data } = await api.post<CorridaCondensacion>(
     `procesos/condensaciones/${id}/cerrar/`, datos,
   );
-  return data;
-}
-
-export async function obtenerOpcionesAltaCondensacion(): Promise<OpcionesAltaCondensacion> {
-  const { data } = await api.get<OpcionesAltaCondensacion>("procesos/condensaciones/opciones-alta/");
-  return data;
-}
-
-export async function crearCondensacionGuiada(datos: {
-  lote: number; silo_destino: number;
-}): Promise<CorridaCondensacion> {
-  const { data } = await api.post<CorridaCondensacion>("procesos/condensaciones/crear-guiada/", datos);
   return data;
 }
 

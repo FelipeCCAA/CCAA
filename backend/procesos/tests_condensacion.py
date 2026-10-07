@@ -519,6 +519,34 @@ class FlujoCondensacionTests(TestCase):
             ).exists()
         )
 
+    def test_motivos_para_iniciar_vacios_cuando_todo_esta_listo(self):
+        from .servicios import motivos_para_iniciar_condensacion
+
+        self.assertEqual(motivos_para_iniciar_condensacion(self.corrida), [])
+
+    def test_motivos_para_iniciar_nombran_el_silo_de_origen_sin_analisis(self):
+        from .servicios import motivos_para_iniciar_condensacion
+
+        AnalisisSilo.objects.filter(silo=self.origen).delete()
+
+        motivos = motivos_para_iniciar_condensacion(self.corrida)
+
+        self.assertTrue(motivos)
+        self.assertIn(self.origen.codigo, motivos[0])
+        with self.assertRaises(ValidationError) as error:
+            iniciar_condensacion(corrida_id=self.corrida.pk, usuario=self.usuario)
+        self.assertIn(motivos[0], " ".join(error.exception.messages))
+
+    def test_motivos_para_iniciar_rechazan_destino_bloqueado(self):
+        from .servicios import motivos_para_iniciar_condensacion
+
+        self.destino.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        self.destino.save(update_fields=["estado"])
+
+        motivos = motivos_para_iniciar_condensacion(self.corrida)
+
+        self.assertTrue(any(self.destino.codigo in motivo for motivo in motivos))
+
     def test_adopta_la_ejecucion_del_lote_sin_consumir_dos_veces(self):
         """La corrida es el detalle especializado del mismo hecho físico."""
         self.lote.ejecucion = self.ejecucion
@@ -595,6 +623,69 @@ class FlujoCondensacionTests(TestCase):
         self.assertEqual(
             [item["id"] for item in respuesta.data["lotes"]], [self.lote.pk]
         )
+
+    def test_alta_guiada_rechaza_un_destino_bloqueado_por_calidad(self):
+        self.corrida.delete()
+        self.lote.ejecucion = self.ejecucion
+        self.lote.save(update_fields=["ejecucion"])
+        EntradaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=self.origen,
+            cantidad=Decimal("600"), unidad="L",
+        )
+        self.destino.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        self.destino.save(update_fields=["estado"])
+
+        with self.assertRaises(ValidationError) as error:
+            crear_condensacion_guiada(
+                lote_id=self.lote.pk, silo_destino_id=self.destino.pk, usuario=self.usuario,
+            )
+
+        self.assertIn(self.destino.codigo, str(error.exception))
+        self.assertFalse(CorridaCondensacion.objects.filter(lote=self.lote).exists())
+
+    def _preparar_alta_guiada(self):
+        self.corrida.delete()
+        self.lote.ejecucion = self.ejecucion
+        self.lote.save(update_fields=["ejecucion"])
+        EntradaProceso.objects.create(
+            ejecucion=self.ejecucion, silo=self.origen,
+            cantidad=Decimal("600"), unidad="L",
+        )
+
+    def test_alta_guiada_rechaza_un_destino_sin_capacidad(self):
+        """Misma regla que al iniciar: preparar una corrida que no cabe solo
+        mueve el rechazo a «Iniciar», con el lote ya abierto."""
+        self._preparar_alta_guiada()
+        MovimientoSilo.objects.create(
+            silo=self.destino, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("500"), fecha_hora=timezone.now(),
+        )
+
+        with self.assertRaises(ValidationError) as error:
+            crear_condensacion_guiada(
+                lote_id=self.lote.pk, silo_destino_id=self.destino.pk, usuario=self.usuario,
+            )
+
+        self.assertIn(f"{self.destino.codigo} no tiene capacidad", str(error.exception))
+        self.assertFalse(CorridaCondensacion.objects.filter(lote=self.lote).exists())
+
+    def test_alta_guiada_rechaza_un_destino_reservado_por_otra_ejecucion(self):
+        self._preparar_alta_guiada()
+        otra = EjecucionProceso.objects.create(
+            codigo="EJ-OTRA-ALTA", etapa=self.ejecucion.etapa,
+            sucursal=self.planta, responsable=self.usuario,
+        )
+        ReservaSiloProceso.objects.create(
+            ejecucion=otra, silo=self.destino,
+            tipo=ReservaSiloProceso.Tipo.DESTINO, cantidad_planificada=Decimal("100"),
+        )
+
+        with self.assertRaisesMessage(ValidationError, "reservado por EJ-OTRA-ALTA"):
+            crear_condensacion_guiada(
+                lote_id=self.lote.pk, silo_destino_id=self.destino.pk, usuario=self.usuario,
+            )
+
+        self.assertFalse(CorridaCondensacion.objects.filter(lote=self.lote).exists())
 
     def test_no_adopta_una_ejecucion_activa_sin_consumo(self):
         self.lote.ejecucion = self.ejecucion

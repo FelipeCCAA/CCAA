@@ -57,7 +57,7 @@ test("Secado entra a su puesto y no recibe accesos operacionales de Condensació
   const navegacion = navegacionPara(usuario);
   const produccion = etiquetas(usuario, "Producción");
 
-  assert.equal(navegacion.inicio.ruta, "/secado");
+  assert.equal(navegacion.inicio.ruta, "/produccion/secado");
   assert.ok(!produccion.includes("Descremado"));
   assert.ok(!produccion.includes("Evaporación"));
   assert.ok(!produccion.includes("Mantequilla"));
@@ -135,7 +135,7 @@ test("la ubicación distingue subprocesos que comparten una URL", () => {
   );
 });
 
-test("Evaporación y Trazabilidad usan ?seccion=, no un segundo # que HashRouter no procesa", () => {
+test("Evaporación tiene su propio puesto; Trazabilidad sigue en ?seccion=", () => {
   // Calidad, y no Condensación: su inicio es /calidad, así que "Panel de
   // producción" (ruta /produccion) sigue en su menú y no se filtra por ser
   // su propia entrada de inicio (criterio ya fijado más arriba, con
@@ -151,17 +151,17 @@ test("Evaporación y Trazabilidad usan ?seccion=, no un segundo # que HashRouter
   const panel = navegacion.grupos
     .flatMap((grupo) => grupo.enlaces)
     .find((enlace) => enlace.etiqueta === "Panel de producción");
-  assert.equal(evaporacion?.ruta, "/produccion?seccion=evaporacion");
+  assert.equal(evaporacion?.ruta, "/produccion/evaporacion");
   assert.equal(trazabilidad?.ruta, "/procesos?seccion=trazabilidad");
 
-  // Visitar la sección no debe marcar a la vez el panel general: antes el
-  // resguardo solo miraba `hashActual`, y con `?seccion=` quedaban los dos
-  // enlaces activos en /produccion.
+  // Evaporación tiene su propia ruta, así que visitarla no marca a la vez
+  // el panel general, ni al revés: son dos pathnames distintos, no la misma
+  // pantalla con una sección distinta.
   assert.ok(evaporacion && esEnlaceOperacionalActual(
-    evaporacion, "/produccion", "?seccion=evaporacion",
+    evaporacion, "/produccion/evaporacion",
   ));
   assert.ok(panel && !esEnlaceOperacionalActual(
-    panel, "/produccion", "?seccion=evaporacion",
+    panel, "/produccion/evaporacion",
   ));
   assert.ok(panel && esEnlaceOperacionalActual(panel, "/produccion", ""));
 });
