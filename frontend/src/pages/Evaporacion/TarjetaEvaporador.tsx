@@ -150,7 +150,7 @@ export default function TarjetaEvaporador({ fila, ocupado, puedeOperar, onAbrir,
             { etiqueta: "Leche", valor: corrida ? `${cantidad(corrida.litros_entrada, "L")} de ${corrida.silo_origen}` : "—" },
             { etiqueta: "Motivo", valor: motivo.trim() },
           ]}
-          advertencia="El lote se anula y la leche vuelve al silo del que salió, con un ingreso de devolución: el análisis de ese silo tendrá que repetirse. El evaporador queda disponible."
+          advertencia="El lote se anula y la leche vuelve al silo del que salió, con un ingreso de devolución. Ese ingreso vence el análisis del silo para todos los evaporadores que se alimentan de él, no solo para este: habrá que repetirlo antes de iniciar cualquiera de ellos. El evaporador queda disponible."
           textoConfirmar="Cancelar preparación"
           peligro
           ocupado={enviando}
