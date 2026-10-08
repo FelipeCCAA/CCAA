@@ -299,7 +299,8 @@ class OpcionesInicioSirvenLaReglaTests(BaseBorradorLote):
         esperados = {tipo for tipo in Equipo.Tipo.values if abre_desde_vale(tipo)}
         self.assertEqual(set(datos["tipos_que_abren_desde_vale"]), esperados)
         # Decisión de 2026-10-07: desde un vale abren solo estos tres.
-        # `carga`, `descremadora` y `otro` tienen su propio flujo.
+        # `carga`, `descremadora`, `mantequera` y `otro` no abren desde un vale:
+        # los tres primeros tienen su propio puesto o flujo.
         self.assertEqual(esperados, {"evaporador", "envasadora", "linea"})
 
 

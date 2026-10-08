@@ -30,10 +30,10 @@ from .servicios import (
 
 class BalanceMantequillaDominioTests(SimpleTestCase):
     """
-    El balance del cierre, sin ORM: los casos que fijaba
-    `frontend/tests/balance-mantequilla.test.ts` (que se elimina en la Task 7)
-    más los bordes en milésimas. Es la regla que usan el modelo, el cierre y
-    `revisar-cierre/`.
+    El balance del cierre, sin ORM: los casos que fijaba la prueba del cliente
+    cuando el cliente calculaba el balance, más los bordes en milésimas. Es la
+    regla que usan el modelo, el cierre y `revisar-cierre/`; el cliente ya no
+    calcula.
     """
 
     def test_un_balance_exacto_con_reproceso_cuadra(self):
