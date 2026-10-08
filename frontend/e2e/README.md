@@ -213,6 +213,32 @@ ninguno, la prueba lo dice con lo que sí ofrece. Para fijarlos a mano:
 que muestra el puesto (por ejemplo `TK LD 2`). No debe repetirse contra una planta real
 sin revisar primero capacidad, contenido y estado de Calidad.
 
+## Mantequilla desde la crema liberada
+
+```powershell
+cd backend
+.venv\Scripts\python.exe manage.py preparar_circuito_mantequilla --aplicar
+cd ..\frontend
+npx playwright test --project=flujo-mantequilla
+```
+
+`preparar_circuito_mantequilla` busca la **mantequera** por su tipo (`maestros.0040`
+reclasificó la `linea_mantequilla`), deja una OP programada y un lote de mazada libre,
+y autoriza la **envasadora de mantequilla** en los formatos activos de la mantequilla:
+la mantequera ya no envasa. Si un producto no tiene formato activo, el comando lo dice
+y hay que crearlo en Maestros.
+
+La primera prueba elige una crema que el puesto sirve con al menos 60 kg (o la de
+`E2E_LOTE_CREMA`) —`flujo-descremado` deja una en un TK—, llega desde Salidas
+intermedias con «Preparar en Mantequilla», prepara (código sugerido, mazada), inicia
+cuando el servidor lo habilita, ve «Balance incompleto» con 31 + 28 kg, completa la
+merma, cierra y Calidad libera. La anotación `mantequilla` trae `E2E_MANTEQUILLA_ID` y
+`E2E_MANTEQUILLA_LOTE` para correr las pruebas de envasado y disposición. La segunda
+prepara 10 kg y **cancela**: el lote de salida queda anulado y la mantequera libre.
+
+Una corrida preparada y abortada retiene la mantequera y la crema que pidió hasta que
+se cancela con «Cancelar preparación» (tarjeta o historial del puesto).
+
 ## Lo que el circuito consume
 
 Es leche de verdad. Cada corrida mete 25.000 L en un silo y 8.000 en un TK, y
