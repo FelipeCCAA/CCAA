@@ -1025,3 +1025,84 @@ class CremasDelPuestoMantequillaTests(BasePuestoMantequilla):
 
         self.assertIn("CR-PM-N6", [fila["codigo"] for fila in datos["cremas"]])
         self.assertEqual(len(seis.captured_queries), len(una.captured_queries))
+
+    def test_el_tk_manda_tambien_en_la_explicacion(self):
+        # La del TK espera a Calidad y otra salida del lote fue rechazada: la
+        # crema no se ofrece por su TK, y eso es lo que se explica.
+        crema, tk = self.crema_en_tk("CR-PM-TKRECH")
+        LiberacionProceso.objects.filter(salida__lote=crema, salida__silo=tk).update(
+            estado=LiberacionProceso.Estado.PENDIENTE,
+        )
+        otra = SalidaProceso.objects.create(
+            ejecucion=SalidaProceso.objects.get(lote=crema).ejecucion, lote=crema,
+            producto=self.producto_crema, cantidad=Decimal("1000"), unidad="kg",
+        )
+        LiberacionProceso.objects.create(salida=otra, estado=LiberacionProceso.Estado.RECHAZADO)
+
+        explicada = [
+            fila for fila in self.puesto()["cremas_pendientes_calidad"] if fila["id"] == crema.pk
+        ]
+
+        self.assertEqual([fila["estado_calidad"] for fila in explicada], ["pendiente"])
+
+
+class SalidasDisponiblesMantequillaTests(BasePuestoMantequilla):
+    """
+    «Preparar en Mantequilla» en `salidas/disponibles` se decide con las reglas
+    del puesto (`filtro_crema_liberada` y el disponible de
+    `kg_crema_disponible`): un enlace a una crema que el puesto no ofrece deja
+    al operador en `?crema=` sin nada que preparar.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.ruta_crema = RutaProducto.objects.create(
+            sucursal=self.planta, producto=self.producto_crema, proceso=self.etapa.proceso,
+        )
+
+    def crema_con_ruta(self, codigo):
+        crema, tk = self.crema_en_tk(codigo)
+        SalidaProceso.objects.filter(lote=crema).update(ruta_producto=self.ruta_crema)
+        return crema, tk
+
+    def acciones(self, salida):
+        respuesta = self.cliente().get("/api/procesos/salidas/disponibles/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        return next(item for item in respuesta.data if item["id"] == salida.pk)["acciones_permitidas"]
+
+    def test_una_crema_con_saldo_ofrece_preparar_en_mantequilla(self):
+        crema, _tk = self.crema_con_ruta("CR-PM-SAL")
+
+        self.assertEqual(
+            self.acciones(SalidaProceso.objects.get(lote=crema)),
+            [{"codigo": "iniciar_mantequilla", "etiqueta": "Preparar en Mantequilla"}],
+        )
+
+    def test_una_crema_comprometida_por_otra_preparada_no_lo_ofrece(self):
+        crema, _tk = self.crema_con_ruta("CR-PM-COMP")
+        self.preparada(lote_crema=crema.pk, kg_crema="1000")
+
+        self.assertEqual(self.acciones(SalidaProceso.objects.get(lote=crema)), [])
+
+    def test_una_crema_cuyo_tk_espera_calidad_no_lo_ofrece_desde_otra_salida(self):
+        # La primera salida en TK —la que cuenta— espera a Calidad; una
+        # segunda en el mismo TK está liberada y aparece en la lista.
+        crema, tk = self.crema_con_ruta("CR-PM-TK2")
+        primera = SalidaProceso.objects.get(lote=crema)
+        LiberacionProceso.objects.filter(salida=primera).update(
+            estado=LiberacionProceso.Estado.PENDIENTE,
+        )
+        segunda = SalidaProceso.objects.create(
+            ejecucion=primera.ejecucion, lote=crema, producto=self.producto_crema, silo=tk,
+            ruta_producto=self.ruta_crema,
+            naturaleza=SalidaProceso.Naturaleza.COPRODUCTO,
+            clasificacion=SalidaProceso.Clasificacion.INTERMEDIO,
+            destino=SalidaProceso.Destino.SIGUIENTE_PROCESO,
+            cantidad=Decimal("100"), unidad="L",
+        )
+        LiberacionProceso.objects.create(
+            salida=segunda, analisis_silo=primera.liberacion_calidad.analisis_silo,
+            estado=LiberacionProceso.Estado.LIBERADO,
+        )
+
+        self.assertEqual(self.acciones(segunda), [])

@@ -56,7 +56,7 @@ from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
     ConflictoVersionEjecucion,
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
-    condicion_situacion,
+    condicion_situacion, cremas_para_mantequilla,
     genealogia_lote,
     revisar_cierre_descremacion,
     crear_condensacion_guiada, crear_descremacion_guiada,
@@ -1438,6 +1438,17 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             ).only("equipo_id", "codigo")
         }
 
+        # «Preparar en Mantequilla» se ofrece con las reglas del puesto
+        # (`cremas_para_mantequilla`): una crema comprometida por otras
+        # corridas preparadas, o cuyo TK espera a Calidad, no tiene qué
+        # preparar y el enlace llevaría a un `?crema=` sin salida.
+        from produccion.models import Lote
+        cremas_ofrecibles = set(
+            cremas_para_mantequilla(
+                Lote.objects.filter(pk__in={salida.lote_id for salida in salidas if salida.lote_id})
+            ).values_list("pk", flat=True)
+        )
+
         def etapas_siguientes(salida):
             siguiente = siguiente_etapa_para_salida(
                 salida=salida, etapas_por_proceso=etapas_por_proceso
@@ -1451,6 +1462,11 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 salida=salida, etapas_por_proceso=etapas_por_proceso
             )
             if siguiente is None:
+                return []
+            if (
+                siguiente.tipo == EtapaProceso.Tipo.MANTEQUILLA
+                and salida.lote_id not in cremas_ofrecibles
+            ):
                 return []
             codigos = {
                 EtapaProceso.Tipo.ESTANDARIZACION: "enviar_estandarizacion",

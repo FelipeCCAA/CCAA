@@ -961,10 +961,50 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
     return corrida
 
 
+def salidas_en_tk(lote):
+    """
+    Las salidas de un lote que están en un TK, en el orden que decide cuál es
+    «la del TK»: la primera por `registrada_en` y `pk`. `lote` es un `Lote` o
+    una referencia (`OuterRef("pk")`) para usarla dentro de una consulta.
+
+    Una sola definición para la liberación que cuenta
+    (`filtro_crema_liberada`), la crema que sale al iniciar
+    (`fuente_tk_de_crema`), el TK que muestra el puesto y la explicación de
+    las cremas que esperan a Calidad: con una copia por lugar, una podía mirar
+    otra salida que las demás.
+    """
+    return SalidaProceso.objects.filter(lote=lote, silo__isnull=False).order_by("registrada_en", "pk")
+
+
+def cremas_para_mantequilla(consulta=None):
+    """
+    Las cremas que «Preparar» acepta, anotadas con `disponible_kg`: producidas,
+    liberadas con la regla del TK (`filtro_crema_liberada`) y con disponible
+    (`expresion_kg_crema_disponible`, la cuenta de `kg_crema_disponible`).
+
+    La usan la lista `cremas` del puesto y la acción «Preparar en Mantequilla»
+    de `salidas/disponibles`: un enlace a una crema que el puesto no ofrece
+    deja al operador en `?crema=` sin nada que preparar.
+    """
+    from produccion.models import Lote
+
+    consulta = Lote.objects.all() if consulta is None else consulta
+    return (
+        consulta.filter(
+            producto__familia="crema",
+            estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
+            kg_producidos__isnull=False,
+        )
+        .filter(filtro_crema_liberada())
+        .annotate(disponible_kg=expresion_kg_crema_disponible())
+        .filter(disponible_kg__gt=0)
+    )
+
+
 def filtro_crema_liberada():
     """
     Un lote de crema que Calidad liberó. Si la crema está en un TK, la
-    liberación que cuenta es la de **esa** salida (`fuente_tk_de_crema`: la
+    liberación que cuenta es la de **esa** salida (`salidas_en_tk`: la
     primera con silo, por `registrada_en` y `pk`): de ella se lee la densidad
     con que se descuenta el TK, y otra salida liberada del mismo lote no dice
     nada de esa crema. Sin TK, basta que alguna salida esté liberada.
@@ -978,11 +1018,8 @@ def filtro_crema_liberada():
     from calidad.models import LiberacionProceso
 
     liberado = LiberacionProceso.Estado.LIBERADO
-    en_tk = Exists(SalidaProceso.objects.filter(lote=OuterRef("pk"), silo__isnull=False))
-    primera_en_tk = (
-        SalidaProceso.objects.filter(lote=OuterRef(OuterRef("pk")), silo__isnull=False)
-        .order_by("registrada_en", "pk").values("pk")[:1]
-    )
+    en_tk = Exists(salidas_en_tk(OuterRef("pk")))
+    primera_en_tk = salidas_en_tk(OuterRef(OuterRef("pk"))).values("pk")[:1]
     tk_liberado = Exists(LiberacionProceso.objects.filter(
         salida_id=Subquery(primera_en_tk), estado=liberado,
     ))
@@ -1114,12 +1151,7 @@ def fuente_tk_de_crema(lote):
     crema al iniciar (en litros, con la densidad de su liberación). El inicio
     y el puesto (`cremas[].tk`) leen la misma.
     """
-    return (
-        SalidaProceso.objects.select_related("silo", "liberacion_calidad__analisis_silo")
-        .filter(lote=lote, silo__isnull=False)
-        .order_by("registrada_en", "pk")
-        .first()
-    )
+    return salidas_en_tk(lote).select_related("silo", "liberacion_calidad__analisis_silo").first()
 
 
 def litros_de_crema(kg, densidad):
@@ -3226,7 +3258,16 @@ def iniciar_mantequilla(*, corrida_id, usuario):
 
 
 def _estado_calidad_de_crema(lote):
-    """Por qué una crema no se ofrece: rechazada, pendiente o sin decisión de Calidad."""
+    """
+    Por qué una crema no se ofrece: rechazada, pendiente o sin decisión de
+    Calidad. Con la regla de `filtro_crema_liberada`: si la crema está en un
+    TK, la juzga la decisión de **esa** salida (`en_tk` y `estado_calidad_tk`,
+    anotados con `salidas_en_tk`), no la de otra salida del lote.
+    """
+    if lote.en_tk:
+        if lote.estado_calidad_tk in {"rechazado", "pendiente"}:
+            return lote.estado_calidad_tk
+        return "trazabilidad_incompleta"
     estados = {
         decision.estado
         for decision in (
@@ -3387,29 +3428,28 @@ def estado_puesto_mantequilla(usuario):
             kg_producidos__isnull=False,
         ).select_related("producto")
     )
-    # Lo que «Preparar» acepta, en una consulta: la misma liberación
-    # (`filtro_crema_liberada`, la del TK si la crema está en uno) y el mismo
-    # disponible (`expresion_kg_crema_disponible`, la cuenta de
-    # `kg_crema_disponible`). Con una cuenta por fila, el puesto hacía tres
-    # consultas por crema.
-    tk_de_la_crema = (
-        SalidaProceso.objects.filter(lote=OuterRef("pk"), silo__isnull=False)
-        .order_by("registrada_en", "pk").values("silo__codigo")[:1]
-    )
+    # Lo que «Preparar» acepta, en una consulta (`cremas_para_mantequilla`):
+    # la misma liberación y el mismo disponible. Con una cuenta por fila, el
+    # puesto hacía tres consultas por crema.
     cremas = [
         {
             "id": lote.pk, "codigo": lote.codigo_lote, "producto": lote.producto.nombre,
             "disponible_kg": texto(lote.disponible_kg),
             "tk": lote.tk,
         }
-        for lote in cremas_producidas.filter(filtro_crema_liberada())
-        .annotate(disponible_kg=expresion_kg_crema_disponible(), tk=Subquery(tk_de_la_crema))
-        .filter(disponible_kg__gt=0)
+        for lote in cremas_para_mantequilla(cremas_producidas)
+        .annotate(tk=Subquery(salidas_en_tk(OuterRef("pk")).values("silo__codigo")[:1]))
         .order_by("codigo_lote")
     ]
     pendientes = (
         cremas_producidas.filter(Exists(SalidaProceso.objects.filter(lote=OuterRef("pk"))))
         .exclude(filtro_crema_liberada())
+        .annotate(
+            en_tk=Exists(salidas_en_tk(OuterRef("pk"))),
+            estado_calidad_tk=Subquery(
+                salidas_en_tk(OuterRef("pk")).values("liberacion_calidad__estado")[:1]
+            ),
+        )
         .prefetch_related("salidas_proceso__liberacion_calidad", "salidas_proceso__ejecucion__etapa")
         .order_by("codigo_lote")
     )
