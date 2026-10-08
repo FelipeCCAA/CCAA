@@ -65,7 +65,7 @@ from .servicios import (
     estado_puesto_descremado, estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
     cancelar_preparacion_descremacion, cancelar_preparacion_evaporacion,
-    cancelar_preparacion_secado,
+    cancelar_preparacion_mantequilla, cancelar_preparacion_secado,
     inicio_reservado_al_puesto,
     revisar_cierre_mantequilla,
     MENSAJES_INICIO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
@@ -779,6 +779,22 @@ class CorridaMantequillaViewSet(
             detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta una mantequera preparada: corrida y lote de salida anulados."""
+        try:
+            ejecucion = cancelar_preparacion_mantequilla(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
 
     @action(detail=True, methods=["post"], url_path="revisar-cierre")
     def revisar_cierre(self, request, pk=None):

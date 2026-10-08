@@ -101,6 +101,9 @@ MENSAJE_INICIO_SECADO_EN_PUESTO = "Las corridas de secado se inician desde el pu
 MENSAJE_INICIO_DESCREMADO_EN_PUESTO = (
     "Las corridas de descremado se inician desde el puesto de Descremado."
 )
+MENSAJE_INICIO_MANTEQUILLA_EN_PUESTO = (
+    "Las corridas de mantequilla se inician desde el puesto de Mantequilla."
+)
 # Etapas cuyo inicio (`preparacion → ejecucion`) es de su puesto: el puesto
 # aplica la única función de motivos de esa etapa. La bandeja genérica no lo
 # ofrece y `transicionar` lo rechaza con este mensaje. Espejo en el frontend:
@@ -108,6 +111,7 @@ MENSAJE_INICIO_DESCREMADO_EN_PUESTO = (
 MENSAJES_INICIO_EN_PUESTO = {
     EtapaProceso.Tipo.SECADO: MENSAJE_INICIO_SECADO_EN_PUESTO,
     EtapaProceso.Tipo.DESCREMACION: MENSAJE_INICIO_DESCREMADO_EN_PUESTO,
+    EtapaProceso.Tipo.MANTEQUILLA: MENSAJE_INICIO_MANTEQUILLA_EN_PUESTO,
 }
 
 
@@ -1311,8 +1315,9 @@ def bloquear_para_cancelar(ejecucion_id):
     Los candados de una cancelación, en el orden de los puestos.
 
     Mismo orden que `iniciar_secado`/`cancelar_preparacion_secado`,
-    `iniciar_condensacion`/`cancelar_preparacion_evaporacion` e
-    `iniciar_descremacion`/`cancelar_preparacion_descremacion`: la corrida
+    `iniciar_condensacion`/`cancelar_preparacion_evaporacion`,
+    `iniciar_descremacion`/`cancelar_preparacion_descremacion` e
+    `iniciar_mantequilla`/`cancelar_preparacion_mantequilla`: la corrida
     especializada primero, la ejecución después. Cancelar una preparación la
     borra o la cancela (`_deshacer_preparacion_secado`,
     `_deshacer_preparacion_evaporacion`); si este camino tomara la ejecución
@@ -1321,7 +1326,9 @@ def bloquear_para_cancelar(ejecucion_id):
     no bloquea nada; para quien ya la tiene, retomarla en la misma
     transacción no espera. Solo vale dentro de una transacción.
     """
-    for modelo in (CorridaSecado, CorridaCondensacion, CorridaDescremacion):
+    for modelo in (
+        CorridaSecado, CorridaCondensacion, CorridaDescremacion, CorridaMantequilla,
+    ):
         list(
             modelo.objects.select_for_update(of=("self",))
             .filter(ejecucion_id=ejecucion_id).values_list("pk", flat=True)
@@ -1427,6 +1434,13 @@ def transicionar_ejecucion(
     ):
         # Por el puesto o por la bandeja genérica, cancelar deja lo mismo.
         _deshacer_preparacion_descremacion(ejecucion, motivo)
+    if (
+        estado_nuevo == EjecucionProceso.Estado.CANCELADA
+        and ejecucion.etapa.tipo == EtapaProceso.Tipo.MANTEQUILLA
+    ):
+        # Por el puesto, por la bandeja genérica o al anular el lote,
+        # cancelar deja lo mismo.
+        _deshacer_preparacion_mantequilla(ejecucion, motivo, usuario)
     if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
         actualizar_queryset_con_auditoria(
             ReservaSiloProceso.objects.filter(
@@ -3636,10 +3650,85 @@ def cancelar_preparacion_descremacion(*, corrida_id, usuario, motivo):
     )
 
 
+def _deshacer_preparacion_mantequilla(ejecucion, motivo, usuario):
+    """
+    Lo propio de Mantequilla al cancelar su ejecución: la corrida queda
+    `anulada` con el motivo y el lote de salida se anula con `anular_lote`, la
+    misma anulación que el `PATCH`. La mantequera queda libre al salir de
+    `ESTADOS_QUE_OCUPAN_EQUIPO`.
+
+    No hay crema que devolver desde una preparación: no se movió, entra al
+    iniciar. Desde una corrida en curso, lo que entró a la mantequera no
+    vuelve, como en Evaporación; y su lote también se anula, porque un lote
+    `en_proceso` sobre una ejecución cancelada no lo cierra nadie. El suero no
+    se desvincula —la corrida anulada conserva el rastro—, pero
+    `sueros_libres` ignora las anuladas.
+
+    Si se llegó aquí desde el `PATCH`, el lote ya viene anulado y
+    `anular_lote` lo deja como está; la ejecución ya está cancelada, así que
+    tampoco la vuelve a cancelar (`ejecucion_cancelable`).
+    """
+    from produccion.models import Lote
+    from produccion.servicios import anular_lote
+
+    corrida = (
+        CorridaMantequilla.objects.select_for_update(of=("self",))
+        .filter(ejecucion=ejecucion).first()
+    )
+    if corrida is None or corrida.estado not in {
+        CorridaMantequilla.Estado.BORRADOR, CorridaMantequilla.Estado.EN_PROCESO,
+    }:
+        return
+    origen = (
+        "Preparación de Mantequilla cancelada"
+        if corrida.estado == CorridaMantequilla.Estado.BORRADOR
+        else "Corrida de Mantequilla cancelada"
+    )
+    corrida.estado = CorridaMantequilla.Estado.ANULADA
+    corrida.motivo_anulacion = _con_punto(motivo)[:250]
+    corrida.save(update_fields=["estado", "motivo_anulacion"])
+    anular_lote(
+        lote=Lote.objects.get(pk=corrida.lote_mantequilla_id),
+        motivo=f"{origen}: {_con_punto(motivo)}",
+        usuario=usuario,
+    )
+
+
+@transaction.atomic
+def cancelar_preparacion_mantequilla(*, corrida_id, usuario, motivo):
+    """
+    Suelta una mantequera preparada sin iniciarla: la corrida y su lote de
+    salida quedan anulados. Acepta la ejecución en `preparacion` y también en
+    `borrador` (corridas heredadas del modal anterior, que nunca tomaron la
+    máquina). Una corrida iniciada se cierra registrando su balance. Simétrica
+    a `cancelar_preparacion_descremacion`; lo que se deshace lo hace la
+    transición genérica.
+    """
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError(MENSAJE_MOTIVO_CANCELACION)
+    corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).get(pk=corrida_id)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",)).get(pk=corrida.ejecucion_id)
+    )
+    if corrida.estado != CorridaMantequilla.Estado.BORRADOR or ejecucion.estado not in {
+        EjecucionProceso.Estado.BORRADOR, EjecucionProceso.Estado.PREPARACION,
+    }:
+        raise ValidationError(
+            f"Solo se cancela una mantequera preparada: {ejecucion.codigo} está "
+            f"{ejecucion.get_estado_display().lower()}. Una corrida iniciada se cierra "
+            "registrando su balance."
+        )
+    return transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+        usuario=usuario, motivo=motivo,
+    )
+
+
 def inicio_reservado_al_puesto(ejecucion, estado_nuevo):
     """
     ¿Es este paso el inicio de una corrida que solo inicia su puesto?
-    (`MENSAJES_INICIO_EN_PUESTO`: Secado y Descremación). Reanudar
+    (`MENSAJES_INICIO_EN_PUESTO`: Secado, Descremación y Mantequilla). Reanudar
     (`pausada`/`bloqueada` → `ejecucion`) no es iniciar: sigue por la
     transición genérica, o una máquina pausada no tendría cómo volver.
     """

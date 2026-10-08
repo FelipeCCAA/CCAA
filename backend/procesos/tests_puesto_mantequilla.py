@@ -21,10 +21,11 @@ from .models import (
     RutaProducto, SalidaProceso,
 )
 from .servicios import (
-    MENSAJE_MANTEQUILLA_EN_PUESTO, MENSAJE_SALIDA_DE_LOTE_ANULADO, RESOLVER_CALIDAD,
+    MENSAJE_INICIO_MANTEQUILLA_EN_PUESTO, MENSAJE_MANTEQUILLA_EN_PUESTO,
+    MENSAJE_MOTIVO_CANCELACION, MENSAJE_SALIDA_DE_LOTE_ANULADO, RESOLVER_CALIDAD,
     RESOLVER_CIP, RESOLVER_PLANIFICACION, RESOLVER_SILOS, iniciar_mantequilla,
     kg_crema_disponible, motivos_para_iniciar_mantequilla,
-    motivos_tipados_para_iniciar_mantequilla, preparar_continuacion,
+    motivos_tipados_para_iniciar_mantequilla, preparar_continuacion, transicionar_ejecucion,
 )
 
 
@@ -491,3 +492,172 @@ class OrdenDeCandadosMantequillaTests(BasePuestoMantequilla):
         self.assertIsNotNone(equipo)
         self.assertLess(orden, lote)
         self.assertLess(lote, equipo)
+
+
+class InicioGenericoCerradoMantequillaTests(BasePuestoMantequilla):
+    def transicionar(self, ejecucion, estado, motivo=""):
+        ejecucion.refresh_from_db()
+        return self.cliente().post(
+            f"/api/procesos/ejecuciones/{ejecucion.pk}/transicionar/",
+            {"estado": estado, "version": ejecucion.version, "motivo": motivo},
+            format="json",
+        )
+
+    def test_transicionar_no_inicia_una_preparada(self):
+        corrida = self.preparada()
+
+        respuesta = self.transicionar(corrida.ejecucion, "ejecucion")
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertEqual(respuesta.data["message"], MENSAJE_INICIO_MANTEQUILLA_EN_PUESTO)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+    def test_pausar_y_reanudar_siguen_por_transicionar(self):
+        corrida = self.en_curso()
+
+        pausa = self.transicionar(corrida.ejecucion, "pausada")
+        reanudar = self.transicionar(corrida.ejecucion, "ejecucion")
+
+        self.assertEqual(pausa.status_code, 200, pausa.data)
+        self.assertEqual(reanudar.status_code, 200, reanudar.data)
+
+    def test_la_bandeja_no_ofrece_iniciar_una_preparada(self):
+        corrida = self.preparada()
+
+        bandeja = self.cliente().get("/api/procesos/ejecuciones/operativas/")
+
+        fila = next(item for item in bandeja.data if item["id"] == corrida.ejecucion_id)
+        self.assertNotIn("ejecucion", fila["acciones_permitidas"])
+        self.assertIn("cancelada", fila["acciones_permitidas"])
+
+    def test_el_alta_directa_de_corridas_sigue_cerrada(self):
+        self.assertEqual(
+            self.cliente().post("/api/procesos/mantequillas/", {}, format="json").status_code, 405,
+        )
+
+
+class CancelarPreparacionMantequillaTests(BasePuestoMantequilla):
+    def cancelar(self, corrida, motivo="Crema equivocada", usuario=None):
+        return self.cliente(usuario).post(
+            f"/api/procesos/mantequillas/{corrida.pk}/cancelar-preparacion/",
+            {"motivo": motivo}, format="json",
+        )
+
+    def test_cancelar_anula_corrida_y_lote_y_suelta_la_mantequera(self):
+        corrida = self.preparada(lote_suero=self.suero.pk)
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data, {
+            "ejecucion_id": corrida.ejecucion_id,
+            "ejecucion_codigo": corrida.ejecucion.codigo,
+            "estado": EjecucionProceso.Estado.CANCELADA,
+        })
+        corrida = self.recargar(corrida.pk)
+        self.assertEqual(corrida.estado, CorridaMantequilla.Estado.ANULADA)
+        self.assertEqual(corrida.motivo_anulacion, "Crema equivocada.")
+        self.assertEqual(corrida.lote_mantequilla.estado, Lote.Estado.ANULADO)
+        self.assertIn(
+            "[ANULACIÓN] Preparación de Mantequilla cancelada: Crema equivocada.",
+            corrida.lote_mantequilla.observacion,
+        )
+        # El suero conserva el rastro en la corrida anulada, pero queda libre:
+        # la misma mantequera, la misma crema y el mismo suero se preparan otra vez.
+        self.assertEqual(corrida.lote_suero, self.suero)
+        self.preparada(lote_suero=self.suero.pk)
+
+    def test_sin_motivo_no_cancela(self):
+        corrida = self.preparada()
+
+        respuesta = self.cancelar(corrida, motivo="  ")
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertEqual(respuesta.data["message"], MENSAJE_MOTIVO_CANCELACION)
+        corrida.ejecucion.refresh_from_db()
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+    def test_una_corrida_en_curso_no_se_cancela_desde_el_puesto(self):
+        corrida = self.en_curso()
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("se cierra registrando su balance", respuesta.data["message"])
+
+    def test_cancelar_desde_la_bandeja_generica_deja_lo_mismo(self):
+        corrida = self.preparada()
+
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.condensador, motivo="Desde la bandeja",
+        )
+
+        corrida = self.recargar(corrida.pk)
+        self.assertEqual(corrida.estado, CorridaMantequilla.Estado.ANULADA)
+        self.assertEqual(corrida.motivo_anulacion, "Desde la bandeja.")
+        self.assertEqual(corrida.lote_mantequilla.estado, Lote.Estado.ANULADO)
+        self.preparada()
+
+    def test_una_corrida_en_curso_cancelada_por_la_bandeja_queda_anulada(self):
+        corrida = self.en_curso()
+
+        transicionar_ejecucion(
+            ejecucion_id=corrida.ejecucion_id, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+            usuario=self.condensador, motivo="Falla eléctrica",
+        )
+
+        corrida = self.recargar(corrida.pk)
+        self.assertEqual(corrida.estado, CorridaMantequilla.Estado.ANULADA)
+        self.assertEqual(corrida.lote_mantequilla.estado, Lote.Estado.ANULADO)
+        self.assertIn("Corrida de Mantequilla cancelada", corrida.lote_mantequilla.observacion)
+
+    def test_anular_el_lote_por_el_patch_deja_lo_mismo_y_marca_una_vez(self):
+        corrida = self.preparada()
+
+        respuesta = self.cliente().patch(
+            f"/api/produccion/lotes/{corrida.lote_mantequilla_id}/",
+            {"estado": "anulado", "motivo_anulacion": "Lote abierto por error"}, format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        corrida = self.recargar(corrida.pk)
+        self.assertEqual(corrida.estado, CorridaMantequilla.Estado.ANULADA)
+        self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.CANCELADA)
+        self.assertEqual(corrida.lote_mantequilla.estado, Lote.Estado.ANULADO)
+        self.assertEqual(corrida.lote_mantequilla.observacion.count("[ANULACIÓN]"), 1)
+
+    def test_una_preparacion_heredada_en_borrador_se_cancela(self):
+        corrida = self.corrida_heredada()
+
+        respuesta = self.cancelar(corrida)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        corrida = self.recargar(corrida.pk)
+        self.assertEqual(corrida.estado, CorridaMantequilla.Estado.ANULADA)
+        self.assertEqual(corrida.lote_mantequilla.estado, Lote.Estado.ANULADO)
+
+
+class PermisosMantequillaTests(BasePuestoMantequilla):
+    """Secado escribe lotes, pero no opera la etapa Mantequilla: 403 en cada acción, nada escrito."""
+
+    def test_secado_no_prepara_inicia_cancela_revisa_ni_cierra(self):
+        preparada = self.preparada()
+        en_curso = self.en_curso(equipo=self.otra_mantequera.pk)
+        secado = self.cliente(self.secador)
+        cierre = {"kg_mantequilla": "31", "kg_suero": "28", "kg_merma": "1"}
+
+        self.assertEqual(self.preparar(usuario=self.secador).status_code, 403)
+        for ruta, cuerpo in (
+            (f"/api/procesos/mantequillas/{preparada.pk}/iniciar/", {}),
+            (f"/api/procesos/mantequillas/{preparada.pk}/cancelar-preparacion/", {"motivo": "No"}),
+            (f"/api/procesos/mantequillas/{en_curso.pk}/revisar-cierre/", cierre),
+            (f"/api/procesos/mantequillas/{en_curso.pk}/cerrar/", cierre),
+        ):
+            with self.subTest(ruta=ruta):
+                self.assertEqual(secado.post(ruta, cuerpo, format="json").status_code, 403)
+
+        self.assertEqual(self.recargar(preparada.pk).ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+        self.assertEqual(self.recargar(en_curso.pk).estado, CorridaMantequilla.Estado.EN_PROCESO)
+        self.assertEqual(Lote.objects.filter(producto=self.producto_mantequilla).count(), 2)
