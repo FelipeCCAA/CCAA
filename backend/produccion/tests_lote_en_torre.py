@@ -132,3 +132,31 @@ class LoteEnTorreTests(BaseBorradorLote):
             {tipo for tipo in Equipo.Tipo.values if servicios.abre_desde_vale(tipo)},
             {Equipo.Tipo.EVAPORADOR, Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA},
         )
+
+    def test_una_maquina_que_no_es_torre_no_habla_de_secado(self):
+        """
+        Una mantequera, una descremadora o un punto de carga no abren desde un
+        vale, pero tampoco son una torre: el rechazo dice qué máquina es y no
+        manda a Secado.
+        """
+        for tipo, codigo in (
+            (Equipo.Tipo.MANTEQUERA, "mant-vale"),
+            (Equipo.Tipo.DESCREMADORA, "desc-vale"),
+            (Equipo.Tipo.CARGA, "carga-vale"),
+        ):
+            equipo = Equipo.objects.create(
+                sucursal=self.sucursal, codigo=codigo, nombre=f"Máquina {codigo}", tipo=tipo,
+            )
+            with self.subTest(tipo=tipo), self.assertRaises(ValidationError) as error:
+                servicios.abrir_lote_desde_vale(
+                    vale=self.vale, codigo_lote=f"{codigo}-SRV", fecha=date(2026, 7, 16),
+                    litros=Decimal("1000"), equipo=equipo,
+                )
+            mensaje = error.exception.message_dict["equipo"][0]
+            self.assertEqual(
+                mensaje,
+                f"Máquina {codigo} no abre lotes desde un vale: desde un vale abren lote "
+                "solo evaporadores, envasadoras y líneas.",
+            )
+            self.assertNotIn("Secado", mensaje)
+        self.assertNadaCreado()
