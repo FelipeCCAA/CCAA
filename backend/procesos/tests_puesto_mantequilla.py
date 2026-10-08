@@ -709,6 +709,13 @@ class PuestoMantequillaTests(BasePuestoMantequilla):
         )
         self.assertEqual(respuesta.status_code, 200, respuesta.data)
 
+    def test_opciones_alta_ya_no_existe(self):
+        # Lo que servía lo sirve `puesto/`, con la regla de ocupación del
+        # servidor: una segunda fuente es lo que dejó al cliente decidirla.
+        respuesta = self.cliente().get("/api/procesos/mantequillas/opciones-alta/")
+
+        self.assertEqual(respuesta.status_code, 404)
+
     def test_una_mantequera_sin_ejecucion_esta_disponible(self):
         fila = self.fila(self.puesto(), self.mantequera)
 

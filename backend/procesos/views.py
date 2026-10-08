@@ -643,120 +643,6 @@ class CorridaMantequillaViewSet(
         """Estado del puesto de Mantequilla: lo que la pantalla dibuja, sin recalcular."""
         return Response(estado_puesto_mantequilla(request.user))
 
-    @action(detail=False, methods=["get"], url_path="opciones-alta")
-    def opciones_alta(self, request):
-        from maestros.models import Equipo
-        from produccion.models import Lote, OrdenProduccion
-
-        ordenes = filtrar_por_scope(
-            OrdenProduccion.objects.filter(
-                producto__categoria="mantequilla",
-                estado__in=[OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO],
-            ).select_related("producto"), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        lotes_crema = filtrar_por_scope(
-            Lote.objects.filter(
-                estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
-                kg_producidos__isnull=False,
-                producto__familia="crema",
-            ).select_related("producto"), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        lotes = lotes_crema.filter(
-            salidas_proceso__liberacion_calidad__estado="liberado",
-        ).annotate(
-                kg_usados=Coalesce(
-                    Sum(
-                        "entradas_proceso__cantidad",
-                        filter=Q(entradas_proceso__unidad__iexact="kg")
-                        & ~preparacion_cancelada("entradas_proceso__"),
-                    ),
-                    Value(0), output_field=DecimalField(),
-                )
-            ).distinct()
-        pendientes_calidad = lotes_crema.filter(
-            salidas_proceso__isnull=False,
-        ).exclude(
-            pk__in=lotes.values("pk"),
-        ).prefetch_related(
-            "salidas_proceso__liberacion_calidad",
-            "salidas_proceso__ejecucion__etapa",
-        ).distinct()
-        lotes_suero = filtrar_por_scope(
-            Lote.objects.filter(
-                producto__categoria="suero",
-                estado__in=[Lote.Estado.BORRADOR, Lote.Estado.EN_PROCESO],
-                kg_producidos__isnull=True,
-                corridas_como_suero_mantequilla__isnull=True,
-            ).select_related("producto"), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        equipos = filtrar_por_scope(
-            Equipo.objects.filter(
-                activo=True, tipo__in=tipos_equipo_para_etapa(EtapaProceso.Tipo.MANTEQUILLA),
-            ),
-            request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        ocupaciones = {
-            ejecucion.equipo_id: ejecucion.codigo
-            for ejecucion in EjecucionProceso.objects.filter(
-                sucursal_id__in={equipo.sucursal_id for equipo in equipos},
-                estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
-                equipo_id__isnull=False,
-            ).only("equipo_id", "codigo")
-        }
-
-        def estado_calidad_crema(lote):
-            decisiones = [
-                getattr(salida, "liberacion_calidad", None)
-                for salida in lote.salidas_proceso.all()
-            ]
-            estados = {decision.estado for decision in decisiones if decision}
-            if "rechazado" in estados:
-                return "rechazado"
-            if "pendiente" in estados:
-                return "pendiente"
-            return "trazabilidad_incompleta"
-
-        return Response({
-            "ordenes": [{"id": item.pk, "codigo": item.codigo, "producto": item.producto.nombre} for item in ordenes],
-            "cremas": [
-                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre,
-                 "disponible_kg": item.kg_producidos - item.kg_usados}
-                for item in lotes if item.kg_producidos > item.kg_usados
-            ],
-            "cremas_pendientes_calidad": [
-                {
-                    "id": item.pk,
-                    "codigo": item.codigo_lote,
-                    "producto": item.producto.nombre,
-                    "estado_calidad": estado_calidad_crema(item),
-                    "etapa_origen": next(
-                        (
-                            salida.ejecucion.etapa.get_tipo_display()
-                            for salida in item.salidas_proceso.all()
-                        ),
-                        "Sin proceso de origen",
-                    ),
-                }
-                for item in pendientes_calidad
-            ],
-            "sueros": [
-                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre}
-                for item in lotes_suero
-            ],
-            "equipos": [
-                {
-                    "id": item.pk,
-                    "nombre": item.nombre,
-                    "tipo": item.tipo,
-                    "ocupado_por": ocupaciones.get(item.pk),
-                }
-                for item in equipos
-            ],
-        })
-
     @action(detail=False, methods=["post"], url_path="crear-guiada")
     def crear_guiada(self, request):
         from maestros.models import Equipo
@@ -1573,7 +1459,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             }
             etiquetas = {
                 EtapaProceso.Tipo.ESTANDARIZACION: "Enviar a Estandarizacion",
-                EtapaProceso.Tipo.MANTEQUILLA: "Iniciar Mantequilla",
+                EtapaProceso.Tipo.MANTEQUILLA: "Preparar en Mantequilla",
                 EtapaProceso.Tipo.SECADO: "Continuar a Secado",
             }
             return [{

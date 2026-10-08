@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 
+import CancelarPreparacion from "../../components/operacion/CancelarPreparacion";
 import { mensajeDe, useCarga } from "../../components/seccion/utilidades";
 import {
   buscarDescremaciones, cancelarPreparacionDescremado, iniciarDescremado,
@@ -14,7 +15,6 @@ import type { CorridaDescremacion } from "../../services/procesos.service";
 import { corridaCancelable } from "../../services/puesto-descremado";
 import { obtenerSesion } from "../../services/sesion";
 import TablaConsulta from "../Inventario/TablaConsulta";
-import CancelarPreparacion from "./CancelarPreparacion";
 import CierreDescremado from "./CierreDescremado";
 import PrepararDescremado from "./PrepararDescremado";
 import TarjetaDescremadora from "./TarjetaDescremadora";
@@ -232,6 +232,7 @@ export default function PuestoDescremado() {
         <CancelarPreparacion
           codigo={cancelando.codigo}
           filas={cancelando.filas}
+          advertencia="La descremadora queda disponible y se sueltan las reservas del silo y de los dos TK. No se mueve leche: hasta el cierre no salió nada del silo."
           alVolver={() => setCancelando(null)}
           alCancelar={cancelar}
         />

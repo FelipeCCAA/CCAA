@@ -23,7 +23,7 @@ test("todos los etapa_tipo reales (EtapaProceso.Tipo) llevan a un destino que ex
   assert.equal(rutaDeEtapa("condensacion"), "/produccion/evaporacion");
   assert.equal(rutaDeEtapa("secado"), "/produccion/secado");
   assert.equal(rutaDeEtapa("envasado"), "/envasado");
-  assert.equal(rutaDeEtapa("mantequilla"), "/procesos?seccion=mantequilla");
+  assert.equal(rutaDeEtapa("mantequilla"), "/produccion/mantequilla");
   assert.equal(rutaDeEtapa("transferencia"), "/produccion");
   assert.equal(rutaDeEtapa("otro"), "/produccion");
 });

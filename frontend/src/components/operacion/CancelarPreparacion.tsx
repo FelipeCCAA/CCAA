@@ -1,16 +1,18 @@
 import { useId, useState, type FormEvent } from "react";
 
-import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
+import ConfirmarAccion from "./ConfirmarAccion";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
 
 /*
-  Motivo y confirmación para soltar una preparación. Lo abren la tarjeta
-  (descremadora preparada) y el historial (corridas `borrador` heredadas del
-  modal anterior), con la misma regla: `corridaCancelable`.
+  Motivo y confirmación para soltar una preparación. Lo abren la tarjeta y el
+  historial de Descremado y de Mantequilla, con la misma regla
+  (`corridaCancelable`); cada puesto dice qué se suelta (`advertencia`).
 */
-export default function CancelarPreparacion({ codigo, filas, alVolver, alCancelar }: {
+export default function CancelarPreparacion({ codigo, filas, advertencia, alVolver, alCancelar }: {
   codigo: string;
   filas: { etiqueta: string; valor: string }[];
+  /* Qué se suelta al cancelar: lo dice cada puesto. */
+  advertencia: string;
   alVolver: () => void;
   /* Rechaza si el servidor no cancela; el modal muestra el motivo. */
   alCancelar: (motivo: string) => Promise<void>;
@@ -48,7 +50,7 @@ export default function CancelarPreparacion({ codigo, filas, alVolver, alCancela
           <ConfirmarAccion
             titulo="Cancelar la preparación"
             filas={[...filas, { etiqueta: "Motivo", valor: motivo.trim() }]}
-            advertencia="La descremadora queda disponible y se sueltan las reservas del silo y de los dos TK. No se mueve leche: hasta el cierre no salió nada del silo."
+            advertencia={advertencia}
             textoConfirmar="Cancelar preparación"
             peligro
             ocupado={enviando}

@@ -226,7 +226,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                 </Link>
               ) : salida.acciones_permitidas.some((accion) => accion.codigo === "iniciar_mantequilla") ? (
                 <Link
-                  to="/procesos?seccion=mantequilla"
+                  to={salida.lote_id ? `/produccion/mantequilla?crema=${salida.lote_id}` : "/produccion/mantequilla"}
                   className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white"
                 >
                   {salida.acciones_permitidas.find((accion) => accion.codigo === "iniciar_mantequilla")?.etiqueta}
