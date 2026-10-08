@@ -250,6 +250,7 @@ export default function PuestoMantequilla() {
           codigo={cancelando.codigo}
           filas={cancelando.filas}
           advertencia={cancelando.advertencia}
+          maxLength={250}
           alVolver={() => setCancelando(null)}
           alCancelar={cancelar}
         />
