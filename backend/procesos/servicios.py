@@ -993,7 +993,10 @@ def kg_crema_disponible(lote, *, excluir_corrida_id=None):
     Lo que queda de una crema para una corrida de mantequilla: sus kilos
     producidos menos lo que ya entró a una mantequera (las entradas en kg que
     no son una preparación cancelada) y menos lo que **otras corridas
-    preparadas** ya pidieron (corrida `borrador` con su ejecución viva).
+    preparadas** ya pidieron: corrida `borrador` con su ejecución en
+    `preparacion`, que es lo que deja «Preparar». Una corrida heredada o
+    huérfana cuya ejecución quedó en `borrador` no tomó la mantequera ni
+    compromete crema; una iniciada ya la cuenta por su `EntradaProceso`.
 
     Una cantidad, una consulta: la usan la lista `cremas` del puesto,
     «Preparar» y el inicio. Sin restar las preparadas, el puesto ofrecía una
@@ -1005,7 +1008,8 @@ def kg_crema_disponible(lote, *, excluir_corrida_id=None):
     ).exclude(PREPARACION_CANCELADA).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
     preparadas = CorridaMantequilla.objects.filter(
         lote_crema=lote, estado=CorridaMantequilla.Estado.BORRADOR,
-    ).exclude(ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES)
+        ejecucion__estado=EjecucionProceso.Estado.PREPARACION,
+    )
     if excluir_corrida_id is not None:
         preparadas = preparadas.exclude(pk=excluir_corrida_id)
     comprometido = preparadas.aggregate(total=Sum("kg_crema"))["total"] or Decimal("0")
@@ -1019,10 +1023,13 @@ def motivos_crema_para_mantequilla(lote, kg, *, excluir_corrida_id=None):
 
     Lo propio de la crema —familia, estado, liberación, disponible—, que no
     cambia entre preparar e iniciar: «Preparar» rechaza con el primero y el
-    inicio los incluye en su lista. Las condiciones del TK (análisis, firmas,
-    CIP, saldo en litros) no están aquí: cambian entre los dos pasos y son
-    solo motivos de inicio.
+    inicio los incluye en su lista. Si la crema está en un TK, la liberación
+    que cuenta es la de **esa** salida: de ella se lee la densidad con que se
+    descuenta el TK, y otra salida liberada del mismo lote no dice nada de esa
+    crema. Las condiciones del TK (análisis, firmas, CIP, saldo en litros) no
+    están aquí: cambian entre los dos pasos y son solo motivos de inicio.
     """
+    from calidad.models import LiberacionProceso
     from produccion.models import Lote
 
     if lote.producto.familia != "crema":
@@ -1033,7 +1040,13 @@ def motivos_crema_para_mantequilla(lote, kg, *, excluir_corrida_id=None):
     if lote.estado not in {Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO}:
         return [(f"El lote de crema {lote.codigo_lote} todavía no está producido.", None)]
     motivos = []
-    if not Lote.objects.filter(pk=lote.pk).filter(filtro_crema_liberada()).exists():
+    fuente = fuente_tk_de_crema(lote)
+    if fuente is not None:
+        liberacion = getattr(fuente, "liberacion_calidad", None)
+        liberada = liberacion is not None and liberacion.estado == LiberacionProceso.Estado.LIBERADO
+    else:
+        liberada = Lote.objects.filter(pk=lote.pk).filter(filtro_crema_liberada()).exists()
+    if not liberada:
         motivos.append((
             f"El lote de crema {lote.codigo_lote} todavía no está liberado por Calidad.",
             RESOLVER_CALIDAD,
@@ -3084,15 +3097,23 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     from produccion.models import Lote, OrdenProduccion
     from recepcion.models import MovimientoSilo
 
-    # Orden de candados de `bloquear_para_cancelar`: corrida, luego ejecución.
+    # Candados: la corrida, luego su ejecución (el orden de los otros puestos;
+    # `bloquear_para_cancelar` todavía no toma `CorridaMantequilla`). Después,
+    # el mismo orden que «Preparar» (`crear_mantequilla_guiada`): orden, lote
+    # de crema, y la mantequera al transicionar. Con la orden tomada al final
+    # —este camino la actualiza—, un inicio y una preparación sobre la misma
+    # orden y la misma crema se esperarían en orden cruzado (deadlock).
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
-        "orden", "lote_crema__producto", "lote_mantequilla__producto",
+        "lote_crema__producto", "lote_mantequilla__producto",
     ).get(pk=corrida_id)
     ejecucion = (
         EjecucionProceso.objects.select_for_update(of=("self",))
         .select_related("etapa", "equipo").get(pk=corrida.ejecucion_id)
     )
     corrida.ejecucion = ejecucion
+    corrida.orden = OrdenProduccion.objects.select_for_update(of=("self",)).get(
+        pk=corrida.orden_id,
+    )
     # Dos inicios sobre la misma crema se serializan antes de contar su disponible.
     list(
         Lote.objects.select_for_update(of=("self",))

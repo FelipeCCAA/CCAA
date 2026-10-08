@@ -3,7 +3,9 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -21,8 +23,8 @@ from .models import (
 from .servicios import (
     MENSAJE_MANTEQUILLA_EN_PUESTO, MENSAJE_SALIDA_DE_LOTE_ANULADO, RESOLVER_CALIDAD,
     RESOLVER_CIP, RESOLVER_PLANIFICACION, RESOLVER_SILOS, iniciar_mantequilla,
-    motivos_para_iniciar_mantequilla, motivos_tipados_para_iniciar_mantequilla,
-    preparar_continuacion,
+    kg_crema_disponible, motivos_para_iniciar_mantequilla,
+    motivos_tipados_para_iniciar_mantequilla, preparar_continuacion,
 )
 
 
@@ -418,3 +420,74 @@ class IniciarMantequillaTests(BasePuestoMantequilla):
         self.assertEqual(self.iniciar(corrida, self.secador).status_code, 403)
         corrida = self.recargar(corrida.pk)
         self.assertEqual(corrida.ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
+
+
+class CremaDeTkYDisponibleTests(BasePuestoMantequilla):
+    def test_una_crema_cuyo_tk_no_esta_liberado_no_se_prepara(self):
+        # Otra salida del lote está liberada, pero la del TK —de la que se lee
+        # la densidad y sale la crema— todavía espera a Calidad.
+        crema, tk = self.crema_en_tk("CR-PM-TKPEND")
+        LiberacionProceso.objects.filter(salida__lote=crema, salida__silo=tk).update(
+            estado=LiberacionProceso.Estado.PENDIENTE,
+        )
+        SalidaProceso.objects.create(
+            ejecucion=SalidaProceso.objects.get(lote=crema).ejecucion, lote=crema,
+            producto=self.producto_crema, cantidad=Decimal("1000"), unidad="kg",
+        )
+        LiberacionProceso.objects.create(
+            salida=SalidaProceso.objects.get(lote=crema, silo__isnull=True),
+            estado=LiberacionProceso.Estado.LIBERADO,
+        )
+
+        respuesta = self.preparar(lote_crema=crema.pk, kg_crema="200")
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("todavía no está liberado por Calidad", str(respuesta.data))
+
+    def test_una_corrida_heredada_en_borrador_no_compromete_crema(self):
+        self.corrida_heredada()
+
+        self.assertEqual(kg_crema_disponible(self.crema), Decimal("1000"))
+
+    def test_una_corrida_preparada_compromete_su_crema(self):
+        self.preparada(kg_crema="60")
+
+        self.assertEqual(kg_crema_disponible(self.crema), Decimal("940"))
+
+
+class OrdenDeCandadosMantequillaTests(BasePuestoMantequilla):
+    """
+    Iniciar toma la orden antes que la crema, y la crema antes que la
+    mantequera: el orden de «Preparar» (`crear_mantequilla_guiada`). Con la
+    orden al final, un inicio y una preparación sobre la misma orden y la
+    misma crema podían esperarse el uno al otro hasta el deadlock.
+    """
+
+    def test_iniciar_bloquea_orden_luego_crema_luego_mantequera(self):
+        corrida = self.preparada()
+        tablas = {
+            "orden": OrdenProduccion._meta.db_table,
+            "lote": Lote._meta.db_table,
+            "equipo": Equipo._meta.db_table,
+        }
+
+        with CaptureQueriesContext(connection) as consultas:
+            iniciar_mantequilla(corrida_id=corrida.pk, usuario=self.condensador)
+
+        candados = [
+            consulta["sql"] for consulta in consultas.captured_queries
+            if "FOR UPDATE" in consulta["sql"]
+        ]
+
+        def primero(tabla):
+            return next(
+                (i for i, sql in enumerate(candados) if f'FROM "{tabla}"' in sql), None,
+            )
+
+        orden, lote, equipo = (primero(tablas[clave]) for clave in ("orden", "lote", "equipo"))
+        # `transicionar_ejecucion` toma la mantequera (`adquirir_equipo`).
+        self.assertIsNotNone(orden)
+        self.assertIsNotNone(lote)
+        self.assertIsNotNone(equipo)
+        self.assertLess(orden, lote)
+        self.assertLess(lote, equipo)
