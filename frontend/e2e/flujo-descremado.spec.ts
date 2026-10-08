@@ -20,6 +20,15 @@ test.afterAll(async () => {
   await cerrarSesionesArea();
 });
 
+/*
+  El código de una corrida como texto exacto: `EJ-DES-2` no debe acertarle a
+  `EJ-DES-23` de una corrida anterior en la misma base. El código lo asigna
+  el servidor (`EJ-DES-{id}`): no trae caracteres especiales de RegExp.
+*/
+function exacto(codigo: string): RegExp {
+  return new RegExp(`${codigo}(?!\\d)`);
+}
+
 interface Preparado {
   codigo: string;
   litrosDescremada: string;
@@ -61,14 +70,14 @@ async function elegirEstanques(page: Page, litros: number, entorno: {
   });
   expect(respuesta.ok(), `No se pudo leer el puesto de Descremado (HTTP ${respuesta.status()}).`).toBeTruthy();
   const puesto = await respuesta.json() as {
-    origenes: { codigo: string; saldo_l: string; motivo: string | null }[];
+    origenes: { codigo: string; libre_l: string; motivo: string | null }[];
     destinos_descremada: { codigo: string; libre_l: string }[];
     destinos_crema: { codigo: string; libre_l: string }[];
   };
 
   const origen = entorno.silo ?? puesto.origenes
-    .filter((o) => !o.motivo && Number(o.saldo_l) >= litros)
-    .sort((a, b) => Number(b.saldo_l) - Number(a.saldo_l))[0]?.codigo;
+    .filter((o) => !o.motivo && Number(o.libre_l) >= litros)
+    .sort((a, b) => Number(b.libre_l) - Number(a.libre_l))[0]?.codigo;
   const conSitio = (destinos: { codigo: string; libre_l: string }[]) => destinos
     .filter((d) => !tanquesUsados.has(d.codigo) && Number(d.libre_l) >= litros)
     .sort((a, b) => Number(b.libre_l) - Number(a.libre_l))[0]?.codigo;
@@ -78,7 +87,7 @@ async function elegirEstanques(page: Page, litros: number, entorno: {
   expect(
     origen,
     `El puesto no ofrece ningún silo con ${litros} L para descremar. Ofrece: ` +
-      `${puesto.origenes.map((o) => `${o.codigo} ${o.saldo_l} L${o.motivo ? ` (${o.motivo})` : ""}`).join(" · ") || "ninguno"}.`,
+      `${puesto.origenes.map((o) => `${o.codigo} ${o.libre_l} L libres${o.motivo ? ` (${o.motivo})` : ""}`).join(" · ") || "ninguno"}.`,
   ).toBeTruthy();
   expect(
     tkDescremada && tkCrema,
@@ -147,7 +156,7 @@ async function preparar(page: Page, rutaDescremar: string, opciones: {
   (Desviación 7 del plan); lo fija la prueba unitaria.
 */
 async function iniciarTrasLaFirma(page: Page, codigo: string, analisisId: number) {
-  const tarjeta = page.getByRole("article").filter({ hasText: codigo });
+  const tarjeta = page.getByRole("article").filter({ hasText: exacto(codigo) });
   await expect(tarjeta).toContainText("Preparada", { timeout: 20_000 });
   const iniciar = tarjeta.getByRole("button", { name: "Iniciar descremado" });
   await expect(iniciar).toBeDisabled();
@@ -169,7 +178,7 @@ async function registrarSalidas(page: Page, codigo: string, datos: Preparado & {
   tkDescremada: string; tkCrema: string;
   aviso: { campo: string; fuera: string; dentro: string; texto: RegExp };
 }) {
-  const tarjeta = page.getByRole("article").filter({ hasText: codigo });
+  const tarjeta = page.getByRole("article").filter({ hasText: exacto(codigo) });
   await tarjeta.getByRole("button", { name: "Registrar salidas y cerrar" }).click();
   const dialogo = page.getByRole("dialog", { name: "Registrar salidas" });
   await campo(dialogo, `Litros a ${datos.tkDescremada}`).fill(datos.litrosDescremada);
@@ -188,7 +197,7 @@ async function registrarSalidas(page: Page, codigo: string, datos: Preparado & {
     await dialogo.getByRole("button", { name: "Confirmar salidas y cerrar" }).click();
   });
   const hoy = page.getByRole("region", { name: "Corridas de hoy" });
-  await expect(hoy.getByRole("listitem").filter({ hasText: codigo })).toContainText(/Esperando Calidad|Terminada/);
+  await expect(hoy.getByRole("listitem").filter({ hasText: exacto(codigo) })).toContainText(/Esperando Calidad|Terminada/);
 }
 
 async function liberarRamas(page: Page, codigo: string, tkDescremada: string, tkCrema: string) {
@@ -197,7 +206,7 @@ async function liberarRamas(page: Page, codigo: string, tkDescremada: string, tk
   await analizarSilo(page, tkCrema, { grasa: "42.00", sng: "8.80" });
   await irA(page, "/calidad");
   for (const tk of [tkDescremada, tkCrema]) {
-    const tarjeta = page.locator("article").filter({ hasText: codigo }).filter({ hasText: tk });
+    const tarjeta = page.locator("article").filter({ hasText: exacto(codigo) }).filter({ hasText: tk });
     await expect(tarjeta).toBeVisible({ timeout: 20_000 });
     await elegirOpcion(tarjeta.getByRole("combobox"), /conforme/i);
     await trasGuardar(page, "/liberar/", async () => {
@@ -292,7 +301,7 @@ test("crema liberada sigue su ruta comercial hasta despacho directo", async ({ p
     await usarSesionArea(page, "e2e_produccion");
     await irA(page, "/produccion");
     await page.getByRole("button", { name: "Consultar disponibles" }).click();
-    const tarjeta = page.locator("article").filter({ hasText: preparado.codigo }).filter({ hasText: tkCrema });
+    const tarjeta = page.locator("article").filter({ hasText: exacto(preparado.codigo) }).filter({ hasText: tkCrema });
     await expect(tarjeta.getByRole("link", { name: "Preparar despacho" })).toBeVisible({ timeout: 20_000 });
     await expect(tarjeta.getByRole("link", { name: "Iniciar Mantequilla" })).toHaveCount(0);
   });
@@ -303,12 +312,12 @@ test("crema liberada sigue su ruta comercial hasta despacho directo", async ({ p
     await page.getByRole("button", { name: "Nueva hoja de carga" }).click();
     await page.getByRole("region", { name: "Nueva hoja de carga" }).getByLabel("Cliente").selectOption({ index: 1 });
     const graneles = page.getByRole("group", { name: "Graneles liberados" });
-    await graneles.getByRole("listitem").filter({ hasText: new RegExp(preparado.codigo) }).getByRole("checkbox").check();
+    await graneles.getByRole("listitem").filter({ hasText: exacto(preparado.codigo) }).getByRole("checkbox").check();
     await page.getByRole("button", { name: "Revisar hoja" }).click();
     await trasGuardar(page, "/api/inventario/despachos/", async () => {
       await page.getByRole("button", { name: "Guardar hoja" }).click();
     });
-    const tarjeta = page.locator("article").filter({ hasText: preparado.codigo });
+    const tarjeta = page.locator("article").filter({ hasText: exacto(preparado.codigo) });
     await expect(tarjeta).toBeVisible({ timeout: 20_000 });
     await trasGuardar(page, "/autorizar/", async () => {
       await tarjeta.getByRole("button", { name: "Autorizar" }).click();
@@ -317,7 +326,7 @@ test("crema liberada sigue su ruta comercial hasta despacho directo", async ({ p
     await trasGuardar(page, "/ejecutar/", async () => {
       await tarjeta.getByRole("button", { name: "Confirmar salida" }).click();
     });
-    await expect(page.getByRole("region", { name: "Despachadas hoy" })).toContainText(preparado.codigo);
+    await expect(page.getByRole("region", { name: "Despachadas hoy" })).toContainText(exacto(preparado.codigo));
   });
 
   expect(erroresJs).toHaveLength(0);
