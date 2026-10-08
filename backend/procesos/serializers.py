@@ -308,8 +308,12 @@ class CierreMantequillaSerializer(serializers.Serializer):
 class RevisarCierreMantequillaSerializer(serializers.Serializer):
     """El cuerpo de `cerrar/`, todo opcional: se pide mientras se teclea."""
 
+    # Sin `min_value`: la mantequilla en cero o negativa la dice el dominio
+    # (`errores_cierre_mantequilla`), con el texto que el formulario muestra.
+    # Un 400 del serializer dejaba el formulario en «No se pudo revisar el
+    # balance». `cerrar/` sigue rechazándola en la entrada.
     kg_mantequilla = serializers.DecimalField(
-        max_digits=14, decimal_places=3, min_value=Decimal("0"),
+        max_digits=14, decimal_places=3,
         required=False, allow_null=True, default=None,
     )
     kg_suero = serializers.DecimalField(

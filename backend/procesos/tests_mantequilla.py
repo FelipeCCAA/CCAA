@@ -553,6 +553,27 @@ class MantequillaTests(TestCase):
         self.assertEqual(revision.data["mensaje"], MENSAJE_FALTA_MANTEQUILLA)
         self.assertEqual(revision.data["errores"], {"kg_mantequilla": MENSAJE_FALTA_MANTEQUILLA})
 
+    def test_revisar_cierre_con_mantequilla_negativa_lo_dice_el_dominio(self):
+        # El serializer no se adelanta con su propio texto: la regla de la
+        # mantequilla en cero o negativa es del dominio, y el formulario
+        # muestra su mensaje. `cerrar/` sigue rechazando en la entrada.
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+        cliente = self.cliente_de_area()
+        cuerpo = {"kg_mantequilla": "-5", "kg_suero": "1000"}
+
+        revision = self.revisar(cliente, cuerpo)
+
+        self.assertEqual(revision.status_code, 200, revision.data)
+        self.assertFalse(revision.data["cuadra"])
+        self.assertEqual(revision.data["errores"], {"kg_mantequilla": MENSAJE_FALTA_MANTEQUILLA})
+        cierre = cliente.post(
+            f"/api/procesos/mantequillas/{self.corrida.pk}/cerrar/", cuerpo, format="json",
+        )
+        self.assertEqual(cierre.status_code, 400, cierre.data)
+        self.assertIn("kg_mantequilla", cierre.data)
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaMantequilla.Estado.EN_PROCESO)
+
     def test_revisar_cierre_repite_las_reglas_del_suero_y_del_reproceso(self):
         iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
         self.corrida.lote_suero = None
