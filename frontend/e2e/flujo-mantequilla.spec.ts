@@ -98,47 +98,6 @@ async function preparar(page: Page, crema: { id: number }, { kg, conMazada }: { 
   };
 }
 
-/*
-  La cancelación va **antes** del recorrido completo: cerrar la corrida pasa
-  su OP a pendiente de Calidad y el puesto deja de ofrecerla, mientras que
-  cancelar una preparación no toca la orden. Al revés, la segunda prueba se
-  quedaba sin OP que elegir con la única que deja `preparar_circuito_mantequilla`.
-*/
-test("una preparación cancelada anula su lote y suelta la mantequera", async ({ page }) => {
-  test.setTimeout(120_000);
-  const erroresJs = vigilar(page);
-
-  const crema = await elegirCrema(page, 10);
-  await irA(page, `/produccion/mantequilla?crema=${crema.id}`);
-  const corrida = await preparar(page, crema, { kg: "10", conMazada: false });
-
-  const tarjeta = page.getByRole("article").filter({ hasText: exacto(corrida.codigo) });
-  await expect(tarjeta).toContainText("Preparada", { timeout: 20_000 });
-  await tarjeta.getByRole("button", { name: "Cancelar preparación" }).click();
-  const dialogo = page.getByRole("dialog", { name: `Cancelar la preparación ${corrida.codigo}` });
-  await dialogo.getByLabel("Motivo de la cancelación").fill("Prueba E2E: se preparó la crema equivocada.");
-  await dialogo.getByRole("button", { name: "Revisar cancelación" }).click();
-  await expect(dialogo).toContainText(`Se anulará el lote ${corrida.lote}`);
-  await trasGuardar(page, "/cancelar-preparacion/", async () => {
-    await dialogo.getByRole("button", { name: "Cancelar preparación" }).click();
-  });
-
-  await expect(page.getByRole("status").filter({ hasText: corrida.codigo })).toContainText("la mantequera libre");
-  await expect(page.getByRole("article").filter({ hasText: exacto(corrida.codigo) })).toHaveCount(0);
-  const mantequera = page.getByRole("article", { name: corrida.mantequera });
-  await expect(mantequera).toContainText("Disponible");
-
-  const token = await page.evaluate(
-    () => JSON.parse(localStorage.getItem("ccaa.sesion") ?? "{}").token,
-  );
-  const lote = await page.request.get(`${API}/api/produccion/lotes/${corrida.loteId}/`, {
-    headers: { Authorization: `Token ${token}` },
-  });
-  expect(lote.ok()).toBeTruthy();
-  expect((await lote.json()).estado).toBe("anulado");
-  expect(erroresJs).toHaveLength(0);
-});
-
 test("crema liberada se prepara, se inicia y se cierra en el puesto de Mantequilla", async ({ page }) => {
   test.setTimeout(180_000);
   const erroresJs = vigilar(page);
@@ -215,6 +174,41 @@ test("crema liberada se prepara, se inicia y se cierra en el puesto de Mantequil
     type: "mantequilla",
     description: `E2E_MANTEQUILLA_ID=${corrida.loteId} E2E_MANTEQUILLA_LOTE=${corrida.lote}`,
   });
+  expect(erroresJs).toHaveLength(0);
+});
+
+test("una preparación cancelada anula su lote y suelta la mantequera", async ({ page }) => {
+  test.setTimeout(120_000);
+  const erroresJs = vigilar(page);
+
+  const crema = await elegirCrema(page, 10);
+  await irA(page, `/produccion/mantequilla?crema=${crema.id}`);
+  const corrida = await preparar(page, crema, { kg: "10", conMazada: false });
+
+  const tarjeta = page.getByRole("article").filter({ hasText: exacto(corrida.codigo) });
+  await expect(tarjeta).toContainText("Preparada", { timeout: 20_000 });
+  await tarjeta.getByRole("button", { name: "Cancelar preparación" }).click();
+  const dialogo = page.getByRole("dialog", { name: `Cancelar la preparación ${corrida.codigo}` });
+  await dialogo.getByLabel("Motivo de la cancelación").fill("Prueba E2E: se preparó la crema equivocada.");
+  await dialogo.getByRole("button", { name: "Revisar cancelación" }).click();
+  await expect(dialogo).toContainText(`Se anulará el lote ${corrida.lote}`);
+  await trasGuardar(page, "/cancelar-preparacion/", async () => {
+    await dialogo.getByRole("button", { name: "Cancelar preparación" }).click();
+  });
+
+  await expect(page.getByRole("status").filter({ hasText: corrida.codigo })).toContainText("la mantequera libre");
+  await expect(page.getByRole("article").filter({ hasText: exacto(corrida.codigo) })).toHaveCount(0);
+  const mantequera = page.getByRole("article", { name: corrida.mantequera });
+  await expect(mantequera).toContainText("Disponible");
+
+  const token = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("ccaa.sesion") ?? "{}").token,
+  );
+  const lote = await page.request.get(`${API}/api/produccion/lotes/${corrida.loteId}/`, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  expect(lote.ok()).toBeTruthy();
+  expect((await lote.json()).estado).toBe("anulado");
   expect(erroresJs).toHaveLength(0);
 });
 

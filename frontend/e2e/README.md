@@ -236,8 +236,19 @@ merma, cierra y Calidad libera. La anotación `mantequilla` trae `E2E_MANTEQUILL
 `E2E_MANTEQUILLA_LOTE` para correr las pruebas de envasado y disposición. La segunda
 prepara 10 kg y **cancela**: el lote de salida queda anulado y la mantequera libre.
 
+El comando deja **dos** OP abiertas (repone hasta dos, no acumula): cerrar la primera
+corrida pasa su OP a pendiente de Calidad, que el puesto ya no ofrece, y la cancelación
+necesita otra. Así el orden de las pruebas no importa.
+
 Una corrida preparada y abortada retiene la mantequera y la crema que pidió hasta que
 se cancela con «Cancelar preparación» (tarjeta o historial del puesto).
+
+La prueba «Calidad dispone el excedente…» (guiada por variables, se salta por omisión)
+termina liberando el expediente de la mantequilla, y hoy **no puede**: «Liberar» queda
+deshabilitado con «No hay documentos configurados para esta familia de producto». Los
+documentos de liberación se sembraron solo para `polvo`, y cuáles exige la mantequilla
+lo decide Calidad (`CLAUDE.md`, «Pendiente con Calidad»). Se resuelve configurando el
+catálogo de documentos de liberación para la familia del producto, no desde la prueba.
 
 ## Lo que el circuito consume
 
