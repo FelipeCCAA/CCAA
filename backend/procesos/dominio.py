@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 
 @dataclass(frozen=True)
@@ -107,6 +107,74 @@ RUTAS_POR_ETAPA = {
 def ruta_de_etapa(tipo: str) -> str:
     """La pantalla donde se trabaja una etapa; el panel de producción si no se conoce."""
     return RUTAS_POR_ETAPA.get(tipo, "/produccion")
+
+
+# Balance del cierre de Mantequilla. El cliente comparaba en milésimas de kg y
+# el modelo exigía diferencia == 0: la misma regla. Tres decimales es la
+# precisión de las columnas; cambiar la tolerancia es editar esta constante,
+# no buscar dos comparaciones.
+TOLERANCIA_BALANCE_MANTEQUILLA_KG = Decimal("0")
+_MILESIMA = Decimal("0.001")
+
+MENSAJE_FALTA_MANTEQUILLA = "Indica la mantequilla producida."
+MENSAJE_SUERO_SIN_LOTE = "Esta corrida no tiene un lote de suero asociado: registra 0 kg."
+MENSAJE_REPROCESO_SIN_MOTIVO = "Indica por qué este material requiere reproceso."
+
+
+@dataclass(frozen=True)
+class BalanceMantequilla:
+    entrada_kg: Decimal
+    clasificado_kg: Decimal
+    diferencia_kg: Decimal  # entrada − clasificado
+    cuadra: bool
+    mensaje: str | None  # None si cuadra
+
+
+def _kg(valor):
+    """Un valor en kg redondeado a la milésima. Ausente cuenta como cero: se teclea de a poco."""
+    bruto = Decimal("0") if valor is None or valor == "" else Decimal(str(valor))
+    return bruto.quantize(_MILESIMA, rounding=ROUND_HALF_UP)
+
+
+def balance_mantequilla(*, kg_crema, kg_mantequilla, kg_suero=0, kg_merma=0, kg_reproceso=0):
+    """
+    ¿Clasifica el cierre el 100 % de la crema? Mantequilla, suero, merma y
+    reproceso contra los kg de crema que entraron.
+
+    Es la única regla: la usan `CorridaMantequilla.clean()`, `cerrar_mantequilla`
+    (antes de escribir) y `revisar-cierre/` mientras se teclea. Antes el
+    cliente la calculaba en milésimas y el modelo en `Decimal`; coincidían por
+    casualidad de redondeo, no por construcción.
+    """
+    entrada = _kg(kg_crema)
+    clasificado = sum(
+        (_kg(valor) for valor in (kg_mantequilla, kg_suero, kg_merma, kg_reproceso)),
+        Decimal("0"),
+    )
+    diferencia = entrada - clasificado
+    if kg_mantequilla is None or kg_mantequilla == "":
+        return BalanceMantequilla(entrada, clasificado, diferencia, False, MENSAJE_FALTA_MANTEQUILLA)
+    if abs(diferencia) <= TOLERANCIA_BALANCE_MANTEQUILLA_KG:
+        return BalanceMantequilla(entrada, clasificado, diferencia, True, None)
+    sentido = "faltan por clasificar" if diferencia > 0 else "exceden la entrada"
+    return BalanceMantequilla(
+        entrada, clasificado, diferencia, False,
+        f"El cierre debe clasificar el 100% de la crema: {abs(diferencia)} kg {sentido}.",
+    )
+
+
+def errores_cierre_mantequilla(*, tiene_lote_suero, kg_suero=0, kg_reproceso=0, motivo_reproceso=""):
+    """
+    Las otras reglas del cierre que dependen de lo tecleado, por campo: suero
+    sin lote donde registrarlo y reproceso sin motivo. Las mismas para
+    `clean()`, el cierre y `revisar-cierre/`, con el mismo texto.
+    """
+    errores = {}
+    if _kg(kg_suero) > 0 and not tiene_lote_suero:
+        errores["kg_suero"] = MENSAJE_SUERO_SIN_LOTE
+    if _kg(kg_reproceso) > 0 and not (motivo_reproceso or "").strip():
+        errores["motivo_reproceso"] = MENSAJE_REPROCESO_SIN_MOTIVO
+    return errores
 
 
 # Cómo se nombra una corrida de descremado en el puesto y en su historial:

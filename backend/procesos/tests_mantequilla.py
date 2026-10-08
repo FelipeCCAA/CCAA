@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -14,6 +14,10 @@ from produccion.models import Analisis, Lote, OrdenProduccion
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
+from .dominio import (
+    MENSAJE_FALTA_MANTEQUILLA, MENSAJE_REPROCESO_SIN_MOTIVO, MENSAJE_SUERO_SIN_LOTE,
+    balance_mantequilla, errores_cierre_mantequilla,
+)
 from .models import (
     AutorizacionReproceso, CorridaMantequilla, EjecucionProceso, EntradaProceso,
     EtapaProceso, Proceso, RutaProducto, SalidaProceso,
@@ -22,6 +26,85 @@ from .servicios import (
     cerrar_mantequilla, crear_mantequilla_guiada,
     genealogia_lote, iniciar_mantequilla,
 )
+
+
+class BalanceMantequillaDominioTests(SimpleTestCase):
+    """
+    El balance del cierre, sin ORM: los casos que fijaba
+    `frontend/tests/balance-mantequilla.test.ts` (que se elimina en la Task 7)
+    más los bordes en milésimas. Es la regla que usan el modelo, el cierre y
+    `revisar-cierre/`.
+    """
+
+    def test_un_balance_exacto_con_reproceso_cuadra(self):
+        balance = balance_mantequilla(
+            kg_crema="1000", kg_mantequilla="420.123", kg_suero="559.877",
+            kg_merma="10", kg_reproceso="10",
+        )
+
+        self.assertTrue(balance.cuadra)
+        self.assertIsNone(balance.mensaje)
+        self.assertEqual(balance.diferencia_kg, Decimal("0"))
+
+    def test_si_falta_crema_por_clasificar_lo_dice(self):
+        balance = balance_mantequilla(
+            kg_crema="1000", kg_mantequilla="420", kg_suero="560", kg_merma="10",
+        )
+
+        self.assertFalse(balance.cuadra)
+        self.assertEqual(balance.diferencia_kg, Decimal("10"))
+        self.assertEqual(
+            balance.mensaje,
+            "El cierre debe clasificar el 100% de la crema: 10.000 kg faltan por clasificar.",
+        )
+
+    def test_si_excede_la_entrada_lo_dice(self):
+        balance = balance_mantequilla(
+            kg_crema="60", kg_mantequilla="31", kg_suero="28", kg_merma="2",
+        )
+
+        self.assertEqual(balance.diferencia_kg, Decimal("-1"))
+        self.assertEqual(
+            balance.mensaje,
+            "El cierre debe clasificar el 100% de la crema: 1.000 kg exceden la entrada.",
+        )
+
+    def test_compara_en_milesimas_sin_errores_de_punto_flotante(self):
+        self.assertTrue(
+            balance_mantequilla(kg_crema="0.300", kg_mantequilla="0.100", kg_suero="0.200").cuadra
+        )
+        # Cada valor se redondea a la milésima, la precisión de las columnas.
+        self.assertTrue(balance_mantequilla(kg_crema="1000", kg_mantequilla="999.9995").cuadra)
+        borde = balance_mantequilla(kg_crema="1000", kg_mantequilla="999.9994")
+        self.assertFalse(borde.cuadra)
+        self.assertEqual(borde.diferencia_kg, Decimal("0.001"))
+
+    def test_sin_mantequilla_no_cuadra_y_la_pide(self):
+        balance = balance_mantequilla(kg_crema="60", kg_mantequilla=None, kg_suero="60")
+
+        self.assertFalse(balance.cuadra)
+        self.assertEqual(balance.mensaje, MENSAJE_FALTA_MANTEQUILLA)
+
+    def test_un_valor_ausente_cuenta_como_cero(self):
+        balance = balance_mantequilla(
+            kg_crema="60", kg_mantequilla="60", kg_suero=None, kg_merma="", kg_reproceso=None,
+        )
+
+        self.assertTrue(balance.cuadra)
+        self.assertEqual(balance.clasificado_kg, Decimal("60"))
+
+    def test_las_otras_reglas_de_lo_tecleado(self):
+        self.assertEqual(
+            errores_cierre_mantequilla(tiene_lote_suero=False, kg_suero="5"),
+            {"kg_suero": MENSAJE_SUERO_SIN_LOTE},
+        )
+        self.assertEqual(
+            errores_cierre_mantequilla(
+                tiene_lote_suero=True, kg_suero="5", kg_reproceso="2", motivo_reproceso="  ",
+            ),
+            {"motivo_reproceso": MENSAJE_REPROCESO_SIN_MOTIVO},
+        )
+        self.assertEqual(errores_cierre_mantequilla(tiene_lote_suero=False, kg_suero="0"), {})
 
 
 class MantequillaTests(TestCase):
@@ -448,3 +531,96 @@ class MantequillaTests(TestCase):
             item for item in respuesta.data["cremas"] if item["id"] == self.lote_crema.pk
         )
         self.assertEqual(crema["disponible_kg"], self.lote_crema.kg_producidos)
+
+    def cliente_de_area(self, area=PerfilUsuario.Area.CONDENSACION, nombre="condensador-mantequilla"):
+        usuario = User.objects.create_user(nombre)
+        PerfilUsuario.objects.create(
+            usuario=usuario, empresa=self.empresa, sucursal=self.planta,
+            rol=Rol.PRODUCCION, area=area,
+        )
+        cliente = APIClient()
+        cliente.force_authenticate(usuario)
+        return cliente
+
+    def revisar(self, cliente, cuerpo):
+        return cliente.post(
+            f"/api/procesos/mantequillas/{self.corrida.pk}/revisar-cierre/", cuerpo, format="json",
+        )
+
+    def test_revisar_cierre_no_escribe_y_dice_lo_que_cerrar_rechazaria(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+        cliente = self.cliente_de_area()
+        cuerpo = {"kg_mantequilla": "420", "kg_suero": "500", "kg_merma": "10"}
+
+        revision = self.revisar(cliente, cuerpo)
+
+        self.assertEqual(revision.status_code, 200, revision.data)
+        self.assertEqual(revision.data, {
+            "entrada_kg": "1000.000", "clasificado_kg": "930.000", "diferencia_kg": "70.000",
+            "cuadra": False,
+            "mensaje": "El cierre debe clasificar el 100% de la crema: 70.000 kg faltan por clasificar.",
+            "errores": {},
+        })
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaMantequilla.Estado.EN_PROCESO)
+        self.assertEqual(self.corrida.ejecucion.salidas.count(), 0)
+
+        cierre = cliente.post(
+            f"/api/procesos/mantequillas/{self.corrida.pk}/cerrar/", cuerpo, format="json",
+        )
+
+        self.assertEqual(cierre.status_code, 400, cierre.data)
+        self.assertEqual(cierre.data["balance"], [revision.data["mensaje"]])
+
+    def test_revisar_cierre_con_el_formulario_vacio_pide_la_mantequilla(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        revision = self.revisar(self.cliente_de_area(), {})
+
+        self.assertEqual(revision.status_code, 200, revision.data)
+        self.assertFalse(revision.data["cuadra"])
+        self.assertEqual(revision.data["mensaje"], MENSAJE_FALTA_MANTEQUILLA)
+        self.assertEqual(revision.data["clasificado_kg"], "0.000")
+
+    def test_revisar_cierre_repite_las_reglas_del_suero_y_del_reproceso(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+        self.corrida.lote_suero = None
+        self.corrida.save(update_fields=["lote_suero"])
+
+        revision = self.revisar(self.cliente_de_area(), {
+            "kg_mantequilla": "420", "kg_suero": "570", "kg_merma": "5", "kg_reproceso": "5",
+        })
+
+        self.assertTrue(revision.data["cuadra"])
+        self.assertEqual(revision.data["errores"], {
+            "kg_suero": MENSAJE_SUERO_SIN_LOTE,
+            "motivo_reproceso": MENSAJE_REPROCESO_SIN_MOTIVO,
+        })
+
+    def test_no_cierra_sin_cuadrar_y_no_deja_lote_de_reproceso(self):
+        # Caracterización: antes la transacción ya revertía el lote creado;
+        # ahora el balance se decide antes de escribir.
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        with self.assertRaisesMessage(ValidationError, "faltan por clasificar"):
+            cerrar_mantequilla(
+                corrida_id=self.corrida.pk, usuario=self.usuario,
+                kg_mantequilla="420", kg_suero="500", kg_merma="10",
+                kg_reproceso="20", motivo_reproceso="Textura fuera de objetivo",
+            )
+
+        self.assertFalse(Lote.objects.filter(codigo_lote__startswith="RW-MANT-").exists())
+        self.assertEqual(AutorizacionReproceso.objects.count(), 0)
+
+    def test_secado_no_revisa_ni_cierra(self):
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+        secado = self.cliente_de_area(PerfilUsuario.Area.SECADO, "secador-mantequilla")
+        cuerpo = {"kg_mantequilla": "420", "kg_suero": "570", "kg_merma": "10"}
+
+        self.assertEqual(self.revisar(secado, cuerpo).status_code, 403)
+        cierre = secado.post(
+            f"/api/procesos/mantequillas/{self.corrida.pk}/cerrar/", cuerpo, format="json",
+        )
+        self.assertEqual(cierre.status_code, 403)
+        self.corrida.refresh_from_db()
+        self.assertEqual(self.corrida.estado, CorridaMantequilla.Estado.EN_PROCESO)

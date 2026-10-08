@@ -2927,12 +2927,44 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     return corrida
 
 
+def revisar_cierre_mantequilla(
+    corrida, *, kg_mantequilla=None, kg_suero=None, kg_merma=None,
+    kg_reproceso=None, motivo_reproceso="",
+):
+    """
+    Lo que el cierre decidiría con estos valores, sin escribir nada. El
+    formulario lo pide mientras se teclea (el patrón de
+    `revisar_cierre_descremacion`) y habilita «Cerrar» solo con una revisión
+    que cuadra: el cliente no calcula. La misma función que `cerrar_mantequilla`
+    y `CorridaMantequilla.clean()`.
+    """
+    from .dominio import balance_mantequilla, errores_cierre_mantequilla
+
+    balance = balance_mantequilla(
+        kg_crema=corrida.kg_crema, kg_mantequilla=kg_mantequilla,
+        kg_suero=kg_suero, kg_merma=kg_merma, kg_reproceso=kg_reproceso,
+    )
+    return {
+        # Texto, como en los serializers: el tipo del frontend es `string`.
+        "entrada_kg": str(balance.entrada_kg),
+        "clasificado_kg": str(balance.clasificado_kg),
+        "diferencia_kg": str(balance.diferencia_kg),
+        "cuadra": balance.cuadra,
+        "mensaje": balance.mensaje,
+        "errores": errores_cierre_mantequilla(
+            tiene_lote_suero=bool(corrida.lote_suero_id), kg_suero=kg_suero,
+            kg_reproceso=kg_reproceso, motivo_reproceso=motivo_reproceso,
+        ),
+    }
+
+
 @transaction.atomic
 def cerrar_mantequilla(
     *, corrida_id, usuario, kg_mantequilla, kg_suero=0, kg_merma=0,
     kg_reproceso=0, motivo_reproceso="", controles=None,
 ):
     from calidad.models import LiberacionProceso
+    from .dominio import balance_mantequilla, errores_cierre_mantequilla
     from produccion.models import Lote
     from .models import AutorizacionReproceso, SalidaProceso
 
@@ -2947,6 +2979,22 @@ def cerrar_mantequilla(
     corrida.kg_reproceso = Decimal(str(kg_reproceso))
     corrida.motivo_reproceso = str(motivo_reproceso).strip()
     corrida.controles = controles or {}
+    # El balance y las reglas de lo tecleado se deciden antes de escribir
+    # nada —hoy el lote de reproceso se creaba y `clean()` lo revertía—, con
+    # las mismas funciones que `revisar-cierre/` y `clean()`.
+    errores = errores_cierre_mantequilla(
+        tiene_lote_suero=bool(corrida.lote_suero_id), kg_suero=corrida.kg_suero,
+        kg_reproceso=corrida.kg_reproceso, motivo_reproceso=corrida.motivo_reproceso,
+    )
+    if errores:
+        raise ValidationError(errores)
+    balance = balance_mantequilla(
+        kg_crema=corrida.kg_crema, kg_mantequilla=corrida.kg_mantequilla,
+        kg_suero=corrida.kg_suero, kg_merma=corrida.kg_merma,
+        kg_reproceso=corrida.kg_reproceso,
+    )
+    if not balance.cuadra:
+        raise ValidationError({"balance": balance.mensaje})
     if corrida.kg_reproceso:
         codigo_reproceso = f"RW-MANT-{corrida.operacion_id.hex[:12].upper()}"
         lote_reproceso = Lote(

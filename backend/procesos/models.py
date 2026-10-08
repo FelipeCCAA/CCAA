@@ -6,6 +6,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from usuarios.tenancy import sucursal_predeterminada_pruebas
 
+from .dominio import balance_mantequilla, errores_cierre_mantequilla
+
 
 class Proceso(models.Model):
     codigo = models.SlugField(max_length=50)
@@ -629,16 +631,16 @@ class CorridaMantequilla(models.Model):
             raise ValidationError({"lote_crema": "La materia prima debe ser un lote de crema."})
         if self.lote_mantequilla_id and self.lote_mantequilla.producto.categoria != "mantequilla":
             raise ValidationError({"lote_mantequilla": "El lote de salida debe ser mantequilla."})
-        if self.kg_suero and not self.lote_suero_id:
-            raise ValidationError({"lote_suero": "Identifica el lote del suero generado."})
         if self.kg_reproceso and not self.lote_reproceso_id:
             raise ValidationError({
                 "lote_reproceso": "El reproceso debe quedar segregado en un lote propio."
             })
-        if self.kg_reproceso and not self.motivo_reproceso.strip():
-            raise ValidationError({
-                "motivo_reproceso": "Indica por qué este material requiere reproceso."
-            })
+        errores = errores_cierre_mantequilla(
+            tiene_lote_suero=bool(self.lote_suero_id), kg_suero=self.kg_suero,
+            kg_reproceso=self.kg_reproceso, motivo_reproceso=self.motivo_reproceso,
+        )
+        if errores:
+            raise ValidationError(errores)
         if self.lote_reproceso_id:
             if self.lote_reproceso.producto_id != self.lote_mantequilla.producto_id:
                 raise ValidationError({
@@ -649,19 +651,12 @@ class CorridaMantequilla(models.Model):
                 raise ValidationError({
                     "kg_mantequilla": "La mantequilla producida debe ser mayor que cero."
                 })
-            total = (
-                self.kg_mantequilla + self.kg_suero
-                + self.kg_merma + self.kg_reproceso
+            balance = balance_mantequilla(
+                kg_crema=self.kg_crema, kg_mantequilla=self.kg_mantequilla,
+                kg_suero=self.kg_suero, kg_merma=self.kg_merma, kg_reproceso=self.kg_reproceso,
             )
-            diferencia = self.kg_crema - total
-            if diferencia != 0:
-                sentido = "faltan por clasificar" if diferencia > 0 else "exceden la entrada"
-                raise ValidationError({
-                    "balance": (
-                        "El cierre debe clasificar el 100% de la crema: "
-                        f"{abs(diferencia)} kg {sentido}."
-                    )
-                })
+            if not balance.cuadra:
+                raise ValidationError({"balance": balance.mensaje})
 
 
 class EjecucionProceso(models.Model):

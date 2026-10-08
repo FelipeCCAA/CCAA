@@ -36,7 +36,7 @@ from .serializers import (
     CorridaSecadoSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
-    RevisarCierreDescremacionSerializer,
+    RevisarCierreDescremacionSerializer, RevisarCierreMantequillaSerializer,
     RutaProductoSerializer, SugerirDescremacionSerializer,
 )
 from .consultas_planta import consultar_planta_ahora, resumen_operacional_produccion
@@ -67,6 +67,7 @@ from .servicios import (
     cancelar_preparacion_descremacion, cancelar_preparacion_evaporacion,
     cancelar_preparacion_secado,
     inicio_reservado_al_puesto,
+    revisar_cierre_mantequilla,
     MENSAJES_INICIO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
     salida_de_lote_anulado,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
@@ -778,6 +779,17 @@ class CorridaMantequillaViewSet(
             detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="revisar-cierre")
+    def revisar_cierre(self, request, pk=None):
+        """El balance del cierre con lo tecleado hasta ahora; no escribe nada."""
+        entrada = RevisarCierreMantequillaSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = {
+            clave: valor for clave, valor in entrada.validated_data.items()
+            if clave != "controles"
+        }
+        return Response(revisar_cierre_mantequilla(self.get_object(), **datos))
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
