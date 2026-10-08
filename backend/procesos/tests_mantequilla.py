@@ -51,8 +51,8 @@ class MantequillaTests(TestCase):
             naturaleza=Producto.Naturaleza.INTERMEDIO,
         )
         equipo = Equipo.objects.create(
-            sucursal=planta, codigo="mant-1", nombre="Línea mantequilla",
-            tipo=Equipo.Tipo.LINEA,
+            sucursal=planta, codigo="mant-1", nombre="Mantequera",
+            tipo=Equipo.Tipo.MANTEQUERA,
         )
         proceso = Proceso.objects.create(codigo="mantequilla", nombre="Mantequilla")
         etapa = EtapaProceso.objects.create(

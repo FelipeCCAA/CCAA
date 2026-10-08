@@ -672,7 +672,9 @@ class CorridaMantequillaViewSet(
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
         equipos = filtrar_por_scope(
-            Equipo.objects.filter(activo=True, tipo__in=[Equipo.Tipo.LINEA, Equipo.Tipo.OTRO]),
+            Equipo.objects.filter(
+                activo=True, tipo__in=tipos_equipo_para_etapa(EtapaProceso.Tipo.MANTEQUILLA),
+            ),
             request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
         ocupaciones = {

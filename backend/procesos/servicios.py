@@ -659,7 +659,7 @@ def tipos_equipo_para_etapa(tipo_etapa):
         EtapaProceso.Tipo.CONDENSACION: {Equipo.Tipo.EVAPORADOR},
         EtapaProceso.Tipo.SECADO: {Equipo.Tipo.TORRE},
         EtapaProceso.Tipo.ENVASADO: {Equipo.Tipo.ENVASADORA, Equipo.Tipo.LINEA},
-        EtapaProceso.Tipo.MANTEQUILLA: {Equipo.Tipo.LINEA, Equipo.Tipo.OTRO},
+        EtapaProceso.Tipo.MANTEQUILLA: {Equipo.Tipo.MANTEQUERA},
         EtapaProceso.Tipo.TRANSFERENCIA: {Equipo.Tipo.CARGA},
         EtapaProceso.Tipo.OTRO: {Equipo.Tipo.OTRO},
     }.get(tipo_etapa, set())
@@ -974,8 +974,8 @@ def crear_mantequilla_guiada(
         raise ValidationError({"lote_crema": "Selecciona un lote de crema."})
     if not equipo.activo:
         raise ValidationError({"equipo": "La línea no está activa."})
-    if equipo.tipo not in {Equipo.Tipo.LINEA, Equipo.Tipo.OTRO}:
-        raise ValidationError({"equipo": "El equipo no corresponde a la línea de mantequilla."})
+    if equipo.tipo not in tipos_equipo_para_etapa(EtapaProceso.Tipo.MANTEQUILLA):
+        raise ValidationError({"equipo": f"{equipo.nombre} no es una mantequera."})
     etapa = etapa_para_producto(
         producto=orden.producto, sucursal=orden.sucursal,
         tipo=EtapaProceso.Tipo.MANTEQUILLA,

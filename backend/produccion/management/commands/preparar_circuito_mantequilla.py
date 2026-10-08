@@ -31,6 +31,7 @@ MATERIALES_ENVASE = (
     ("EMB-PALLET", "Pallet madera industrial", False, False, Decimal("1"), Decimal("10")),
     ("EMB-FILM", "Film stretch para pallet", False, False, Decimal("1"), Decimal("10")),
 )
+CODIGO_ENVASADORA = "envasadora_mantequilla"
 
 
 class Command(BaseCommand):
@@ -61,17 +62,19 @@ class Command(BaseCommand):
             activa=True,
         ).exists():
             raise CommandError("La mantequilla no tiene una ruta activa de Mantequilla a Envasado.")
-        linea = Equipo.objects.filter(
-            activo=True, tipo=Equipo.Tipo.LINEA,
-            nombre__icontains="mantequilla",
-        ).first()
-        if linea is None:
-            raise CommandError("Falta la linea activa de mantequilla.")
+        mantequera = Equipo.objects.filter(
+            activo=True, tipo=Equipo.Tipo.MANTEQUERA,
+        ).order_by("codigo").first()
+        if mantequera is None:
+            raise CommandError(
+                "Falta una mantequera activa: créala en Maestros › Máquinas con tipo «Mantequera»."
+            )
 
         if not opciones["aplicar"]:
             self.stdout.write(self.style.WARNING(
-                f"Vista previa: {producto.nombre}, OP 40 kg, {linea.nombre}, "
-                "especificacion Codex provisional y lote trazable de mazada."
+                f"Vista previa: {producto.nombre}, OP 40 kg, {mantequera.nombre}, "
+                "envasadora de mantequilla autorizada en sus formatos, especificacion "
+                "Codex provisional y lote trazable de mazada."
             ))
             transaction.set_rollback(True)
             return
@@ -128,6 +131,14 @@ class Command(BaseCommand):
             )
             if producto_mantequilla.pk == producto.pk:
                 receta_envase = receta_configurada
+        envasadora, sin_formato = self._autorizar_envasadora(
+            planta=planta, productos=productos_mantequilla,
+        )
+        for nombre in sin_formato:
+            self.stdout.write(self.style.WARNING(
+                f"{nombre} no tiene un formato de envasado activo: créalo en Maestros "
+                "› Formatos de envasado y vuelve a correr el comando."
+            ))
 
         orden = OrdenProduccion.objects.filter(
             producto=producto,
@@ -142,8 +153,8 @@ class Command(BaseCommand):
                 producto=producto,
                 cantidad_planificada=40,
                 unidad="kg",
-                equipo=linea,
-                linea=linea.nombre,
+                equipo=mantequera,
+                linea=mantequera.nombre,
                 estado=OrdenProduccion.Estado.PROGRAMADA,
                 creada_por=usuario,
                 observacion="Orden local de validacion; no representa una orden comercial.",
@@ -191,8 +202,39 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Mantequilla preparada: OP={orden.codigo}; producto={producto.nombre}; "
             f"especificacion=v{especificacion.version}; mazada={lote_suero.codigo_lote}; "
+            f"envasadora={envasadora.nombre}; "
             f"receta_envase=v{receta_envase.version}; materiales={materiales}."
         ))
+
+    def _autorizar_envasadora(self, *, planta, productos):
+        """
+        La mantequilla se envasa en una envasadora, no en la mantequera: el
+        envasado acepta solo envasadora o línea (`FormatoEnvasado`,
+        `Envase.clean()`) y `maestros.0040` sacó la mantequera de los
+        formatos. Se asegura una y se autoriza en los formatos activos de cada
+        mantequilla. Un producto sin formato se avisa, no se inventa: el
+        formato es configuración de planta.
+
+        Sin `consume_materiales`: la mantequera ya lo tiene, y marcar las dos
+        haría que el MRP pidiera los envases dos veces.
+        """
+        envasadora, _ = Equipo.objects.get_or_create(
+            sucursal=planta, codigo=CODIGO_ENVASADORA,
+            defaults={"nombre": "Envasadora de mantequilla", "tipo": Equipo.Tipo.ENVASADORA},
+        )
+        if envasadora.tipo != Equipo.Tipo.ENVASADORA or not envasadora.activo:
+            raise CommandError(
+                f"{CODIGO_ENVASADORA} existe pero no es una envasadora activa: "
+                "corrígelo en Maestros › Máquinas."
+            )
+        sin_formato = []
+        for producto in productos:
+            formatos = list(producto.formatos_envasado.filter(activo=True))
+            if not formatos:
+                sin_formato.append(producto.nombre)
+            for formato in formatos:
+                formato.equipos.add(envasadora)
+        return envasadora, sin_formato
 
     def _preparar_materiales_envase(self, *, planta, producto, usuario):
         """Configura una BOM explícita; el stock entra mediante movimientos."""

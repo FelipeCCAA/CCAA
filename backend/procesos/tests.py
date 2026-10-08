@@ -200,7 +200,7 @@ class ProcesosIndustrialesTests(TestCase):
             ("est", EtapaProceso.Tipo.ESTANDARIZACION, Equipo.Tipo.OTRO),
             ("des", EtapaProceso.Tipo.DESCREMACION, Equipo.Tipo.DESCREMADORA),
             ("eva", EtapaProceso.Tipo.EVAPORACION, Equipo.Tipo.EVAPORADOR),
-            ("man", EtapaProceso.Tipo.MANTEQUILLA, Equipo.Tipo.LINEA),
+            ("man", EtapaProceso.Tipo.MANTEQUILLA, Equipo.Tipo.MANTEQUERA),
             ("sec", EtapaProceso.Tipo.SECADO, Equipo.Tipo.TORRE),
         ]
         ejecuciones = []

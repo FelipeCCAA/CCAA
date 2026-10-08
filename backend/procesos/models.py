@@ -555,6 +555,9 @@ class CorridaMantequilla(models.Model):
         EN_PROCESO = "en_proceso", "En proceso"
         PENDIENTE_CALIDAD = "pendiente_calidad", "Pendiente de Calidad"
         CERRADA = "cerrada", "Cerrada"
+        # Una preparación cancelada (o una corrida cuya ejecución se canceló):
+        # queda como rastro en vez de borrarse, como en Descremado.
+        ANULADA = "anulada", "Anulada"
 
     ejecucion = models.OneToOneField(
         "procesos.EjecucionProceso", on_delete=models.PROTECT,
@@ -601,6 +604,7 @@ class CorridaMantequilla(models.Model):
         related_name="mantequillas_finalizadas", null=True, blank=True,
     )
     finalizada_en = models.DateTimeField(null=True, blank=True)
+    motivo_anulacion = models.CharField(max_length=250, blank=True)
 
     class Meta:
         ordering = ["-id"]
