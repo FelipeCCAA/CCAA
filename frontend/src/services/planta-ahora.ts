@@ -26,6 +26,7 @@ export function rutaDeEtapa(tipo: string): string {
 const PUESTOS_QUE_INICIAN: Record<string, string> = {
   secado: "Secado",
   descremacion: "Descremado",
+  mantequilla: "Mantequilla",
 };
 
 export function textoIniciarEnPuesto(etapaTipo: string, estado: string): string | null {

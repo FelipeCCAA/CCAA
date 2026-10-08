@@ -168,6 +168,12 @@ export interface CorridaMantequilla {
   iniciada_en: string | null;
   finalizada_por_nombre: string | null;
   finalizada_en: string | null;
+  /* El historial distingue «Preparada» de «Borrador» con el estado de la ejecución. */
+  ejecucion_estado: string;
+  /* La columna «Situación», con la tabla que usa su filtro (`SITUACIONES_MANTEQUILLA`). */
+  situacion: string;
+  situacion_etiqueta: string;
+  motivo_anulacion: string;
 }
 
 export interface ProcesoMaestro {
