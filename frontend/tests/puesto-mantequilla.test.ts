@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  accionDeMantequera, corridaCancelable, estadoDelBalance, moduloDeResolver,
+  MENSAJE_CREMA_SIN_SALDO, accionDeMantequera, corridaCancelable, cremaPedida, estadoDelBalance,
+  moduloDeResolver,
 } from "../src/services/puesto-mantequilla.ts";
 
 const base = {
@@ -106,4 +107,31 @@ test("una revisión en camino o fallida no habla de lo que se va a cerrar", () =
 test("los motivos de la orden se resuelven en Planificación", () => {
   assert.equal(moduloDeResolver("/planificacion"), "planificacion");
   assert.equal(moduloDeResolver("/calidad"), "calidad");
+});
+
+const listas = {
+  cremas: [{ id: 5, codigo: "CR-5", producto: "Crema", disponible_kg: "400.000", tk: "TK-1" }],
+  cremas_pendientes_calidad: [
+    { id: 6, codigo: "CR-6", producto: "Crema", estado_calidad: "pendiente" as const, etapa_origen: "Descremación" },
+  ],
+};
+
+test("sin ?crema= no hay crema pedida", () => {
+  assert.equal(cremaPedida(listas, undefined), null);
+});
+
+test("una crema pedida con saldo se ofrece con su código", () => {
+  assert.deepEqual(cremaPedida(listas, 5), { tipo: "ofrecida", codigo: "CR-5" });
+});
+
+test("una crema pedida que espera a Calidad trae su explicación", () => {
+  assert.deepEqual(cremaPedida(listas, 6), { tipo: "pendiente", codigo: "CR-6", crema: listas.cremas_pendientes_calidad[0] });
+});
+
+test("una crema pedida que no está en ninguna lista no tiene saldo para mantequilla", () => {
+  assert.deepEqual(cremaPedida(listas, 7), { tipo: "sin_saldo", codigo: null });
+  assert.equal(
+    MENSAJE_CREMA_SIN_SALDO,
+    "La crema pedida no tiene saldo disponible para mantequilla: la tomaron otras corridas preparadas o en curso.",
+  );
 });

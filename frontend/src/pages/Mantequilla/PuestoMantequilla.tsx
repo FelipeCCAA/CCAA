@@ -12,7 +12,7 @@ import {
 } from "../../services/mantequilla.service";
 import { puedeOperarMantequilla } from "../../services/permisos-mantequilla";
 import type { CorridaMantequilla } from "../../services/procesos.service";
-import { corridaCancelable } from "../../services/puesto-mantequilla";
+import { MENSAJE_CREMA_SIN_SALDO, corridaCancelable, cremaPedida } from "../../services/puesto-mantequilla";
 import { obtenerSesion } from "../../services/sesion";
 import TablaConsulta from "../Inventario/TablaConsulta";
 import CierreMantequilla from "./CierreMantequilla";
@@ -36,8 +36,8 @@ const advertenciaDe = (lote: string | null) =>
 export default function PuestoMantequilla() {
   const puesto = useCarga(obtenerPuestoMantequilla);
   const [parametros, setParametros] = useSearchParams();
-  const cremaPedida = Number(parametros.get("crema"));
-  const cremaInicial = Number.isInteger(cremaPedida) && cremaPedida > 0 ? cremaPedida : undefined;
+  const cremaDelEnlace = Number(parametros.get("crema"));
+  const cremaInicial = Number.isInteger(cremaDelEnlace) && cremaDelEnlace > 0 ? cremaDelEnlace : undefined;
   const [preparando, setPreparando] = useState<{ equipoId?: number } | null>(null);
   const [iniciando, setIniciando] = useState<number | null>(null);
   const [cerrando, setCerrando] = useState<CorridaMantequilla | null>(null);
@@ -50,6 +50,8 @@ export default function PuestoMantequilla() {
   // «Preparar en Mantequilla» llega con `?crema=`: el formulario se abre solo, con esa crema.
   const formulario: { equipoId?: number } | null =
     preparando ?? (cremaInicial !== undefined && puedeOperar ? {} : null);
+  // Quien solo consulta (Calidad) no abre el formulario: se le dice qué crema pidió el enlace.
+  const pedidaEnConsulta = !puedeOperar && puesto.datos ? cremaPedida(puesto.datos, cremaInicial) : null;
 
   const cerrarFormulario = () => {
     setPreparando(null);
@@ -127,6 +129,13 @@ export default function PuestoMantequilla() {
             <h1 className="mt-1 text-3xl font-bold text-slate-900">Mantequilla</h1>
             <p className="mt-2 max-w-2xl text-slate-600">Prepara una corrida con crema liberada; luego inicia y registra el balance desde la tarjeta de la mantequera.</p>
             {!puedeOperar && <p className="mt-2 text-sm font-medium text-slate-600">Vista de consulta: las acciones las registra Condensación.</p>}
+            {pedidaEnConsulta && (
+              <p className="mt-2 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                {pedidaEnConsulta.codigo
+                  ? `Llegaste por la crema ${pedidaEnConsulta.codigo}: la prepara Condensación en este puesto.`
+                  : MENSAJE_CREMA_SIN_SALDO}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void puesto.recargar()} aria-label="Actualizar" title="Actualizar" className="rounded-xl border border-slate-300 bg-white p-3 text-slate-600 hover:border-amber-400 hover:text-amber-700">

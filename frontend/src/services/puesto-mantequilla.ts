@@ -1,5 +1,7 @@
 import { cantidad } from "./formato.ts";
-import type { MantequeraPuesto, RevisionCierreMantequilla } from "./mantequilla.service.ts";
+import type {
+  CremaPendienteCalidad, MantequeraPuesto, PuestoMantequilla, RevisionCierreMantequilla,
+} from "./mantequilla.service.ts";
 
 /* Un solo mapa de «dónde se resuelve» para los puestos. */
 export { moduloDeResolver } from "./puesto-secado.ts";
@@ -93,4 +95,30 @@ export function estadoDelBalance(
     errores,
     puedeCerrar: false,
   };
+}
+
+export const MENSAJE_CREMA_SIN_SALDO =
+  "La crema pedida no tiene saldo disponible para mantequilla: la tomaron otras corridas preparadas o en curso.";
+
+export type CremaPedida =
+  | { tipo: "ofrecida"; codigo: string }
+  | { tipo: "pendiente"; codigo: string; crema: CremaPendienteCalidad }
+  | { tipo: "sin_saldo"; codigo: null };
+
+/*
+  Qué pasa con la crema que llegó por `?crema=` («Preparar en Mantequilla»).
+  Solo lee las dos listas del puesto: `cremas` es lo que «Preparar» acepta y
+  `cremas_pendientes_calidad` explica las que esperan a Calidad. Una crema
+  que no está en ninguna no tiene saldo para mantequilla —la tomaron otras
+  corridas—, y decirlo evita un formulario con la crema en blanco y sin razón.
+*/
+export function cremaPedida(
+  puesto: Pick<PuestoMantequilla, "cremas" | "cremas_pendientes_calidad">, cremaId: number | undefined,
+): CremaPedida | null {
+  if (cremaId === undefined) return null;
+  const ofrecida = puesto.cremas.find((item) => item.id === cremaId);
+  if (ofrecida) return { tipo: "ofrecida", codigo: ofrecida.codigo };
+  const pendiente = puesto.cremas_pendientes_calidad.find((item) => item.id === cremaId);
+  if (pendiente) return { tipo: "pendiente", codigo: pendiente.codigo, crema: pendiente };
+  return { tipo: "sin_saldo", codigo: null };
 }

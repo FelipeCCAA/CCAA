@@ -8,6 +8,7 @@ import { mensajeErrorProceso } from "../../services/errores-proceso";
 import { fechaLocalISO } from "../../services/fechas";
 import { cantidad } from "../../services/formato";
 import { prepararMantequilla, type PuestoMantequilla } from "../../services/mantequilla.service";
+import { MENSAJE_CREMA_SIN_SALDO, cremaPedida } from "../../services/puesto-mantequilla";
 import { sugerirCodigoLote } from "../../services/produccion.service";
 import { obtenerSesion } from "../../services/sesion";
 
@@ -35,9 +36,8 @@ export default function PrepararMantequilla({ puesto, cremaInicial, equipoInicia
   alPreparar: (codigo: string) => void;
 }) {
   const libres = puesto.mantequeras.filter((item) => item.estado === "disponible" && item.motivos_para_tomar.length === 0);
-  const [crema, setCrema] = useState(
-    cremaInicial !== undefined && puesto.cremas.some((item) => item.id === cremaInicial) ? String(cremaInicial) : "",
-  );
+  const pedida = cremaPedida(puesto, cremaInicial);
+  const [crema, setCrema] = useState(pedida?.tipo === "ofrecida" ? String(cremaInicial) : "");
   const [kg, setKg] = useState("");
   const [orden, setOrden] = useState(puesto.ordenes.length === 1 ? String(puesto.ordenes[0].id) : "");
   const [equipo, setEquipo] = useState(
@@ -73,9 +73,7 @@ export default function PrepararMantequilla({ puesto, cremaInicial, equipoInicia
   }, [equipo]);
 
   const elegida = puesto.cremas.find((item) => item.id === Number(crema));
-  const pedidaPendiente = cremaInicial !== undefined
-    ? puesto.cremas_pendientes_calidad.find((item) => item.id === cremaInicial)
-    : undefined;
+  const pedidaPendiente = pedida?.tipo === "pendiente" ? pedida.crema : undefined;
   const ordenElegida = puesto.ordenes.find((item) => item.id === Number(orden));
   const maquina = libres.find((item) => item.equipo_id === Number(equipo));
   const sueroElegido = puesto.sueros.find((item) => item.id === Number(suero));
@@ -129,6 +127,10 @@ export default function PrepararMantequilla({ puesto, cremaInicial, equipoInicia
           </p>
         )}
 
+        {pedida?.tipo === "sin_saldo" && (
+          <p role="alert" className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">{MENSAJE_CREMA_SIN_SALDO}</p>
+        )}
+
         <fieldset className="grid gap-4 sm:grid-cols-2" disabled={revisando}>
           <Campo texto="Crema">
             <select required value={crema} onChange={(e) => setCrema(e.target.value)} className={control}>
@@ -174,7 +176,7 @@ export default function PrepararMantequilla({ puesto, cremaInicial, equipoInicia
             {puedeAccederModulo(usuario, "planificacion") && <>{" "}<Link to="/planificacion" className="font-semibold underline">Ir a Planificación</Link></>}
           </p>
         )}
-        {puesto.cremas.length === 0 && !pedidaPendiente && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No hay crema liberada con saldo disponible.</p>}
+        {puesto.cremas.length === 0 && !pedidaPendiente && pedida?.tipo !== "sin_saldo" && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No hay crema liberada con saldo disponible.</p>}
         {error && !revisando && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>}
 
         {revisando && elegida && ordenElegida && maquina ? (
