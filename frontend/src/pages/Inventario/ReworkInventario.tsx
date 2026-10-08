@@ -7,6 +7,7 @@ import {
 } from "../../services/inventario.service";
 import { esAdministradorGlobal } from "../../services/access-control";
 import { obtenerSesion } from "../../services/sesion";
+import { invalidarCacheLecturas } from "../../services/api";
 
 type Bandeja = "aprobado" | "bloqueado" | "consumido" | "destruido";
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 3 });
@@ -104,7 +105,7 @@ export default function ReworkInventario() {
   return <section className="space-y-4">
     <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5">
       <div><h2 className="text-lg font-bold text-slate-900">Existencia física de rework</h2><p className="mt-1 text-sm text-slate-600">Calidad decide; Bodega confirma la zona liberada; Producción consume el saldo de esta unidad.</p></div>
-      <button type="button" onClick={() => void cargar()} disabled={cargando} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />Actualizar</button>
+      <button type="button" onClick={() => { invalidarCacheLecturas(); void cargar(); }} disabled={cargando} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />Actualizar</button>
     </header>
     {error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
     {mensaje && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{mensaje}</p>}

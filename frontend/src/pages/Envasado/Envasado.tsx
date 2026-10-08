@@ -7,6 +7,7 @@ import {
 } from "../../services/produccion.service";
 import { puedeEscribir } from "../../services/sesion";
 import FormularioEnvase from "../Produccion/FormularioEnvase";
+import { invalidarCacheLecturas } from "../../services/api";
 
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
@@ -44,7 +45,7 @@ export default function Envasado() {
   return <main className="px-6 py-8 lg:px-10"><div className="mx-auto max-w-7xl space-y-7">
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div><p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Área de Envase</p><h1 className="mt-2 text-3xl font-bold text-slate-900">Envasado y unidades logísticas</h1><p className="mt-2 max-w-3xl text-slate-600">Recibe materiales liberados y crea pallets o Big Bags físicos en cuarentena para Calidad final.</p></div>
-      <button type="button" onClick={() => void cargar()} disabled={cargando} className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />Actualizar</button>
+      <button type="button" onClick={() => { invalidarCacheLecturas(); void cargar(); }} disabled={cargando} className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />Actualizar</button>
     </header>
     <section className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-4">
       <div><b>1. Calidad intermedia</b><br />Libera el material a granel.</div><div><b>2. Envasado</b><br />Envase selecciona lote y máquina.</div><div><b>3. Unidad logística</b><br />Pallet o Big Bag según maestro.</div><div><b>4. Calidad final</b><br />Libera antes de ingresar a Bodega.</div>
