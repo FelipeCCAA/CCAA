@@ -116,21 +116,35 @@ test("la ubicación distingue subprocesos que comparten una URL", () => {
   const usuario = usuarioDeArea("condensacion", "Condensación", "produccion");
 
   assert.ok(esRutaOperacionalActual(
-    "/procesos?seccion=descremacion",
-    "/procesos",
-    "?seccion=descremacion",
-  ));
-  assert.ok(!esRutaOperacionalActual(
     "/procesos?seccion=mantequilla",
     "/procesos",
-    "?seccion=descremacion",
+    "?seccion=mantequilla",
+  ));
+  assert.ok(!esRutaOperacionalActual(
+    "/procesos?seccion=trazabilidad",
+    "/procesos",
+    "?seccion=mantequilla",
   ));
   assert.equal(
-    contextoOperacionalPara(
-      usuario,
-      "/procesos",
-      "?seccion=descremacion",
-    ).actual.etiqueta,
+    contextoOperacionalPara(usuario, "/procesos", "?seccion=mantequilla").actual.etiqueta,
+    "Mantequilla",
+  );
+});
+
+test("Descremado tiene su propio puesto; el enlace viejo lo sigue marcando", () => {
+  const usuario = usuarioDeArea("condensacion", "Condensación", "produccion");
+  const descremado = navegacionPara(usuario).grupos
+    .flatMap((grupo) => grupo.enlaces)
+    .find((enlace) => enlace.etiqueta === "Descremado");
+
+  assert.equal(descremado?.ruta, "/produccion/descremado");
+  assert.equal(descremado?.modulo, "produccion");
+  assert.ok(descremado && esEnlaceOperacionalActual(descremado, "/produccion/descremado"));
+  // `/procesos?seccion=descremacion` redirige al puesto; mientras tanto, el
+  // menú marca la misma entrada.
+  assert.ok(descremado && esEnlaceOperacionalActual(descremado, "/procesos", "?seccion=descremacion"));
+  assert.equal(
+    contextoOperacionalPara(usuario, "/produccion/descremado").actual.etiqueta,
     "Descremado",
   );
 });

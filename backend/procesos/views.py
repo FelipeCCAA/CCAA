@@ -36,6 +36,7 @@ from .serializers import (
     CorridaSecadoSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
+    RevisarCierreDescremacionSerializer,
     RutaProductoSerializer, SugerirDescremacionSerializer,
 )
 from .consultas_planta import consultar_planta_ahora, resumen_operacional_produccion
@@ -54,16 +55,19 @@ from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
     ConflictoVersionEjecucion,
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
+    condicion_situacion_descremacion,
     genealogia_lote,
+    revisar_cierre_descremacion,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
-    estado_puesto_evaporacion, estado_puesto_secado,
+    estado_puesto_descremado, estado_puesto_evaporacion, estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
-    cancelar_preparacion_evaporacion, cancelar_preparacion_secado,
+    cancelar_preparacion_descremacion, cancelar_preparacion_evaporacion,
+    cancelar_preparacion_secado,
     inicio_reservado_al_puesto,
-    MENSAJE_INICIO_SECADO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
+    MENSAJES_INICIO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
     salida_de_lote_anulado,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
     silos_con_saldo,
@@ -310,26 +314,54 @@ class CorridaCondensacionViewSet(
         return Response(self.get_serializer(corrida).data)
 
 
-class CorridaDescremacionViewSet(viewsets.ModelViewSet):
+class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
+    tenant_lookup_sucursal = "ejecucion__sucursal_id"
+    tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
     queryset = CorridaDescremacion.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "analisis_entrada",
         "producto_descremada", "producto_crema",
         "silo_entera", "silo_descremada", "estanque_crema",
         "iniciada_por", "finalizada_por",
-    )
+    ).order_by("-pk")
     serializer_class = CorridaDescremacionSerializer
     permission_classes = [OperaProcesoPorEtapa]
     tipo_etapa_operacional = EtapaProceso.Tipo.DESCREMACION
     http_method_names = ["get", "post", "head", "options"]
+    # Historial del puesto: se filtra en el servidor porque la lista está
+    # paginada (mismo contrato que Secado, Existencias y Despacho).
+    busqueda_en = (
+        "ejecucion__codigo", "silo_entera__codigo",
+        "silo_descremada__codigo", "estanque_crema__codigo",
+    )
+    filtro_estado = "estado"
+    filtro_fecha = "ejecucion__creada_en"
+
+    def condicion_estado(self, estado):
+        # `?estado=` filtra por la situación que muestra la columna, con las
+        # opciones que sirve `puesto/` (`SITUACIONES_DESCREMACION`).
+        return condicion_situacion_descremacion(estado)
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed(
+            "POST", detail="La corrida de descremado nace en el puesto de Descremado.",
+        )
 
     @staticmethod
     def _error(error, codigo=status.HTTP_400_BAD_REQUEST):
         detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
         return Response(detalle, status=codigo)
 
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Descremado: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_descremado(request.user))
+
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):
-        """Catálogos operacionales mínimos y faltantes para iniciar descremación."""
+        """Catálogos operacionales mínimos y faltantes para iniciar descremación.
+
+        Máquinas y destinos los sirve `puesto/` con la regla de destino: una sola fuente.
+        """
         from maestros.models import Equipo, Especificacion, Producto, Silo
 
         etapas = EtapaProceso.objects.filter(
@@ -372,13 +404,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
             proceso__activo=True,
             producto_id__in=ids_productos,
         ).select_related("producto", "proceso").prefetch_related("proceso__etapas")
-        ocupaciones = {
-            ejecucion.equipo_id: ejecucion.codigo
-            for ejecucion in EjecucionProceso.objects.filter(
-                estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
-                equipo_id__in=equipos.values_list("pk", flat=True),
-            ).only("equipo_id", "codigo")
-        }
         silos_descremada = silos.filter(tipo=Silo.Tipo.TK_LD)
         estanques_crema = silos.filter(tipo=Silo.Tipo.TK_CREMA)
 
@@ -405,23 +430,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
             "etapas": [
                 {"id": item.pk, "nombre": item.nombre, "tipo": item.tipo, "activa": item.activa}
                 for item in etapas
-            ],
-            "equipos": [
-                {
-                    "id": item.pk,
-                    "nombre": item.nombre,
-                    "tipo": item.tipo,
-                    "ocupado_por": ocupaciones.get(item.pk),
-                }
-                for item in equipos
-            ],
-            "silos_descremada": [
-                {"id": item.pk, "codigo": item.codigo, "tipo": item.tipo, "activo": item.activo}
-                for item in silos_descremada
-            ],
-            "estanques_crema": [
-                {"id": item.pk, "codigo": item.codigo, "tipo": item.tipo, "activo": item.activo}
-                for item in estanques_crema
             ],
             "productos_descremada": [
                 {
@@ -489,7 +497,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="crear-guiada")
     def crear_guiada(self, request):
         from maestros.models import Equipo, Producto, Silo
-        from recepcion.models import AnalisisSilo
 
         entrada = CrearDescremacionGuiadaSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -498,7 +505,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
         equipos = Equipo.objects.all()
         productos = Producto.objects.all()
         rutas = RutaProducto.objects.filter(activa=True)
-        analisis = AnalisisSilo.objects.all()
         ids_validos = (
             silos.filter(pk=datos["silo_entera"]).exists()
             and silos.filter(pk=datos["silo_descremada"]).exists()
@@ -506,7 +512,6 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
             and equipos.filter(pk=datos["equipo"]).exists()
             and productos.filter(pk=datos["producto_descremada"]).exists()
             and productos.filter(pk=datos["producto_crema"]).exists()
-            and analisis.filter(pk=datos["analisis_entrada"]).exists()
             and (
                 not datos.get("ruta_descremada")
                 or rutas.filter(pk=datos["ruta_descremada"]).exists()
@@ -523,9 +528,8 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
             )
         try:
             corrida = crear_descremacion_guiada(
-                codigo=datos["codigo"], etapa_id=datos["etapa"],
+                etapa_id=datos["etapa"],
                 equipo_id=datos["equipo"], silo_entera_id=datos["silo_entera"],
-                analisis_entrada_id=datos["analisis_entrada"],
                 litros_entrada=datos["litros_entrada"],
                 silo_descremada_id=datos["silo_descremada"],
                 estanque_crema_id=datos["estanque_crema"],
@@ -537,6 +541,7 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
                 destino_crema=datos["destino_crema"],
                 litros_descremada_plan=datos["litros_descremada_plan"],
                 litros_crema_plan=datos["litros_crema_plan"],
+                analisis_esperado_id=datos.get("analisis_esperado"),
                 usuario=request.user,
             )
         except DjangoValidationError as error:
@@ -552,6 +557,29 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as error:
             return self._error(error, status.HTTP_409_CONFLICT)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta una descremadora preparada: reservas liberadas, corrida anulada."""
+        try:
+            ejecucion = cancelar_preparacion_descremacion(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
+
+    @action(detail=True, methods=["post"], url_path="revisar-cierre")
+    def revisar_cierre(self, request, pk=None):
+        """Avisos del cierre con lo tecleado hasta ahora; no escribe nada."""
+        entrada = RevisarCierreDescremacionSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        return Response(revisar_cierre_descremacion(self.get_object(), **entrada.validated_data))
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
@@ -970,19 +998,14 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def create(self, request, *args, **kwargs):
-        tipo = EtapaProceso.objects.filter(
-            pk=request.data.get("etapa")
-        ).values_list("tipo", flat=True).first()
-        if tipo != EtapaProceso.Tipo.DESCREMACION:
-            raise MethodNotAllowed(
-                "POST",
-                detail=(
-                    "La ejecucion debe crearse desde la accion especializada "
-                    "del proceso. El alta generica solo conserva compatibilidad "
-                    "temporal con Descremacion."
-                ),
-            )
-        return super().create(request, *args, **kwargs)
+        # Una ejecución nace en la acción especializada de su proceso
+        # (crear-guiada, preparar-continuacion, abrir un lote…). La excepción
+        # de Descremación creaba una ejecución sin corrida que podía ocupar la
+        # descremadora sin pasar por el puesto.
+        raise MethodNotAllowed(
+            "POST",
+            detail="La ejecución debe crearse desde la acción especializada del proceso.",
+        )
 
     def get_queryset(self):
         queryset = EjecucionProceso.objects.select_related(
@@ -1002,14 +1025,6 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
         return filtrar_por_scope(
             queryset, self.request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-
-    def perform_create(self, serializer):
-        serializer.save(
-            responsable=self.request.user,
-            sucursal=sucursal_para_escritura(
-                self.request.user, serializer.validated_data
-            ),
         )
 
     def perform_update(self, serializer):
@@ -1158,7 +1173,7 @@ class EjecucionProcesoViewSet(RelacionesTenantMixin, viewsets.ModelViewSet):
         actual = self.get_object()
         if inicio_reservado_al_puesto(actual, request.data.get("estado", "")):
             return respuesta_error_dominio(
-                DjangoValidationError(MENSAJE_INICIO_SECADO_EN_PUESTO)
+                DjangoValidationError(MENSAJES_INICIO_EN_PUESTO[actual.etapa.tipo])
             )
         try:
             ejecucion = transicionar_ejecucion(

@@ -5,6 +5,7 @@ import {
   consumirRework, obtenerReworkDisponible,
   type EjecucionOperativa, type ReworkDisponible,
 } from "../../services/procesos.service";
+import { invalidarCacheLecturas } from "../../services/api";
 
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 });
 
@@ -74,7 +75,7 @@ export default function ReworkProduccion({
     <section className="rounded-2xl border border-amber-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex gap-3"><span className="rounded-xl bg-amber-100 p-2 text-amber-800"><Recycle className="h-5 w-5" /></span><div><h2 className="font-bold text-slate-900">Rework autorizado</h2><p className="mt-1 text-sm text-slate-600">Sólo muestra lotes aprobados por Calidad y su saldo reutilizable.</p></div></div>
-        <button type="button" onClick={() => void cargar()} disabled={cargando} className="inline-flex items-center gap-2 rounded-xl border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />{materiales === null ? "Consultar" : "Actualizar"}</button>
+        <button type="button" onClick={() => { invalidarCacheLecturas(); void cargar(); }} disabled={cargando} className="inline-flex items-center gap-2 rounded-xl border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />{materiales === null ? "Consultar" : "Actualizar"}</button>
       </div>
       {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
       {mensaje && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensaje}</p>}

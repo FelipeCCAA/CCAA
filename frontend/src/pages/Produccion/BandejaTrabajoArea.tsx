@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 
 import StatusBadge from "../../components/ui/StatusBadge";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
-import { rutaDeEtapa } from "../../services/planta-ahora";
+import { rutaDeEtapa, textoIniciarEnPuesto } from "../../services/planta-ahora";
 import {
   obtenerEjecucionesOperativas,
   transicionarEjecucion,
@@ -167,7 +167,7 @@ export default function BandejaTrabajoArea() {
 
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <Link to={destinoDe(ejecucion)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-emerald-500">
-                    {ejecucion.etapa_tipo === "secado" && ejecucion.estado === "preparacion" ? "Iniciar en el puesto de Secado" : "Abrir tarea"} <ArrowRight className="h-4 w-4" />
+                    {textoIniciarEnPuesto(ejecucion.etapa_tipo, ejecucion.estado) ?? "Abrir tarea"} <ArrowRight className="h-4 w-4" />
                   </Link>
                   {puedeIniciar && (
                     <button

@@ -53,20 +53,27 @@ def capas_fifo_silo(silo, antes_de=None):
     return dominio.saldo_por_recepcion(movimientos, atribuciones)
 
 
-def motivos_silo_no_disponible(silo, *, para, ahora=None):
-    """Adapta la compuerta pura al libro, análisis y CIP persistidos."""
-    from inventario.models import CicloCIP
-    from .models import AnalisisSilo
-
-    ahora = ahora or timezone.now()
-    analisis = (
-        AnalisisSilo.objects.filter(
-            silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
-        )
+def ultimo_analisis_confirmado(silo):
+    """
+    El análisis que describe hoy el silo: el último confirmado. Es el que lee
+    la compuerta de proceso (`motivos_silo_no_disponible`) y el que usa
+    Descremado para congelar la composición al preparar: con dos consultas,
+    el puesto prepararía con un análisis y el inicio evaluaría otro.
+    """
+    return (
+        AnalisisSilo.objects.filter(silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO)
         .select_related("analista", "visualizado_por")
         .order_by("-tomado_en", "-id")
         .first()
     )
+
+
+def motivos_silo_no_disponible(silo, *, para, ahora=None):
+    """Adapta la compuerta pura al libro, análisis y CIP persistidos."""
+    from inventario.models import CicloCIP
+
+    ahora = ahora or timezone.now()
+    analisis = ultimo_analisis_confirmado(silo)
     ciclo_cip = (
         CicloCIP.objects.filter(
             silo=silo,
@@ -507,9 +514,7 @@ def despachar_leche(
         raise ValidationError({
             "litros": f"Saldo insuficiente: {silo.codigo} tiene {disponible} L."
         })
-    analisis = AnalisisSilo.objects.filter(
-        silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
-    ).order_by("-tomado_en", "-id").first()
+    analisis = ultimo_analisis_confirmado(silo)
     if analisis.tomado_en > fecha_hora:
         raise ValidationError({
             "fecha_hora": "La liberación de Calidad debe ser anterior al despacho."

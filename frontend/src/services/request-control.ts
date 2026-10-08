@@ -74,3 +74,69 @@ export function esLecturaMiBorrador(url: string, recurso: string): boolean {
   return segmentos.at(-1) === "mi-borrador"
     && segmentos.slice(0, -1).join("/") === recurso;
 }
+
+
+/*
+  Caché de lecturas: una respuesta sirve durante `duracionMs`, se guardan como
+  máximo `maxima`, y dos lecturas simultáneas de la misma clave comparten la
+  petición. Pura —sin axios ni navegador— para poder probarla con un reloj
+  manual.
+
+  `vaciar()` existe para la recarga que pide una persona («Actualizar»): quien
+  la pulsa sabe que el dato cambió en otra sesión —la segunda firma de Calidad
+  se registra en otro navegador—, y esa escritura no vacía esta caché. Sin
+  vaciarla, el botón devolvía la respuesta guardada y no cambiaba nada durante
+  diez segundos. Vacía también las lecturas en camino: una que salió antes del
+  cambio traería el dato viejo.
+*/
+export class CacheLecturas<R> {
+  private readonly duracionMs: number;
+  private readonly maxima: number;
+  private readonly reloj: () => number;
+  private readonly guardadas = new Map<string, { vence: number; respuesta: R; url: string }>();
+  private readonly pendientes = new Map<string, Promise<R>>();
+
+  constructor(duracionMs: number, maxima: number, reloj: () => number = () => Date.now()) {
+    this.duracionMs = duracionMs;
+    this.maxima = maxima;
+    this.reloj = reloj;
+  }
+
+  leer(clave: string, url: string, pedir: () => Promise<R>): Promise<R> {
+    const guardada = this.guardadas.get(clave);
+    if (guardada && guardada.vence > this.reloj()) return Promise.resolve(guardada.respuesta);
+    const pendiente = this.pendientes.get(clave);
+    if (pendiente) return pendiente;
+
+    const solicitud: Promise<R> = pedir()
+      .then((respuesta) => {
+        // Si alguien vació la caché mientras esta iba en camino, su respuesta
+        // es anterior al cambio: se entrega a quien la pidió, pero no se guarda.
+        if (this.pendientes.get(clave) === solicitud) {
+          if (this.guardadas.size >= this.maxima) {
+            const primera = this.guardadas.keys().next().value;
+            if (primera !== undefined) this.guardadas.delete(primera);
+          }
+          this.guardadas.set(clave, { vence: this.reloj() + this.duracionMs, respuesta, url });
+        }
+        return respuesta;
+      })
+      .finally(() => {
+        if (this.pendientes.get(clave) === solicitud) this.pendientes.delete(clave);
+      });
+    this.pendientes.set(clave, solicitud);
+    return solicitud;
+  }
+
+  /* Borra las respuestas guardadas cuya URL cumple el criterio. */
+  quitar(criterio: (url: string) => boolean): void {
+    for (const [clave, guardada] of this.guardadas) {
+      if (criterio(guardada.url)) this.guardadas.delete(clave);
+    }
+  }
+
+  vaciar(): void {
+    this.guardadas.clear();
+    this.pendientes.clear();
+  }
+}

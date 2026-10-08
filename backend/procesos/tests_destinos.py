@@ -18,7 +18,7 @@ class RutaDeEtapaTests(SimpleTestCase):
         esperado = {
             "recepcion": "/leche",
             "estandarizacion": "/estandarizacion",
-            "descremacion": "/procesos?seccion=descremacion",
+            "descremacion": "/produccion/descremado",
             "evaporacion": "/produccion/evaporacion",
             "condensacion": "/produccion/evaporacion",
             "secado": "/produccion/secado",

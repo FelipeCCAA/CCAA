@@ -43,13 +43,57 @@ def calcular_balance_descremacion(
     )
 
 
+# Límites físicos de la descremación (docs/REGLAS_DE_PLANTA.md §2). Avisan,
+# no bloquean: endurecerlos —que la grasa alta impida cerrar o retenga el
+# TK— es decisión de Calidad y se hace aquí y en quien llama a
+# `avisos_limites_descremacion`, no en una segunda regla.
+LIMITE_GRASA_DESCREMADA = Decimal("0.1")  # %
+RANGO_GRASA_CREMA_DESPACHO = (Decimal("42"), Decimal("43"))  # %
+
+
+def _porcentaje(valor):
+    """`Decimal("0.150")` → «0,15»: como se lee en planta."""
+    return f"{valor.normalize():f}".replace(".", ",")
+
+
+def avisos_limites_descremacion(*, grasa_descremada, grasa_crema, crema_a_despacho):
+    """
+    Los límites físicos que no cumple el cierre, como `(codigo, mensaje)`.
+
+    Un valor ausente no avisa: todavía no se tecleó. El límite de la crema es
+    el de «crema para despacho»: solo aplica si va a despacho directo; para
+    Mantequilla o Estandarización el documento no da límite y no se inventa.
+    Las RPM no están: no hay sensor ni campo, y en el documento son una
+    alarma del arranque, no una medición del cierre.
+    """
+    avisos = []
+    if grasa_descremada is not None:
+        grasa = Decimal(str(grasa_descremada))
+        if grasa > LIMITE_GRASA_DESCREMADA:
+            avisos.append((
+                "grasa_descremada_alta",
+                f"Grasa de la descremada {_porcentaje(grasa)} % sobre el límite de "
+                f"{_porcentaje(LIMITE_GRASA_DESCREMADA)} %.",
+            ))
+    if grasa_crema is not None and crema_a_despacho:
+        grasa = Decimal(str(grasa_crema))
+        minimo, maximo = RANGO_GRASA_CREMA_DESPACHO
+        if not minimo <= grasa <= maximo:
+            avisos.append((
+                "grasa_crema_fuera_de_rango",
+                f"Grasa de la crema para despacho {_porcentaje(grasa)} % fuera del rango "
+                f"{_porcentaje(minimo)}–{_porcentaje(maximo)} %.",
+            ))
+    return avisos
+
+
 # Pantalla donde se trabaja cada etapa, para los enlaces de los avisos.
 # Misma tabla que `rutaDeEtapa` en `frontend/src/services/planta-ahora.ts`:
 # si divergen, un aviso lleva a una sección que no existe.
 RUTAS_POR_ETAPA = {
     "recepcion": "/leche",
     "estandarizacion": "/estandarizacion",
-    "descremacion": "/procesos?seccion=descremacion",
+    "descremacion": "/produccion/descremado",
     "evaporacion": "/produccion/evaporacion",
     "condensacion": "/produccion/evaporacion",
     "secado": "/produccion/secado",
@@ -63,3 +107,32 @@ RUTAS_POR_ETAPA = {
 def ruta_de_etapa(tipo: str) -> str:
     """La pantalla donde se trabaja una etapa; el panel de producción si no se conoce."""
     return RUTAS_POR_ETAPA.get(tipo, "/produccion")
+
+
+# Cómo se nombra una corrida de descremado en el puesto y en su historial:
+# `(valor, etiqueta, estado de la corrida, estados de la ejecución o None)`,
+# y gana la primera fila que coincide. Una sola tabla para la columna
+# «Situación», el catálogo del filtro y el filtro mismo
+# (`procesos.servicios.condicion_situacion_descremacion`): con dos, el
+# filtro ofrecía «En curso» y la columna decía «En la descremadora», y
+# «Cerrada» devolvía filas que la columna llamaba «Esperando Calidad».
+SITUACIONES_DESCREMACION = (
+    ("preparada", "Preparada", "borrador", frozenset({"borrador", "preparacion"})),
+    ("en_curso", "En la descremadora", "en_curso", None),
+    ("esperando_calidad", "Esperando Calidad", "cerrada", frozenset({"pendiente_control"})),
+    ("terminada", "Terminada", "cerrada", None),
+    ("anulada", "Anulada", "anulada", None),
+    # Una corrida en borrador cuya ejecución ya no está en preparación: las
+    # heredadas del modal anterior y los huérfanos.
+    ("borrador", "Borrador", "borrador", None),
+)
+
+
+def situacion_descremacion(estado: str, estado_ejecucion: str) -> tuple[str, str]:
+    """`(valor, etiqueta)` de la situación de una corrida (`SITUACIONES_DESCREMACION`)."""
+    for valor, etiqueta, estado_corrida, estados_ejecucion in SITUACIONES_DESCREMACION:
+        if estado == estado_corrida and (
+            estados_ejecucion is None or estado_ejecucion in estados_ejecucion
+        ):
+            return valor, etiqueta
+    return estado, estado

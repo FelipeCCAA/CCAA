@@ -218,6 +218,7 @@ export interface CorridaDescremacion {
   id: number;
   ejecucion: number;
   ejecucion_codigo: string;
+  ejecucion_estado: string;
   equipo_nombre: string | null;
   silo_entera: number;
   silo_entera_codigo: string;
@@ -244,6 +245,9 @@ export interface CorridaDescremacion {
   controles: Record<string, unknown>;
   estado: string;
   estado_etiqueta: string;
+  /* La columna «Situación»: la nombra el servidor con la misma tabla que su filtro. */
+  situacion: string;
+  situacion_etiqueta: string;
   iniciada_por_nombre: string | null;
   iniciada_en: string | null;
   finalizada_por_nombre: string | null;
@@ -354,9 +358,6 @@ export interface OpcionesAltaMantequilla {
 
 export interface OpcionesAltaDescremacion {
   etapas: EtapaProceso[];
-  equipos: { id: number; nombre: string; tipo: string; ocupado_por: string | null }[];
-  silos_descremada: { id: number; codigo: string; tipo: string; activo: boolean }[];
-  estanques_crema: { id: number; codigo: string; tipo: string; activo: boolean }[];
   productos_descremada: {
     id: number;
     nombre: string;
@@ -593,18 +594,6 @@ export async function obtenerEtapas(): Promise<Pagina<EtapaProceso>> {
   return data;
 }
 
-export async function crearEjecucion(datos: {
-  codigo: string; etapa: number; equipo: number;
-}): Promise<EjecucionProceso> {
-  const { data } = await api.post<EjecucionProceso>("procesos/ejecuciones/", datos);
-  return data;
-}
-
-export async function obtenerDescremaciones(): Promise<Pagina<CorridaDescremacion>> {
-  const { data } = await api.get<Pagina<CorridaDescremacion>>("procesos/descremaciones/");
-  return data;
-}
-
 export async function obtenerOpcionesAltaDescremacion(): Promise<OpcionesAltaDescremacion> {
   const { data } = await api.get<OpcionesAltaDescremacion>(
     "procesos/descremaciones/opciones-alta/",
@@ -695,34 +684,6 @@ export async function definirDestinoSalida(
   });
 }
 
-export async function crearDescremacion(datos: {
-  ejecucion: number; silo_entera: number; analisis_entrada: number;
-  litros_entrada: number; grasa_entrada: number; sng_entrada: number;
-  silo_descremada: number; estanque_crema: number;
-  producto_descremada: number; producto_crema: number;
-}): Promise<CorridaDescremacion> {
-  const { data } = await api.post<CorridaDescremacion>("procesos/descremaciones/", datos);
-  return data;
-}
-
-export async function crearDescremacionGuiada(datos: {
-  codigo: string; etapa: number; equipo: number; silo_entera: number;
-  analisis_entrada: number; litros_entrada: number;
-  silo_descremada: number; estanque_crema: number;
-  producto_descremada: number; producto_crema: number;
-  litros_descremada_plan: number; litros_crema_plan: number;
-  plan_confirmado: true;
-  ruta_descremada: number; ruta_crema: number;
-  destino_descremada: "estandarizacion";
-  destino_crema: "siguiente_proceso" | "estandarizacion" | "despacho_directo";
-}): Promise<CorridaDescremacion> {
-  const { data } = await api.post<CorridaDescremacion>(
-    "procesos/descremaciones/crear-guiada/",
-    datos,
-  );
-  return data;
-}
-
 export interface SugerenciaDescremacion {
   litros_descremada_sugeridos: string;
   litros_crema_sugeridos: string;
@@ -742,11 +703,6 @@ export async function sugerirBalanceDescremacion(datos: {
   const { data } = await api.post<SugerenciaDescremacion>(
     "procesos/descremaciones/sugerir-balance/", datos,
   );
-  return data;
-}
-
-export async function iniciarDescremacion(id: number): Promise<CorridaDescremacion> {
-  const { data } = await api.post<CorridaDescremacion>(`procesos/descremaciones/${id}/iniciar/`);
   return data;
 }
 

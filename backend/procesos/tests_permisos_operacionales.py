@@ -85,13 +85,25 @@ class PermisosOperacionalesPorEtapaTests(TestCase):
             format="json",
         )
 
-    def test_alta_generica_solo_conserva_descremacion_y_su_area(self):
+    def test_alta_generica_de_ejecuciones_esta_cerrada_para_todas_las_etapas(self):
+        # Una ejecución nace en la acción especializada de su proceso. El alta
+        # genérica de Descremación creaba una ejecución sin corrida que podía
+        # ocupar la descremadora sin pasar por el puesto.
         self.assertEqual(
             self._crear_ejecucion(
                 self.secado, "EJ-SEC-PER", self.etapa_secado, self.torre
             ).status_code,
             405,
         )
+        self.assertEqual(
+            self._crear_ejecucion(
+                self.condensacion, "EJ-DES-PER", self.etapa_descremacion,
+                self.descremadora,
+            ).status_code,
+            405,
+        )
+        # Sin el permiso de la etapa sigue respondiendo 403: el permiso se
+        # evalúa antes que la acción.
         self.assertEqual(
             self._crear_ejecucion(
                 self.secado, "EJ-DES-NO", self.etapa_descremacion,
@@ -101,17 +113,11 @@ class PermisosOperacionalesPorEtapaTests(TestCase):
         )
         self.assertEqual(
             self._crear_ejecucion(
-                self.condensacion, "EJ-DES-PER", self.etapa_descremacion,
-                self.descremadora,
-            ).status_code,
-            201,
-        )
-        self.assertEqual(
-            self._crear_ejecucion(
                 self.condensacion, "EJ-SEC-NO", self.etapa_secado, self.torre
             ).status_code,
             403,
         )
+        self.assertFalse(EjecucionProceso.objects.filter(codigo="EJ-DES-PER").exists())
 
     def test_calidad_puede_consultar_pero_no_operar(self):
         cliente = self._cliente(self.calidad)

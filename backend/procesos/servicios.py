@@ -15,6 +15,7 @@ from auditoria.registro import (
     actualizar_queryset_con_auditoria,
     crear_en_lote_con_auditoria,
 )
+from maestros.models import Silo
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
@@ -92,6 +93,17 @@ AVISO_INSPECCION_PREOPERATIVA = (
     f"Falta la inspección pre-operativa de hoy ({CODIGO_INSPECCION_PREOPERATIVA})."
 )
 MENSAJE_INICIO_SECADO_EN_PUESTO = "Las corridas de secado se inician desde el puesto de Secado."
+MENSAJE_INICIO_DESCREMADO_EN_PUESTO = (
+    "Las corridas de descremado se inician desde el puesto de Descremado."
+)
+# Etapas cuyo inicio (`preparacion → ejecucion`) es de su puesto: el puesto
+# aplica la única función de motivos de esa etapa. La bandeja genérica no lo
+# ofrece y `transicionar` lo rechaza con este mensaje. Espejo en el frontend:
+# `textoIniciarEnPuesto` (`services/planta-ahora.ts`).
+MENSAJES_INICIO_EN_PUESTO = {
+    EtapaProceso.Tipo.SECADO: MENSAJE_INICIO_SECADO_EN_PUESTO,
+    EtapaProceso.Tipo.DESCREMACION: MENSAJE_INICIO_DESCREMADO_EN_PUESTO,
+}
 
 
 class ConflictoVersionEjecucion(Exception):
@@ -411,17 +423,27 @@ def crear_salida_proceso(*, datos):
 
 @transaction.atomic
 def crear_descremacion_guiada(
-    *, codigo, etapa_id, equipo_id, silo_entera_id, analisis_entrada_id,
+    *, etapa_id, equipo_id, silo_entera_id,
     litros_entrada, silo_descremada_id, estanque_crema_id,
     producto_descremada_id, producto_crema_id, usuario,
     ruta_descremada_id=None, ruta_crema_id=None,
     destino_descremada=CorridaDescremacion.DestinoRama.PENDIENTE,
     destino_crema=CorridaDescremacion.DestinoRama.PENDIENTE,
     litros_descremada_plan=None, litros_crema_plan=None,
+    analisis_esperado_id=None,
 ):
-    """Crea ejecucion y corrida de descremacion como una sola operacion."""
+    """
+    Prepara una descremación: corrida, reservas de silo y descremadora tomada,
+    en una sola transacción —todo o nada—. El análisis y el código los pone el
+    servidor.
+
+    `analisis_esperado_id` es el análisis con que el formulario pidió la
+    sugerencia. Si ya no es el último confirmado, el reparto que el operador
+    confirmó se calculó para otra leche: se rechaza sin escribir nada.
+    """
+    from inventario.servicios import motivo_equipo_no_habilitado
     from maestros.models import Equipo, Producto, Silo
-    from recepcion.models import AnalisisSilo
+    from recepcion.servicios import ultimo_analisis_confirmado
 
     try:
         etapa = EtapaProceso.objects.select_related("proceso").get(
@@ -430,15 +452,21 @@ def crear_descremacion_guiada(
     except EtapaProceso.DoesNotExist as error:
         raise ValidationError({"etapa": "Selecciona una etapa activa de descremacion."}) from error
 
-    try:
-        origen = Silo.objects.select_for_update().get(pk=silo_entera_id)
-    except Silo.DoesNotExist as error:
-        raise ValidationError({"silo_entera": "El silo de origen no existe."}) from error
-    destinos = {
+    # Los tres silos en una sola consulta y en orden de clave, como preparar,
+    # iniciar y cerrar: dos transacciones que los tomen en otro orden se
+    # bloquean entre sí.
+    silos = {
         silo.pk: silo
         for silo in Silo.objects.select_for_update().filter(
-            pk__in=[silo_descremada_id, estanque_crema_id]
-        )
+            pk__in=[silo_entera_id, silo_descremada_id, estanque_crema_id]
+        ).order_by("pk")
+    }
+    origen = silos.get(silo_entera_id)
+    if origen is None:
+        raise ValidationError({"silo_entera": "El silo de origen no existe."})
+    destinos = {
+        pk: silos[pk] for pk in (silo_descremada_id, estanque_crema_id)
+        if pk in silos and pk != silo_entera_id
     }
     if len(destinos) != 2:
         raise ValidationError("Selecciona los dos estanques de destino.")
@@ -448,15 +476,21 @@ def crear_descremacion_guiada(
         raise ValidationError({"equipo": "El equipo no esta activo en la planta de origen."}) from error
     if equipo.tipo not in tipos_equipo_para_etapa(etapa.tipo):
         raise ValidationError({"equipo": "El equipo no es compatible con descremacion."})
+    impedimento = motivo_equipo_no_habilitado(equipo)
+    if impedimento:
+        raise ValidationError({"equipo": impedimento})
 
-    try:
-        analisis = AnalisisSilo.objects.get(pk=analisis_entrada_id, silo=origen)
-    except AnalisisSilo.DoesNotExist as error:
-        raise ValidationError({"analisis_entrada": "El analisis no pertenece al silo de origen."}) from error
-    if analisis.estado != AnalisisSilo.Estado.CONFIRMADO or not analisis.vigente:
-        raise ValidationError({"analisis_entrada": "El analisis debe estar confirmado y vigente."})
-    if analisis.grasa is None or analisis.sng is None:
-        raise ValidationError({"analisis_entrada": "El analisis requiere grasa y SNG."})
+    # El análisis lo elige el servidor: el último confirmado del silo, el
+    # mismo que lee `motivos_silo_no_disponible` al iniciar. Un análisis
+    # elegido en el cliente podía ser uno viejo, y el inicio evaluaba otro.
+    analisis = ultimo_analisis_confirmado(origen)
+    motivos = motivos_para_preparar_desde_silo(origen, analisis)
+    if motivos:
+        raise ValidationError({"silo_entera": motivos[0]})
+    if analisis_esperado_id is not None and analisis.pk != analisis_esperado_id:
+        raise ValidationError({
+            "analisis_esperado": "El análisis del silo cambió: recalcula la sugerencia."
+        })
 
     productos = {
         producto.pk: producto
@@ -494,13 +528,15 @@ def crear_descremacion_guiada(
         producto_crema=productos[producto_crema_id],
     )
     ejecucion = crear_ejecucion_proceso(datos={
-        "codigo": codigo,
+        # Provisional: el código usa el id de la corrida, que todavía no
+        # existe. Todo ocurre en esta transacción: nadie ve este valor.
+        "codigo": f"EJ-DES-TMP-{uuid.uuid4().hex}",
         "etapa": etapa,
         "sucursal": origen.sucursal,
         "equipo": equipo,
         "responsable": usuario,
     })
-    return crear_corrida_descremacion(datos={
+    corrida = crear_corrida_descremacion(datos={
         "ejecucion": ejecucion,
         "silo_entera": origen,
         "analisis_entrada": analisis,
@@ -521,6 +557,11 @@ def crear_descremacion_guiada(
         "plan_confirmado_por": usuario,
         "plan_confirmado_en": timezone.now(),
     })
+    # Como `EJ-PROD-{lote}` y los lotes `INT-DES-{corrida}-LD/CR`: el código
+    # lo pone el servidor, y la tarjeta del puesto se reconoce por él.
+    ejecucion.codigo = f"EJ-DES-{corrida.pk}"
+    ejecucion.save(update_fields=["codigo"])
+    return preparar_descremacion(corrida_id=corrida.pk, usuario=usuario)
 
 
 def sugerir_plan_descremacion(
@@ -1103,8 +1144,9 @@ def bloquear_para_cancelar(ejecucion_id):
     """
     Los candados de una cancelación, en el orden de los puestos.
 
-    Mismo orden que `iniciar_secado`/`cancelar_preparacion_secado` e
-    `iniciar_condensacion`/`cancelar_preparacion_evaporacion`: la corrida
+    Mismo orden que `iniciar_secado`/`cancelar_preparacion_secado`,
+    `iniciar_condensacion`/`cancelar_preparacion_evaporacion` e
+    `iniciar_descremacion`/`cancelar_preparacion_descremacion`: la corrida
     especializada primero, la ejecución después. Cancelar una preparación la
     borra o la cancela (`_deshacer_preparacion_secado`,
     `_deshacer_preparacion_evaporacion`); si este camino tomara la ejecución
@@ -1113,7 +1155,7 @@ def bloquear_para_cancelar(ejecucion_id):
     no bloquea nada; para quien ya la tiene, retomarla en la misma
     transacción no espera. Solo vale dentro de una transacción.
     """
-    for modelo in (CorridaSecado, CorridaCondensacion):
+    for modelo in (CorridaSecado, CorridaCondensacion, CorridaDescremacion):
         list(
             modelo.objects.select_for_update(of=("self",))
             .filter(ejecucion_id=ejecucion_id).values_list("pk", flat=True)
@@ -1213,6 +1255,12 @@ def transicionar_ejecucion(
         # Igual que Secado: por el puesto, por la bandeja genérica o al
         # anular el lote, una corrida preparada devuelve su leche.
         _deshacer_preparacion_evaporacion(ejecucion, motivo, usuario)
+    if (
+        estado_nuevo == EjecucionProceso.Estado.CANCELADA
+        and ejecucion.etapa.tipo == EtapaProceso.Tipo.DESCREMACION
+    ):
+        # Por el puesto o por la bandeja genérica, cancelar deja lo mismo.
+        _deshacer_preparacion_descremacion(ejecucion, motivo)
     if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
         actualizar_queryset_con_auditoria(
             ReservaSiloProceso.objects.filter(
@@ -1989,126 +2037,619 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     return corrida
 
 
+# Estados en que un estanque no recibe producto ni se procesa desde él. Una
+# sola lista para preparar, iniciar, el puesto y `cerrar_descremacion`.
+ESTADOS_SILO_SIN_PRODUCTO = frozenset({
+    Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+})
+
+
+def motivos_para_preparar_desde_silo(silo, analisis):
+    """
+    Por qué no se puede preparar un descremado desde `silo` con `analisis` (el
+    último confirmado, `ultimo_analisis_confirmado`). Lista vacía: se puede.
+
+    Solo lo que el **plan** necesita: el silo en servicio y una composición
+    vigente. Firmas, inhibidores y la revalidación de 48 h no frenan la
+    preparación: son motivos de inicio y la tarjeta los muestra con su enlace,
+    como en Evaporación. El puesto ofrece los silos con esta función y
+    `crear_descremacion_guiada` rechaza con ella.
+    """
+    if not silo.activo or silo.estado in ESTADOS_SILO_SIN_PRODUCTO:
+        estado = "fuera de servicio" if not silo.activo else silo.get_estado_display().lower()
+        return [f"{silo.codigo} está {estado}."]
+    if analisis is None:
+        return [f"{silo.codigo} no tiene un análisis confirmado: Calidad debe analizarlo."]
+    motivos = []
+    if not analisis.vigente:
+        motivos.append(
+            f"{silo.codigo}: "
+            + (analisis.motivo_vigencia or "el análisis perdió vigencia; vuelve a muestrear.")
+        )
+    if analisis.grasa is None or analisis.sng is None:
+        motivos.append(
+            f"{silo.codigo}: el análisis no tiene grasa y SNG, y sin composición no hay plan."
+        )
+    return motivos
+
+
+def litros_libres_origen(origen, *, saldo=None, excluir_ejecucion_id=None):
+    """
+    Lo que el silo de origen puede entregar a un descremado: su saldo menos lo
+    que otras ejecuciones reservaron como origen. `saldo` evita releerlo
+    cuando la consulta ya lo trae anotado (`silos_con_saldo`).
+    """
+    from recepcion.servicios import saldo_silo
+
+    if saldo is None:
+        saldo = saldo_silo(origen)
+    return saldo - litros_origen_reservados(
+        silo_id=origen.pk, excluir_ejecucion_id=excluir_ejecucion_id,
+    )
+
+
+def motivos_origen_descremacion(origen, litros, *, excluir_ejecucion_id=None):
+    """
+    Si el silo de origen tiene `litros` libres (`litros_libres_origen`). Una
+    sola regla para preparar, para iniciar y para lo que el puesto ofrece:
+    con dos, el puesto prepararía una corrida que «Iniciar» rechaza.
+    """
+    libre = litros_libres_origen(origen, excluir_ejecucion_id=excluir_ejecucion_id)
+    if libre < Decimal(str(litros)):
+        return [f"{origen.codigo} tiene {libre} L libres; la corrida requiere {litros} L."]
+    return []
+
+
+def motivos_destino_descremacion(destino, *, producto=None, litros=None, excluir_ejecucion_id=None):
+    """
+    Por qué `destino` no puede recibir una rama del descremado. Sin `producto`
+    ni `litros` comprueba solo estado y reservas —lo que el puesto usa para
+    ofrecer el TK—; con ellos, también mezcla y capacidad, que dependen del
+    plan. Preparar, iniciar y el puesto llaman a esta misma función.
+    """
+    from recepcion.servicios import saldo_silo
+
+    motivos = []
+    if not destino.activo or destino.estado in ESTADOS_SILO_SIN_PRODUCTO:
+        motivos.append(f"{destino.codigo} no admite producto.")
+    reserva = (
+        reservas_activas_silo(silo_id=destino.pk, excluir_ejecucion_id=excluir_ejecucion_id)
+        .select_related("ejecucion").order_by("pk").first()
+    )
+    if reserva is not None:
+        motivos.append(f"{destino.codigo} ya está reservado por {reserva.ejecucion.codigo}.")
+    if producto is None and litros is None:
+        return motivos
+    saldo = saldo_silo(destino)
+    if producto is not None and saldo > 0 and destino.producto_actual_id not in {None, producto.pk}:
+        motivos.append(f"{destino.codigo} contiene otro producto y no admite la mezcla.")
+    if litros is not None and saldo + Decimal(str(litros)) > destino.capacidad_l:
+        motivos.append(f"{destino.codigo} no tiene capacidad para los {litros} L planificados.")
+    return motivos
+
+
 @transaction.atomic
-def iniciar_descremacion(*, corrida_id, usuario):
+def preparar_descremacion(*, corrida_id, usuario):
+    """
+    Reserva el silo de origen y los dos TK y toma la descremadora
+    (`borrador → preparacion`). Lo llama `crear_descremacion_guiada` al final
+    de su transacción: si algo falla no queda corrida, ni reservas, ni máquina
+    ocupada. Las reglas son las mismas que vuelve a aplicar el inicio.
+    """
     from inventario.servicios import motivo_equipo_no_habilitado
     from maestros.models import Silo
-    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
-    from .models import EntradaProceso
 
-    corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
-        "ejecucion__etapa", "ejecucion__equipo", "analisis_entrada",
-        "silo_entera", "silo_descremada", "estanque_crema",
-        "producto_descremada", "producto_crema",
-    ).get(pk=corrida_id)
-    if corrida.estado != CorridaDescremacion.Estado.BORRADOR:
-        raise ValidationError("Solo una descremación en borrador puede iniciarse.")
-    corrida.clean()
-    if not (
-        corrida.litros_descremada_plan
-        and corrida.litros_crema_plan
-        and corrida.plan_confirmado_por_id
-        and corrida.plan_confirmado_en
+    corrida = (
+        CorridaDescremacion.objects.select_for_update(of=("self",))
+        .select_related("producto_descremada", "producto_crema").get(pk=corrida_id)
+    )
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .select_related("equipo").get(pk=corrida.ejecucion_id)
+    )
+    if (
+        corrida.estado != CorridaDescremacion.Estado.BORRADOR
+        or ejecucion.estado != EjecucionProceso.Estado.BORRADOR
     ):
-        raise ValidationError(
-            "Calcula y confirma el reparto planificado antes de iniciar."
-        )
-    if not corrida.ejecucion.equipo_id:
-        raise ValidationError("La descremación requiere un equipo asignado.")
-    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
+        raise ValidationError(f"{ejecucion.codigo} ya no está en borrador: no se vuelve a preparar.")
+    if not ejecucion.equipo_id:
+        raise ValidationError({"equipo": "La descremación requiere una descremadora asignada."})
+    impedimento = motivo_equipo_no_habilitado(ejecucion.equipo)
     if impedimento:
-        raise ValidationError(impedimento)
+        raise ValidationError({"equipo": impedimento})
     silos = {
         silo.pk: silo
         for silo in Silo.objects.select_for_update().filter(pk__in=[
-            corrida.silo_entera_id, corrida.silo_descremada_id,
-            corrida.estanque_crema_id,
+            corrida.silo_entera_id, corrida.silo_descremada_id, corrida.estanque_crema_id,
         ]).order_by("pk")
     }
     origen = silos[corrida.silo_entera_id]
     destino_descremada = silos[corrida.silo_descremada_id]
     destino_crema = silos[corrida.estanque_crema_id]
-    motivos = motivos_silo_no_disponible(origen, para="proceso")
-    if motivos:
-        raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
-    if corrida.analisis_entrada.estado != corrida.analisis_entrada.Estado.CONFIRMADO:
-        raise ValidationError({"analisis_entrada": "El análisis de entrada debe estar confirmado."})
-    if corrida.analisis_entrada.grasa != corrida.grasa_entrada or corrida.analisis_entrada.sng != corrida.sng_entrada:
-        raise ValidationError({
-            "analisis_entrada": "Grasa y SNG deben coincidir con el análisis seleccionado."
-        })
-    reservado_origen = ReservaSiloProceso.objects.filter(
-        silo=origen, tipo=ReservaSiloProceso.Tipo.ORIGEN,
-        estado=ReservaSiloProceso.Estado.ACTIVA,
-    ).exclude(ejecucion=corrida.ejecucion).aggregate(
-        total=Sum("cantidad_planificada")
-    )["total"] or 0
-    if saldo_silo(origen) - reservado_origen < corrida.litros_entrada:
-        raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
-
-    for destino, producto, cantidad in (
+    motivos = motivos_origen_descremacion(
+        origen, corrida.litros_entrada, excluir_ejecucion_id=ejecucion.pk,
+    )
+    for destino, producto, litros in (
         (destino_descremada, corrida.producto_descremada, corrida.litros_descremada_plan),
         (destino_crema, corrida.producto_crema, corrida.litros_crema_plan),
     ):
-        if not destino.activo or destino.estado in {
-            Silo.Estado.BLOQUEADO_CALIDAD,
-            Silo.Estado.EN_CIP,
-            Silo.Estado.FUERA_SERVICIO,
-        }:
-            raise ValidationError(f"{destino.codigo} no admite producto.")
-        if ReservaSiloProceso.objects.filter(
-            silo=destino, tipo=ReservaSiloProceso.Tipo.DESTINO,
-            estado=ReservaSiloProceso.Estado.ACTIVA,
-        ).exclude(ejecucion=corrida.ejecucion).exists():
-            raise ValidationError(f"{destino.codigo} ya está reservado por otra ejecución.")
-        saldo = saldo_silo(destino)
-        if saldo > 0 and destino.producto_actual_id not in {None, producto.pk}:
-            raise ValidationError(
-                f"{destino.codigo} contiene otro producto y no admite la mezcla."
-            )
-        if saldo + cantidad > destino.capacidad_l:
-            raise ValidationError(
-                f"{destino.codigo} no tiene capacidad para los {cantidad} L planificados."
-            )
-
+        motivos.extend(motivos_destino_descremacion(
+            destino, producto=producto, litros=litros, excluir_ejecucion_id=ejecucion.pk,
+        ))
+    if motivos:
+        raise ValidationError(motivos[0])
     crear_en_lote_con_auditoria([
         ReservaSiloProceso(
-            ejecucion=corrida.ejecucion, silo=origen,
-            producto=origen.producto_actual, tipo=ReservaSiloProceso.Tipo.ORIGEN,
-            cantidad_planificada=corrida.litros_entrada,
+            ejecucion=ejecucion, silo=origen, producto=origen.producto_actual,
+            tipo=ReservaSiloProceso.Tipo.ORIGEN, cantidad_planificada=corrida.litros_entrada,
         ),
         ReservaSiloProceso(
-            ejecucion=corrida.ejecucion, silo=destino_descremada,
-            producto=corrida.producto_descremada,
+            ejecucion=ejecucion, silo=destino_descremada, producto=corrida.producto_descremada,
             tipo=ReservaSiloProceso.Tipo.DESTINO,
             cantidad_planificada=corrida.litros_descremada_plan,
         ),
         ReservaSiloProceso(
-            ejecucion=corrida.ejecucion, silo=destino_crema,
-            producto=corrida.producto_crema,
-            tipo=ReservaSiloProceso.Tipo.DESTINO,
-            cantidad_planificada=corrida.litros_crema_plan,
+            ejecucion=ejecucion, silo=destino_crema, producto=corrida.producto_crema,
+            tipo=ReservaSiloProceso.Tipo.DESTINO, cantidad_planificada=corrida.litros_crema_plan,
         ),
     ])
+    transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk, estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+        usuario=usuario, motivo="Preparación desde el puesto de Descremado.",
+    )
+    return CorridaDescremacion.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden", "analisis_entrada",
+        "producto_descremada", "producto_crema",
+        "silo_entera", "silo_descremada", "estanque_crema", "iniciada_por", "finalizada_por",
+    ).get(pk=corrida.pk)
+
+
+def motivos_tipados_para_iniciar_descremacion(corrida, *, ejecucion=None):
+    """
+    Lo que impide iniciar esta descremación, como pares `(motivo,
+    resolver_en)`, en el orden en que el inicio lo comprueba. Lista vacía: se
+    puede.
+
+    Es la única implementación de esas reglas: `iniciar_descremacion` lanza el
+    primer motivo y el puesto los muestra junto a un botón deshabilitado,
+    enlazando a donde se resuelve el primero. Un aseo observado **no** está
+    aquí: avisa, no bloquea.
+    """
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from recepcion.servicios import motivos_silo_no_disponible, ultimo_analisis_confirmado
+
+    ejecucion = ejecucion or corrida.ejecucion
+    if (
+        corrida.estado != CorridaDescremacion.Estado.BORRADOR
+        or ejecucion.estado != EjecucionProceso.Estado.PREPARACION
+    ):
+        # Lo demás no aplica a una corrida que no está preparada.
+        return [(
+            f"{ejecucion.codigo} no está preparada: está "
+            f"{ejecucion.get_estado_display().lower()}.",
+            None,
+        )]
+    motivos = []
+    if not (
+        corrida.litros_descremada_plan and corrida.litros_crema_plan
+        and corrida.plan_confirmado_por_id and corrida.plan_confirmado_en
+    ):
+        motivos.append(("Calcula y confirma el reparto planificado antes de iniciar.", None))
+    try:
+        corrida.clean()
+    except ValidationError as error:
+        motivos.extend((mensaje, None) for mensaje in error.messages)
+    if not ejecucion.equipo_id:
+        motivos.append(("La descremación requiere una descremadora asignada.", None))
+    else:
+        impedimento = motivo_equipo_no_habilitado(ejecucion.equipo)
+        if impedimento:
+            motivos.append((impedimento, RESOLVER_CIP))
+    origen = corrida.silo_entera
+    del_silo = motivos_silo_no_disponible(origen, para="proceso")
+    if del_silo:
+        motivos.append((f"{origen.codigo}: " + " ".join(del_silo), RESOLVER_SILOS))
+    vigente = ultimo_analisis_confirmado(origen)
+    if vigente is not None and (
+        vigente.pk != corrida.analisis_entrada_id
+        or (vigente.grasa, vigente.sng) != (corrida.grasa_entrada, corrida.sng_entrada)
+    ):
+        # Analizar de nuevo no arregla esto: la corrida congeló la composición
+        # vieja. Se arregla cancelando y volviendo a preparar, en el puesto.
+        motivos.append((
+            f"El análisis con que se preparó {ejecucion.codigo} ya no es el vigente de "
+            f"{origen.codigo}: cancela la preparación y vuelve a prepararla con la "
+            "composición actual.",
+            None,
+        ))
+    motivos.extend(
+        (motivo, None) for motivo in motivos_origen_descremacion(
+            origen, corrida.litros_entrada, excluir_ejecucion_id=ejecucion.pk,
+        )
+    )
+    for destino, producto, litros in (
+        (corrida.silo_descremada, corrida.producto_descremada, corrida.litros_descremada_plan),
+        (corrida.estanque_crema, corrida.producto_crema, corrida.litros_crema_plan),
+    ):
+        motivos.extend(
+            (motivo, None) for motivo in motivos_destino_descremacion(
+                destino, producto=producto, litros=litros, excluir_ejecucion_id=ejecucion.pk,
+            )
+        )
+    propias = set(
+        ReservaSiloProceso.objects.filter(
+            ejecucion=ejecucion, estado=ReservaSiloProceso.Estado.ACTIVA,
+        ).values_list("tipo", "silo_id")
+    )
+    esperadas = {
+        (ReservaSiloProceso.Tipo.ORIGEN, corrida.silo_entera_id),
+        (ReservaSiloProceso.Tipo.DESTINO, corrida.silo_descremada_id),
+        (ReservaSiloProceso.Tipo.DESTINO, corrida.estanque_crema_id),
+    }
+    if not esperadas <= propias:
+        motivos.append((
+            "Las reservas de origen y destino de la preparación no están completas: "
+            "cancela la preparación y vuelve a prepararla.",
+            None,
+        ))
+    return motivos
+
+
+def motivos_para_iniciar_descremacion(corrida, *, ejecucion=None):
+    """Los textos de `motivos_tipados_para_iniciar_descremacion`. Lista vacía: se puede."""
+    return [
+        motivo for motivo, _ in
+        motivos_tipados_para_iniciar_descremacion(corrida, ejecucion=ejecucion)
+    ]
+
+
+@transaction.atomic
+def iniciar_descremacion(*, corrida_id, usuario):
+    """
+    Pasa una descremación preparada a ejecución. Recalcula los motivos con la
+    corrida, la ejecución y los silos bloqueados —entre que el puesto los
+    mostró y el clic pudo perder vigencia el análisis o entrar un CIP— y lanza
+    el primero. No crea reservas: nacieron al preparar.
+    """
+    from inventario.servicios import advertencia_aseo_equipo
+    from maestros.models import Silo
+    from .models import EntradaProceso
+
+    corrida = (
+        CorridaDescremacion.objects.select_for_update(of=("self",))
+        .select_related("analisis_entrada", "producto_descremada", "producto_crema")
+        .get(pk=corrida_id)
+    )
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .select_related("etapa", "equipo").get(pk=corrida.ejecucion_id)
+    )
+    silos = {
+        silo.pk: silo
+        for silo in Silo.objects.select_for_update().filter(pk__in=[
+            corrida.silo_entera_id, corrida.silo_descremada_id, corrida.estanque_crema_id,
+        ]).order_by("pk")
+    }
+    corrida.ejecucion = ejecucion
+    corrida.silo_entera = silos[corrida.silo_entera_id]
+    corrida.silo_descremada = silos[corrida.silo_descremada_id]
+    corrida.estanque_crema = silos[corrida.estanque_crema_id]
+    motivos = motivos_para_iniciar_descremacion(corrida, ejecucion=ejecucion)
+    if motivos:
+        raise ValidationError(motivos[0])
 
     EntradaProceso.objects.create(
-        ejecucion=corrida.ejecucion, silo=origen,
-        tipo=EntradaProceso.Tipo.PRINCIPAL, cantidad=corrida.litros_entrada, unidad="L",
+        ejecucion=ejecucion, silo=corrida.silo_entera, tipo=EntradaProceso.Tipo.PRINCIPAL,
+        cantidad=corrida.litros_entrada, unidad="L",
     )
-    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
-        transicionar_ejecucion(
-            ejecucion_id=corrida.ejecucion_id,
-            estado_nuevo=EjecucionProceso.Estado.PREPARACION, usuario=usuario,
-        )
+    aseo = advertencia_aseo_equipo(ejecucion.equipo)
     transicionar_ejecucion(
-        ejecucion_id=corrida.ejecucion_id,
-        estado_nuevo=EjecucionProceso.Estado.EJECUCION, usuario=usuario,
+        ejecucion_id=ejecucion.pk, estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        usuario=usuario,
+        motivo=(
+            f"Advertencia no bloqueante de aseo: {aseo}"
+            if aseo else "Inicio desde el puesto de Descremado."
+        ),
     )
     corrida.estado = CorridaDescremacion.Estado.EN_CURSO
     corrida.iniciada_por = usuario
     corrida.iniciada_en = timezone.now()
     corrida.save(update_fields=["estado", "iniciada_por", "iniciada_en"])
-    return corrida
+    return CorridaDescremacion.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden", "analisis_entrada",
+        "producto_descremada", "producto_crema",
+        "silo_entera", "silo_descremada", "estanque_crema", "iniciada_por", "finalizada_por",
+    ).get(pk=corrida.pk)
+
+
+def condicion_situacion_descremacion(situacion):
+    """
+    El filtro del historial por situación: la misma tabla que nombra cada
+    fila (`dominio.SITUACIONES_DESCREMACION`), con «gana la primera» traducido
+    a excluir las filas anteriores. Una situación desconocida no devuelve nada.
+    """
+    from .dominio import SITUACIONES_DESCREMACION
+
+    def condicion(estado_corrida, estados_ejecucion):
+        resultado = Q(estado=estado_corrida)
+        if estados_ejecucion is not None:
+            resultado &= Q(ejecucion__estado__in=estados_ejecucion)
+        return resultado
+
+    anteriores = Q()
+    for valor, _etiqueta, estado_corrida, estados_ejecucion in SITUACIONES_DESCREMACION:
+        propia = condicion(estado_corrida, estados_ejecucion)
+        if valor == situacion:
+            return propia & ~anteriores if anteriores else propia
+        anteriores |= propia
+    return Q(pk__in=[])
+
+
+def catalogo_situaciones_descremacion():
+    from .dominio import SITUACIONES_DESCREMACION
+
+    return [
+        {"valor": valor, "etiqueta": etiqueta}
+        for valor, etiqueta, _estado, _ejecucion in SITUACIONES_DESCREMACION
+    ]
+
+
+def estado_puesto_descremado(usuario):
+    """
+    Lo que el puesto de Descremado dibuja: un estado por descremadora,
+    derivado de su ejecución de Descremación que ocupa el equipo (una en curso
+    manda sobre una preparada), con los motivos que impiden iniciar
+    calculados por la misma función que decide al iniciar; los silos de origen
+    con el análisis que usará «Preparar»; los TK que la regla de destino
+    acepta; y las corridas de hoy. La pantalla no recalcula nada de esto.
+
+    Una ejecución `cerrada`/`cancelada` no ocupa la máquina aunque su corrida
+    haya quedado en `borrador`/`en_curso` (`ESTADOS_QUE_OCUPAN_EQUIPO`).
+    `en_calidad` es informativa: esa ejecución ya no ocupa la descremadora,
+    pero sus TK siguen bloqueados hasta que Calidad decida.
+    """
+    from inventario.servicios import advertencia_aseo_equipo, motivo_equipo_no_habilitado
+    from maestros.models import Equipo, Silo
+    from recepcion.servicios import ultimo_analisis_confirmado
+    from usuarios.tenancy import filtrar_por_scope
+
+    from .dominio import situacion_descremacion
+
+    def texto(valor):
+        # Texto, como en los serializers: el tipo del frontend es `string`.
+        return None if valor is None else str(valor)
+
+    descremadoras = list(filtrar_por_scope(
+        Equipo.objects.filter(activo=True, tipo=Equipo.Tipo.DESCREMADORA)
+        .select_related("sucursal").order_by("codigo"),
+        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ))
+    ids = [equipo.pk for equipo in descremadoras]
+
+    activas = {}
+    for ejecucion in (
+        EjecucionProceso.objects.filter(
+            etapa__tipo=EtapaProceso.Tipo.DESCREMACION, equipo_id__in=ids,
+            estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+        )
+        .select_related(
+            "etapa", "equipo", "corrida_descremacion__analisis_entrada",
+            "corrida_descremacion__silo_entera", "corrida_descremacion__silo_descremada",
+            "corrida_descremacion__estanque_crema", "corrida_descremacion__producto_descremada",
+            "corrida_descremacion__producto_crema",
+            # `motivos_tipados_para_iniciar_descremacion` llama a `clean()`,
+            # que lee las dos rutas: sin esto, dos consultas por tarjeta.
+            "corrida_descremacion__ruta_descremada", "corrida_descremacion__ruta_crema",
+        )
+        .order_by("pk")
+    ):
+        actual = activas.get(ejecucion.equipo_id)
+        if actual is None or (
+            actual.estado == EjecucionProceso.Estado.PREPARACION
+            and ejecucion.estado != EjecucionProceso.Estado.PREPARACION
+        ):
+            activas[ejecucion.equipo_id] = ejecucion
+
+    en_calidad = {}
+    for corrida in (
+        CorridaDescremacion.objects.filter(
+            ejecucion__equipo_id__in=ids,
+            ejecucion__estado=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+        ).select_related("ejecucion", "silo_descremada", "estanque_crema").order_by("pk")
+    ):
+        en_calidad[corrida.ejecucion.equipo_id] = corrida
+
+    def resumen(ejecucion):
+        corrida = getattr(ejecucion, "corrida_descremacion", None)
+        base = {
+            "id": None, "ejecucion_id": ejecucion.pk, "ejecucion_codigo": ejecucion.codigo,
+            "ejecucion_estado": ejecucion.estado, "estado": None,
+            "silo_entera": None, "litros_entrada": None, "grasa_entrada": None,
+            "sng_entrada": None, "silo_descremada": None, "litros_descremada_plan": None,
+            "estanque_crema": None, "litros_crema_plan": None, "destino_crema": None,
+            "iniciada_en": ejecucion.inicio,
+        }
+        if corrida is None:
+            return base
+        return {
+            **base,
+            "id": corrida.pk, "estado": corrida.estado,
+            "silo_entera": corrida.silo_entera.codigo,
+            "litros_entrada": texto(corrida.litros_entrada),
+            "grasa_entrada": texto(corrida.grasa_entrada),
+            "sng_entrada": texto(corrida.sng_entrada),
+            "silo_descremada": corrida.silo_descremada.codigo,
+            "litros_descremada_plan": texto(corrida.litros_descremada_plan),
+            "estanque_crema": corrida.estanque_crema.codigo,
+            "litros_crema_plan": texto(corrida.litros_crema_plan),
+            "destino_crema": corrida.destino_crema,
+            "iniciada_en": corrida.iniciada_en,
+        }
+
+    filas = []
+    for maquina in descremadoras:
+        ejecucion = activas.get(maquina.pk)
+        motivos_tomar, motivos_iniciar, resolver_en = [], [], None
+        if ejecucion is None:
+            estado = "disponible"
+            # La misma regla con que «Preparar» rechaza la descremadora.
+            impedimento = motivo_equipo_no_habilitado(maquina)
+            if impedimento:
+                motivos_tomar, resolver_en = [impedimento], RESOLVER_CIP
+        elif ejecucion.estado == EjecucionProceso.Estado.PREPARACION:
+            estado = "preparada"
+            corrida = getattr(ejecucion, "corrida_descremacion", None)
+            if corrida is None:
+                # Dato heredado del alta genérica, ya cerrada: sin corrida no
+                # hay `cancelar-preparacion/`.
+                motivos_iniciar = [
+                    f"{ejecucion.codigo} no tiene corrida de descremado y no puede "
+                    "iniciarse: cancela esa ejecución en Procesos y vuelve a preparar."
+                ]
+            else:
+                tipados = motivos_tipados_para_iniciar_descremacion(corrida, ejecucion=ejecucion)
+                motivos_iniciar = [motivo for motivo, _ in tipados]
+                # El enlace es del primer motivo, que es el que la tarjeta muestra.
+                resolver_en = tipados[0][1] if tipados else None
+        else:
+            estado = "en_curso"
+        aseo = None if estado == "en_curso" else advertencia_aseo_equipo(maquina)
+        pendiente = en_calidad.get(maquina.pk)
+        filas.append({
+            "equipo_id": maquina.pk, "codigo": maquina.codigo, "nombre": maquina.nombre,
+            "estado": estado,
+            "corrida": resumen(ejecucion) if ejecucion is not None else None,
+            "motivos_para_tomar": motivos_tomar,
+            "motivos_para_iniciar": motivos_iniciar,
+            "resolver_en": resolver_en,
+            "avisos": [aseo] if aseo else [],
+            "en_calidad": (
+                {
+                    "id": pendiente.pk, "ejecucion_codigo": pendiente.ejecucion.codigo,
+                    "tanques": [
+                        silo.codigo for silo in (pendiente.silo_descremada, pendiente.estanque_crema)
+                        if silo.estado == Silo.Estado.BLOQUEADO_CALIDAD
+                    ],
+                }
+                if pendiente is not None else None
+            ),
+        })
+
+    origenes = []
+    for silo in filtrar_por_scope(
+        silos_con_saldo(Silo.objects.filter(activo=True, tipo=Silo.Tipo.SILO))
+        .filter(saldo_l__gt=0).order_by("codigo"),
+        usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+    ):
+        analisis = ultimo_analisis_confirmado(silo)
+        # La misma regla con que `crear_descremacion_guiada` rechaza el
+        # origen. Con motivo, el silo se ofrece deshabilitado con el texto:
+        # es la entrada que viene desde «Descremar» del silo.
+        motivos = motivos_para_preparar_desde_silo(silo, analisis)
+        # El tope del formulario: lo que otras preparaciones no reservaron
+        # ya como origen, con la misma cuenta con que «Preparar» rechaza.
+        libre = litros_libres_origen(silo, saldo=silo.saldo_l)
+        if libre <= 0 and not motivos:
+            motivos = [
+                f"{silo.codigo} no tiene litros libres: su saldo está reservado "
+                "por otras corridas."
+            ]
+        origenes.append({
+            "id": silo.pk, "codigo": silo.codigo, "saldo_l": texto(silo.saldo_l),
+            "libre_l": texto(libre),
+            "analisis": (
+                {
+                    "id": analisis.pk, "grasa": texto(analisis.grasa),
+                    "sng": texto(analisis.sng), "tomado_en": analisis.tomado_en,
+                }
+                if analisis is not None and not motivos else None
+            ),
+            "motivo": motivos[0] if motivos else None,
+        })
+
+    def destinos(tipo):
+        # Estado y reservas con la regla de destino; capacidad y mezcla
+        # dependen del plan y las vuelve a comprobar «Preparar».
+        return [
+            {"id": silo.pk, "codigo": silo.codigo, "libre_l": texto(silo.capacidad_l - silo.saldo_l)}
+            for silo in filtrar_por_scope(
+                silos_con_saldo(Silo.objects.filter(tipo=tipo)).order_by("codigo"),
+                usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+            )
+            if not motivos_destino_descremacion(silo)
+        ]
+
+    hoy = timezone.localdate()
+    corridas_de_hoy = [
+        {
+            "id": corrida.pk, "ejecucion_codigo": corrida.ejecucion.codigo,
+            "equipo": corrida.ejecucion.equipo.codigo if corrida.ejecucion.equipo_id else None,
+            "silo_entera": corrida.silo_entera.codigo,
+            "estado": corrida.estado, "estado_etiqueta": corrida.get_estado_display(),
+            "estado_ejecucion": corrida.ejecucion.estado,
+            **dict(zip(
+                ("situacion", "situacion_etiqueta"),
+                situacion_descremacion(corrida.estado, corrida.ejecucion.estado),
+            )),
+        }
+        for corrida in CorridaDescremacion.objects.filter(ejecucion__equipo_id__in=ids)
+        .filter(
+            Q(ejecucion__creada_en__date=hoy) | Q(iniciada_en__date=hoy)
+            | Q(finalizada_en__date=hoy)
+        )
+        # Un huérfano cuya ejecución terminó sin iniciarse no es trabajo del día.
+        .exclude(iniciada_en__isnull=True, ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES)
+        .select_related("ejecucion__equipo", "silo_entera")
+        .order_by("-pk")
+    ]
+    return {
+        "descremadoras": filas,
+        "origenes": origenes,
+        "destinos_descremada": destinos(Silo.Tipo.TK_LD),
+        "destinos_crema": destinos(Silo.Tipo.TK_CREMA),
+        "corridas_de_hoy": corridas_de_hoy,
+        # Las opciones del filtro del historial: las mismas situaciones que
+        # muestra la columna, no los estados crudos de la corrida.
+        "estados": catalogo_situaciones_descremacion(),
+    }
+
+
+def revisar_cierre_descremacion(
+    corrida, *, litros_descremada=None, grasa_descremada=None,
+    litros_crema=None, grasa_crema=None,
+):
+    """
+    Lo que el cierre avisaría con estos valores, sin escribir nada. El
+    formulario lo pide mientras se teclea (el patrón de `calcular/` del vale):
+    la misma función de límites que `cerrar_descremacion` guarda y el mismo
+    balance. El cliente no calcula nada por su cuenta.
+    """
+    from .dominio import avisos_limites_descremacion, calcular_balance_descremacion
+
+    limites = avisos_limites_descremacion(
+        grasa_descremada=grasa_descremada, grasa_crema=grasa_crema,
+        crema_a_despacho=(
+            corrida.destino_crema == CorridaDescremacion.DestinoRama.DESPACHO_DIRECTO
+        ),
+    )
+    avisos_balance, merma, desvio = [], None, None
+    if grasa_descremada is not None and grasa_crema is not None:
+        con_litros = litros_descremada is not None and litros_crema is not None
+        balance = calcular_balance_descremacion(
+            corrida.litros_entrada, corrida.grasa_entrada, corrida.sng_entrada,
+            grasa_descremada, grasa_crema,
+            litros_descremada=litros_descremada if con_litros else None,
+            litros_crema=litros_crema if con_litros else None,
+        )
+        avisos_balance = list(balance.avisos)
+        merma, desvio = balance.merma_declarada_l, balance.desvio_grasa_kg
+    return {
+        "avisos_limites": [{"codigo": codigo, "mensaje": mensaje} for codigo, mensaje in limites],
+        "avisos_balance": avisos_balance,
+        # Texto, como en los serializers: el tipo del frontend es `string`.
+        "merma_l": None if merma is None else str(merma.quantize(Decimal("0.01"))),
+        "desvio_grasa_kg": None if desvio is None else str(desvio.quantize(Decimal("0.001"))),
+    }
 
 
 @transaction.atomic
@@ -2120,7 +2661,7 @@ def cerrar_descremacion(
     from produccion.models import Lote
     from recepcion.models import MovimientoSilo
     from recepcion.servicios import heredar_atribuciones, motivos_silo_no_disponible, saldo_silo
-    from .dominio import calcular_balance_descremacion
+    from .dominio import avisos_limites_descremacion, calcular_balance_descremacion
     from .models import SalidaProceso
 
     corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
@@ -2152,9 +2693,7 @@ def cerrar_descremacion(
     if saldo_silo(origen) < corrida.litros_entrada:
         raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
     for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
-        if not destino.activo or destino.estado in {
-            Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
-        }:
+        if not destino.activo or destino.estado in ESTADOS_SILO_SIN_PRODUCTO:
             raise ValidationError(f"{destino.codigo} no admite producto.")
         if saldo_silo(destino) + cantidad > destino.capacidad_l:
             raise ValidationError(f"{destino.codigo} excedería su capacidad.")
@@ -2255,9 +2794,23 @@ def cerrar_descremacion(
         corrida.litros_entrada, corrida.grasa_entrada, corrida.sng_entrada, gd, gc,
         litros_descremada=ld, litros_crema=lc,
     )
+    limites = avisos_limites_descremacion(
+        grasa_descremada=gd, grasa_crema=gc,
+        crema_a_despacho=(
+            corrida.destino_crema == CorridaDescremacion.DestinoRama.DESPACHO_DIRECTO
+        ),
+    )
     corrida.litros_descremada, corrida.grasa_descremada = ld, gd
     corrida.litros_crema, corrida.grasa_crema = lc, gc
-    corrida.controles = {**(controles or {}), "avisos_balance": list(balance.avisos)}
+    corrida.controles = {
+        **(controles or {}),
+        # Después de lo que manda el cliente: los avisos los escribe el
+        # servidor y no se pueden pisar por `controles`.
+        "avisos_balance": list(balance.avisos),
+        "avisos_limites": [
+            {"codigo": codigo, "mensaje": mensaje} for codigo, mensaje in limites
+        ],
+    }
     corrida.estado = CorridaDescremacion.Estado.CERRADA
     corrida.finalizada_por = usuario
     corrida.finalizada_en = ahora
@@ -2265,6 +2818,8 @@ def cerrar_descremacion(
     transicionar_ejecucion(
         ejecucion_id=corrida.ejecucion_id,
         estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
+        # Lo que lee la auditoría de la ejecución.
+        motivo=" ".join(mensaje for _, mensaje in limites),
     )
     if corrida.ejecucion.etapa.requiere_calidad:
         actualizar_queryset_con_auditoria(
@@ -2739,17 +3294,72 @@ def cancelar_preparacion_evaporacion(*, corrida_id, usuario, motivo):
     )
 
 
+def _deshacer_preparacion_descremacion(ejecucion, motivo):
+    """
+    Lo propio de Descremación al cancelar su ejecución: la corrida queda
+    `anulada` con el motivo. Las reservas las suelta la transición genérica, y
+    la descremadora queda libre al salir de `ESTADOS_QUE_OCUPAN_EQUIPO`. No
+    hay lote que anular ni leche que devolver: hasta el cierre no se mueve un
+    litro.
+
+    También una corrida ya iniciada, cancelada desde la bandeja: una corrida
+    «en curso» sobre una ejecución cancelada no la hace nadie (como
+    `_deshacer_preparacion_evaporacion` con la que está en proceso).
+    """
+    corrida = (
+        CorridaDescremacion.objects.select_for_update(of=("self",))
+        .filter(ejecucion=ejecucion).first()
+    )
+    if corrida is None or corrida.estado not in {
+        CorridaDescremacion.Estado.BORRADOR, CorridaDescremacion.Estado.EN_CURSO,
+    }:
+        return
+    corrida.estado = CorridaDescremacion.Estado.ANULADA
+    corrida.motivo_anulacion = _con_punto(motivo)
+    corrida.save(update_fields=["estado", "motivo_anulacion"])
+
+
+@transaction.atomic
+def cancelar_preparacion_descremacion(*, corrida_id, usuario, motivo):
+    """
+    Suelta una descremadora preparada sin iniciarla. Acepta la ejecución en
+    `preparacion` y también en `borrador` (corridas heredadas del modal
+    anterior, que nunca llegaron a reservar). Una corrida iniciada se cierra
+    registrando sus salidas. Simétrica a `cancelar_preparacion_secado`; lo que
+    se deshace lo hace la transición genérica.
+    """
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError(MENSAJE_MOTIVO_CANCELACION)
+    corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).get(pk=corrida_id)
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",)).get(pk=corrida.ejecucion_id)
+    )
+    if corrida.estado != CorridaDescremacion.Estado.BORRADOR or ejecucion.estado not in {
+        EjecucionProceso.Estado.BORRADOR, EjecucionProceso.Estado.PREPARACION,
+    }:
+        raise ValidationError(
+            f"Solo se cancela una descremadora preparada: {ejecucion.codigo} está "
+            f"{ejecucion.get_estado_display().lower()}. Una corrida iniciada se cierra "
+            "registrando sus salidas."
+        )
+    return transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk, estado_nuevo=EjecucionProceso.Estado.CANCELADA,
+        usuario=usuario, motivo=motivo,
+    )
+
+
 def inicio_reservado_al_puesto(ejecucion, estado_nuevo):
     """
-    ¿Es este paso el inicio de una corrida de Secado? Ese paso solo lo da
-    `iniciar_secado`, que es quien aplica `motivos_para_iniciar_secado`.
-    Reanudar (`pausada`/`bloqueada` → `ejecucion`) no es iniciar: sigue por la
-    transición genérica, o una torre pausada no tendría cómo volver.
+    ¿Es este paso el inicio de una corrida que solo inicia su puesto?
+    (`MENSAJES_INICIO_EN_PUESTO`: Secado y Descremación). Reanudar
+    (`pausada`/`bloqueada` → `ejecucion`) no es iniciar: sigue por la
+    transición genérica, o una máquina pausada no tendría cómo volver.
     """
     return (
         estado_nuevo == EjecucionProceso.Estado.EJECUCION
         and ejecucion.estado == EjecucionProceso.Estado.PREPARACION
-        and ejecucion.etapa.tipo == EtapaProceso.Tipo.SECADO
+        and ejecucion.etapa.tipo in MENSAJES_INICIO_EN_PUESTO
     )
 
 
@@ -2758,6 +3368,10 @@ def inicio_reservado_al_puesto(ejecucion, estado_nuevo):
 # que lo arregle y viaja con `None`.
 RESOLVER_CIP = "/calidad/inocuidad"
 RESOLVER_CALIDAD = "/calidad"
+
+# Motivos del silo de origen (análisis, firmas, inhibidores, 48 h, estado):
+# se resuelven donde Recepción y Calidad analizan los silos.
+RESOLVER_SILOS = "/silos"
 
 
 def motivos_tipados_para_iniciar_secado(corrida, *, ejecucion=None):

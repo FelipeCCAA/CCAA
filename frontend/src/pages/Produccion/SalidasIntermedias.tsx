@@ -9,6 +9,7 @@ import {
   type SalidaIntermediaDisponible,
 } from "../../services/procesos.service";
 import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
+import { invalidarCacheLecturas } from "../../services/api";
 
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 });
 
@@ -128,7 +129,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
         </div>
         <button
           type="button"
-          onClick={() => void cargar()}
+          onClick={() => { invalidarCacheLecturas(); void cargar(); }}
           disabled={cargando}
           className="inline-flex items-center gap-2 rounded-xl border border-emerald-700 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 disabled:opacity-60"
         >

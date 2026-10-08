@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { invalidarCacheLecturas } from "../../services/api";
+
 
 /*
   Utilidades compartidas de la sección de abastecimiento.
@@ -77,7 +79,7 @@ export function useCarga<T>(traer: () => Promise<T>) {
     traerRef.current = traer;
   });
 
-  const recargar = useCallback(async () => {
+  const cargar = useCallback(async () => {
     setCargando(true);
 
     try {
@@ -90,14 +92,24 @@ export function useCarga<T>(traer: () => Promise<T>) {
     }
   }, []);
 
+  /* `recargar` es lo que hay detrás de cada «Actualizar» y de la recarga tras
+     una acción: quien la pide espera el dato de ahora, que puede haber cambiado
+     en otra sesión —la segunda firma de Calidad—. Por eso va a la red aunque la
+     respuesta anterior siga en la caché de lecturas; la primera carga sí la
+     aprovecha. */
+  const recargar = useCallback(async () => {
+    invalidarCacheLecturas();
+    await cargar();
+  }, [cargar]);
+
   useEffect(() => {
     // Diferido con `setTimeout`, como en `Registros` y en el panel de
     // inocuidad: llamar a `setState` dentro del cuerpo de un efecto encadena
     // renders y el linter lo rechaza.
-    const t = setTimeout(() => void recargar(), 0);
+    const t = setTimeout(() => void cargar(), 0);
 
     return () => clearTimeout(t);
-  }, [recargar]);
+  }, [cargar]);
 
   return { datos, cargando, error, recargar };
 }

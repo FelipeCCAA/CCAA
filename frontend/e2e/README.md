@@ -186,8 +186,31 @@ $env:E2E_CLAVE = "auditoria-e2e-ccaa"
 npx playwright test --project=flujo-descremado
 ```
 
-El recorrido consume 1.000 L del silo de entrada. Los TK pueden cambiarse con
-`E2E_TK_DESCREMADA` y `E2E_TK_CREMA`; no debe repetirse contra una planta real
+El recorrido es el del puesto: Calidad analiza el silo de entrada **sin** la
+segunda firma → Producción entra por «Descremar» y prepara en el puesto
+(`/produccion/descremado`): reservas tomadas, «Iniciar descremado»
+deshabilitado con el motivo de la firma → la segunda firma
+(`e2e_calidad_firma`) lo habilita → inicia → registra las salidas viendo el
+aviso de grasa (`revisar-cierre/`) → Calidad libera cada rama. La tarjeta se
+busca por el código que asigna el servidor (`EJ-DES-{id}`), no por uno
+tecleado.
+
+Una corrida preparada y abortada —por ejemplo, una prueba que falló entre
+preparar e iniciar— **retiene la descremadora y los dos TK** hasta que se
+cancela con «Cancelar preparación», desde la tarjeta o desde el historial del
+puesto. Antes de repetir el recorrido, comprueba en `/produccion/descremado`
+que `DES-01` está *Disponible*.
+
+El recorrido consume 1.000 L del silo de entrada (y 500 L la segunda prueba).
+**No hay estanques escritos en la prueba**: cada prueba lee
+`descremaciones/puesto/` y toma el silo de origen sin motivo y con más saldo,
+y los TK de descremada y de crema que el puesto ofrece —sin reserva ni
+bloqueo de Calidad— con más sitio libre; la segunda prueba no repite los TK
+de la primera, y la tercera mira los de la primera. Si el puesto no ofrece
+ninguno, la prueba lo dice con lo que sí ofrece. Para fijarlos a mano:
+`E2E_SILO_ENTERA`, `E2E_TK_DESCREMADA` y `E2E_TK_CREMA` (primera prueba),
+`E2E_TK_DESCREMADA_DIRECTA` y `E2E_TK_CREMA_DIRECTA` (segunda), con el código
+que muestra el puesto (por ejemplo `TK LD 2`). No debe repetirse contra una planta real
 sin revisar primero capacidad, contenido y estado de Calidad.
 
 ## Lo que el circuito consume

@@ -45,11 +45,15 @@ class CrearMantequillaGuiadaSerializer(serializers.Serializer):
 
 
 class CrearDescremacionGuiadaSerializer(serializers.Serializer):
-    codigo = serializers.CharField(max_length=60)
+    """
+    Preparar un descremado. `codigo` y `analisis_entrada` no se reciben: el
+    código lo asigna el servidor (`EJ-DES-{id}`) y el análisis es el último
+    confirmado del silo. Si llegan, DRF los ignora.
+    """
+
     etapa = serializers.IntegerField(min_value=1)
     equipo = serializers.IntegerField(min_value=1)
     silo_entera = serializers.IntegerField(min_value=1)
-    analisis_entrada = serializers.IntegerField(min_value=1)
     litros_entrada = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=1)
     silo_descremada = serializers.IntegerField(min_value=1)
     estanque_crema = serializers.IntegerField(min_value=1)
@@ -64,6 +68,9 @@ class CrearDescremacionGuiadaSerializer(serializers.Serializer):
     plan_confirmado = serializers.BooleanField()
     ruta_descremada = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     ruta_crema = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    # El análisis con que el formulario pidió la sugerencia. Opcional: si
+    # llega y ya no es el último confirmado, «Preparar» rechaza sin escribir.
+    analisis_esperado = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     destino_descremada = serializers.ChoiceField(
         choices=CorridaDescremacion.DestinoRama.choices,
         default=CorridaDescremacion.DestinoRama.PENDIENTE,
@@ -176,19 +183,40 @@ class CierreDescremacionSerializer(serializers.Serializer):
     controles = serializers.JSONField(required=False, default=dict)
 
 
+class RevisarCierreDescremacionSerializer(serializers.Serializer):
+    """El cuerpo de `cerrar/`, todo opcional: se pide mientras se teclea."""
+
+    litros_descremada = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True, default=None,
+    )
+    grasa_descremada = serializers.DecimalField(
+        max_digits=6, decimal_places=3, required=False, allow_null=True, default=None,
+    )
+    litros_crema = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True, default=None,
+    )
+    grasa_crema = serializers.DecimalField(
+        max_digits=6, decimal_places=3, required=False, allow_null=True, default=None,
+    )
+
+
 class CorridaDescremacionSerializer(serializers.ModelSerializer):
     ejecucion_codigo = serializers.CharField(source="ejecucion.codigo", read_only=True)
+    # El historial distingue «Preparada» de «Esperando Calidad» con el estado
+    # de la ejecución, no solo con el de la corrida.
+    ejecucion_estado = serializers.CharField(source="ejecucion.estado", read_only=True)
     equipo_nombre = serializers.CharField(source="ejecucion.equipo.nombre", read_only=True)
     silo_entera_codigo = serializers.CharField(source="silo_entera.codigo", read_only=True)
     silo_descremada_codigo = serializers.CharField(source="silo_descremada.codigo", read_only=True)
     estanque_crema_codigo = serializers.CharField(source="estanque_crema.codigo", read_only=True)
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
+    # La columna «Situación» del historial, con la tabla que usa su filtro.
+    situacion = serializers.SerializerMethodField()
+    situacion_etiqueta = serializers.SerializerMethodField()
     iniciada_por_nombre = serializers.CharField(source="iniciada_por.get_full_name", read_only=True)
     finalizada_por_nombre = serializers.CharField(source="finalizada_por.get_full_name", read_only=True)
     producto_descremada_nombre = serializers.CharField(source="producto_descremada.nombre", read_only=True)
     producto_crema_nombre = serializers.CharField(source="producto_crema.nombre", read_only=True)
-    iniciada_por_nombre = serializers.CharField(source="iniciada_por.get_full_name", read_only=True)
-    finalizada_por_nombre = serializers.CharField(source="finalizada_por.get_full_name", read_only=True)
 
     class Meta:
         model = CorridaDescremacion
@@ -200,6 +228,18 @@ class CorridaDescremacionSerializer(serializers.ModelSerializer):
             "litros_descremada_plan", "litros_crema_plan", "fuente_plan",
             "plan_confirmado_por", "plan_confirmado_en",
         ]
+
+    @staticmethod
+    def _situacion(corrida):
+        from .dominio import situacion_descremacion
+
+        return situacion_descremacion(corrida.estado, corrida.ejecucion.estado)
+
+    def get_situacion(self, corrida):
+        return self._situacion(corrida)[0]
+
+    def get_situacion_etiqueta(self, corrida):
+        return self._situacion(corrida)[1]
 
     def validate(self, attrs):
         candidato = CorridaDescremacion(**{
