@@ -33,6 +33,7 @@ MATERIALES_ENVASE = (
     ("EMB-FILM", "Film stretch para pallet", False, False, Decimal("1"), Decimal("10")),
 )
 CODIGO_ENVASADORA = "envasadora_mantequilla"
+ORDENES_ABIERTAS = 2
 
 
 class Command(BaseCommand):
@@ -141,14 +142,19 @@ class Command(BaseCommand):
                 "› Formatos de envasado y vuelve a correr el comando."
             ))
 
-        orden = OrdenProduccion.objects.filter(
+        # Dos OP abiertas, no una: el E2E prepara dos corridas (la completa y la
+        # que cancela), y cerrar la primera pasa su OP a pendiente de Calidad,
+        # que el puesto ya no ofrece. Con una, la segunda prueba dependía del
+        # orden. Se repone hasta dos; nunca se acumulan.
+        abiertas = OrdenProduccion.objects.filter(
             producto=producto,
             estado__in=[OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO],
-        ).first()
-        if orden is None:
-            base = f"OP-E2E-MANT-{date.today():%Y%m%d}"
+        )
+        ordenes = list(abiertas.order_by("pk")[:ORDENES_ABIERTAS])
+        base = f"OP-E2E-MANT-{date.today():%Y%m%d}"
+        while len(ordenes) < ORDENES_ABIERTAS:
             correlativo = OrdenProduccion.objects.filter(codigo__startswith=base).count() + 1
-            orden = OrdenProduccion.objects.create(
+            ordenes.append(OrdenProduccion.objects.create(
                 sucursal=planta,
                 codigo=f"{base}-{correlativo}",
                 producto=producto,
@@ -159,7 +165,7 @@ class Command(BaseCommand):
                 estado=OrdenProduccion.Estado.PROGRAMADA,
                 creada_por=usuario,
                 observacion="Orden local de validacion; no representa una orden comercial.",
-            )
+            ))
 
         mandante = Mandante.objects.filter(
             empresa=planta.empresa,
@@ -196,7 +202,7 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS(
-            f"Mantequilla preparada: OP={orden.codigo}; producto={producto.nombre}; "
+            f"Mantequilla preparada: OP={', '.join(o.codigo for o in ordenes)}; producto={producto.nombre}; "
             f"especificacion=v{especificacion.version}; mazada={lote_suero.codigo_lote}; "
             f"envasadora={envasadora.nombre}; "
             f"receta_envase=v{receta_envase.version}; materiales={materiales}."

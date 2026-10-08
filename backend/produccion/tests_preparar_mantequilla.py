@@ -68,8 +68,35 @@ class PrepararCircuitoMantequillaTests(TestCase):
         self.assertEqual(envasadora.nombre, "Envasadora de mantequilla")
         self.assertIn(envasadora, self.formato.equipos.all())
         self.assertFalse(self.formato.equipos.filter(tipo=Equipo.Tipo.MANTEQUERA).exists())
-        orden = OrdenProduccion.objects.get(producto=self.producto)
-        self.assertEqual(orden.equipo.tipo, Equipo.Tipo.MANTEQUERA)
+        for orden in OrdenProduccion.objects.filter(producto=self.producto):
+            self.assertEqual(orden.equipo.tipo, Equipo.Tipo.MANTEQUERA)
+
+    def test_deja_dos_ordenes_programadas_sin_acumular(self):
+        """
+        El E2E prepara dos corridas —la completa y la que cancela— y cerrar la
+        primera pasa su OP a pendiente de Calidad, que el puesto ya no ofrece.
+        Con una sola OP, la segunda prueba dependía del orden de las pruebas.
+        """
+        self.preparar()
+        self.preparar()
+
+        abiertas = OrdenProduccion.objects.filter(
+            producto=self.producto,
+            estado__in=[OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO],
+        )
+        self.assertEqual(abiertas.count(), 2)
+
+        consumida = abiertas.first()
+        consumida.estado = OrdenProduccion.Estado.PENDIENTE_CALIDAD
+        consumida.save(update_fields=["estado"])
+
+        salida = self.preparar()
+
+        self.assertEqual(abiertas.count(), 2)
+        self.assertEqual(OrdenProduccion.objects.filter(producto=self.producto).count(), 3)
+        codigos = set(OrdenProduccion.objects.values_list("codigo", flat=True))
+        self.assertEqual(len(codigos), OrdenProduccion.objects.count())
+        self.assertIn("OP=", salida)
 
     def test_sin_mantequera_activa_lo_dice(self):
         Equipo.objects.filter(tipo=Equipo.Tipo.MANTEQUERA).update(activo=False)
