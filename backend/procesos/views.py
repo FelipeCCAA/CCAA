@@ -39,6 +39,7 @@ from .serializers import (
     RevisarCierreDescremacionSerializer, RevisarCierreMantequillaSerializer,
     RutaProductoSerializer, SugerirDescremacionSerializer,
 )
+from .dominio import SITUACIONES_DESCREMACION, SITUACIONES_MANTEQUILLA
 from .consultas_planta import consultar_planta_ahora, resumen_operacional_produccion
 from .consultas_trazabilidad import (
     construir_timeline_trazabilidad,
@@ -55,14 +56,15 @@ from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
     ConflictoVersionEjecucion,
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
-    condicion_situacion_descremacion,
+    condicion_situacion,
     genealogia_lote,
     revisar_cierre_descremacion,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
-    estado_puesto_descremado, estado_puesto_evaporacion, estado_puesto_secado,
+    estado_puesto_descremado, estado_puesto_evaporacion, estado_puesto_mantequilla,
+    estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
     cancelar_preparacion_descremacion, cancelar_preparacion_evaporacion,
     cancelar_preparacion_mantequilla, cancelar_preparacion_secado,
@@ -340,7 +342,7 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
     def condicion_estado(self, estado):
         # `?estado=` filtra por la situación que muestra la columna, con las
         # opciones que sirve `puesto/` (`SITUACIONES_DESCREMACION`).
-        return condicion_situacion_descremacion(estado)
+        return condicion_situacion(SITUACIONES_DESCREMACION, estado)
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
@@ -597,7 +599,7 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
 
 
 class CorridaMantequillaViewSet(
-    RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
+    FiltraConsultaMixin, RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
 ):
     tenant_lookup_sucursal = "ejecucion__sucursal_id"
     tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
@@ -612,16 +614,34 @@ class CorridaMantequillaViewSet(
         "ejecucion__etapa", "ejecucion__equipo", "orden",
         "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
         "iniciada_por", "finalizada_por",
-    )
+    ).order_by("-pk")
     serializer_class = CorridaMantequillaSerializer
     permission_classes = [OperaProcesoPorEtapa]
     tipo_etapa_operacional = EtapaProceso.Tipo.MANTEQUILLA
     http_method_names = ["get", "post", "head", "options"]
+    # Historial del puesto: se filtra en el servidor porque la lista está
+    # paginada (mismo contrato que Descremado, Secado y Existencias).
+    busqueda_en = (
+        "ejecucion__codigo", "lote_mantequilla__codigo_lote",
+        "lote_crema__codigo_lote", "orden__codigo",
+    )
+    filtro_estado = "estado"
+    filtro_fecha = "ejecucion__creada_en"
+
+    def condicion_estado(self, estado):
+        # `?estado=` filtra por la situación que muestra la columna, con las
+        # opciones que sirve `puesto/` (`SITUACIONES_MANTEQUILLA`).
+        return condicion_situacion(SITUACIONES_MANTEQUILLA, estado)
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
             "POST", detail="Usa crear-guiada para registrar una corrida de mantequilla."
         )
+
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Mantequilla: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_mantequilla(request.user))
 
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):

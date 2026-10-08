@@ -16,6 +16,7 @@ from produccion.models import Lote, OrdenProduccion
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
+from .dominio import SITUACIONES_MANTEQUILLA, situacion_mantequilla
 from .models import (
     CorridaMantequilla, EjecucionProceso, EntradaProceso, EtapaProceso, Proceso,
     RutaProducto, SalidaProceso,
@@ -24,7 +25,7 @@ from .servicios import (
     MENSAJE_INICIO_MANTEQUILLA_EN_PUESTO, MENSAJE_MANTEQUILLA_EN_PUESTO,
     MENSAJE_MOTIVO_CANCELACION, MENSAJE_SALIDA_DE_LOTE_ANULADO, RESOLVER_CALIDAD,
     RESOLVER_CIP, RESOLVER_PLANIFICACION, RESOLVER_SILOS, iniciar_mantequilla,
-    kg_crema_disponible, motivos_para_iniciar_mantequilla,
+    kg_crema_disponible, motivos_crema_para_mantequilla, motivos_para_iniciar_mantequilla,
     motivos_tipados_para_iniciar_mantequilla, preparar_continuacion, transicionar_ejecucion,
 )
 
@@ -661,3 +662,359 @@ class PermisosMantequillaTests(BasePuestoMantequilla):
         self.assertEqual(self.recargar(preparada.pk).ejecucion.estado, EjecucionProceso.Estado.PREPARACION)
         self.assertEqual(self.recargar(en_curso.pk).estado, CorridaMantequilla.Estado.EN_PROCESO)
         self.assertEqual(Lote.objects.filter(producto=self.producto_mantequilla).count(), 2)
+
+
+class SituacionesMantequillaTests(TestCase):
+    def test_cada_corrida_tiene_una_situacion_y_gana_la_primera(self):
+        casos = {
+            ("borrador", "preparacion"): "preparada",
+            ("en_proceso", "ejecucion"): "en_curso",
+            ("en_proceso", "pausada"): "en_curso",
+            ("pendiente_calidad", "pendiente_control"): "esperando_calidad",
+            ("cerrada", "cerrada"): "terminada",
+            ("anulada", "cancelada"): "anulada",
+            # Heredada del modal anterior, o huérfana: no es «Preparada».
+            ("borrador", "borrador"): "borrador",
+            ("borrador", "cancelada"): "borrador",
+        }
+        for (estado, ejecucion), esperada in casos.items():
+            with self.subTest(estado=estado, ejecucion=ejecucion):
+                self.assertEqual(situacion_mantequilla(estado, ejecucion)[0], esperada)
+
+    def test_el_catalogo_es_la_tabla(self):
+        self.assertEqual(
+            [fila[0] for fila in SITUACIONES_MANTEQUILLA],
+            ["preparada", "en_curso", "esperando_calidad", "terminada", "anulada", "borrador"],
+        )
+
+
+class PuestoMantequillaTests(BasePuestoMantequilla):
+    def puesto(self, usuario=None):
+        respuesta = self.cliente(usuario).get("/api/procesos/mantequillas/puesto/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        return respuesta.data
+
+    def fila(self, datos, equipo):
+        return next(item for item in datos["mantequeras"] if item["equipo_id"] == equipo.pk)
+
+    def por_id(self, filas, *objetos):
+        propios = {objeto.pk for objeto in objetos}
+        return {fila["id"]: fila for fila in filas if fila["id"] in propios}
+
+    def cerrar(self, corrida):
+        # Sin lote de suero en la corrida: todo lo que no es mantequilla es merma.
+        respuesta = self.cliente().post(
+            f"/api/procesos/mantequillas/{corrida.pk}/cerrar/",
+            {"kg_mantequilla": "59", "kg_merma": "1"}, format="json",
+        )
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+
+    def test_una_mantequera_sin_ejecucion_esta_disponible(self):
+        fila = self.fila(self.puesto(), self.mantequera)
+
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertEqual(fila["tipo"], "mantequera")
+        self.assertIsNone(fila["corrida"])
+        self.assertEqual(fila["motivos_para_tomar"], [])
+        self.assertIsNone(fila["en_calidad"])
+
+    def test_una_preparada_trae_su_corrida_y_puede_iniciarse(self):
+        corrida = self.preparada(lote_suero=self.suero.pk)
+
+        fila = self.fila(self.puesto(), self.mantequera)
+
+        self.assertEqual(fila["estado"], "preparada")
+        self.assertEqual(fila["corrida"], {
+            "id": corrida.pk, "estado": "borrador",
+            "ejecucion_id": corrida.ejecucion_id, "ejecucion_codigo": corrida.ejecucion.codigo,
+            "ejecucion_estado": "preparacion", "orden_codigo": "OP-PM-1",
+            "producto": "Mantequilla PM", "lote_mantequilla": corrida.lote_mantequilla.codigo_lote,
+            "lote_crema": "CR-PM-1", "kg_crema": "60.000", "lote_suero": "MAZ-PM-1",
+            "iniciada_en": None,
+        })
+        self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertIsNone(fila["resolver_en"])
+
+    def test_los_motivos_dicen_donde_se_resuelven(self):
+        crema, _tk = self.crema_en_tk("CR-PM-FIRMA", segunda_firma=False)
+        self.preparada(lote_crema=crema.pk, kg_crema="200")
+        self.preparada(equipo=self.otra_mantequera.pk)
+        self.cip(self.otra_mantequera)
+
+        datos = self.puesto()
+
+        sin_firma = self.fila(datos, self.mantequera)
+        self.assertIn("firma de realización y visualización", sin_firma["motivos_para_iniciar"][0])
+        self.assertEqual(sin_firma["resolver_en"], "/silos")
+        en_cip = self.fila(datos, self.otra_mantequera)
+        self.assertIn("CIP", en_cip["motivos_para_iniciar"][0])
+        self.assertEqual(en_cip["resolver_en"], "/calidad/inocuidad")
+
+    def test_una_crema_sin_liberar_y_una_orden_cancelada_dicen_donde(self):
+        self.preparada()
+        LiberacionProceso.objects.filter(salida__lote=self.crema).update(
+            estado=LiberacionProceso.Estado.PENDIENTE,
+        )
+        self.assertEqual(self.fila(self.puesto(), self.mantequera)["resolver_en"], "/calidad")
+
+        OrdenProduccion.objects.filter(pk=self.orden.pk).update(
+            estado=OrdenProduccion.Estado.CANCELADA,
+        )
+        fila = self.fila(self.puesto(), self.mantequera)
+        # La orden se comprueba antes que la crema: es el primer motivo.
+        self.assertIn("OP-PM-1", fila["motivos_para_iniciar"][0])
+        self.assertEqual(fila["resolver_en"], "/planificacion")
+
+    def test_una_mantequera_en_cip_no_se_toma(self):
+        self.cip(self.mantequera)
+
+        fila = self.fila(self.puesto(), self.mantequera)
+
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertIn("CIP", fila["motivos_para_tomar"][0])
+        self.assertEqual(fila["resolver_en"], "/calidad/inocuidad")
+
+    def test_un_aseo_observado_es_aviso_no_motivo(self):
+        self.preparada()
+        self.cip(self.mantequera, estado=CicloCIP.Estado.OBSERVADO, horas=3)
+
+        fila = self.fila(self.puesto(), self.mantequera)
+
+        self.assertEqual(fila["motivos_para_iniciar"], [])
+        self.assertTrue(fila["avisos"])
+
+    def test_ejecucion_en_curso_pausada_o_bloqueada_esta_en_curso(self):
+        # «En curso manda sobre preparada» no se puede sembrar: la base impide
+        # dos ocupaciones del mismo equipo (Desviación 11).
+        corrida = self.en_curso()
+        for estado in ("ejecucion", "pausada", "bloqueada"):
+            EjecucionProceso.objects.filter(pk=corrida.ejecucion_id).update(estado=estado)
+            with self.subTest(estado=estado):
+                fila = self.fila(self.puesto(), self.mantequera)
+                self.assertEqual(fila["estado"], "en_curso")
+                self.assertEqual(fila["corrida"]["ejecucion_estado"], estado)
+                self.assertEqual(fila["motivos_para_iniciar"], [])
+
+    def test_un_huerfano_con_ejecucion_terminada_no_ocupa(self):
+        corrida = self.preparada()
+        EjecucionProceso.objects.filter(pk=corrida.ejecucion_id).update(
+            estado=EjecucionProceso.Estado.CANCELADA,
+        )
+
+        datos = self.puesto()
+
+        self.assertEqual(self.fila(datos, self.mantequera)["estado"], "disponible")
+        self.assertEqual(self.por_id(datos["corridas_de_hoy"], corrida), {})
+
+    def test_en_calidad_la_mantequera_queda_libre_y_lo_informa(self):
+        corrida = self.en_curso()
+        self.cerrar(corrida)
+
+        fila = self.fila(self.puesto(), self.mantequera)
+
+        self.assertEqual(fila["estado"], "disponible")
+        self.assertEqual(fila["en_calidad"], {
+            "id": corrida.pk, "ejecucion_codigo": corrida.ejecucion.codigo,
+            "lote_mantequilla": corrida.lote_mantequilla.codigo_lote,
+        })
+
+    def test_una_linea_ocupada_por_mantequilla_aparece_y_una_ajena_no(self):
+        linea = Equipo.objects.create(
+            sucursal=self.planta, codigo="linea-pm-vieja", nombre="Línea vieja", tipo=Equipo.Tipo.LINEA,
+        )
+        ajena = Equipo.objects.create(
+            sucursal=self.planta, codigo="linea-pm-ajena", nombre="Línea ajena", tipo=Equipo.Tipo.LINEA,
+        )
+        ejecucion = EjecucionProceso.objects.create(
+            codigo="EJ-MANT-VIEJA", etapa=self.etapa, sucursal=self.planta, equipo=linea,
+            responsable=self.condensador, estado=EjecucionProceso.Estado.PREPARACION,
+        )
+
+        datos = self.puesto()
+
+        fila = self.fila(datos, linea)
+        self.assertEqual(fila["tipo"], "linea")
+        self.assertEqual(fila["estado"], "preparada")
+        self.assertIn(f"{ejecucion.codigo} no tiene corrida de mantequilla", fila["motivos_para_iniciar"][0])
+        self.assertNotIn(ajena.pk, [item["equipo_id"] for item in datos["mantequeras"]])
+
+    def test_cremas_restan_las_otras_preparadas_y_no_ofrecen_la_agotada(self):
+        self.preparada(kg_crema="600")
+        crema = self.por_id(self.puesto()["cremas"], self.crema)[self.crema.pk]
+        self.assertEqual(crema["disponible_kg"], "400.000")
+        self.assertIsNone(crema["tk"])
+
+        self.preparada(equipo=self.otra_mantequera.pk, kg_crema="400")
+
+        self.assertEqual(self.por_id(self.puesto()["cremas"], self.crema), {})
+
+    def test_cremas_traen_su_tk(self):
+        crema, tk = self.crema_en_tk("CR-PM-TK")
+
+        fila = self.por_id(self.puesto()["cremas"], crema)[crema.pk]
+
+        self.assertEqual(fila["tk"], tk.codigo)
+
+    def test_cremas_pendientes_de_calidad_explican_por_que_no_aparecen(self):
+        pendiente = self.lote_crema("CR-PM-PEND", liberacion=LiberacionProceso.Estado.PENDIENTE)
+        sin_decision = self.lote_crema("CR-PM-SIN", liberacion=None)
+
+        datos = self.puesto()
+
+        self.assertEqual(self.por_id(datos["cremas"], pendiente, sin_decision), {})
+        explicadas = self.por_id(datos["cremas_pendientes_calidad"], pendiente, sin_decision)
+        self.assertEqual(explicadas[pendiente.pk]["estado_calidad"], "pendiente")
+        self.assertEqual(explicadas[sin_decision.pk]["estado_calidad"], "trazabilidad_incompleta")
+        self.assertEqual(explicadas[pendiente.pk]["etapa_origen"], "Descremación")
+
+    def test_sueros_ofrecen_de_nuevo_el_de_una_corrida_anulada(self):
+        corrida = self.preparada(lote_suero=self.suero.pk)
+        self.assertEqual(self.por_id(self.puesto()["sueros"], self.suero), {})
+
+        self.cliente().post(
+            f"/api/procesos/mantequillas/{corrida.pk}/cancelar-preparacion/",
+            {"motivo": "Suero equivocado"}, format="json",
+        )
+
+        self.assertIn(self.suero.pk, self.por_id(self.puesto()["sueros"], self.suero))
+
+    def test_ordenes_programadas_o_en_proceso(self):
+        cancelada = OrdenProduccion.objects.create(
+            sucursal=self.planta, codigo="OP-PM-CAN", producto=self.producto_mantequilla,
+            cantidad_planificada=10, unidad="kg", estado=OrdenProduccion.Estado.CANCELADA,
+        )
+
+        ordenes = self.por_id(self.puesto()["ordenes"], self.orden, cancelada)
+
+        self.assertEqual(list(ordenes), [self.orden.pk])
+
+    def test_corridas_de_hoy_sin_huerfanos_y_con_su_situacion(self):
+        en_curso = self.en_curso()
+        huerfana = self.preparada(equipo=self.otra_mantequera.pk)
+        EjecucionProceso.objects.filter(pk=huerfana.ejecucion_id).update(
+            estado=EjecucionProceso.Estado.CANCELADA,
+        )
+
+        propias = self.por_id(self.puesto()["corridas_de_hoy"], en_curso, huerfana)
+
+        self.assertEqual(list(propias), [en_curso.pk])
+        self.assertEqual(propias[en_curso.pk]["situacion"], "en_curso")
+        self.assertEqual(propias[en_curso.pk]["situacion_etiqueta"], "En la mantequera")
+        self.assertEqual(propias[en_curso.pk]["lote_crema"], "CR-PM-1")
+
+    def test_calidad_lee_el_puesto(self):
+        datos = self.puesto(self.calidad)
+
+        self.assertIn("mantequeras", datos)
+        self.assertEqual(
+            [estado["valor"] for estado in datos["estados"]],
+            [fila[0] for fila in SITUACIONES_MANTEQUILLA],
+        )
+
+    def test_el_historial_filtra_en_el_servidor(self):
+        primera = self.en_curso()
+        segunda = self.preparada(equipo=self.otra_mantequera.pk)
+        url = "/api/procesos/mantequillas/"
+
+        por_lote = self.cliente().get(url, {"q": segunda.lote_mantequilla.codigo_lote})
+        en_curso = self.cliente().get(url, {"estado": "en_curso"})
+        preparadas = self.cliente().get(url, {"estado": "preparada"})
+        manana = (timezone.localdate() + timedelta(days=1)).isoformat()
+        futuras = self.cliente().get(url, {"desde": manana})
+
+        self.assertEqual(list(self.por_id(por_lote.data["results"], primera, segunda)), [segunda.pk])
+        self.assertEqual(list(self.por_id(en_curso.data["results"], primera, segunda)), [primera.pk])
+        self.assertEqual(list(self.por_id(preparadas.data["results"], primera, segunda)), [segunda.pk])
+        self.assertEqual(self.por_id(futuras.data["results"], primera, segunda), {})
+        fila = self.por_id(en_curso.data["results"], primera)[primera.pk]
+        self.assertEqual(fila["ejecucion_estado"], "ejecucion")
+        self.assertEqual(fila["situacion_etiqueta"], "En la mantequera")
+
+
+class CremasDelPuestoMantequillaTests(BasePuestoMantequilla):
+    """
+    La lista `cremas` ofrece exactamente lo que «Preparar» acepta: la misma
+    liberación (la de la salida del TK si la crema está en uno) y el mismo
+    disponible (`kg_crema_disponible`), calculados en la consulta y no por fila.
+    """
+
+    def puesto(self):
+        respuesta = self.cliente().get("/api/procesos/mantequillas/puesto/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        return respuesta.data
+
+    def crema_tk_pendiente_y_otra_salida_liberada(self, codigo):
+        crema, tk = self.crema_en_tk(codigo)
+        LiberacionProceso.objects.filter(salida__lote=crema, salida__silo=tk).update(
+            estado=LiberacionProceso.Estado.PENDIENTE,
+        )
+        otra = SalidaProceso.objects.create(
+            ejecucion=SalidaProceso.objects.get(lote=crema).ejecucion, lote=crema,
+            producto=self.producto_crema, cantidad=Decimal("1000"), unidad="kg",
+        )
+        LiberacionProceso.objects.create(salida=otra, estado=LiberacionProceso.Estado.LIBERADO)
+        return crema
+
+    def test_una_crema_cuyo_tk_espera_calidad_no_se_ofrece_aunque_otra_salida_este_liberada(self):
+        crema = self.crema_tk_pendiente_y_otra_salida_liberada("CR-PM-TKPEND")
+
+        datos = self.puesto()
+
+        self.assertEqual([fila["id"] for fila in datos["cremas"] if fila["id"] == crema.pk], [])
+        explicada = [fila for fila in datos["cremas_pendientes_calidad"] if fila["id"] == crema.pk]
+        self.assertEqual([fila["estado_calidad"] for fila in explicada], ["pendiente"])
+
+    def test_la_lista_es_lo_que_acepta_preparar(self):
+        agotada = self.lote_crema("CR-PM-AGOT")
+        EntradaProceso.objects.create(
+            ejecucion=SalidaProceso.objects.get(lote=agotada).ejecucion, lote=agotada,
+            cantidad=Decimal("1000"), unidad="kg",
+        )
+        anulada = self.lote_crema("CR-PM-ANUL")
+        Lote.objects.filter(pk=anulada.pk).update(estado=Lote.Estado.ANULADO)
+        en_proceso = self.lote_crema("CR-PM-PROC")
+        Lote.objects.filter(pk=en_proceso.pk).update(estado=Lote.Estado.EN_PROCESO)
+        en_tk, _tk = self.crema_en_tk("CR-PM-TKOK")
+        lotes = [
+            self.crema, agotada, anulada, en_proceso, en_tk,
+            self.crema_tk_pendiente_y_otra_salida_liberada("CR-PM-TKPEND"),
+            self.lote_crema("CR-PM-PEND", liberacion=LiberacionProceso.Estado.PENDIENTE),
+            self.lote_crema("CR-PM-RECH", liberacion=LiberacionProceso.Estado.RECHAZADO),
+            self.lote_crema("CR-PM-SIN", liberacion=None),
+        ]
+        self.preparada(kg_crema="300")
+
+        ofrecidas = {fila["id"]: fila for fila in self.puesto()["cremas"]}
+
+        for lote in lotes:
+            lote.refresh_from_db()
+            with self.subTest(lote=lote.codigo_lote):
+                acepta = motivos_crema_para_mantequilla(lote, Decimal("0.001")) == []
+                self.assertEqual(lote.pk in ofrecidas, acepta)
+                if acepta:
+                    self.assertEqual(
+                        ofrecidas[lote.pk]["disponible_kg"], str(kg_crema_disponible(lote)),
+                    )
+        self.assertEqual(ofrecidas[self.crema.pk]["disponible_kg"], "700.000")
+        self.assertEqual(ofrecidas[en_tk.pk]["tk"], "TK-CR-PM-TKOK")
+
+    def test_las_consultas_no_crecen_con_las_cremas_ni_los_sueros(self):
+        def cremas(desde, hasta):
+            for numero in range(desde, hasta):
+                self.lote_crema(f"CR-PM-N{numero}")
+                self.crema_en_tk(f"CR-PM-T{numero}")
+                self.lote_crema(f"CR-PM-P{numero}", liberacion=LiberacionProceso.Estado.PENDIENTE)
+                Lote.objects.create(
+                    sucursal=self.planta, codigo_lote=f"MAZ-PM-N{numero}",
+                    producto=self.producto_suero, fecha=date(2026, 10, 8),
+                )
+
+        cremas(1, 2)
+        with CaptureQueriesContext(connection) as una:
+            self.puesto()
+        cremas(2, 7)
+        with CaptureQueriesContext(connection) as seis:
+            datos = self.puesto()
+
+        self.assertIn("CR-PM-N6", [fila["codigo"] for fila in datos["cremas"]])
+        self.assertEqual(len(seis.captured_queries), len(una.captured_queries))

@@ -195,7 +195,7 @@ def errores_cierre_mantequilla(
 # `(valor, etiqueta, estado de la corrida, estados de la ejecución o None)`,
 # y gana la primera fila que coincide. Una sola tabla para la columna
 # «Situación», el catálogo del filtro y el filtro mismo
-# (`procesos.servicios.condicion_situacion_descremacion`): con dos, el
+# (`procesos.servicios.condicion_situacion`): con dos, el
 # filtro ofrecía «En curso» y la columna decía «En la descremadora», y
 # «Cerrada» devolvía filas que la columna llamaba «Esperando Calidad».
 SITUACIONES_DESCREMACION = (
@@ -210,11 +210,36 @@ SITUACIONES_DESCREMACION = (
 )
 
 
-def situacion_descremacion(estado: str, estado_ejecucion: str) -> tuple[str, str]:
-    """`(valor, etiqueta)` de la situación de una corrida (`SITUACIONES_DESCREMACION`)."""
-    for valor, etiqueta, estado_corrida, estados_ejecucion in SITUACIONES_DESCREMACION:
+# Cómo se nombra una corrida de mantequilla en el puesto y en su historial,
+# con la forma de `SITUACIONES_DESCREMACION` (gana la primera). A diferencia
+# de Descremado, «Preparada» exige la ejecución en `preparacion`: una corrida
+# heredada del modal anterior (ejecución en `borrador`) nunca tomó la
+# mantequera y es «Borrador».
+SITUACIONES_MANTEQUILLA = (
+    ("preparada", "Preparada", "borrador", frozenset({"preparacion"})),
+    ("en_curso", "En la mantequera", "en_proceso", None),
+    ("esperando_calidad", "Esperando Calidad", "pendiente_calidad", None),
+    ("terminada", "Terminada", "cerrada", None),
+    ("anulada", "Anulada", "anulada", None),
+    ("borrador", "Borrador", "borrador", None),
+)
+
+
+def situacion_de(tabla, estado: str, estado_ejecucion: str) -> tuple[str, str]:
+    """`(valor, etiqueta)` de la situación de una corrida según `tabla` (gana la primera fila)."""
+    for valor, etiqueta, estado_corrida, estados_ejecucion in tabla:
         if estado == estado_corrida and (
             estados_ejecucion is None or estado_ejecucion in estados_ejecucion
         ):
             return valor, etiqueta
     return estado, estado
+
+
+def situacion_descremacion(estado: str, estado_ejecucion: str) -> tuple[str, str]:
+    """`(valor, etiqueta)` de la situación de una corrida de descremado."""
+    return situacion_de(SITUACIONES_DESCREMACION, estado, estado_ejecucion)
+
+
+def situacion_mantequilla(estado: str, estado_ejecucion: str) -> tuple[str, str]:
+    """`(valor, etiqueta)` de la situación de una corrida de mantequilla."""
+    return situacion_de(SITUACIONES_MANTEQUILLA, estado, estado_ejecucion)

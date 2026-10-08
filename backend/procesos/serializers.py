@@ -341,6 +341,12 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
     iniciada_por_nombre = serializers.CharField(source="iniciada_por.get_full_name", read_only=True)
     finalizada_por_nombre = serializers.CharField(source="finalizada_por.get_full_name", read_only=True)
+    # El historial distingue «Preparada» de «Borrador» con el estado de la
+    # ejecución, no solo con el de la corrida.
+    ejecucion_estado = serializers.CharField(source="ejecucion.estado", read_only=True)
+    # La columna «Situación» del historial, con la tabla que usa su filtro.
+    situacion = serializers.SerializerMethodField()
+    situacion_etiqueta = serializers.SerializerMethodField()
 
     class Meta:
         model = CorridaMantequilla
@@ -349,7 +355,20 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
             "estado", "kg_mantequilla", "kg_suero", "kg_merma", "kg_reproceso",
             "motivo_reproceso", "lote_reproceso", "controles",
             "iniciada_por", "iniciada_en", "finalizada_por", "finalizada_en",
+            "motivo_anulacion",
         ]
+
+    @staticmethod
+    def _situacion(corrida):
+        from .dominio import situacion_mantequilla
+
+        return situacion_mantequilla(corrida.estado, corrida.ejecucion.estado)
+
+    def get_situacion(self, corrida):
+        return self._situacion(corrida)[0]
+
+    def get_situacion_etiqueta(self, corrida):
+        return self._situacion(corrida)[1]
 
     def validate(self, attrs):
         candidato = CorridaMantequilla(**{

@@ -5,7 +5,8 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import (
-    Case, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Sum, Value, When,
+    Case, Count, DecimalField, Exists, ExpressionWrapper, F, OuterRef, Prefetch, Q, Subquery,
+    Sum, Value, When,
 )
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -962,14 +963,33 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
 
 def filtro_crema_liberada():
     """
-    Un lote de crema que Calidad liberó: alguna de sus salidas tiene la
-    liberación en `liberado`. Una sola condición para la lista `cremas` del
-    puesto, «Preparar» y el inicio: antes el inicio solo la miraba si la crema
-    estaba en un TK, y la lista la exigía siempre.
+    Un lote de crema que Calidad liberó. Si la crema está en un TK, la
+    liberación que cuenta es la de **esa** salida (`fuente_tk_de_crema`: la
+    primera con silo, por `registrada_en` y `pk`): de ella se lee la densidad
+    con que se descuenta el TK, y otra salida liberada del mismo lote no dice
+    nada de esa crema. Sin TK, basta que alguna salida esté liberada.
+
+    Una sola condición —con `Exists`, sin multiplicar filas— para la lista
+    `cremas` del puesto, «Preparar» y el inicio
+    (`motivos_crema_para_mantequilla`): con la condición vieja, «cualquier
+    salida liberada», el puesto ofrecía una crema cuyo TK esperaba a Calidad y
+    «Preparar» la rechazaba.
     """
     from calidad.models import LiberacionProceso
 
-    return Q(salidas_proceso__liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO)
+    liberado = LiberacionProceso.Estado.LIBERADO
+    en_tk = Exists(SalidaProceso.objects.filter(lote=OuterRef("pk"), silo__isnull=False))
+    primera_en_tk = (
+        SalidaProceso.objects.filter(lote=OuterRef(OuterRef("pk")), silo__isnull=False)
+        .order_by("registrada_en", "pk").values("pk")[:1]
+    )
+    tk_liberado = Exists(LiberacionProceso.objects.filter(
+        salida_id=Subquery(primera_en_tk), estado=liberado,
+    ))
+    alguna_liberada = Exists(LiberacionProceso.objects.filter(
+        salida__lote=OuterRef("pk"), estado=liberado,
+    ))
+    return (Q(en_tk) & Q(tk_liberado)) | (~Q(en_tk) & Q(alguna_liberada))
 
 
 def sueros_libres(consulta=None):
@@ -1006,18 +1026,45 @@ def kg_crema_disponible(lote, *, excluir_corrida_id=None):
     «Preparar» y el inicio. Sin restar las preparadas, el puesto ofrecía una
     crema que el inicio de la segunda corrida rechazaba (caso 1 de «La
     pantalla ofrece lo que el backend va a rechazar», `CLAUDE.md`).
+
+    La cuenta es una expresión (`expresion_kg_crema_disponible`): el puesto la
+    anota sobre todas las cremas en una consulta y aquí se evalúa para una.
     """
-    utilizado = EntradaProceso.objects.filter(
-        lote=lote, unidad__iexact="kg",
-    ).exclude(PREPARACION_CANCELADA).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    from produccion.models import Lote
+
+    return Lote.objects.filter(pk=lote.pk).annotate(
+        disponible=expresion_kg_crema_disponible(excluir_corrida_id=excluir_corrida_id),
+    ).values_list("disponible", flat=True).get()
+
+
+def expresion_kg_crema_disponible(*, excluir_corrida_id=None):
+    """
+    `kg_crema_disponible` como expresión sobre `Lote`: kilos producidos menos
+    las entradas en kg que no son una preparación cancelada, menos el
+    `kg_crema` de las otras corridas preparadas.
+    """
+    decimal = DecimalField(max_digits=20, decimal_places=3)
+    cero = Value(Decimal("0"), output_field=decimal)
+    utilizado = (
+        EntradaProceso.objects.filter(lote=OuterRef("pk"), unidad__iexact="kg")
+        .exclude(PREPARACION_CANCELADA)
+        .order_by().values("lote").annotate(total=Sum("cantidad")).values("total")
+    )
     preparadas = CorridaMantequilla.objects.filter(
-        lote_crema=lote, estado=CorridaMantequilla.Estado.BORRADOR,
+        lote_crema=OuterRef("pk"), estado=CorridaMantequilla.Estado.BORRADOR,
         ejecucion__estado=EjecucionProceso.Estado.PREPARACION,
     )
     if excluir_corrida_id is not None:
         preparadas = preparadas.exclude(pk=excluir_corrida_id)
-    comprometido = preparadas.aggregate(total=Sum("kg_crema"))["total"] or Decimal("0")
-    return Decimal(str(lote.kg_producidos or 0)) - utilizado - comprometido
+    comprometido = (
+        preparadas.order_by().values("lote_crema").annotate(total=Sum("kg_crema")).values("total")
+    )
+    return ExpressionWrapper(
+        Coalesce(F("kg_producidos"), cero)
+        - Coalesce(Subquery(utilizado, output_field=decimal), cero)
+        - Coalesce(Subquery(comprometido, output_field=decimal), cero),
+        output_field=decimal,
+    )
 
 
 def motivos_crema_para_mantequilla(lote, kg, *, excluir_corrida_id=None):
@@ -1033,7 +1080,6 @@ def motivos_crema_para_mantequilla(lote, kg, *, excluir_corrida_id=None):
     crema. Las condiciones del TK (análisis, firmas, CIP, saldo en litros) no
     están aquí: cambian entre los dos pasos y son solo motivos de inicio.
     """
-    from calidad.models import LiberacionProceso
     from produccion.models import Lote
 
     if lote.producto.familia != "crema":
@@ -1044,13 +1090,9 @@ def motivos_crema_para_mantequilla(lote, kg, *, excluir_corrida_id=None):
     if lote.estado not in {Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO}:
         return [(f"El lote de crema {lote.codigo_lote} todavía no está producido.", None)]
     motivos = []
-    fuente = fuente_tk_de_crema(lote)
-    if fuente is not None:
-        liberacion = getattr(fuente, "liberacion_calidad", None)
-        liberada = liberacion is not None and liberacion.estado == LiberacionProceso.Estado.LIBERADO
-    else:
-        liberada = Lote.objects.filter(pk=lote.pk).filter(filtro_crema_liberada()).exists()
-    if not liberada:
+    # La regla del TK vive en `filtro_crema_liberada`, la misma con que el
+    # puesto arma su lista `cremas`.
+    if not Lote.objects.filter(pk=lote.pk).filter(filtro_crema_liberada()).exists():
         motivos.append((
             f"El lote de crema {lote.codigo_lote} todavía no está liberado por Calidad.",
             RESOLVER_CALIDAD,
@@ -2542,14 +2584,15 @@ def iniciar_descremacion(*, corrida_id, usuario):
     ).get(pk=corrida.pk)
 
 
-def condicion_situacion_descremacion(situacion):
+def condicion_situacion(tabla, situacion):
     """
-    El filtro del historial por situación: la misma tabla que nombra cada
-    fila (`dominio.SITUACIONES_DESCREMACION`), con «gana la primera» traducido
-    a excluir las filas anteriores. Una situación desconocida no devuelve nada.
+    El filtro del historial por situación: la misma tabla que nombra cada fila
+    (`dominio.SITUACIONES_DESCREMACION`, `dominio.SITUACIONES_MANTEQUILLA`),
+    con «gana la primera» traducido a excluir las filas anteriores. Una
+    situación desconocida no devuelve nada. Una función para los dos puestos:
+    con dos copias, el filtro de un historial y su columna podían dejar de
+    coincidir.
     """
-    from .dominio import SITUACIONES_DESCREMACION
-
     def condicion(estado_corrida, estados_ejecucion):
         resultado = Q(estado=estado_corrida)
         if estados_ejecucion is not None:
@@ -2557,7 +2600,7 @@ def condicion_situacion_descremacion(situacion):
         return resultado
 
     anteriores = Q()
-    for valor, _etiqueta, estado_corrida, estados_ejecucion in SITUACIONES_DESCREMACION:
+    for valor, _etiqueta, estado_corrida, estados_ejecucion in tabla:
         propia = condicion(estado_corrida, estados_ejecucion)
         if valor == situacion:
             return propia & ~anteriores if anteriores else propia
@@ -2565,12 +2608,11 @@ def condicion_situacion_descremacion(situacion):
     return Q(pk__in=[])
 
 
-def catalogo_situaciones_descremacion():
-    from .dominio import SITUACIONES_DESCREMACION
-
+def catalogo_situaciones(tabla):
+    """Las opciones del filtro del historial: las mismas situaciones que muestra la columna."""
     return [
         {"valor": valor, "etiqueta": etiqueta}
-        for valor, etiqueta, _estado, _ejecucion in SITUACIONES_DESCREMACION
+        for valor, etiqueta, _estado, _ejecucion in tabla
     ]
 
 
@@ -2593,7 +2635,7 @@ def estado_puesto_descremado(usuario):
     from recepcion.servicios import ultimo_analisis_confirmado
     from usuarios.tenancy import filtrar_por_scope
 
-    from .dominio import situacion_descremacion
+    from .dominio import SITUACIONES_DESCREMACION, situacion_descremacion
 
     def texto(valor):
         # Texto, como en los serializers: el tipo del frontend es `string`.
@@ -2790,7 +2832,7 @@ def estado_puesto_descremado(usuario):
         "corridas_de_hoy": corridas_de_hoy,
         # Las opciones del filtro del historial: las mismas situaciones que
         # muestra la columna, no los estados crudos de la corrida.
-        "estados": catalogo_situaciones_descremacion(),
+        "estados": catalogo_situaciones(SITUACIONES_DESCREMACION),
     }
 
 
@@ -3111,8 +3153,9 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     from produccion.models import Lote, OrdenProduccion
     from recepcion.models import MovimientoSilo
 
-    # Candados: la corrida, luego su ejecución (el orden de los otros puestos;
-    # `bloquear_para_cancelar` todavía no toma `CorridaMantequilla`). Después,
+    # Candados: la corrida, luego su ejecución (el orden de los otros puestos
+    # y de `bloquear_para_cancelar`, que también toma `CorridaMantequilla`
+    # antes que la ejecución al cancelar una preparación). Después,
     # el mismo orden que «Preparar» (`crear_mantequilla_guiada`): orden, lote
     # de crema, y la mantequera al transicionar. Con la orden tomada al final
     # —este camino la actualiza—, un inicio y una preparación sobre la misma
@@ -3180,6 +3223,247 @@ def iniciar_mantequilla(*, corrida_id, usuario):
         "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
         "iniciada_por", "finalizada_por",
     ).get(pk=corrida.pk)
+
+
+def _estado_calidad_de_crema(lote):
+    """Por qué una crema no se ofrece: rechazada, pendiente o sin decisión de Calidad."""
+    estados = {
+        decision.estado
+        for decision in (
+            getattr(salida, "liberacion_calidad", None) for salida in lote.salidas_proceso.all()
+        )
+        if decision is not None
+    }
+    if "rechazado" in estados:
+        return "rechazado"
+    if "pendiente" in estados:
+        return "pendiente"
+    return "trazabilidad_incompleta"
+
+
+def estado_puesto_mantequilla(usuario):
+    """
+    Lo que el puesto de Mantequilla dibuja: un estado por mantequera
+    —derivado de su ejecución de Mantequilla que ocupa el equipo; una en
+    curso manda sobre una preparada—, los motivos que impiden iniciar
+    calculados por la misma función que decide al iniciar, y las listas que
+    «Preparar» vuelve a validar con las mismas reglas: órdenes, cremas con su
+    disponible (`kg_crema_disponible`), cremas que esperan a Calidad y sueros
+    libres (`sueros_libres`). La pantalla no recalcula nada de esto.
+
+    Se listan las mantequeras activas **y** cualquier equipo que tenga una
+    ejecución de Mantequilla que lo ocupe aunque no sea mantequera (un dato de
+    antes de `maestros.0040`): sin eso, esa corrida no tendría tarjeta ni cómo
+    cerrarse. Una ejecución terminal o en `pendiente_control` no ocupa; la
+    segunda se informa en `en_calidad`.
+    """
+    from inventario.servicios import advertencia_aseo_equipo, motivo_equipo_no_habilitado
+    from maestros.models import Equipo
+    from produccion.models import Lote, OrdenProduccion
+    from usuarios.tenancy import filtrar_por_scope
+
+    from .dominio import SITUACIONES_MANTEQUILLA, situacion_mantequilla
+
+    def texto(valor):
+        # Texto, como en los serializers: el tipo del frontend es `string`.
+        return None if valor is None else str(valor)
+
+    def acotar(consulta):
+        return filtrar_por_scope(
+            consulta, usuario, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        )
+
+    ocupantes = EjecucionProceso.objects.filter(
+        etapa__tipo=EtapaProceso.Tipo.MANTEQUILLA,
+        estado__in=ESTADOS_QUE_OCUPAN_EQUIPO, equipo__isnull=False,
+    )
+    maquinas = list(acotar(
+        Equipo.objects.filter(
+            Q(activo=True, tipo=Equipo.Tipo.MANTEQUERA)
+            | Q(pk__in=ocupantes.values("equipo_id"))
+        ).order_by("codigo")
+    ))
+    ids = [maquina.pk for maquina in maquinas]
+
+    activas = {}
+    for ejecucion in ocupantes.filter(equipo_id__in=ids).select_related(
+        "etapa", "equipo", "corrida_mantequilla__orden__producto",
+        "corrida_mantequilla__lote_crema__producto",
+        "corrida_mantequilla__lote_mantequilla__producto",
+        "corrida_mantequilla__lote_suero",
+    ).order_by("pk"):
+        actual = activas.get(ejecucion.equipo_id)
+        if actual is None or (
+            actual.estado == EjecucionProceso.Estado.PREPARACION
+            and ejecucion.estado != EjecucionProceso.Estado.PREPARACION
+        ):
+            activas[ejecucion.equipo_id] = ejecucion
+
+    en_calidad = {}
+    for corrida in CorridaMantequilla.objects.filter(
+        ejecucion__equipo_id__in=ids,
+        ejecucion__estado=EjecucionProceso.Estado.PENDIENTE_CONTROL,
+    ).select_related("ejecucion", "lote_mantequilla").order_by("pk"):
+        en_calidad[corrida.ejecucion.equipo_id] = corrida
+
+    def resumen(ejecucion):
+        corrida = getattr(ejecucion, "corrida_mantequilla", None)
+        base = {
+            "id": None, "estado": None, "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo, "ejecucion_estado": ejecucion.estado,
+            "orden_codigo": None, "producto": None, "lote_mantequilla": None,
+            "lote_crema": None, "kg_crema": None, "lote_suero": None,
+            "iniciada_en": ejecucion.inicio,
+        }
+        if corrida is None:
+            return base
+        return {
+            **base,
+            "id": corrida.pk, "estado": corrida.estado,
+            "orden_codigo": corrida.orden.codigo, "producto": corrida.orden.producto.nombre,
+            "lote_mantequilla": corrida.lote_mantequilla.codigo_lote,
+            "lote_crema": corrida.lote_crema.codigo_lote,
+            "kg_crema": texto(corrida.kg_crema),
+            "lote_suero": corrida.lote_suero.codigo_lote if corrida.lote_suero_id else None,
+            "iniciada_en": corrida.iniciada_en,
+        }
+
+    filas = []
+    for maquina in maquinas:
+        ejecucion = activas.get(maquina.pk)
+        motivos_tomar, motivos_iniciar, resolver_en = [], [], None
+        if ejecucion is None:
+            estado = "disponible"
+            # La misma regla con que «Preparar» rechaza la mantequera.
+            impedimento = motivo_equipo_no_habilitado(maquina)
+            if impedimento:
+                motivos_tomar, resolver_en = [impedimento], RESOLVER_CIP
+        elif ejecucion.estado == EjecucionProceso.Estado.PREPARACION:
+            estado = "preparada"
+            corrida = getattr(ejecucion, "corrida_mantequilla", None)
+            if corrida is None:
+                # Dato heredado de `preparar-continuacion`, ya cerrado para
+                # Mantequilla: sin corrida no hay `cancelar-preparacion/`.
+                motivos_iniciar = [
+                    f"{ejecucion.codigo} no tiene corrida de mantequilla y no puede "
+                    "iniciarse: cancela esa ejecución en Procesos y vuelve a preparar."
+                ]
+            else:
+                tipados = motivos_tipados_para_iniciar_mantequilla(corrida, ejecucion=ejecucion)
+                motivos_iniciar = [motivo for motivo, _ in tipados]
+                # El enlace es del primer motivo, que es el que la tarjeta muestra.
+                resolver_en = tipados[0][1] if tipados else None
+        else:
+            estado = "en_curso"
+        aseo = None if estado == "en_curso" else advertencia_aseo_equipo(maquina)
+        pendiente = en_calidad.get(maquina.pk)
+        filas.append({
+            "equipo_id": maquina.pk, "codigo": maquina.codigo, "nombre": maquina.nombre,
+            "tipo": maquina.tipo, "estado": estado,
+            "corrida": resumen(ejecucion) if ejecucion is not None else None,
+            "motivos_para_tomar": motivos_tomar,
+            "motivos_para_iniciar": motivos_iniciar,
+            "resolver_en": resolver_en,
+            "avisos": [aseo] if aseo else [],
+            "en_calidad": (
+                {
+                    "id": pendiente.pk, "ejecucion_codigo": pendiente.ejecucion.codigo,
+                    "lote_mantequilla": pendiente.lote_mantequilla.codigo_lote,
+                }
+                if pendiente is not None else None
+            ),
+        })
+
+    ordenes = acotar(
+        OrdenProduccion.objects.filter(
+            producto__categoria="mantequilla",
+            estado__in=[OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO],
+        ).select_related("producto").order_by("codigo")
+    )
+    cremas_producidas = acotar(
+        Lote.objects.filter(
+            producto__familia="crema",
+            estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
+            kg_producidos__isnull=False,
+        ).select_related("producto")
+    )
+    # Lo que «Preparar» acepta, en una consulta: la misma liberación
+    # (`filtro_crema_liberada`, la del TK si la crema está en uno) y el mismo
+    # disponible (`expresion_kg_crema_disponible`, la cuenta de
+    # `kg_crema_disponible`). Con una cuenta por fila, el puesto hacía tres
+    # consultas por crema.
+    tk_de_la_crema = (
+        SalidaProceso.objects.filter(lote=OuterRef("pk"), silo__isnull=False)
+        .order_by("registrada_en", "pk").values("silo__codigo")[:1]
+    )
+    cremas = [
+        {
+            "id": lote.pk, "codigo": lote.codigo_lote, "producto": lote.producto.nombre,
+            "disponible_kg": texto(lote.disponible_kg),
+            "tk": lote.tk,
+        }
+        for lote in cremas_producidas.filter(filtro_crema_liberada())
+        .annotate(disponible_kg=expresion_kg_crema_disponible(), tk=Subquery(tk_de_la_crema))
+        .filter(disponible_kg__gt=0)
+        .order_by("codigo_lote")
+    ]
+    pendientes = (
+        cremas_producidas.filter(Exists(SalidaProceso.objects.filter(lote=OuterRef("pk"))))
+        .exclude(filtro_crema_liberada())
+        .prefetch_related("salidas_proceso__liberacion_calidad", "salidas_proceso__ejecucion__etapa")
+        .order_by("codigo_lote")
+    )
+    hoy = timezone.localdate()
+    corridas_de_hoy = [
+        {
+            "id": corrida.pk, "ejecucion_codigo": corrida.ejecucion.codigo,
+            "equipo": corrida.ejecucion.equipo.codigo if corrida.ejecucion.equipo_id else None,
+            "lote_mantequilla": corrida.lote_mantequilla.codigo_lote,
+            "lote_crema": corrida.lote_crema.codigo_lote,
+            "estado": corrida.estado, "estado_etiqueta": corrida.get_estado_display(),
+            "estado_ejecucion": corrida.ejecucion.estado,
+            **dict(zip(
+                ("situacion", "situacion_etiqueta"),
+                situacion_mantequilla(corrida.estado, corrida.ejecucion.estado),
+            )),
+        }
+        for corrida in CorridaMantequilla.objects.filter(ejecucion__equipo_id__in=ids)
+        .filter(
+            Q(ejecucion__creada_en__date=hoy) | Q(iniciada_en__date=hoy)
+            | Q(finalizada_en__date=hoy)
+        )
+        # Un huérfano cuya ejecución terminó sin iniciarse no es trabajo del día.
+        .exclude(iniciada_en__isnull=True, ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES)
+        .select_related("ejecucion__equipo", "lote_mantequilla", "lote_crema")
+        .order_by("-pk")
+    ]
+    return {
+        "mantequeras": filas,
+        "ordenes": [
+            {"id": orden.pk, "codigo": orden.codigo, "producto": orden.producto.nombre}
+            for orden in ordenes
+        ],
+        "cremas": cremas,
+        "cremas_pendientes_calidad": [
+            {
+                "id": lote.pk, "codigo": lote.codigo_lote, "producto": lote.producto.nombre,
+                "estado_calidad": _estado_calidad_de_crema(lote),
+                "etapa_origen": next(
+                    (salida.ejecucion.etapa.get_tipo_display() for salida in lote.salidas_proceso.all()),
+                    "Sin proceso de origen",
+                ),
+            }
+            for lote in pendientes
+        ],
+        "sueros": [
+            {"id": lote.pk, "codigo": lote.codigo_lote, "producto": lote.producto.nombre}
+            for lote in sueros_libres(acotar(Lote.objects.select_related("producto"))).order_by("codigo_lote")
+        ],
+        "corridas_de_hoy": corridas_de_hoy,
+        # Las opciones del filtro del historial: las mismas situaciones que
+        # muestra la columna, no los estados crudos de la corrida.
+        "estados": catalogo_situaciones(SITUACIONES_MANTEQUILLA),
+    }
 
 
 def revisar_cierre_mantequilla(
