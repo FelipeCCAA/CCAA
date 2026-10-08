@@ -55,6 +55,7 @@ from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
     ConflictoVersionEjecucion,
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
+    condicion_situacion_descremacion,
     genealogia_lote,
     revisar_cierre_descremacion,
     crear_condensacion_guiada, crear_descremacion_guiada,
@@ -335,6 +336,11 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
     filtro_estado = "estado"
     filtro_fecha = "ejecucion__creada_en"
 
+    def condicion_estado(self, estado):
+        # `?estado=` filtra por la situación que muestra la columna, con las
+        # opciones que sirve `puesto/` (`SITUACIONES_DESCREMACION`).
+        return condicion_situacion_descremacion(estado)
+
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
             "POST", detail="La corrida de descremado nace en el puesto de Descremado.",
@@ -535,6 +541,7 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
                 destino_crema=datos["destino_crema"],
                 litros_descremada_plan=datos["litros_descremada_plan"],
                 litros_crema_plan=datos["litros_crema_plan"],
+                analisis_esperado_id=datos.get("analisis_esperado"),
                 usuario=request.user,
             )
         except DjangoValidationError as error:

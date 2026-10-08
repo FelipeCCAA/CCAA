@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -12,6 +12,7 @@ from maestros.models import Equipo, Especificacion, Mandante, Producto, Silo
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
+from .dominio import SITUACIONES_DESCREMACION, situacion_descremacion
 from .models import (
     CorridaDescremacion, EjecucionProceso, EtapaProceso, Proceso, ReservaSiloProceso,
 )
@@ -153,6 +154,15 @@ class BasePuestoDescremado(TestCase):
 
     def reservas(self, corrida, estado=ReservaSiloProceso.Estado.ACTIVA):
         return ReservaSiloProceso.objects.filter(ejecucion_id=corrida.ejecucion_id, estado=estado)
+
+    def puesto(self, usuario=None):
+        respuesta = self.cliente(usuario).get("/api/procesos/descremaciones/puesto/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        return respuesta.data
+
+    def ids(self, filas, *objetos):
+        propios = {objeto.pk for objeto in objetos}
+        return [fila["id"] for fila in filas if fila["id"] in propios]
 
 
 class PrepararDescremadoTests(BasePuestoDescremado):
@@ -608,17 +618,8 @@ class LimitesDelCierreTests(BasePuestoDescremado):
 
 
 class PuestoDescremadoTests(BasePuestoDescremado):
-    def puesto(self, usuario=None):
-        respuesta = self.cliente(usuario).get("/api/procesos/descremaciones/puesto/")
-        self.assertEqual(respuesta.status_code, 200, respuesta.data)
-        return respuesta.data
-
     def fila(self, datos, equipo):
         return next(item for item in datos["descremadoras"] if item["equipo_id"] == equipo.pk)
-
-    def ids(self, filas, *objetos):
-        propios = {objeto.pk for objeto in objetos}
-        return [fila["id"] for fila in filas if fila["id"] in propios]
 
     def test_una_descremadora_sin_ejecucion_esta_disponible(self):
         fila = self.fila(self.puesto(), self.descremadora)
@@ -818,3 +819,157 @@ class PuestoDescremadoTests(BasePuestoDescremado):
             self.assertNotIn(clave, respuesta.data)
         for clave in ("etapas", "productos_descremada", "productos_crema", "rutas", "bloqueos"):
             self.assertIn(clave, respuesta.data)
+
+
+class OrigenLibreDelPuestoTests(BasePuestoDescremado):
+    """
+    El formulario usa lo que el puesto ofrece como tope de litros: si ofrece
+    el saldo sin descontar lo que otra preparación ya reservó como origen,
+    «Preparar» rechaza un número que la pantalla dejó teclear.
+    """
+
+    def origen_servido(self):
+        return next(item for item in self.puesto()["origenes"] if item["id"] == self.origen.pk)
+
+    def test_otra_preparacion_sobre_el_mismo_origen_reduce_lo_ofrecido(self):
+        self.assertEqual(self.origen_servido()["libre_l"], "20000.00")
+
+        self.preparada()
+        origen = self.origen_servido()
+
+        self.assertEqual(origen["saldo_l"], "20000.00")
+        self.assertEqual(origen["libre_l"], "19000.00")
+        self.assertIsNone(origen["motivo"])
+
+    def test_un_origen_reservado_entero_se_ofrece_con_motivo(self):
+        self.preparada(litros_entrada="20000", litros_descremada_plan="19000")
+
+        origen = self.origen_servido()
+
+        self.assertEqual(origen["libre_l"], "0.00")
+        self.assertIn("reservad", origen["motivo"])
+        self.assertIsNone(origen["analisis"])
+
+
+class AnalisisEsperadoAlPrepararTests(BasePuestoDescremado):
+    """
+    La sugerencia se calculó con un análisis; «Preparar» congela el último
+    confirmado. Si entre los dos llegó otro, el reparto confirmado habla de
+    una leche que ya no es la del silo.
+    """
+
+    def test_un_analisis_nuevo_entre_sugerir_y_preparar_no_deja_nada_escrito(self):
+        self.analizar(self.origen, minutos=10, grasa="3.40")
+
+        respuesta = self.preparar(analisis_esperado=self.analisis.pk)
+
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn(
+            "El análisis del silo cambió: recalcula la sugerencia.",
+            str(respuesta.data),
+        )
+        self.assertFalse(CorridaDescremacion.objects.filter(silo_entera=self.origen).exists())
+        self.assertFalse(
+            ReservaSiloProceso.objects.filter(silo__in=[
+                self.origen, self.tk_descremada, self.tk_crema,
+            ]).exists()
+        )
+        self.assertFalse(
+            EjecucionProceso.objects.filter(equipo=self.descremadora).exists()
+        )
+
+    def test_con_el_analisis_vigente_prepara(self):
+        corrida = self.preparada(analisis_esperado=self.analisis.pk)
+
+        self.assertEqual(corrida.analisis_entrada_id, self.analisis.pk)
+
+
+class CapacidadAlIniciarTests(BasePuestoDescremado):
+    def test_un_tk_que_se_lleno_despues_de_preparar_no_deja_iniciar(self):
+        corrida = self.preparada()
+        MovimientoSilo.objects.create(
+            silo=self.tk_crema, tipo=MovimientoSilo.Tipo.INGRESO, litros=4990,
+            fecha_hora=timezone.now(), origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+        )
+
+        respuesta = self.cliente().post(f"/api/procesos/descremaciones/{corrida.pk}/iniciar/")
+
+        self.assertEqual(respuesta.status_code, 409, respuesta.data)
+        self.assertIn(f"{self.tk_crema.codigo} no tiene capacidad", str(respuesta.data))
+        corrida.refresh_from_db()
+        self.assertEqual(corrida.estado, CorridaDescremacion.Estado.BORRADOR)
+
+
+class SituacionDelHistorialTests(BasePuestoDescremado):
+    """
+    El filtro del historial y la columna «Situación» dicen lo mismo: el
+    catálogo `estados` y la etiqueta de cada fila salen de la misma tabla, y
+    filtrar por un valor devuelve justo las filas que lo muestran.
+    """
+
+    def test_cada_fila_aparece_bajo_la_situacion_que_muestra(self):
+        self.etapa.requiere_calidad = True
+        self.etapa.save(update_fields=["requiere_calidad"])
+        en_calidad = self.en_curso()
+        cierre = self.cliente().post(
+            f"/api/procesos/descremaciones/{en_calidad.pk}/cerrar/",
+            {"litros_descremada": "970", "grasa_descremada": "0.06",
+             "litros_crema": "25", "grasa_crema": "42"},
+            format="json",
+        )
+        self.assertEqual(cierre.status_code, 200, cierre.data)
+        preparada = self.preparada(
+            equipo=self.otra_descremadora.pk, silo_descremada=self.otro_tk_descremada.pk,
+            estanque_crema=self.otro_tk_crema.pk,
+        )
+        propias = (en_calidad, preparada)
+
+        catalogo = {item["valor"]: item["etiqueta"] for item in self.puesto()["estados"]}
+        todas = self.cliente().get("/api/procesos/descremaciones/").data["results"]
+        filas = {fila["id"]: fila for fila in todas if fila["id"] in {c.pk for c in propias}}
+
+        self.assertEqual(filas[en_calidad.pk]["situacion"], "esperando_calidad")
+        self.assertEqual(filas[en_calidad.pk]["situacion_etiqueta"], "Esperando Calidad")
+        self.assertEqual(filas[preparada.pk]["situacion"], "preparada")
+        for corrida in propias:
+            fila = filas[corrida.pk]
+            with self.subTest(situacion=fila["situacion"]):
+                self.assertEqual(catalogo[fila["situacion"]], fila["situacion_etiqueta"])
+                filtradas = self.cliente().get(
+                    "/api/procesos/descremaciones/", {"estado": fila["situacion"]},
+                ).data["results"]
+                self.assertEqual(self.ids(filtradas, *propias), [corrida.pk])
+        terminadas = self.cliente().get(
+            "/api/procesos/descremaciones/", {"estado": "terminada"},
+        ).data["results"]
+        self.assertEqual(self.ids(terminadas, *propias), [])
+
+    def test_las_corridas_de_hoy_traen_la_misma_etiqueta(self):
+        corrida = self.en_curso()
+
+        hoy = next(c for c in self.puesto()["corridas_de_hoy"] if c["id"] == corrida.pk)
+
+        self.assertEqual(hoy["situacion"], "en_curso")
+        self.assertEqual(hoy["situacion_etiqueta"], "En la descremadora")
+
+
+class SituacionDescremacionDominioTests(SimpleTestCase):
+    def test_cada_combinacion_tiene_una_sola_situacion(self):
+        casos = {
+            ("borrador", "preparacion"): "preparada",
+            ("borrador", "borrador"): "preparada",
+            ("borrador", "cancelada"): "borrador",
+            ("en_curso", "ejecucion"): "en_curso",
+            ("en_curso", "pausada"): "en_curso",
+            ("cerrada", "pendiente_control"): "esperando_calidad",
+            ("cerrada", "cerrada"): "terminada",
+            ("anulada", "cancelada"): "anulada",
+        }
+        for (estado, ejecucion), esperada in casos.items():
+            with self.subTest(estado=estado, ejecucion=ejecucion):
+                self.assertEqual(situacion_descremacion(estado, ejecucion)[0], esperada)
+
+    def test_el_catalogo_no_repite_valores(self):
+        valores = [fila[0] for fila in SITUACIONES_DESCREMACION]
+
+        self.assertEqual(len(valores), len(set(valores)))

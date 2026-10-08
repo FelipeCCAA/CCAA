@@ -107,3 +107,32 @@ RUTAS_POR_ETAPA = {
 def ruta_de_etapa(tipo: str) -> str:
     """La pantalla donde se trabaja una etapa; el panel de producción si no se conoce."""
     return RUTAS_POR_ETAPA.get(tipo, "/produccion")
+
+
+# Cómo se nombra una corrida de descremado en el puesto y en su historial:
+# `(valor, etiqueta, estado de la corrida, estados de la ejecución o None)`,
+# y gana la primera fila que coincide. Una sola tabla para la columna
+# «Situación», el catálogo del filtro y el filtro mismo
+# (`procesos.servicios.condicion_situacion_descremacion`): con dos, el
+# filtro ofrecía «En curso» y la columna decía «En la descremadora», y
+# «Cerrada» devolvía filas que la columna llamaba «Esperando Calidad».
+SITUACIONES_DESCREMACION = (
+    ("preparada", "Preparada", "borrador", frozenset({"borrador", "preparacion"})),
+    ("en_curso", "En la descremadora", "en_curso", None),
+    ("esperando_calidad", "Esperando Calidad", "cerrada", frozenset({"pendiente_control"})),
+    ("terminada", "Terminada", "cerrada", None),
+    ("anulada", "Anulada", "anulada", None),
+    # Una corrida en borrador cuya ejecución ya no está en preparación: las
+    # heredadas del modal anterior y los huérfanos.
+    ("borrador", "Borrador", "borrador", None),
+)
+
+
+def situacion_descremacion(estado: str, estado_ejecucion: str) -> tuple[str, str]:
+    """`(valor, etiqueta)` de la situación de una corrida (`SITUACIONES_DESCREMACION`)."""
+    for valor, etiqueta, estado_corrida, estados_ejecucion in SITUACIONES_DESCREMACION:
+        if estado == estado_corrida and (
+            estados_ejecucion is None or estado_ejecucion in estados_ejecucion
+        ):
+            return valor, etiqueta
+    return estado, estado

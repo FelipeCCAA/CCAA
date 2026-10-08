@@ -15,6 +15,7 @@ from auditoria.registro import (
     actualizar_queryset_con_auditoria,
     crear_en_lote_con_auditoria,
 )
+from maestros.models import Silo
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
@@ -429,11 +430,16 @@ def crear_descremacion_guiada(
     destino_descremada=CorridaDescremacion.DestinoRama.PENDIENTE,
     destino_crema=CorridaDescremacion.DestinoRama.PENDIENTE,
     litros_descremada_plan=None, litros_crema_plan=None,
+    analisis_esperado_id=None,
 ):
     """
     Prepara una descremación: corrida, reservas de silo y descremadora tomada,
     en una sola transacción —todo o nada—. El análisis y el código los pone el
     servidor.
+
+    `analisis_esperado_id` es el análisis con que el formulario pidió la
+    sugerencia. Si ya no es el último confirmado, el reparto que el operador
+    confirmó se calculó para otra leche: se rechaza sin escribir nada.
     """
     from inventario.servicios import motivo_equipo_no_habilitado
     from maestros.models import Equipo, Producto, Silo
@@ -446,15 +452,21 @@ def crear_descremacion_guiada(
     except EtapaProceso.DoesNotExist as error:
         raise ValidationError({"etapa": "Selecciona una etapa activa de descremacion."}) from error
 
-    try:
-        origen = Silo.objects.select_for_update().get(pk=silo_entera_id)
-    except Silo.DoesNotExist as error:
-        raise ValidationError({"silo_entera": "El silo de origen no existe."}) from error
-    destinos = {
+    # Los tres silos en una sola consulta y en orden de clave, como preparar,
+    # iniciar y cerrar: dos transacciones que los tomen en otro orden se
+    # bloquean entre sí.
+    silos = {
         silo.pk: silo
         for silo in Silo.objects.select_for_update().filter(
-            pk__in=[silo_descremada_id, estanque_crema_id]
-        )
+            pk__in=[silo_entera_id, silo_descremada_id, estanque_crema_id]
+        ).order_by("pk")
+    }
+    origen = silos.get(silo_entera_id)
+    if origen is None:
+        raise ValidationError({"silo_entera": "El silo de origen no existe."})
+    destinos = {
+        pk: silos[pk] for pk in (silo_descremada_id, estanque_crema_id)
+        if pk in silos and pk != silo_entera_id
     }
     if len(destinos) != 2:
         raise ValidationError("Selecciona los dos estanques de destino.")
@@ -475,6 +487,10 @@ def crear_descremacion_guiada(
     motivos = motivos_para_preparar_desde_silo(origen, analisis)
     if motivos:
         raise ValidationError({"silo_entera": motivos[0]})
+    if analisis_esperado_id is not None and analisis.pk != analisis_esperado_id:
+        raise ValidationError({
+            "analisis_esperado": "El análisis del silo cambió: recalcula la sugerencia."
+        })
 
     productos = {
         producto.pk: producto
@@ -2021,9 +2037,11 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     return corrida
 
 
-# Estados en que un estanque no recibe producto ni se procesa desde él. Los
-# mismos que `iniciar_descremacion` y `cerrar_descremacion` usaban en línea.
-ESTADOS_SILO_SIN_PRODUCTO = frozenset({"bloqueado_calidad", "en_cip", "fuera_servicio"})
+# Estados en que un estanque no recibe producto ni se procesa desde él. Una
+# sola lista para preparar, iniciar, el puesto y `cerrar_descremacion`.
+ESTADOS_SILO_SIN_PRODUCTO = frozenset({
+    Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+})
 
 
 def motivos_para_preparar_desde_silo(silo, analisis):
@@ -2055,17 +2073,28 @@ def motivos_para_preparar_desde_silo(silo, analisis):
     return motivos
 
 
-def motivos_origen_descremacion(origen, litros, *, excluir_ejecucion_id=None):
+def litros_libres_origen(origen, *, saldo=None, excluir_ejecucion_id=None):
     """
-    Si el silo de origen tiene `litros` libres: su saldo menos lo que otras
-    ejecuciones reservaron como origen. Una sola regla para preparar y para
-    iniciar: con dos, el puesto prepararía una corrida que «Iniciar» rechaza.
+    Lo que el silo de origen puede entregar a un descremado: su saldo menos lo
+    que otras ejecuciones reservaron como origen. `saldo` evita releerlo
+    cuando la consulta ya lo trae anotado (`silos_con_saldo`).
     """
     from recepcion.servicios import saldo_silo
 
-    libre = saldo_silo(origen) - litros_origen_reservados(
+    if saldo is None:
+        saldo = saldo_silo(origen)
+    return saldo - litros_origen_reservados(
         silo_id=origen.pk, excluir_ejecucion_id=excluir_ejecucion_id,
     )
+
+
+def motivos_origen_descremacion(origen, litros, *, excluir_ejecucion_id=None):
+    """
+    Si el silo de origen tiene `litros` libres (`litros_libres_origen`). Una
+    sola regla para preparar, para iniciar y para lo que el puesto ofrece:
+    con dos, el puesto prepararía una corrida que «Iniciar» rechaza.
+    """
+    libre = litros_libres_origen(origen, excluir_ejecucion_id=excluir_ejecucion_id)
     if libre < Decimal(str(litros)):
         return [f"{origen.codigo} tiene {libre} L libres; la corrida requiere {litros} L."]
     return []
@@ -2333,6 +2362,38 @@ def iniciar_descremacion(*, corrida_id, usuario):
     ).get(pk=corrida.pk)
 
 
+def condicion_situacion_descremacion(situacion):
+    """
+    El filtro del historial por situación: la misma tabla que nombra cada
+    fila (`dominio.SITUACIONES_DESCREMACION`), con «gana la primera» traducido
+    a excluir las filas anteriores. Una situación desconocida no devuelve nada.
+    """
+    from .dominio import SITUACIONES_DESCREMACION
+
+    def condicion(estado_corrida, estados_ejecucion):
+        resultado = Q(estado=estado_corrida)
+        if estados_ejecucion is not None:
+            resultado &= Q(ejecucion__estado__in=estados_ejecucion)
+        return resultado
+
+    anteriores = Q()
+    for valor, _etiqueta, estado_corrida, estados_ejecucion in SITUACIONES_DESCREMACION:
+        propia = condicion(estado_corrida, estados_ejecucion)
+        if valor == situacion:
+            return propia & ~anteriores if anteriores else propia
+        anteriores |= propia
+    return Q(pk__in=[])
+
+
+def catalogo_situaciones_descremacion():
+    from .dominio import SITUACIONES_DESCREMACION
+
+    return [
+        {"valor": valor, "etiqueta": etiqueta}
+        for valor, etiqueta, _estado, _ejecucion in SITUACIONES_DESCREMACION
+    ]
+
+
 def estado_puesto_descremado(usuario):
     """
     Lo que el puesto de Descremado dibuja: un estado por descremadora,
@@ -2351,6 +2412,8 @@ def estado_puesto_descremado(usuario):
     from maestros.models import Equipo, Silo
     from recepcion.servicios import ultimo_analisis_confirmado
     from usuarios.tenancy import filtrar_por_scope
+
+    from .dominio import situacion_descremacion
 
     def texto(valor):
         # Texto, como en los serializers: el tipo del frontend es `string`.
@@ -2374,6 +2437,9 @@ def estado_puesto_descremado(usuario):
             "corrida_descremacion__silo_entera", "corrida_descremacion__silo_descremada",
             "corrida_descremacion__estanque_crema", "corrida_descremacion__producto_descremada",
             "corrida_descremacion__producto_crema",
+            # `motivos_tipados_para_iniciar_descremacion` llama a `clean()`,
+            # que lee las dos rutas: sin esto, dos consultas por tarjeta.
+            "corrida_descremacion__ruta_descremada", "corrida_descremacion__ruta_crema",
         )
         .order_by("pk")
     ):
@@ -2480,8 +2546,17 @@ def estado_puesto_descremado(usuario):
         # origen. Con motivo, el silo se ofrece deshabilitado con el texto:
         # es la entrada que viene desde «Descremar» del silo.
         motivos = motivos_para_preparar_desde_silo(silo, analisis)
+        # El tope del formulario: lo que otras preparaciones no reservaron
+        # ya como origen, con la misma cuenta con que «Preparar» rechaza.
+        libre = litros_libres_origen(silo, saldo=silo.saldo_l)
+        if libre <= 0 and not motivos:
+            motivos = [
+                f"{silo.codigo} no tiene litros libres: su saldo está reservado "
+                "por otras corridas."
+            ]
         origenes.append({
             "id": silo.pk, "codigo": silo.codigo, "saldo_l": texto(silo.saldo_l),
+            "libre_l": texto(libre),
             "analisis": (
                 {
                     "id": analisis.pk, "grasa": texto(analisis.grasa),
@@ -2512,6 +2587,10 @@ def estado_puesto_descremado(usuario):
             "silo_entera": corrida.silo_entera.codigo,
             "estado": corrida.estado, "estado_etiqueta": corrida.get_estado_display(),
             "estado_ejecucion": corrida.ejecucion.estado,
+            **dict(zip(
+                ("situacion", "situacion_etiqueta"),
+                situacion_descremacion(corrida.estado, corrida.ejecucion.estado),
+            )),
         }
         for corrida in CorridaDescremacion.objects.filter(ejecucion__equipo_id__in=ids)
         .filter(
@@ -2529,10 +2608,9 @@ def estado_puesto_descremado(usuario):
         "destinos_descremada": destinos(Silo.Tipo.TK_LD),
         "destinos_crema": destinos(Silo.Tipo.TK_CREMA),
         "corridas_de_hoy": corridas_de_hoy,
-        "estados": [
-            {"valor": valor, "etiqueta": etiqueta}
-            for valor, etiqueta in CorridaDescremacion.Estado.choices
-        ],
+        # Las opciones del filtro del historial: las mismas situaciones que
+        # muestra la columna, no los estados crudos de la corrida.
+        "estados": catalogo_situaciones_descremacion(),
     }
 
 
@@ -2615,9 +2693,7 @@ def cerrar_descremacion(
     if saldo_silo(origen) < corrida.litros_entrada:
         raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
     for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
-        if not destino.activo or destino.estado in {
-            Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
-        }:
+        if not destino.activo or destino.estado in ESTADOS_SILO_SIN_PRODUCTO:
             raise ValidationError(f"{destino.codigo} no admite producto.")
         if saldo_silo(destino) + cantidad > destino.capacidad_l:
             raise ValidationError(f"{destino.codigo} excedería su capacidad.")

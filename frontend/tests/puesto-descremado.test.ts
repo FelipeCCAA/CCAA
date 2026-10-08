@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  accionDeDescremadora, avisosDeCierre, corridaCancelable, moduloDeResolver, situacionDeCorrida,
+  accionDeDescremadora, avisosDeCierre, corridaCancelable, moduloDeResolver,
 } from "../src/services/puesto-descremado.ts";
 
 const base = {
@@ -63,15 +63,6 @@ test("se cancela una corrida en borrador con la ejecución preparada o heredada 
   assert.equal(corridaCancelable({ ...corrida, ejecucion_estado: "cancelada" }), null);
   assert.equal(corridaCancelable({ ...corrida, id: null }), null);
   assert.equal(corridaCancelable(null), null);
-});
-
-test("la situación de una corrida para la lista y el historial", () => {
-  assert.equal(situacionDeCorrida("borrador", "preparacion"), "Preparada");
-  assert.equal(situacionDeCorrida("en_curso", "ejecucion"), "En la descremadora");
-  assert.equal(situacionDeCorrida("cerrada", "pendiente_control"), "Esperando Calidad");
-  assert.equal(situacionDeCorrida("cerrada", "cerrada"), "Terminada");
-  assert.equal(situacionDeCorrida("anulada", "cancelada"), "Anulada");
-  assert.equal(situacionDeCorrida("borrador", "cancelada", "Borrador"), "Borrador");
 });
 
 test("los motivos del silo se resuelven en Silos, módulo de Recepción", () => {

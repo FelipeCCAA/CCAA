@@ -111,7 +111,7 @@ export default function CierreDescremado({ corrida, alCerrar, alCompletarse }: {
           <div>
             <p className="font-mono text-xs font-semibold text-emerald-700">{corrida.ejecucion_codigo}</p>
             <h2 id={idTitulo} className="mt-1 text-2xl font-bold text-slate-900">Registrar salidas</h2>
-            <p className="mt-2 text-sm text-slate-600">Entrada: {cantidad(corrida.litros_entrada, "L")} desde {corrida.silo_entera_codigo} · {corrida.grasa_entrada} % MG.</p>
+            <p className="mt-2 text-sm text-slate-600">Entrada: {cantidad(corrida.litros_entrada, "L")} desde {corrida.silo_entera_codigo} · {cantidad(corrida.grasa_entrada, "% MG")}.</p>
           </div>
           <button type="button" onClick={alCerrar} disabled={guardando} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Cerrar"><X className="h-5 w-5" /></button>
         </div>
@@ -134,8 +134,8 @@ export default function CierreDescremado({ corrida, alCerrar, alCompletarse }: {
             titulo="Cerrar la descremación"
             filas={[
               { etiqueta: "Entrada", valor: `${corrida.silo_entera_codigo} · ${cantidad(corrida.litros_entrada, "L")}` },
-              { etiqueta: "Leche descremada", valor: `${corrida.silo_descremada_codigo} · ${cantidad(campos.litros_descremada, "L")} · ${campos.grasa_descremada} % MG` },
-              { etiqueta: "Crema", valor: `${corrida.estanque_crema_codigo} · ${cantidad(campos.litros_crema, "L")} · ${campos.grasa_crema} % MG` },
+              { etiqueta: "Leche descremada", valor: `${corrida.silo_descremada_codigo} · ${cantidad(campos.litros_descremada, "L")} · ${cantidad(campos.grasa_descremada, "% MG")}` },
+              { etiqueta: "Crema", valor: `${corrida.estanque_crema_codigo} · ${cantidad(campos.litros_crema, "L")} · ${cantidad(campos.grasa_crema, "% MG")}` },
             ]}
             advertencia={panel.advertencia}
             textoConfirmar="Confirmar salidas y cerrar"

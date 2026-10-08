@@ -60,22 +60,9 @@ export function corridaCancelable(
   return ["borrador", "preparacion"].includes(corrida.ejecucion_estado) ? corrida.id : null;
 }
 
-/* Cómo se nombra una corrida en «Corridas de hoy» y en el historial. Un
-   estado que no se distingue lleva la etiqueta del servidor. */
-export function situacionDeCorrida(estado: string, estadoEjecucion: string, etiqueta?: string): string {
-  switch (estado) {
-    case "borrador":
-      return ["borrador", "preparacion"].includes(estadoEjecucion) ? "Preparada" : etiqueta ?? estado;
-    case "en_curso":
-      return "En la descremadora";
-    case "cerrada":
-      return estadoEjecucion === "pendiente_control" ? "Esperando Calidad" : "Terminada";
-    case "anulada":
-      return "Anulada";
-    default:
-      return etiqueta ?? estado;
-  }
-}
+/* La situación de una corrida («Preparada», «En la descremadora»…) no se
+   calcula aquí: la sirve el servidor (`situacion_etiqueta`) con la misma
+   tabla que filtra el historial (`SITUACIONES_DESCREMACION`). */
 
 export interface AvisosCierre {
   /* Avisos de una revisión que corresponde a lo tecleado; nunca de una vieja. */

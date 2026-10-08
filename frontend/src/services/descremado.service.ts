@@ -42,6 +42,9 @@ export interface OrigenDescremado {
   id: number;
   codigo: string;
   saldo_l: string;
+  /* El saldo menos lo que otras preparaciones reservaron como origen: el
+     tope de litros del formulario. */
+  libre_l: string;
   /* El análisis que usará «Preparar»: no se elige en la pantalla. */
   analisis: { id: number; grasa: string; sng: string; tomado_en: string } | null;
   motivo: string | null;
@@ -61,6 +64,9 @@ export interface CorridaDeHoyDescremado {
   estado: string;
   estado_etiqueta: string;
   estado_ejecucion: string;
+  /* Cómo la nombra el puesto; mismas opciones que el filtro del historial. */
+  situacion: string;
+  situacion_etiqueta: string;
 }
 
 export interface PuestoDescremado {
@@ -69,6 +75,7 @@ export interface PuestoDescremado {
   destinos_descremada: DestinoDescremado[];
   destinos_crema: DestinoDescremado[];
   corridas_de_hoy: CorridaDeHoyDescremado[];
+  /* Las situaciones del filtro del historial (`SITUACIONES_DESCREMACION`). */
   estados: { valor: string; etiqueta: string }[];
 }
 
@@ -91,6 +98,8 @@ export interface PreparacionDescremado {
   ruta_crema: number;
   destino_descremada: "estandarizacion";
   destino_crema: DestinoRamaCrema;
+  /* El análisis con que se pidió la sugerencia; si ya no es el último, se rechaza. */
+  analisis_esperado: number | null;
 }
 
 export interface ValoresCierreDescremado {

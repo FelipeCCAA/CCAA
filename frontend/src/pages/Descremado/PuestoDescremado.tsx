@@ -11,7 +11,7 @@ import { mensajeErrorProceso } from "../../services/errores-proceso";
 import { cantidad } from "../../services/formato";
 import { puedeOperarDescremado } from "../../services/permisos-descremado";
 import type { CorridaDescremacion } from "../../services/procesos.service";
-import { corridaCancelable, situacionDeCorrida } from "../../services/puesto-descremado";
+import { corridaCancelable } from "../../services/puesto-descremado";
 import { obtenerSesion } from "../../services/sesion";
 import TablaConsulta from "../Inventario/TablaConsulta";
 import CancelarPreparacion from "./CancelarPreparacion";
@@ -164,7 +164,7 @@ export default function PuestoDescremado() {
               {puesto.datos.corridas_de_hoy.map((c) => (
                 <li key={c.id} className="flex flex-wrap justify-between gap-2 px-5 py-3 text-sm">
                   <span><span className="font-mono">{c.ejecucion_codigo}</span> · {c.equipo ?? "—"} · {c.silo_entera}</span>
-                  <span className="text-slate-700">{situacionDeCorrida(c.estado, c.estado_ejecucion, c.estado_etiqueta)}</span>
+                  <span className="text-slate-700">{c.situacion_etiqueta}</span>
                 </li>
               ))}
             </ul>
@@ -190,7 +190,7 @@ export default function PuestoDescremado() {
               { titulo: "Origen", celda: (f) => `${f.silo_entera_codigo} · ${cantidad(f.litros_entrada, "L")}` },
               { titulo: "Destinos", celda: (f) => `${f.silo_descremada_codigo} + ${f.estanque_crema_codigo}` },
               { titulo: "Inicio", celda: (f) => fecha(f.iniciada_en) },
-              { titulo: "Situación", celda: (f) => situacionDeCorrida(f.estado, f.ejecucion_estado, f.estado_etiqueta) },
+              { titulo: "Situación", celda: (f) => f.situacion_etiqueta },
               {
                 titulo: "Acción",
                 celda: (f) => puedeOperar && corridaCancelable(f) !== null

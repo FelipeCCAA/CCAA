@@ -245,6 +245,9 @@ export interface CorridaDescremacion {
   controles: Record<string, unknown>;
   estado: string;
   estado_etiqueta: string;
+  /* La columna «Situación»: la nombra el servidor con la misma tabla que su filtro. */
+  situacion: string;
+  situacion_etiqueta: string;
   iniciada_por_nombre: string | null;
   iniciada_en: string | null;
   finalizada_por_nombre: string | null;

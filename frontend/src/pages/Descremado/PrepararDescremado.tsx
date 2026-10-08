@@ -44,6 +44,9 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
   const [rutaDescremada, setRutaDescremada] = useState("");
   const [rutaCrema, setRutaCrema] = useState("");
   const [sugerencia, setSugerencia] = useState<SugerenciaDescremacion | null>(null);
+  /* El análisis con que se calculó la sugerencia: «Preparar» lo envía y el
+     servidor rechaza si el silo ya tiene otro. */
+  const [analisisDeSugerencia, setAnalisisDeSugerencia] = useState<number | null>(null);
   const [planDescremada, setPlanDescremada] = useState("");
   const [planCrema, setPlanCrema] = useState("");
   const [planConfirmado, setPlanConfirmado] = useState(false);
@@ -106,6 +109,7 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
   /* Cambiar litros o productos invalida el reparto: se vuelve a calcular. */
   const invalidarPlan = () => {
     setSugerencia(null);
+    setAnalisisDeSugerencia(null);
     setPlanDescremada("");
     setPlanCrema("");
     setPlanConfirmado(false);
@@ -119,11 +123,13 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
     setCalculando(true);
     setError("");
     try {
+      const analisis = origen.analisis.id;
       const propuesta = await sugerirBalanceDescremacion({
-        analisis_entrada: origen.analisis.id, litros_entrada: Number(litros),
+        analisis_entrada: analisis, litros_entrada: Number(litros),
         producto_descremada: Number(productoDescremada), producto_crema: Number(productoCrema),
       });
       setSugerencia(propuesta);
+      setAnalisisDeSugerencia(analisis);
       setPlanDescremada(propuesta.litros_descremada_sugeridos);
       setPlanCrema(propuesta.litros_crema_sugeridos);
       setPlanConfirmado(false);
@@ -154,6 +160,7 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
         plan_confirmado: true,
         ruta_descremada: Number(rutaDescremada), ruta_crema: Number(rutaCrema),
         destino_descremada: "estandarizacion", destino_crema: ramaCrema,
+        analisis_esperado: analisisDeSugerencia,
       });
       alPreparar(corrida.ejecucion_codigo);
     } catch (causa) {
@@ -183,7 +190,7 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
               <option value="">Seleccionar…</option>
               {puesto.origenes.map((item) => (
                 <option key={item.id} value={item.id} disabled={Boolean(item.motivo)}>
-                  {item.codigo} · {cantidad(item.saldo_l, "L")}{item.motivo ? " · no disponible" : ""}
+                  {item.codigo} · {cantidad(item.libre_l, "L")} libres{item.motivo ? " · no disponible" : ""}
                 </option>
               ))}
             </select>
@@ -191,7 +198,7 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
           <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
             <span className="block text-xs text-slate-500">Composición que se usará</span>
             {origen?.analisis
-              ? `${origen.analisis.grasa} % MG · ${origen.analisis.sng} % SNG · análisis del ${new Date(origen.analisis.tomado_en).toLocaleString("es-CL")}`
+              ? `${cantidad(origen.analisis.grasa, "% MG")} · ${cantidad(origen.analisis.sng, "% SNG")} · análisis del ${new Date(origen.analisis.tomado_en).toLocaleString("es-CL")}`
               : "—"}
           </div>
           {origen?.motivo && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 sm:col-span-2">{origen.motivo}</p>}
@@ -213,7 +220,7 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
             </select>
           </Campo>
           <Campo texto="Litros de entrada">
-            <input required type="number" min="1" step="0.01" max={origen?.saldo_l} value={litros} onChange={(e) => { setLitros(e.target.value); invalidarPlan(); }} className={control} />
+            <input required type="number" min="1" step="0.01" max={origen?.libre_l} value={litros} onChange={(e) => { setLitros(e.target.value); invalidarPlan(); }} className={control} />
           </Campo>
           <Campo texto="Producto · leche descremada">
             <select required value={productoDescremada} onChange={(e) => { setProductoDescremada(e.target.value); setRutaDescremada(""); invalidarPlan(); }} className={control}>
@@ -277,8 +284,8 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
               <Campo texto="Crema planificada (L)">
                 <input required type="number" min="0.01" step="0.01" value={planCrema} onChange={(e) => { setPlanCrema(e.target.value); setPlanConfirmado(false); }} className={control} />
               </Campo>
-              <p className="text-xs text-slate-600">Referencia descremada: {sugerencia.grasa_descremada_objetivo} % MG</p>
-              <p className="text-xs text-slate-600">Referencia crema: {sugerencia.grasa_crema_objetivo} % MG</p>
+              <p className="text-xs text-slate-600">Referencia descremada: {cantidad(sugerencia.grasa_descremada_objetivo, "% MG")}</p>
+              <p className="text-xs text-slate-600">Referencia crema: {cantidad(sugerencia.grasa_crema_objetivo, "% MG")}</p>
               {(excedeDescremada || excedeCrema) && (
                 <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:col-span-2">El plan supera la capacidad libre de {[excedeDescremada && destinoDescremada?.codigo, excedeCrema && destinoCrema?.codigo].filter(Boolean).join(" y ")}: «Preparar» lo va a rechazar.</p>
               )}
@@ -304,7 +311,7 @@ export default function PrepararDescremado({ puesto, siloInicial, equipoInicial,
             titulo="Preparar el descremado"
             filas={[
               { etiqueta: "Origen", valor: `${origen.codigo} · ${cantidad(litros, "L")}` },
-              { etiqueta: "Composición", valor: origen.analisis ? `${origen.analisis.grasa} % MG · ${origen.analisis.sng} % SNG` : "—" },
+              { etiqueta: "Composición", valor: origen.analisis ? `${cantidad(origen.analisis.grasa, "% MG")} · ${cantidad(origen.analisis.sng, "% SNG")}` : "—" },
               { etiqueta: "Descremadora", valor: maquina.nombre },
               { etiqueta: "Leche descremada", valor: `${destinoDescremada.codigo} · ${cantidad(planDescremada, "L")}` },
               { etiqueta: "Crema", valor: `${destinoCrema.codigo} · ${cantidad(planCrema, "L")}` },
