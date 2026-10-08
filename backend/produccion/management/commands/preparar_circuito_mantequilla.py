@@ -12,6 +12,7 @@ from maestros.models import (
     Equipo, Especificacion, Mandante, Producto, Receta, RecetaComponente,
 )
 from procesos.models import RutaProducto
+from procesos.servicios import sueros_libres
 from produccion.models import Lote, OrdenProduccion
 from usuarios.tenancy import unica_sucursal_activa
 
@@ -180,12 +181,7 @@ class Command(BaseCommand):
                 "unidad_base": Producto.Unidad.KG,
             },
         )
-        lote_suero = Lote.objects.filter(
-            producto=mazada,
-            estado__in=[Lote.Estado.BORRADOR, Lote.Estado.EN_PROCESO],
-            kg_producidos__isnull=True,
-            corridas_como_suero_mantequilla__isnull=True,
-        ).first()
+        lote_suero = sueros_libres(Lote.objects.filter(producto=mazada)).order_by("pk").first()
         if lote_suero is None:
             base = f"MAZ-E2E-{date.today():%Y%m%d}"
             correlativo = Lote.objects.filter(codigo_lote__startswith=base).count() + 1

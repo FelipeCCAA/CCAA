@@ -86,6 +86,10 @@ MENSAJE_SALIDA_DE_LOTE_ANULADO = (
     "El lote {codigo} está anulado: su material no se ofrece ni se prepara."
 )
 MENSAJE_MOTIVO_CANCELACION = "Indica el motivo de la cancelación."
+# La mantequilla tiene una sola entrada: su puesto. `preparar_continuacion`
+# creaba una ejecución de Mantequilla sin `CorridaMantequilla`, sin cierre ni
+# balance que ninguna pantalla supiera hacer.
+MENSAJE_MANTEQUILLA_EN_PUESTO = "La mantequilla se prepara en el puesto de Mantequilla."
 
 # Registro de planta que la torre pide antes de operar. Avisa, no bloquea:
 # que bloquee lo decide Calidad, y sería sobre `avisos_de_torre`.
@@ -952,40 +956,178 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
     return corrida
 
 
+def filtro_crema_liberada():
+    """
+    Un lote de crema que Calidad liberó: alguna de sus salidas tiene la
+    liberación en `liberado`. Una sola condición para la lista `cremas` del
+    puesto, «Preparar» y el inicio: antes el inicio solo la miraba si la crema
+    estaba en un TK, y la lista la exigía siempre.
+    """
+    from calidad.models import LiberacionProceso
+
+    return Q(salidas_proceso__liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO)
+
+
+def sueros_libres(consulta=None):
+    """
+    Los lotes de suero o mazada que una corrida puede tomar: categoría suero,
+    en borrador o en proceso, sin kilos y sin una corrida de mantequilla
+    **viva** —una `anulada` lo suelta, aunque conserve el rastro—. La usan la
+    lista `sueros` del puesto, «Preparar» y `preparar_circuito_mantequilla`.
+    """
+    from produccion.models import Lote
+
+    consulta = Lote.objects.all() if consulta is None else consulta
+    vivas = CorridaMantequilla.objects.filter(lote_suero=OuterRef("pk")).exclude(
+        estado=CorridaMantequilla.Estado.ANULADA,
+    )
+    return consulta.filter(
+        producto__categoria="suero",
+        estado__in=[Lote.Estado.BORRADOR, Lote.Estado.EN_PROCESO],
+        kg_producidos__isnull=True,
+    ).exclude(Exists(vivas))
+
+
+def kg_crema_disponible(lote, *, excluir_corrida_id=None):
+    """
+    Lo que queda de una crema para una corrida de mantequilla: sus kilos
+    producidos menos lo que ya entró a una mantequera (las entradas en kg que
+    no son una preparación cancelada) y menos lo que **otras corridas
+    preparadas** ya pidieron (corrida `borrador` con su ejecución viva).
+
+    Una cantidad, una consulta: la usan la lista `cremas` del puesto,
+    «Preparar» y el inicio. Sin restar las preparadas, el puesto ofrecía una
+    crema que el inicio de la segunda corrida rechazaba (caso 1 de «La
+    pantalla ofrece lo que el backend va a rechazar», `CLAUDE.md`).
+    """
+    utilizado = EntradaProceso.objects.filter(
+        lote=lote, unidad__iexact="kg",
+    ).exclude(PREPARACION_CANCELADA).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    preparadas = CorridaMantequilla.objects.filter(
+        lote_crema=lote, estado=CorridaMantequilla.Estado.BORRADOR,
+    ).exclude(ejecucion__estado__in=ESTADOS_EJECUCION_TERMINALES)
+    if excluir_corrida_id is not None:
+        preparadas = preparadas.exclude(pk=excluir_corrida_id)
+    comprometido = preparadas.aggregate(total=Sum("kg_crema"))["total"] or Decimal("0")
+    return Decimal(str(lote.kg_producidos or 0)) - utilizado - comprometido
+
+
+def motivos_crema_para_mantequilla(lote, kg, *, excluir_corrida_id=None):
+    """
+    Por qué `kg` de este lote no pueden entrar a una corrida de mantequilla,
+    como pares `(motivo, resolver_en)`. Lista vacía: pueden.
+
+    Lo propio de la crema —familia, estado, liberación, disponible—, que no
+    cambia entre preparar e iniciar: «Preparar» rechaza con el primero y el
+    inicio los incluye en su lista. Las condiciones del TK (análisis, firmas,
+    CIP, saldo en litros) no están aquí: cambian entre los dos pasos y son
+    solo motivos de inicio.
+    """
+    from produccion.models import Lote
+
+    if lote.producto.familia != "crema":
+        return [(f"El lote {lote.codigo_lote} no es un lote de crema.", None)]
+    if lote.estado == Lote.Estado.ANULADO:
+        # El material de un lote anulado no se procesa (como en Secado).
+        return [(MENSAJE_SALIDA_DE_LOTE_ANULADO.format(codigo=lote.codigo_lote), None)]
+    if lote.estado not in {Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO}:
+        return [(f"El lote de crema {lote.codigo_lote} todavía no está producido.", None)]
+    motivos = []
+    if not Lote.objects.filter(pk=lote.pk).filter(filtro_crema_liberada()).exists():
+        motivos.append((
+            f"El lote de crema {lote.codigo_lote} todavía no está liberado por Calidad.",
+            RESOLVER_CALIDAD,
+        ))
+    pedido = Decimal(str(kg))
+    disponible = kg_crema_disponible(lote, excluir_corrida_id=excluir_corrida_id)
+    if pedido > disponible:
+        motivos.append((
+            f"El lote de crema {lote.codigo_lote} tiene {disponible} kg disponibles; "
+            f"la corrida pide {pedido} kg.",
+            None,
+        ))
+    return motivos
+
+
+def fuente_tk_de_crema(lote):
+    """
+    La salida del lote de crema que está en un TK, si la hay: de ahí sale la
+    crema al iniciar (en litros, con la densidad de su liberación). El inicio
+    y el puesto (`cremas[].tk`) leen la misma.
+    """
+    return (
+        SalidaProceso.objects.select_related("silo", "liberacion_calidad__analisis_silo")
+        .filter(lote=lote, silo__isnull=False)
+        .order_by("registrada_en", "pk")
+        .first()
+    )
+
+
+def litros_de_crema(kg, densidad):
+    """Los litros del TK que corresponden a `kg` de crema con esta densidad (kg/m³)."""
+    return (Decimal(str(kg)) * Decimal("1000") / Decimal(str(densidad))).quantize(Decimal("0.01"))
+
+
 @transaction.atomic
 def crear_mantequilla_guiada(
     *, orden_id, lote_crema_id, equipo_id, codigo_lote_mantequilla,
     kg_crema, usuario, lote_suero_id=None,
 ):
-    """Crea ejecución, lote de salida y corrida sin pasos parciales huérfanos."""
+    """
+    Prepara una corrida de mantequilla: lote de salida, ejecución y corrida, y
+    toma la mantequera (`borrador → preparacion`), en una sola transacción
+    —todo o nada: ni lote, ni ejecución, ni corrida, ni máquina ocupada—.
+
+    La crema se valida con las mismas reglas que el inicio
+    (`motivos_crema_para_mantequilla`), pero no se mueve: entra a la
+    mantequera al iniciar. Las condiciones del TK cambian entre preparar e
+    iniciar y son motivos de inicio, con su enlace.
+    """
+    from inventario.servicios import motivo_equipo_no_habilitado
     from maestros.models import Equipo
     from produccion.models import Lote, OrdenProduccion
 
     orden = OrdenProduccion.objects.select_for_update(of=("self",)).select_related(
         "producto", "sucursal"
     ).get(pk=orden_id)
-    crema = Lote.objects.select_for_update(of=("self",)).select_related("producto").get(pk=lote_crema_id)
+    crema = (
+        Lote.objects.select_for_update(of=("self",)).select_related("producto")
+        .get(pk=lote_crema_id)
+    )
     equipo = Equipo.objects.select_for_update().get(pk=equipo_id)
-    suero = Lote.objects.select_for_update().get(pk=lote_suero_id) if lote_suero_id else None
+    suero = (
+        Lote.objects.select_for_update(of=("self",)).get(pk=lote_suero_id)
+        if lote_suero_id else None
+    )
     if orden.producto.categoria != "mantequilla":
         raise ValidationError({"orden": "La orden no corresponde a mantequilla."})
     if orden.estado not in {OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO}:
         raise ValidationError({"orden": "La orden no está programada o en proceso."})
-    if crema.producto.familia != "crema":
-        raise ValidationError({"lote_crema": "Selecciona un lote de crema."})
     if not equipo.activo:
-        raise ValidationError({"equipo": "La línea no está activa."})
+        raise ValidationError({"equipo": f"{equipo.nombre} no está activa."})
     if equipo.tipo not in tipos_equipo_para_etapa(EtapaProceso.Tipo.MANTEQUILLA):
         raise ValidationError({"equipo": f"{equipo.nombre} no es una mantequera."})
+    # Hoy una mantequera en CIP se preparaba y el rechazo llegaba al iniciar.
+    impedimento = motivo_equipo_no_habilitado(equipo)
+    if impedimento:
+        raise ValidationError({"equipo": impedimento})
+    motivos = motivos_crema_para_mantequilla(crema, kg_crema)
+    if motivos:
+        raise ValidationError({"lote_crema": motivos[0][0]})
+    if suero is not None and not sueros_libres(Lote.objects.filter(pk=suero.pk)).exists():
+        raise ValidationError({
+            "lote_suero": (
+                f"El lote {suero.codigo_lote} no puede recibir el suero: ya lo tomó otra "
+                "corrida, ya tiene kilos o no es un lote de suero."
+            )
+        })
     etapa = etapa_para_producto(
         producto=orden.producto, sucursal=orden.sucursal,
         tipo=EtapaProceso.Tipo.MANTEQUILLA,
     )
     if etapa is None:
         raise ValidationError({"orden": "El producto no tiene una etapa de mantequilla activa."})
-    ruta = ruta_para_etapa(
-        producto=orden.producto, sucursal=orden.sucursal, etapa=etapa
-    )
+    ruta = ruta_para_etapa(producto=orden.producto, sucursal=orden.sucursal, etapa=etapa)
     codigo = str(codigo_lote_mantequilla).strip()
     if not codigo:
         raise ValidationError({"codigo_lote_mantequilla": "Ingresa el código del lote de salida."})
@@ -998,8 +1140,7 @@ def crear_mantequilla_guiada(
     lote_salida.full_clean()
     lote_salida.save()
     ejecucion = EjecucionProceso(
-        codigo=f"EJ-MANT-{lote_salida.pk}", etapa=etapa,
-        ruta_producto=ruta,
+        codigo=f"EJ-MANT-{lote_salida.pk}", etapa=etapa, ruta_producto=ruta,
         sucursal=orden.sucursal, equipo=equipo, responsable=usuario,
     )
     ejecucion.full_clean()
@@ -1013,7 +1154,16 @@ def crear_mantequilla_guiada(
     )
     corrida.full_clean()
     corrida.save()
-    return corrida
+    # Toma la mantequera: `adquirir_equipo` rechaza una ocupada, y la
+    # excepción revierte todo lo de arriba.
+    transicionar_ejecucion(
+        ejecucion_id=ejecucion.pk, estado_nuevo=EjecucionProceso.Estado.PREPARACION,
+        usuario=usuario, motivo="Preparación desde el puesto de Mantequilla.",
+    )
+    return CorridaMantequilla.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden",
+        "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
+    ).get(pk=corrida.pk)
 
 
 @transaction.atomic
@@ -1035,6 +1185,8 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         )
     except (EtapaProceso.DoesNotExist, TypeError, ValueError) as error:
         raise ValidationError("La etapa seleccionada no existe o está inactiva.") from error
+    if etapa.tipo == EtapaProceso.Tipo.MANTEQUILLA:
+        raise ValidationError(MENSAJE_MANTEQUILLA_EN_PUESTO)
     siguiente = siguiente_etapa_para_salida(salida=salida)
     if siguiente is None or etapa.pk != siguiente.pk:
         raise ValidationError(
@@ -2835,88 +2987,151 @@ def cerrar_descremacion(
     return corrida
 
 
+def motivos_tipados_para_iniciar_mantequilla(corrida, *, ejecucion=None):
+    """
+    Lo que impide iniciar esta corrida de mantequilla, como pares `(motivo,
+    resolver_en)`, en el orden en que el inicio lo comprueba. Lista vacía: se
+    puede.
+
+    Es la única implementación de esas reglas: `iniciar_mantequilla` lanza el
+    primer motivo y el puesto los muestra junto a un botón deshabilitado,
+    enlazando a donde se resuelve el primero. Un aseo observado **no** está
+    aquí: avisa, no bloquea. El stock de envases tampoco: se descuenta al
+    declarar el lote producido y no bloquea (`cerrar_lote_producido`).
+    """
+    from inventario.servicios import motivo_equipo_no_habilitado
+    from produccion.models import OrdenProduccion
+    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+
+    ejecucion = ejecucion or corrida.ejecucion
+    if (
+        corrida.estado != CorridaMantequilla.Estado.BORRADOR
+        or ejecucion.estado != EjecucionProceso.Estado.PREPARACION
+    ):
+        # Lo demás no aplica a una corrida que no está preparada.
+        return [(
+            f"{ejecucion.codigo} no está preparada: está "
+            f"{ejecucion.get_estado_display().lower()}.",
+            None,
+        )]
+    motivos = []
+    try:
+        corrida.clean()
+    except ValidationError as error:
+        motivos.extend((mensaje, None) for mensaje in error.messages)
+    orden = corrida.orden
+    if orden.estado not in {OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO}:
+        motivos.append((
+            f"La orden {orden.codigo} está {orden.get_estado_display().lower()}: "
+            "debe estar programada o en proceso.",
+            RESOLVER_PLANIFICACION,
+        ))
+    if not ejecucion.equipo_id:
+        motivos.append(("La corrida requiere una mantequera asignada.", None))
+    else:
+        impedimento = motivo_equipo_no_habilitado(ejecucion.equipo)
+        if impedimento:
+            motivos.append((impedimento, RESOLVER_CIP))
+    motivos.extend(motivos_crema_para_mantequilla(
+        corrida.lote_crema, corrida.kg_crema, excluir_corrida_id=corrida.pk,
+    ))
+    fuente = fuente_tk_de_crema(corrida.lote_crema)
+    if fuente is not None:
+        tk = fuente.silo
+        liberacion = getattr(fuente, "liberacion_calidad", None)
+        densidad = (
+            liberacion.analisis_silo.densidad
+            if liberacion is not None and liberacion.analisis_silo_id else None
+        )
+        if densidad is None or densidad <= 0:
+            motivos.append((
+                f"El análisis de la crema en {tk.codigo} no tiene una densidad válida.",
+                RESOLVER_CALIDAD,
+            ))
+        del_tk = motivos_silo_no_disponible(tk, para="proceso")
+        if del_tk:
+            motivos.append((f"{tk.codigo}: " + " ".join(del_tk), RESOLVER_SILOS))
+        if densidad is not None and densidad > 0:
+            litros = litros_de_crema(corrida.kg_crema, densidad)
+            if saldo_silo(tk) < litros:
+                motivos.append((
+                    f"{tk.codigo} no tiene los {litros} L equivalentes a la crema solicitada.",
+                    None,
+                ))
+    return motivos
+
+
+def motivos_para_iniciar_mantequilla(corrida, *, ejecucion=None):
+    """Los textos de `motivos_tipados_para_iniciar_mantequilla`. Lista vacía: se puede."""
+    return [
+        motivo for motivo, _ in
+        motivos_tipados_para_iniciar_mantequilla(corrida, ejecucion=ejecucion)
+    ]
+
+
 @transaction.atomic
 def iniciar_mantequilla(*, corrida_id, usuario):
-    from inventario.servicios import motivo_equipo_no_habilitado
-    from calidad.models import LiberacionProceso
+    """
+    Pasa una corrida preparada a ejecución. Recalcula los motivos con la
+    corrida, la ejecución, la crema y su TK bloqueados —entre que el puesto los
+    mostró y el clic pudo entrar un CIP o perderse la liberación— y lanza el
+    primero. Sin motivos, saca la crema del TK, registra la entrada y la
+    mantequera pasa a `ejecucion`. Ya no pasa por `borrador → preparacion`:
+    eso lo hizo «Preparar».
+    """
+    from inventario.servicios import advertencia_aseo_equipo
     from maestros.models import Silo
-    from produccion.models import OrdenProduccion
+    from produccion.models import Lote, OrdenProduccion
     from recepcion.models import MovimientoSilo
-    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
-    from .models import EntradaProceso, SalidaProceso
 
+    # Orden de candados de `bloquear_para_cancelar`: corrida, luego ejecución.
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
-        "ejecucion__etapa", "ejecucion__equipo", "orden",
-        "lote_crema__producto", "lote_mantequilla__producto",
+        "orden", "lote_crema__producto", "lote_mantequilla__producto",
     ).get(pk=corrida_id)
-    if corrida.estado != CorridaMantequilla.Estado.BORRADOR:
-        raise ValidationError("Solo una corrida en borrador puede iniciarse.")
-    corrida.clean()
-    if corrida.orden.estado not in {
-        OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
-    }:
-        raise ValidationError("La orden debe estar programada o en proceso.")
-    impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
-    if impedimento:
-        raise ValidationError(impedimento)
-    # Una preparación cancelada no tomó crema (`PREPARACION_CANCELADA`).
-    utilizado = EntradaProceso.objects.filter(
-        lote=corrida.lote_crema, unidad__iexact="kg"
-    ).exclude(PREPARACION_CANCELADA).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
-    disponible = Decimal(str(corrida.lote_crema.kg_producidos or 0)) - utilizado
-    if corrida.kg_crema > disponible:
-        raise ValidationError(f"El lote de crema solo tiene {disponible} kg disponibles.")
-    fuente_tk = (
-        SalidaProceso.objects.select_for_update(of=("self",))
-        .select_related("silo", "liberacion_calidad__analisis_silo")
-        .filter(lote=corrida.lote_crema, silo__isnull=False)
-        .order_by("registrada_en")
-        .first()
+    ejecucion = (
+        EjecucionProceso.objects.select_for_update(of=("self",))
+        .select_related("etapa", "equipo").get(pk=corrida.ejecucion_id)
     )
-    if fuente_tk is not None:
-        liberacion = getattr(fuente_tk, "liberacion_calidad", None)
-        if not liberacion or liberacion.estado != LiberacionProceso.Estado.LIBERADO:
-            raise ValidationError("El lote de crema todavía no está liberado por Calidad.")
-        densidad = liberacion.analisis_silo.densidad if liberacion.analisis_silo_id else None
-        if densidad is None or densidad <= 0:
-            raise ValidationError("El análisis de la crema no tiene una densidad válida.")
-        litros_consumidos = (
-            Decimal(str(corrida.kg_crema)) * Decimal("1000") / Decimal(str(densidad))
-        ).quantize(Decimal("0.01"))
-        tk_crema = Silo.objects.select_for_update().get(pk=fuente_tk.silo_id)
-        motivos_tk = motivos_silo_no_disponible(tk_crema, para="proceso")
-        if motivos_tk:
-            raise ValidationError(f"{tk_crema.codigo}: " + " ".join(motivos_tk))
-        if saldo_silo(tk_crema) < litros_consumidos:
-            raise ValidationError(
-                f"{tk_crema.codigo} no tiene los {litros_consumidos} L equivalentes "
-                "a la crema solicitada."
-            )
+    corrida.ejecucion = ejecucion
+    # Dos inicios sobre la misma crema se serializan antes de contar su disponible.
+    list(
+        Lote.objects.select_for_update(of=("self",))
+        .filter(pk=corrida.lote_crema_id).values_list("pk", flat=True)
+    )
+    fuente = fuente_tk_de_crema(corrida.lote_crema)
+    tk = Silo.objects.select_for_update().get(pk=fuente.silo_id) if fuente is not None else None
+    motivos = motivos_para_iniciar_mantequilla(corrida, ejecucion=ejecucion)
+    if motivos:
+        raise ValidationError(motivos[0])
+
+    if tk is not None:
         MovimientoSilo.objects.create(
-            silo=tk_crema,
+            silo=tk,
             tipo=MovimientoSilo.Tipo.SALIDA,
-            litros=litros_consumidos,
+            litros=litros_de_crema(
+                corrida.kg_crema, fuente.liberacion_calidad.analisis_silo.densidad,
+            ),
             fecha_hora=timezone.now(),
             origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
             origen_id=corrida.pk,
             operacion_id=corrida.operacion_id,
             lote=corrida.lote_crema,
             producto=corrida.lote_crema.producto,
-            equipo=corrida.ejecucion.equipo,
+            equipo=ejecucion.equipo,
             usuario=usuario,
         )
     EntradaProceso.objects.create(
-        ejecucion=corrida.ejecucion, lote=corrida.lote_crema,
+        ejecucion=ejecucion, lote=corrida.lote_crema,
         cantidad=corrida.kg_crema, unidad="kg",
     )
-    if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
-        transicionar_ejecucion(
-            ejecucion_id=corrida.ejecucion_id,
-            estado_nuevo=EjecucionProceso.Estado.PREPARACION, usuario=usuario,
-        )
+    aseo = advertencia_aseo_equipo(ejecucion.equipo)
     transicionar_ejecucion(
-        ejecucion_id=corrida.ejecucion_id,
-        estado_nuevo=EjecucionProceso.Estado.EJECUCION, usuario=usuario,
+        ejecucion_id=ejecucion.pk, estado_nuevo=EjecucionProceso.Estado.EJECUCION,
+        usuario=usuario,
+        motivo=(
+            f"Advertencia no bloqueante de aseo: {aseo}"
+            if aseo else "Inicio desde el puesto de Mantequilla."
+        ),
     )
     corrida.estado = CorridaMantequilla.Estado.EN_PROCESO
     corrida.iniciada_por = usuario
@@ -2925,7 +3140,11 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     if corrida.orden.estado == OrdenProduccion.Estado.PROGRAMADA:
         corrida.orden.estado = OrdenProduccion.Estado.EN_PROCESO
         corrida.orden.save(update_fields=["estado"])
-    return corrida
+    return CorridaMantequilla.objects.select_related(
+        "ejecucion__etapa", "ejecucion__equipo", "orden",
+        "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
+        "iniciada_por", "finalizada_por",
+    ).get(pk=corrida.pk)
 
 
 def revisar_cierre_mantequilla(
@@ -3419,6 +3638,9 @@ RESOLVER_CALIDAD = "/calidad"
 # Motivos del silo de origen (análisis, firmas, inhibidores, 48 h, estado):
 # se resuelven donde Recepción y Calidad analizan los silos.
 RESOLVER_SILOS = "/silos"
+
+# Motivos de la orden (cancelada, cerrada): se resuelven donde se programan.
+RESOLVER_PLANIFICACION = "/planificacion"
 
 
 def motivos_tipados_para_iniciar_secado(corrida, *, ejecucion=None):
