@@ -16,6 +16,7 @@ from auditoria.registro import (
     crear_en_lote_con_auditoria,
 )
 from maestros.models import Silo
+from .dominio import balance_mantequilla, errores_cierre_mantequilla
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso, EtapaProceso, EventoProceso, SalidaProceso,
@@ -2938,8 +2939,6 @@ def revisar_cierre_mantequilla(
     que cuadra: el cliente no calcula. La misma función que `cerrar_mantequilla`
     y `CorridaMantequilla.clean()`.
     """
-    from .dominio import balance_mantequilla, errores_cierre_mantequilla
-
     balance = balance_mantequilla(
         kg_crema=corrida.kg_crema, kg_mantequilla=kg_mantequilla,
         kg_suero=kg_suero, kg_merma=kg_merma, kg_reproceso=kg_reproceso,
@@ -2952,8 +2951,8 @@ def revisar_cierre_mantequilla(
         "cuadra": balance.cuadra,
         "mensaje": balance.mensaje,
         "errores": errores_cierre_mantequilla(
-            tiene_lote_suero=bool(corrida.lote_suero_id), kg_suero=kg_suero,
-            kg_reproceso=kg_reproceso, motivo_reproceso=motivo_reproceso,
+            tiene_lote_suero=bool(corrida.lote_suero_id), kg_mantequilla=kg_mantequilla,
+            kg_suero=kg_suero, kg_reproceso=kg_reproceso, motivo_reproceso=motivo_reproceso,
         ),
     }
 
@@ -2964,7 +2963,6 @@ def cerrar_mantequilla(
     kg_reproceso=0, motivo_reproceso="", controles=None,
 ):
     from calidad.models import LiberacionProceso
-    from .dominio import balance_mantequilla, errores_cierre_mantequilla
     from produccion.models import Lote
     from .models import AutorizacionReproceso, SalidaProceso
 
@@ -2983,8 +2981,9 @@ def cerrar_mantequilla(
     # nada —hoy el lote de reproceso se creaba y `clean()` lo revertía—, con
     # las mismas funciones que `revisar-cierre/` y `clean()`.
     errores = errores_cierre_mantequilla(
-        tiene_lote_suero=bool(corrida.lote_suero_id), kg_suero=corrida.kg_suero,
-        kg_reproceso=corrida.kg_reproceso, motivo_reproceso=corrida.motivo_reproceso,
+        tiene_lote_suero=bool(corrida.lote_suero_id), kg_mantequilla=corrida.kg_mantequilla,
+        kg_suero=corrida.kg_suero, kg_reproceso=corrida.kg_reproceso,
+        motivo_reproceso=corrida.motivo_reproceso,
     )
     if errores:
         raise ValidationError(errores)

@@ -636,8 +636,9 @@ class CorridaMantequilla(models.Model):
                 "lote_reproceso": "El reproceso debe quedar segregado en un lote propio."
             })
         errores = errores_cierre_mantequilla(
-            tiene_lote_suero=bool(self.lote_suero_id), kg_suero=self.kg_suero,
-            kg_reproceso=self.kg_reproceso, motivo_reproceso=self.motivo_reproceso,
+            tiene_lote_suero=bool(self.lote_suero_id), kg_mantequilla=self.kg_mantequilla,
+            kg_suero=self.kg_suero, kg_reproceso=self.kg_reproceso,
+            motivo_reproceso=self.motivo_reproceso,
         )
         if errores:
             raise ValidationError(errores)
@@ -647,10 +648,6 @@ class CorridaMantequilla(models.Model):
                     "lote_reproceso": "El reproceso debe conservar el producto de mantequilla."
                 })
         if self.kg_mantequilla is not None:
-            if self.kg_mantequilla <= 0:
-                raise ValidationError({
-                    "kg_mantequilla": "La mantequilla producida debe ser mayor que cero."
-                })
             balance = balance_mantequilla(
                 kg_crema=self.kg_crema, kg_mantequilla=self.kg_mantequilla,
                 kg_suero=self.kg_suero, kg_merma=self.kg_merma, kg_reproceso=self.kg_reproceso,

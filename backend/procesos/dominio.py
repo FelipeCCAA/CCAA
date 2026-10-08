@@ -152,7 +152,10 @@ def balance_mantequilla(*, kg_crema, kg_mantequilla, kg_suero=0, kg_merma=0, kg_
         Decimal("0"),
     )
     diferencia = entrada - clasificado
-    if kg_mantequilla is None or kg_mantequilla == "":
+    # 0 o negativo es, para el balance, lo mismo que no haberla tecleado: no
+    # hay mantequilla que clasificar. `errores_cierre_mantequilla` repite el
+    # mismo criterio para el error de campo; aquí decide si "cuadra".
+    if kg_mantequilla is None or kg_mantequilla == "" or _kg(kg_mantequilla) <= 0:
         return BalanceMantequilla(entrada, clasificado, diferencia, False, MENSAJE_FALTA_MANTEQUILLA)
     if abs(diferencia) <= TOLERANCIA_BALANCE_MANTEQUILLA_KG:
         return BalanceMantequilla(entrada, clasificado, diferencia, True, None)
@@ -163,13 +166,24 @@ def balance_mantequilla(*, kg_crema, kg_mantequilla, kg_suero=0, kg_merma=0, kg_
     )
 
 
-def errores_cierre_mantequilla(*, tiene_lote_suero, kg_suero=0, kg_reproceso=0, motivo_reproceso=""):
+def errores_cierre_mantequilla(
+    *, tiene_lote_suero, kg_mantequilla=None, kg_suero=0, kg_reproceso=0, motivo_reproceso="",
+):
     """
-    Las otras reglas del cierre que dependen de lo tecleado, por campo: suero
-    sin lote donde registrarlo y reproceso sin motivo. Las mismas para
-    `clean()`, el cierre y `revisar-cierre/`, con el mismo texto.
+    Las otras reglas del cierre que dependen de lo tecleado, por campo:
+    mantequilla en cero o negativa, suero sin lote donde registrarlo y
+    reproceso sin motivo. Las mismas para `clean()`, el cierre y
+    `revisar-cierre/`, con el mismo texto.
+
+    `kg_mantequilla` ausente (`None`/`""`) no es un error de este campo: ya lo
+    dice `balance_mantequilla` en su propio mensaje, antes de teclear nada.
+    Tecleado en 0 o negativo sí lo es —antes `revisar-cierre/` lo daba por
+    cuadrado mientras `cerrar/` lo rechazaba (serializer y `clean()`)—, con el
+    mismo mensaje que la ausencia: para el balance, cero no clasifica nada.
     """
     errores = {}
+    if kg_mantequilla not in (None, "") and _kg(kg_mantequilla) <= 0:
+        errores["kg_mantequilla"] = MENSAJE_FALTA_MANTEQUILLA
     if _kg(kg_suero) > 0 and not tiene_lote_suero:
         errores["kg_suero"] = MENSAJE_SUERO_SIN_LOTE
     if _kg(kg_reproceso) > 0 and not (motivo_reproceso or "").strip():

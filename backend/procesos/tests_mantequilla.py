@@ -106,6 +106,39 @@ class BalanceMantequillaDominioTests(SimpleTestCase):
         )
         self.assertEqual(errores_cierre_mantequilla(tiene_lote_suero=False, kg_suero="0"), {})
 
+    def test_mantequilla_en_cero_no_cuadra_aunque_el_resto_clasifique_todo(self):
+        # Fix round 1: `revisar-cierre/` daba `cuadra: true` con kg_mantequilla="0"
+        # porque el balance solo miraba la ausencia (None/""), no el cero
+        # tecleado; `cerrar/` sí lo rechazaba (serializer min_value=0.001 y
+        # `clean()`). Mismo criterio, misma función: cero tecleado es, para el
+        # balance, como no haber tecleado nada.
+        balance = balance_mantequilla(kg_crema="1000", kg_mantequilla="0", kg_suero="1000")
+
+        self.assertFalse(balance.cuadra)
+        self.assertEqual(balance.mensaje, MENSAJE_FALTA_MANTEQUILLA)
+
+    def test_mantequilla_negativa_tampoco_cuadra(self):
+        balance = balance_mantequilla(kg_crema="1000", kg_mantequilla="-5", kg_suero="1005")
+
+        self.assertFalse(balance.cuadra)
+        self.assertEqual(balance.mensaje, MENSAJE_FALTA_MANTEQUILLA)
+
+    def test_mantequilla_en_cero_o_negativa_es_un_error_de_campo(self):
+        self.assertEqual(
+            errores_cierre_mantequilla(tiene_lote_suero=True, kg_mantequilla="0"),
+            {"kg_mantequilla": MENSAJE_FALTA_MANTEQUILLA},
+        )
+        self.assertEqual(
+            errores_cierre_mantequilla(tiene_lote_suero=True, kg_mantequilla="-1"),
+            {"kg_mantequilla": MENSAJE_FALTA_MANTEQUILLA},
+        )
+
+    def test_mantequilla_ausente_no_es_un_error_de_campo(self):
+        # La ausencia (None/"") ya la dice `balance_mantequilla` en su propio
+        # mensaje mientras se teclea de a poco; no es un error de este campo.
+        self.assertEqual(errores_cierre_mantequilla(tiene_lote_suero=True, kg_mantequilla=None), {})
+        self.assertEqual(errores_cierre_mantequilla(tiene_lote_suero=True, kg_mantequilla=""), {})
+
 
 class MantequillaTests(TestCase):
     def setUp(self):
@@ -581,6 +614,22 @@ class MantequillaTests(TestCase):
         self.assertFalse(revision.data["cuadra"])
         self.assertEqual(revision.data["mensaje"], MENSAJE_FALTA_MANTEQUILLA)
         self.assertEqual(revision.data["clasificado_kg"], "0.000")
+
+    def test_revisar_cierre_con_mantequilla_en_cero_no_cuadra_y_lo_marca(self):
+        # Fix round 1: con kg_mantequilla="0" el resto clasificaba el 100% de
+        # la crema (suero = toda la entrada) y la revisión decía `cuadra: true`,
+        # mientras `cerrar/` lo habría rechazado. El balance y los errores de
+        # campo tienen que coincidir siempre.
+        iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
+
+        revision = self.revisar(self.cliente_de_area(), {
+            "kg_mantequilla": "0", "kg_suero": "1000",
+        })
+
+        self.assertEqual(revision.status_code, 200, revision.data)
+        self.assertFalse(revision.data["cuadra"])
+        self.assertEqual(revision.data["mensaje"], MENSAJE_FALTA_MANTEQUILLA)
+        self.assertEqual(revision.data["errores"], {"kg_mantequilla": MENSAJE_FALTA_MANTEQUILLA})
 
     def test_revisar_cierre_repite_las_reglas_del_suero_y_del_reproceso(self):
         iniciar_mantequilla(corrida_id=self.corrida.pk, usuario=self.usuario)
