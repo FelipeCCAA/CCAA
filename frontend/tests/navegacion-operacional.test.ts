@@ -116,18 +116,18 @@ test("la ubicación distingue subprocesos que comparten una URL", () => {
   const usuario = usuarioDeArea("condensacion", "Condensación", "produccion");
 
   assert.ok(esRutaOperacionalActual(
-    "/procesos?seccion=mantequilla",
+    "/procesos?seccion=trazabilidad",
     "/procesos",
-    "?seccion=mantequilla",
+    "?seccion=trazabilidad",
   ));
   assert.ok(!esRutaOperacionalActual(
     "/procesos?seccion=trazabilidad",
     "/procesos",
-    "?seccion=mantequilla",
+    "?seccion=rework",
   ));
   assert.equal(
-    contextoOperacionalPara(usuario, "/procesos", "?seccion=mantequilla").actual.etiqueta,
-    "Mantequilla",
+    contextoOperacionalPara(usuario, "/procesos", "?seccion=trazabilidad").actual.etiqueta,
+    "Trazabilidad productiva",
   );
 });
 
@@ -146,6 +146,24 @@ test("Descremado tiene su propio puesto; el enlace viejo lo sigue marcando", () 
   assert.equal(
     contextoOperacionalPara(usuario, "/produccion/descremado").actual.etiqueta,
     "Descremado",
+  );
+});
+
+test("Mantequilla tiene su propio puesto; el enlace viejo lo sigue marcando", () => {
+  const usuario = usuarioDeArea("condensacion", "Condensación", "produccion");
+  const mantequilla = navegacionPara(usuario).grupos
+    .flatMap((grupo) => grupo.enlaces)
+    .find((enlace) => enlace.etiqueta === "Mantequilla");
+
+  assert.equal(mantequilla?.ruta, "/produccion/mantequilla");
+  assert.equal(mantequilla?.modulo, "produccion");
+  assert.ok(mantequilla && esEnlaceOperacionalActual(mantequilla, "/produccion/mantequilla"));
+  // `/procesos?seccion=mantequilla` redirige al puesto; mientras tanto, el
+  // menú marca la misma entrada.
+  assert.ok(mantequilla && esEnlaceOperacionalActual(mantequilla, "/procesos", "?seccion=mantequilla"));
+  assert.equal(
+    contextoOperacionalPara(usuario, "/produccion/mantequilla").actual.etiqueta,
+    "Mantequilla",
   );
 });
 

@@ -226,7 +226,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                 </Link>
               ) : salida.acciones_permitidas.some((accion) => accion.codigo === "iniciar_mantequilla") ? (
                 <Link
-                  to="/procesos?seccion=mantequilla"
+                  to={salida.lote_id ? `/produccion/mantequilla?crema=${salida.lote_id}` : "/produccion/mantequilla"}
                   className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white"
                 >
                   {salida.acciones_permitidas.find((accion) => accion.codigo === "iniciar_mantequilla")?.etiqueta}
@@ -240,6 +240,10 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                   Tomar en el puesto de Secado
                   <ArrowRight className="h-4 w-4" />
                 </Link>
+              ) : salida.etapas_siguientes.some((etapa) => etapa.tipo === "mantequilla") ? (
+                /* El servidor no ofreció «Preparar en Mantequilla» (reglas del puesto):
+                   la continuación genérica la rechazaría igual. */
+                <p className="mt-4 text-sm font-medium text-amber-800">Sin saldo para Mantequilla: la tomaron otras corridas preparadas o en curso, o su TK todavía espera a Calidad.</p>
               ) : preparando === salida.id ? (
                 <div className="mt-4 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                   <label className="block text-xs font-semibold text-slate-700">

@@ -366,6 +366,11 @@ class Equipo(models.Model):
         DESCREMADORA = "descremadora", "Descremadora"
         EVAPORADOR = "evaporador", "Evaporador"
         TORRE = "torre", "Torre de secado"
+        # La máquina de batido de la crema. Tipo propio para que una línea de
+        # envasado no aparezca como mantequera ni una mantequera como línea de
+        # envasado (`maestros.0040`), por la misma razón que `e1`/`e2` dejaron
+        # de ser «líneas».
+        MANTEQUERA = "mantequera", "Mantequera"
         ENVASADORA = "envasadora", "Envasadora"
         LINEA = "linea", "Línea"
         CARGA = "carga", "Carga"

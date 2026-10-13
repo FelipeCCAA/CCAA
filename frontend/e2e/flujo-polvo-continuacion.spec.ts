@@ -101,10 +101,14 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
   if (reanudarDesde <= 4) await test.step("4 · Calidad analiza y libera el polvo", async () => {
     await usarSesionArea(page, "e2e_envasado");
     await irA(page, "/envasado");
-    // La bandeja actual muestra únicamente material ya liberado: mientras
-    // Calidad está pendiente, el lote no debe ofrecerse como seleccionable.
-    await expect(page.getByText("No hay material liberado para envasar.")).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(flujo.lote) })).toHaveCount(0);
+    // La bandeja muestra únicamente material ya liberado: mientras Calidad
+    // está pendiente, **este** lote no debe ofrecerse. Otros flujos (la
+    // mantequilla, por ejemplo) dejan material liberado en la misma base, así
+    // que no se supone la bandeja vacía. «Actualizar» se habilita al terminar
+    // la carga: antes de eso, «no está» no probaría nada.
+    await expect(page.getByRole("button", { name: "Actualizar" })).toBeEnabled({ timeout: 20_000 });
+    await expect(page.getByText("No se pudo cargar la bandeja de Envasado.")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: new RegExp(`^${flujo.lote}(?!\\d)`) })).toHaveCount(0);
 
     await usarSesionArea(page, "e2e_calidad");
     await irA(page, `/calidad/expedientes?lote=${loteId}`);

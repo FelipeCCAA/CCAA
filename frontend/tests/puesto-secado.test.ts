@@ -85,6 +85,7 @@ test("cada «dónde se resuelve» sabe a qué módulo lleva", () => {
   assert.equal(moduloDeResolver("/calidad"), "calidad");
   assert.equal(moduloDeResolver("/registros"), "registros");
   assert.equal(moduloDeResolver("/silos"), "recepcion");
+  assert.equal(moduloDeResolver("/planificacion"), "planificacion");
   // Un destino que no se conoce no se ofrece: no se sabe si se puede entrar.
   assert.equal(moduloDeResolver("/otra-cosa"), null);
 });

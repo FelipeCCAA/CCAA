@@ -56,7 +56,7 @@ const GRUPOS: GrupoOperacional[] = [
       { etiqueta: "Descremado", ruta: "/produccion/descremado", modulo: "produccion", icono: "produccion", nivel: "proceso", areas: ["condensacion", "calidad"], alias: ["/procesos?seccion=descremacion"] },
       { etiqueta: "Evaporación", ruta: "/produccion/evaporacion", modulo: "produccion", icono: "produccion", nivel: "proceso", areas: ["condensacion", "calidad"] },
       { etiqueta: "Secado", ruta: "/produccion/secado", modulo: "secado", icono: "secado", nivel: "proceso", areas: ["secado", "calidad"], alias: ["/secado"] },
-      { etiqueta: "Mantequilla", ruta: "/procesos?seccion=mantequilla", modulo: "procesos", icono: "procesos", nivel: "proceso", areas: ["condensacion", "calidad"] },
+      { etiqueta: "Mantequilla", ruta: "/produccion/mantequilla", modulo: "produccion", icono: "produccion", nivel: "proceso", areas: ["condensacion", "calidad"], alias: ["/procesos?seccion=mantequilla"] },
       { etiqueta: "Trazabilidad productiva", ruta: "/procesos?seccion=trazabilidad", modulo: "procesos", icono: "procesos" },
       { etiqueta: "Planificación", ruta: "/planificacion", modulo: "planificacion", icono: "planificacion" },
     ],
@@ -152,12 +152,13 @@ export function esRutaOperacionalActual(
   if (destino.hash) return hashActual === destino.hash;
 
   // Los accesos generales no se marcan junto a un subproceso específico.
-  // Mantequilla y Trazabilidad viven en /procesos con
+  // Trazabilidad vive en /procesos con
   // `?seccion=`, no con un segundo `#`: HashRouter no procesa ese segundo
   // `#`, así que nunca bajaba a su sección. Evaporación ya no es una de
   // ellas: desde que tiene su propio puesto (/produccion/evaporacion) es un
   // pathname distinto, no una sección de /produccion o /procesos. Descremado
-  // tampoco, desde su puesto (/produccion/descremado).
+  // tampoco, desde su puesto (/produccion/descremado), y Mantequilla
+  // tampoco, desde su puesto (/produccion/mantequilla).
   if (pathnameActual === "/procesos" && searchActual) return false;
   if (pathnameActual === "/produccion" && searchActual) return false;
   return true;

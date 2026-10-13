@@ -1,16 +1,20 @@
 import { useId, useState, type FormEvent } from "react";
 
-import ConfirmarAccion from "../../components/operacion/ConfirmarAccion";
+import ConfirmarAccion from "./ConfirmarAccion";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
 
 /*
-  Motivo y confirmación para soltar una preparación. Lo abren la tarjeta
-  (descremadora preparada) y el historial (corridas `borrador` heredadas del
-  modal anterior), con la misma regla: `corridaCancelable`.
+  Motivo y confirmación para soltar una preparación. Lo abren la tarjeta y el
+  historial de Descremado y de Mantequilla, con la misma regla
+  (`corridaCancelable`); cada puesto dice qué se suelta (`advertencia`).
 */
-export default function CancelarPreparacion({ codigo, filas, alVolver, alCancelar }: {
+export default function CancelarPreparacion({ codigo, filas, advertencia, maxLength, alVolver, alCancelar }: {
   codigo: string;
   filas: { etiqueta: string; valor: string }[];
+  /* Qué se suelta al cancelar: lo dice cada puesto. */
+  advertencia: string;
+  /* El largo que el servidor acepta para el motivo, si lo limita (Mantequilla: `motivo_anulacion`, 250). */
+  maxLength?: number;
   alVolver: () => void;
   /* Rechaza si el servidor no cancela; el modal muestra el motivo. */
   alCancelar: (motivo: string) => Promise<void>;
@@ -48,7 +52,7 @@ export default function CancelarPreparacion({ codigo, filas, alVolver, alCancela
           <ConfirmarAccion
             titulo="Cancelar la preparación"
             filas={[...filas, { etiqueta: "Motivo", valor: motivo.trim() }]}
-            advertencia="La descremadora queda disponible y se sueltan las reservas del silo y de los dos TK. No se mueve leche: hasta el cierre no salió nada del silo."
+            advertencia={advertencia}
             textoConfirmar="Cancelar preparación"
             peligro
             ocupado={enviando}
@@ -59,7 +63,7 @@ export default function CancelarPreparacion({ codigo, filas, alVolver, alCancela
         ) : (
           <form onSubmit={revisar} className="space-y-3">
             <label htmlFor={idMotivo} className="block text-sm font-medium text-slate-700">Motivo de la cancelación</label>
-            <textarea id={idMotivo} required value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600" />
+            <textarea id={idMotivo} required maxLength={maxLength} value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600" />
             <div className="flex flex-wrap justify-end gap-2">
               <button type="button" onClick={alVolver} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Volver</button>
               <button type="submit" disabled={!motivo.trim()} className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Revisar cancelación</button>

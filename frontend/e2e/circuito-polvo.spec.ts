@@ -34,7 +34,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 import {
   analizarSilo, campo, cerrarSegundaFirma, descartarPendiente, elegirOpcion,
-  irA, rechazos, trasGuardar, vigilar,
+  esperarConsultaBorrador, irA, rechazos, trasGuardar, vigilar,
 } from "./ayudantes";
 import { API } from "./constantes";
 
@@ -119,12 +119,14 @@ async function recibirCamion(
   estanque: string,
 ) {
   await irA(pagina, "/leche");
+  // Antes del clic: la consulta del borrador sale al abrir el formulario.
+  const consultaBorrador = esperarConsultaBorrador(pagina, "recepcion/recepciones");
   await pagina.getByRole("button", { name: "Registrar llegada" }).click();
 
   const formulario = pagina.getByRole("dialog").or(pagina.locator("form")).first();
   await expect(pagina.getByText("Registrar llegada del camión")).toBeVisible();
 
-  await descartarPendiente(pagina);
+  await descartarPendiente(pagina, pagina, consultaBorrador);
 
   await campo(pagina, "Fecha *").fill(HOY);
   await campo(pagina, "Guía / recepción").fill(leche.guia);

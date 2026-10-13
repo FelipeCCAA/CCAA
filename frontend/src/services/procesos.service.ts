@@ -168,6 +168,12 @@ export interface CorridaMantequilla {
   iniciada_en: string | null;
   finalizada_por_nombre: string | null;
   finalizada_en: string | null;
+  /* El historial distingue «Preparada» de «Borrador» con el estado de la ejecución. */
+  ejecucion_estado: string;
+  /* La columna «Situación», con la tabla que usa su filtro (`SITUACIONES_MANTEQUILLA`). */
+  situacion: string;
+  situacion_etiqueta: string;
+  motivo_anulacion: string;
 }
 
 export interface ProcesoMaestro {
@@ -341,20 +347,6 @@ export interface Genealogia {
 }
 
 export type TipoReferenciaTrazabilidad = TipoReferenciaTrazable;
-
-export interface OpcionesAltaMantequilla {
-  ordenes: { id: number; codigo: string; producto: string }[];
-  cremas: { id: number; codigo: string; producto: string; disponible_kg: string }[];
-  cremas_pendientes_calidad: {
-    id: number;
-    codigo: string;
-    producto: string;
-    estado_calidad: "pendiente" | "rechazado" | "trazabilidad_incompleta";
-    etapa_origen: string;
-  }[];
-  sueros: { id: number; codigo: string; producto: string }[];
-  equipos: { id: number; nombre: string; tipo: string; ocupado_por: string | null }[];
-}
 
 export interface OpcionesAltaDescremacion {
   etapas: EtapaProceso[];
@@ -584,11 +576,6 @@ export async function cerrarCondensacion(id: number, datos: {
   return data;
 }
 
-export async function obtenerMantequillas(): Promise<Pagina<CorridaMantequilla>> {
-  const { data } = await api.get<Pagina<CorridaMantequilla>>("procesos/mantequillas/");
-  return data;
-}
-
 export async function obtenerEtapas(): Promise<Pagina<EtapaProceso>> {
   const { data } = await api.get<Pagina<EtapaProceso>>("procesos/etapas/");
   return data;
@@ -598,38 +585,6 @@ export async function obtenerOpcionesAltaDescremacion(): Promise<OpcionesAltaDes
   const { data } = await api.get<OpcionesAltaDescremacion>(
     "procesos/descremaciones/opciones-alta/",
   );
-  return data;
-}
-
-export async function iniciarMantequilla(id: number): Promise<CorridaMantequilla> {
-  const { data } = await api.post<CorridaMantequilla>(`procesos/mantequillas/${id}/iniciar/`);
-  return data;
-}
-
-export async function cerrarMantequilla(id: number, datos: {
-  kg_mantequilla: number;
-  kg_suero?: number;
-  kg_merma?: number;
-  kg_reproceso?: number;
-  motivo_reproceso?: string;
-  controles?: Record<string, unknown>;
-}): Promise<CorridaMantequilla> {
-  const { data } = await api.post<CorridaMantequilla>(
-    `procesos/mantequillas/${id}/cerrar/`, datos,
-  );
-  return data;
-}
-
-export async function obtenerOpcionesAltaMantequilla(): Promise<OpcionesAltaMantequilla> {
-  const { data } = await api.get<OpcionesAltaMantequilla>("procesos/mantequillas/opciones-alta/");
-  return data;
-}
-
-export async function crearMantequillaGuiada(datos: {
-  orden: number; lote_crema: number; equipo: number;
-  codigo_lote_mantequilla: string; lote_suero?: number; kg_crema: number;
-}): Promise<CorridaMantequilla> {
-  const { data } = await api.post<CorridaMantequilla>("procesos/mantequillas/crear-guiada/", datos);
   return data;
 }
 

@@ -222,8 +222,13 @@ def exigir_apertura_fuera_de_secado(equipo):
         raise ValidationError({"equipo": "Selecciona la máquina de la corrida."})
     if equipo.tipo == Equipo.Tipo.TORRE:
         raise ValidationError({"equipo": MENSAJE_LOTE_EN_TORRE})
+    # Una mantequera, una descremadora o un punto de carga no son una torre:
+    # tienen su propio flujo, y mandarlas a Secado era decir algo falso.
     raise ValidationError({
-        "equipo": f"{equipo.nombre} no abre lotes desde un vale: Secado se alimenta desde su puesto."
+        "equipo": (
+            f"{equipo.nombre} no abre lotes desde un vale: desde un vale abren lote "
+            "solo evaporadores, envasadoras y líneas."
+        )
     })
 
 

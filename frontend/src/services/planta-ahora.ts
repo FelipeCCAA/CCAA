@@ -8,7 +8,7 @@ const RUTAS_ETAPA: Record<string, string> = {
   condensacion: "/produccion/evaporacion",
   secado: "/produccion/secado",
   envasado: "/envasado",
-  mantequilla: "/procesos?seccion=mantequilla",
+  mantequilla: "/produccion/mantequilla",
   transferencia: "/produccion",
   otro: "/produccion",
 };
@@ -26,6 +26,7 @@ export function rutaDeEtapa(tipo: string): string {
 const PUESTOS_QUE_INICIAN: Record<string, string> = {
   secado: "Secado",
   descremacion: "Descremado",
+  mantequilla: "Mantequilla",
 };
 
 export function textoIniciarEnPuesto(etapaTipo: string, estado: string): string | null {

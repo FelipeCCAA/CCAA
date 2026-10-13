@@ -36,9 +36,10 @@ from .serializers import (
     CorridaSecadoSerializer,
     EjecucionProcesoSerializer, EntradaProcesoSerializer, EtapaProcesoSerializer,
     IncorporarReworkSerializer, ProcesoSerializer, SalidaProcesoSerializer,
-    RevisarCierreDescremacionSerializer,
+    RevisarCierreDescremacionSerializer, RevisarCierreMantequillaSerializer,
     RutaProductoSerializer, SugerirDescremacionSerializer,
 )
+from .dominio import SITUACIONES_DESCREMACION, SITUACIONES_MANTEQUILLA
 from .consultas_planta import consultar_planta_ahora, resumen_operacional_produccion
 from .consultas_trazabilidad import (
     construir_timeline_trazabilidad,
@@ -55,18 +56,20 @@ from .servicios import (
     ESTADOS_QUE_OCUPAN_EQUIPO,
     ConflictoVersionEjecucion,
     cerrar_condensacion, cerrar_descremacion, cerrar_mantequilla, cerrar_secado,
-    condicion_situacion_descremacion,
+    condicion_situacion, cremas_para_mantequilla,
     genealogia_lote,
     revisar_cierre_descremacion,
     crear_condensacion_guiada, crear_descremacion_guiada,
     crear_entrada_proceso, crear_mantequilla_guiada,
     definir_destino_salida,
     diagnosticar_integridad_produccion,
-    estado_puesto_descremado, estado_puesto_evaporacion, estado_puesto_secado,
+    estado_puesto_descremado, estado_puesto_evaporacion, estado_puesto_mantequilla,
+    estado_puesto_secado,
     iniciar_condensacion, iniciar_descremacion, iniciar_mantequilla, iniciar_secado,
     cancelar_preparacion_descremacion, cancelar_preparacion_evaporacion,
-    cancelar_preparacion_secado,
+    cancelar_preparacion_mantequilla, cancelar_preparacion_secado,
     inicio_reservado_al_puesto,
+    revisar_cierre_mantequilla,
     MENSAJES_INICIO_EN_PUESTO, PREPARACION_CANCELADA, preparacion_cancelada,
     salida_de_lote_anulado,
     preparar_continuacion, preparar_secado_desde_inventario, siguiente_etapa_para_salida,
@@ -339,7 +342,7 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
     def condicion_estado(self, estado):
         # `?estado=` filtra por la situación que muestra la columna, con las
         # opciones que sirve `puesto/` (`SITUACIONES_DESCREMACION`).
-        return condicion_situacion_descremacion(estado)
+        return condicion_situacion(SITUACIONES_DESCREMACION, estado)
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
@@ -596,7 +599,7 @@ class CorridaDescremacionViewSet(FiltraConsultaMixin, QuerysetTenantMixin, views
 
 
 class CorridaMantequillaViewSet(
-    RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
+    FiltraConsultaMixin, RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet
 ):
     tenant_lookup_sucursal = "ejecucion__sucursal_id"
     tenant_lookup_empresa = "ejecucion__sucursal__empresa_id"
@@ -611,128 +614,34 @@ class CorridaMantequillaViewSet(
         "ejecucion__etapa", "ejecucion__equipo", "orden",
         "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
         "iniciada_por", "finalizada_por",
-    )
+    ).order_by("-pk")
     serializer_class = CorridaMantequillaSerializer
     permission_classes = [OperaProcesoPorEtapa]
     tipo_etapa_operacional = EtapaProceso.Tipo.MANTEQUILLA
     http_method_names = ["get", "post", "head", "options"]
+    # Historial del puesto: se filtra en el servidor porque la lista está
+    # paginada (mismo contrato que Descremado, Secado y Existencias).
+    busqueda_en = (
+        "ejecucion__codigo", "lote_mantequilla__codigo_lote",
+        "lote_crema__codigo_lote", "orden__codigo",
+    )
+    filtro_estado = "estado"
+    filtro_fecha = "ejecucion__creada_en"
+
+    def condicion_estado(self, estado):
+        # `?estado=` filtra por la situación que muestra la columna, con las
+        # opciones que sirve `puesto/` (`SITUACIONES_MANTEQUILLA`).
+        return condicion_situacion(SITUACIONES_MANTEQUILLA, estado)
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed(
             "POST", detail="Usa crear-guiada para registrar una corrida de mantequilla."
         )
 
-    @action(detail=False, methods=["get"], url_path="opciones-alta")
-    def opciones_alta(self, request):
-        from maestros.models import Equipo
-        from produccion.models import Lote, OrdenProduccion
-
-        ordenes = filtrar_por_scope(
-            OrdenProduccion.objects.filter(
-                producto__categoria="mantequilla",
-                estado__in=[OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO],
-            ).select_related("producto"), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        lotes_crema = filtrar_por_scope(
-            Lote.objects.filter(
-                estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
-                kg_producidos__isnull=False,
-                producto__familia="crema",
-            ).select_related("producto"), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        lotes = lotes_crema.filter(
-            salidas_proceso__liberacion_calidad__estado="liberado",
-        ).annotate(
-                kg_usados=Coalesce(
-                    Sum(
-                        "entradas_proceso__cantidad",
-                        filter=Q(entradas_proceso__unidad__iexact="kg")
-                        & ~preparacion_cancelada("entradas_proceso__"),
-                    ),
-                    Value(0), output_field=DecimalField(),
-                )
-            ).distinct()
-        pendientes_calidad = lotes_crema.filter(
-            salidas_proceso__isnull=False,
-        ).exclude(
-            pk__in=lotes.values("pk"),
-        ).prefetch_related(
-            "salidas_proceso__liberacion_calidad",
-            "salidas_proceso__ejecucion__etapa",
-        ).distinct()
-        lotes_suero = filtrar_por_scope(
-            Lote.objects.filter(
-                producto__categoria="suero",
-                estado__in=[Lote.Estado.BORRADOR, Lote.Estado.EN_PROCESO],
-                kg_producidos__isnull=True,
-                corridas_como_suero_mantequilla__isnull=True,
-            ).select_related("producto"), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        equipos = filtrar_por_scope(
-            Equipo.objects.filter(activo=True, tipo__in=[Equipo.Tipo.LINEA, Equipo.Tipo.OTRO]),
-            request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
-        )
-        ocupaciones = {
-            ejecucion.equipo_id: ejecucion.codigo
-            for ejecucion in EjecucionProceso.objects.filter(
-                sucursal_id__in={equipo.sucursal_id for equipo in equipos},
-                estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
-                equipo_id__isnull=False,
-            ).only("equipo_id", "codigo")
-        }
-
-        def estado_calidad_crema(lote):
-            decisiones = [
-                getattr(salida, "liberacion_calidad", None)
-                for salida in lote.salidas_proceso.all()
-            ]
-            estados = {decision.estado for decision in decisiones if decision}
-            if "rechazado" in estados:
-                return "rechazado"
-            if "pendiente" in estados:
-                return "pendiente"
-            return "trazabilidad_incompleta"
-
-        return Response({
-            "ordenes": [{"id": item.pk, "codigo": item.codigo, "producto": item.producto.nombre} for item in ordenes],
-            "cremas": [
-                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre,
-                 "disponible_kg": item.kg_producidos - item.kg_usados}
-                for item in lotes if item.kg_producidos > item.kg_usados
-            ],
-            "cremas_pendientes_calidad": [
-                {
-                    "id": item.pk,
-                    "codigo": item.codigo_lote,
-                    "producto": item.producto.nombre,
-                    "estado_calidad": estado_calidad_crema(item),
-                    "etapa_origen": next(
-                        (
-                            salida.ejecucion.etapa.get_tipo_display()
-                            for salida in item.salidas_proceso.all()
-                        ),
-                        "Sin proceso de origen",
-                    ),
-                }
-                for item in pendientes_calidad
-            ],
-            "sueros": [
-                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre}
-                for item in lotes_suero
-            ],
-            "equipos": [
-                {
-                    "id": item.pk,
-                    "nombre": item.nombre,
-                    "tipo": item.tipo,
-                    "ocupado_por": ocupaciones.get(item.pk),
-                }
-                for item in equipos
-            ],
-        })
+    @action(detail=False, methods=["get"])
+    def puesto(self, request):
+        """Estado del puesto de Mantequilla: lo que la pantalla dibuja, sin recalcular."""
+        return Response(estado_puesto_mantequilla(request.user))
 
     @action(detail=False, methods=["post"], url_path="crear-guiada")
     def crear_guiada(self, request):
@@ -776,6 +685,33 @@ class CorridaMantequillaViewSet(
             detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(corrida).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar-preparacion")
+    def cancelar_preparacion(self, request, pk=None):
+        """Suelta una mantequera preparada: corrida y lote de salida anulados."""
+        try:
+            ejecucion = cancelar_preparacion_mantequilla(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                motivo=str(request.data.get("motivo") or ""),
+            )
+        except DjangoValidationError as error:
+            return respuesta_error_dominio(error)
+        return Response({
+            "ejecucion_id": ejecucion.pk,
+            "ejecucion_codigo": ejecucion.codigo,
+            "estado": ejecucion.estado,
+        })
+
+    @action(detail=True, methods=["post"], url_path="revisar-cierre")
+    def revisar_cierre(self, request, pk=None):
+        """El balance del cierre con lo tecleado hasta ahora; no escribe nada."""
+        entrada = RevisarCierreMantequillaSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        datos = {
+            clave: valor for clave, valor in entrada.validated_data.items()
+            if clave != "controles"
+        }
+        return Response(revisar_cierre_mantequilla(self.get_object(), **datos))
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
@@ -1502,6 +1438,17 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             ).only("equipo_id", "codigo")
         }
 
+        # «Preparar en Mantequilla» se ofrece con las reglas del puesto
+        # (`cremas_para_mantequilla`): una crema comprometida por otras
+        # corridas preparadas, o cuyo TK espera a Calidad, no tiene qué
+        # preparar y el enlace llevaría a un `?crema=` sin salida.
+        from produccion.models import Lote
+        cremas_ofrecibles = set(
+            cremas_para_mantequilla(
+                Lote.objects.filter(pk__in={salida.lote_id for salida in salidas if salida.lote_id})
+            ).values_list("pk", flat=True)
+        )
+
         def etapas_siguientes(salida):
             siguiente = siguiente_etapa_para_salida(
                 salida=salida, etapas_por_proceso=etapas_por_proceso
@@ -1516,6 +1463,11 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             )
             if siguiente is None:
                 return []
+            if (
+                siguiente.tipo == EtapaProceso.Tipo.MANTEQUILLA
+                and salida.lote_id not in cremas_ofrecibles
+            ):
+                return []
             codigos = {
                 EtapaProceso.Tipo.ESTANDARIZACION: "enviar_estandarizacion",
                 EtapaProceso.Tipo.MANTEQUILLA: "iniciar_mantequilla",
@@ -1523,7 +1475,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             }
             etiquetas = {
                 EtapaProceso.Tipo.ESTANDARIZACION: "Enviar a Estandarizacion",
-                EtapaProceso.Tipo.MANTEQUILLA: "Iniciar Mantequilla",
+                EtapaProceso.Tipo.MANTEQUILLA: "Preparar en Mantequilla",
                 EtapaProceso.Tipo.SECADO: "Continuar a Secado",
             }
             return [{

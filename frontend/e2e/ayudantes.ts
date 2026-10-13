@@ -11,7 +11,7 @@
   prueba. Esto es solo cómo se conduce el navegador contra ESTA aplicación.
 */
 
-import { expect, request as peticion, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, request as peticion, type APIRequestContext, type Locator, type Page, type Response } from "@playwright/test";
 import fs from "node:fs";
 
 import { API, ORIGEN, RUTA_ESTADO } from "./constantes";
@@ -152,26 +152,63 @@ export async function elegirOpcion(select: Locator, patron: RegExp) {
   Continuar/Descartar y dejan los campos deshabilitados. Es correcto —evita dos
   documentos del mismo hecho— pero significa que el circuito no puede empezar
   hasta resolverlo, igual que el operador.
+
+  `consulta` es la respuesta de `mi-borrador/`, esperada **antes** de abrir el
+  formulario (`esperarConsultaBorrador`). Con ella la decisión no se adivina:
+  204 es que no hay borrador; otra respuesta, que el aviso va a aparecer. Hace
+  falta porque Recepción dibuja el formulario **habilitado** mientras consulta
+  y lo reemplaza por el aviso al llegar la respuesta: la heurística de los
+  campos habilitados veía «no hay» al instante y el circuito tecleaba sobre un
+  formulario que desaparecía. Sin `consulta` (o si la lectura salió de la
+  caché y no hubo petición) se usa esa heurística, que sí sirve en el
+  análisis de silo, cuyos campos siguen deshabilitados hasta saberlo.
 */
-export async function descartarPendiente(pagina: Page, scope: Page | Locator = pagina) {
+export async function descartarPendiente(
+  pagina: Page,
+  scope: Page | Locator = pagina,
+  consulta?: Promise<Response | null>,
+) {
   const descartar = (scope as Page).getByRole
     ? (scope as Page).getByRole("button", { name: "Descartar" })
     : (scope as Locator).getByRole("button", { name: "Descartar" });
 
-  /* La consulta del borrador es asíncrona. No se decide que «no hay» mientras
-     los campos sigan deshabilitados, porque el aviso puede aparecer justo
-     después y convertir el borrador recién creado en un falso pendiente. */
-  const controlesDisponibles = (scope as Page | Locator).locator(
-    "input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
-  );
-  await expect.poll(async () =>
-    (await descartar.count()) + (await controlesDisponibles.count()),
-  { timeout: 10_000 }).toBeGreaterThan(0);
+  const respuesta = consulta ? await consulta : null;
+  if (respuesta) {
+    if (respuesta.status() === 204) return;
+    await expect(descartar.first(), "Hay un borrador pendiente y no apareció «Descartar».")
+      .toBeVisible({ timeout: 10_000 });
+  } else {
+    /* La consulta del borrador es asíncrona. No se decide que «no hay» mientras
+       los campos sigan deshabilitados, porque el aviso puede aparecer justo
+       después y convertir el borrador recién creado en un falso pendiente. */
+    const controlesDisponibles = (scope as Page | Locator).locator(
+      "input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+    );
+    await expect.poll(async () =>
+      (await descartar.count()) + (await controlesDisponibles.count()),
+    { timeout: 10_000 }).toBeGreaterThan(0);
+  }
 
   if (await descartar.count()) {
     await descartar.first().click();
     await expect(descartar).toHaveCount(0);
   }
+}
+
+/*
+  La respuesta de la consulta `mi-borrador/` de `recurso` (p. ej.
+  `recepcion/recepciones`), para `descartarPendiente`. Se llama **antes** del
+  clic que abre el formulario: registrada después, la respuesta ya pasó. Si no
+  llega —la lectura salió de la caché de diez segundos del cliente— resuelve
+  `null` y el ayudante vuelve a su heurística.
+*/
+export function esperarConsultaBorrador(pagina: Page, recurso: string): Promise<Response | null> {
+  return pagina
+    .waitForResponse(
+      (r) => r.url().includes(`/${recurso}/mi-borrador/`) && r.request().method() === "GET",
+      { timeout: 15_000 },
+    )
+    .catch(() => null);
 }
 
 /*

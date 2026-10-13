@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   campo,
@@ -9,65 +9,206 @@ import {
   usarSesionArea,
   vigilar,
 } from "./ayudantes";
+import { API } from "./constantes";
 
 const HOY = new Date().toISOString().slice(0, 10);
 
+test.describe.configure({ mode: "serial" });
 test.afterAll(cerrarSesionesArea);
 
-test("crema liberada se transforma en mantequilla y pasa por Calidad", async ({ page }) => {
+/*
+  El código de una corrida como texto exacto: `EJ-MANT-31` no debe acertarle
+  a `EJ-MANT-311` de una corrida anterior en la misma base. El código lo
+  asigna el servidor (`EJ-MANT-{lote}`): no trae caracteres especiales.
+*/
+function exacto(codigo: string): RegExp {
+  return new RegExp(`${codigo}(?!\\d)`);
+}
+
+interface PuestoLeido {
+  cremas: { id: number; codigo: string; disponible_kg: string }[];
+  mantequeras: { equipo_id: number; nombre: string; estado: string; motivos_para_tomar: string[] }[];
+}
+
+/* `page.request` no pasa por axios: la cabecera va a mano, con el token de la
+   sesión que acaba de quedar en `localStorage`. */
+async function leerPuesto(page: Page): Promise<PuestoLeido> {
+  const token = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("ccaa.sesion") ?? "{}").token,
+  );
+  const respuesta = await page.request.get(`${API}/api/procesos/mantequillas/puesto/`, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  expect(respuesta.ok(), `No se pudo leer el puesto de Mantequilla (HTTP ${respuesta.status()}).`).toBeTruthy();
+  return await respuesta.json() as PuestoLeido;
+}
+
+/*
+  Elige la crema entre lo que **sirve el puesto** (liberada y con disponible),
+  como `flujo-descremado` elige sus TK: un código escrito en la prueba deja de
+  existir en cuanto la base usa otros. `E2E_LOTE_CREMA`, si viene, manda.
+*/
+async function elegirCrema(page: Page, kg: number) {
+  await usarSesionArea(page, "e2e_produccion");
+  const puesto = await leerPuesto(page);
+  const pedida = process.env.E2E_LOTE_CREMA;
+  const crema = puesto.cremas
+    .filter((item) => (!pedida || item.codigo === pedida) && Number(item.disponible_kg) >= kg)
+    .sort((a, b) => Number(b.disponible_kg) - Number(a.disponible_kg))[0];
+  expect(
+    crema,
+    `El puesto no ofrece una crema liberada con ${kg} kg disponibles. Ofrece: ` +
+      `${puesto.cremas.map((item) => `${item.codigo} ${item.disponible_kg} kg`).join(" · ") || "ninguna"}. ` +
+      "Corre flujo-descremado (deja crema liberada en un TK) o libera una crema en Calidad.",
+  ).toBeTruthy();
+  expect(
+    puesto.mantequeras.some((item) => item.estado === "disponible" && item.motivos_para_tomar.length === 0),
+    "No hay una mantequera disponible: cancela desde el puesto la preparación que la retiene.",
+  ).toBeTruthy();
+  return crema!;
+}
+
+/*
+  Prepara desde el formulario del puesto, ya abierto. La tarjeta se busca
+  después por el `ejecucion_codigo` que devuelve `crear-guiada`, no por un
+  código tecleado.
+*/
+async function preparar(page: Page, crema: { id: number }, { kg, conMazada }: { kg: string; conMazada: boolean }) {
+  const dialogo = page.getByRole("dialog", { name: "Preparar mantequilla" });
+  await expect(dialogo).toBeVisible({ timeout: 20_000 });
+  await expect(campo(dialogo, "Crema")).toHaveValue(String(crema.id));
+  await campo(dialogo, "Crema a utilizar (kg)").fill(kg);
+  await elegirOpcion(campo(dialogo, "Orden de mantequilla"), /OP-E2E-MANT/);
+  await elegirOpcion(campo(dialogo, "Mantequera"), /mantequ/i);
+  if (conMazada) {
+    await elegirOpcion(campo(dialogo, "Lote de suero / mazada (opcional)"), /MAZ-E2E/);
+  }
+  // El código lo sugiere el servidor (sigla de la mantequera y fecha de hoy).
+  await expect(campo(dialogo, "Código del lote de mantequilla")).not.toHaveValue("", { timeout: 10_000 });
+  await dialogo.getByRole("button", { name: "Revisar y confirmar" }).click();
+  const respuesta = await trasGuardar(page, "/crear-guiada/", async () => {
+    await dialogo.getByRole("button", { name: "Preparar mantequilla" }).click();
+  });
+  const creada = await respuesta.json();
+  return {
+    codigo: String(creada.ejecucion_codigo),
+    loteId: Number(creada.lote_mantequilla),
+    lote: String(creada.mantequilla_codigo),
+    mantequera: String(creada.equipo_nombre),
+  };
+}
+
+test("crema liberada se prepara, se inicia y se cierra en el puesto de Mantequilla", async ({ page }) => {
+  test.setTimeout(180_000);
+  const erroresJs = vigilar(page);
+  let crema = { id: 0, codigo: "" };
+  let corrida = { codigo: "", loteId: 0, lote: "", mantequera: "" };
+
+  await test.step("1 · Producción llega desde Salidas intermedias con la crema elegida", async () => {
+    crema = await elegirCrema(page, 60);
+    await irA(page, "/produccion");
+    await page.getByRole("button", { name: "Consultar disponibles" }).click();
+    const tarjeta = page.locator("article").filter({ hasText: exacto(crema.codigo) }).first();
+    const enlace = tarjeta.getByRole("link", { name: "Preparar en Mantequilla" });
+    await expect(enlace).toBeVisible({ timeout: 20_000 });
+    await enlace.click();
+    await expect(page).toHaveURL(new RegExp(`#/produccion/mantequilla\\?crema=${crema.id}$`));
+  });
+
+  await test.step("2 · Prepara con la mazada y el código sugerido", async () => {
+    corrida = await preparar(page, crema, { kg: "60", conMazada: true });
+  });
+
+  await test.step("3 · «Iniciar mantequilla» habilitado por el servidor; inicia", async () => {
+    const tarjeta = page.getByRole("article").filter({ hasText: exacto(corrida.codigo) });
+    await expect(tarjeta).toContainText("Preparada", { timeout: 20_000 });
+    const iniciar = tarjeta.getByRole("button", { name: "Iniciar mantequilla" });
+    await expect(iniciar).toBeEnabled({ timeout: 20_000 });
+    await trasGuardar(page, "/iniciar/", async () => iniciar.click());
+    await expect(tarjeta).toContainText("En curso", { timeout: 20_000 });
+  });
+
+  await test.step("4 · El balance lo dice el servidor mientras se teclea; se cierra", async () => {
+    const tarjeta = page.getByRole("article").filter({ hasText: exacto(corrida.codigo) });
+    await tarjeta.getByRole("button", { name: "Registrar balance y cerrar" }).click();
+    const dialogo = page.getByRole("dialog", { name: "Registrar balance y cerrar" });
+    const balance = dialogo.getByRole("region", { name: "Balance del cierre" });
+    await campo(dialogo, "Mantequilla producida (kg)").fill("31");
+    await campo(dialogo, "Suero / mazada recuperada (kg)").fill("28");
+    await expect(balance).toContainText("Balance incompleto", { timeout: 10_000 });
+    await expect(balance).toContainText(/1\.000 kg faltan por clasificar/);
+    await expect(dialogo.getByRole("button", { name: "Revisar cierre" })).toBeDisabled();
+
+    await campo(dialogo, "Merma medida (kg)").fill("1");
+    await campo(dialogo, "Humedad (%)").fill("15.8");
+    await expect(balance).toContainText("Balance completo", { timeout: 10_000 });
+    await dialogo.getByRole("button", { name: "Revisar cierre" }).click();
+    await trasGuardar(page, "/cerrar/", async () => {
+      await dialogo.getByRole("button", { name: "Cerrar y enviar a Calidad" }).click();
+    });
+    const hoy = page.getByRole("region", { name: "Corridas de hoy" });
+    await expect(hoy.getByRole("listitem").filter({ hasText: exacto(corrida.codigo) })).toContainText("Esperando Calidad");
+  });
+
+  await test.step("5 · Calidad libera la mantequilla", async () => {
+    await usarSesionArea(page, "e2e_calidad");
+    await irA(page, `/calidad/expedientes?lote=${corrida.loteId}`);
+    await page.getByRole("button", { name: "Agregar análisis" }).click();
+    await page.getByPlaceholder("M-01").fill(`M-${corrida.lote}`);
+    await campo(page, "Materia grasa").fill("82.0");
+    await campo(page, "Humedad").fill("15.8");
+    await campo(page, "Sólidos no grasos").fill("1.5");
+    await trasGuardar(page, "/analisis/", async () => {
+      await page.getByRole("button", { name: "Registrar análisis" }).click();
+    });
+    await irA(page, "/calidad");
+    const calidad = page.locator("article").filter({ hasText: corrida.lote });
+    await expect(calidad).toBeVisible({ timeout: 20_000 });
+    await elegirOpcion(calidad.getByRole("combobox"), /conforme/i);
+    await trasGuardar(page, "/liberar/", async () => {
+      await calidad.getByRole("button", { name: "Liberar para Envasado" }).click();
+    });
+  });
+
+  test.info().annotations.push({
+    type: "mantequilla",
+    description: `E2E_MANTEQUILLA_ID=${corrida.loteId} E2E_MANTEQUILLA_LOTE=${corrida.lote}`,
+  });
+  expect(erroresJs).toHaveLength(0);
+});
+
+test("una preparación cancelada anula su lote y suelta la mantequera", async ({ page }) => {
   test.setTimeout(120_000);
   const erroresJs = vigilar(page);
-  const crema = process.env.E2E_LOTE_CREMA ?? "INT-DES-2-CR";
-  const lote = `MANT-E2E-${Date.now().toString().slice(-8)}`;
 
-  await usarSesionArea(page, "e2e_produccion");
-  await irA(page, "/procesos");
-  await page.getByRole("button", { name: "Nueva corrida" }).click();
-  const alta = page.locator("form").filter({ hasText: "Nueva corrida de mantequilla" });
-  await elegirOpcion(campo(alta, "Orden de mantequilla"), /OP-E2E-MANT/);
-  await elegirOpcion(campo(alta, "Lote de crema"), new RegExp(crema));
-  await campo(alta, "Crema a utilizar (kg)").fill("60");
-  await elegirOpcion(campo(alta, "Línea / equipo"), /Línea de mantequilla/i);
-  await campo(alta, "Código nuevo lote de mantequilla").fill(lote);
-  await elegirOpcion(campo(alta, "Lote de suero / mazada (opcional)"), /MAZ-E2E/);
-  const creada = await trasGuardar(page, "/crear-guiada/", async () => {
-    await alta.getByRole("button", { name: "Crear corrida" }).click();
-  });
-  const loteId = Number((await creada.json()).lote_mantequilla);
+  const crema = await elegirCrema(page, 10);
+  await irA(page, `/produccion/mantequilla?crema=${crema.id}`);
+  const corrida = await preparar(page, crema, { kg: "10", conMazada: false });
 
-  const tarjeta = page.locator("article").filter({ hasText: lote });
-  await trasGuardar(page, "/iniciar/", async () => {
-    await tarjeta.getByRole("button", { name: "Iniciar con esta crema" }).click();
-  });
-  await tarjeta.getByRole("button", { name: "Registrar balance y cerrar" }).click();
-  const cierre = page.locator("form").filter({ hasText: "Cerrar proceso de mantequilla" });
-  await campo(cierre, "Mantequilla producida (kg)").fill("31");
-  await campo(cierre, "Suero / mazada recuperada (kg)").fill("28");
-  await campo(cierre, "Merma medida (kg)").fill("1");
-  await campo(cierre, "Humedad (%)").fill("15.8");
-  await trasGuardar(page, "/cerrar/", async () => {
-    await cierre.getByRole("button", { name: "Cerrar y enviar a Calidad" }).click();
-  });
-  await expect(tarjeta).toContainText(/Calidad/);
-
-  await usarSesionArea(page, "e2e_calidad");
-  await irA(page, `/calidad/expedientes?lote=${loteId}`);
-  await page.getByRole("button", { name: "Agregar análisis" }).click();
-  await page.getByPlaceholder("M-01").fill(`M-${lote}`);
-  await campo(page, "Materia grasa").fill("82.0");
-  await campo(page, "Humedad").fill("15.8");
-  await campo(page, "Sólidos no grasos").fill("1.5");
-  await trasGuardar(page, "/analisis/", async () => {
-    await page.getByRole("button", { name: "Registrar análisis" }).click();
+  const tarjeta = page.getByRole("article").filter({ hasText: exacto(corrida.codigo) });
+  await expect(tarjeta).toContainText("Preparada", { timeout: 20_000 });
+  await tarjeta.getByRole("button", { name: "Cancelar preparación" }).click();
+  const dialogo = page.getByRole("dialog", { name: `Cancelar la preparación ${corrida.codigo}` });
+  await dialogo.getByLabel("Motivo de la cancelación").fill("Prueba E2E: se preparó la crema equivocada.");
+  await dialogo.getByRole("button", { name: "Revisar cancelación" }).click();
+  await expect(dialogo).toContainText(`Se anulará el lote ${corrida.lote}`);
+  await trasGuardar(page, "/cancelar-preparacion/", async () => {
+    await dialogo.getByRole("button", { name: "Cancelar preparación" }).click();
   });
 
-  await irA(page, "/calidad");
-  const calidad = page.locator("article").filter({ hasText: lote });
-  await expect(calidad).toBeVisible({ timeout: 20_000 });
-  await elegirOpcion(calidad.getByRole("combobox"), /conforme/i);
-  await trasGuardar(page, "/liberar/", async () => {
-    await calidad.getByRole("button", { name: "Liberar para Envasado" }).click();
+  await expect(page.getByRole("status").filter({ hasText: corrida.codigo })).toContainText("la mantequera libre");
+  await expect(page.getByRole("article").filter({ hasText: exacto(corrida.codigo) })).toHaveCount(0);
+  const mantequera = page.getByRole("article", { name: corrida.mantequera });
+  await expect(mantequera).toContainText("Disponible");
+
+  const token = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("ccaa.sesion") ?? "{}").token,
+  );
+  const lote = await page.request.get(`${API}/api/produccion/lotes/${corrida.loteId}/`, {
+    headers: { Authorization: `Token ${token}` },
   });
+  expect(lote.ok()).toBeTruthy();
+  expect((await lote.json()).estado).toBe("anulado");
   expect(erroresJs).toHaveLength(0);
 });
 
@@ -109,7 +250,7 @@ test("envasa solamente cajas completas y deja visible el remanente", async ({ pa
 
   const formulario = page.locator("form").filter({ hasText: "Envasar en pallet" });
   const selectorEquipo = formulario.locator("select").first();
-  await elegirOpcion(selectorEquipo, /Línea de mantequilla/i);
+  await elegirOpcion(selectorEquipo, /Envasadora de mantequilla/i);
   await formulario.getByPlaceholder("Código pallet").fill(pallet);
   await expect(formulario.locator('input[type="number"]').first()).toHaveValue("1");
   const respuesta = await trasGuardar(page, "/envases/", async () => {

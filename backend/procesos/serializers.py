@@ -3,6 +3,8 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
+from .dominio import MENSAJE_REPROCESO_SIN_MOTIVO
+
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso,
@@ -299,10 +301,39 @@ class CierreMantequillaSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["kg_reproceso"] > 0 and not attrs["motivo_reproceso"].strip():
-            raise serializers.ValidationError({
-                "motivo_reproceso": "Indica por qué este material requiere reproceso."
-            })
+            raise serializers.ValidationError({"motivo_reproceso": MENSAJE_REPROCESO_SIN_MOTIVO})
         return attrs
+
+
+class RevisarCierreMantequillaSerializer(serializers.Serializer):
+    """El cuerpo de `cerrar/`, todo opcional: se pide mientras se teclea."""
+
+    # Sin `min_value`: la mantequilla en cero o negativa la dice el dominio
+    # (`errores_cierre_mantequilla`), con el texto que el formulario muestra.
+    # Un 400 del serializer dejaba el formulario en «No se pudo revisar el
+    # balance». `cerrar/` sigue rechazándola en la entrada.
+    kg_mantequilla = serializers.DecimalField(
+        max_digits=14, decimal_places=3,
+        required=False, allow_null=True, default=None,
+    )
+    kg_suero = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0"),
+        required=False, allow_null=True, default=None,
+    )
+    kg_merma = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0"),
+        required=False, allow_null=True, default=None,
+    )
+    kg_reproceso = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0"),
+        required=False, allow_null=True, default=None,
+    )
+    motivo_reproceso = serializers.CharField(
+        max_length=250, required=False, allow_blank=True, default="",
+    )
+    # Se acepta para que el formulario mande el mismo cuerpo que a `cerrar/`;
+    # no entra al balance.
+    controles = serializers.JSONField(required=False, default=dict)
 
 
 class CorridaMantequillaSerializer(serializers.ModelSerializer):
@@ -314,6 +345,12 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
     estado_etiqueta = serializers.CharField(source="get_estado_display", read_only=True)
     iniciada_por_nombre = serializers.CharField(source="iniciada_por.get_full_name", read_only=True)
     finalizada_por_nombre = serializers.CharField(source="finalizada_por.get_full_name", read_only=True)
+    # El historial distingue «Preparada» de «Borrador» con el estado de la
+    # ejecución, no solo con el de la corrida.
+    ejecucion_estado = serializers.CharField(source="ejecucion.estado", read_only=True)
+    # La columna «Situación» del historial, con la tabla que usa su filtro.
+    situacion = serializers.SerializerMethodField()
+    situacion_etiqueta = serializers.SerializerMethodField()
 
     class Meta:
         model = CorridaMantequilla
@@ -322,7 +359,20 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
             "estado", "kg_mantequilla", "kg_suero", "kg_merma", "kg_reproceso",
             "motivo_reproceso", "lote_reproceso", "controles",
             "iniciada_por", "iniciada_en", "finalizada_por", "finalizada_en",
+            "motivo_anulacion",
         ]
+
+    @staticmethod
+    def _situacion(corrida):
+        from .dominio import situacion_mantequilla
+
+        return situacion_mantequilla(corrida.estado, corrida.ejecucion.estado)
+
+    def get_situacion(self, corrida):
+        return self._situacion(corrida)[0]
+
+    def get_situacion_etiqueta(self, corrida):
+        return self._situacion(corrida)[1]
 
     def validate(self, attrs):
         candidato = CorridaMantequilla(**{

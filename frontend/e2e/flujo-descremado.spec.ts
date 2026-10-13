@@ -255,7 +255,7 @@ test("descremado separa, Calidad libera y conserva ambas rutas", async ({ page }
     await page.getByRole("button", { name: new RegExp(tkDescremada, "i") }).first().click();
     await expect(page.getByRole("link", { name: /Enviar a Estandarizaci[oó]n/ }).first()).toBeVisible();
     await page.getByRole("button", { name: new RegExp(tkCrema, "i") }).first().click();
-    await expect(page.getByRole("link", { name: "Iniciar Mantequilla" }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Preparar en Mantequilla" }).first()).toBeVisible();
   });
 
   expect(erroresJs).toHaveLength(0);
@@ -303,7 +303,7 @@ test("crema liberada sigue su ruta comercial hasta despacho directo", async ({ p
     await page.getByRole("button", { name: "Consultar disponibles" }).click();
     const tarjeta = page.locator("article").filter({ hasText: exacto(preparado.codigo) }).filter({ hasText: tkCrema });
     await expect(tarjeta.getByRole("link", { name: "Preparar despacho" })).toBeVisible({ timeout: 20_000 });
-    await expect(tarjeta.getByRole("link", { name: "Iniciar Mantequilla" })).toHaveCount(0);
+    await expect(tarjeta.getByRole("link", { name: "Preparar en Mantequilla" })).toHaveCount(0);
   });
 
   await test.step("7 · Despacho arma, autoriza y ejecuta la hoja de carga de la crema", async () => {
@@ -342,5 +342,5 @@ test("ramas liberadas muestran Estandarización y Mantequilla", async ({ page })
   await page.getByRole("button", { name: new RegExp(tkDescremada, "i") }).first().click();
   await expect(page.getByRole("link", { name: /Enviar a Estandarizaci[oó]n/ }).first()).toBeVisible();
   await page.getByRole("button", { name: new RegExp(tkCrema, "i") }).first().click();
-  await expect(page.getByRole("link", { name: "Iniciar Mantequilla" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Preparar en Mantequilla" }).first()).toBeVisible();
 });
