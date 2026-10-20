@@ -1,3 +1,13 @@
+# OP-02 — antecedente histórico y autorización posterior
+
+El usuario aprobó las ocho reglas y autorizó implementar en una rama, con pruebas y PR, sin producción ni despliegue. El estado y la evidencia vigentes están en [OP-02_VALIDACION.md](OP-02_VALIDACION.md).
+
+El alcance aprobado es balance contable en litros comparables y registro a 0,01 L, sin conversiones kg↔L ni tolerancias físicas inventadas. Las diferencias medidas se registran y retienen liberación/despacho; no se adoptaron densidades ni porcentajes de merma.
+
+A continuación se conserva íntegro el diagnóstico anterior a la autorización. Sus estados y preguntas corresponden a ese corte histórico; las referencias de líneas son del commit `c6aba44`, no de la implementación nueva.
+
+---
+
 # OP-02 — Balance y receta de estandarización
 
 **Estado:** DIAGNÓSTICO · **prioridad:** P0 · **WP:** WP004 · **dependencia:** OP-00 satisfecha. No se autoriza aquí ninguna implementación funcional ni cambio de regla. Este documento reúne hallazgos estáticos confirmados en código; no afirma reproducción en pruebas, incidente real ni uso de datos productivos.
