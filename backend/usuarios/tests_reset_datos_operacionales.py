@@ -4,16 +4,33 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
-from django.test import TestCase, override_settings
+from django.test import override_settings
 
+from estandarizacion.models import ActoValeEstandarizacion, ValeEstandarizacion
+from estandarizacion.tests_vale import BaseVale
 from inventario.models import Notificacion
 
 from .management.commands.reset_datos_operacionales import validar_destino
 
 
-class SeguridadResetOperacionalTests(TestCase):
+class SeguridadResetOperacionalTests(BaseVale):
     # PostgreSQL permite revertir TRUNCATE: el envoltorio transaccional de
     # TestCase restaura tanto datos sembrados como secuencias al terminar.
+
+    def crear_vale_con_acto(self, usuario):
+        import uuid
+
+        vale = self.crear_vale(codigo="VE-RESET-ACTO")
+        acto = ActoValeEstandarizacion.objects.create(
+            vale=vale,
+            clave=uuid.uuid4(),
+            tipo="documental",
+            usuario=usuario,
+            motivo="Acto sintético para validar el alcance del reset",
+            rectificacion={},
+            solicitud={},
+        )
+        return vale, acto
 
     def test_aborta_si_el_destino_parece_productivo(self):
         with self.assertRaisesMessage(CommandError, "parece productiva"):
@@ -47,9 +64,10 @@ class SeguridadResetOperacionalTests(TestCase):
 
     @override_settings(DJANGO_ENV="test")
     def test_borra_operacion_y_conserva_usuarios_y_maestros(self):
-        from maestros.models import Equipo, Producto
+        from maestros.models import Equipo, Producto, Silo
 
         usuario = User.objects.create_user("usuario-maestro")
+        vale, acto = self.crear_vale_con_acto(usuario)
         productos_antes = Producto.objects.count()
         equipos_antes = Equipo.objects.count()
         Notificacion.objects.bulk_create([Notificacion(
@@ -71,7 +89,11 @@ class SeguridadResetOperacionalTests(TestCase):
         )
 
         self.assertFalse(Notificacion.objects.exists())
+        self.assertFalse(ActoValeEstandarizacion.objects.filter(pk=acto.pk).exists())
+        self.assertFalse(ValeEstandarizacion.objects.filter(pk=vale.pk).exists())
         self.assertTrue(User.objects.filter(pk=usuario.pk).exists())
+        self.assertTrue(Producto.objects.filter(pk=self.producto.pk).exists())
+        self.assertTrue(Silo.objects.filter(pk=self.silo_destino.pk).exists())
         self.assertEqual(Producto.objects.count(), productos_antes)
         self.assertEqual(Equipo.objects.count(), equipos_antes)
 
@@ -98,6 +120,7 @@ class SeguridadResetOperacionalTests(TestCase):
     @override_settings(DJANGO_ENV="test")
     def test_vista_previa_no_borra_datos(self):
         usuario = User.objects.create_user("conservar-en-vista-previa")
+        vale, acto = self.crear_vale_con_acto(usuario)
         notificacion = Notificacion.objects.create(
             destinatario=usuario,
             tipo="prueba",
@@ -110,6 +133,8 @@ class SeguridadResetOperacionalTests(TestCase):
 
         self.assertIn("VISTA PREVIA: no se borró ningún dato", salida.getvalue())
         self.assertTrue(Notificacion.objects.filter(pk=notificacion.pk).exists())
+        self.assertTrue(ActoValeEstandarizacion.objects.filter(pk=acto.pk).exists())
+        self.assertTrue(ValeEstandarizacion.objects.filter(pk=vale.pk).exists())
         self.assertTrue(User.objects.filter(pk=usuario.pk).exists())
 
     def test_exige_postgresql(self):
