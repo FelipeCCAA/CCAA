@@ -81,11 +81,13 @@ def registrar_pallets_producidos(pallets, usuario):
 def ingresar_pallet(pallet, ubicacion, usuario, *, operacion=None):
     from calidad.evidencia import bloquear_catalogo
     from calidad.vigencia import exigir_liberacion_lote_vigente
+    from estandarizacion.bloqueos import exigir_sin_retencion_lote
     from produccion.models import Lote, PalletProducto
 
     bloquear_catalogo()
     lote_id = PalletProducto.objects.values_list("envase__lote_id", flat=True).get(pk=pallet.pk)
     Lote.objects.select_for_update().get(pk=lote_id)
+    exigir_sin_retencion_lote(lote_id)
     exigir_liberacion_lote_vigente(lote_id, bloquear=True)
     pallet = PalletProducto.objects.select_for_update(of=("self",)).select_related(
         "envase__lote__sucursal"
@@ -248,6 +250,9 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
     invalidar evidencia no vuelve a tomarla en orden inverso.
     """
     from calidad.evidencia import bloquear_catalogo
+    from estandarizacion.bloqueos import (
+        exigir_sin_retencion_lote, exigir_sin_retencion_salida,
+    )
     from calidad.vigencia import (
         bloquear_evidencias_despacho,
         exigir_liberacion_lote_vigente, exigir_liberacion_salida_vigente,
@@ -282,6 +287,10 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
     # una raíz nueva después de haber bloqueado las salidas.
     if any(salida.lote_id and salida.lote_id not in lotes_id for salida in salidas.values()):
         raise ValidationError("El material de la salida cambió; vuelve a consultar la hoja.")
+    for lote_id in sorted(lotes_id):
+        exigir_sin_retencion_lote(lote_id)
+    for salida_id in sorted(salidas, key=lambda pk: (salidas[pk].silo_id or 0, pk)):
+        exigir_sin_retencion_salida(salida_id)
     pallet_lotes = sorted({pallet.envase.lote_id for pallet in pallets_consulta})
     if bloquear:
         bloquear_evidencias_despacho(lote_ids=pallet_lotes, salida_ids=sorted(salidas))
@@ -354,7 +363,8 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
             salida=salida, despacho__estado__in=[Despacho.Estado.AUTORIZADO, Despacho.Estado.DESPACHADO],
         ).exclude(despacho=despacho).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
         litros_en_hoja = litros_en_hoja_por_silo.get(silo.pk, Decimal("0"))
-        disponible = min(salida.cantidad - comprometido, saldo_silo(silo) - litros_en_hoja)
+        from estandarizacion.balance import cantidad_operativa_salida
+        disponible = min(cantidad_operativa_salida(salida) - comprometido, saldo_silo(silo) - litros_en_hoja)
         if detalle.cantidad <= 0 or detalle.cantidad > disponible:
             raise ValidationError(f"{silo.codigo} tiene {disponible} L disponibles para este despacho.")
         litros_en_hoja_por_silo[silo.pk] = litros_en_hoja + detalle.cantidad

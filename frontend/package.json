@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test tests/*.test.ts",
+    "test": "node --test tests/*.test.ts src/pages/Estandarizacion/*.test.ts",
     "lint": "eslint .",
     "preview": "vite preview",
     "auditoria": "playwright test --project=login --project=accesibilidad",

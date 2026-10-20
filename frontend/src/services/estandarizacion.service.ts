@@ -62,7 +62,42 @@ export interface ValeEstandarizacion {
   responsable_nombre: string | null;
   es_borrador: boolean;
   actualizado_en: string;
+  balance?: BalanceVale;
+  actos?: ActoVale[];
 }
+
+export interface BalanceVale {
+  componentes: string;
+  volumen_ejecutado: string;
+  volumen_medido: string | null;
+  diferencia: string | null;
+  pendiente: boolean;
+}
+
+export type TipoActo = "medicion" | "documental" | "adicion" | "retiro";
+export interface EntradaActoVale {
+  clave: string;
+  tipo: TipoActo;
+  motivo: string;
+  litros?: string;
+  silo_contraparte?: number;
+  volumen_medido?: string;
+  rectificacion?: Record<string, string | number | null>;
+}
+export interface ActoVale {
+  clave: string;
+  tipo: TipoActo;
+  motivo: string;
+  litros: string | null;
+  silo_contraparte: number | null;
+  volumen_medido: string | null;
+  rectificacion: Record<string, unknown>;
+  usuario_nombre: string;
+  creado_en: string;
+}
+
+export const registrarActoVale = (id: number, cuerpo: EntradaActoVale) =>
+  accion(id, "actos", cuerpo);
 
 export interface Mezcla {
   posible: boolean;

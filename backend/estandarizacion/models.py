@@ -102,6 +102,12 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
         "volumen", "silo_entera", "silo_descremada", "silo_destino",
         "silo_crema", "litros_entera", "litros_descremada", "litros_crema",
     )
+    CAMPOS_RECETA = CAMPOS_QUE_MUEVEN_LIBRO + (
+        "producto", "rc_objetivo", "entera_grasa", "entera_sng",
+        "descremada_grasa", "descremada_sng", "crema_grasa", "crema_sng",
+        "analisis_entera", "analisis_descremada", "analisis_crema",
+        "silo_sugerido_fifo", "motivo_desvio_fifo",
+    )
 
     codigo = models.CharField("Código de vale", max_length=40, unique=True)
     fecha = models.DateField("Fecha")
@@ -299,6 +305,7 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
     def tiene_codigo_provisional(self):
         return not self.codigo or self.codigo.startswith(PREFIJO_BORRADOR)
 
+    @transaction.atomic
     def save(self, **kwargs):
         """
         Un vale que deja de ser borrador sin código definitivo recibe el suyo.
@@ -308,6 +315,19 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
         No toca un código explícito (pruebas, histórico) ni un borrador
         descartado, que pasa a anulado con su `BORRADOR-…` y sin número.
         """
+        from .balance import litros_exactos
+        for nombre in ("volumen", "litros_entera", "litros_descremada", "litros_crema"):
+            valor = getattr(self, nombre)
+            if valor is not None:
+                litros_exactos(valor, campo=nombre)
+        if self.pk:
+            anterior = type(self).objects.select_for_update().get(pk=self.pk)
+            if anterior.ejecutado_en:
+                protegidos = (*self.CAMPOS_RECETA, "codigo", "fecha", "ejecutado_en")
+                for nombre in protegidos:
+                    campo = self._meta.get_field(nombre)
+                    if getattr(anterior, campo.attname) != campo.to_python(getattr(self, campo.attname)):
+                        raise ValidationError({nombre: "La receta ejecutada es inmutable; registra una rectificación vinculada."})
         necesita_codigo = (
             self.estado not in (self.Estado.BORRADOR, self.Estado.ANULADO)
             and self.tiene_codigo_provisional()
@@ -446,6 +466,12 @@ class ValeEstandarizacion(DocumentoBorradorMixin, models.Model):
             rc_objetivo=float(self.rc_objetivo),
         )
 
+    @property
+    def volumen_operativo(self):
+        from decimal import Decimal
+        from .balance import balance_vale
+        return Decimal(balance_vale(self)["volumen_ejecutado"]) if self.ejecutado_en else self.volumen
+
     # ------------------------------------------------------------- reglas
 
     def clean(self):
@@ -482,3 +508,42 @@ class CorreccionValeEstandarizacion(models.Model):
 
     class Meta:
         ordering = ["-creada_en", "-id"]
+
+
+class ActoValeEstandarizacion(models.Model):
+    """Evidencia inmutable de una medición, rectificación o movimiento nuevo."""
+
+    vale = models.ForeignKey(ValeEstandarizacion, on_delete=models.PROTECT, related_name="actos")
+    clave = models.UUIDField(unique=True)
+    tipo = models.CharField(max_length=20, choices=[(x, x) for x in ("medicion", "documental", "adicion", "retiro")])
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    motivo = models.TextField()
+    litros = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    silo_contraparte = models.ForeignKey("maestros.Silo", on_delete=models.PROTECT, null=True, blank=True)
+    volumen_medido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    rectificacion = models.JSONField(default=dict)
+    solicitud = models.JSONField(default=dict, editable=False)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["creado_en", "pk"]
+        constraints = [models.CheckConstraint(
+            condition=(
+                models.Q(tipo__in=["adicion", "retiro"], litros__gt=0, silo_contraparte__isnull=False, volumen_medido__isnull=True)
+                | models.Q(tipo="medicion", litros__isnull=True, silo_contraparte__isnull=True, volumen_medido__gte=0)
+                | models.Q(tipo="documental", litros__isnull=True, silo_contraparte__isnull=True, volumen_medido__isnull=True)
+            ), name="acto_vale_payload_coherente",
+        )]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Los actos son inmutables; registra otro acto vinculado.")
+        from .balance import litros_exactos
+        for nombre in ("litros", "volumen_medido"):
+            valor = getattr(self, nombre)
+            if valor is not None:
+                litros_exactos(valor, campo=nombre)
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Los actos de estandarización no se eliminan.")

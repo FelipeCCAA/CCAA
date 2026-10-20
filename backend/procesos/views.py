@@ -1375,6 +1375,8 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             ).values("lote_id").annotate(total=Sum("cantidad"))
         }
         for salida in salidas:
+            from estandarizacion.balance import cantidad_operativa_salida
+            salida.cantidad_operativa = cantidad_operativa_salida(salida)
             salida.consumido_trazable = (
                 (salida.consumido or 0)
                 + consumos_fisicos.get((salida.lote_id, salida.silo_id), 0)
@@ -1391,7 +1393,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 )
         salidas = [
             salida for salida in salidas
-            if salida.cantidad - salida.consumido_trazable > 0
+            if salida.cantidad_operativa - salida.consumido_trazable > 0
         ]
         procesos_ids = {
             salida.ruta_producto.proceso_id
@@ -1491,9 +1493,10 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 ),
                 "silo_id": salida.silo_id,
                 "silo_codigo": salida.silo.codigo,
-                "cantidad_total": salida.cantidad,
+                "cantidad_total": salida.cantidad_operativa,
+                "cantidad_original": salida.cantidad,
                 "cantidad_consumida": salida.consumido_trazable,
-                "cantidad_disponible": salida.cantidad - salida.consumido_trazable,
+                "cantidad_disponible": salida.cantidad_operativa - salida.consumido_trazable,
                 "unidad": salida.unidad,
                 "clasificacion": salida.clasificacion,
                 "clasificacion_etiqueta": salida.get_clasificacion_display(),

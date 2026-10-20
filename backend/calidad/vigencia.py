@@ -186,7 +186,7 @@ def evidencia_salida(salida_id, *, bloquear=False, analisis_silo_id=None, analis
             especificacion = analisis.especificacion or dominio_produccion.especificacion_vigente(
                 Especificacion.objects.filter(producto_id=producto_evaluado), producto_evaluado, analisis.fecha, tipo,
             )
-    return {
+    evidencia = {
         "formato": 1, "sujeto": {"salida": salida_id}, "salida": _fila(salida),
         "lote": _fila(salida.lote) if salida.lote_id else None,
         "producto": _filas(Producto.objects.filter(pk=producto_id), bloquear),
@@ -194,6 +194,11 @@ def evidencia_salida(salida_id, *, bloquear=False, analisis_silo_id=None, analis
         "analisis_silo": _filas(AnalisisSilo.objects.filter(pk=analisis_silo_id or getattr(decision, "analisis_silo_id", None)), bloquear),
         "analisis_lote": _filas(Analisis.objects.filter(pk=analisis_lote_id or getattr(decision, "analisis_lote_id", None)), bloquear),
     }
+    if salida.ejecucion.vale_id:
+        actos = salida.ejecucion.vale.actos.filter(tipo__in=["adicion", "retiro"])
+        if actos.exists():
+            evidencia["actos_estandarizacion"] = _json(list(actos.order_by("pk").values("clave", "tipo", "litros", "silo_contraparte_id", "creado_en")))
+    return evidencia
 
 
 def registrar_firma_lote(liberacion, *, evidencia=None):

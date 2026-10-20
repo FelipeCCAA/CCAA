@@ -429,6 +429,11 @@ class CorridaSecadoSerializer(serializers.ModelSerializer):
 class SalidaProcesoSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
+    cantidad_operativa = serializers.SerializerMethodField()
+
+    def get_cantidad_operativa(self, salida):
+        from estandarizacion.balance import cantidad_operativa_salida
+        return str(cantidad_operativa_salida(salida))
 
     class Meta:
         model = SalidaProceso

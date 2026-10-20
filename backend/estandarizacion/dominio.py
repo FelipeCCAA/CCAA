@@ -138,8 +138,8 @@ def sugerir_mezcla_con_crema(
 
 
 def _redondear(valor: float) -> float:
-    """Litros al decilitro. Nadie abre una válvula con más precisión."""
-    return round(valor, 1)
+    """Escala de registro aprobada para la propuesta; no precisión del instrumento."""
+    return round(valor, 2)
 
 
 def calcular_mezcla(

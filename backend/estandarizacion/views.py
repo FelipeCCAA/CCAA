@@ -1,3 +1,6 @@
+from dataclasses import replace
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Case, Count, DecimalField, F, Max, Sum, Value, When
@@ -7,7 +10,7 @@ from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from usuarios.permisos import EscribeEstandarizacion
+from usuarios.permisos import EscribeEstandarizacion, EscribeCalidad, EscribeProduccion
 from usuarios.tenancy import QuerysetTenantMixin, RelacionesTenantMixin, filtrar_por_scope
 from maestros.models import Silo
 from recepcion.models import AnalisisSilo
@@ -23,11 +26,24 @@ from .serializers import (
     CorreccionMuestraSerializer,
     MuestraSerializer,
     ValeEstandarizacionSerializer,
+    RegistrarActoSerializer,
 )
 
 
 def _conflicto(error):
     return Response({"detail": error.messages[0]}, status=status.HTTP_409_CONFLICT)
+
+
+def _propuesta_centilitros(mezcla, volumen):
+    if not mezcla.posible:
+        return mezcla
+    nombres = ("entera", "descremada", "crema")
+    partes = {n: Decimal(str(getattr(mezcla, n))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) for n in nombres}
+    residuo = Decimal(str(volumen)) - sum(partes.values())
+    mayor = max(partes, key=partes.get)
+    partes[mayor] += residuo
+    avisos = [*mezcla.avisos, "Propuesta expresada a 0,01 L; la suma de componentes conserva el volumen solicitado."]
+    return replace(mezcla, **{n: float(v) for n, v in partes.items()}, avisos=avisos)
 
 
 class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.ModelViewSet):
@@ -46,6 +62,34 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
     )
     serializer_class = ValeEstandarizacionSerializer
     permission_classes = [EscribeEstandarizacion]
+
+    def get_permissions(self):
+        if self.action == "decidir":
+            return [EscribeCalidad()]
+        if self.action == "actos":
+            tipo = self.request.data.get("tipo")
+            if tipo in {"adicion", "retiro", "documental"}:
+                return [EscribeProduccion()]
+            if EscribeCalidad().has_permission(self.request, self):
+                return [EscribeCalidad()]
+        return super().get_permissions()
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        # Comparte el candado con transferir: una edición en vuelo no pisa la receta ejecutada.
+        self.queryset = self.queryset.select_for_update(of=("self",))
+        return super().update(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"])
+    def actos(self, request, pk=None):
+        from .actos import registrar_acto
+        entrada = RegistrarActoSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        try:
+            vale = registrar_acto(vale_id=self.get_object().pk, usuario=request.user, datos=entrada.validated_data)
+        except DjangoValidationError as error:
+            return _conflicto(error)
+        return Response(self.get_serializer(vale).data)
 
     def get_queryset(self):
         consulta = super().get_queryset()
@@ -71,12 +115,16 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
     def perform_create(self, serializer):
         # El código lo asigna el `save()` del vale; el cliente ya no lo manda.
         try:
-            serializer.save(
-                responsable=self.request.user,
-                estado=ValeEstandarizacion.Estado.CALCULADO,
-            )
+            with transaction.atomic():
+                vale = serializer.save(
+                    responsable=self.request.user,
+                    estado=ValeEstandarizacion.Estado.CALCULADO,
+                )
+                servicios.transferir(vale_id=vale.pk, usuario=self.request.user, comprobar_solamente=True)
         except CodigoValeNoAsignado as error:
             raise serializers.ValidationError({"codigo": [str(error)]})
+        except DjangoValidationError as error:
+            raise serializers.ValidationError({"detail": error.messages})
 
     def destroy(self, request, *args, **kwargs):
         """
@@ -180,6 +228,11 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         motivos = vale.confirmar(request.user)
         if motivos:
             return Response({"motivos": motivos}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            servicios.transferir(vale_id=vale.pk, usuario=request.user, comprobar_solamente=True)
+        except DjangoValidationError as error:
+            transaction.set_rollback(True)
+            return _conflicto(error)
         return Response(self.get_serializer(vale).data)
 
     @action(detail=True, methods=["post"], url_path="descartar-borrador")
@@ -205,6 +258,9 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
         entrada = CalculoMezclaSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
         datos = entrada.validated_data
+        # La frontera valida escala decimal; el cálculo de RC conserva su contrato numérico.
+        for nombre in ("volumen", "entera_disponible", "descremada_disponible", "crema_disponible"):
+            datos[nombre] = float(datos[nombre])
 
         tiene_descremada = (
             datos.get("descremada_grasa") is not None
@@ -243,6 +299,9 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             )
             alternativa_sin_crema = None
 
+        mezcla = _propuesta_centilitros(mezcla, datos["volumen"])
+        if alternativa_sin_crema:
+            alternativa_sin_crema = _propuesta_centilitros(alternativa_sin_crema, datos["volumen"])
         return Response({
             "posible": mezcla.posible,
             "motivo": mezcla.motivo,
@@ -415,6 +474,12 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
                             "o anular el vale."
                         )
                     },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            if vale.muestreado_en is None or vale.grasa_real is None or vale.sng_real is None:
+                return Response(
+                    {"detail": "No hay una muestra vigente que rectificar. Reagita y registra una muestra nueva."},
                     status=status.HTTP_409_CONFLICT,
                 )
 

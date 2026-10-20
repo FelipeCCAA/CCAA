@@ -876,7 +876,8 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     comprometido_despacho = salida.detalles_despacho_granel.filter(
         despacho__estado__in=["autorizado", "despachado"]
     ).aggregate(total=Sum("cantidad"))["total"] or 0
-    disponible = salida.cantidad - consumido - comprometido_despacho
+    from estandarizacion.balance import cantidad_operativa_salida
+    disponible = cantidad_operativa_salida(salida) - consumido - comprometido_despacho
     if cantidad > disponible:
         raise ValidationError(
             f"La salida tiene {disponible} {salida.unidad} disponibles."
