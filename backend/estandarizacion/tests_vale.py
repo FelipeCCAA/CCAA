@@ -734,6 +734,9 @@ class ApiTests(BaseVale):
         )
         self.assertEqual(len(respuesta.json()["avisos"]), 1)
 
+        calidad = get_user_model().objects.create_user(username="calidad-aviso-op02")
+        PerfilUsuario.objects.create(usuario=calidad, rol=Rol.CALIDAD)
+        self.cliente.force_authenticate(calidad)
         respuesta = self.cliente.post(
             f"/api/estandarizacion/vales/{vale.pk}/decidir/", format="json",
         )

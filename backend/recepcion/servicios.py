@@ -78,10 +78,15 @@ def motivos_silo_no_disponible(silo, *, para, ahora=None):
     )
 
     leche_mas_antigua_en = momento_leche_mas_antigua(silo)
-    return motivos_silo_no_disponible_con_datos(
+    motivos = motivos_silo_no_disponible_con_datos(
         silo, analisis=analisis, ciclo_cip=ciclo_cip,
         leche_mas_antigua_en=leche_mas_antigua_en, para=para, ahora=ahora,
     )
+    from estandarizacion.bloqueos import motivo_retencion_silo
+    retencion = motivo_retencion_silo(silo.pk)
+    if retencion:
+        motivos.append(retencion)
+    return motivos
 
 
 def motivos_silo_no_disponible_con_datos(

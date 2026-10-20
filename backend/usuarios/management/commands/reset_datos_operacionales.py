@@ -36,6 +36,7 @@ MODELOS_OPERACIONALES = (
     "recoleccion.CargaModulo",
     "estandarizacion.ValeEstandarizacion",
     "estandarizacion.CorreccionValeEstandarizacion",
+    "estandarizacion.ActoValeEstandarizacion",
     "produccion.OrdenProduccion",
     "produccion.Lote",
     "produccion.CorreccionLote",

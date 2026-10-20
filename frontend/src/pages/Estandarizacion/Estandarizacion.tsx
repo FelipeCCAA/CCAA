@@ -16,6 +16,7 @@ import { cantidad } from "../../services/formato";
 import { Aviso, Tarjeta, Vacio } from "../../components/seccion/componentes";
 import Cronometro from "./Cronometro";
 import FormularioVale from "./FormularioVale";
+import BalanceActos from "./BalanceActos";
 
 const TONO: Record<string, string> = {
   calculado: "bg-slate-100 text-slate-600",
@@ -55,7 +56,9 @@ function Estandarizacion() {
   const [historico, setHistorico] = useState(false);
 
   const editable = puedeEscribir("estandarizacion");
+  const calidad = puedeEscribir("calidad");
   const vale = vales.find((item) => item.id === valeId) ?? null;
+  const muestraExistente = Boolean(vale?.muestreado_en && vale.grasa_real != null && vale.sng_real != null);
 
   const resumen = useMemo(() => ({
     agitando: vales.filter((item) => item.estado === "agitando").length,
@@ -149,7 +152,7 @@ function Estandarizacion() {
 
   const guardarCorreccion = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vale || !correccion) return;
+    if (!vale || !correccion || !muestraExistente) return;
     setOcupado(true);
     setError("");
     try {
@@ -192,6 +195,10 @@ function Estandarizacion() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button type="button" onClick={() => void cargar()} disabled={ocupado}
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 disabled:opacity-40">
+            Actualizar vales
+          </button>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"
@@ -411,16 +418,21 @@ function Estandarizacion() {
                 )}
               </Tarjeta>
 
+              <BalanceActos key={vale.id} vale={vale} silos={silos} onActualizado={(actualizado) => {
+                setVales((actuales) => actuales.map((item) => item.id === actualizado.id ? actualizado : item));
+                if (!actualizado.muestreado_en || actualizado.grasa_real == null || actualizado.sng_real == null) setCorreccion(null);
+              }} />
+
               <Tarjeta
                 titulo="Ciclo del vale"
                 descripcion="Transferir · agitar · muestrear · decidir. Cada paso tiene su regla; el sistema no ofrece el siguiente hasta que corresponde."
               >
-                {!editable ? (
+                {!editable && !calidad ? (
                   <Vacio>Tu rol no registra vales de estandarización.</Vacio>
                 ) : (
                   <div className="space-y-4">
 
-                    {vale.estado === "calculado" && (
+                    {editable && vale.estado === "calculado" && (
                       <Paso
                         texto="Conecta el circuito y transfiere las dos leches al silo de destino."
                         boton="Transferido"
@@ -434,7 +446,7 @@ function Estandarizacion() {
                       />
                     )}
 
-                    {vale.estado === "transferido" && (
+                    {editable && vale.estado === "transferido" && (
                       <Paso
                         texto="La agitación arranca ahora y el reloj lo lleva el servidor."
                         boton="Iniciar agitación"
@@ -448,7 +460,7 @@ function Estandarizacion() {
                       />
                     )}
 
-                    {vale.estado === "agitando" && (
+                    {editable && vale.estado === "agitando" && (
                       <>
                         {/* La `key` reinicia el contador con cada dato nuevo
                             del servidor: el componente cuenta segundos desde
@@ -497,9 +509,14 @@ function Estandarizacion() {
                       </>
                     )}
 
-                    {vale.estado === "muestreado" && (
+                    {vale.estado === "muestreado" && (!calidad || !vale.balance || vale.balance.pendiente) && (
+                      <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+                        {!vale.balance || vale.balance.pendiente ? "Liberación bloqueada: resuelve el balance pendiente antes de la decisión de Calidad." : "Esperando decisión de Calidad."}
+                      </p>
+                    )}
+                    {calidad && vale.estado === "muestreado" && vale.balance && !vale.balance.pendiente && (
                       <Paso
-                        texto="El sistema compara el RC medido con el objetivo y decide: libera o manda a corregir. La decisión no se elige."
+                        texto="Calidad decide sobre la nueva muestra. El sistema compara el RC medido con el objetivo: libera o manda a corregir."
                         boton="Decidir"
                         ocupado={ocupado}
                         onClick={() =>
@@ -511,9 +528,9 @@ function Estandarizacion() {
                       />
                     )}
 
-                    {vale.estado === "corrigiendo" && (
+                    {editable && vale.estado === "corrigiendo" && (
                       <Paso
-                        texto="Agrega la leche que indica el motivo y vuelve a agitar. El reloj empieza otra vez: agregar leche deshace la mezcla."
+                        texto="Registra cualquier adición o retiro en los actos del vale. Después reagita y toma una nueva muestra para Calidad."
                         boton="Reagitar"
                         ocupado={ocupado}
                         onClick={() =>
@@ -525,7 +542,13 @@ function Estandarizacion() {
                       />
                     )}
 
-                    {["muestreado", "corrigiendo"].includes(vale.estado) && !correccion && (
+                    {editable && vale.estado === "corrigiendo" && !muestraExistente && (
+                      <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+                        No hay una muestra vigente. Después de la corrección física, debes reagitar, registrar una nueva muestra y solicitar la decisión de Calidad.
+                      </p>
+                    )}
+
+                    {editable && muestraExistente && ["muestreado", "corrigiendo"].includes(vale.estado) && !correccion && (
                       <button
                         type="button"
                         onClick={() => setCorreccion({
@@ -539,7 +562,7 @@ function Estandarizacion() {
                       </button>
                     )}
 
-                    {correccion && ["muestreado", "corrigiendo"].includes(vale.estado) && (
+                    {editable && muestraExistente && correccion && ["muestreado", "corrigiendo"].includes(vale.estado) && (
                       <form onSubmit={guardarCorreccion} className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:grid-cols-2">
                         <label className="text-sm text-slate-700">Materia grasa %<input required type="number" step="0.01" min="0" value={correccion.grasa} onChange={(e) => setCorreccion({ ...correccion, grasa: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
                         <label className="text-sm text-slate-700">SNG %<input required type="number" step="0.01" min="0.01" value={correccion.sng} onChange={(e) => setCorreccion({ ...correccion, sng: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-200 px-3 py-2" /></label>
@@ -548,14 +571,14 @@ function Estandarizacion() {
                       </form>
                     )}
 
-                    {vale.estado === "liberado" && (
+                    {vale.estado === "liberado" && vale.balance && !vale.balance.pendiente && (
                       <p className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                         <CheckCircle2 className="h-4 w-4" />
                         Silo liberado. Avisa a Condensación.
                       </p>
                     )}
 
-                    {!["liberado", "anulado"].includes(vale.estado) && (
+                    {editable && !["liberado", "anulado"].includes(vale.estado) && (
                       <button
                         onClick={() => void anular()}
                         disabled={ocupado}

@@ -27,6 +27,11 @@ class ValeEstandarizacionAdmin(admin.ModelAdmin):
         # Un vale se anula, no se borra: tampoco desde aquí.
         return False
 
+    def get_readonly_fields(self, request, obj=None):
+        if obj and obj.ejecutado_en:
+            return (*self.readonly_fields, *obj.CAMPOS_RECETA)
+        return self.readonly_fields
+
     @admin.display(description="RC medido")
     def rc_medido(self, vale):
         rc = vale.rc_real

@@ -74,6 +74,8 @@ class BorradorValeTests(BaseVale):
         )
 
     def test_confirmar_reserva_el_codigo_sin_mover_leche(self):
+        self.abastecer_origenes()
+        movimientos_previos = MovimientoSilo.objects.count()
         borrador = self.crear_borrador(observaciones="Inicio").json()
         respuesta_guardado = self.cliente.patch(
             f"/api/estandarizacion/vales/{borrador['id']}/guardar-borrador/",
@@ -92,9 +94,10 @@ class BorradorValeTests(BaseVale):
             respuesta.json()["codigo"], generar_codigo_vale(timezone.localdate(), 1)
         )
         self.assertEqual(respuesta.json()["estado"], ValeEstandarizacion.Estado.CALCULADO)
-        self.assertEqual(MovimientoSilo.objects.count(), 0)
+        self.assertEqual(MovimientoSilo.objects.count(), movimientos_previos)
 
     def test_confirma_mezcla_solo_entera_sin_exigir_tanque_descremada(self):
+        self.abastecer_origenes()
         borrador = self.crear_borrador().json()
         datos = self.datos_completos()
         datos.update({

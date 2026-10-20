@@ -713,8 +713,12 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         # tenía forma de saber cuál de los dos números era el bueno.
         resultado = []
         for vale in vales:
+            from estandarizacion.balance import balance_vale
+            if balance_vale(vale)["pendiente"]:
+                continue
             usados = servicios_produccion.litros_ya_tomados(vale)
-            disponibles = vale.volumen - usados
+            preparados = vale.volumen_operativo
+            disponibles = preparados - usados
             if disponibles <= 0:
                 continue
             etapas_iniciales = etapas_por_producto.get(
@@ -730,7 +734,8 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                 "mandante_nombre": vale.producto.mandante.nombre,
                 "rc_objetivo": vale.rc_objetivo,
                 "rc_real": vale.rc_real,
-                "litros_preparados": vale.volumen,
+                "litros_preparados": preparados,
+                "litros_receta_original": vale.volumen,
                 "litros_usados": usados,
                 "litros_disponibles": disponibles,
                 "silo_entera_codigo": vale.silo_entera.codigo,

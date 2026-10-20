@@ -389,6 +389,14 @@ def _ejecucion_admite_decision_de_calidad(salida):
         EjecucionProceso.Estado.BLOQUEADA,
     }:
         return True
+    if (
+        salida.ejecucion.etapa.tipo == EtapaProceso.Tipo.ESTANDARIZACION
+        and salida.ejecucion.estado == EjecucionProceso.Estado.CERRADA
+        and salida.ejecucion.vale_id
+        and salida.ejecucion.vale.estado == "liberado"
+        and salida.ejecucion.vale.actos.filter(tipo__in=("adicion", "retiro")).exists()
+    ):
+        return True
     return (
         salida.ejecucion.etapa.tipo == EtapaProceso.Tipo.SECADO
         and salida.ejecucion.estado == EjecucionProceso.Estado.CERRADA
@@ -896,6 +904,33 @@ def _cerrar_ejecucion_si_calidad_termino(*, salida, usuario):
     return True
 
 
+def _ultimo_acto_fisico_vale_salida(salida):
+    """Momento más reciente de corrección física que afecta la fuente analizada."""
+    from estandarizacion.models import ActoValeEstandarizacion
+    from produccion.models import Lote
+
+    actos = ActoValeEstandarizacion.objects.filter(tipo__in=("adicion", "retiro"))
+    if salida.silo_id:
+        # La liberación del silo también puede pertenecer a otro vale. Exigir
+        # una muestra posterior a cualquier acto que haya cambiado ese silo.
+        actos = actos.filter(
+            Q(vale__silo_destino_id=salida.silo_id)
+            | Q(tipo="retiro", silo_contraparte_id=salida.silo_id)
+        )
+    else:
+        vale_ids = {salida.ejecucion.vale_id} - {None}
+        if salida.lote_id:
+            vale_lote_id = Lote.objects.filter(pk=salida.lote_id).values_list(
+                "vale_id", flat=True
+            ).first()
+            vale_ids.add(vale_lote_id)
+        vale_ids.discard(None)
+        if not vale_ids:
+            return None
+        actos = actos.filter(vale_id__in=vale_ids)
+    return actos.order_by("-creado_en", "-pk").values_list("creado_en", flat=True).first()
+
+
 @api_view(["POST"])
 @permission_classes([EscribeCalidad])
 def liberar_resultado_proceso(request, salida_id):
@@ -917,6 +952,15 @@ def liberar_resultado_proceso(request, salida_id):
         salida = _salida_intermedia_permitida(request, salida_id, bloquear=True)
         if salida.lote_id != previa.lote_id:
             return Response({"detail": "Cambió el lote de la salida. Vuelve a cargarla."}, status=409)
+        from estandarizacion.bloqueos import (
+            exigir_sin_retencion_lote, exigir_sin_retencion_salida,
+        )
+        try:
+            if salida.lote_id:
+                exigir_sin_retencion_lote(salida.lote_id)
+            exigir_sin_retencion_salida(salida.pk)
+        except DjangoValidationError as error:
+            return Response({"detail": "; ".join(error.messages)}, status=409)
         if salida.lote_id and salida.producto_id and salida.producto_id != salida.lote.producto_id:
             return Response({"detail": "El producto de la salida no corresponde al lote."}, status=409)
         existente = getattr(salida, "liberacion_calidad", None)
@@ -951,6 +995,17 @@ def liberar_resultado_proceso(request, salida_id):
                 silo_id=salida.silo_id,
                 estado=AnalisisSilo.Estado.CONFIRMADO,
             )
+            acto_fisico = _ultimo_acto_fisico_vale_salida(salida)
+            if acto_fisico and analisis_silo.tomado_en < acto_fisico:
+                return Response(
+                    {
+                        "analisis_id": (
+                            "El análisis debe ser posterior a la última corrección "
+                            "física del vale asociado."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             if analisis_silo.tomado_en < salida.registrada_en:
                 return Response(
                     {
@@ -988,6 +1043,18 @@ def liberar_resultado_proceso(request, salida_id):
                 ),
                 lote_id=salida.lote_id,
             )
+            acto_fisico = _ultimo_acto_fisico_vale_salida(salida)
+            if acto_fisico:
+                from auditoria.models import RegistroAuditoria
+                alta_posterior = RegistroAuditoria.objects.filter(
+                    modelo="produccion.Analisis", objeto_id=str(analisis_lote.pk),
+                    accion=RegistroAuditoria.Accion.CREACION, fecha_hora__gte=acto_fisico,
+                ).exists()
+                if not alta_posterior or analisis_lote.fecha < timezone.localdate(acto_fisico):
+                    return Response(
+                        {"analisis_lote_id": "Registra un análisis nuevo posterior a la corrección física; el análisis anterior no se reutiliza."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
             if analisis_lote.fecha < timezone.localdate(salida.registrada_en):
                 return Response(
                     {
@@ -1222,6 +1289,11 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
             .select_related("producto", "orden", "autorizacion_reproceso"),
             pk=lote_id,
         )
+        from estandarizacion.bloqueos import exigir_sin_retencion_lote
+        try:
+            exigir_sin_retencion_lote(lote.pk)
+        except DjangoValidationError as error:
+            return Response({"detail": "; ".join(error.messages)}, status=409)
         foto = evidencia_lote(lote.pk, bloquear=True)
         contexto = _contexto_del_lote(lote, bloquear=True)
 

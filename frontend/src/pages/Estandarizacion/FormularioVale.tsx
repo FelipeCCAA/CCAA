@@ -14,6 +14,7 @@ import {
 import { mensajeDe } from "../../components/seccion/utilidades";
 import { useBorrador } from "../../hooks/useBorrador";
 import { cantidad } from "../../services/formato";
+import { errorPrecisionLitros } from "./balance";
 
 /*
   Nuevo vale, en dos tiempos: **primero se calcula, después se guarda**.
@@ -115,7 +116,8 @@ function FormularioVale({
   };
   const borrador = useBorrador({
     datos: datosBorrador,
-    activo: tocado && borradorPendiente === null,
+    activo: tocado && borradorPendiente === null && !errorPrecisionLitros({ volumen: datos.volumen,
+      litros_entera: datosBorrador.litros_entera, litros_descremada: datosBorrador.litros_descremada, litros_crema: datosBorrador.litros_crema }),
     crear: crearBorradorVale,
     actualizar: guardarBorradorVale,
     alError: (error) => setError(mensajeDe(error, "No se pudo autoguardar el borrador.")),
@@ -264,6 +266,12 @@ function FormularioVale({
 
   const calcular = async (e: React.FormEvent) => {
     e.preventDefault();
+    const precision = errorPrecisionLitros({ volumen: datos.volumen,
+      // Lecturas del catálogo pueden traer ceros de serialización (10.000).
+      // Number elimina esos ceros; conserva una fracción real como 10.001.
+      entera_disponible: Number(datos.entera_disponible || 0), descremada_disponible: Number(datos.descremada_disponible || 0),
+      crema_disponible: Number(datos.crema_disponible || 0) });
+    if (precision) { setError(precision); setMezcla(null); return; }
     setTocado(true);
     setOcupado(true);
     setError("");
@@ -295,6 +303,9 @@ function FormularioVale({
 
   const guardar = async () => {
     if (!mezcla?.posible) return;
+    const precision = errorPrecisionLitros({ volumen: datos.volumen,
+      litros_entera: mezcla.entera, litros_descremada: mezcla.descremada, litros_crema: mezcla.crema });
+    if (precision) { setError(precision); return; }
 
     setOcupado(true);
     setError("");

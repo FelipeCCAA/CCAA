@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -36,6 +37,7 @@ class CorreccionMuestraValeTests(BaseVale):
     def test_corrige_la_muestra_y_recalcula_la_evaluacion(self):
         vale = self.crear_vale(
             estado=ValeEstandarizacion.Estado.MUESTREADO,
+            muestreado_en=timezone.now(),
             grasa_real="2.50",
             sng_real="8.90",
         )
@@ -52,6 +54,7 @@ class CorreccionMuestraValeTests(BaseVale):
     def test_desde_corrigiendo_vuelve_a_decision_sin_mover_leche(self):
         vale = self.crear_vale(
             estado=ValeEstandarizacion.Estado.CORRIGIENDO,
+            muestreado_en=timezone.now(),
             grasa_real="2.50",
             sng_real="8.90",
         )

@@ -826,7 +826,9 @@ class DespachoViewSet(FiltraConsultaMixin, SucursalTenantViewSetMixin, viewsets.
         )
         respuesta = []
         for salida in salidas:
-            if salida.cantidad - salida.comprometido <= 0:
+            from estandarizacion.balance import cantidad_operativa_salida
+            cantidad_actual = cantidad_operativa_salida(salida)
+            if cantidad_actual - salida.comprometido <= 0:
                 continue
             lote = getattr(salida.ejecucion, "lote_produccion", None)
             producto = salida.producto or (lote.producto if lote else None)
@@ -838,7 +840,7 @@ class DespachoViewSet(FiltraConsultaMixin, SucursalTenantViewSetMixin, viewsets.
                 "producto_nombre": producto.nombre if producto else salida.ejecucion.etapa.nombre,
                 "lote_codigo": lote.codigo_lote if lote else None,
                 "silo_codigo": salida.silo.codigo if salida.silo_id else None,
-                "cantidad_disponible": salida.cantidad - salida.comprometido,
+                "cantidad_disponible": cantidad_actual - salida.comprometido,
                 "unidad": salida.unidad,
             })
         return Response(respuesta)

@@ -17,6 +17,7 @@ from django.utils import timezone
 from auditoria.registro import crear_en_lote_con_auditoria
 from config.formato import formato_cantidad
 from .models import ValeEstandarizacion
+from .balance import exigir_balance, balance_vale
 from maestros.models import Silo
 from procesos.models import ReservaSiloProceso
 from procesos.servicios import (
@@ -54,10 +55,13 @@ def _exigir_transicion(vale, nuevo):
 
 
 @transaction.atomic
-def transferir(*, vale_id, usuario):
+def transferir(*, vale_id, usuario, comprobar_solamente=False):
     """Las dos leches ya están en el silo de destino."""
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
+    if vale.ejecutado_en:
+        return vale
     _exigir_transicion(vale, ValeEstandarizacion.Estado.TRANSFERIDO)
+    ingreso_total = exigir_balance(vale)
 
     ids_silos = [vale.silo_entera_id, vale.silo_destino_id]
     if vale.silo_descremada_id:
@@ -66,7 +70,7 @@ def transferir(*, vale_id, usuario):
         ids_silos.append(vale.silo_crema_id)
     bloqueados = {
         silo.id: silo
-        for silo in Silo.objects.select_for_update().filter(pk__in=ids_silos)
+        for silo in Silo.objects.select_for_update().filter(pk__in=ids_silos).order_by("pk")
     }
     entera = bloqueados[vale.silo_entera_id]
     destino = bloqueados[vale.silo_destino_id]
@@ -74,7 +78,7 @@ def transferir(*, vale_id, usuario):
     crema = bloqueados.get(vale.silo_crema_id)
 
     for silo in filter(None, [entera, descremada, crema]):
-        motivos = motivos_silo_no_disponible(silo, para="proceso")
+        motivos = [] if comprobar_solamente else motivos_silo_no_disponible(silo, para="proceso")
         if motivos:
             raise ValidationError(f"{silo.codigo}: " + " ".join(motivos))
         if reservas_activas_silo(
@@ -124,6 +128,8 @@ def transferir(*, vale_id, usuario):
             "capacidad disponible."
         )
 
+    if comprobar_solamente:
+        return vale
     ahora = timezone.now()
     operacion_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ccaa:estandarizacion:{vale.pk}")
     movimientos = [
@@ -136,7 +142,7 @@ def transferir(*, vale_id, usuario):
         ),
         MovimientoSilo(
             silo=destino, tipo=MovimientoSilo.Tipo.INGRESO,
-            litros=vale.volumen, fecha_hora=ahora,
+            litros=ingreso_total, fecha_hora=ahora,
             origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
             origen_id=vale.id,
             operacion_id=operacion_id, usuario=usuario,
@@ -250,6 +256,8 @@ def decidir(*, vale_id, usuario):
     **No recibe la decisión**: la calcula desde el análisis. Dejar que el
     cliente diga «liberado» convertiría la regla en una sugerencia.
     """
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
 
     if vale.estado != ValeEstandarizacion.Estado.MUESTREADO:
@@ -261,6 +269,8 @@ def decidir(*, vale_id, usuario):
 
     if evaluacion is None:
         raise ValidationError("El vale no tiene análisis registrado.")
+    if balance_vale(vale)["pendiente"]:
+        raise ValidationError("Hay una discrepancia de litros pendiente; no se puede liberar el vale.")
 
     vale.estado = (
         ValeEstandarizacion.Estado.LIBERADO

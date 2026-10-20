@@ -3,7 +3,17 @@ from decimal import Decimal
 from rest_framework import serializers
 from maestros.models import Silo
 
-from .models import ValeEstandarizacion
+from .models import ActoValeEstandarizacion, ValeEstandarizacion
+from .balance import balance_vale
+
+
+class ActoValeSerializer(serializers.ModelSerializer):
+    usuario_nombre = serializers.CharField(source="usuario.get_full_name", read_only=True)
+
+    class Meta:
+        model = ActoValeEstandarizacion
+        fields = ["clave", "tipo", "motivo", "litros", "silo_contraparte", "volumen_medido", "rectificacion", "usuario_nombre", "creado_en"]
+        read_only_fields = fields
 
 
 class ValeEstandarizacionSerializer(serializers.ModelSerializer):
@@ -40,6 +50,8 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     evaluacion = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
+    actos = ActoValeSerializer(many=True, read_only=True)
 
     class Meta:
         model = ValeEstandarizacion
@@ -58,7 +70,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "grasa_real", "sng_real",
             "rc_real", "minutos_agitando", "avisos", "evaluacion",
             "observaciones", "responsable", "responsable_nombre", "creado_en",
-            "es_borrador", "abierto_por", "abierto_en", "actualizado_en",
+            "es_borrador", "abierto_por", "abierto_en", "actualizado_en", "balance", "actos",
         ]
         # El estado lo mueven las acciones del ciclo, no un PATCH: liberar
         # exige que el RC cumpla, y con un campo escribible eso se salta.
@@ -87,7 +99,17 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "motivo": evaluacion.motivo,
         }
 
+    def get_balance(self, vale):
+        return balance_vale(vale)
+
     def validate(self, attrs):
+        if self.instance and self.instance.ejecutado_en:
+            for nombre in self.instance.CAMPOS_RECETA:
+                if nombre in attrs and attrs[nombre] != getattr(self.instance, nombre):
+                    raise serializers.ValidationError({nombre: "La receta ejecutada no se edita; registra un acto vinculado."})
+        for nombre in ("litros_entera", "litros_descremada", "litros_crema"):
+            if attrs.get(nombre) is not None and attrs[nombre] < 0:
+                raise serializers.ValidationError({nombre: "Los litros no pueden ser negativos."})
         if self.instance is None and not self.partial:
             obligatorios = (
                 "producto", "rc_objetivo", "volumen",
@@ -167,15 +189,35 @@ class CalculoMezclaSerializer(serializers.Serializer):
 
     entera_grasa = serializers.FloatField()
     entera_sng = serializers.FloatField()
-    entera_disponible = serializers.FloatField(required=False, default=0.0)
+    entera_disponible = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False, default=Decimal("0"))
     descremada_grasa = serializers.FloatField(required=False, allow_null=True)
     descremada_sng = serializers.FloatField(required=False, allow_null=True)
-    descremada_disponible = serializers.FloatField(required=False, default=0.0)
+    descremada_disponible = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False, default=Decimal("0"))
     crema_grasa = serializers.FloatField(required=False, allow_null=True)
     crema_sng = serializers.FloatField(required=False, allow_null=True)
-    crema_disponible = serializers.FloatField(required=False, default=0.0)
+    crema_disponible = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False, default=Decimal("0"))
     rc_objetivo = serializers.FloatField()
-    volumen = serializers.FloatField()
+    volumen = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+
+
+class RegistrarActoSerializer(serializers.Serializer):
+    clave = serializers.UUIDField()
+    tipo = serializers.ChoiceField(choices=["medicion", "documental", "adicion", "retiro"])
+    motivo = serializers.CharField(min_length=5, trim_whitespace=True)
+    litros = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"), required=False)
+    silo_contraparte = serializers.PrimaryKeyRelatedField(queryset=Silo.objects.all(), required=False)
+    volumen_medido = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False)
+    rectificacion = serializers.DictField(required=False)
+
+    def validate(self, attrs):
+        campos = {
+            "medicion": {"volumen_medido"}, "documental": {"rectificacion"},
+            "adicion": {"litros", "silo_contraparte"}, "retiro": {"litros", "silo_contraparte"},
+        }[attrs["tipo"]]
+        recibidos = set(attrs) - {"clave", "tipo", "motivo"}
+        if recibidos != campos:
+            raise serializers.ValidationError("Envía solamente los campos necesarios para este tipo de acto.")
+        return attrs
 
 
 class MuestraSerializer(serializers.Serializer):

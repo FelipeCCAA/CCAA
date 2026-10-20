@@ -69,6 +69,10 @@ def abrir_lote_desde_vale(
     # mismo vale podría llevarse los litros que este acaba de dar por
     # disponibles, y los dos pasarían la regla por separado.
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale.pk)
+    from estandarizacion.balance import balance_vale, litros_exactos
+    litros_exactos(litros, permitir_cero=False)
+    if balance_vale(vale)["pendiente"]:
+        raise ValidationError("El vale tiene una discrepancia de litros pendiente de revisión.")
 
     decision = dominio.puede_abrir_lote_desde(
         vale, litros, consumido_por_otros_lotes=litros_ya_tomados(vale)

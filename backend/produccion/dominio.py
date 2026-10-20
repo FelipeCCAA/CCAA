@@ -560,7 +560,7 @@ def puede_abrir_lote_desde(vale, litros, consumido_por_otros_lotes=0) -> Decisio
             "todavía no es la de ningún producto."
         )
 
-    preparado = Decimal(str(getattr(vale, "volumen", 0) or 0))
+    preparado = Decimal(str(getattr(vale, "volumen_operativo", getattr(vale, "volumen", 0)) or 0))
     ya_usado = Decimal(str(consumido_por_otros_lotes or 0))
     disponible = preparado - ya_usado
 
