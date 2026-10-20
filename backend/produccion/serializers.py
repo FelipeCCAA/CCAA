@@ -720,7 +720,9 @@ class LoteSerializer(serializers.ModelSerializer):
 
         liberacion = Liberacion.objects.filter(lote=self.instance).first()
 
-        if liberacion is None or not liberacion.liberado:
+        # Una aprobación declarada también protege el histórico sin metadata.
+        # Solo Calidad puede retirarla; esto no concede permiso de despacho.
+        if liberacion is None or liberacion.estado not in Liberacion.ESTADOS_LIBERADO:
             return
 
         raise serializers.ValidationError(
@@ -810,7 +812,7 @@ class LoteDetalleSerializer(LoteSerializer):
         return {
             "estado": liberacion.estado,
             "estado_etiqueta": liberacion.get_estado_display(),
-            "liberado": liberacion.liberado,
+            "liberado": liberacion.estado in Liberacion.ESTADOS_LIBERADO,
             "autorizada_por_nombre": (
                 liberacion.autorizada_por.get_full_name()
                 if liberacion.autorizada_por

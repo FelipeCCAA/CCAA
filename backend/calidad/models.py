@@ -35,9 +35,10 @@ from django.db import models
 from maestros.models import DocumentoLiberacion
 from produccion.models import Lote
 from usuarios.tenancy import sucursal_predeterminada_pruebas
+from .evidencia import EvidenciaCalidadMixin, FirmaCalidadMixin
 
 
-class RegistroCalidad(models.Model):
+class RegistroCalidad(EvidenciaCalidadMixin):
     """
     Un formulario del checklist ya completado para un lote concreto.
 
@@ -127,7 +128,7 @@ class RegistroCalidad(models.Model):
             )
 
 
-class Liberacion(models.Model):
+class Liberacion(FirmaCalidadMixin):
     """
     La autorización de Calidad para despachar un lote, y su firma.
 
@@ -208,7 +209,7 @@ class Liberacion(models.Model):
     @property
     def liberado(self) -> bool:
         """¿El producto puede salir? Es lo único que Despachos necesita saber."""
-        return self.estado in self.ESTADOS_LIBERADO
+        return self.estado in self.ESTADOS_LIBERADO and self.firma_vigente
 
     def clean(self):
         # La concesión sin motivo es la que hay que impedir: es la firma que
@@ -235,7 +236,7 @@ class Liberacion(models.Model):
         return estado in self.TRANSICIONES.get(self.estado, [])
 
 
-class LiberacionProceso(models.Model):
+class LiberacionProceso(FirmaCalidadMixin):
     """Decisión de Calidad sobre una salida intermedia, en silo o por lote."""
 
     class Estado(models.TextChoices):
@@ -290,7 +291,7 @@ class LiberacionProceso(models.Model):
                 })
 
 
-class RegistroEquipo(models.Model):
+class RegistroEquipo(EvidenciaCalidadMixin):
     """
     Un formulario de planta que **no pertenece a un lote sino a un equipo y a
     un período**: el aseo semanal de una torre, la inspección preoperativa de

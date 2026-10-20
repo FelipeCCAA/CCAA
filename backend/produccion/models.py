@@ -28,6 +28,7 @@ from maestros.catalogos import CLAVES_PARAMETROS
 from maestros.models import Especificacion, Producto
 from usuarios.documentos import DocumentoBorradorMixin
 from usuarios.tenancy import sucursal_predeterminada_pruebas
+from calidad.evidencia import EvidenciaCalidadMixin
 
 
 class OrdenProduccion(models.Model):
@@ -108,7 +109,7 @@ class OrdenProduccion(models.Model):
         return None
 
 
-class Lote(DocumentoBorradorMixin, models.Model):
+class Lote(DocumentoBorradorMixin, EvidenciaCalidadMixin):
     """Unidad de producción y de liberación."""
 
     class Linea(models.TextChoices):
@@ -330,7 +331,7 @@ class CorreccionLote(models.Model):
         ordering = ["-creada_en", "-id"]
 
 
-class Analisis(models.Model):
+class Analisis(EvidenciaCalidadMixin):
     """
     Medición fisicoquímica de un lote.
 
@@ -394,7 +395,7 @@ class Analisis(models.Model):
                 )
 
 
-class ControlProceso(models.Model):
+class ControlProceso(EvidenciaCalidadMixin):
     """
     Control de proceso de un equipo para un lote: condensación o secado.
 
@@ -502,7 +503,7 @@ class ControlProceso(models.Model):
             )
 
 
-class ControlProcesoLectura(models.Model):
+class ControlProcesoLectura(EvidenciaCalidadMixin):
     """
     Una lectura horaria de un control de proceso.
 
@@ -551,7 +552,7 @@ class ControlProcesoLectura(models.Model):
                 )
 
 
-class RegistroEnvase(models.Model):
+class RegistroEnvase(EvidenciaCalidadMixin):
     """Cierre de envase de un lote maestro; no crea un lote paralelo."""
 
     lote = models.ForeignKey(

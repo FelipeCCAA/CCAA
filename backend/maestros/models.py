@@ -9,6 +9,7 @@ modelado y su justificación están en `prototipo/MODELO_DATOS.md`.
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from calidad.evidencia import EvidenciaCalidadMixin
 
 from usuarios.models import Empresa, Sucursal
 from usuarios.tenancy import (
@@ -78,7 +79,7 @@ class Mandante(models.Model):
         return self.nombre
 
 
-class Producto(models.Model):
+class Producto(EvidenciaCalidadMixin):
     """
     Producto terminado, intermedio o materia prima.
 
@@ -334,7 +335,7 @@ class Producto(models.Model):
         super().save(*args, **kwargs)
 
 
-class Equipo(models.Model):
+class Equipo(EvidenciaCalidadMixin):
     """
     Máquina programable de la planta: evaporadores, líneas de secado, etc.
 
@@ -619,7 +620,7 @@ class Vehiculo(models.Model):
         return f"{self.placa} · {self.transportista}" if self.transportista else self.placa
 
 
-class Especificacion(models.Model):
+class Especificacion(EvidenciaCalidadMixin):
     """
     Rangos de calidad aceptables de un producto, versionados en el tiempo.
 
@@ -722,7 +723,7 @@ class Especificacion(models.Model):
             )
 
 
-class DocumentoLiberacion(models.Model):
+class DocumentoLiberacion(EvidenciaCalidadMixin):
     """
     Un documento del checklist de liberación y, en `plantilla`, los campos de
     su formulario.

@@ -1,6 +1,6 @@
 # Backlog de mejoras OP
 
-Backlog de las diez oportunidades priorizadas: OP-00 completada en la rama y OP-01 a OP-09 pendientes. OP-00 prepara pruebas reproducibles; no autoriza trabajo industrial, operación real ni carga concurrente. Corte 2026-10-20.
+Backlog de las diez oportunidades priorizadas: OP-00 y OP-01 completadas en sus ramas; OP-02 preparada para diagnóstico y OP-03 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; OP-01 no autoriza uso de datos reales. Corte 2026-10-20.
 
 ## OP-00 — Entorno reproducible de pruebas (WP001, P1 habilitante)
 
@@ -18,14 +18,14 @@ Cambios: [CI](.github/workflows/ci.yml) ejecuta `npm test`; [tests del reset](ba
 
 **Riesgos y límites:** no ejecutar contra producción ni datos reales. El resguardo depende de validar la instancia PostgreSQL antes de Django y de que el harness limpie variables heredadas. No se autoriza cambiar el alcance destructivo del reset. Población de 70 usuarios no equivale a concurrencia probada o certificada. No se autoriza prueba de carga ni recorrido operacional en OP-00.
 
-## OP-01 a OP-09 — pendientes
+## Catálogo OP-01 a OP-09
 
 Los enlaces siguientes son referencias de requisitos y contexto existentes; no representan aceptación ni evidencia de implementación.
 
 | ID | Prioridad | Tema y referencia existente | Estado / dependencia |
 |---|---|---|---|
-| OP-01 | P0 | Firma y despacho — [puestos de bodega y despacho](docs/superpowers/specs/2026-09-24-puestos-bodega-despacho-design.md), WP002/003 | PENDIENTE; depende de OP-00 |
-| OP-02 | P0 | Balances y receta — [servicios de estandarización](backend/estandarizacion/servicios.py), WP004 | PENDIENTE; depende de OP-00 |
+| OP-01 | P0 | Firma y despacho — [expediente OP-01](docs/operacion/OP-01_VALIDACION.md) y [puestos de bodega y despacho](docs/superpowers/specs/2026-09-24-puestos-bodega-despacho-design.md), WP002/003 | COMPLETADA EN LA RAMA; depende de OP-00. CI global aprobada; PR borrador no fusionado. |
+| OP-02 | P0 | Balances y receta — [servicios de estandarización](backend/estandarizacion/servicios.py), WP004 | DIAGNÓSTICO PREPARADO; depende de OP-00. Sin autorización de implementación. |
 | OP-03 | P0 | Saldo, reservas y ubicación — [integración de inventario](docs/INTEGRACION_INVENTARIO.md), WP005/006 | PENDIENTE; depende de OP-01 y OP-02 |
 | OP-04 | P0 | Secado y FIFO — [flujo de secado Protomalt](docs/flujos/11-secado-protomalt.md) y [suero](docs/flujos/10-secado-suero.md), WP007/008 | PENDIENTE; depende de OP-03 |
 | OP-05 | P0 | Mantequilla — [flujo productivo](docs/flujos/03-mantequilla.md), WP009 | PENDIENTE; depende de OP-03 |
@@ -36,8 +36,16 @@ Los enlaces siguientes son referencias de requisitos y contexto existentes; no r
 
 El roadmap previo del repositorio está en [plan incremental](docs/architecture/06-improvement-plan.md). Las prioridades OP reflejan el catálogo de este expediente y no sustituyen ni cierran aquel roadmap.
 
-### Preparación de OP-01 (sin implementación autorizada)
+### OP-01 — implementación y evidencia
 
-Preparación estática de OP-01 lista; implementación aún no autorizada. Objetivo por validar: impedir que una aprobación firmada se reutilice para otro lote; mantener inmutable la identidad del lote asociado a la firma y definir la vigencia de la aprobación cuando cambie la evidencia, permitiendo renovarla según la regla que acuerden Calidad y Bodega. Revalidar ubicación/silo al ejecutar el despacho. La QA de diagnóstico estático señaló [calidad/serializers.py](backend/calidad/serializers.py#L158), [produccion/serializers.py](backend/produccion/serializers.py#L149) e [inventario/servicios.py](backend/inventario/servicios.py#L238) como zonas a revisar al iniciar OP-01; son referencias diagnósticas, no hallazgos validados ni pruebas.
+OP-01 quedó COMPLETADA EN LA RAMA `codex/op-01-firmas-despacho`, head `479624ae1783b3087cdab4f520ad1f889443214c`, en cuatro commits (`49282a5`, `a976283`, `8af89ca`, `479624a`) apilados sobre OP-00. El [PR borrador #7](https://github.com/FelipeCCAA/CCAA/pull/7) sigue abierto, sin merge; base OP-00 `032be18`, rama remota `DevelopMain` permanece en `d34df44`. El PR incluye 35 archivos de implementación más estos tres documentos; [lista de archivos del PR](https://github.com/FelipeCCAA/CCAA/pull/7/files). La [CI final 39446921296](https://github.com/FelipeCCAA/CCAA/actions/runs/39446921296) terminó SUCCESS en ese head. Backend: 1.586 pruebas en 516.121 s, `OK (skipped=5)` (1.581 aprobadas, 5 omitidas, cero fallos/errores), PostgreSQL 17.11; Ruff, Django check, dry-run y migraciones pasaron. Frontend: 88/88, lint, TypeScript y build aprobados. Production-config aprobó con el aviso preexistente W021. El aviso de import dinámico de `FormularioMaestro` también es preexistente y no bloqueó.
 
-Antes de implementar, Calidad debe definir qué ediciones invalidan firma y cuándo se requiere refirmar; Calidad y Bodega deben acordar estados y ubicaciones aptos, y qué hojas/documentos existentes están autorizados. Diseñar después pruebas de firmar–editar–despachar, cambio de lote, carrera con dos conexiones y permisos por rol. Estas pruebas todavía no se han ejecutado; OP-01 permanece pendiente y requiere autorización independiente para su implementación.
+La validación focal local pasó 96 pruebas en 33.449 s (Calidad 25, Inventario OP-01 29 y heredadas 42, incluyendo seis carreras); Producción pasó 16 en 33.657 s (3 nuevas y 13 heredadas). Las 57 regresiones nuevas se corresponden con Calidad 25, Inventario OP-01 29 y Producción 3. La instancia PostgreSQL 17.10 aislada propia se detuvo correctamente con `pg_ctl`; `postmaster.pid` no existe y la sesión terminó exit 0. QA revisó la delta `8af89ca..479624a` sin bloqueos técnicos. El expediente registra los límites de revisión DESK y UX.
+
+Como historial, la CI anterior `39444907350` falló con 1.579 pruebas en 395.686 s (4 fallos, 3 errores, 5 omitidas); las causas se corrigieron en los cuatro commits del head final. Dos ejecuciones intermedias fueron canceladas y no se cuentan como aprobadas. Las guardas de tenant se limitaron a campos que no pertenecen a la dimensión funcional; no se modificaron maestros ni datos.
+
+El [expediente OP-01](docs/operacion/OP-01_VALIDACION.md) registra matriz de aceptación, escenarios de mesa de Producción, Calidad y Bodega, una limitación UX no bloqueante y la evidencia. La implementación y validación de la rama están completas; aceptación/UAT humana, PR/merge/despliegue y plan productivo para firmas históricas son actividades separadas. Las reglas de implementación están adoptadas; eso no sustituye aceptación humana ni autorización de uso productivo. OP-02 solo está preparada para diagnóstico; antes de implementar deben acordarse masa frente a litros, densidades, tolerancias, redondeo y correcciones posteriores a ejecución.
+
+### OP-02 — preparación diagnóstica (sin implementación autorizada)
+
+El siguiente diagnóstico documentará cómo se determina el balance de masa de receta y el balance en litros, qué densidades y tolerancias corresponden, cómo se redondean cantidades y cómo se registran correcciones posteriores a la ejecución. La referencia de código es [backend/estandarizacion/servicios.py](backend/estandarizacion/servicios.py). Estos puntos requieren una propuesta verificable antes de solicitar autorización de implementación; no se han cambiado reglas ni ejecutado pruebas de OP-02.

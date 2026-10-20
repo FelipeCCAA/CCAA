@@ -57,6 +57,10 @@ from .consultas import (
     valores_calidad_de_silo,
 )
 from .models import Liberacion, LiberacionProceso, RegistroCalidad, RegistroEquipo
+from .evidencia import bloquear_catalogo
+from .vigencia import (
+    evidencia_lote, evidencia_salida, registrar_firma_lote, registrar_firma_salida,
+)
 from .serializers_equipo import RegistroEquipoSerializer
 from .serializers import (
     ConcesionSerializer,
@@ -136,7 +140,13 @@ class RegistroCalidadViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             == RegistroCalidad.Estado.COMPLETADO
         )
 
-        if completado:
+        cambio_documental = serializer.instance is None or any(
+            valor != getattr(serializer.instance, campo)
+            for campo, valor in serializer.validated_data.items() if campo != "observacion"
+        )
+        if completado and serializer.instance is not None and not cambio_documental:
+            serializer.save()
+        elif completado:
             serializer.save(completado_por=self.request.user, completado_en=ahora())
         else:
             serializer.save(completado_por=None, completado_en=None)
@@ -795,6 +805,8 @@ def _bloqueo_especificacion_lote(salida, analisis):
             Especificacion.TipoAnalisis.LOTE,
         )
     )
+    if especificacion and especificacion.producto_id != salida.lote.producto_id:
+        return {"detail": "La especificación de la muestra no corresponde al producto actual del lote."}
     evaluacion = dominio_produccion.evaluar_analisis(analisis.valores, especificacion)
     if evaluacion.resultado == dominio_produccion.CONFORME:
         return None
@@ -889,20 +901,43 @@ def _cerrar_ejecucion_si_calidad_termino(*, salida, usuario):
 def liberar_resultado_proceso(request, salida_id):
     """Libera una salida intermedia usando el análisis de silo o lote aplicable."""
     from maestros.models import Silo
-    from procesos.models import CorridaCondensacion, SalidaProceso
+    from procesos.models import CorridaCondensacion, EjecucionProceso, SalidaProceso
     from produccion.models import Analisis, OrdenProduccion
     from procesos.servicios import notificar_handoff_salida_liberada
     from recepcion.models import AnalisisSilo
 
     with transaction.atomic():
+        bloquear_catalogo()
+        # Misma jerarquía que despacho: catálogo → lote → salida → fuentes.
+        # La primera lectura aplica el scope, pero no bloquea una salida antes
+        # de su lote. Después de esperar se verifica que no fue reasignada.
+        previa = _salida_intermedia_permitida(request, salida_id)
+        if previa.lote_id:
+            Lote.objects.select_for_update().get(pk=previa.lote_id)
         salida = _salida_intermedia_permitida(request, salida_id, bloquear=True)
-        if not _ejecucion_admite_decision_de_calidad(salida):
+        if salida.lote_id != previa.lote_id:
+            return Response({"detail": "Cambió el lote de la salida. Vuelve a cargarla."}, status=409)
+        if salida.lote_id and salida.producto_id and salida.producto_id != salida.lote.producto_id:
+            return Response({"detail": "El producto de la salida no corresponde al lote."}, status=409)
+        existente = getattr(salida, "liberacion_calidad", None)
+        requiere_refirma = existente is not None and (
+            existente.estado == LiberacionProceso.Estado.LIBERADO and (
+                not existente.firma_vigente
+                or existente.evidencia_firmada != evidencia_salida(salida.pk)
+                or salida.silo_id and existente.analisis_silo_id
+                and existente.analisis_silo.silo_id != salida.silo_id
+            )
+            or existente.estado == LiberacionProceso.Estado.PENDIENTE
+            and existente.firma_id is not None
+            and existente.version_firmada != existente.version_evidencia
+        )
+        puede_refirmar_cerrada = requiere_refirma and salida.ejecucion.estado == EjecucionProceso.Estado.CERRADA
+        if not _ejecucion_admite_decision_de_calidad(salida) and not puede_refirmar_cerrada:
             return Response(
                 {"detail": "La salida no está pendiente de Calidad."},
                 status=status.HTTP_409_CONFLICT,
             )
-        existente = getattr(salida, "liberacion_calidad", None)
-        if existente and existente.estado != LiberacionProceso.Estado.PENDIENTE:
+        if existente and existente.estado != LiberacionProceso.Estado.PENDIENTE and not requiere_refirma:
             return Response(
                 {"detail": "La salida ya tiene una decisión de Calidad."},
                 status=status.HTTP_409_CONFLICT,
@@ -966,10 +1001,16 @@ def liberar_resultado_proceso(request, salida_id):
                 bloqueo_especificacion,
                 status=status.HTTP_409_CONFLICT,
             )
+        evidencia_salida(
+            salida.pk, bloquear=True,
+            analisis_silo_id=getattr(analisis_silo, "pk", None),
+            analisis_lote_id=getattr(analisis_lote, "pk", None),
+        )
         decision, _ = LiberacionProceso.objects.select_for_update().get_or_create(
             salida=salida
         )
         decision.estado = LiberacionProceso.Estado.LIBERADO
+        decision.firma_id = None  # Acto nuevo, nunca reactivar el identificador anterior.
         decision.analisis_silo = analisis_silo
         decision.analisis_lote = analisis_lote
         decision.decidida_por = request.user
@@ -1016,6 +1057,8 @@ def liberar_resultado_proceso(request, salida_id):
                 if corrida_final:
                     corrida_final.orden.estado = OrdenProduccion.Estado.LIBERADA
                     corrida_final.orden.save(update_fields=["estado"])
+        decision.refresh_from_db()
+        registrar_firma_salida(decision)
         notificar_handoff_salida_liberada(salida)
     return Response({"estado": decision.estado})
 
@@ -1170,6 +1213,7 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
     rol = rol_de(request.user)
 
     with transaction.atomic():
+        bloquear_catalogo()
         # Comparte el bloqueo del lote con Envasado y con la disposición de
         # excedentes: la firma debe juzgar una fotografía física estable.
         lote = get_object_or_404(
@@ -1178,6 +1222,7 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
             .select_related("producto", "orden", "autorizacion_reproceso"),
             pk=lote_id,
         )
+        foto = evidencia_lote(lote.pk, bloquear=True)
         contexto = _contexto_del_lote(lote, bloquear=True)
 
         if concesion:
@@ -1207,6 +1252,10 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         # estados que el modelo declara.
         if liberacion.estado == Liberacion.Estado.PENDIENTE:
             liberacion.estado = Liberacion.Estado.EN_REVISION
+        if liberacion.estado in Liberacion.ESTADOS_LIBERADO and (
+            not liberacion.firma_vigente or liberacion.evidencia_firmada != foto
+        ):
+            liberacion.estado = Liberacion.Estado.EN_REVISION
 
         if not liberacion.puede_pasar_a(destino):
             return Response(
@@ -1227,6 +1276,7 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         liberacion.autorizada_por = request.user
         liberacion.autorizada_en = ahora()
         liberacion.save()
+        registrar_firma_lote(liberacion, evidencia=foto)
         if lote.orden_id and lote.orden.estado == lote.orden.Estado.PENDIENTE_CALIDAD:
             lote.orden.estado = lote.orden.Estado.LIBERADA
             lote.orden.save(update_fields=["estado"])

@@ -18,6 +18,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from calidad.evidencia import EvidenciaCalidadMixin
 from usuarios.tenancy import sucursal_predeterminada_pruebas
 from usuarios.documentos import DocumentoBorradorMixin
 
@@ -835,7 +836,7 @@ class BusquedaProveedor(models.Model):
         return f"{self.proveedor} · {self.resultado}"
 
 
-class AnalisisSilo(DocumentoBorradorMixin, models.Model):
+class AnalisisSilo(DocumentoBorradorMixin, EvidenciaCalidadMixin):
     """
     El análisis de la leche que hay en un silo.
 

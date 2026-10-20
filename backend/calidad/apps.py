@@ -13,3 +13,6 @@ class CalidadConfig(AppConfig):
         from .checks import motor_soporta_bloqueo
 
         register(motor_soporta_bloqueo)
+        from .senales_vigencia import registrar_senales
+
+        registrar_senales()

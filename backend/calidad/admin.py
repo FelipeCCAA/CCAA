@@ -25,6 +25,11 @@ class RegistroCalidadAdmin(admin.ModelAdmin):
 
 @admin.register(Liberacion)
 class LiberacionAdmin(admin.ModelAdmin):
+    readonly_fields = [
+        "lote", "estado", "concesion", "motivo_concesion",
+        "autorizada_por", "autorizada_en", "firma_id", "version_evidencia",
+        "version_firmada", "evidencia_firmada",
+    ]
     # Sin columna de avance documental ni de resultado de calidad: ambos son
     # derivados que calcula la capa de dominio, no campos de la tabla.
     list_display = ["lote", "estado", "concesion", "autorizada_por", "autorizada_en"]
@@ -32,6 +37,9 @@ class LiberacionAdmin(admin.ModelAdmin):
     search_fields = ["lote__codigo_lote", "motivo_concesion"]
     autocomplete_fields = ["lote"]
     date_hierarchy = "autorizada_en"
+
+    def has_add_permission(self, request):
+        return False  # La aprobación se tramita y firma en el expediente.
 
     def has_delete_permission(self, request, obj=None):
         # El expediente de liberación no se borra: existe mientras exista el

@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import Permission, User
+from django.db import transaction
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -54,7 +55,19 @@ class EscenarioProductoTerminado(TestCase):
         self.api.force_authenticate(self.usuario)
 
     def liberar(self):
-        Liberacion.objects.create(lote=self.lote, estado=Liberacion.Estado.LIBERADO)
+        # Frontera de estas pruebas: Calidad ya tomó su decisión. El acto
+        # upstream lleva ahora identidad y fotografía; no hay fallback legacy
+        # en el código productivo para aceptar solo un estado escrito a mano.
+        from calidad.evidencia import bloquear_catalogo
+        from calidad.vigencia import registrar_firma_lote
+
+        with transaction.atomic():
+            bloquear_catalogo()
+            decision = Liberacion.objects.create(
+                lote=self.lote, estado=Liberacion.Estado.LIBERADO,
+                autorizada_por=self.usuario, autorizada_en=timezone.now(),
+            )
+            registrar_firma_lote(decision)
         self.pallet.estado = PalletProducto.Estado.LIBERADO
         self.pallet.save(update_fields=["estado"])
 

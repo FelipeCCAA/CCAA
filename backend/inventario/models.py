@@ -1054,6 +1054,7 @@ class Despacho(models.Model):
     autorizado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="despachos_autorizados")
     creado_en = models.DateTimeField(auto_now_add=True)
     autorizado_en = models.DateTimeField(null=True, blank=True)
+    autorizacion_evidencia = models.JSONField(default=dict, blank=True, editable=False)
     despachado_en = models.DateTimeField(null=True, blank=True)
     motivo_cancelacion = models.TextField(blank=True)
     cancelado_por = models.ForeignKey(

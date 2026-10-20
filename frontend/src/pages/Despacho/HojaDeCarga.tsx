@@ -25,6 +25,7 @@ export default function HojaDeCarga({ hoja, autoriza, onCambio }: {
   const [error, setError] = useState("");
   const totales = totalesCarga(hoja.detalles, hoja.detalles_granel);
   const activa = hoja.estado === "borrador" || hoja.estado === "autorizado";
+  const requiereRevision = hoja.estado === "autorizado" && hoja.requiere_reautorizacion;
 
   const correr = async (accion: () => Promise<Despacho>, mensaje: string) => {
     setOcupado(true);
@@ -34,7 +35,7 @@ export default function HojaDeCarga({ hoja, autoriza, onCambio }: {
       setPaso("nada");
       onCambio(mensaje);
     } catch (causa) {
-      setError(mensajeDe(causa, "No se pudo registrar la operación."));
+      setError(`${mensajeDe(causa, "No se pudo registrar la operación.")} Actualiza la página para consultar el estado actual de la hoja.`);
     } finally {
       setOcupado(false);
     }
@@ -86,21 +87,27 @@ export default function HojaDeCarga({ hoja, autoriza, onCambio }: {
         ))}
       </ul>
 
+      {requiereRevision && (
+        <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Requiere revisión antes de salir. {hoja.motivo_reautorizacion}
+        </p>
+      )}
+
       {activa && !autoriza && (
         <p className="mt-3 text-sm text-slate-600">
-          {hoja.estado === "borrador" ? "Espera la autorización de quien tiene permiso para autorizar despachos." : "Autorizada: la ejecuta quien tiene permiso para autorizar despachos."}
+          {hoja.estado === "borrador" || requiereRevision ? "Espera la autorización de quien tiene permiso para autorizar despachos." : "Autorizada: la ejecuta quien tiene permiso para autorizar despachos."}
         </p>
       )}
 
       {activa && autoriza && paso === "nada" && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          {hoja.estado === "borrador" && (
+          {(hoja.estado === "borrador" || requiereRevision) && (
             <button type="button" disabled={ocupado} onClick={() => void correr(() => autorizarDespacho(hoja.id), `Hoja ${hoja.numero} autorizada.`)}
               className="rounded-xl border-2 border-blue-700 px-5 py-2.5 text-sm font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-40">
-              Autorizar
+              {requiereRevision ? "Revisar y autorizar nuevamente" : "Autorizar"}
             </button>
           )}
-          {hoja.estado === "autorizado" && (
+          {hoja.estado === "autorizado" && !requiereRevision && (
             <button type="button" onClick={() => setPaso("ejecutar")}
               className="rounded-xl bg-green-700 px-6 py-3 text-sm font-bold text-white hover:bg-green-800">
               Ejecutar salida
@@ -112,7 +119,7 @@ export default function HojaDeCarga({ hoja, autoriza, onCambio }: {
         </div>
       )}
 
-      {paso === "ejecutar" && (
+      {paso === "ejecutar" && !requiereRevision && (
         <div className="mt-4">
           <ConfirmarAccion
             titulo={`Ejecutar la salida de ${hoja.numero}`}
