@@ -440,6 +440,7 @@ export interface Despacho {
   creado_en: string; autorizado_en: string | null; despachado_en: string | null;
   detalles: DetalleDespacho[]; detalles_granel: DetalleDespachoGranel[];
   motivo_cancelacion: string; cancelado_en: string | null;
+  requiere_reautorizacion: boolean; motivo_reautorizacion: string;
 }
 
 export const obtenerProductoTerminado = () =>

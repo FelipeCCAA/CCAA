@@ -22,9 +22,10 @@ impida liberar el lote— con sus pruebas de regresión.
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from calidad.evidencia import EvidenciaCalidadMixin
 
 
-class MonitoreoPPRO(models.Model):
+class MonitoreoPPRO(EvidenciaCalidadMixin):
     """
     Monitoreo de un PPRO o PCC para un lote y turno.
 
@@ -136,7 +137,7 @@ class MonitoreoPPRO(models.Model):
         return not self.tiene_no_ok or bool(self.accion_correctiva.strip())
 
 
-class PproLectura(models.Model):
+class PproLectura(EvidenciaCalidadMixin):
     """
     Lectura horaria de un monitoreo.
 

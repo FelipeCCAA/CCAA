@@ -77,20 +77,23 @@ def registrar_pallets_producidos(pallets, usuario):
     )
 
 
-def _validar_pallet_liberado(pallet):
-    from calidad.models import Liberacion
-    liberacion = getattr(pallet.envase.lote, "liberacion", None)
-    if not liberacion or liberacion.estado not in Liberacion.ESTADOS_LIBERADO:
-        raise ValidationError("El lote del pallet no tiene una liberación de Calidad vigente.")
-
-
 @transaction.atomic
 def ingresar_pallet(pallet, ubicacion, usuario, *, operacion=None):
-    from produccion.models import PalletProducto
-    pallet = PalletProducto.objects.select_for_update().select_related("envase__lote__sucursal").get(pk=pallet.pk)
-    ubicacion = Ubicacion.objects.select_for_update().select_related("bodega__sucursal").get(pk=ubicacion.pk)
-    _validar_pallet_liberado(pallet)
-    if ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+    from calidad.evidencia import bloquear_catalogo
+    from calidad.vigencia import exigir_liberacion_lote_vigente
+    from produccion.models import Lote, PalletProducto
+
+    bloquear_catalogo()
+    lote_id = PalletProducto.objects.values_list("envase__lote_id", flat=True).get(pk=pallet.pk)
+    Lote.objects.select_for_update().get(pk=lote_id)
+    exigir_liberacion_lote_vigente(lote_id, bloquear=True)
+    pallet = PalletProducto.objects.select_for_update(of=("self",)).select_related(
+        "envase__lote__sucursal"
+    ).get(pk=pallet.pk)
+    if pallet.envase.lote_id != lote_id:
+        raise ValidationError("El lote del pallet cambió; vuelve a consultar antes de ingresarlo.")
+    ubicacion = Ubicacion.objects.select_for_update(of=("self",)).select_related("bodega__sucursal").get(pk=ubicacion.pk)
+    if not ubicacion.activo or ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
         raise ValidationError("El destino del pallet debe ser una ubicación disponible de Bodega.")
     if pallet.estado not in {PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO}:
         raise ValidationError("El pallet no está disponible para ingresar a inventario.")
@@ -116,10 +119,21 @@ def ingresar_pallet(pallet, ubicacion, usuario, *, operacion=None):
 
 @transaction.atomic
 def transferir_pallet(existencia, destino, usuario, *, motivo="", operacion=None):
-    existencia = ExistenciaProductoTerminado.objects.select_for_update().select_related(
+    from produccion.models import PalletProducto
+
+    # El movimiento referencia el pallet mediante una FK diferida. Tomar sólo
+    # la existencia permitiría un ciclo al confirmar: despacho tiene el pallet
+    # y espera la existencia, transferencia tiene la existencia y espera la FK.
+    pallet_id = ExistenciaProductoTerminado.objects.values_list(
+        "pallet_id", flat=True,
+    ).get(pk=existencia.pk)
+    PalletProducto.objects.select_for_update().get(pk=pallet_id)
+    existencia = ExistenciaProductoTerminado.objects.select_for_update(of=("self",)).select_related(
         "pallet__envase__lote__sucursal", "ubicacion__bodega__sucursal"
     ).get(pk=existencia.pk)
-    destino = Ubicacion.objects.select_for_update().select_related("bodega__sucursal").get(pk=destino.pk)
+    if existencia.pallet_id != pallet_id:
+        raise ValidationError("El pallet de la existencia cambió; vuelve a consultar antes de trasladarlo.")
+    destino = Ubicacion.objects.select_for_update(of=("self",)).select_related("bodega__sucursal").get(pk=destino.pk)
     if not existencia.activo:
         raise ValidationError("El pallet ya no tiene existencia activa.")
     origen = existencia.ubicacion
@@ -150,6 +164,8 @@ def filtro_pallets_cargables(consulta):
     from produccion.models import PalletProducto
     return consulta.filter(
         activo=True,
+        ubicacion__activo=True,
+        ubicacion__bodega__activo=True,
         ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
         pallet__estado__in=[PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO],
     ).exclude(
@@ -174,154 +190,255 @@ def causa_pallet_no_cargable(pallet):
     existencia = getattr(pallet, "existencia_producto", None)
     if existencia is None or not existencia.activo:
         return "no tiene una ubicación vigente en bodega"
+    if not existencia.ubicacion.activo:
+        return f"está en una ubicación inactiva ({existencia.ubicacion.codigo})"
+    if not existencia.ubicacion.bodega.activo:
+        return f"está en una bodega inactiva ({existencia.ubicacion.bodega.codigo})"
     if existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
         return f"está en una ubicación no disponible ({existencia.ubicacion.codigo})"
     return "no está disponible para cargar"
 
 
+def _con_bloqueo(consulta, bloquear):
+    return consulta.select_for_update(of=("self",)) if bloquear else consulta
+
+
+def _validar_silo_de_despacho(silo, salida):
+    from calidad.models import LiberacionProceso
+    from maestros.models import Silo
+    from procesos.models import EntradaProceso
+    from procesos.servicios import ESTADOS_QUE_OCUPAN_EQUIPO, reservas_activas_silo
+    from recepcion.models import AnalisisSilo
+
+    if not silo.activo or silo.estado not in {Silo.Estado.DISPONIBLE, Silo.Estado.EN_USO}:
+        raise ValidationError(f"{silo.codigo} no está disponible para despachar ({silo.get_estado_display()}).")
+    if silo.sucursal_id != salida.ejecucion.sucursal_id:
+        raise ValidationError("El silo no pertenece a la planta de la salida autorizada.")
+    decision = LiberacionProceso.objects.select_related("analisis_silo").get(salida_id=salida.pk)
+    analisis = decision.analisis_silo
+    if (
+        analisis is None or analisis.silo_id != silo.pk
+        or analisis.estado != AnalisisSilo.Estado.CONFIRMADO or not analisis.vigente
+    ):
+        raise ValidationError(
+            f"El análisis aprobado para {salida.ejecucion.codigo} no cubre el silo actual o ya no está vigente; Calidad debe revisarlo."
+        )
+    reserva = reservas_activas_silo(
+        silo_id=silo.pk, excluir_ejecucion_id=salida.ejecucion_id,
+    ).select_related("ejecucion").order_by("pk").first()
+    if reserva is not None:
+        raise ValidationError(f"{silo.codigo} está reservado por {reserva.ejecucion.codigo}.")
+    if EntradaProceso.objects.filter(
+        silo_id=silo.pk, ejecucion__estado__in=ESTADOS_QUE_OCUPAN_EQUIPO,
+    ).exclude(ejecucion_id=salida.ejecucion_id).exists():
+        raise ValidationError(f"{silo.codigo} está siendo utilizado por otro proceso.")
+    producto_id = salida.producto_id or (salida.lote.producto_id if salida.lote_id else None)
+    if silo.producto_actual_id and producto_id and silo.producto_actual_id != producto_id:
+        raise ValidationError(f"El producto declarado en {silo.codigo} no coincide con la salida.")
+
+
+def _preparar_autorizacion_despacho(despacho, *, bloquear):
+    """Lee de nuevo las fuentes; nunca usa el prefetch anterior al candado.
+
+    Orden compartido con Calidad: lote, salida y su evidencia antes de las
+    existencias/ubicaciones y silos. Sólo el servicio de despacho toma su hoja;
+    invalidar evidencia no vuelve a tomarla en orden inverso.
+    """
+    from calidad.evidencia import bloquear_catalogo
+    from calidad.vigencia import (
+        bloquear_evidencias_despacho,
+        exigir_liberacion_lote_vigente, exigir_liberacion_salida_vigente,
+    )
+    from maestros.models import Silo
+    from procesos.models import SalidaProceso
+    from produccion.models import Lote, PalletProducto
+    from recepcion.servicios import saldo_silo
+
+    if bloquear:
+        bloquear_catalogo()
+    detalles = list(_con_bloqueo(
+        DetalleDespacho.objects.filter(despacho=despacho).order_by("pk"), bloquear,
+    ))
+    graneles = list(_con_bloqueo(
+        DetalleDespachoGranel.objects.filter(despacho=despacho).order_by("pk"), bloquear,
+    ))
+    if not detalles and not graneles:
+        raise ValidationError("El despacho debe contener pallets o producto a granel.")
+    pallets_consulta = PalletProducto.objects.filter(
+        pk__in=[detalle.pallet_id for detalle in detalles],
+    ).select_related("envase__lote").order_by("pk")
+    salidas_consulta = SalidaProceso.objects.filter(
+        pk__in=[detalle.salida_id for detalle in graneles],
+    ).select_related("ejecucion", "lote", "producto").order_by("pk")
+    lotes_id = {pallet.envase.lote_id for pallet in pallets_consulta}
+    lotes_id.update(salidas_consulta.exclude(lote_id=None).values_list("lote_id", flat=True))
+    if bloquear:
+        list(Lote.objects.select_for_update().filter(pk__in=lotes_id).order_by("pk"))
+    salidas = {salida.pk: salida for salida in _con_bloqueo(salidas_consulta, bloquear)}
+    # Una FK cambiada durante la espera requiere volver a consultar, no tomar
+    # una raíz nueva después de haber bloqueado las salidas.
+    if any(salida.lote_id and salida.lote_id not in lotes_id for salida in salidas.values()):
+        raise ValidationError("El material de la salida cambió; vuelve a consultar la hoja.")
+    pallet_lotes = sorted({pallet.envase.lote_id for pallet in pallets_consulta})
+    if bloquear:
+        bloquear_evidencias_despacho(lote_ids=pallet_lotes, salida_ids=sorted(salidas))
+    firmas_lote = {
+        lote_id: exigir_liberacion_lote_vigente(lote_id, bloquear=bloquear)
+        for lote_id in pallet_lotes
+    }
+    firmas_salida = {
+        salida_id: exigir_liberacion_salida_vigente(salida_id, bloquear=bloquear)
+        for salida_id in salidas
+    }
+    pallets = {pallet.pk: pallet for pallet in _con_bloqueo(pallets_consulta.all(), bloquear)}
+    existencias = {existencia.pallet_id: existencia for existencia in _con_bloqueo(
+        ExistenciaProductoTerminado.objects.filter(
+            pallet_id__in=pallets, activo=True,
+        ).order_by("pk"), bloquear,
+    )}
+    ubicaciones = {ubicacion.pk: ubicacion for ubicacion in _con_bloqueo(
+        Ubicacion.objects.filter(
+            pk__in=[existencia.ubicacion_id for existencia in existencias.values()],
+        ).order_by("pk"), bloquear,
+    )}
+    bodegas = {bodega.pk: bodega for bodega in _con_bloqueo(
+        Bodega.objects.filter(
+            pk__in={ubicacion.bodega_id for ubicacion in ubicaciones.values()},
+        ).order_by("pk"), bloquear,
+    )}
+    silos = {silo.pk: silo for silo in _con_bloqueo(
+        Silo.objects.filter(pk__in={salida.silo_id for salida in salidas.values()}).order_by("pk"),
+        bloquear,
+    )}
+    evidencia = {"version": 1, "pallets": [], "graneles": []}
+    for detalle in detalles:
+        pallet = pallets[detalle.pallet_id]
+        if pallet.envase.lote_id not in firmas_lote:
+            raise ValidationError("El lote del pallet cambió; vuelve a consultar la hoja.")
+        if pallet.envase.lote.sucursal_id != despacho.sucursal_id:
+            raise ValidationError("El pallet no pertenece a la planta del despacho.")
+        if pallet.estado not in {PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO}:
+            raise ValidationError(f"El pallet {pallet.codigo} no está disponible para despachar.")
+        existencia = existencias.get(pallet.pk)
+        ubicacion = ubicaciones.get(existencia.ubicacion_id) if existencia else None
+        if ubicacion is None or not ubicacion.activo or ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+            raise ValidationError(f"El pallet {pallet.codigo} no está en una ubicación activa disponible.")
+        bodega = bodegas[ubicacion.bodega_id]
+        if not bodega.activo or bodega.sucursal_id != despacho.sucursal_id:
+            raise ValidationError("La ubicación no pertenece a una bodega activa de la planta del despacho.")
+        if DetalleDespacho.objects.filter(
+            pallet=pallet, despacho__estado=Despacho.Estado.AUTORIZADO,
+        ).exclude(despacho=despacho).exists():
+            raise ValidationError(f"El pallet {pallet.codigo} ya está comprometido en otro despacho.")
+        evidencia["pallets"].append({
+            "detalle": detalle.pk, "pallet": pallet.pk, "lote": pallet.envase.lote_id,
+            "firma": firmas_lote[pallet.envase.lote_id], "ubicacion": ubicacion.pk,
+            "bodega": bodega.pk, "planta_ubicacion": bodega.sucursal_id,
+            "kg": str(pallet.kg_neto), "unidades": pallet.unidades,
+        })
+    litros_en_hoja_por_silo = {}
+    for detalle in graneles:
+        salida = salidas[detalle.salida_id]
+        if detalle.movimiento_silo_id is not None:
+            raise ValidationError("La hoja ya registra una salida física; revisa su historial antes de continuar.")
+        if salida.ejecucion.sucursal_id != despacho.sucursal_id:
+            raise ValidationError("La salida no pertenece a la planta del despacho.")
+        if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
+            raise ValidationError(f"{salida.ejecucion.codigo} ya no está destinada a despacho directo.")
+        silo = silos.get(salida.silo_id)
+        if silo is None:
+            raise ValidationError(f"{salida.ejecucion.codigo} no tiene un silo/TK físico para descontar.")
+        if salida.unidad.lower() != "l" or detalle.unidad.lower() != "l":
+            raise ValidationError("El despacho físico a granel requiere una cantidad expresada en litros.")
+        _validar_silo_de_despacho(silo, salida)
+        comprometido = DetalleDespachoGranel.objects.filter(
+            salida=salida, despacho__estado__in=[Despacho.Estado.AUTORIZADO, Despacho.Estado.DESPACHADO],
+        ).exclude(despacho=despacho).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+        litros_en_hoja = litros_en_hoja_por_silo.get(silo.pk, Decimal("0"))
+        disponible = min(salida.cantidad - comprometido, saldo_silo(silo) - litros_en_hoja)
+        if detalle.cantidad <= 0 or detalle.cantidad > disponible:
+            raise ValidationError(f"{silo.codigo} tiene {disponible} L disponibles para este despacho.")
+        litros_en_hoja_por_silo[silo.pk] = litros_en_hoja + detalle.cantidad
+        evidencia["graneles"].append({
+            "detalle": detalle.pk, "salida": salida.pk, "lote": salida.lote_id,
+            "producto": salida.producto_id or (salida.lote.producto_id if salida.lote_id else None),
+            "firma": firmas_salida[salida.pk],
+            "silo": silo.pk, "producto_declarado": silo.producto_actual_id,
+            "cantidad": str(detalle.cantidad), "unidad": detalle.unidad.lower(),
+        })
+    return evidencia, detalles, graneles, pallets, salidas, existencias, silos
+
+
+def estado_autorizacion_despacho(despacho):
+    """Estado derivado para el operador, sin actualizar ni refirmar datos."""
+    resultado = {"requiere_reautorizacion": False, "motivo_reautorizacion": ""}
+    if despacho.estado != Despacho.Estado.AUTORIZADO:
+        return resultado
+    try:
+        evidencia, *_ = _preparar_autorizacion_despacho(despacho, bloquear=False)
+        if despacho.autorizacion_evidencia != evidencia:
+            raise ValidationError("La evidencia, el material o su origen cambiaron. Revisa y autoriza nuevamente la hoja.")
+    except ValidationError as error:
+        resultado["requiere_reautorizacion"] = True
+        resultado["motivo_reautorizacion"] = "; ".join(error.messages)
+    return resultado
+
+
 @transaction.atomic
 def autorizar_despacho(despacho, usuario):
     despacho = Despacho.objects.select_for_update().get(pk=despacho.pk)
-    if despacho.estado != Despacho.Estado.BORRADOR:
-        raise ValidationError("Solo un despacho en borrador puede autorizarse.")
-    detalles = list(despacho.detalles.select_related("pallet__envase__lote").select_for_update())
-    graneles = list(
-        despacho.detalles_granel.select_related(
-            "salida__ejecucion__sucursal"
-        ).select_for_update()
-    )
-    if not detalles and not graneles:
-        raise ValidationError("El despacho debe contener pallets o producto a granel.")
-    for detalle in detalles:
-        _validar_pallet_liberado(detalle.pallet)
-        comprometido = DetalleDespacho.objects.filter(
-            pallet=detalle.pallet,
-            despacho__estado=Despacho.Estado.AUTORIZADO,
-        ).exclude(despacho=despacho).exists()
-        if comprometido:
-            raise ValidationError(f"El pallet {detalle.pallet.codigo} ya está comprometido en otro despacho.")
-        if not ExistenciaProductoTerminado.objects.filter(pallet=detalle.pallet, activo=True).exists():
-            raise ValidationError(f"El pallet {detalle.pallet.codigo} no está disponible en inventario.")
-    from calidad.models import LiberacionProceso
-    from procesos.models import SalidaProceso
-    for detalle in graneles:
-        salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
-            "ejecucion__sucursal"
-        ).get(pk=detalle.salida_id)
-        if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
-            raise ValidationError(
-                f"{salida.ejecucion.codigo} no está destinada a despacho directo."
-            )
-        if not LiberacionProceso.objects.filter(
-            salida=salida, estado=LiberacionProceso.Estado.LIBERADO
-        ).exists():
-            raise ValidationError(
-                f"{salida.ejecucion.codigo} todavía no está liberada por Calidad."
-            )
-        comprometido = DetalleDespachoGranel.objects.filter(
-            salida=salida,
-            despacho__estado__in=[Despacho.Estado.AUTORIZADO, Despacho.Estado.DESPACHADO],
-        ).exclude(despacho=despacho).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
-        disponible = salida.cantidad - comprometido
-        if detalle.cantidad > disponible:
-            raise ValidationError(
-                f"{salida.ejecucion.codigo} tiene {disponible} {salida.unidad} disponibles."
-            )
+    if despacho.estado not in {Despacho.Estado.BORRADOR, Despacho.Estado.AUTORIZADO}:
+        raise ValidationError("Solo una hoja pendiente de autorización puede autorizarse.")
+    evidencia, *_ = _preparar_autorizacion_despacho(despacho, bloquear=True)
+    if despacho.estado == Despacho.Estado.AUTORIZADO and despacho.autorizacion_evidencia == evidencia:
+        raise ValidationError("La hoja ya está autorizada con la evidencia vigente.")
     despacho.estado = Despacho.Estado.AUTORIZADO
     despacho.autorizado_por = usuario
     despacho.autorizado_en = timezone.now()
-    despacho.save(update_fields=["estado", "autorizado_por", "autorizado_en"])
+    despacho.autorizacion_evidencia = evidencia
+    despacho.save(update_fields=["estado", "autorizado_por", "autorizado_en", "autorizacion_evidencia"])
     return despacho
 
 
 @transaction.atomic
 def ejecutar_despacho(despacho, usuario):
     from produccion.models import PalletProducto
-    from calidad.models import LiberacionProceso
-    from procesos.models import SalidaProceso
+    from recepcion.models import MovimientoSilo
+
     despacho = Despacho.objects.select_for_update().get(pk=despacho.pk)
     if despacho.estado == Despacho.Estado.DESPACHADO:
         return despacho
     if despacho.estado != Despacho.Estado.AUTORIZADO:
         raise ValidationError("El despacho debe estar autorizado.")
-    detalles = list(despacho.detalles.select_related("pallet__envase__lote").select_for_update())
-    graneles = list(
-        despacho.detalles_granel.select_related(
-            "salida__silo", "salida__lote", "salida__producto",
-            "salida__ejecucion__equipo",
-        ).select_for_update(of=("self",))
+    evidencia, detalles, graneles, pallets, salidas, existencias, silos = _preparar_autorizacion_despacho(
+        despacho, bloquear=True,
     )
+    if despacho.autorizacion_evidencia != evidencia:
+        raise ValidationError("La evidencia, el material o su origen cambiaron. Revisa y autoriza nuevamente la hoja.")
     for detalle in detalles:
-        _validar_pallet_liberado(detalle.pallet)
-        existencia = ExistenciaProductoTerminado.objects.select_for_update().select_related("ubicacion").get(
-            pallet=detalle.pallet, activo=True
-        )
+        pallet = pallets[detalle.pallet_id]
+        existencia = existencias[pallet.pk]
         existencia.activo = False
         existencia.save(update_fields=["activo", "actualizado_en"])
         MovimientoProductoTerminado.objects.create(
-            operacion=uuid4(), pallet=detalle.pallet, tipo=MovimientoProductoTerminado.Tipo.DESPACHO,
-            origen=existencia.ubicacion, despacho=despacho, registrado_por=usuario,
+            operacion=uuid4(), pallet=pallet, tipo=MovimientoProductoTerminado.Tipo.DESPACHO,
+            origen_id=existencia.ubicacion_id, despacho=despacho, registrado_por=usuario,
         )
-        detalle.pallet.estado = PalletProducto.Estado.DESPACHADO
-        detalle.pallet.save(update_fields=["estado"])
-    from maestros.models import Silo
-    from recepcion.models import MovimientoSilo
-    from recepcion.servicios import saldo_silo
-
-    silos = {
-        silo.pk: silo
-        for silo in Silo.objects.select_for_update().filter(
-            pk__in=sorted({detalle.salida.silo_id for detalle in graneles})
-        ).order_by("pk")
-    }
+        pallet.estado = PalletProducto.Estado.DESPACHADO
+        pallet.save(update_fields=["estado"])
     for detalle in graneles:
-        salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
-            "lote", "producto", "ejecucion__equipo"
-        ).get(pk=detalle.salida_id)
-        if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
-            raise ValidationError(
-                f"{salida.ejecucion.codigo} ya no está destinada a despacho directo."
-            )
-        if not LiberacionProceso.objects.filter(
-            salida=salida, estado=LiberacionProceso.Estado.LIBERADO
-        ).exists():
-            raise ValidationError(
-                f"{salida.ejecucion.codigo} fue bloqueada por Calidad antes del despacho."
-            )
-        if not salida.silo_id or salida.silo_id not in silos:
-            raise ValidationError(
-                f"{salida.ejecucion.codigo} no tiene un silo/TK fisico para descontar."
-            )
-        if salida.unidad.lower() != "l" or detalle.unidad.lower() != "l":
-            raise ValidationError(
-                "El despacho fisico a granel requiere una cantidad expresada en litros."
-            )
-        silo = silos[salida.silo_id]
-        disponible = saldo_silo(silo)
-        if detalle.cantidad > disponible:
-            raise ValidationError(
-                f"{silo.codigo} tiene {disponible} L fisicos disponibles."
-            )
-        movimiento = detalle.movimiento_silo
-        if movimiento is None:
-            movimiento = MovimientoSilo.objects.create(
-                silo=silo,
-                tipo=MovimientoSilo.Tipo.SALIDA,
-                litros=detalle.cantidad,
-                fecha_hora=timezone.now(),
-                origen_tipo=MovimientoSilo.OrigenTipo.DESPACHO,
-                origen_id=detalle.pk,
-                operacion_id=detalle.operacion_id,
-                lote=salida.lote,
-                producto=salida.producto or (
-                    salida.lote.producto if salida.lote_id else None
-                ),
-                equipo=salida.ejecucion.equipo,
-                usuario=usuario,
-                motivo=f"Despacho {despacho.numero}",
-            )
-            detalle.movimiento_silo = movimiento
-            detalle.save(update_fields=["movimiento_silo"])
+        salida = salidas[detalle.salida_id]
+        movimiento = MovimientoSilo.objects.create(
+            silo=silos[salida.silo_id], tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=detalle.cantidad, fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.DESPACHO, origen_id=detalle.pk,
+            operacion_id=detalle.operacion_id, lote=salida.lote,
+            producto=salida.producto or (salida.lote.producto if salida.lote_id else None),
+            equipo=salida.ejecucion.equipo, usuario=usuario,
+            motivo=f"Despacho {despacho.numero}",
+        )
+        detalle.movimiento_silo = movimiento
+        detalle.save(update_fields=["movimiento_silo"])
     despacho.estado = Despacho.Estado.DESPACHADO
     despacho.despachado_en = timezone.now()
     despacho.save(update_fields=["estado", "despachado_en"])

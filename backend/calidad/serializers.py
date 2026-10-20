@@ -141,6 +141,10 @@ class LiberacionSerializer(serializers.ModelSerializer):
         "motivo_concesion",
         "autorizada_por",
         "autorizada_en",
+        "firma_id",
+        "version_evidencia",
+        "version_firmada",
+        "evidencia_firmada",
     )
 
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
@@ -169,6 +173,8 @@ class LiberacionSerializer(serializers.ModelSerializer):
             "motivo_concesion",
             "observacion",
             "liberado",
+            "firma_id",
+            "firma_vigente",
         ]
         # La firma la estampa el servidor al liberar, nunca el cliente.
         read_only_fields = [
@@ -177,6 +183,8 @@ class LiberacionSerializer(serializers.ModelSerializer):
             "autorizada_en",
             "concesion",
             "motivo_concesion",
+            "firma_id",
+            "firma_vigente",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -189,6 +197,8 @@ class LiberacionSerializer(serializers.ModelSerializer):
             )
 
     def validate(self, datos):
+        if self.instance is not None and "lote" in datos and datos["lote"].pk != self.instance.lote_id:
+            raise serializers.ValidationError({"lote": "No se puede cambiar el lote de una aprobación existente."})
         intentados = sorted(set(self.DE_LA_FIRMA) & set(self.initial_data or {}))
 
         if intentados:

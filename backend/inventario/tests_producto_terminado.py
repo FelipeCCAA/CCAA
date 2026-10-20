@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from calidad.models import Liberacion, LiberacionProceso
+from calidad.models import Liberacion
 from maestros.models import Silo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from produccion.models import Lote, PalletProducto
@@ -18,6 +18,7 @@ from .models import (
     MovimientoProductoTerminado, Ubicacion,
 )
 from .pruebas_base import EscenarioProductoTerminado
+from .pruebas_firmas import firmar_salida_de_prueba
 from .servicios import autorizar_despacho, ejecutar_despacho, ingresar_pallet
 
 
@@ -112,7 +113,8 @@ class FlujoProductoTerminadoTests(EscenarioProductoTerminado):
             capacidad_l=Decimal("20000"),
         )
         salida = SalidaProceso.objects.create(
-            ejecucion=ejecucion, silo=silo, cantidad=Decimal("10000"), unidad="L",
+            ejecucion=ejecucion, producto=self.producto, silo=silo,
+            cantidad=Decimal("10000"), unidad="L",
             clasificacion=SalidaProceso.Clasificacion.GRANEL,
             destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
         )
@@ -121,10 +123,7 @@ class FlujoProductoTerminadoTests(EscenarioProductoTerminado):
             litros=Decimal("10000"), fecha_hora=timezone.now(),
             origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
         )
-        LiberacionProceso.objects.create(
-            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
-            decidida_por=self.usuario, decidida_en=timezone.now(),
-        )
+        firmar_salida_de_prueba(salida, self.usuario)
         despacho = Despacho.objects.create(
             sucursal=self.planta, numero="D-GRANEL-1", cliente=self.cliente,
             creado_por=self.usuario,
@@ -178,10 +177,7 @@ class FlujoProductoTerminadoTests(EscenarioProductoTerminado):
             sucursal=self.planta, codigo_lote="L-GRANEL-API",
             producto=self.producto, fecha=date(2026, 8, 18), ejecucion=ejecucion,
         )
-        LiberacionProceso.objects.create(
-            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
-            decidida_por=self.usuario, decidida_en=timezone.now(),
-        )
+        firmar_salida_de_prueba(salida, self.usuario)
 
         respuesta = self.api.post(
             "/api/inventario/despachos/",

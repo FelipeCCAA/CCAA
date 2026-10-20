@@ -6,7 +6,6 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.test import APIClient
 
-from calidad.models import LiberacionProceso
 from maestros.models import Silo
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, SalidaProceso
 from usuarios.models import PerfilUsuario, Rol
@@ -14,6 +13,7 @@ from usuarios.tenancy import unica_sucursal_activa
 
 from .models import Despacho, DetalleDespacho, ExistenciaProductoTerminado, Ubicacion
 from .pruebas_base import EscenarioProductoTerminado
+from .pruebas_firmas import firmar_salida_de_prueba
 from .serializers import DespachoSerializer
 from .servicios import autorizar_despacho, ejecutar_despacho, ingresar_pallet
 from produccion.models import PalletProducto
@@ -233,13 +233,11 @@ class HojaDeCargaTests(EscenarioProductoTerminado):
         )
         salida = SalidaProceso.objects.create(
             ejecucion=ejecucion, silo=silo, cantidad=Decimal("5000"), unidad=unidad,
+            producto=self.producto, lote=self.lote if silo is None else None,
             clasificacion=SalidaProceso.Clasificacion.GRANEL,
             destino=SalidaProceso.Destino.DESPACHO_DIRECTO,
         )
-        LiberacionProceso.objects.create(
-            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
-            decidida_por=self.usuario, decidida_en=timezone.now(),
-        )
+        firmar_salida_de_prueba(salida, self.usuario)
         return salida
 
     def test_granel_disponible_no_ofrece_lo_que_ejecutar_rechazaria(self):

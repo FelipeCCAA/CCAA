@@ -22,7 +22,9 @@ from .models import (
     MovimientoProductoTerminado,
     MovimientoRework, UnidadRework,
 )
-from .servicios import causa_pallet_no_cargable, filtro_pallets_cargables
+from .servicios import (
+    causa_pallet_no_cargable, estado_autorizacion_despacho, filtro_pallets_cargables,
+)
 
 
 class InsumoSerializer(serializers.ModelSerializer):
@@ -899,6 +901,22 @@ class DespachoSerializer(serializers.ModelSerializer):
         help_text="Salidas a despacho directo: [{salida, cantidad}].",
     )
     cliente_nombre = serializers.CharField(source="cliente.nombre", read_only=True)
+    requiere_reautorizacion = serializers.SerializerMethodField()
+    motivo_reautorizacion = serializers.SerializerMethodField()
+
+    def _vigencia_autorizacion(self, despacho):
+        cache = getattr(self, "_vigencia_cache", None)
+        if cache is None:
+            cache = self._vigencia_cache = {}
+        if despacho.pk not in cache:
+            cache[despacho.pk] = estado_autorizacion_despacho(despacho)
+        return cache[despacho.pk]
+
+    def get_requiere_reautorizacion(self, despacho):
+        return self._vigencia_autorizacion(despacho)["requiere_reautorizacion"]
+
+    def get_motivo_reautorizacion(self, despacho):
+        return self._vigencia_autorizacion(despacho)["motivo_reautorizacion"]
 
     class Meta:
         model = Despacho
@@ -906,6 +924,7 @@ class DespachoSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "numero", "sucursal", "creado_por", "autorizado_por", "estado",
             "creado_en", "autorizado_en", "despachado_en",
+            "autorizacion_evidencia",
             "motivo_cancelacion", "cancelado_por", "cancelado_en",
         ]
 

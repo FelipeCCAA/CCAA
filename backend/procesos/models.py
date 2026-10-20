@@ -4,6 +4,7 @@ import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from calidad.evidencia import EvidenciaCalidadMixin
 from usuarios.tenancy import sucursal_predeterminada_pruebas
 
 
@@ -953,7 +954,7 @@ class EntradaProceso(models.Model):
             })
 
 
-class SalidaProceso(models.Model):
+class SalidaProceso(EvidenciaCalidadMixin):
     class Naturaleza(models.TextChoices):
         PRINCIPAL = "principal", "Producto principal"
         COPRODUCTO = "coproducto", "Coproducto"
@@ -1163,7 +1164,7 @@ class EventoProceso(models.Model):
         return super().save(*args, **kwargs)
 
 
-class AutorizacionReproceso(models.Model):
+class AutorizacionReproceso(EvidenciaCalidadMixin):
     """Decisión independiente de Calidad sobre material que volverá al proceso."""
 
     class Estado(models.TextChoices):
