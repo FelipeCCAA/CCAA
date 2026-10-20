@@ -70,7 +70,7 @@ Los criterios traducen las reglas adoptadas a comportamiento verificable. La mat
 | Ejecutar dos veces o en carrera desde dos conexiones | como máximo una salida efectiva; consistencia de estados y saldos | PASS — concurrencia de Calidad/Despacho; seis carreras focales locales y CI global backend |
 | Roles y permisos | backend aplica autorización a firma, autorización y ejecución | PASS — suites focales de Calidad/Inventario y CI global backend; revisión desk independiente de tres roles |
 | Renovar aprobación | UUID nuevo, hoja reautorizada, auditoría conserva el acto previo | PASS — `calidad/tests_op01_vigencia.py`, `inventario/tests_op01_despacho.py`; CI global backend |
-| Retirar vigencia, editar lote/origen, re-firmar y reautorizar | Calidad retira por POST/revisión; operador corrige; Calidad revisa y firma nueva; Bodega reautoriza antes de salida | PASS — guardas automatizadas en suite Producción 16/16; secuencia completa revisada DESK, sin E2E |
+| Retirar vigencia, editar lote/origen, re-firmar y reautorizar | Calidad retira por POST/revisión; operador corrige; Calidad revisa y firma nueva; Bodega reautoriza antes de salida | Guardas automatizadas PASS (16 de Producción); secuencia completa revisada DESK, sin E2E |
 
 ### Evidencia de pruebas y CI final
 
@@ -96,7 +96,7 @@ Resultado del análisis de escritorio: los dos recorridos dejan explícito cuán
 ### Walkthroughs independientes de Calidad y Bodega
 
 1. **Calidad — edición que sigue conforme:** al cambiar un resultado firmado, la liberación pasa a `EN REV`; revertir el dato no reactiva la firma anterior. Calidad revisa y emite una nueva firma UUID. En cambio de silo A→B, `POST liberar B` con análisis de A devuelve `404`; con nueva muestra vigente de B, `POST liberar B` devuelve `200`. Una decisión de Calidad `RECHAZADO` o una ejecución de salida `CANCELADA` no habilitan la salida.
-2. **Bodega — hoja antigua y cambio de origen:** una hoja antigua se rechaza cuando carece de autorización vigente; primero se requiere firma de Calidad y luego reautorización de la hoja. Tras ejecutar, un reintento no debe duplicar el movimiento. El cambio A→B exige validar la muestra aplicable y reautorizar la hoja como controles separados.
+2. **Bodega — hoja antigua y cambio de origen:** una hoja antigua se rechaza; tras la nueva firma de Calidad se requiere reautorización de la hoja. Se ejecuta y un reintento no debe duplicar el movimiento. En cambio A→B, la validación de muestra y la reautorización son fronteras separadas.
 
 Son recorridos de mesa independientes, sin interacción con el sistema ni cambios de datos. No verifican el circuito E2E completo ni genealogía industrial.
 
@@ -118,3 +118,9 @@ Límites pendientes: el UX de Detalle de Lote puede mostrar verde para concesion
 ## Archivos y commits de entrega
 
 Cuatro commits de implementación y regresión: `49282a5`, `a976283`, `8af89ca`, `479624a`. Se modificaron 35 archivos de código/pruebas/migraciones y estos tres documentos de seguimiento (38 en total). El [listado completo del PR #7](https://github.com/FelipeCCAA/CCAA/pull/7/files) es el manifiesto verificable; las áreas y tablas afectadas se describen arriba. El commit documental posterior no altera backend, frontend ni el workflow; la CI aprobada corresponde al código `479624a`.
+
+## Seguimiento posterior — limpieza de CI, 20-10-2026
+
+La [corrida 39449334479](https://github.com/FelipeCCAA/CCAA/actions/runs/39449334479), sobre el cierre documental `60bf962`, terminó **FAIL**. Backend completó 1.586 casos en 520,977 s con `OK (skipped=5)`; después, al eliminar `test_ccaa_ci`, PostgreSQL notificó dos sesiones conectadas y el job salió con código 1. Frontend y comprobación de configuración productiva terminaron aprobados. No hay diferencia de backend/workflow respecto de `479624a`; la CI aprobada anterior no convierte esta corrida en aprobada.
+
+QA contrastó logs y código sin repetir pruebas ni modificar datos. Dos candidatos previos a OP-01, `procesos/tests_concurrencia_version.py:47` y `usuarios/tests_sesiones.py:199`, usan trabajadores y `close_old_connections()`, que puede mantener conexiones sanas recientes con `CONN_MAX_AGE=60`. No se ha demostrado que fueran las dos sesiones retenidas. Los nuevos hilos de OP-01 incluyen cierre incondicional y comprobación de terminación. Para atribuir la causa falta correlacionar PID de trabajadores con `pg_stat_activity` inmediatamente antes de la limpieza. Estado del seguimiento: **EN ANÁLISIS**, sin corrección implementada ni evidencia de un defecto productivo. Se conserva el resultado histórico aprobado de las comprobaciones funcionales y se registra la última CI fallida.

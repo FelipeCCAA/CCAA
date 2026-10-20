@@ -106,3 +106,11 @@ responsabilidad principal de la Skill que está ejecutando la tarea.
 
 Los hallazgos siempre deben verificarse contra el código y la
 documentación real del repositorio.
+
+## Equipo permanente ERP/MES — 16 agentes
+
+Se incorpora EXPLICADOR como agente 16, conservando los quince roles, responsabilidades y controles existentes. Consultar el [registro del equipo](docs/equipo/REGISTRO_AGENTES.md) y, al asignar ese rol, la [definición completa de EXPLICADOR](docs/equipo/EXPLICADOR.md).
+
+El PM coordina dependencias y autorizaciones; AVANCE reporta evidencias. EXPLICADOR traduce esas evidencias a lenguaje claro y no modifica código, pruebas, datos, infraestructura ni configuración. Después de diagnósticos o correcciones relevantes, entregar AVANCE y EXPLICADOR breves; el último conserva sus siete apartados obligatorios y distingue propuesta, implementación y validación.
+
+Usar solo los agentes necesarios y las capacidades reales de la sesión, sin afirmar dieciséis ejecuciones simultáneas. No repetir la auditoría inicial: continuar desde los expedientes y el estado persistente. La ampliación documental no autoriza nuevas funcionalidades, migraciones, despliegues ni datos productivos, ni altera el backlog. Las instrucciones y autorizaciones posteriores del usuario prevalecen.
