@@ -256,7 +256,10 @@ class LiberacionTests(BaseExpediente):
         self.assertFalse(liberacion.puede_pasar_a(Liberacion.Estado.PENDIENTE))
 
     def test_liberado_y_bajo_concesion_son_los_dos_estados_que_dejan_despachar(self):
-        """Es lo único que Despachos necesita preguntar."""
+        """Ambos estados exigen el respaldo de una aprobación vigente."""
+        from .evidencia import bloquear_catalogo
+        from .vigencia import registrar_firma_lote
+
         liberacion = Liberacion.objects.create(
             lote=self.lote,
             estado=Liberacion.Estado.CONCESION,
@@ -264,6 +267,16 @@ class LiberacionTests(BaseExpediente):
             motivo_concesion="Aceptado por el mandante según correo del 21-05.",
             autorizada_por=self.usuario,
         )
+        self.assertFalse(liberacion.liberado)
+
+        # Fixture de un acto ya validado por el flujo de Calidad: crear solo
+        # la fila histórica no debe convertirla en una aprobación vigente.
+        with transaction.atomic():
+            bloquear_catalogo()
+            registrar_firma_lote(liberacion)
+        self.assertTrue(liberacion.liberado)
+
+        liberacion.estado = Liberacion.Estado.LIBERADO
         self.assertTrue(liberacion.liberado)
 
         liberacion.estado = Liberacion.Estado.RECHAZADO
