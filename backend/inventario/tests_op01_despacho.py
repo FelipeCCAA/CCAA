@@ -15,10 +15,10 @@ from procesos.models import (
 )
 from recepcion.models import MovimientoSilo
 from recepcion.servicios import saldo_silo
-from usuarios.models import Sucursal
+from usuarios.models import PerfilUsuario, Sucursal
 
 from .models import (
-    Bodega, Despacho, DetalleDespacho, DetalleDespachoGranel,
+    Bodega, CicloCIP, Despacho, DetalleDespacho, DetalleDespachoGranel,
     ExistenciaProductoTerminado, MovimientoProductoTerminado, Ubicacion,
 )
 from .pruebas_base import EscenarioProductoTerminado
@@ -51,7 +51,7 @@ class VigenciaDespachoOP01Tests(EscenarioProductoTerminado):
             )
         return hoja
 
-    def _granel(self):
+    def _granel(self, *, sucursal_ejecucion=None):
         self.secuencia += 1
         codigo = f"OP01-GR-{self.secuencia}"
         proceso = Proceso.objects.create(codigo=codigo, nombre="Granel OP01")
@@ -60,7 +60,7 @@ class VigenciaDespachoOP01Tests(EscenarioProductoTerminado):
             tipo=EtapaProceso.Tipo.EVAPORACION, orden=1, requiere_calidad=True,
         )
         ejecucion = EjecucionProceso.objects.create(
-            codigo=codigo, etapa=etapa, sucursal=self.planta,
+            codigo=codigo, etapa=etapa, sucursal=sucursal_ejecucion or self.planta,
         )
         silo = Silo.objects.create(
             sucursal=self.planta, codigo=codigo, tipo=Silo.Tipo.SILO,
@@ -388,23 +388,44 @@ class VigenciaDespachoOP01Tests(EscenarioProductoTerminado):
         ejecutar_despacho(hoja, self.usuario)
         self.assertFalse(ExistenciaProductoTerminado.objects.get(pallet=self.pallet).activo)
 
-    def test_ubicacion_en_otra_planta_no_habilita_un_despacho_local(self):
+    def test_las_fks_historicas_no_bloquean_un_pallet_fisicamente_habilitado(self):
         hoja = self._hoja(pallet=self.pallet)
+        historica = Sucursal.objects.create(
+            empresa=self.empresa, codigo="OP01-HIST", nombre="Organización histórica",
+        )
+        hoja.sucursal = historica
+        hoja.save(update_fields=["sucursal"])
+        self.assertNotEqual(hoja.sucursal_id, self.lote.sucursal_id)
+        self.assertNotEqual(hoja.sucursal_id, self.ubicacion.bodega.sucursal_id)
+
         autorizar_despacho(hoja, self.usuario)
-        otra_planta = Sucursal.objects.create(
-            empresa=self.empresa, codigo="OP01-OTRA", nombre="Otra planta",
-        )
-        otra_bodega = Bodega.objects.create(
-            sucursal=otra_planta, codigo="OP01-OTRA", nombre="Bodega de otra planta",
-        )
-        # Incluso conservar el mismo ID de ubicación no conserva el origen.
-        self.ubicacion.bodega = otra_bodega
-        self.ubicacion.save(update_fields=["bodega"])
+        ejecutar_despacho(hoja, self.usuario)
+        ejecutar_despacho(hoja, self.usuario)
 
-        with self.assertRaises(ValidationError):
-            ejecutar_despacho(hoja, self.usuario)
+        movimiento = MovimientoProductoTerminado.objects.get(
+            despacho=hoja, tipo=MovimientoProductoTerminado.Tipo.DESPACHO,
+        )
+        self.assertEqual(movimiento.pallet_id, self.pallet.pk)
+        self.assertEqual(movimiento.origen_id, self.ubicacion.pk)
+        self.assertFalse(ExistenciaProductoTerminado.objects.get(pallet=self.pallet).activo)
 
-        self._sin_salida(hoja, pallet=self.pallet)
+    def test_las_fks_historicas_no_bloquean_el_granel_con_muestra_del_silo_actual(self):
+        historica = Sucursal.objects.create(
+            empresa=self.empresa, codigo="OP01-G-HIST", nombre="Organización histórica",
+        )
+        salida, silo = self._granel(sucursal_ejecucion=historica)
+        hoja = self._hoja(salida=salida)
+        self.assertNotEqual(salida.ejecucion.sucursal_id, hoja.sucursal_id)
+        self.assertNotEqual(salida.ejecucion.sucursal_id, silo.sucursal_id)
+
+        autorizar_despacho(hoja, self.usuario)
+        ejecutar_despacho(hoja, self.usuario)
+        ejecutar_despacho(hoja, self.usuario)
+
+        detalle = hoja.detalles_granel.get()
+        self.assertEqual(saldo_silo(silo), Decimal("200"))
+        self.assertEqual(MovimientoSilo.objects.filter(operacion_id=detalle.operacion_id).count(), 1)
+        self.assertEqual(detalle.movimiento_silo.silo_id, silo.pk)
 
     def test_bodega_desactivada_despues_de_autorizar_impide_salida(self):
         hoja = self._hoja(pallet=self.pallet)
@@ -441,3 +462,56 @@ class VigenciaDespachoOP01Tests(EscenarioProductoTerminado):
             ejecutar_despacho(hoja, self.usuario)
 
         self._sin_salida(hoja, silo=otro)
+
+    def test_cambiar_bodega_de_la_misma_ubicacion_exige_reautorizar_el_origen(self):
+        hoja = self._hoja(pallet=self.pallet)
+        autorizar_despacho(hoja, self.usuario)
+        nueva_bodega = Bodega.objects.create(
+            sucursal=self.planta, codigo="OP01-NUEVA-BOD", nombre="Nueva bodega física",
+        )
+        self.ubicacion.bodega = nueva_bodega
+        self.ubicacion.save(update_fields=["bodega"])
+
+        with self.assertRaises(ValidationError):
+            ejecutar_despacho(hoja, self.usuario)
+
+        self._sin_salida(hoja, pallet=self.pallet)
+        autorizar_despacho(hoja, self.usuario)
+        ejecutar_despacho(hoja, self.usuario)
+        movimiento = MovimientoProductoTerminado.objects.get(
+            despacho=hoja, tipo=MovimientoProductoTerminado.Tipo.DESPACHO,
+        )
+        self.assertEqual(movimiento.origen_id, self.ubicacion.pk)
+        self.assertEqual(hoja.detalles.get().pallet_id, self.pallet.pk)
+
+    def _cip_en_curso(self, silo):
+        return CicloCIP.objects.create(
+            sucursal=self.planta, silo=silo,
+            tipo_objetivo=CicloCIP.TipoObjetivo.SILO,
+            estado=CicloCIP.Estado.EN_CURSO,
+            inicio=timezone.now(), area=PerfilUsuario.Area.RECEPCION,
+            responsable=self.usuario,
+        )
+
+    def test_cip_real_en_curso_impide_autorizar_aunque_silo_figure_disponible(self):
+        salida, silo = self._granel()
+        self._cip_en_curso(silo)
+        hoja = self._hoja(salida=salida)
+        self.assertEqual(silo.estado, Silo.Estado.DISPONIBLE)
+
+        with self.assertRaises(ValidationError):
+            autorizar_despacho(hoja, self.usuario)
+
+        self._sin_salida(hoja, silo=silo)
+
+    def test_cip_real_posterior_a_autorizacion_impide_salida(self):
+        salida, silo = self._granel()
+        hoja = self._hoja(salida=salida)
+        autorizar_despacho(hoja, self.usuario)
+        self._cip_en_curso(silo)
+        self.assertEqual(silo.estado, Silo.Estado.DISPONIBLE)
+
+        with self.assertRaises(ValidationError):
+            ejecutar_despacho(hoja, self.usuario)
+
+        self._sin_salida(hoja, silo=silo)

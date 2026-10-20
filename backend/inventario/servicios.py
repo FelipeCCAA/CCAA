@@ -13,7 +13,7 @@ from django.db.models import F, Sum
 from django.utils import timezone
 
 from .models import (
-    Aprobacion, Bodega, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
+    Aprobacion, Bodega, CicloCIP, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
     InspeccionMaterial, LoteInventario, MovimientoInventario, Notificacion,
     ReservaInventario, Ubicacion, Despacho, DetalleDespacho, DetalleDespachoGranel,
     ExistenciaProductoTerminado, MovimientoProductoTerminado,
@@ -212,8 +212,11 @@ def _validar_silo_de_despacho(silo, salida):
 
     if not silo.activo or silo.estado not in {Silo.Estado.DISPONIBLE, Silo.Estado.EN_USO}:
         raise ValidationError(f"{silo.codigo} no está disponible para despachar ({silo.get_estado_display()}).")
-    if silo.sucursal_id != salida.ejecucion.sucursal_id:
-        raise ValidationError("El silo no pertenece a la planta de la salida autorizada.")
+    if CicloCIP.objects.filter(
+        silo=silo, tipo_objetivo=CicloCIP.TipoObjetivo.SILO,
+        estado=CicloCIP.Estado.EN_CURSO,
+    ).exists():
+        raise ValidationError(f"{silo.codigo} tiene un ciclo de limpieza en curso y no puede despacharse.")
     decision = LiberacionProceso.objects.select_related("analisis_silo").get(salida_id=salida.pk)
     analisis = decision.analisis_silo
     if (
@@ -315,8 +318,6 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
         pallet = pallets[detalle.pallet_id]
         if pallet.envase.lote_id not in firmas_lote:
             raise ValidationError("El lote del pallet cambió; vuelve a consultar la hoja.")
-        if pallet.envase.lote.sucursal_id != despacho.sucursal_id:
-            raise ValidationError("El pallet no pertenece a la planta del despacho.")
         if pallet.estado not in {PalletProducto.Estado.LIBERADO, PalletProducto.Estado.EN_INVENTARIO}:
             raise ValidationError(f"El pallet {pallet.codigo} no está disponible para despachar.")
         existencia = existencias.get(pallet.pk)
@@ -324,8 +325,8 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
         if ubicacion is None or not ubicacion.activo or ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
             raise ValidationError(f"El pallet {pallet.codigo} no está en una ubicación activa disponible.")
         bodega = bodegas[ubicacion.bodega_id]
-        if not bodega.activo or bodega.sucursal_id != despacho.sucursal_id:
-            raise ValidationError("La ubicación no pertenece a una bodega activa de la planta del despacho.")
+        if not bodega.activo:
+            raise ValidationError("La ubicación no pertenece a una bodega activa.")
         if DetalleDespacho.objects.filter(
             pallet=pallet, despacho__estado=Despacho.Estado.AUTORIZADO,
         ).exclude(despacho=despacho).exists():
@@ -341,8 +342,6 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
         salida = salidas[detalle.salida_id]
         if detalle.movimiento_silo_id is not None:
             raise ValidationError("La hoja ya registra una salida física; revisa su historial antes de continuar.")
-        if salida.ejecucion.sucursal_id != despacho.sucursal_id:
-            raise ValidationError("La salida no pertenece a la planta del despacho.")
         if salida.destino != SalidaProceso.Destino.DESPACHO_DIRECTO:
             raise ValidationError(f"{salida.ejecucion.codigo} ya no está destinada a despacho directo.")
         silo = silos.get(salida.silo_id)
