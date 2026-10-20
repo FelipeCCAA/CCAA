@@ -27,6 +27,7 @@ ruff check .
 python manage.py check
 python manage.py makemigrations --check --dry-run
 python manage.py test usuarios.tests_reset_datos_operacionales --noinput --verbosity 2
+python manage.py test produccion.tests_api.ResumenAPITests --noinput --verbosity 2
 python manage.py test --noinput --verbosity 1
 ```
 
@@ -85,6 +86,20 @@ La suite focalizada ampliada contiene siete pruebas:
 - Vista previa: salida explícita y datos conservados.
 - Motor diferente de PostgreSQL: rechazo sin usar ese motor.
 - Desarrollo con host remoto: rechazo.
+
+La primera regresión global local ejecutó 1528 pruebas: tres fallos, un error
+y cinco omitidas. Los cuatro casos afectados pertenecían a `ResumenAPITests`:
+sus lotes de julio de 2026 habían quedado fuera de la ventana de 90 días al
+avanzar el calendario. La primera CI reprodujo el fallo del backend; frontend
+y comprobación de configuración productiva aprobaron.
+
+Se controla únicamente el reloj y la ventana configurada de esa clase de tests,
+sin cambiar `produccion.views`, el filtro temporal ni las reglas del resumen.
+Un séptimo caso verifica el límite inclusivo de 90 días: excluye el 2 de mayo,
+incluye el 3 de mayo y julio, y comprueba el total con cantidades diferentes.
+La repetición focalizada combina los siete casos del reset y los siete del
+resumen. La aceptación exige además la suite global sobre el código corregido;
+un resultado focalizado por sí solo no cierra OP-00.
 
 Los resultados, revisiones, commits y estado del PR se consolidan en
 [PROGRESS.md](../../PROGRESS.md); los criterios y dependencias están en

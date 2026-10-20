@@ -9,6 +9,7 @@ consulta por lote.
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -679,6 +680,13 @@ class LotesAPITests(BaseAPI):
 
 
 class ResumenAPITests(BaseAPI):
+    def setUp(self):
+        super().setUp()
+        # Los lotes de este fixture son de julio: su pertenencia al periodo
+        # no debe cambiar con el calendario ni con la configuración del host.
+        self.enterContext(patch("produccion.views.timezone.localdate", return_value=date(2026, 8, 1)))
+        self.enterContext(patch("produccion.views.RESUMEN_DIAS", 90))
+
     def test_el_resumen_informa_su_cobertura(self):
         """
         Un 100 % de cumplimiento sobre 1 lote de 3 no es una buena noticia:
@@ -758,3 +766,14 @@ class ResumenAPITests(BaseAPI):
         ).json()
 
         self.assertEqual(datos["lotes"], 1)
+
+    def test_la_ventana_por_defecto_incluye_su_limite_inferior(self):
+        self._lote(codigo="L-FUERA", fecha=date(2026, 5, 2), kg_producidos=1000)
+        self._lote(codigo="L-LIMITE", fecha=date(2026, 5, 3), kg_producidos=2000)
+        self._lote(codigo="L-RECIENTE", fecha=date(2026, 7, 20), kg_producidos=4000)
+
+        datos = self.cliente.get("/api/produccion/resumen/").json()
+
+        self.assertEqual(datos["periodo"], {"desde": "2026-05-03", "hasta": None})
+        self.assertEqual(datos["lotes"], 2)
+        self.assertEqual(datos["kg_producidos"], 6000.0)
