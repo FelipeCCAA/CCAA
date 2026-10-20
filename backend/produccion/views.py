@@ -1184,7 +1184,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
         liberacion = Liberacion.objects.filter(lote=lote).first()
 
-        if liberacion is not None and liberacion.liberado:
+        if liberacion is not None and liberacion.estado in Liberacion.ESTADOS_LIBERADO:
             return (
                 "El lote está liberado: cambiar de qué leche salió dejaría la "
                 "firma de Calidad respaldando otra materia prima. Retire antes "
