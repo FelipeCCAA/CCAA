@@ -8,6 +8,7 @@ from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from auditoria.registro import crear_en_lote_con_auditoria
 from maestros.models import Silo
 
 from . import dominio
@@ -230,7 +231,7 @@ def atribuir_salida(movimiento):
             orden=len(filas) + 1,
             origen_no_atribuible="saldo histórico sin recepción atribuible",
         ))
-    return AtribucionRecepcion.objects.bulk_create(filas)
+    return crear_en_lote_con_auditoria(filas)
 
 
 @transaction.atomic
@@ -264,7 +265,7 @@ def heredar_atribuciones(ingreso, salidas):
             orden=len(filas) + 1,
             origen_no_atribuible=fuente.origen_no_atribuible,
         ))
-    return AtribucionRecepcion.objects.bulk_create(filas)
+    return crear_en_lote_con_auditoria(filas)
 
 
 def trazabilidad_fifo_movimientos(consumos):

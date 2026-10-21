@@ -97,4 +97,12 @@ Evidencia local: focal 51/51 en 108,516 s; dos guardas finales 2/2 en 3,034 s y 
 
 Dos agentes de apoyo reutilizados (backend y revisor, `gpt-6-sol high`), sin activar los demás; frontend, integración, QA, PM/AVANCE/EXPLICADOR por coordinador. Revisión independiente sobre `a62622c` sin bloqueantes nuevos de las guardas revisadas; pruebas ejecutadas por coordinador. Sin migraciones ni nuevas contrataciones, credenciales o recursos externos.
 
-Entrega de revisión apilada sobre OP-05 #12, con verificación general por CI del PR; el informe AVANCE y sus checks conservan el resultado del commit entregado. Clúster exacto OP-00 detenido, exit 0 y sin postmaster.pid. DevelopMain verificada sin cambios en `d34df44ca30c402e9da34dc7b75f7652c2751fef`. Sin producción, merge, despliegue, UAT, carga certificada o restauración. Próxima OP-07: diagnóstico y preparación no destructiva; su implementación necesita autorización propia.
+Entrega de revisión apilada sobre OP-05 #12, con verificación general por CI del PR; el informe AVANCE y sus checks conservan el resultado del commit entregado. Clúster exacto OP-00 detenido, exit 0 y sin postmaster.pid. DevelopMain verificada sin cambios en `d34df44ca30c402e9da34dc7b75f7652c2751fef`. Sin producción, merge, despliegue, UAT, carga certificada o restauración. OP-07 continuó con aprobación expresa posterior, según el cierre siguiente.
+
+## OP-07 — Identificadores, auditoría y exportaciones
+
+IMPLEMENTADA Y VALIDADA LOCALMENTE EN LA RAMA codex/op-07-auditoria-exportaciones desde OP-06 4dd3a94. Seis reglas aprobadas. Código/pruebas 3ad83f3: IDs/UUID intactos; auditoría masiva crítica atómica y fiel; historia/secretos conservados; CSV/XLSX literales y tres formatos limitados a 1000 recepciones con rechazo explicado, sin truncar. Interfaz muestra error JSON/Blob y cancela consultas anteriores.
+
+Integración 58/58, historia API 12/12, frontend 111/111, Chrome 2/2 simulado; Ruff, lint, tipos/build y ausencia de nuevas migraciones aprobados. Dos apoyos reutilizados: backend y revisión independiente sin bloqueos concretos; coordinación integra QA/PM/AVANCE. [Expediente y límites](docs/operacion/OP-07_VALIDACION.md). CI general y PR definitivo en sus checks y AVANCE del commit entregado.
+
+Clúster OP-00 detenido, sin postmaster.pid. Sin producción, datos reales, migraciones nuevas, merge ni despliegue. No UAT, carga certificada ni restauración de backup. PR sobre OP-06 #13. Próxima OP-08: diagnóstico/preparación, implementación requiere autorización propia.

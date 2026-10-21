@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 
+from auditoria.registro import crear_en_lote_con_auditoria
 from maestros.models import Silo
 from produccion.models import PalletProducto
 
@@ -178,7 +179,7 @@ class CicloCIPSerializer(serializers.ModelSerializer):
         if etapas is None:
             return
         ciclo.etapas.all().delete()
-        EtapaCIP.objects.bulk_create(
+        crear_en_lote_con_auditoria(
             EtapaCIP(ciclo=ciclo, **etapa) for etapa in etapas
         )
 
@@ -1069,7 +1070,7 @@ class DespachoSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"pallet_ids": errores})
         despacho = Despacho(**validated_data)
         despacho.asignar_numero()
-        DetalleDespacho.objects.bulk_create([DetalleDespacho(despacho=despacho, pallet=p) for p in pallets])
+        crear_en_lote_con_auditoria([DetalleDespacho(despacho=despacho, pallet=p) for p in pallets])
         for item in graneles:
             try:
                 salida = SalidaProceso.objects.select_related("ejecucion__etapa").get(

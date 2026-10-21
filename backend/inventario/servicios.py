@@ -12,6 +12,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
+from auditoria.registro import crear_en_lote_con_auditoria
+
 from .models import (
     Aprobacion, Bodega, CicloCIP, DetalleRecepcionCompra, DetalleSolicitudMaterial, Existencia,
     InspeccionMaterial, LoteInventario, MovimientoInventario, Notificacion,
@@ -57,11 +59,11 @@ def registrar_pallets_producidos(pallets, usuario):
         ).values_list("pallet_id", flat=True)
     )
     nuevos = [p for p in pallets if p.pk not in existentes]
-    ExistenciaProductoTerminado.objects.bulk_create([
+    crear_en_lote_con_auditoria([
         ExistenciaProductoTerminado(pallet=p, ubicacion=ubicacion, activo=True)
         for p in nuevos
     ])
-    MovimientoProductoTerminado.objects.bulk_create([
+    crear_en_lote_con_auditoria([
         MovimientoProductoTerminado(
             operacion=uuid4(),
             pallet=p,
@@ -1794,7 +1796,7 @@ def crear_solicitud_desde_mrp(*, ejecucion, usuario, area=None):
         estado=SolicitudCompra.Estado.BORRADOR,
     )
 
-    DetalleSolicitudCompra.objects.bulk_create([
+    crear_en_lote_con_auditoria([
         DetalleSolicitudCompra(
             solicitud=solicitud,
             insumo_id=linea.insumo_id,
@@ -1886,7 +1888,7 @@ def convertir_solicitud_en_ordenes(*, solicitud, usuario, bodega):
             fecha_comprometida=min(d.fecha_requerida for d in lineas),
         )
 
-        DetalleOrdenCompra.objects.bulk_create([
+        crear_en_lote_con_auditoria([
             DetalleOrdenCompra(
                 orden=orden,
                 insumo_id=d.insumo_id,
