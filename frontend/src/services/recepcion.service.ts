@@ -34,6 +34,12 @@ export interface OcupacionSilo {
   tipo: string;
   tipo_etiqueta: string;
   litros: number;
+  /* Disponibilidad calculada por el servidor. Opcionales para detectar una
+     respuesta anterior sin tratar el saldo físico como material libre. */
+  litros_reservados?: number | string;
+  litros_libres?: number | string;
+  litros_disponibles?: number | string;
+  capacidad_reservada?: number | string;
   capacidad: number;
   estado: string;
   estado_etiqueta: string;
@@ -377,8 +383,12 @@ export const ESTADOS_RECEPCION = [
 ];
 
 
-export async function obtenerOcupacion(): Promise<Ocupacion> {
-  const { data } = await api.get<Ocupacion>("recepcion/ocupacion/");
+export async function obtenerOcupacion(actualizar = false): Promise<Ocupacion> {
+  // Una actualización explícita debe consultar el servidor, no recuperar la
+  // caché breve de navegación que puede contener reservas anteriores.
+  const { data } = await api.get<Ocupacion>("recepcion/ocupacion/", actualizar
+    ? { params: { _actualizar: crypto.randomUUID() } }
+    : undefined);
 
   return data;
 }

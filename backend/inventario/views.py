@@ -44,6 +44,7 @@ from .serializers import (
     NotificacionSerializer, OrdenCompraSerializer, PlantillaInspeccionSerializer, ProveedorSerializer,
     RecepcionCompraSerializer, SolicitudCompraSerializer,
     SolicitudMaterialSerializer, UbicacionSerializer,
+    TrasladoExistenciaSerializer,
     ClienteDespachoSerializer, DespachoSerializer,
     ExistenciaProductoTerminadoSerializer, MovimientoProductoTerminadoSerializer,
     MovimientoReworkSerializer, UnidadReworkSerializer,
@@ -1002,19 +1003,22 @@ class MovimientoViewSet(FiltraConsultaMixin, FiltraPorLoteMixin, QuerysetTenantM
     @action(detail=False, methods=["post"], url_path="trasladar")
     def trasladar(self, request):
         try:
-            existencia = _tenant_get(Existencia, request.user, request.data.get("existencia"), sucursal="ubicacion__bodega__sucursal_id", empresa="ubicacion__bodega__sucursal__empresa_id")
-            movimiento = trasladar_existencia(
+            entrada = TrasladoExistenciaSerializer(data=request.data)
+            entrada.is_valid(raise_exception=True)
+            datos = entrada.validated_data
+            existencia = _tenant_get(Existencia, request.user, datos["existencia"], sucursal="ubicacion__bodega__sucursal_id", empresa="ubicacion__bodega__sucursal__empresa_id")
+            destino = _tenant_get(Ubicacion, request.user, datos["destino"], sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id")
+            movimiento, repetido = trasladar_existencia(
                 existencia_id=existencia.pk,
-                destino=_tenant_get(Ubicacion, request.user, request.data.get("destino"), sucursal="bodega__sucursal_id", empresa="bodega__sucursal__empresa_id"),
-                cantidad=request.data.get("cantidad"), usuario=request.user,
-                documento_tipo=request.data.get("documento_tipo", "inventario.TrasladoManual"),
-                documento_id=request.data.get("documento_id") or 0,
-                motivo=request.data.get("motivo", ""),
+                destino=destino, cantidad=datos["cantidad"], usuario=request.user,
+                documento_tipo=datos["documento_tipo"], documento_id=datos["documento_id"],
+                motivo=datos["motivo"], operacion_id=datos["operacion_id"],
+                retornar_replay=True,
             )
         except (Existencia.DoesNotExist, Ubicacion.DoesNotExist, DjangoValidationError, ValueError) as error:
             mensaje = error.messages[0] if isinstance(error, DjangoValidationError) else str(error)
             return Response({"error": mensaje}, status=409)
-        return Response(self.get_serializer(movimiento).data, status=201)
+        return Response(self.get_serializer(movimiento).data, status=200 if repetido else 201)
 
 
 class AjusteInventarioViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):

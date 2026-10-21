@@ -7,6 +7,7 @@ import {
 } from "../../services/recepcion.service";
 import AnalisisSiloPanel from "./AnalisisSilo";
 import FormularioDespachoLeche from "./FormularioDespachoLeche";
+import { bloqueoSilo, cantidadInformada, disponibleSilo, formatoLitros as formato } from "./disponibilidad-silo";
 import {
   obtenerSalidasIntermediasDisponibles,
   type SalidaIntermediaDisponible,
@@ -31,7 +32,19 @@ import {
      las cuatro que importan.
 */
 
-const formato = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
+function Disponibilidad({ silo, compacta = false }: { silo: OcupacionSilo; compacta?: boolean }) {
+  const datos = [
+    ["Reservado", cantidadInformada(silo.litros_reservados)],
+    ...(!compacta ? [["Libre de reservas", cantidadInformada(silo.litros_libres)]] as const : []),
+    ["Disponible", disponibleSilo(silo)],
+  ] as const;
+  return <dl className={compacta ? "mt-3 space-y-2 text-xs" : "mt-3 grid grid-cols-3 gap-4 text-xs"}>
+    {datos.map(([etiqueta, cantidad]) => <div key={etiqueta} className={compacta ? "flex flex-wrap items-baseline justify-between gap-x-2" : undefined}>
+      <dt className="text-slate-600">{etiqueta}</dt>
+      <dd className={`${compacta ? "" : "mt-1 "}font-semibold tabular-nums text-slate-900`}>{cantidad === null ? "Sin informar" : `${formato.format(cantidad)} L`}</dd>
+    </div>)}
+  </dl>;
+}
 
 
 function AccionSilo({
@@ -113,12 +126,13 @@ function Barra({
 
       <div className="mt-3 flex items-baseline justify-between gap-3">
         <p className="text-sm font-semibold text-slate-800">
-          {formato.format(silo.litros)} L
+          Físico: {formato.format(silo.litros)} L
         </p>
         <p className="text-xs text-slate-600">
           de {formato.format(silo.capacidad)} L
         </p>
       </div>
+      <Disponibilidad silo={silo} compacta />
         </div>
       </div>
     </button>
@@ -133,6 +147,7 @@ interface SilosProps {
 function Silos({ soloPrincipales = false }: SilosProps) {
   const [ocupacion, setOcupacion] = useState<Ocupacion | null>(null);
   const [error, setError] = useState("");
+  const [errorActualizacion, setErrorActualizacion] = useState("");
   const [verVacios, setVerVacios] = useState(false);
   // El análisis se pide aparte de la ocupación, y no en el mismo
   // `Promise.all`: si su endpoint cae, la pantalla de silos sigue
@@ -144,6 +159,13 @@ function Silos({ soloPrincipales = false }: SilosProps) {
   const [cargandoMateriales, setCargandoMateriales] = useState(false);
   const [errorMateriales, setErrorMateriales] = useState("");
   const cargaMaterialRef = useRef(0);
+
+  const actualizarOcupacion = async () => {
+    const nueva = await obtenerOcupacion(true);
+    setOcupacion(nueva);
+    setSeleccionado((actual) => actual ? nueva.silos.find((item) => item.silo_id === actual.silo_id) ?? null : null);
+    setErrorActualizacion("");
+  };
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -182,9 +204,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
   // su muestra, movimientos y despacho.
   const tanquesProceso = silos.filter((s) => s.tipo !== "silo");
   const faltaTkCrema = !silos.some((s) => s.tipo === "tk_crema");
-  const bloqueoSeleccionado = seleccionado?.reservas_activas.length
-    ? `Reservado por ${seleccionado.reservas_activas[0].ejecucion_codigo}`
-    : seleccionado?.motivos_no_disponible[0];
+  const bloqueoSeleccionado = seleccionado ? bloqueoSilo(seleccionado) : undefined;
 
   const capacidadTotal = silos.reduce((suma, s) => suma + s.capacidad, 0);
   const pctTotal = capacidadTotal > 0
@@ -263,7 +283,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Volumen disponible
+              Volumen físico registrado
             </p>
             <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
               {formato.format(ocupacion.litros_totales)} L
@@ -273,7 +293,9 @@ function Silos({ soloPrincipales = false }: SilosProps) {
             {pctTotal}% de {formato.format(capacidadTotal)} L ·{" "}
             {silos.length} de {ocupacion.silos.length} unidades
           </p>
+          <button type="button" onClick={() => void actualizarOcupacion().catch(() => setErrorActualizacion("No se pudieron actualizar los saldos. Vuelve a intentarlo."))} className="text-sm font-semibold text-emerald-700 underline">Actualizar saldos</button>
         </div>
+        {errorActualizacion && <p role="alert" className="mt-3 text-sm text-rose-700">{errorActualizacion}</p>}
       </section>
 
       <section className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-4">
@@ -285,14 +307,16 @@ function Silos({ soloPrincipales = false }: SilosProps) {
 
       {seleccionado && (
         <>
-          {despachando && <FormularioDespachoLeche siloId={seleccionado.silo_id} siloCodigo={seleccionado.codigo} disponible={seleccionado.litros} onCerrar={() => setDespachando(false)} onCreado={async () => { const nueva = await obtenerOcupacion(); setOcupacion(nueva); setSeleccionado(nueva.silos.find((item) => item.silo_id === seleccionado.silo_id) ?? null); setDespachos(null); setDespachando(false); }} />}
+          {despachando && <FormularioDespachoLeche key={seleccionado.silo_id} siloId={seleccionado.silo_id} siloCodigo={seleccionado.codigo} disponible={disponibleSilo(seleccionado)} onActualizar={actualizarOcupacion} onCerrar={() => setDespachando(false)} onCreado={async () => { await actualizarOcupacion(); setDespachos(null); setDespachando(false); }} />}
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Operar {seleccionado.codigo} · {seleccionado.tipo_etiqueta}</p>
                 <h2 className="mt-1 text-xl font-semibold text-slate-900">
-                  {formato.format(seleccionado.litros)} L disponibles
+                  {formato.format(seleccionado.litros)} L físicos
                 </h2>
+                <Disponibilidad silo={seleccionado} />
+                {cantidadInformada(seleccionado.capacidad_reservada) !== null && <p className="mt-2 text-xs text-violet-800">Capacidad reservada como destino: {formato.format(Number(seleccionado.capacidad_reservada))} L</p>}
                 <p className="mt-1 text-sm text-slate-600">
                   {seleccionado.grasa ?? "—"}% MG · {seleccionado.sng ?? "—"}% SNG ·{" "}
                   {seleccionado.antiguedad_horas == null ? "sin antigüedad" : `${seleccionado.antiguedad_horas} h desde la leche más antigua`}
@@ -305,6 +329,7 @@ function Silos({ soloPrincipales = false }: SilosProps) {
                 Último aseo: {seleccionado.ultima_limpieza ?? "sin registro"}
               </p>
             </div>
+            {disponibleSilo(seleccionado) === null && <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Disponibilidad desconocida. Actualiza los saldos antes de operar; el volumen físico no indica cuánto está libre.</p>}
             {seleccionado.motivos_no_disponible.length > 0 && (
               <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
                 {seleccionado.motivos_no_disponible.join(" · ")}

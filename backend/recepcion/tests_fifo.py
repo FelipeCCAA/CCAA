@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone as tz
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -8,7 +9,7 @@ from django.test import TestCase
 from maestros.models import Silo
 
 from . import dominio
-from .models import AtribucionRecepcion, MovimientoSilo, Recepcion
+from .models import AnalisisSilo, AtribucionRecepcion, MovimientoSilo, Recepcion
 from .servicios import atribuir_salida, transferir_silo
 
 
@@ -99,11 +100,21 @@ class AtribucionFIFOIntegracionTests(TestCase):
         self.assertTrue(atribuciones[-1].origen_no_atribuible)
 
     def test_transferencia_propaga_las_capas_al_silo_destino(self):
-        salida, ingreso = transferir_silo(
-            silo_origen_id=self.silo.id, silo_destino_id=self.destino.id,
-            litros=Decimal("250"), operacion_id=uuid.uuid4(),
-            usuario=self.usuario,
+        tomado_en = self.inicio + timedelta(hours=4)
+        AnalisisSilo.objects.create(
+            silo=self.silo, tomado_en=tomado_en,
+            grasa=Decimal("4.00"), sng=Decimal("8.70"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=tomado_en.time(), estado=AnalisisSilo.Estado.CONFIRMADO,
+            analista=self.usuario, visualizado_por=self.usuario,
+            visualizado_en=tomado_en,
         )
+        with patch("django.utils.timezone.now", return_value=self.inicio + timedelta(hours=5)):
+            salida, ingreso = transferir_silo(
+                silo_origen_id=self.silo.id, silo_destino_id=self.destino.id,
+                litros=Decimal("250"), operacion_id=uuid.uuid4(),
+                usuario=self.usuario,
+            )
         self.assertEqual(
             list(ingreso.atribuciones_recepcion.values_list("recepcion_id", "litros")),
             [(self.recepciones[0].id, Decimal("100")), (self.recepciones[1].id, Decimal("150"))],

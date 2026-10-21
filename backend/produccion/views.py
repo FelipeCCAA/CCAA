@@ -719,6 +719,20 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             usados = servicios_produccion.litros_ya_tomados(vale)
             preparados = vale.volumen_operativo
             disponibles = preparados - usados
+            from inventario.models import CicloCIP
+            from procesos.servicios import exigir_origen_disponible
+            from recepcion.servicios import ESTADOS_SIN_CONSUMO
+            from estandarizacion.bloqueos import motivo_retencion_silo
+            silo = vale.silo_destino
+            if (not silo.activo or silo.estado in ESTADOS_SIN_CONSUMO
+                or CicloCIP.objects.filter(silo=silo, estado=CicloCIP.Estado.EN_CURSO).exists()
+                or motivo_retencion_silo(silo.pk)):
+                continue
+            try:
+                libres = exigir_origen_disponible(silo=silo, cantidad=Decimal("0"))
+            except DjangoValidationError:
+                continue
+            disponibles = min(disponibles, libres)
             if disponibles <= 0:
                 continue
             etapas_iniciales = etapas_por_producto.get(
@@ -1148,6 +1162,23 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             preparadas.append((silo_id, litros, linea.get("fecha_hora")))
 
         with transaction.atomic():
+            from calidad.evidencia import bloquear_catalogo
+            bloquear_catalogo()
+            from procesos.servicios import exigir_origen_disponible
+            from recepcion.servicios import motivos_silo_no_disponible
+            cantidades = defaultdict(Decimal)
+            for silo_id, litros, _ in preparadas:
+                cantidades[int(silo_id)] += litros
+            silos = {s.pk: s for s in Silo.objects.select_for_update().filter(
+                pk__in=cantidades,
+            ).order_by("pk")}
+            if set(silos) != set(cantidades):
+                return Response({"detail": "Uno de los silos no existe."}, status=400)
+            for silo_id, litros in cantidades.items():
+                exigir_origen_disponible(silo=silos[silo_id], cantidad=litros)
+                motivos = motivos_silo_no_disponible(silos[silo_id], para="proceso")
+                if motivos:
+                    return Response({"detail": " ".join(motivos)}, status=409)
             return [
                 MovimientoSilo.objects.create(
                     silo_id=silo_id,

@@ -16,7 +16,7 @@ from .models import (
     Bodega, DetalleOrdenCompra, Existencia, InspeccionMaterial,
     LoteInventario, MovimientoInventario, OrdenCompra, Proveedor,
     RecepcionCompra, SolicitudCompra, SolicitudMaterial,
-    DetalleSolicitudMaterial, Ubicacion,
+    DetalleSolicitudMaterial, ReservaInventario, Ubicacion,
 )
 from .servicios import (
     consumir_receta_produccion, convertir_solicitud_en_ordenes,
@@ -376,22 +376,40 @@ class LibroInventarioTests(TestCase):
             lote=lote, ubicacion=self.disponible, cantidad=5,
             usuario=self.usuario, documento_tipo="recepcion", documento_id=1,
         )
-        existencia, _ = reservar_fefo(
+        existencia, cantidad_reservada = reservar_fefo(
             insumo_id=self.insumo.id, cantidad=3, usuario=self.usuario,
             documento_tipo="mrq", documento_id=3,
         )[0]
+        solicitud = SolicitudMaterial.objects.create(
+            numero="MRQ-ENTREGA-RESERVA", area=PerfilUsuario.Area.SECADO,
+            solicitante=self.usuario, fecha_requerida=timezone.localdate(),
+            estado=SolicitudMaterial.Estado.PREPARADA,
+        )
+        detalle = DetalleSolicitudMaterial.objects.create(
+            solicitud=solicitud, insumo=self.insumo,
+            cantidad_solicitada=Decimal("3"), cantidad_aprobada=Decimal("3"),
+        )
+        reserva = ReservaInventario.objects.create(
+            detalle=detalle, existencia=existencia, cantidad=cantidad_reservada,
+        )
         entregar_reserva(
-            existencia_id=existencia.id, cantidad=3, destino=self.produccion,
-            usuario=self.usuario, documento_tipo="entrega", documento_id=1,
+            reserva_id=reserva.pk, existencia_id=existencia.id,
+            cantidad=3, destino=self.produccion, usuario=self.usuario,
+            documento_tipo="inventario.SolicitudMaterial", documento_id=solicitud.pk,
         )
         existencia.refresh_from_db()
+        reserva.refresh_from_db()
         self.assertEqual(existencia.cantidad_fisica, 2)
         self.assertEqual(existencia.cantidad_reservada, 0)
-        with self.assertRaisesMessage(ValidationError, "supera la existencia reservada"):
+        self.assertFalse(reserva.activa)
+        with self.assertRaisesMessage(ValidationError, "La reserva ya no está activa"):
             entregar_reserva(
-                existencia_id=existencia.id, cantidad=1, destino=self.produccion,
-                usuario=self.usuario, documento_tipo="entrega", documento_id=2,
+                reserva_id=reserva.pk, existencia_id=existencia.id,
+                cantidad=1, destino=self.produccion, usuario=self.usuario,
+                documento_tipo="inventario.SolicitudMaterial", documento_id=solicitud.pk,
             )
+        existencia.refresh_from_db()
+        self.assertEqual(existencia.cantidad_fisica, 2)
 
     def test_mrq_reserva_y_entrega_con_trazabilidad(self):
         from django.utils import timezone

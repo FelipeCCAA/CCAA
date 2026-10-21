@@ -433,6 +433,16 @@ class MovimientoSerializer(serializers.ModelSerializer):
         read_only_fields = [campo.name for campo in MovimientoInventario._meta.fields]
 
 
+class TrasladoExistenciaSerializer(serializers.Serializer):
+    existencia = serializers.IntegerField(min_value=1)
+    destino = serializers.IntegerField(min_value=1)
+    cantidad = serializers.DecimalField(max_digits=16, decimal_places=3, min_value=Decimal("0.001"))
+    operacion_id = serializers.UUIDField(required=True)
+    documento_tipo = serializers.CharField(max_length=80, required=False, default="inventario.TrasladoManual")
+    documento_id = serializers.IntegerField(min_value=0, required=False, default=0)
+    motivo = serializers.CharField(required=False, allow_blank=True, default="")
+
+
 class UnidadReworkSerializer(serializers.ModelSerializer):
     lote_id = serializers.IntegerField(source="autorizacion.lote_id", read_only=True)
     lote_codigo = serializers.CharField(

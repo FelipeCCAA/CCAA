@@ -1,8 +1,9 @@
 from collections import defaultdict
 from decimal import Decimal
+from uuid import UUID
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -21,6 +22,16 @@ ESTADOS_SIN_CONSUMO = {
     Silo.Estado.EN_CIP,
     Silo.Estado.FUERA_SERVICIO,
 }
+
+
+def _bloquear_operacion(operacion_id):
+    # La misma clave se serializa aun si dos solicitudes nombran silos
+    # diferentes. Colisiones del hash sólo serializan; no mezclan solicitudes.
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [
+                17220, UUID(str(operacion_id)).int & 0x7fffffff,
+            ])
 
 
 def saldo_silo(silo):
@@ -405,17 +416,40 @@ def transferir_silo(
     motivo="", lote=None, producto=None, equipo=None,
 ):
     """Transfiere con dos asientos atómicos y una clave idempotente."""
+    from calidad.evidencia import bloquear_catalogo
+    from procesos.servicios import exigir_destino_sin_reserva, exigir_origen_disponible
+
+    bloquear_catalogo()
+    _bloquear_operacion(operacion_id)
+    cantidad = Decimal(str(litros))
+
+    def comprobar_reintento(filas):
+        esperados = {
+            (silo_origen_id, MovimientoSilo.Tipo.SALIDA, silo_destino_id),
+            (silo_destino_id, MovimientoSilo.Tipo.INGRESO, silo_origen_id),
+        }
+        if len(filas) != 2 or {
+            (m.silo_id, m.tipo, m.silo_contraparte_id) for m in filas
+        } != esperados or any(
+            m.origen_tipo != MovimientoSilo.OrigenTipo.TRANSFERENCIA
+            or m.litros != cantidad or m.lote_id != getattr(lote, "pk", None)
+            or m.producto_id != getattr(producto, "pk", None)
+            or m.equipo_id != getattr(equipo, "pk", None) or m.motivo != motivo
+            for m in filas
+        ):
+            raise ValidationError("La clave ya identifica otra transferencia; revisa la operación.")
+        return filas
+
     existente = list(
         MovimientoSilo.objects.filter(operacion_id=operacion_id)
         .select_related("silo", "silo_contraparte")
         .order_by("tipo")
     )
     if existente:
-        return existente
+        return comprobar_reintento(existente)
 
     if silo_origen_id == silo_destino_id:
         raise ValidationError("El silo de origen y destino deben ser distintos.")
-    cantidad = Decimal(str(litros))
     if cantidad <= 0:
         raise ValidationError({"litros": "La cantidad debe ser mayor que cero."})
 
@@ -436,7 +470,7 @@ def transferir_silo(
         .order_by("tipo")
     )
     if existente:
-        return existente
+        return comprobar_reintento(existente)
     origen = bloqueados[silo_origen_id]
     destino = bloqueados[silo_destino_id]
     if not origen.activo or origen.estado in ESTADOS_SIN_CONSUMO:
@@ -449,11 +483,11 @@ def transferir_silo(
     if producto and origen.producto_actual_id and origen.producto_actual_id != producto.pk:
         raise ValidationError("El producto no coincide con el contenido declarado del origen.")
 
-    disponible = saldo_silo(origen)
-    if cantidad > disponible:
-        raise ValidationError({
-            "litros": f"Saldo insuficiente: {origen.codigo} tiene {disponible} L."
-        })
+    exigir_origen_disponible(silo=origen, cantidad=cantidad)
+    exigir_destino_sin_reserva(silo=destino)
+    motivos = motivos_silo_no_disponible(origen, para="proceso")
+    if motivos:
+        raise ValidationError({"silo_origen": motivos})
     ocupacion_destino = saldo_silo(destino)
     if ocupacion_destino + cantidad > destino.capacidad_l:
         raise ValidationError({
@@ -496,22 +530,41 @@ def despachar_leche(
     operacion_id, usuario,
 ):
     """Registra una salida a granel, con liberación vigente y FIFO."""
-    existente = DespachoLeche.objects.filter(operacion_id=operacion_id).first()
-    if existente:
+    from calidad.evidencia import bloquear_catalogo
+    from procesos.servicios import exigir_origen_disponible
+
+    bloquear_catalogo()
+    _bloquear_operacion(operacion_id)
+    cantidad = Decimal(str(litros))
+
+    def comprobar_reintento(existente):
+        if (
+            existente.silo_id != silo_id or existente.litros != cantidad
+            or existente.destino != destino.strip()
+            or existente.guia_despacho != guia_despacho.strip()
+            or existente.patente != patente.strip().upper()
+            or existente.fecha_hora != fecha_hora
+        ):
+            raise ValidationError("La clave ya identifica otro despacho; revisa la operación.")
         return existente
 
+    existente = DespachoLeche.objects.filter(operacion_id=operacion_id).first()
+    if existente:
+        return comprobar_reintento(existente)
+
+    if MovimientoSilo.objects.filter(operacion_id=operacion_id).exists():
+        raise ValidationError("La clave ya identifica otro movimiento; revisa la operación.")
+
     silo = Silo.objects.select_for_update().get(pk=silo_id)
-    cantidad = Decimal(str(litros))
+    existente = DespachoLeche.objects.filter(operacion_id=operacion_id).first()
+    if existente:
+        return comprobar_reintento(existente)
     if cantidad <= 0:
         raise ValidationError({"litros": "La cantidad debe ser mayor que cero."})
     motivos = motivos_silo_no_disponible(silo, para="proceso", ahora=fecha_hora)
     if motivos:
         raise ValidationError({"silo": motivos})
-    disponible = saldo_silo(silo)
-    if cantidad > disponible:
-        raise ValidationError({
-            "litros": f"Saldo insuficiente: {silo.codigo} tiene {disponible} L."
-        })
+    exigir_origen_disponible(silo=silo, cantidad=cantidad)
     analisis = AnalisisSilo.objects.filter(
         silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
     ).order_by("-tomado_en", "-id").first()
@@ -549,6 +602,10 @@ def reversar_despacho_leche(*, despacho_id, motivo, usuario):
     if len(texto) < 5:
         raise ValidationError({"motivo": "Indica el motivo de la reversa (mínimo 5 caracteres)."})
     silo = Silo.objects.select_for_update().get(pk=despacho.silo_id)
+    from procesos.servicios import exigir_destino_sin_reserva
+    exigir_destino_sin_reserva(silo=silo)
+    if not silo.activo or silo.estado in ESTADOS_SIN_CONSUMO:
+        raise ValidationError(f"{silo.codigo} no admite la devolución en su estado actual.")
     if saldo_silo(silo) + despacho.litros > silo.capacidad_l:
         raise ValidationError({
             "motivo": f"No se puede reversar: {silo.codigo} excedería su capacidad."
@@ -569,15 +626,25 @@ def reversar_despacho_leche(*, despacho_id, motivo, usuario):
 
 @transaction.atomic
 def ajustar_silo(*, silo_id, litros, operacion_id, usuario, motivo):
+    _bloquear_operacion(operacion_id)
+    cantidad = Decimal(str(litros))
     existente = MovimientoSilo.objects.filter(operacion_id=operacion_id).first()
     if existente:
+        if (existente.silo_id != silo_id or existente.tipo != MovimientoSilo.Tipo.AJUSTE
+            or existente.origen_tipo != MovimientoSilo.OrigenTipo.AJUSTE
+            or existente.litros != cantidad or existente.motivo != motivo):
+            raise ValidationError("La clave ya identifica otro movimiento; revisa la operación.")
         return existente
     silo = Silo.objects.select_for_update().get(pk=silo_id)
-    cantidad = Decimal(str(litros))
     if cantidad == 0:
         raise ValidationError({"litros": "El ajuste no puede ser cero."})
     if not motivo.strip():
         raise ValidationError({"motivo": "El ajuste requiere un motivo."})
+    from procesos.servicios import exigir_destino_sin_reserva, exigir_origen_disponible
+    if cantidad < 0:
+        exigir_origen_disponible(silo=silo, cantidad=-cantidad)
+    else:
+        exigir_destino_sin_reserva(silo=silo)
     nuevo_saldo = saldo_silo(silo) + cantidad
     if nuevo_saldo < 0:
         raise ValidationError({"litros": "El ajuste dejaría el silo con saldo negativo."})

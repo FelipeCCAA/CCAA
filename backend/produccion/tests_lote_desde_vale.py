@@ -20,6 +20,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from estandarizacion.models import ValeEstandarizacion
@@ -64,7 +65,7 @@ class BaseValeLote(TestCase):
         )
 
     def _vale(self, estado=ValeEstandarizacion.Estado.LIBERADO, volumen="20000.00"):
-        return ValeEstandarizacion.objects.create(
+        vale = ValeEstandarizacion.objects.create(
             codigo=f"VE-{estado}-{volumen}",
             fecha=date(2026, 8, 12),
             producto=self.producto,
@@ -77,6 +78,13 @@ class BaseValeLote(TestCase):
             litros_entera=Decimal("19128.10"), litros_descremada=Decimal("871.90"),
             estado=estado,
         )
+        MovimientoSilo.objects.create(
+            silo=self.destino, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal(volumen), fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+            motivo="Saldo inicial sintético del fixture del vale",
+        )
+        return vale
 
     def _abrir(self, vale, litros, codigo="CCAA6224010102010201-01"):
         return servicios.abrir_lote_desde_vale(
@@ -161,7 +169,9 @@ class AperturaTests(BaseValeLote):
         with self.assertRaises(ValidationError):
             self._abrir(vale, Decimal("9000.00"))
 
-        self.assertFalse(MovimientoSilo.objects.exists())
+        self.assertFalse(
+            MovimientoSilo.objects.filter(origen_tipo=MovimientoSilo.OrigenTipo.LOTE).exists()
+        )
 
     def test_sin_ruta_no_quedan_lote_ni_movimiento_huerfanos(self):
         vale = self._vale()
@@ -171,7 +181,9 @@ class AperturaTests(BaseValeLote):
             self._abrir(vale, Decimal("1000.00"))
 
         self.assertFalse(Lote.objects.exists())
-        self.assertFalse(MovimientoSilo.objects.exists())
+        self.assertFalse(
+            MovimientoSilo.objects.filter(origen_tipo=MovimientoSilo.OrigenTipo.LOTE).exists()
+        )
 
     def test_no_permite_saltar_la_etapa_inicial_posterior_al_vale(self):
         secado = self.ruta.proceso.etapas.get(tipo=EtapaProceso.Tipo.SECADO)

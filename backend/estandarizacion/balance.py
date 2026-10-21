@@ -60,7 +60,9 @@ def balance_vale(vale):
     actual = volumen if vale.ejecutado_en else Decimal("0")
     medicion = None
     diferencia = None
-    for acto in vale.actos.order_by("creado_en", "pk"):
+    # Meta ordena por creado_en/pk; all() también respeta el prefetch de las
+    # bandejas para no volver a consultar cada acto de cada silo.
+    for acto in vale.actos.all():
         if acto.tipo == "adicion":
             actual += acto.litros
         elif acto.tipo == "retiro":

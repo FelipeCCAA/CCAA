@@ -917,7 +917,7 @@ export async function registrarSalida(datos: { existencia: number; cantidad: num
   return data;
 }
 
-export async function trasladarExistencia(datos: { existencia: number; destino: number; cantidad: number; motivo: string }) {
+export async function trasladarExistencia(datos: { existencia: number; destino: number; cantidad: number; motivo: string; operacion_id: string }) {
   const { data } = await api.post<MovimientoInventario>("inventario/movimientos/trasladar/", datos);
   return data;
 }

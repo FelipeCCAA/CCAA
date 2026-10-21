@@ -163,6 +163,9 @@ def litros_origen_reservados(*, silo_id, excluir_ejecucion_id=None):
 
 
 def exigir_destino_sin_reserva(*, silo, excluir_ejecucion_id=None):
+    from inventario.models import CicloCIP
+    if CicloCIP.objects.filter(silo=silo, estado=CicloCIP.Estado.EN_CURSO).exists():
+        raise ValidationError(f"{silo.codigo} tiene una limpieza en curso; no admite ingresos.")
     reserva = reservas_activas_silo(
         silo_id=silo.pk,
         excluir_ejecucion_id=excluir_ejecucion_id,
@@ -173,6 +176,51 @@ def exigir_destino_sin_reserva(*, silo, excluir_ejecucion_id=None):
                 f"{silo.codigo} esta reservado por {reserva.ejecucion.codigo}."
             )
         })
+
+
+def exigir_origen_disponible(*, silo, cantidad, excluir_ejecucion_id=None):
+    """Valida litros libres bajo el bloqueo físico que toma el llamador.
+
+    Una reserva de destino impide usar el contenido durante el proceso. Una
+    reserva de origen sólo compromete su cantidad; la ejecución propietaria
+    puede consumirla sin descontarla dos veces.
+    """
+    from recepcion.servicios import saldo_silo
+
+    reservas = list(reservas_activas_silo(
+        silo_id=silo.pk, excluir_ejecucion_id=excluir_ejecucion_id,
+    ).select_related("ejecucion").order_by("pk"))
+    destino = next((r for r in reservas if r.tipo == ReservaSiloProceso.Tipo.DESTINO), None)
+    if destino:
+        raise ValidationError(
+            f"{silo.codigo} está reservado como destino por {destino.ejecucion.codigo}."
+        )
+    reservado = sum((r.cantidad_planificada for r in reservas), Decimal("0"))
+    fisico = saldo_silo(silo)
+    libre = fisico - reservado
+    if Decimal(str(cantidad)) > libre:
+        responsables = ", ".join(dict.fromkeys(r.ejecucion.codigo for r in reservas))
+        raise ValidationError(
+            f"{silo.codigo}: saldo físico {fisico} L, reservado {reservado} L"
+            f"{(' por ' + responsables) if responsables else ''}; "
+            f"disponible {libre} L. La operación requiere {cantidad} L."
+        )
+    return libre
+
+
+def consumir_reserva_origen(*, ejecucion_id, silo_id, cantidad):
+    """El consumo físico termina su compromiso; no modifica reservas ajenas."""
+    reserva = ReservaSiloProceso.objects.select_for_update().filter(
+        ejecucion_id=ejecucion_id, silo_id=silo_id,
+        tipo=ReservaSiloProceso.Tipo.ORIGEN, estado=ReservaSiloProceso.Estado.ACTIVA,
+    ).first()
+    if reserva is not None:
+        if cantidad > reserva.cantidad_planificada:
+            raise ValidationError("El consumo supera la reserva de origen de la ejecución.")
+        reserva.estado = ReservaSiloProceso.Estado.CONSUMIDA
+        reserva.cantidad_real = cantidad
+        reserva.cerrada_en = timezone.now()
+        reserva.save(update_fields=["estado", "cantidad_real", "cerrada_en"])
 
 
 def adquirir_equipo(*, equipo_id, ejecucion_id=None):
@@ -996,7 +1044,14 @@ def transicionar_ejecucion(
     ejecucion.estado = estado_nuevo
     ejecucion.version += 1
     ejecucion.save()
-    if estado_nuevo == EjecucionProceso.Estado.CANCELADA:
+    if estado_nuevo in {EjecucionProceso.Estado.CANCELADA, EjecucionProceso.Estado.CERRADA}:
+        # Comparte el candado con transferencias/consumos. Primero silos en
+        # orden, después las filas de reserva; nunca devuelve leche consumida.
+        from maestros.models import Silo
+        ids_silo = ReservaSiloProceso.objects.filter(
+            ejecucion=ejecucion, estado=ReservaSiloProceso.Estado.ACTIVA,
+        ).values_list("silo_id", flat=True)
+        list(Silo.objects.select_for_update().filter(pk__in=ids_silo).order_by("pk"))
         actualizar_queryset_con_auditoria(
             ReservaSiloProceso.objects.filter(
                 ejecucion=ejecucion,
@@ -1329,6 +1384,8 @@ def iniciar_condensacion(*, corrida_id, usuario):
     from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
     from .models import EntradaProceso
 
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden", "lote__producto",
         "silo_origen", "silo_destino",
@@ -1434,13 +1491,10 @@ def iniciar_condensacion(*, corrida_id, usuario):
                 "de proceso que corresponde al consumo del silo."
             )
     else:
-        disponible = saldo_silo(origen) - litros_origen_reservados(
-            silo_id=origen.pk, excluir_ejecucion_id=corrida.ejecucion_id,
+        exigir_origen_disponible(
+            silo=origen, cantidad=corrida.litros_entrada,
+            excluir_ejecucion_id=corrida.ejecucion_id,
         )
-        if corrida.litros_entrada > disponible:
-            raise ValidationError(
-                f"{origen.codigo} tiene {disponible} L; la corrida requiere {corrida.litros_entrada} L."
-            )
 
         consumo_del_lote = MovimientoSilo.objects.create(
             silo=origen, silo_contraparte=corrida.silo_destino,
@@ -1465,6 +1519,10 @@ def iniciar_condensacion(*, corrida_id, usuario):
             estado_nuevo=EjecucionProceso.Estado.EJECUCION,
             usuario=usuario,
         )
+    consumir_reserva_origen(
+        ejecucion_id=corrida.ejecucion_id, silo_id=origen.pk,
+        cantidad=corrida.litros_entrada,
+    )
     ReservaSiloProceso.objects.create(
         ejecucion=corrida.ejecucion,
         silo=destino,
@@ -1489,9 +1547,15 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
     from recepcion.servicios import heredar_atribuciones, saldo_silo
     from .models import SalidaProceso
 
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     corrida = CorridaCondensacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "lote__producto", "silo_destino"
     ).get(pk=corrida_id)
+    # El orden compartido con cancelación es ejecución -> silos -> reservas.
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(of=("self",)).select_related(
+        "etapa", "equipo",
+    ).get(pk=corrida.ejecucion_id)
     if corrida.estado != CorridaCondensacion.Estado.EN_PROCESO:
         raise ValidationError("Solo una condensación en proceso puede cerrarse.")
     cantidad = Decimal(str(litros_precondensado))
@@ -1504,6 +1568,7 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         raise ValidationError(f"{destino.codigo} no admite el precondensado.")
     if saldo_silo(destino) + cantidad > destino.capacidad_l:
         raise ValidationError("El precondensado excedería la capacidad del destino.")
+    exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=corrida.ejecucion_id)
     reserva_destino = ReservaSiloProceso.objects.select_for_update().filter(
         ejecucion=corrida.ejecucion,
         silo=destino,
@@ -1615,11 +1680,17 @@ def iniciar_descremacion(*, corrida_id, usuario):
     from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
     from .models import EntradaProceso
 
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "analisis_entrada",
         "silo_entera", "silo_descremada", "estanque_crema",
         "producto_descremada", "producto_crema",
     ).get(pk=corrida_id)
+    # El orden compartido con cancelación es ejecución -> silos -> reservas.
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(of=("self",)).select_related(
+        "etapa", "equipo",
+    ).get(pk=corrida.ejecucion_id)
     if corrida.estado != CorridaDescremacion.Estado.BORRADOR:
         raise ValidationError("Solo una descremación en borrador puede iniciarse.")
     corrida.clean()
@@ -1656,14 +1727,10 @@ def iniciar_descremacion(*, corrida_id, usuario):
         raise ValidationError({
             "analisis_entrada": "Grasa y SNG deben coincidir con el análisis seleccionado."
         })
-    reservado_origen = ReservaSiloProceso.objects.filter(
-        silo=origen, tipo=ReservaSiloProceso.Tipo.ORIGEN,
-        estado=ReservaSiloProceso.Estado.ACTIVA,
-    ).exclude(ejecucion=corrida.ejecucion).aggregate(
-        total=Sum("cantidad_planificada")
-    )["total"] or 0
-    if saldo_silo(origen) - reservado_origen < corrida.litros_entrada:
-        raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
+    exigir_origen_disponible(
+        silo=origen, cantidad=corrida.litros_entrada,
+        excluir_ejecucion_id=corrida.ejecucion_id,
+    )
 
     for destino, producto, cantidad in (
         (destino_descremada, corrida.producto_descremada, corrida.litros_descremada_plan),
@@ -1680,6 +1747,7 @@ def iniciar_descremacion(*, corrida_id, usuario):
             estado=ReservaSiloProceso.Estado.ACTIVA,
         ).exclude(ejecucion=corrida.ejecucion).exists():
             raise ValidationError(f"{destino.codigo} ya está reservado por otra ejecución.")
+        exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=corrida.ejecucion_id)
         saldo = saldo_silo(destino)
         if saldo > 0 and destino.producto_actual_id not in {None, producto.pk}:
             raise ValidationError(
@@ -1742,11 +1810,17 @@ def cerrar_descremacion(
     from .dominio import calcular_balance_descremacion
     from .models import SalidaProceso
 
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     corrida = CorridaDescremacion.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "silo_entera",
         "silo_descremada", "estanque_crema", "producto_descremada", "producto_crema",
         "ruta_descremada", "ruta_crema",
     ).get(pk=corrida_id)
+    # El orden compartido con cancelación es ejecución -> silos -> reservas.
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(of=("self",)).select_related(
+        "etapa", "equipo",
+    ).get(pk=corrida.ejecucion_id)
     if corrida.estado != CorridaDescremacion.Estado.EN_CURSO:
         raise ValidationError("Solo una descremación en curso puede cerrarse.")
     ld, lc = Decimal(str(litros_descremada)), Decimal(str(litros_crema))
@@ -1768,9 +1842,12 @@ def cerrar_descremacion(
     motivos = motivos_silo_no_disponible(origen, para="proceso")
     if motivos:
         raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
-    if saldo_silo(origen) < corrida.litros_entrada:
-        raise ValidationError(f"{origen.codigo} no tiene litros suficientes.")
+    exigir_origen_disponible(
+        silo=origen, cantidad=corrida.litros_entrada,
+        excluir_ejecucion_id=corrida.ejecucion_id,
+    )
     for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
+        exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=corrida.ejecucion_id)
         if not destino.activo or destino.estado in {
             Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
         }:
@@ -1908,10 +1985,16 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
     from .models import EntradaProceso, SalidaProceso
 
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden",
         "lote_crema__producto", "lote_mantequilla__producto",
     ).get(pk=corrida_id)
+    # El orden compartido con cancelación es ejecución -> silos -> reservas.
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(of=("self",)).select_related(
+        "etapa", "equipo",
+    ).get(pk=corrida.ejecucion_id)
     if corrida.estado != CorridaMantequilla.Estado.BORRADOR:
         raise ValidationError("Solo una corrida en borrador puede iniciarse.")
     corrida.clean()
@@ -1949,11 +2032,14 @@ def iniciar_mantequilla(*, corrida_id, usuario):
         motivos_tk = motivos_silo_no_disponible(tk_crema, para="proceso")
         if motivos_tk:
             raise ValidationError(f"{tk_crema.codigo}: " + " ".join(motivos_tk))
-        if saldo_silo(tk_crema) < litros_consumidos:
-            raise ValidationError(
-                f"{tk_crema.codigo} no tiene los {litros_consumidos} L equivalentes "
-                "a la crema solicitada."
-            )
+        exigir_origen_disponible(
+            silo=tk_crema, cantidad=litros_consumidos,
+            excluir_ejecucion_id=corrida.ejecucion_id,
+        )
+        consumir_reserva_origen(
+            ejecucion_id=corrida.ejecucion_id, silo_id=tk_crema.pk,
+            cantidad=litros_consumidos,
+        )
         MovimientoSilo.objects.create(
             silo=tk_crema,
             tipo=MovimientoSilo.Tipo.SALIDA,
@@ -1999,9 +2085,15 @@ def cerrar_mantequilla(
     from produccion.models import Lote
     from .models import AutorizacionReproceso, SalidaProceso
 
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "lote_mantequilla__producto", "lote_suero", "orden"
     ).get(pk=corrida_id)
+    # El orden compartido con cancelación es ejecución -> silos -> reservas.
+    corrida.ejecucion = EjecucionProceso.objects.select_for_update(of=("self",)).select_related(
+        "etapa", "equipo",
+    ).get(pk=corrida.ejecucion_id)
     if corrida.estado != CorridaMantequilla.Estado.EN_PROCESO:
         raise ValidationError("Solo una corrida en proceso puede cerrarse.")
     corrida.kg_mantequilla = Decimal(str(kg_mantequilla))
