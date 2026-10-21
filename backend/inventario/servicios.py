@@ -292,6 +292,12 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
     for salida_id in sorted(salidas, key=lambda pk: (salidas[pk].silo_id or 0, pk)):
         exigir_sin_retencion_salida(salida_id)
     pallet_lotes = sorted({pallet.envase.lote_id for pallet in pallets_consulta})
+    # Compartir salida -> silo -> análisis con los consumos industriales.
+    # Dos salidas distintas pueden depender del mismo análisis de un TK.
+    silos = {silo.pk: silo for silo in _con_bloqueo(
+        Silo.objects.filter(pk__in={salida.silo_id for salida in salidas.values()}).order_by("pk"),
+        bloquear,
+    )}
     if bloquear:
         bloquear_evidencias_despacho(lote_ids=pallet_lotes, salida_ids=sorted(salidas))
     firmas_lote = {
@@ -317,10 +323,6 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
         Bodega.objects.filter(
             pk__in={ubicacion.bodega_id for ubicacion in ubicaciones.values()},
         ).order_by("pk"), bloquear,
-    )}
-    silos = {silo.pk: silo for silo in _con_bloqueo(
-        Silo.objects.filter(pk__in={salida.silo_id for salida in salidas.values()}).order_by("pk"),
-        bloquear,
     )}
     evidencia = {"version": 1, "pallets": [], "graneles": []}
     for detalle in detalles:

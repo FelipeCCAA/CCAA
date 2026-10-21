@@ -286,7 +286,16 @@ export interface OpcionesAltaCondensacion {
 
 export interface OpcionesAltaMantequilla {
   ordenes: { id: number; codigo: string; producto: string }[];
-  cremas: { id: number; codigo: string; producto: string; disponible_kg: string }[];
+  cremas: {
+    id: number;
+    codigo: string;
+    producto: string;
+    salida_crema: number;
+    silo_codigo: string;
+    silo_id: number;
+    unidad_origen: string;
+    disponible_kg: string;
+  }[];
   cremas_pendientes_calidad: {
     id: number;
     codigo: string;
@@ -294,7 +303,6 @@ export interface OpcionesAltaMantequilla {
     estado_calidad: "pendiente" | "rechazado" | "trazabilidad_incompleta";
     etapa_origen: string;
   }[];
-  sueros: { id: number; codigo: string; producto: string }[];
   equipos: { id: number; nombre: string; tipo: string; ocupado_por: string | null }[];
 }
 
@@ -565,18 +573,18 @@ export async function obtenerOpcionesAltaDescremacion(): Promise<OpcionesAltaDes
   return data;
 }
 
-export async function iniciarMantequilla(id: number): Promise<CorridaMantequilla> {
-  const { data } = await api.post<CorridaMantequilla>(`procesos/mantequillas/${id}/iniciar/`);
+export async function iniciarMantequilla(id: number, datos: { operacion_id: string }): Promise<CorridaMantequilla> {
+  const { data } = await api.post<CorridaMantequilla>(`procesos/mantequillas/${id}/iniciar/`, datos);
   return data;
 }
 
 export async function cerrarMantequilla(id: number, datos: {
+  operacion_id: string;
   kg_mantequilla: number;
-  kg_suero?: number;
-  kg_merma?: number;
-  kg_reproceso?: number;
-  motivo_reproceso?: string;
-  controles?: Record<string, unknown>;
+  kg_merma: number;
+  kg_reproceso: number;
+  motivo_reproceso: string;
+  controles: Record<string, unknown>;
 }): Promise<CorridaMantequilla> {
   const { data } = await api.post<CorridaMantequilla>(
     `procesos/mantequillas/${id}/cerrar/`, datos,
@@ -590,8 +598,13 @@ export async function obtenerOpcionesAltaMantequilla(): Promise<OpcionesAltaMant
 }
 
 export async function crearMantequillaGuiada(datos: {
-  orden: number; lote_crema: number; equipo: number;
-  codigo_lote_mantequilla: string; lote_suero?: number; kg_crema: number;
+  operacion_id: string;
+  orden: number;
+  lote_crema: number;
+  salida_crema: number;
+  equipo: number;
+  codigo_lote_mantequilla: string;
+  kg_crema: number;
 }): Promise<CorridaMantequilla> {
   const { data } = await api.post<CorridaMantequilla>("procesos/mantequillas/crear-guiada/", datos);
   return data;

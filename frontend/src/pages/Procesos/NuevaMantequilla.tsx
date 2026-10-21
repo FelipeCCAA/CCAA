@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
 import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
+import { resultadoDeEnvioIncierto } from "../../services/resultado-envio";
+import { prepararIntentoOperacion, type IntentoOperacion } from "../../services/intento-operacion";
 import {
   crearMantequillaGuiada,
   obtenerOpcionesAltaMantequilla,
@@ -27,9 +29,13 @@ export default function NuevaMantequilla({
   alConflictoEquipo: () => Promise<void>;
 }) {
   const [opciones, setOpciones] = useState<OpcionesAltaMantequilla | null>(null);
-  const [datos, setDatos] = useState({ orden: "", crema: "", suero: "", equipo: "", codigo: "", kg: "" });
+  const [datos, setDatos] = useState({ orden: "", salidaCrema: "", equipo: "", codigo: "", kg: "" });
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [incierto, setIncierto] = useState(false);
+  const [confirmado, setConfirmado] = useState(false);
+  const enviando = useRef(false);
+  const intento = useRef<IntentoOperacion<Omit<Parameters<typeof crearMantequillaGuiada>[0], "operacion_id">> | null>(null);
 
   useEffect(() => {
     void obtenerOpcionesAltaMantequilla()
@@ -37,7 +43,7 @@ export default function NuevaMantequilla({
       .catch(() => setError("No se pudieron cargar las opciones de mantequilla."));
   }, []);
 
-  const crema = opciones?.cremas.find((item) => item.id === Number(datos.crema));
+  const crema = opciones?.cremas.find((item) => item.salida_crema === Number(datos.salidaCrema));
   const ocupaciones = ocupacionesPorEquipo(ejecuciones);
   const equipoSeleccionado = opciones?.equipos.find((item) => item.id === Number(datos.equipo));
   const ocupacionSeleccionada = equipoSeleccionado ? ocupaciones.get(equipoSeleccionado.id) : undefined;
@@ -45,23 +51,38 @@ export default function NuevaMantequilla({
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
-    if (guardando) return;
+    if (enviando.current || confirmado) return;
+    if (!crema) return;
+    const cargaBase = {
+      orden: Number(datos.orden),
+      lote_crema: crema.id,
+      salida_crema: crema.salida_crema,
+      equipo: Number(datos.equipo),
+      codigo_lote_mantequilla: datos.codigo.trim(),
+      kg_crema: Number(datos.kg),
+    };
+    intento.current = prepararIntentoOperacion(intento.current, cargaBase);
+    enviando.current = true;
     setGuardando(true);
     setError("");
+    let respuestaRecibida = false;
     try {
-      await onCreada(await crearMantequillaGuiada({
-        orden: Number(datos.orden),
-        lote_crema: Number(datos.crema),
-        equipo: Number(datos.equipo),
-        codigo_lote_mantequilla: datos.codigo,
-        lote_suero: datos.suero ? Number(datos.suero) : undefined,
-        kg_crema: Number(datos.kg),
-      }));
+      const corrida = await crearMantequillaGuiada(intento.current.carga);
+      respuestaRecibida = true;
+      await onCreada(corrida);
+      setConfirmado(true);
     } catch (errorPeticion: unknown) {
-      const mensaje = mensajeErrorProceso(errorPeticion, "No se pudo crear la corrida.");
-      if (esErrorDeEquipo(errorPeticion)) await alConflictoEquipo();
-      setError(mensaje);
+      const incierto = respuestaRecibida || resultadoDeEnvioIncierto(errorPeticion);
+      setIncierto(incierto);
+      if (!incierto) intento.current = null;
+      if (!respuestaRecibida && esErrorDeEquipo(errorPeticion)) await alConflictoEquipo();
+      setError(incierto
+        ? respuestaRecibida
+          ? "La corrida se confirmó, pero no pudimos actualizar esta pantalla. Recupera el resultado de la misma operación."
+          : "No sabemos si se creó la corrida. Recupera el resultado de esta misma operación antes de cambiar los datos."
+        : mensajeErrorProceso(errorPeticion, "No se pudo crear la corrida."));
     } finally {
+      enviando.current = false;
       setGuardando(false);
     }
   };
@@ -71,26 +92,26 @@ export default function NuevaMantequilla({
       <form onSubmit={guardar} className="my-8 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
         <div className="flex justify-between gap-3">
           <div><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Alta guiada</p><h2 className="mt-1 text-xl font-bold">Nueva corrida de mantequilla</h2><p className="mt-2 text-sm text-slate-600">Crema con saldo → línea de mantequilla → nuevo lote trazable.</p></div>
-          <button type="button" onClick={onCerrar} className="h-fit rounded-lg p-2 hover:bg-slate-100" aria-label="Cerrar"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={onCerrar} disabled={guardando || incierto || confirmado} className="h-fit rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40" aria-label="Cerrar"><X className="h-5 w-5" /></button>
         </div>
         {!opciones && !error ? <p className="mt-6 text-sm text-slate-500">Cargando opciones…</p> : (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <fieldset disabled={guardando || incierto || confirmado} className="mt-6 grid gap-4 sm:grid-cols-2">
             <Selector texto="Orden de mantequilla" valor={datos.orden} cambiar={(valor) => setDatos({ ...datos, orden: valor })}><option value="">Seleccionar OP…</option>{opciones?.ordenes.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto}</option>)}</Selector>
-            <Selector texto="Lote de crema" valor={datos.crema} cambiar={(valor) => setDatos({ ...datos, crema: valor, kg: "" })}><option value="">Seleccionar crema…</option>{opciones?.cremas.map((item) => <option key={item.id} value={item.id}>{item.codigo} · disponible {Number(item.disponible_kg).toLocaleString("es-CL")} kg</option>)}</Selector>
+            <Selector texto="Origen de crema" valor={datos.salidaCrema} cambiar={(valor) => setDatos({ ...datos, salidaCrema: valor, kg: "" })}><option value="">Seleccionar origen…</option>{opciones?.cremas.map((item) => <option key={item.salida_crema} value={item.salida_crema}>{item.codigo} · {item.silo_codigo} · {Number(item.disponible_kg).toLocaleString("es-CL")} kg disponibles</option>)}</Selector>
+            {crema && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:col-span-2"><p className="font-semibold">Origen trazable</p><p>Lote {crema.codigo} · {crema.silo_codigo} · salida de crema {crema.salida_crema}</p><p>Saldo disponible: {Number(crema.disponible_kg).toLocaleString("es-CL")} kg</p>{crema.unidad_origen !== "kg" && <p>Unidad del origen: {crema.unidad_origen}</p>}</div>}
             <label className="text-sm font-medium text-slate-700">Crema a utilizar (kg)<input required min="0.001" max={crema?.disponible_kg} step="0.001" type="number" value={datos.kg} onChange={(evento) => setDatos({ ...datos, kg: evento.target.value })} className={campo} /></label>
-            <Selector texto="Lote de suero / mazada (opcional)" valor={datos.suero} cambiar={(valor) => setDatos({ ...datos, suero: valor })}><option value="">Sin recuperación de mazada…</option>{opciones?.sueros.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.producto}</option>)}</Selector>
             <Selector texto="Línea / equipo" valor={datos.equipo} cambiar={(valor) => setDatos({ ...datos, equipo: valor })}><option value="">Seleccionar línea…</option>{opciones?.equipos.map((item) => { const ocupacion = ocupaciones.get(item.id); const ocupadoPor = ocupacion?.ejecucion ?? item.ocupado_por; return <option key={item.id} value={item.id} disabled={Boolean(ocupadoPor)}>{item.nombre}{ocupadoPor ? ` · ocupado por ${ocupadoPor}` : " · disponible"}</option>; })}</Selector>
             {equipoSeleccionado && <div className="self-end pb-2"><EstadoEquipo estado={ocupacionSeleccionada?.estado ?? (equipoSeleccionado.ocupado_por ? "ejecucion" : undefined)} ejecucion={ocupacionSeleccionada?.ejecucion ?? equipoSeleccionado.ocupado_por ?? undefined} /></div>}
             <label className="text-sm font-medium text-slate-700">Código nuevo lote de mantequilla<input required value={datos.codigo} onChange={(evento) => setDatos({ ...datos, codigo: evento.target.value.toUpperCase() })} className={campo} /></label>
-          </div>
+          </fieldset>
         )}
         {opciones?.ordenes.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">No hay una OP de mantequilla programada. <Link to="/planificacion" className="font-semibold underline">Ir a Planificación</Link>.</p>}
         {opciones && opciones.cremas.length === 0 && opciones.cremas_pendientes_calidad.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">No existe crema producida con saldo disponible.</p>}
         {opciones && opciones.cremas_pendientes_calidad.length > 0 && <section className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3"><p className="text-sm font-semibold text-violet-900">Crema no habilitada</p><div className="mt-2 space-y-1">{opciones.cremas_pendientes_calidad.map((item) => <p key={item.id} className="text-xs text-violet-800">{item.codigo} · {item.producto} · {item.estado_calidad === "rechazado" ? "Rechazada" : item.estado_calidad === "trazabilidad_incompleta" ? `Trazabilidad incompleta: origen ${item.etapa_origen}` : "Pendiente de liberación"}</p>)}</div><p className="mt-2 text-xs text-violet-700">Los lotes pendientes se gestionan en <Link to="/calidad" className="font-semibold underline">Calidad</Link>. Un lote con trazabilidad incompleta requiere revisión y no puede aprobarse automáticamente.</p></section>}
-        {error && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+        {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={onCerrar} className="px-4 py-2 text-sm text-slate-600">Cancelar</button>
-          <button disabled={guardando || equipoBloqueado || !datos.orden || !datos.crema || !datos.equipo || !datos.codigo || !datos.kg} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{guardando ? "Creando…" : "Crear corrida"}</button>
+          <button type="button" onClick={onCerrar} disabled={guardando || incierto || confirmado} className="px-4 py-2 text-sm text-slate-600 disabled:opacity-40">Cancelar</button>
+          <button disabled={guardando || equipoBloqueado || !datos.orden || !crema || !datos.equipo || !datos.codigo.trim() || !datos.kg} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{guardando ? "Creando…" : incierto ? "Recuperar resultado" : confirmado ? "Corrida creada" : "Crear corrida"}</button>
         </div>
       </form>
     </div>

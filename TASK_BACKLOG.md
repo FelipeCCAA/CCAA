@@ -1,6 +1,6 @@
 # Backlog de mejoras OP
 
-Backlog de las diez oportunidades priorizadas: OP-00, OP-01 y OP-02 completadas en sus ramas; OP-03 completada en su rama; OP-04 completada en su rama; OP-05 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
+Backlog de las diez oportunidades priorizadas: OP-00, OP-01 y OP-02 completadas en sus ramas; OP-03 completada en su rama; OP-04 completada en su rama; OP-05 completada en su rama; OP-06 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
 
 ## OP-00 — Entorno reproducible de pruebas (WP001, P1 habilitante)
 
@@ -28,7 +28,7 @@ Los enlaces siguientes son referencias de requisitos y contexto existentes; no r
 | OP-02 | P0 | Balances y receta — [expediente de validación](docs/operacion/OP-02_VALIDACION.md), WP004 | COMPLETADA EN LA RAMA; CI global del código 7d36bbe aprobada, 1.635 backend (5 omitidas) y 91 frontend. Reglas aprobadas; sin merge ni despliegue. |
 | OP-03 | P0 | Saldo, reservas y ubicación — [integración de inventario](docs/INTEGRACION_INVENTARIO.md), WP005/006 | COMPLETADA EN LA RAMA; CI global aprobada, PR #10 borrador sobre OP-02; sin merge/despliegue |
 | OP-04 | P0 | Secado y FIFO — [flujo de secado Protomalt](docs/flujos/11-secado-protomalt.md) y [suero](docs/flujos/10-secado-suero.md), WP007/008 | COMPLETADA EN LA RAMA; CI 39637476601 SUCCESS, PR #11 borrador sobre OP-03; sin merge/despliegue |
-| OP-05 | P0 | Mantequilla — [flujo productivo](docs/flujos/03-mantequilla.md), WP009 | PENDIENTE; depende de OP-03 |
+| OP-05 | P0 | Mantequilla — [flujo productivo](docs/flujos/03-mantequilla.md), WP009 | COMPLETADA EN LA RAMA; CI 39647306726 SUCCESS, PR #12 borrador sobre OP-04; sin merge/despliegue |
 | OP-06 | P0 | Identidad — [arquitectura actual](docs/architecture/03-architecture-current.md), WP013/014 | PENDIENTE; depende de OP-00 |
 | OP-07 | P1 | UUID, auditoría y exportaciones — [auditoría](docs/architecture/04-architecture-problems.md), WP011/015 | PENDIENTE; depende de OP-00 |
 | OP-08 | P1 | Envases, archivos y correo — [mapa del sistema](docs/architecture/01-system-map.md), WP010/012 | PENDIENTE; depende de OP-00 y sujeto a confirmar alcance |
@@ -53,4 +53,13 @@ Revisión independiente sin defectos concretos pendientes en el delta final. DES
 
 **Evidencia:** [CI 39637476601 SUCCESS](https://github.com/FelipeCCAA/CCAA/actions/runs/39637476601) en `1e2098d`: 1.696 backend (1.691 aprobadas, cinco omitidas), 101/101 frontend, checks/lint/tipos/build/configuración/migración efímera aprobados. Local 68/68 en 158,219 s; Chrome 5/5 con API simulada en 51,7 s. Revisión independiente sin bloqueantes pendientes del delta final. [Expediente, archivos, fallos previos y límites](docs/operacion/OP-04_VALIDACION.md).
 
-Correcciones de revisión: carrera de Calidad, orden de bloqueos, origen físico duplicado y retiro durante CIP. Medición kg declarada con referencia, sin integración de báscula ni conversión L/kg. Registros históricos no se autorreparan; preparación Protomalt no activada. Recorridos DESK de Recepción/Producción/Bodega, sin UAT, carga de 70 usuarios ni restauración. Clúster local detenido y sin postmaster.pid. Próxima OP-05: diagnóstico y reglas; implementación requiere autorización específica.
+Correcciones de revisión: carrera de Calidad, orden de bloqueos, origen físico duplicado y retiro durante CIP. Medición kg declarada con referencia, sin integración de báscula ni conversión L/kg. Registros históricos no se autorreparan; preparación Protomalt no activada. Recorridos DESK de Recepción/Producción/Bodega, sin UAT, carga de 70 usuarios ni restauración. Clúster local detenido y sin postmaster.pid. OP-05 continuó con la aprobación posterior del usuario, según el cierre siguiente.
+
+
+### OP-05 — Mantequilla
+
+**COMPLETADA EN LA RAMA** `codex/op-05-mantequilla`, desde OP-04 `f00e39a`. Código/pruebas `85b5ad1b8d8134fe1bf97d722ae2ca0fe7b396ff`; [PR #12 borrador](https://github.com/FelipeCCAA/CCAA/pull/12) sobre OP-04 #11. Seis reglas aprobadas: origen explícito y retiro real, firma vigente, saldos/reservas/CIP, conversión con densidad identificada, balance exacto conservado sin mazada nueva y recuperación por UUID. Migración 0024 aditiva nullable sin backfill, sólo en pruebas. Sin producción, merge ni despliegue.
+
+**CI final SUCCESS** [39647306726](https://github.com/FelipeCCAA/CCAA/actions/runs/39647306726): 1.719 backend (1.714 aprobadas, cinco omitidas), 103/103 frontend, estática/checks/migración efímera/lint/tipos/build/configuración aprobados. Local final limpio 34/34, Chrome 5/5 con API simulada. Revisión independiente sin bloqueantes pendientes de las correcciones verificadas. [Archivos, evidencias y fallos previos](docs/operacion/OP-05_VALIDACION.md). Cierre posterior sólo tres documentos y dos valores de fixtures Chrome, probados 5/5; código de funcionamiento y tests backend iguales al head con CI aprobada. Su CI adicional no se anticipa aprobada.
+
+Históricos sin origen no se completan automáticamente. Revisar corridas abiertas antes de cualquier despliegue futuro. Sin UAT, carga de 70 usuarios ni restauración de backup; clúster local detenido y sin postmaster.pid. Próxima OP-06: diagnóstico y reglas, implementación requiere autorización específica.
