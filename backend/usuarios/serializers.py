@@ -179,7 +179,11 @@ class TrabajadorSerializer(UsuarioSerializer):
         datos_perfil = self._extraer_perfil(validated_data)
         password = validated_data.pop("password")
         usuario = User.objects.create_user(password=password, **validated_data)
-        perfil = PerfilUsuario(usuario=usuario, **datos_perfil)
+        # La clave entregada por Administración es temporal hasta que su dueño
+        # la reemplace en la primera sesión.
+        perfil = PerfilUsuario(
+            usuario=usuario, debe_cambiar_password=True, **datos_perfil,
+        )
         perfil.full_clean()
         perfil.save()
         self._guardar_permisos(usuario, permisos)

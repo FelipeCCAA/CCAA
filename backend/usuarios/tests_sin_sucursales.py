@@ -5,7 +5,7 @@ La aplicación trabaja por empresa. Los registros internos que aún conservan
 las tablas se resuelven en el servidor y nunca se seleccionan desde la API.
 """
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.test import TestCase, override_settings
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
@@ -195,6 +195,9 @@ class AltaDePersonalTests(BaseSinSucursales):
         Lo que pidió Administración: es quien responde por toda la empresa, y
         atarla a una planta le negaría lo que su propio nivel dice que abarca.
         """
+        self.administrador.user_permissions.add(Permission.objects.get(
+            codename="change_roles", content_type__app_label="usuarios",
+        ))
         respuesta = self._crear(
             self.administrador,
             username="nueva.jefa",
@@ -240,6 +243,9 @@ class AltaDePersonalTests(BaseSinSucursales):
 
     def test_con_dos_plantas_administracion_sigue_sin_elegir(self):
         """Su alcance no es una planta: la segunda no le añade ambigüedad."""
+        self.administrador.user_permissions.add(Permission.objects.get(
+            codename="change_roles", content_type__app_label="usuarios",
+        ))
         Sucursal.objects.create(
             empresa=self.empresa, codigo="PLANTA3", nombre="Tercera"
         )

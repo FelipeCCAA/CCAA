@@ -137,6 +137,15 @@ export function obtenerToken(): string | null {
 }
 
 
+/** Conserva Recordarme y descarta respuestas de una sesión que ya cambió. */
+export function actualizarUsuarioSesion(token: string, usuario: Usuario): boolean {
+  if (obtenerToken() !== token) return false;
+  const recordar = sessionStorage.getItem(CLAVE) === null;
+  guardarSesion({ token, usuario }, recordar);
+  return true;
+}
+
+
 export function cerrarSesion(): void {
   // Los dos, sin preguntar dónde estaba: cerrar sesión a medias es peor que
   // no cerrarla, porque el usuario cree que salió.

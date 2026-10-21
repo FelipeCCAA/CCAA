@@ -68,7 +68,9 @@ function Administracion() {
   const sesion = obtenerSesion();
   const areaPropia = sesion?.usuario.perfil?.area ?? "secado";
   const administraTodasLasAreas = !sesion?.usuario.perfil || areaPropia === "administracion";
-  const [nuevo, setNuevo] = useState<{ username: string; email: string; nombre: string; apellido: string; area: string; nivel: "admin" | "trabajador"; cargo: string; password: string }>({ username: "", email: "", nombre: "", apellido: "", area: areaPropia, nivel: "trabajador", cargo: "", password: "" });
+  const puedeAsignarRoles = sesion?.usuario.capacidades?.includes("change_roles") ?? false;
+  const areaInicial = areaPropia === "administracion" && !puedeAsignarRoles ? "" : areaPropia;
+  const [nuevo, setNuevo] = useState<{ username: string; email: string; nombre: string; apellido: string; area: string; nivel: "admin" | "trabajador"; cargo: string; password: string }>({ username: "", email: "", nombre: "", apellido: "", area: areaInicial, nivel: "trabajador", cargo: "", password: "" });
 
   useEffect(() => {
     let vigente = true;
@@ -131,7 +133,7 @@ function Administracion() {
     try {
       const creado = await crearTrabajador(nuevo);
       setTrabajadores((actuales) => [...actuales, creado]);
-      setNuevo({ username: "", email: "", nombre: "", apellido: "", area: areaPropia, nivel: "trabajador", cargo: "", password: "" });
+      setNuevo({ username: "", email: "", nombre: "", apellido: "", area: areaInicial, nivel: "trabajador", cargo: "", password: "" });
       setMostrarFormulario(false);
       setError("");
       setAviso("Trabajador creado correctamente.");
@@ -232,7 +234,7 @@ function Administracion() {
         </section>
 
         <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6">
-          <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-semibold text-slate-800">Personal</h2><p className="mt-1 text-sm text-slate-600">Crea una cuenta con contraseña inicial para ingreso inmediato.</p></div><button type="button" onClick={() => setMostrarFormulario((visible) => !visible)} className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">{mostrarFormulario ? "Cancelar" : "Agregar trabajador"}</button></div>
+          <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-semibold text-slate-800">Personal</h2><p className="mt-1 text-sm text-slate-600">El trabajador deberá cambiar su contraseña inicial antes de operar.</p></div><button type="button" onClick={() => setMostrarFormulario((visible) => !visible)} className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">{mostrarFormulario ? "Cancelar" : "Agregar trabajador"}</button></div>
           {mostrarFormulario && <>
           <h3 className="mt-6 font-semibold text-slate-700">Nuevo trabajador</h3>
           <form onSubmit={guardarNuevo} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -241,10 +243,11 @@ function Administracion() {
             <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input placeholder="Apellido" value={nuevo.apellido} onChange={(e) => setNuevo({ ...nuevo, apellido: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <input required type="password" minLength={8} autoComplete="new-password" placeholder="Contraseña inicial" value={nuevo.password} onChange={(e) => setNuevo({ ...nuevo, password: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
-            <select disabled={!administraTodasLasAreas} value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100">
-              {["recepcion", "condensacion", "secado", "envase", "calidad", "bodega", "compras", "despacho", "administracion"].map((a) => <option key={a} value={a}>{a}</option>)}
+            <select aria-label="Área del nuevo trabajador" required disabled={!administraTodasLasAreas} value={nuevo.area} onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100">
+              <option value="">Seleccionar área…</option>
+              {["recepcion", "condensacion", "secado", "envase", "calidad", "bodega", "compras", "despacho", "administracion"].map((a) => <option key={a} value={a} disabled={a === "administracion" && !puedeAsignarRoles}>{a}</option>)}
             </select>
-            <select disabled={!administraTodasLasAreas} value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
+            <select aria-label="Nivel del nuevo trabajador" disabled={!administraTodasLasAreas || !puedeAsignarRoles} value={nuevo.nivel} onChange={(e) => setNuevo({ ...nuevo, nivel: e.target.value as "admin" | "trabajador" })} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm disabled:bg-slate-100"><option value="trabajador">Trabajador</option><option value="admin">Administrador de área</option></select>
             <input placeholder="Cargo" value={nuevo.cargo} onChange={(e) => setNuevo({ ...nuevo, cargo: e.target.value })} className="rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             <button className="rounded-xl bg-green-700 px-5 py-3 text-sm font-semibold text-white">Crear usuario</button>
           </form>

@@ -1,6 +1,6 @@
 # Backlog de mejoras OP
 
-Backlog de las diez oportunidades priorizadas: OP-00, OP-01 y OP-02 completadas en sus ramas; OP-03 completada en su rama; OP-04 completada en su rama; OP-05 completada en su rama; OP-06 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
+Backlog de las diez oportunidades priorizadas: OP-00 a OP-05 completadas en sus ramas; OP-06 implementada y validada localmente en su rama; OP-07 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
 
 ## OP-00 — Entorno reproducible de pruebas (WP001, P1 habilitante)
 
@@ -29,7 +29,7 @@ Los enlaces siguientes son referencias de requisitos y contexto existentes; no r
 | OP-03 | P0 | Saldo, reservas y ubicación — [integración de inventario](docs/INTEGRACION_INVENTARIO.md), WP005/006 | COMPLETADA EN LA RAMA; CI global aprobada, PR #10 borrador sobre OP-02; sin merge/despliegue |
 | OP-04 | P0 | Secado y FIFO — [flujo de secado Protomalt](docs/flujos/11-secado-protomalt.md) y [suero](docs/flujos/10-secado-suero.md), WP007/008 | COMPLETADA EN LA RAMA; CI 39637476601 SUCCESS, PR #11 borrador sobre OP-03; sin merge/despliegue |
 | OP-05 | P0 | Mantequilla — [flujo productivo](docs/flujos/03-mantequilla.md), WP009 | COMPLETADA EN LA RAMA; CI 39647306726 SUCCESS, PR #12 borrador sobre OP-04; sin merge/despliegue |
-| OP-06 | P0 | Identidad — [arquitectura actual](docs/architecture/03-architecture-current.md), WP013/014 | PENDIENTE; depende de OP-00 |
+| OP-06 | P0 | Identidad — [expediente OP-06](docs/operacion/OP-06_VALIDACION.md), WP013/014 | IMPLEMENTADA Y VALIDADA LOCALMENTE EN LA RAMA; frontend 5bdca62 y backend a62622c, seis reglas aprobadas, revisión/CI del PR separadas; sin merge/despliegue; depende de OP-00 |
 | OP-07 | P1 | UUID, auditoría y exportaciones — [auditoría](docs/architecture/04-architecture-problems.md), WP011/015 | PENDIENTE; depende de OP-00 |
 | OP-08 | P1 | Envases, archivos y correo — [mapa del sistema](docs/architecture/01-system-map.md), WP010/012 | PENDIENTE; depende de OP-00 y sujeto a confirmar alcance |
 | OP-09 | P1 | Circuito de 70 usuarios y backup — [arquitectura de escalabilidad](docs/ARQUITECTURA_FLUJOS_BIZAGI_ESCALABILIDAD.md), [despliegue Docker y backup](docs/DESPLIEGUE_DOCKER.md) | PENDIENTE; depende de OP-01 a OP-08 y requiere aprobación específica de pruebas. 70 es población, no concurrencia aprobada/certificada. |
@@ -62,4 +62,12 @@ Correcciones de revisión: carrera de Calidad, orden de bloqueos, origen físico
 
 **CI final SUCCESS** [39647306726](https://github.com/FelipeCCAA/CCAA/actions/runs/39647306726): 1.719 backend (1.714 aprobadas, cinco omitidas), 103/103 frontend, estática/checks/migración efímera/lint/tipos/build/configuración aprobados. Local final limpio 34/34, Chrome 5/5 con API simulada. Revisión independiente sin bloqueantes pendientes de las correcciones verificadas. [Archivos, evidencias y fallos previos](docs/operacion/OP-05_VALIDACION.md). Cierre posterior sólo tres documentos y dos valores de fixtures Chrome, probados 5/5; código de funcionamiento y tests backend iguales al head con CI aprobada. Su CI adicional no se anticipa aprobada.
 
-Históricos sin origen no se completan automáticamente. Revisar corridas abiertas antes de cualquier despliegue futuro. Sin UAT, carga de 70 usuarios ni restauración de backup; clúster local detenido y sin postmaster.pid. Próxima OP-06: diagnóstico y reglas, implementación requiere autorización específica.
+Históricos sin origen no se completan automáticamente. Revisar corridas abiertas antes de cualquier despliegue futuro. Sin UAT, carga de 70 usuarios ni restauración de backup; clúster local detenido y sin postmaster.pid al cierre de OP-05. OP-06 continuó con aprobación posterior del usuario, según el cierre siguiente.
+
+### OP-06 — Identidad, permisos y sesiones
+
+Seis reglas implementadas en `codex/op-06-identidad`, desde OP-05 `c21b1f3`; frontend `5bdca62`, backend `a62622c`. Acceso revalidado bajo bloqueo, contraseña temporal distinta antes de operar, promociones explícitas, delegación por área conservada, revocación transaccional en API/admin/grupos y perfil actualizado al abrir la interfaz. Sin nuevas migraciones, infraestructura o cambios industriales.
+
+Evidencia local: focal 51/51, últimas guardas 2/2 y 1/1; corte final API/rendimiento 17/17; frontend 107/107, Chrome OP-06 7/7 y regresión OP-02 a OP-05 16/16. Ruff, checks, tipos/build y esquema sin cambios aprobados. Cortes solapados, no sumar como casos únicos. Revisión independiente de lectura sin bloqueantes nuevos en el commit revisado. [Archivos, fallos iniciales, reproducción y límites](docs/operacion/OP-06_VALIDACION.md). Los checks y el informe AVANCE del PR conservan la evidencia de CI del commit entregado.
+
+Destino de revisión: PR borrador apilado sobre OP-05 #12; no fusionar directamente con DevelopMain. Clúster local OP-00 detenido, sin postmaster.pid. Sin producción, despliegue, UAT, prueba de carga de 70 usuarios o restauración de backup. Próxima OP-07 lista por OP-00: diagnóstico/preparación no destructiva; implementar requiere autorización adicional específica.

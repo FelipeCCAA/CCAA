@@ -39,6 +39,7 @@ from .serializers import (
 from .permisos import IsAdminDeArea, PuedeGestionarSesiones
 from .permisos_industriales import (
     permisos_asignables_por,
+    queryset_grupos_con_permisos_industriales,
     queryset_permisos_industriales,
 )
 from .throttling import LoginIPThrottle, LoginUsuarioThrottle
@@ -176,6 +177,21 @@ def login(request):
         with transaction.atomic():
             # La fila User serializa logins del mismo usuario entre workers.
             usuario = User.objects.select_for_update().get(pk=usuario.pk)
+            # Authenticate leyó el hash antes del lock. Un reset concurrente
+            # puede haberlo cambiado mientras esta solicitud esperaba.
+            if not usuario.check_password(password):
+                _anotar_intento(request, username, exito=False, motivo="credenciales")
+                registrar_evento("LOGIN_FALLIDO", request=request, motivo="credenciales")
+                return Response(
+                    {"error": "Usuario o contraseña incorrectos"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            if not usuario.is_active:
+                _anotar_intento(request, username, exito=False, motivo="desactivada")
+                return Response(
+                    {"error": "La cuenta está desactivada"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             activa = SesionUsuario.objects.select_for_update().filter(
                 usuario=usuario, fecha_cierre__isnull=True
             ).first()
@@ -274,7 +290,12 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
                 "user_permissions",
                 queryset=queryset_permisos_industriales(),
                 to_attr="permisos_industriales_precargados",
-            )
+            ),
+            Prefetch(
+                "groups",
+                queryset=queryset_grupos_con_permisos_industriales(),
+                to_attr="grupos_industriales_precargados",
+            ),
         ).order_by("first_name", "last_name", "username")
         if self.request.user.is_superuser:
             return usuarios
@@ -287,11 +308,21 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
         usuarios = usuarios.filter(perfil__area=perfil.area)
         return usuarios
 
+    @transaction.atomic
     def perform_create(self, serializer):
         perfil = getattr(self.request.user, "perfil", None)
         if self.request.user.is_superuser or (
             perfil and perfil.area == PerfilUsuario.Area.ADMINISTRACION
         ):
+            if (
+                not self.request.user.is_superuser
+                and (
+                    serializer.validated_data.get("nivel") == PerfilUsuario.Nivel.ADMIN
+                    or serializer.validated_data.get("area") == PerfilUsuario.Area.ADMINISTRACION
+                )
+                and not self.request.user.has_perm("usuarios.change_roles")
+            ):
+                raise PermissionDenied("No tienes permiso para crear administradores.")
             serializer.save()
             return
 
@@ -301,14 +332,24 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
             nivel=PerfilUsuario.Nivel.TRABAJADOR,
         )
 
+    @transaction.atomic
     def perform_update(self, serializer):
-        objetivo = self.get_object()
+        # El login, el reset y la desactivación comparten este lock de User.
+        objetivo = User.objects.select_for_update().get(pk=serializer.instance.pk)
+        if not self.get_queryset().filter(pk=objetivo.pk).exists():
+            raise PermissionDenied("El trabajador ya no está en tu ámbito de administración.")
+        serializer.instance = objetivo
+        perfil_objetivo = PerfilUsuario.objects.select_for_update().filter(usuario=objetivo).first()
         estaba_activo = objetivo.is_active
+        area_anterior = perfil_objetivo.area if perfil_objetivo else ""
+        nivel_anterior = perfil_objetivo.nivel if perfil_objetivo else PerfilUsuario.Nivel.TRABAJADOR
+        rol_anterior = perfil_objetivo.rol if perfil_objetivo else ""
+        permisos_anteriores = set(objetivo.user_permissions.values_list("pk", flat=True))
         perfil_actor = getattr(self.request.user, "perfil", None)
         es_general = self.request.user.is_superuser or (
             perfil_actor and perfil_actor.area == PerfilUsuario.Area.ADMINISTRACION
         )
-        if not self.request.user.is_superuser and objetivo.perfil.es_admin_de_area:
+        if not self.request.user.is_superuser and perfil_objetivo and perfil_objetivo.es_admin_de_area:
             raise PermissionDenied(
                 "Un administrador de área no puede modificar a otro administrador."
             )
@@ -317,23 +358,53 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(
                     "No puedes modificar el área ni los permisos del trabajador."
                 )
+        cambio_area = (
+            "area" in serializer.validated_data
+            and serializer.validated_data["area"] != area_anterior
+        )
+        cambio_nivel = (
+            "nivel" in serializer.validated_data
+            and serializer.validated_data["nivel"] != nivel_anterior
+        )
+        cambio_rol = (
+            "rol" in serializer.validated_data
+            and serializer.validated_data["rol"] != rol_anterior
+        )
         if (
             not self.request.user.is_superuser
-            and {"area", "nivel", "rol"}.intersection(self.request.data)
+            and (cambio_area or cambio_nivel or cambio_rol)
             and not self.request.user.has_perm("usuarios.change_roles")
         ):
             raise PermissionDenied("No tienes permiso para cambiar roles o permisos.")
         actualizado = serializer.save()
-        if estaba_activo and not actualizado.is_active:
-            revocar_sesiones(
-                actualizado, SesionUsuario.MotivoCierre.DESACTIVACION, actor=self.request.user
+        perfil_nuevo = PerfilUsuario.objects.get(usuario=actualizado)
+        permisos_nuevos = set(actualizado.user_permissions.values_list("pk", flat=True))
+        identidad_cambio = (
+            perfil_nuevo.area != area_anterior
+            or perfil_nuevo.nivel != nivel_anterior
+            or perfil_nuevo.rol != rol_anterior
+            or permisos_nuevos != permisos_anteriores
+        )
+        if (estaba_activo and not actualizado.is_active) or identidad_cambio:
+            motivo = (
+                SesionUsuario.MotivoCierre.DESACTIVACION
+                if estaba_activo and not actualizado.is_active
+                else SesionUsuario.MotivoCierre.ADMIN
             )
+            revocar_sesiones(
+                actualizado, motivo, actor=self.request.user
+            )
+        if estaba_activo and not actualizado.is_active:
             registrar_evento(
                 "USUARIO_DESACTIVADO", request=self.request, usuario=actualizado,
                 actor=self.request.user,
             )
 
+    @transaction.atomic
     def perform_destroy(self, instance):
+        instance = User.objects.select_for_update().get(pk=instance.pk)
+        if not self.get_queryset().filter(pk=instance.pk).exists():
+            raise PermissionDenied("El trabajador ya no está en tu ámbito de administración.")
         if instance == self.request.user:
             raise PermissionDenied("No puedes desactivar tu propia cuenta.")
         if not self.request.user.is_superuser and instance.perfil.es_admin_de_area:
@@ -541,6 +612,11 @@ def cambiar_password(request):
                 {"password_actual": ["La contraseña actual no es correcta."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if usuario.check_password(datos["nueva_contrasena"]):
+            return Response(
+                {"nueva_contrasena": ["Debe ser distinta de la contraseña actual."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             validate_password(datos["nueva_contrasena"], user=usuario)
         except DjangoValidationError as error:
@@ -574,7 +650,12 @@ class SesionUsuarioViewSet(viewsets.ReadOnlyModelViewSet):
                     "usuario__user_permissions",
                     queryset=queryset_permisos_industriales(),
                     to_attr="permisos_industriales_precargados",
-                )
+                ),
+                Prefetch(
+                    "usuario__groups",
+                    queryset=queryset_grupos_con_permisos_industriales(),
+                    to_attr="grupos_industriales_precargados",
+                ),
             )
         )
 

@@ -1,6 +1,7 @@
 """Catálogo y límites de asignación para permisos industriales Django."""
 
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Group, Permission
+from django.db.models import Prefetch
 
 from .models import PerfilUsuario
 
@@ -48,6 +49,14 @@ def queryset_permisos_industriales():
     ).only("id", "codename", "content_type_id")
 
 
+def queryset_grupos_con_permisos_industriales():
+    return Group.objects.prefetch_related(Prefetch(
+        "permissions",
+        queryset=queryset_permisos_industriales(),
+        to_attr="permisos_industriales_precargados",
+    ))
+
+
 def permisos_industriales_de(usuario) -> list[str]:
     """Permisos directos, usando la precarga del listado cuando está presente."""
     precargados = getattr(usuario, "permisos_industriales_precargados", None)
@@ -83,4 +92,18 @@ def capacidades_de(usuario) -> list[str]:
         return []
     if usuario.is_superuser:
         return sorted(TODOS_LOS_PERMISOS)
-    return permisos_industriales_de(usuario)
+    capacidades = set(permisos_industriales_de(usuario))
+    grupos = getattr(usuario, "grupos_industriales_precargados", None)
+    if grupos is None:
+        capacidades.update(
+            queryset_permisos_industriales()
+            .filter(group__user=usuario)
+            .values_list("codename", flat=True)
+        )
+    else:
+        capacidades.update(
+            permiso.codename
+            for grupo in grupos
+            for permiso in grupo.permisos_industriales_precargados
+        )
+    return sorted(capacidades & TODOS_LOS_PERMISOS)

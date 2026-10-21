@@ -32,6 +32,7 @@ async function abrir(browser: Browser, modo: "inicio-perdida" | "inicio-conflict
     if (url.origin !== BASE) { externos.push(url.origin); await route.abort(); return; }
     if (!url.pathname.startsWith("/api/")) { await route.continue(); return; }
     const responder = (json: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(json) });
+    if (url.pathname === "/api/usuarios/yo/") { await responder({ id: 901, username: "operador-secado-simulado", nombre: "Operador", apellido: "Secado", email: "", rol: "operador", capacidades: [], perfil: { area: "secado" } }); return; }
     if (url.pathname === "/api/procesos/secados/" && route.request().method() === "GET") { await responder({ count: 1, next: null, previous: null, results: [corrida()] }); return; }
     if (url.pathname === "/api/procesos/secados/opciones-alimentacion-externa/") {
       await responder({

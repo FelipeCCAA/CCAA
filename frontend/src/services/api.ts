@@ -75,7 +75,7 @@ api.interceptors.response.use(
             error.response?.status,
             rutaActual,
             redireccionandoAlLogin,
-        )) {
+        ) && error.config?.headers?.Authorization === `Token ${obtenerToken()}`) {
             redireccionandoAlLogin = true;
             const codigo = error.response?.data?.code;
             cerrarSesion();
@@ -111,13 +111,19 @@ api.get = (function getControlado<T = unknown, R = AxiosResponse<T>, D = unknown
     config?: AxiosRequestConfig<D>,
 ): Promise<R> {
     const clave = claveGet(url, config?.params, obtenerToken());
+    const pendiente = getPendientes.get(clave);
+    if (pendiente) return pendiente as Promise<R>;
+    // La identidad debe venir del servidor incluso durante la ventana de caché.
+    if (url.replace(/^\/+/, "") === "usuarios/yo/") {
+        const solicitud = getOriginal<T, AxiosResponse<T>, D>(url, config)
+            .finally(() => getPendientes.delete(clave));
+        getPendientes.set(clave, solicitud);
+        return solicitud as Promise<R>;
+    }
     const guardada = cacheGet.get(clave);
     if (guardada && guardada.vence > Date.now()) {
         return Promise.resolve(guardada.respuesta as R);
     }
-    const pendiente = getPendientes.get(clave);
-    if (pendiente) return pendiente as Promise<R>;
-
     const solicitud = getOriginal<T, AxiosResponse<T>, D>(url, config)
         .then((respuesta) => {
             if (cacheGet.size >= CACHE_MAXIMA) {
