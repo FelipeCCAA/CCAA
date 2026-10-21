@@ -46,6 +46,7 @@ async function abrir(browser: Browser, modo: "crear-perdida" | "crear-conflicto"
     if (url.origin !== BASE) { externos.push(url.origin); await route.abort(); return; }
     if (!url.pathname.startsWith("/api/")) { await route.continue(); return; }
     const responder = (json: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(json) });
+    if (url.pathname === "/api/usuarios/yo/") { await responder({ id: 905, username: "operador-mantequilla-simulado", nombre: "Operador", apellido: "Mantequilla", email: "", rol: "produccion", capacidades: [], perfil: null }); return; }
     if (url.pathname === "/api/procesos/ejecuciones/operativas/" && route.request().method() === "GET") { await responder([]); return; }
     if (url.pathname === "/api/procesos/mantequillas/opciones-alta/") { await responder(opciones); return; }
     if (url.pathname === "/api/procesos/mantequillas/" && route.request().method() === "GET") { await responder({ count: 1, next: null, previous: null, results: [corrida(estado)] }); return; }

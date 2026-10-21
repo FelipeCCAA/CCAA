@@ -43,6 +43,7 @@ async function abrir(browser: Browser, rol: "recepcion" | "produccion") {
     if (!url.pathname.startsWith("/api/")) { await route.continue(); return; }
     const responder = (json: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(json) });
     const ruta = url.pathname;
+    if (ruta === "/api/usuarios/yo/") { await responder({ id: 900, username: "operador-simulado", nombre: "Operador", apellido: "Simulado", email: "", rol, capacidades: [], perfil: null }); return; }
     if (ruta === "/api/estandarizacion/vales/71/actos/" && route.request().method() === "POST") {
       const body = route.request().postDataJSON() as Record<string, unknown>;
       solicitudes.push(body);

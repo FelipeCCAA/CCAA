@@ -33,6 +33,7 @@ async function abrir(browser: Browser, modo: "perdida" | "servidor" | "cambio" |
     if (url.origin !== BASE) { externos.push(url.origin); await route.abort(); return; }
     if (!url.pathname.startsWith("/api/")) { await route.continue(); return; }
     const responder = (json: unknown, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(json) });
+    if (url.pathname === "/api/usuarios/yo/") { await responder({ id: 900, username: "operador-simulado", nombre: "Operador", apellido: "Simulado", email: "", rol: "recepcion", capacidades: [], perfil: null }); return; }
     if (url.pathname === "/api/recepcion/ocupacion/") {
       consultas += 1;
       const silo: Partial<typeof SILO> = comprometido ? { ...SILO, litros: 8000, litros_libres: 0, litros_disponibles: 0, pct: 40 } : { ...SILO };

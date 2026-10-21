@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
-import { haySesion, obtenerSesion } from "../../services/sesion";
+import { actualizarUsuarioSesion, obtenerSesion, obtenerToken } from "../../services/sesion";
+import { obtenerUsuarioActual } from "../../services/usuario.service";
 
 
 /*
@@ -13,8 +15,42 @@ import { haySesion, obtenerSesion } from "../../services/sesion";
 function RutaProtegida() {
 
   const ubicacion = useLocation();
+  const token = obtenerToken();
+  const [intento, setIntento] = useState(0);
+  const [validacion, setValidacion] = useState<{
+    token: string; intento: number; correcta: boolean;
+  } | null>(null);
 
-  if (!haySesion()) {
+  useEffect(() => {
+    let vigente = true;
+    if (token) {
+      obtenerUsuarioActual()
+        .then((usuario) => {
+          if (!vigente) return;
+          const correcta = actualizarUsuarioSesion(token, usuario);
+          setValidacion({ token, intento, correcta });
+        })
+        .catch(() => {
+          if (vigente) setValidacion({ token, intento, correcta: false });
+        });
+    }
+    return () => { vigente = false; };
+  }, [token, intento]);
+
+  useEffect(() => {
+    const actualizar = () => setIntento((actual) => actual + 1);
+    const cambioAlmacen = (evento: StorageEvent) => {
+      if (evento.key === "ccaa.sesion" || evento.key === null) actualizar();
+    };
+    window.addEventListener("storage", cambioAlmacen);
+    window.addEventListener("ccaa:sesion-cerrada", actualizar);
+    return () => {
+      window.removeEventListener("storage", cambioAlmacen);
+      window.removeEventListener("ccaa:sesion-cerrada", actualizar);
+    };
+  }, []);
+
+  if (!token) {
 
     return (
       <Navigate
@@ -24,6 +60,17 @@ function RutaProtegida() {
       />
     );
 
+  }
+
+  if (validacion?.token !== token || validacion.intento !== intento) {
+    return <p role="status" className="p-10 text-sm text-slate-600">Verificando acceso…</p>;
+  }
+
+  if (!validacion.correcta) {
+    return <main className="p-10">
+      <p role="alert">No pudimos verificar tu acceso. Reintenta para continuar.</p>
+      <button type="button" onClick={() => setIntento((actual) => actual + 1)} className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-white">Reintentar</button>
+    </main>;
   }
 
   if (
