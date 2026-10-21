@@ -21,6 +21,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from auditoria.registro import crear_en_lote_con_auditoria
 from config.formato import formato_cantidad
 
 from . import dominio
@@ -492,7 +493,7 @@ def registrar_envasado(
             })
         pallet.full_clean()
         creados.append(pallet)
-    PalletProducto.objects.bulk_create(creados)
+    crear_en_lote_con_auditoria(creados)
     # Sacos, cajas y pallets se usan físicamente aquí. Descontarlos al cerrar
     # Producción adelanta un hecho que todavía no ocurrió y falla cuando el
     # lote se envasa en varias operaciones.

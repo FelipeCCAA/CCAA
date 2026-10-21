@@ -1,10 +1,10 @@
 """
 Captura de cambios por señales de Django.
 
-Por señales y no desde las vistas: así queda cubierto todo lo que escribe en
-la base —la API, el admin, un script, el shell— y no solo los caminos que
-alguien se acordó de instrumentar. Una auditoría con agujeros conocidos no
-sirve de mucho.
+Las señales cubren save/delete de los modelos auditados. Las escrituras
+masivas no emiten save: los caminos críticos utilizan los helpers explícitos
+de este módulo, dentro de la transacción de dominio. El SQL directo y las
+escrituras privilegiadas que no pasan por estos caminos no quedan cubiertos.
 
 Los dos lados del diff se leen **de la base**: el antes en `pre_save` y el
 después en `post_save`. Cuesta dos consultas por escritura; a escala de planta
@@ -15,6 +15,7 @@ memoria haría figurar como cambiados campos que solo cambiaron de tipo.
 
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from django.db.models.signals import (
     post_delete,
     post_save,
@@ -142,43 +143,54 @@ def crear_en_lote_con_auditoria(objetos, **opciones):
     modelo = type(objetos[0])
     if any(type(objeto) is not modelo for objeto in objetos):
         raise TypeError("Todos los objetos del lote deben pertenecer al mismo modelo.")
-    creados = modelo._base_manager.bulk_create(objetos, **opciones)
-    if se_audita(modelo):
-        for objeto in creados:
-            despues = _instantanea_guardada(modelo, objeto.pk) or _instantanea(objeto)
-            _escribir(
-                objeto,
-                "creacion",
-                {campo: [None, valor] for campo, valor in despues.items()},
-            )
-    return creados
+    # Con conflictos ignorados/actualizados, bulk_create no informa qué filas
+    # insertó. Declararlas todas como altas inventaría hechos.
+    if opciones.get("ignore_conflicts") or opciones.get("update_conflicts"):
+        raise ValueError("La creación masiva auditada no admite conflictos ignorados o actualizados.")
+    with transaction.atomic():
+        creados = modelo._base_manager.bulk_create(objetos, **opciones)
+        if se_audita(modelo):
+            for objeto in creados:
+                if objeto.pk is None:
+                    raise RuntimeError("No se puede auditar un alta masiva sin ID persistido.")
+                despues = _instantanea_guardada(modelo, objeto.pk)
+                if despues is None:
+                    raise RuntimeError("No se encontró el alta masiva en la base de datos.")
+                _escribir(
+                    objeto,
+                    "creacion",
+                    {campo: [None, valor] for campo, valor in despues.items()},
+                )
+        return creados
 
 
 def actualizar_queryset_con_auditoria(queryset, **cambios):
     """Actualiza filas bloqueadas y registra el antes/después de cada una.
 
-    Debe llamarse dentro de la misma transacción de la operación de dominio.
-    El ``select_for_update`` hace que el diff corresponda exactamente al valor
-    reemplazado y no a una lectura que otro operador pudo cambiar entre medio.
+    El helper es atómico; si la operación de dominio escribe otras tablas,
+    debe envolver también esos cambios en su transacción exterior.
+    ``select_for_update`` vincula cada diff al valor reemplazado, incluso si
+    otro operador intenta actualizar la misma fila al mismo tiempo.
     """
-    objetos = list(queryset.select_for_update())
-    if not objetos:
-        return 0
-    modelo = queryset.model
-    antes = {objeto.pk: _instantanea(objeto) for objeto in objetos}
-    ids = list(antes)
-    cantidad = modelo._base_manager.filter(pk__in=ids).update(**cambios)
-    if se_audita(modelo):
-        despues_por_id = {
-            objeto.pk: objeto
-            for objeto in modelo._base_manager.filter(pk__in=ids)
-        }
-        for pk in ids:
-            objeto = despues_por_id[pk]
-            diferencias = _diferencias(antes[pk], _instantanea(objeto))
-            if diferencias:
-                _escribir(objeto, "modificacion", diferencias)
-    return cantidad
+    with transaction.atomic():
+        objetos = list(queryset.select_for_update().order_by("pk"))
+        if not objetos:
+            return 0
+        modelo = queryset.model
+        antes = {objeto.pk: _instantanea(objeto) for objeto in objetos}
+        ids = list(antes)
+        cantidad = modelo._base_manager.filter(pk__in=ids).update(**cambios)
+        if se_audita(modelo):
+            despues_por_id = {
+                objeto.pk: objeto
+                for objeto in modelo._base_manager.filter(pk__in=ids)
+            }
+            for pk in ids:
+                objeto = despues_por_id[pk]
+                diferencias = _diferencias(antes[pk], _instantanea(objeto))
+                if diferencias:
+                    _escribir(objeto, "modificacion", diferencias)
+        return cantidad
 
 
 def actualizar_en_lote_con_auditoria(objetos, campos, **opciones):
@@ -190,17 +202,23 @@ def actualizar_en_lote_con_auditoria(objetos, campos, **opciones):
     if any(type(objeto) is not modelo for objeto in objetos):
         raise TypeError("Todos los objetos del lote deben pertenecer al mismo modelo.")
     ids = [objeto.pk for objeto in objetos]
-    anteriores = {
-        objeto.pk: _instantanea(objeto)
-        for objeto in modelo._base_manager.select_for_update().filter(pk__in=ids)
-    }
-    cantidad = modelo._base_manager.bulk_update(objetos, campos, **opciones)
-    if se_audita(modelo):
-        for objeto in modelo._base_manager.filter(pk__in=ids):
-            diferencias = _diferencias(anteriores[objeto.pk], _instantanea(objeto))
-            if diferencias:
-                _escribir(objeto, "modificacion", diferencias)
-    return cantidad
+    if any(pk is None for pk in ids) or len(ids) != len(set(ids)):
+        raise ValueError("La actualización masiva auditada requiere IDs existentes y únicos.")
+    with transaction.atomic():
+        anteriores = {
+            objeto.pk: _instantanea(objeto)
+            for objeto in modelo._base_manager.select_for_update()
+            .filter(pk__in=ids).order_by("pk")
+        }
+        if len(anteriores) != len(ids):
+            raise ValueError("Algún registro de la actualización masiva ya no existe.")
+        cantidad = modelo._base_manager.bulk_update(objetos, campos, **opciones)
+        if se_audita(modelo):
+            for objeto in modelo._base_manager.filter(pk__in=ids).order_by("pk"):
+                diferencias = _diferencias(anteriores[objeto.pk], _instantanea(objeto))
+                if diferencias:
+                    _escribir(objeto, "modificacion", diferencias)
+        return cantidad
 
 
 @receiver(pre_save)

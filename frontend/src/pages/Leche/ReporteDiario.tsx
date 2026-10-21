@@ -11,6 +11,7 @@ import {
   type ResumenDiarioRecepcion,
 } from "../../services/recepcion.service";
 import { cantidad } from "../../services/formato";
+import { mensajeErrorReporte } from "../../services/error-reporte";
 
 
 const fechaLocal = (fecha = new Date()) => {
@@ -67,7 +68,7 @@ function ReporteDiario() {
 
   const periodo: PeriodoResumenRecepcion = modo === "dia" ? { fecha } : { desde, hasta };
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (signal: AbortSignal) => {
     if (modo === "rango" && desde > hasta) {
       setResumen(null);
       setError("La fecha desde no puede ser posterior a la fecha hasta.");
@@ -77,20 +78,25 @@ function ReporteDiario() {
     setCargando(true);
     setError("");
     try {
-      setResumen(await resumenDiarioRecepcion(
-        modo === "dia" ? { fecha } : { desde, hasta },
-      ));
-    } catch {
+      const datos = await resumenDiarioRecepcion(
+        modo === "dia" ? { fecha } : { desde, hasta }, signal,
+      );
+      if (!signal.aborted) setResumen(datos);
+    } catch (causa) {
+      if (signal.aborted) return;
+      const mensaje = await mensajeErrorReporte(causa, "No se pudo cargar el reporte. Revisa la conexión e inténtalo nuevamente.");
+      if (signal.aborted) return;
       setResumen(null);
-      setError("No se pudo cargar el reporte. Revisa la conexión e inténtalo nuevamente.");
+      setError(mensaje);
     } finally {
-      setCargando(false);
+      if (!signal.aborted) setCargando(false);
     }
   }, [modo, fecha, desde, hasta]);
 
   useEffect(() => {
-    const temporizador = window.setTimeout(() => { void cargar(); }, 0);
-    return () => window.clearTimeout(temporizador);
+    const controlador = new AbortController();
+    const temporizador = window.setTimeout(() => { void cargar(controlador.signal); }, 0);
+    return () => { window.clearTimeout(temporizador); controlador.abort(); };
   }, [cargar]);
 
   const exportar = async (formato: "csv" | "xlsx") => {
@@ -99,8 +105,8 @@ function ReporteDiario() {
     try {
       const archivo = await descargarResumenRecepcion(periodo, formato);
       descargar(archivo.contenido, archivo.nombre);
-    } catch {
-      setError(`No se pudo descargar el archivo ${formato.toUpperCase()}.`);
+    } catch (causa) {
+      setError(await mensajeErrorReporte(causa, `No se pudo descargar el archivo ${formato.toUpperCase()}.`));
     } finally {
       setExportando(false);
     }
@@ -126,25 +132,25 @@ function ReporteDiario() {
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs font-semibold text-slate-700">
               Período
-              <select value={modo} onChange={(e) => setModo(e.target.value as "dia" | "rango")} className="mt-1 block h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm">
+              <select disabled={exportando} value={modo} onChange={(e) => setModo(e.target.value as "dia" | "rango")} className="mt-1 block h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm">
                 <option value="dia">Un día</option>
                 <option value="rango">Rango</option>
               </select>
             </label>
             {modo === "dia" ? (
               <div className="flex items-center gap-1">
-                <button type="button" onClick={() => setFecha(moverDia(fecha, -1))} className="h-10 rounded-xl border border-slate-300 px-3 text-slate-700 hover:bg-slate-50" aria-label="Día anterior"><ChevronLeft className="h-4 w-4" /></button>
-                <label className="text-xs font-semibold text-slate-700">Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="mt-1 block h-10 rounded-xl border border-slate-300 px-3 text-sm" /></label>
-                <button type="button" onClick={() => setFecha(moverDia(fecha, 1))} className="h-10 rounded-xl border border-slate-300 px-3 text-slate-700 hover:bg-slate-50" aria-label="Día siguiente"><ChevronRight className="h-4 w-4" /></button>
+                <button type="button" disabled={exportando} onClick={() => setFecha(moverDia(fecha, -1))} className="h-10 rounded-xl border border-slate-300 px-3 text-slate-700 hover:bg-slate-50" aria-label="Día anterior"><ChevronLeft className="h-4 w-4" /></button>
+                <label className="text-xs font-semibold text-slate-700">Fecha<input type="date" disabled={exportando} value={fecha} onChange={(e) => setFecha(e.target.value)} className="mt-1 block h-10 rounded-xl border border-slate-300 px-3 text-sm" /></label>
+                <button type="button" disabled={exportando} onClick={() => setFecha(moverDia(fecha, 1))} className="h-10 rounded-xl border border-slate-300 px-3 text-slate-700 hover:bg-slate-50" aria-label="Día siguiente"><ChevronRight className="h-4 w-4" /></button>
               </div>
             ) : (
               <>
-                <label className="text-xs font-semibold text-slate-700">Desde<input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="mt-1 block h-10 rounded-xl border border-slate-300 px-3 text-sm" /></label>
-                <label className="text-xs font-semibold text-slate-700">Hasta<input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="mt-1 block h-10 rounded-xl border border-slate-300 px-3 text-sm" /></label>
+                <label className="text-xs font-semibold text-slate-700">Desde<input type="date" disabled={exportando} value={desde} onChange={(e) => setDesde(e.target.value)} className="mt-1 block h-10 rounded-xl border border-slate-300 px-3 text-sm" /></label>
+                <label className="text-xs font-semibold text-slate-700">Hasta<input type="date" disabled={exportando} value={hasta} onChange={(e) => setHasta(e.target.value)} className="mt-1 block h-10 rounded-xl border border-slate-300 px-3 text-sm" /></label>
               </>
             )}
-            <button type="button" disabled={exportando || !resumen} onClick={() => void exportar("csv")} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Download className="h-4 w-4" />CSV</button>
-            <button type="button" disabled={exportando || !resumen} onClick={() => void exportar("xlsx")} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"><FileSpreadsheet className="h-4 w-4" />Excel</button>
+            <button type="button" disabled={exportando || cargando || !resumen} onClick={() => void exportar("csv")} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Download className="h-4 w-4" />CSV</button>
+            <button type="button" disabled={exportando || cargando || !resumen} onClick={() => void exportar("xlsx")} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"><FileSpreadsheet className="h-4 w-4" />Excel</button>
           </div>
         </div>
       </section>

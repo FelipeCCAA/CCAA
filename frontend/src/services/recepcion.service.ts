@@ -540,6 +540,7 @@ export async function asignarSilo(id: number, silo: number): Promise<Recepcion> 
 */
 export async function resumenDiarioRecepcion(
   periodo: string | PeriodoResumenRecepcion,
+  signal?: AbortSignal,
 ): Promise<ResumenDiarioRecepcion> {
   const { data } = await api.get<ResumenDiarioRecepcion>(
     "recepcion/recepciones/resumen-diario/",
@@ -548,6 +549,7 @@ export async function resumenDiarioRecepcion(
         ...(typeof periodo === "string" ? { fecha: periodo } : periodo),
         detalle: 1,
       },
+        signal,
     },
   );
   return data;

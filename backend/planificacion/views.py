@@ -24,6 +24,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.renderers import JSONRenderer
 
+from auditoria.registro import crear_en_lote_con_auditoria
 from produccion.models import Lote
 from recepcion.models import MovimientoSilo, Recepcion
 from usuarios.permisos import EscribeProduccion
@@ -140,7 +141,7 @@ class SemanaPlanViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
             copia = serializer.save()
-            BalanceDia.objects.bulk_create([
+            crear_en_lote_con_auditoria([
                 BalanceDia(
                     semana=copia, dia=item.dia, stock_inicial=item.stock_inicial,
                     recepcion_ccaa=item.recepcion_ccaa,
@@ -151,7 +152,7 @@ class SemanaPlanViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                     ajustes=item.ajustes, observacion=item.observacion,
                 ) for item in origen.balances.all()
             ])
-            BloquePlan.objects.bulk_create([
+            crear_en_lote_con_auditoria([
                 BloquePlan(
                     semana=copia, equipo=item.equipo, dia=item.dia,
                     hora_inicio=item.hora_inicio, hora_fin=item.hora_fin,
@@ -166,7 +167,7 @@ class SemanaPlanViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
                     creado_por=request.user,
                 ) for item in origen.bloques.all()
             ])
-            MovimientoPlan.objects.bulk_create([
+            crear_en_lote_con_auditoria([
                 MovimientoPlan(
                     semana=copia,
                     fecha_hora=item.fecha_hora + timedelta(days=(copia.fecha_inicio - origen.fecha_inicio).days),

@@ -19,6 +19,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
 from maestros.models import Silo
+from auditoria.registro import crear_en_lote_con_auditoria
 from usuarios.areas import perfiles_del_area, usuarios_del_area
 from usuarios.permisos import DecideCalidadRecepcion, EscribeRecepcion
 from usuarios.models import PerfilUsuario, Rol
@@ -28,6 +29,9 @@ from usuarios.tenancy import (
 )
 
 from . import dominio
+from .exportaciones import (
+    MAX_RECEPCIONES_REPORTE, agregar_fila_texto_literal, texto_csv,
+)
 from .models import (
     CONTROLES_DECLARADOS, AlertaCalidadSilo, AnalisisSilo, BusquedaProveedor,
     AtribucionRecepcion, CorreccionRecepcion, ModuloRecepcion, MovimientoSilo, Recepcion,
@@ -409,7 +413,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 {"modulos": "Usa números únicos de módulo entre 1 y 4."}
             )
         recepcion.modulos.all().delete()
-        ModuloRecepcion.objects.bulk_create([
+        crear_en_lote_con_auditoria([
             ModuloRecepcion(
                 recepcion=recepcion,
                 numero=item["numero"],
@@ -1080,7 +1084,20 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             campo_empresa="sucursal__empresa_id",
         ).order_by("fecha", "hora", "id")
 
-        recepciones = list(base)
+        # Una fila extra detecta exceso sin contar/cargar el rango completo.
+        # Los totales y los tres formatos parten de la misma lista completa.
+        recepciones = list(base[:MAX_RECEPCIONES_REPORTE + 1])
+        if len(recepciones) > MAX_RECEPCIONES_REPORTE:
+            return Response(
+                {
+                    "code": "REPORTE_DEMASIADO_GRANDE",
+                    "detail": (
+                        f"El reporte supera {MAX_RECEPCIONES_REPORTE} recepciones; "
+                        "reduce el rango de fechas. No se generó un reporte parcial."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         litros = sum((r.litros or Decimal("0") for r in recepciones), Decimal("0"))
         kg_guia = sum(
@@ -1235,7 +1252,14 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             escritor.writerows(
                 [
                     [
-                        fila.get(clave) if fila.get(clave) is not None else ""
+                        (
+                            texto_csv(fila.get(clave))
+                            if clave not in {
+                                "litros", "kg_guia", "kg_romana", "diferencia_kg",
+                                "permanencia_horas", "horas_a_pagar",
+                            }
+                            else fila.get(clave)
+                        ) if fila.get(clave) is not None else ""
                         for _, clave in columnas
                     ]
                     for fila in filas
@@ -1254,7 +1278,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
         hoja.title = "Recepciones"
         hoja.append([titulo for titulo, _ in columnas])
         for fila in filas:
-            hoja.append([
+            agregar_fila_texto_literal(hoja, [
                 fila.get(clave) if fila.get(clave) is not None else ""
                 for _, clave in columnas
             ])
@@ -1277,7 +1301,7 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
             ("Camiones sin romana", resumen["camiones_sin_romana"]),
             ("Camiones sin marcas horarias", resumen["camiones_sin_marcas_horarias"]),
         ]:
-            totales.append([etiqueta, valor if valor is not None else ""])
+            agregar_fila_texto_literal(totales, [etiqueta, valor if valor is not None else ""])
         contenido = BytesIO()
         libro.save(contenido)
         respuesta = HttpResponse(
