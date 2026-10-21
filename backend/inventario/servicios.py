@@ -1001,10 +1001,23 @@ def reservar_fefo(*, insumo_id, cantidad, usuario, documento_tipo, documento_id)
     return reservas
 
 
+def _bloquear_ubicaciones(ids):
+    """Tras bloquear los lotes, fijar ubicaciones y bodegas hasta el commit."""
+    ubicaciones = dict(Ubicacion.objects.select_for_update().filter(
+        pk__in=ids,
+    ).order_by("pk").in_bulk())
+    bodegas = dict(Bodega.objects.select_for_update().filter(
+        pk__in={u.bodega_id for u in ubicaciones.values()},
+    ).order_by("pk").in_bulk())
+    for ubicacion in ubicaciones.values():
+        ubicacion.bodega = bodegas[ubicacion.bodega_id]
+    return ubicaciones
+
+
 @transaction.atomic
 def entregar_reserva(*, reserva_id, existencia_id, cantidad, destino, usuario, documento_tipo, documento_id):
     cantidad = _cantidad(cantidad)
-    reserva = ReservaInventario.objects.select_for_update().select_related("detalle").get(
+    reserva = ReservaInventario.objects.select_for_update(of=("self",)).select_related("detalle").get(
         pk=reserva_id
     )
     if not reserva.activa or reserva.existencia_id != existencia_id:
@@ -1019,14 +1032,16 @@ def entregar_reserva(*, reserva_id, existencia_id, cantidad, destino, usuario, d
         raise ValidationError("La reserva pertenece a otra solicitud de material.")
     if cantidad > reserva.cantidad:
         raise ValidationError("La entrega supera la cantidad de esta reserva.")
-    existencia = Existencia.objects.select_for_update().select_related("lote", "ubicacion").get(pk=existencia_id)
+    referencia = Existencia.objects.get(pk=existencia_id)
+    # El mismo orden que el traslado: lote, ubicaciones, bodegas, existencia.
+    # No bloquear los joins de Existencia antes de conocer ambos extremos.
+    LoteInventario.objects.select_for_update().get(pk=referencia.lote_id)
+    ubicaciones = _bloquear_ubicaciones({referencia.ubicacion_id, destino.pk})
+    existencia = Existencia.objects.select_for_update(of=("self",)).select_related("lote", "ubicacion").get(pk=existencia_id)
+    if existencia.lote_id != referencia.lote_id or existencia.ubicacion_id != referencia.ubicacion_id:
+        raise ValidationError("La existencia cambió; actualiza la vista e intenta nuevamente.")
     if not existencia.lote.utilizable:
         raise ValidationError("El lote no está aprobado, está bloqueado, rechazado o vencido.")
-    ubicaciones = {
-        u.pk: u for u in Ubicacion.objects.select_related("bodega").filter(
-            pk__in=[existencia.ubicacion_id, destino.pk],
-        )
-    }
     if len(ubicaciones) != 2 or any(
         not u.activo or not u.bodega.activo for u in ubicaciones.values()
     ):
@@ -1275,9 +1290,15 @@ def entregar_solicitud_material(*, solicitud, destino, entrega_por, recibe_por, 
     solicitud = SolicitudMaterial.objects.select_for_update().get(pk=solicitud.pk)
     if solicitud.estado not in {SolicitudMaterial.Estado.PREPARADA, SolicitudMaterial.Estado.PARCIAL}:
         raise ValidationError("La MRQ no está preparada para entrega.")
-    reservas = ReservaInventario.objects.select_for_update().select_related(
+    reservas = list(ReservaInventario.objects.select_for_update(of=("self",)).select_related(
         "existencia__lote", "detalle"
-    ).filter(detalle__solicitud=solicitud, activa=True)
+    ).filter(detalle__solicitud=solicitud, activa=True).order_by("pk"))
+    # Una MRQ puede entregar varias líneas: adquirir todas sus raíces antes
+    # de escribir evita invertir el orden entre líneas y traslados paralelos.
+    list(LoteInventario.objects.select_for_update().filter(
+        pk__in={r.existencia.lote_id for r in reservas},
+    ).order_by("pk"))
+    _bloquear_ubicaciones({destino.pk, *(r.existencia.ubicacion_id for r in reservas)})
     por_id = {int(item["reserva"]): Decimal(str(item["cantidad"])) for item in (selecciones or [])}
     entrega = EntregaProduccion.objects.create(
         solicitud=solicitud, entregada_por=entrega_por,
@@ -1327,12 +1348,7 @@ def trasladar_existencia(
 
     referencia = Existencia.objects.select_related("lote").get(pk=existencia_id)
     lote = LoteInventario.objects.select_for_update().get(pk=referencia.lote_id)
-    ubicaciones = {
-        ubicacion.pk: ubicacion
-        for ubicacion in Ubicacion.objects.select_for_update().select_related(
-            "bodega"
-        ).filter(pk__in={referencia.ubicacion_id, destino.pk}).order_by("pk")
-    }
+    ubicaciones = _bloquear_ubicaciones({referencia.ubicacion_id, destino.pk})
     if len(ubicaciones) != 2:
         raise ValidationError("El origen o destino ya no existe.")
     origen_ubicacion = ubicaciones[referencia.ubicacion_id]

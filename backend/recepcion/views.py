@@ -1811,6 +1811,10 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
 @permission_classes([EscribeRecepcion])
 def sugerencia_silos(request):
     """Silos ordenados por la leche utilizable más antigua."""
+    from django.core.exceptions import ValidationError
+    from estandarizacion.bloqueos import motivos_retencion_silos
+    from procesos.servicios import exigir_origen_disponible
+
     try:
         volumen = Decimal(str(request.query_params.get("volumen", "0")))
     except Exception:
@@ -1820,12 +1824,21 @@ def sugerencia_silos(request):
         Silo.objects.filter(activo=True, tipo=tipo), request.user,
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     ).order_by("codigo")
+    silos = list(silos)
+    retenciones = motivos_retencion_silos([silo.pk for silo in silos])
     ahora = timezone.now()
     entradas = []
     metadatos = {}
     for silo in silos:
         antigua = momento_leche_mas_antigua(silo)
         motivos = motivos_silo_no_disponible(silo, para="proceso", ahora=ahora)
+        if retenciones.get(silo.pk):
+            motivos.append(retenciones[silo.pk])
+        try:
+            libre = exigir_origen_disponible(silo=silo, cantidad=Decimal("0"))
+        except ValidationError as error:
+            libre = Decimal("0")
+            motivos.extend(error.messages)
         analisis = silo.analisis.filter(
             estado=AnalisisSilo.Estado.CONFIRMADO
         ).order_by("-tomado_en", "-id").first()
@@ -1835,7 +1848,7 @@ def sugerencia_silos(request):
         )
         entradas.append({
             "silo_id": silo.id,
-            "litros_disponibles": saldo_silo(silo),
+            "litros_disponibles": max(Decimal("0"), libre),
             "leche_mas_antigua_en": antigua,
             "antiguedad_horas": antiguedad,
             "motivos_no_disponible": motivos,

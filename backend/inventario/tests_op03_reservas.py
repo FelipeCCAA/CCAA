@@ -1,11 +1,16 @@
 """OP-03: traslado por ubicación sin mover reservas ni cambiar el lote."""
 
 from decimal import Decimal
+from queue import Queue
+import threading
+import time
 import uuid
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.db import connection, connections, transaction
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -395,4 +400,165 @@ class EntregaReservasPropiasOP03Tests(TestCase):
                 cantidad=Decimal("5"),
                 lote=self.lote,
             ).exists()
+        )
+
+
+class ConcurrenciaDestinoEntregaOP03Tests(TransactionTestCase):
+    def setUp(self):
+        if connection.vendor != "postgresql":
+            self.skipTest("Requiere bloqueos reales entre conexiones PostgreSQL.")
+        EntregaReservasPropiasOP03Tests.setUp(self)
+
+    def test_desactivar_destino_espera_desde_validacion_hasta_commit_de_entrega(self):
+        validada = threading.Event()
+        continuar_escritura = threading.Event()
+        servicio_terminado = threading.Event()
+        permitir_commit = threading.Event()
+        desactivacion_terminada = threading.Event()
+        resultados, pids_entrega, pids_desactivacion = Queue(), Queue(), Queue()
+        guardar_real = Existencia.save
+        origen_id, destino_id = self.existencia.pk, self.destino.pk
+
+        def guardar_con_barrera(instancia, *args, **kwargs):
+            if (
+                instancia.pk == origen_id
+                and "cantidad_fisica" in (kwargs.get("update_fields") or ())
+                and not validada.is_set()
+            ):
+                # La validación ya leyó destino/bodega; todavía no se escribió
+                # el primer descuento. Se conserva el save real y su control.
+                validada.set()
+                if not continuar_escritura.wait(timeout=10):
+                    raise RuntimeError(
+                        "No se autorizó continuar la escritura sintética."
+                    )
+            return guardar_real(instancia, *args, **kwargs)
+
+        def preparar_conexion(pids):
+            with connection.cursor() as cursor:
+                cursor.execute("SET lock_timeout = '12s'")
+                cursor.execute("SET statement_timeout = '15s'")
+                cursor.execute("SELECT pg_backend_pid()")
+                pids.put(cursor.fetchone()[0])
+
+        def entregar():
+            try:
+                preparar_conexion(pids_entrega)
+                with transaction.atomic():
+                    movimiento = entregar_reserva(
+                        reserva_id=self.reserva_propia.pk,
+                        existencia_id=origen_id,
+                        cantidad=Decimal("5"),
+                        destino=Ubicacion.objects.get(pk=destino_id),
+                        usuario=get_user_model().objects.get(pk=self.usuario.pk),
+                        documento_tipo="inventario.SolicitudMaterial",
+                        documento_id=self.propia.pk,
+                    )
+                    servicio_terminado.set()
+                    if not permitir_commit.wait(timeout=10):
+                        raise RuntimeError("No se autorizó el commit sintético.")
+                resultados.put(("entrega", movimiento.pk))
+            except Exception as error:
+                resultados.put(("error_entrega", repr(error)))
+            finally:
+                connections.close_all()
+
+        def desactivar():
+            try:
+                preparar_conexion(pids_desactivacion)
+                actualizadas = Ubicacion.objects.filter(pk=destino_id).update(
+                    activo=False
+                )
+                resultados.put(("desactivacion", actualizadas))
+            except Exception as error:
+                resultados.put(("error_desactivacion", repr(error)))
+            finally:
+                desactivacion_terminada.set()
+                connections.close_all()
+
+        def espera_observada(pid_actualizacion, pid_entrega):
+            limite = time.monotonic() + 3
+            while time.monotonic() < limite:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT %s = ANY(pg_blocking_pids(%s))",
+                        [pid_entrega, pid_actualizacion],
+                    )
+                    if cursor.fetchone()[0]:
+                        return True
+                if desactivacion_terminada.is_set():
+                    return False
+                threading.Event().wait(0.01)
+            return False
+
+        hilo_entrega = threading.Thread(target=entregar, daemon=True)
+        hilo_desactivacion = threading.Thread(target=desactivar, daemon=True)
+        bloqueo_tras_validar = bloqueo_hasta_commit = False
+        with patch.object(Existencia, "save", guardar_con_barrera):
+            try:
+                hilo_entrega.start()
+                self.assertTrue(
+                    validada.wait(timeout=6), "No se alcanzó la barrera tras validar."
+                )
+                pid_entrega = pids_entrega.get(timeout=1)
+                hilo_desactivacion.start()
+                pid_actualizacion = pids_desactivacion.get(timeout=6)
+                self.assertNotEqual(pid_entrega, pid_actualizacion)
+                bloqueo_tras_validar = espera_observada(pid_actualizacion, pid_entrega)
+                continuar_escritura.set()
+                self.assertTrue(
+                    servicio_terminado.wait(timeout=6),
+                    "La entrega no terminó su servicio.",
+                )
+                bloqueo_hasta_commit = espera_observada(pid_actualizacion, pid_entrega)
+                # El servicio terminó, pero el commit del llamador sigue
+                # pendiente: un tercero aún ve los saldos anteriores.
+                self.assertEqual(
+                    Existencia.objects.get(pk=origen_id).cantidad_fisica,
+                    Decimal("100"),
+                )
+            finally:
+                continuar_escritura.set()
+                permitir_commit.set()
+                for hilo in (hilo_entrega, hilo_desactivacion):
+                    if hilo.ident is not None:
+                        hilo.join(timeout=18)
+                for hilo in (hilo_entrega, hilo_desactivacion):
+                    self.assertFalse(
+                        hilo.is_alive(), "Quedó un trabajador de entrega activo."
+                    )
+
+        entregados = [resultados.get(timeout=1) for _ in range(2)]
+        self.assertEqual(
+            {tipo for tipo, _ in entregados}, {"entrega", "desactivacion"}, entregados
+        )
+        self.assertTrue(
+            bloqueo_tras_validar,
+            "La desactivación no esperó después de validar el destino.",
+        )
+        self.assertTrue(
+            bloqueo_hasta_commit, "La desactivación pasó antes del commit externo."
+        )
+        self.destino.refresh_from_db()
+        self.existencia.refresh_from_db()
+        self.reserva_propia.refresh_from_db()
+        self.reserva_ajena.refresh_from_db()
+        self.assertFalse(self.destino.activo)
+        self.assertEqual(self.existencia.cantidad_fisica, Decimal("95"))
+        self.assertEqual(self.existencia.cantidad_reservada, Decimal("35"))
+        self.assertEqual(self.reserva_propia.cantidad, Decimal("10"))
+        self.assertEqual(self.reserva_ajena.cantidad, Decimal("25"))
+        self.assertTrue(self.reserva_ajena.activa)
+        self.assertEqual(
+            MovimientoInventario.objects.filter(
+                tipo=MovimientoInventario.Tipo.ENTREGA,
+                cantidad=Decimal("5"),
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            Existencia.objects.get(
+                lote=self.lote, ubicacion=self.destino
+            ).cantidad_fisica,
+            Decimal("5"),
         )

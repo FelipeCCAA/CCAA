@@ -186,6 +186,43 @@ class ReservasRecepcionOP03Tests(TestCase):
         self.assertEqual(Decimal(str(origen["litros_libres"])), Decimal("100.00"))
         self.assertEqual(Decimal(str(origen["litros_disponibles"])), Decimal("0.00"))
 
+    def test_sugerencia_fifo_usa_100_libres_y_no_propone_origen_reservado_como_destino(
+        self,
+    ):
+        reserva = self._reservar(self.origen, ReservaSiloProceso.Tipo.ORIGEN, "700.00")
+        url = "/api/recepcion/silos/sugerencia/?volumen=300&tipo=silo"
+        antes = self._foto()
+
+        respuesta = self.api.get(url)
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        fila = next(
+            f for f in respuesta.data["sugerencias"] if f["silo"] == self.origen.pk
+        )
+        self.assertTrue(fila["sugerido"])
+        self.assertEqual(Decimal(str(fila["litros_disponibles"])), Decimal("100.00"))
+        self.assertEqual(Decimal(str(fila["litros_sugeridos"])), Decimal("100.00"))
+        self.assertEqual(self._foto(), antes)
+
+        reserva.estado = ReservaSiloProceso.Estado.LIBERADA
+        reserva.cerrada_en = timezone.now()
+        reserva.save(update_fields=["estado", "cerrada_en"])
+        self._reservar(self.origen, ReservaSiloProceso.Tipo.DESTINO, "200.00")
+        antes = self._foto()
+
+        retenida = self.api.get(url)
+
+        self.assertEqual(retenida.status_code, 200, retenida.data)
+        sugeridos = [f["silo"] for f in retenida.data["sugerencias"] if f["sugerido"]]
+        self.assertNotIn(self.origen.pk, sugeridos)
+        for candidato in retenida.data["sugerencias"]:
+            if candidato["silo"] == self.origen.pk:
+                self.assertEqual(
+                    Decimal(str(candidato["litros_sugeridos"])), Decimal("0.00")
+                )
+                self.assertTrue(candidato["motivos_no_disponible"])
+        self.assertEqual(self._foto(), antes)
+
     def test_transferencia_permite_solo_los_100_litros_libres_sin_mover_reserva(self):
         reserva = self._reservar(self.origen, ReservaSiloProceso.Tipo.ORIGEN, "700.00")
         original = ReservaSiloProceso.objects.values().get(pk=reserva.pk)
