@@ -5,7 +5,7 @@ Las que importan no son las del camino feliz, sino las que comprueban que la
 API queda CERRADA: que sin token no se lee ni se escribe nada.
 """
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.test import TestCase
 from django.urls import get_resolver
 from rest_framework.test import APIClient
@@ -196,6 +196,9 @@ class PanelAdministracionTests(TestCase):
         self.assertEqual(respuesta.status_code, 403)
 
     def test_administrador_general_crea_administrador_de_area_con_contrasena_inicial(self):
+        self.admin.user_permissions.add(Permission.objects.get(
+            codename="change_roles", content_type__app_label="usuarios",
+        ))
         self.cliente.force_authenticate(self.admin)
         respuesta = self.cliente.post(
             "/api/usuarios/trabajadores/",
@@ -208,6 +211,7 @@ class PanelAdministracionTests(TestCase):
         self.assertTrue(creado.check_password("Clave-inicial-2026!"))
         self.assertEqual(creado.perfil.area, PerfilUsuario.Area.BODEGA)
         self.assertEqual(creado.perfil.nivel, PerfilUsuario.Nivel.ADMIN)
+        self.assertTrue(creado.perfil.debe_cambiar_password)
 
     def test_administrador_de_area_solo_crea_trabajadores_de_su_area(self):
         jefe = User.objects.create_user("jefe-secado", password="x")
