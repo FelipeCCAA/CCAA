@@ -1,6 +1,6 @@
 # Backlog de mejoras OP
 
-Backlog de las diez oportunidades priorizadas: OP-00, OP-01 y OP-02 completadas en sus ramas; OP-03 completada en su rama; OP-04 en validación; OP-05 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
+Backlog de las diez oportunidades priorizadas: OP-00, OP-01 y OP-02 completadas en sus ramas; OP-03 completada en su rama; OP-04 completada en su rama; OP-05 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
 
 ## OP-00 — Entorno reproducible de pruebas (WP001, P1 habilitante)
 
@@ -27,7 +27,7 @@ Los enlaces siguientes son referencias de requisitos y contexto existentes; no r
 | OP-01 | P0 | Firma y despacho — [expediente OP-01](docs/operacion/OP-01_VALIDACION.md) y [puestos de bodega y despacho](docs/superpowers/specs/2026-09-24-puestos-bodega-despacho-design.md), WP002/003 | COMPLETADA EN LA RAMA; depende de OP-00. CI global aprobada; PR borrador no fusionado. |
 | OP-02 | P0 | Balances y receta — [expediente de validación](docs/operacion/OP-02_VALIDACION.md), WP004 | COMPLETADA EN LA RAMA; CI global del código 7d36bbe aprobada, 1.635 backend (5 omitidas) y 91 frontend. Reglas aprobadas; sin merge ni despliegue. |
 | OP-03 | P0 | Saldo, reservas y ubicación — [integración de inventario](docs/INTEGRACION_INVENTARIO.md), WP005/006 | COMPLETADA EN LA RAMA; CI global aprobada, PR #10 borrador sobre OP-02; sin merge/despliegue |
-| OP-04 | P0 | Secado y FIFO — [flujo de secado Protomalt](docs/flujos/11-secado-protomalt.md) y [suero](docs/flujos/10-secado-suero.md), WP007/008 | IMPLEMENTADA, EN VALIDACIÓN; seis reglas aprobadas. Rama codex/op-04-secado-fifo sobre OP-03; sin producción/despliegue |
+| OP-04 | P0 | Secado y FIFO — [flujo de secado Protomalt](docs/flujos/11-secado-protomalt.md) y [suero](docs/flujos/10-secado-suero.md), WP007/008 | COMPLETADA EN LA RAMA; CI 39637476601 SUCCESS, PR #11 borrador sobre OP-03; sin merge/despliegue |
 | OP-05 | P0 | Mantequilla — [flujo productivo](docs/flujos/03-mantequilla.md), WP009 | PENDIENTE; depende de OP-03 |
 | OP-06 | P0 | Identidad — [arquitectura actual](docs/architecture/03-architecture-current.md), WP013/014 | PENDIENTE; depende de OP-00 |
 | OP-07 | P1 | UUID, auditoría y exportaciones — [auditoría](docs/architecture/04-architecture-problems.md), WP011/015 | PENDIENTE; depende de OP-00 |
@@ -44,11 +44,13 @@ Se implementaron las cinco reglas aprobadas: físico/reservado/libre por ubicaci
 
 **Validación:** [CI 39624260452 SUCCESS](https://github.com/FelipeCCAA/CCAA/actions/runs/39624260452) en `ef4cd15`: 1.674 backend (1.669 aprobadas, cinco omitidas, cero fallos/errores) en 244,149 s; frontend 97/97, lint, tipos, build, configuración, Ruff y migraciones efímeras aprobados. Focal local 64/64 (39 nuevas), regresión heredada 58/58 y Chrome 5/5 con API simulada. Historial de fallos, correcciones, archivos, reproducción y límites en [expediente OP-03](docs/operacion/OP-03_VALIDACION.md).
 
-Revisión independiente sin defectos concretos pendientes en el delta final. DESK de Recepción, Producción y Bodega; no UAT, carga de 70 usuarios, restauración de backup ni prueba con datos reales. Clúster local detenido y sin `postmaster.pid`. OP-04 es la siguiente por dependencia: sólo diagnóstico/propuesta de reglas; implementar requiere autorización. La revisión/merge/despliegue son hitos separados; OP-04 a OP-09 no están implementadas.
+Revisión independiente sin defectos concretos pendientes en el delta final. DESK de Recepción, Producción y Bodega; no UAT, carga de 70 usuarios, restauración de backup ni prueba con datos reales. Clúster local detenido y sin `postmaster.pid`. OP-04 continuó con validación y autorización posterior del usuario, documentadas abajo. La revisión/merge/despliegue son hitos separados; OP-05 a OP-09 no están implementadas.
 
 
 ### OP-04 — Secado y FIFO
 
-**Estado: IMPLEMENTADA, EN VALIDACIÓN** en `codex/op-04-secado-fifo`, desde OP-03 `5fd3d89`. Seis reglas validadas y ejecución autorizada por el usuario. Expediente: [OP-04_VALIDACION.md](docs/operacion/OP-04_VALIDACION.md). Inicio/cierre recuperables por UUID; alimentación contrastada con retiro real; litros conservados y kg medidos con referencia; FIFO del servidor con excepción auditada; continuación con firma vigente, sin origen duplicado ni retiro durante CIP. Sin migración nueva.
+**Estado: COMPLETADA EN LA RAMA** `codex/op-04-secado-fifo`, desde OP-03 `5fd3d89`. Código/pruebas `1e2098d89ffc422471b9aa247ccb0b82af82c4bc`; [PR #11 borrador](https://github.com/FelipeCCAA/CCAA/pull/11) sobre OP-03 #10. El cierre posterior sólo actualiza tres documentos. Seis reglas aprobadas: origen y retiro real, unidades explícitas, FIFO del servidor, excepción auditada, consumo atómico/idempotente y cierre trazable. Sin nueva migración, merge, despliegue ni inventario real.
 
-Revisión independiente corrigió carrera de Calidad, orden de bloqueos, reutilización de retiro por entradas duplicadas y guarda CIP. Primera integración: 35 pruebas, 34 aprobadas y un error de fixture (orden de etapa ausente), corregido; segunda validación y CI pendientes. Frontend 101/101, lint, tipos/build aprobados; pantallas con API simulada en verificación final. No declarar aprobación global hasta recibir evidencia. Sin merge, despliegue ni inventario real. OP-05 siguiente para diagnóstico y reglas; no autorizada su implementación.
+**Evidencia:** [CI 39637476601 SUCCESS](https://github.com/FelipeCCAA/CCAA/actions/runs/39637476601) en `1e2098d`: 1.696 backend (1.691 aprobadas, cinco omitidas), 101/101 frontend, checks/lint/tipos/build/configuración/migración efímera aprobados. Local 68/68 en 158,219 s; Chrome 5/5 con API simulada en 51,7 s. Revisión independiente sin bloqueantes pendientes del delta final. [Expediente, archivos, fallos previos y límites](docs/operacion/OP-04_VALIDACION.md).
+
+Correcciones de revisión: carrera de Calidad, orden de bloqueos, origen físico duplicado y retiro durante CIP. Medición kg declarada con referencia, sin integración de báscula ni conversión L/kg. Registros históricos no se autorreparan; preparación Protomalt no activada. Recorridos DESK de Recepción/Producción/Bodega, sin UAT, carga de 70 usuarios ni restauración. Clúster local detenido y sin postmaster.pid. Próxima OP-05: diagnóstico y reglas; implementación requiere autorización específica.

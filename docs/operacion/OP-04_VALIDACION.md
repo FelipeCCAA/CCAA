@@ -1,5 +1,7 @@
 # OP-04 — Secado y FIFO
 
+**COMPLETADA EN LA RAMA.** Código y pruebas validados en `1e2098d`; [PR #11 borrador](https://github.com/FelipeCCAA/CCAA/pull/11), sin fusionar ni desplegar. El commit de cierre posterior modifica sólo este expediente, TASK_BACKLOG.md y PROGRESS.md.
+
 ## Alcance autorizado
 
 Implementación en `codex/op-04-secado-fifo`, desde OP-03 `5fd3d89`. El usuario validó las seis reglas y autorizó código, pruebas y PR para revisión. Sin producción, despliegue, merge, inventario real ni contratación. No se utiliza Supabase. Se conserva el esquema existente: no se añade migración ni se hace backfill.
@@ -35,7 +37,41 @@ Antes del cambio se reprodujeron seis fallos: cuatro casos Secado (cierre sin or
 
 Las pruebas de base de datos se ejecutan exclusivamente mediante el harness OP-00: PostgreSQL 17 local, `127.0.0.1:55439`, rol `op00_test`, directorio `../op00-runtime/pgdata`; valida identidad antes de Django y rechaza `.env`. Datos sintéticos y bases desechables. Las pruebas concurrentes usan conexiones independientes y observan bloqueos reales en `pg_blocking_pids`; las pruebas de navegador usan API simulada y bloquean servicios externos.
 
-**Validación en curso:** el cierre de evidencia, CI, commits y PR se incorporará al terminar las comprobaciones. No considerar este estado una aprobación global.
+Código/pruebas: commit `1e2098d89ffc422471b9aa247ccb0b82af82c4bc`. [PR #11 borrador](https://github.com/FelipeCCAA/CCAA/pull/11), apilado sobre OP-03 #10. Revisión independiente final por lectura sin bloqueantes pendientes; no ejecutó BD. Tres subagentes: backend y revisión `gpt-6-sol high`, frontend `gpt-6-luna medium`; PM/AVANCE/EXPLICADOR integrados por el coordinador.
+
+| Comprobación local | Resultado |
+|---|---|
+| Primera integración Secado/FIFO y heredadas | 35 pruebas, 34 aprobadas y un error de fixture (EtapaProceso sin orden), 56,473 s. Se corrigió únicamente el fixture. |
+| Integración limpia: Secado/FIFO, heredadas, vigencia/concurrencia Calidad y FIFO Recepción | 68/68 en 158,219 s, exit 0; base creada desde migraciones y destruida. Log `op04-integracion-final.log`. La última extensión CIP y su guarda son posteriores al arranque/importación de esta ejecución; su validación definitiva corresponde a CI del commit final. |
+| Estandarización completa previa | 166/166, 64,529 s; anterior a la última protección de escritura de AnalisisSilo. No sustituye CI final. |
+| Frontend | 101/101, 3,458 s; lint y build/TypeScript exit 0. Aviso preexistente `INEFFECTIVE_DYNAMIC_IMPORT` de FormularioMaestro, sin cambiarlo. |
+| Chrome final con API simulada | 5/5 en 51,7 s, log `op04-ui-validado.log`. FIFO/unidad, equipo ocupado, respuesta perdida, misma clave y corrección tras rechazo. |
+| Estática/configuración | Ruff backend, Django check, `makemigrations --check --dry-run` y diff-check aprobados. Sin cambios de migración. |
+
+Los primeros ensayos Chrome detectaron dos selectores ambiguos y, al corregir fixtures para representar inventario kg/silo L, una comprobación de unidad antes de seleccionar origen. Se corrigieron localizadores/momento de comprobación; la última corrida 5/5 usa los fixtures finales. La prueba se repitió por cambios concretos, no se contó la ejecución fallida como aprobada.
+
+El clúster local quedó detenido mediante `pg_ctl -D` apuntando a su directorio exacto; exit 0 y ausencia de `postmaster.pid` verificada. `DevelopMain` sigue en `d34df44ca30c402e9da34dc7b75f7652c2751fef` al consultar GitHub después de publicar el PR.
+
+**CI final SUCCESS:** [39637476601](https://github.com/FelipeCCAA/CCAA/actions/runs/39637476601), commit `1e2098d89ffc422471b9aa247ccb0b82af82c4bc`. [Backend](https://github.com/FelipeCCAA/CCAA/actions/runs/39637476601/job/119351835884): `Ran 1696 tests in 378.453s`, `OK (skipped=5)`: **1.691 aprobadas, cinco omitidas preexistentes, cero fallos/errores**; incluye los 22 casos nuevos de Secado/FIFO y la extensión CIP final. Ruff, Django checks, migración efímera y comprobación de ausencia de migraciones nuevas aprobados. [Frontend](https://github.com/FelipeCCAA/CCAA/actions/runs/39637476601/job/119351835583): **101/101**, lint, TypeScript y build aprobados. [Configuración](https://github.com/FelipeCCAA/CCAA/actions/runs/39637476601/job/119351836052): aprobada. PostgreSQL 17 en CI efímera. El cierre documental posterior no cambia código ni pruebas; su CI separada no se declara aprobada anticipadamente.
+
+Manifiesto completo: [20 archivos del PR](https://github.com/FelipeCCAA/CCAA/pull/11/files). Los comandos y logs locales se ejecutaron sobre datos sintéticos; el resultado global proviene del head exacto señalado, no de extrapolar pruebas focales.
+
+Reproducción, exclusivamente en PostgreSQL sintético con configuración CI y sin `.env` productivo:
+
+```text
+python manage.py test estandarizacion.tests_op04_fifo procesos.tests_op04_secado procesos.tests_secado procesos.tests_flujo_suero calidad.tests_op01_vigencia calidad.tests_op01_concurrencia recepcion.tests_fifo recepcion.tests_sugerencia_fifo --noinput --verbosity 1
+python manage.py test --verbosity 1
+```
+
+En `frontend`: `npm test`, `npm run lint`, `npm run build`; Chrome instalado: `npx playwright test --config op04-ui/playwright.config.ts`. El harness de navegador levanta sólo localhost:5194 y no envía peticiones a servicios reales.
+
+## Recorridos de operadores (DESK)
+
+Se reutilizaron los agentes necesarios para cubrir perspectivas operacionales; son simulaciones de escritorio sobre código/pruebas, no tres operadores humanos ni UAT de planta.
+
+- **Recepción (coordinador):** silo antiguo utilizable se recomienda; si está retenido, CIP, rechazado o totalmente reservado, se excluye. Omitir/falsificar la sugerencia no evita justificar el silo nuevo. Una corrección concurrente de inhibidores espera el retiro que ya está confirmándose; una corrección confirmada previamente impide el uso. Evidencia: `tests_op04_fifo`, incluidas la API y dos conexiones reales.
+- **Producción (backend):** continuación de 600 L conserva esa unidad; 600 kg declarados y ticket son otro registro. Sin firma no retira. Con firma y CIP activo no retira; CIP terminado permite el cierre. Repetir UUID/carga recupera un solo retiro. Evidencia: caso de continuación y cierre desde vale; extensión CIP validada por CI final.
+- **Bodega (frontend):** lote externo kg muestra saldo/unidad/FIFO. Elegir uno posterior exige motivo; los reservados o no utilizables se filtran y el servidor revalida. Si se pierde la respuesta, recuperar reenvía la misma carga/UUID. Chrome prueba interfaz/reintento, sin caso de navegador específico para los filtros de Calidad/reservas; sus guardas se verifican en backend.
 
 ## Límites operacionales y reversión
 
@@ -56,5 +92,14 @@ OP-05 (Mantequilla) tiene dependencia OP-03 satisfecha en rama. Próxima activid
 3. **Ejemplo:** si se pierde la respuesta al alimentar la torre, repetir no debe descontar otra vez; declarar 600 kg tampoco demuestra por sí solo un retiro del silo.
 4. **Solución:** enlazar origen y retiro, conservar unidades y recuperar la misma operación; las excepciones FIFO llevan motivo.
 5. **Trabajo real:** backend, interfaz y pruebas coordinadas por PM; revisión independiente; sin nueva estructura de base de datos.
-6. **Pruebas:** resultados verificables se registran en la sección de evidencias al terminar, distinguiendo PostgreSQL real de pantallas con API simulada.
-7. **Estado:** EN IMPLEMENTACIÓN. La entrega de rama no habilita producción; revisión y despliegue son pasos separados.
+6. **Pruebas:** CI 1.696 backend (1.691 aprobadas, cinco omitidas), 101 frontend y Chrome local 5/5 con API simulada; 68 focales locales y carreras PostgreSQL. Sin UAT industrial.
+7. **Estado:** VALIDADO MEDIANTE PRUEBAS EN LA RAMA. CI global aprobada; revisión humana del PR, UAT y eventual despliegue siguen separados. No se modificó producción.
+
+
+## AVANCE final
+
+- Completado: implementación y validación de las seis reglas OP-04 en rama, sin habilitar producción. Evidencia global CI SUCCESS en `1e2098d`, más Chrome local 5/5 y suite integrada 68/68.
+- Entrega: commit `1e2098d`, PR #11 borrador sobre OP-03 #10; cierre posterior sólo documental. Archivos y funciones arriba y manifiesto del PR. TASK_BACKLOG.md y PROGRESS.md actualizados.
+- Riesgos pendientes: medición declarada y evidencia histórica necesitan revisión operacional; sin carga certificada, UAT ni prueba de backup/restauración. Las ramas OP anteriores todavía no están fusionadas.
+- Próxima tarea: OP-05, diagnóstico/reglas de Mantequilla; no implementada.
+- Decisiones: revisión humana de PR y dependencias antes de cualquier integración; autorización aparte para producción/despliegue o para implementar OP-05. No se necesita contratar servicios ni entregar credenciales para completar esta entrega.
