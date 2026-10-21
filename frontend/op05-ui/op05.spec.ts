@@ -19,10 +19,10 @@ const opciones = {
   ordenes: [{ id: 4, codigo: "OP-M-4", producto: "Mantequilla con sal" }],
   cremas: [
     { id: 501, codigo: "CREMA-LOTE-20", producto: "Crema", salida_crema: 81, silo_codigo: "TK-4", silo_id: 4, unidad_origen: "L", disponible_kg: "140.000" },
-    { id: 501, codigo: "CREMA-LOTE-20", producto: "Crema", salida_crema: 82, silo_codigo: "TK-5", silo_id: 5, unidad_origen: "kg", disponible_kg: "90.000" },
+    { id: 501, codigo: "CREMA-LOTE-20", producto: "Crema", salida_crema: 82, silo_codigo: "TK-5", silo_id: 5, unidad_origen: "L", disponible_kg: "90.000" },
   ],
   cremas_pendientes_calidad: [{ id: 502, codigo: "CREMA-PENDIENTE", producto: "Crema", estado_calidad: "pendiente", etapa_origen: "Descremado" }],
-  equipos: [{ id: 601, nombre: "Mantecadora 1", tipo: "mantequilla", ocupado_por: null }],
+  equipos: [{ id: 601, nombre: "Mantecadora 1", tipo: "linea", ocupado_por: null }],
 };
 
 async function abrir(browser: Browser, modo: "crear-perdida" | "crear-conflicto" | "iniciar-perdida" | "cerrar-perdida", estado = "borrador") {
