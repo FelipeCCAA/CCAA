@@ -457,7 +457,7 @@ def transferir_silo(
         silo.pk: silo
         for silo in Silo.objects.select_for_update().filter(
             pk__in=sorted([silo_origen_id, silo_destino_id])
-        )
+        ).order_by("pk")
     }
     if len(bloqueados) != 2:
         raise ValidationError("Uno de los silos no existe.")
