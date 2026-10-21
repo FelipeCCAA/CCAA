@@ -27,15 +27,28 @@ export interface CorridaSecado {
   requiere_calidad: boolean;
   estado_calidad: "no_requerida" | "pendiente" | "liberado" | "rechazado";
   operacion_id: string;
+  readonly entradas_alimentacion: readonly EntradaAlimentacionSecado[];
+  readonly requiere_referencia_medicion_kg: boolean;
+}
+
+export interface EntradaAlimentacionSecado {
+  readonly tipo_origen: string;
+  readonly origen_id: number;
+  readonly cantidad: string;
+  readonly unidad: string;
+  readonly codigo: string;
+  readonly estado_calidad: string;
 }
 
 export interface CierreSecado {
+  operacion_id: string;
   kg_alimentacion: number;
   solidos_entrada_pct: number;
   kg_polvo: number;
   kg_finos: number;
   kg_merma: number;
   controles: Record<string, number>;
+  referencia_medicion_kg?: string;
 }
 
 export interface OpcionesSecadoExterno {
@@ -43,6 +56,7 @@ export interface OpcionesSecadoExterno {
     id: number; lote_id: number; lote_codigo: string;
     insumo_id: number; insumo_nombre: string;
     cantidad_disponible: string; unidad: string; estado_calidad: string;
+    readonly fifo_recomendado: boolean; readonly recibido_en: string | null;
   }>;
   ordenes: Array<{
     id: number; codigo: string; producto_id: number;
@@ -59,6 +73,8 @@ export interface InicioSecadoExterno {
   equipo: number;
   codigo_lote: string;
   cantidad: number;
+  operacion_id: string;
+  excepcion_fifo_motivo?: string;
 }
 
 export async function obtenerSecados(signal?: AbortSignal): Promise<Pagina<CorridaSecado>> {

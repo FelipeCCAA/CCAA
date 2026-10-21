@@ -82,6 +82,14 @@ def preparar_escritura(objeto, anterior, *, using=DEFAULT_DB_ALIAS):
     if etiqueta in CATALOGOS:
         bloquear_catalogo(escritura=True, using=using)
         return
+    if etiqueta == "recepcion.AnalisisSilo":
+        # Los consumos/FIFO mantienen el silo bloqueado hasta confirmar.
+        # Una corrección del análisis debe compartir esa frontera antes de
+        # escribir: bloquear sólo la muestra deja cambiar Calidad en vuelo.
+        ids = {objeto.silo_id, (anterior or {}).get("silo_id")} - {None}
+        list(apps.get_model("maestros.Silo")._base_manager.using(using)
+             .select_for_update().filter(pk__in=ids).order_by("pk"))
+        return
     padres = {
         "produccion.Analisis": ("produccion.Lote", "lote_id"),
         "calidad.RegistroCalidad": ("produccion.Lote", "lote_id"),

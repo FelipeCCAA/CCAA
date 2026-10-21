@@ -767,7 +767,7 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="opciones-alimentacion-externa")
     def opciones_alimentacion_externa(self, request):
         """Catalogos acotados para iniciar una ruta desde materia prima externa."""
-        from inventario.models import Existencia, Ubicacion
+        from inventario.models import Existencia, Insumo, Ubicacion
         from maestros.models import Equipo
         from produccion.models import OrdenProduccion
 
@@ -792,11 +792,26 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         existencias = filtrar_por_scope(
             Existencia.objects.filter(
                 lote__insumo_id__in=insumos, lote__activo=True,
+                lote__insumo__unidad=Insumo.Unidad.KG,
+                lote__estado_calidad__in=[
+                    "no_requiere", "aprobado", "observado",
+                ],
                 ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
-            ).select_related("lote__insumo", "ubicacion"),
+                ubicacion__activo=True, ubicacion__bodega__activo=True,
+                cantidad_fisica__gt=F("cantidad_reservada"),
+            ).filter(
+                Q(lote__vencimiento__isnull=True)
+                | Q(lote__vencimiento__gte=timezone.localdate())
+            ).select_related("lote__insumo", "ubicacion", "lote").order_by(
+                "lote__recibido_en", "lote_id", "pk",
+            ),
             request.user, campo_sucursal="lote__sucursal_id",
             campo_empresa="lote__sucursal__empresa_id",
         )
+        existencias = [item for item in existencias if item.cantidad_disponible > 0]
+        primeros = {}
+        for item in existencias:
+            primeros.setdefault(item.lote.insumo_id, item.pk)
         ordenes = filtrar_por_scope(
             OrdenProduccion.objects.filter(
                 producto_id__in=rutas_por_producto,
@@ -828,8 +843,10 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                     "cantidad_disponible": item.cantidad_disponible,
                     "unidad": item.lote.insumo.unidad,
                     "estado_calidad": item.lote.estado_calidad,
+                    "recibido_en": item.lote.recibido_en,
+                    "fifo_recomendado": item.pk == primeros[item.lote.insumo_id],
                 }
-                for item in existencias if item.cantidad_disponible > 0
+                for item in existencias
             ],
             "ordenes": [
                 {
@@ -873,10 +890,11 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                 Equipo.objects.all(), request.user,
                 campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
             ).get(pk=datos["equipo"])
-            corrida = crear_secado_desde_inventario(
+            corrida, repetida = crear_secado_desde_inventario(
                 orden=orden, existencia=existencia, equipo=equipo,
                 codigo_lote=datos["codigo_lote"], cantidad=datos["cantidad"],
-                usuario=request.user,
+                usuario=request.user, operacion_id=datos["operacion_id"],
+                excepcion_fifo_motivo=datos.get("excepcion_fifo_motivo", ""),
             )
         except (Existencia.DoesNotExist, OrdenProduccion.DoesNotExist, Equipo.DoesNotExist):
             return Response(
@@ -889,7 +907,10 @@ class CorridaSecadoViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                 else {"detail": error.messages[0]}
             )
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
-        return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(corrida).data,
+            status=status.HTTP_200_OK if repetida else status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):

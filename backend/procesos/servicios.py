@@ -2235,26 +2235,81 @@ def cerrar_mantequilla(
     return corrida
 
 
+def _bloquear_operacion_secado(operacion_id):
+    """Serializa reintentos de una clave incluso antes de que exista su fila."""
+    from django.db import connection
+
+    if connection.vendor == "postgresql":
+        llave = int.from_bytes(operacion_id.bytes[:4], "big", signed=True)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [17220, llave])
+
+
 @transaction.atomic
 def crear_secado_desde_inventario(
     *, orden, existencia, equipo, codigo_lote, cantidad, usuario,
+    operacion_id, excepcion_fifo_motivo="",
 ):
     """Inicia Secado desde una materia prima externa liberada y trazable."""
-    from inventario.models import Existencia, Insumo, Ubicacion
+    from inventario.models import Existencia, Insumo, LoteInventario, Ubicacion
     from inventario.servicios import (
-        advertencia_aseo_equipo, motivo_equipo_no_habilitado, registrar_salida,
+        _bloquear_ubicaciones, advertencia_aseo_equipo,
+        motivo_equipo_no_habilitado, registrar_salida,
     )
     from maestros.models import Equipo
     from produccion.models import Lote, OrdenProduccion
+    from calidad.evidencia import bloquear_catalogo
+
+    cantidad = Decimal(str(cantidad))
+    codigo = str(codigo_lote).strip()
+    excepcion_fifo_motivo = str(excepcion_fifo_motivo or "").strip()
+    operacion_id = uuid.UUID(str(operacion_id))
+    bloquear_catalogo()
+    _bloquear_operacion_secado(operacion_id)
+    payload = {
+        "orden": orden.pk, "existencia": existencia.pk, "equipo": equipo.pk,
+        "codigo_lote": codigo, "cantidad": str(cantidad),
+        "excepcion_fifo_motivo": excepcion_fifo_motivo,
+        "usuario_id": usuario.pk,
+    }
+    previa = CorridaSecado.objects.select_for_update(of=("self",)).filter(
+        operacion_id=operacion_id,
+    ).first()
+    if previa is not None:
+        evento = EventoProceso.objects.filter(
+            ejecucion_id=previa.ejecucion_id, tipo="inicio_secado_externo",
+            operacion_id=operacion_id,
+        ).first()
+        if evento is None or evento.datos.get("solicitud") != payload:
+            raise ValidationError({
+                "operacion_id": "Esta clave ya se usó con una solicitud distinta."
+            })
+        return previa, True
+    if EventoProceso.objects.filter(operacion_id=operacion_id).exists():
+        raise ValidationError({
+            "operacion_id": "Esta clave ya se usó en otra operación."
+        })
 
     orden = OrdenProduccion.objects.select_for_update(of=("self",)).select_related(
         "producto", "sucursal"
     ).get(pk=orden.pk)
+    referencia = Existencia.objects.select_related("lote").get(pk=existencia.pk)
+    # El insumo serializa elecciones de Secado y altas de lotes del insumo.
+    # El lote seleccionado se bloquea antes de ubicación y existencia.
+    Insumo.objects.select_for_update(of=("self",)).get(pk=referencia.lote.insumo_id)
+    lote_externo = LoteInventario.objects.select_for_update(of=("self",)).get(
+        pk=referencia.lote_id,
+    )
+    # Orden de inventario: lotes -> ubicaciones/bodegas -> existencias.
+    ubicaciones = _bloquear_ubicaciones({referencia.ubicacion_id})
     existencia = Existencia.objects.select_for_update(of=("self",)).select_related(
         "lote__insumo", "lote__sucursal", "ubicacion"
     ).get(pk=existencia.pk)
+    if existencia.lote_id != lote_externo.pk or existencia.ubicacion_id != referencia.ubicacion_id:
+        raise ValidationError({"existencia": "La existencia cambió; actualiza las opciones."})
+    existencia.lote = lote_externo
+    existencia.ubicacion = ubicaciones[referencia.ubicacion_id]
     equipo = adquirir_equipo(equipo_id=equipo.pk)
-    cantidad = Decimal(str(cantidad))
 
     if orden.estado not in {
         OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
@@ -2269,7 +2324,10 @@ def crear_secado_desde_inventario(
                 "en kg antes de alimentarla; no se aplican conversiones ocultas."
             )
         })
-    if not existencia.lote.utilizable or existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE:
+    if (not existencia.lote.utilizable
+        or existencia.ubicacion.tipo != Ubicacion.Tipo.DISPONIBLE
+        or not existencia.ubicacion.activo
+        or not existencia.ubicacion.bodega.activo):
         raise ValidationError({
             "existencia": "La materia prima debe estar vigente y aprobada por Calidad."
         })
@@ -2306,7 +2364,36 @@ def crear_secado_desde_inventario(
             )
         })
     etapa = ruta.proceso.etapas_para_inicio[0]
-    codigo = str(codigo_lote).strip()
+    fifo_evaluado_en = timezone.now()
+    primero = (
+        Existencia.objects.select_related("lote").filter(
+            lote__insumo_id=existencia.lote.insumo_id,
+            lote__activo=True,
+            lote__estado_calidad__in=[
+                LoteInventario.EstadoCalidad.NO_REQUIERE,
+                LoteInventario.EstadoCalidad.APROBADO,
+                LoteInventario.EstadoCalidad.OBSERVADO,
+            ],
+            ubicacion__tipo=Ubicacion.Tipo.DISPONIBLE,
+            ubicacion__activo=True, ubicacion__bodega__activo=True,
+            cantidad_fisica__gt=F("cantidad_reservada"),
+        ).filter(
+            Q(lote__vencimiento__isnull=True)
+            | Q(lote__vencimiento__gte=timezone.localdate())
+        ).order_by("lote__recibido_en", "lote_id", "pk").first()
+    )
+    if primero is not None and primero.pk != existencia.pk and not excepcion_fifo_motivo:
+        raise ValidationError({
+            "existencia": (
+                f"FIFO: primero corresponde el lote {primero.lote.codigo} "
+                f"({primero.cantidad_disponible} kg libres). Para elegir otro, "
+                "registra el motivo de excepción."
+            )
+        })
+    if primero is not None and primero.pk == existencia.pk and excepcion_fifo_motivo:
+        raise ValidationError({
+            "excepcion_fifo_motivo": "No hay un salto FIFO que justificar."
+        })
     if not codigo:
         raise ValidationError({"codigo_lote": "Ingresa el codigo del lote de salida."})
     advertencia = advertencia_aseo_equipo(equipo)
@@ -2340,7 +2427,8 @@ def crear_secado_desde_inventario(
         motivo=f"Alimentacion externa de Secado {ejecucion.codigo}", consumo=True,
     )
     corrida = CorridaSecado.objects.create(
-        ejecucion=ejecucion, orden=orden, lote=lote, kg_alimentacion=cantidad,
+        ejecucion=ejecucion, orden=orden, lote=lote,
+        kg_alimentacion=cantidad, operacion_id=operacion_id,
     )
     if orden.estado == OrdenProduccion.Estado.PROGRAMADA:
         orden.estado = OrdenProduccion.Estado.EN_PROCESO
@@ -2351,21 +2439,38 @@ def crear_secado_desde_inventario(
         motivo=(
             f"Lote externo {existencia.lote.codigo}; {cantidad} kg de "
             f"{existencia.lote.insumo.nombre}."
+            + (f" Excepción FIFO: {excepcion_fifo_motivo}" if excepcion_fifo_motivo else "")
         ),
+        datos={"solicitud": payload, "fifo_primero_id": primero.pk if primero else None,
+               "fifo_evaluado_en": fifo_evaluado_en.isoformat(),
+               "fifo_primero_libre_kg": str(primero.cantidad_disponible) if primero else None,
+               "excepcion_fifo": bool(primero and primero.pk != existencia.pk),
+               "actor_id": usuario.pk, "fecha": timezone.now().isoformat()},
+        operacion_id=operacion_id,
     )
-    return corrida
+    return corrida, False
 
 
 @transaction.atomic
 def cerrar_secado(
     *, corrida_id, usuario, kg_alimentacion, solidos_entrada_pct,
     kg_polvo, kg_finos=0, kg_merma=0, controles=None,
+    operacion_id, referencia_medicion_kg="",
 ):
     """Cierra torre, balance y lote como un solo hecho transaccional."""
     from calidad.models import LiberacionProceso
+    from calidad.vigencia import exigir_liberacion_salida_vigente
+    from inventario.models import LoteInventario, MovimientoInventario
+    from maestros.models import Silo
+    from recepcion.models import MovimientoSilo
     from produccion.models import Lote, OrdenProduccion
     from produccion.servicios import cerrar_lote_producido, registrar_produccion
     from .models import CorridaSecado
+    from calidad.evidencia import bloquear_catalogo
+
+    operacion_id = uuid.UUID(str(operacion_id))
+    bloquear_catalogo()
+    _bloquear_operacion_secado(operacion_id)
 
     corrida = (
         CorridaSecado.objects.select_for_update(of=("self",))
@@ -2375,6 +2480,36 @@ def cerrar_secado(
     corrida.ejecucion = EjecucionProceso.objects.select_for_update(
         of=("self",)
     ).select_related("etapa", "equipo").get(pk=corrida.ejecucion_id)
+    if corrida.orden_id:
+        OrdenProduccion.objects.select_for_update(of=("self",)).get(
+            pk=corrida.orden_id,
+        )
+    controles = controles or {}
+    if not isinstance(controles, dict) or "_op04" in controles:
+        raise ValidationError({"controles": "_op04 está reservado para evidencia del servidor."})
+    referencia_medicion_kg = str(referencia_medicion_kg or "").strip()
+    solicitud = {
+        "operacion_id": str(operacion_id),
+        "kg_alimentacion": str(Decimal(str(kg_alimentacion))),
+        "solidos_entrada_pct": str(Decimal(str(solidos_entrada_pct))),
+        "kg_polvo": str(Decimal(str(kg_polvo))),
+        "kg_finos": str(Decimal(str(kg_finos))),
+        "kg_merma": str(Decimal(str(kg_merma))),
+        "referencia_medicion_kg": referencia_medicion_kg,
+        "controles": controles,
+        "usuario_id": usuario.pk,
+    }
+    cierre_previo = (corrida.controles or {}).get("_op04", {}).get("cierre")
+    if cierre_previo is not None:
+        if cierre_previo.get("solicitud") != solicitud:
+            raise ValidationError({
+                "operacion_id": "La corrida ya se confirmó con una solicitud distinta."
+            })
+        return corrida
+    if EventoProceso.objects.filter(operacion_id=operacion_id).exists():
+        raise ValidationError({
+            "operacion_id": "Esta clave ya se usó en otra operación."
+        })
     if corrida.ejecucion.estado not in {
         EjecucionProceso.Estado.EJECUCION,
         EjecucionProceso.Estado.PAUSADA,
@@ -2382,6 +2517,153 @@ def cerrar_secado(
         raise ValidationError("Solo una corrida de Secado activa puede cerrarse.")
 
     alimentacion = Decimal(str(kg_alimentacion))
+    entradas = list(
+        EntradaProceso.objects.select_related(
+            "lote_inventario", "silo", "salida_origen", "lote"
+        ).filter(ejecucion_id=corrida.ejecucion_id,
+                 tipo=EntradaProceso.Tipo.PRINCIPAL).order_by("pk")
+    )
+    if not entradas:
+        raise ValidationError({
+            "alimentacion": "Secado necesita una entrada principal con origen real y cantidad consumida."
+        })
+    unidades = {entrada.unidad.strip().lower() for entrada in entradas}
+    if unidades - {"kg", "l"} or len(unidades) != 1:
+        raise ValidationError({
+            "alimentacion": "Las entradas principales deben tener una unidad única: kg o L."
+        })
+    if len(entradas) > 1 and any(e.lote_inventario_id for e in entradas):
+        raise ValidationError({
+            "alimentacion": "No se puede mezclar origen externo con otras entradas en esta confirmación."
+        })
+    silos = [entrada.silo_id for entrada in entradas if entrada.silo_id]
+    if len(silos) != len(set(silos)):
+        raise ValidationError({
+            "alimentacion": "Hay entradas principales duplicadas del mismo silo; corrige el origen físico antes de confirmar."
+        })
+    if "l" in unidades and not referencia_medicion_kg:
+        raise ValidationError({
+            "referencia_medicion_kg": (
+                "Registra la referencia de la medición real en kg; los litros "
+                "de origen no se convierten automáticamente."
+            )
+        })
+    for entrada in entradas:
+        if entrada.lote_inventario_id:
+            origen = LoteInventario.objects.select_for_update(of=("self",)).get(
+                pk=entrada.lote_inventario_id,
+            )
+            if not origen.utilizable:
+                raise ValidationError({
+                    "alimentacion": "Calidad cambió el estado del lote externo; revisa antes de confirmar."
+                })
+            consumo = MovimientoInventario.objects.filter(
+                tipo=MovimientoInventario.Tipo.CONSUMO,
+                documento_tipo="procesos.EjecucionProceso",
+                documento_id=corrida.ejecucion_id,
+                lote_id=origen.pk,
+            ).aggregate(total=Sum("cantidad"), cantidad_movimientos=Count("pk"))
+            if (entrada.unidad.lower() != "kg"
+                or consumo["cantidad_movimientos"] != 1
+                or consumo["total"] != entrada.cantidad):
+                raise ValidationError({
+                    "alimentacion": "La entrada externa no coincide con un consumo único en kg del libro."
+                })
+        elif entrada.salida_origen_id:
+            salida_origen = SalidaProceso.objects.select_for_update(of=("self",)).get(
+                pk=entrada.salida_origen_id,
+            )
+            if (salida_origen.silo_id != entrada.silo_id
+                or salida_origen.unidad.lower() != entrada.unidad.lower()):
+                raise ValidationError({
+                    "alimentacion": "La salida intermedia no corresponde al silo y unidad de la entrada."
+                })
+            comprometido = salida_origen.usos_como_origen.aggregate(
+                total=Sum("cantidad"),
+            )["total"] or Decimal("0")
+            comprometido_despacho = salida_origen.detalles_despacho_granel.filter(
+                despacho__estado__in=["autorizado", "despachado"],
+            ).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+            from estandarizacion.balance import cantidad_operativa_salida
+            if comprometido + comprometido_despacho > cantidad_operativa_salida(salida_origen):
+                raise ValidationError({
+                    "alimentacion": "La salida intermedia está comprometida por encima de su cantidad."
+                })
+            exigir_liberacion_salida_vigente(salida_origen.pk, bloquear=True)
+            if entrada.unidad.lower() != "l":
+                raise ValidationError({
+                    "alimentacion": (
+                        "El silo se controla en litros; una salida intermedia en kg "
+                        "requiere un consumo en kg verificable, sin conversión implícita."
+                    )
+                })
+            silo = Silo.objects.select_for_update(of=("self",)).get(pk=entrada.silo_id)
+            if silo.estado == Silo.Estado.BLOQUEADO_CALIDAD:
+                raise ValidationError({
+                    "alimentacion": "El silo de origen está bloqueado por Calidad."
+                })
+            retiros = MovimientoSilo.objects.filter(
+                silo_id=entrada.silo_id,
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+                origen_id=corrida.pk,
+            ).aggregate(total=Sum("litros"), cantidad_movimientos=Count("pk"))
+            if retiros["cantidad_movimientos"]:
+                if (retiros["cantidad_movimientos"] != 1
+                    or retiros["total"] != entrada.cantidad):
+                    raise ValidationError({
+                        "alimentacion": "El retiro previo de silo no coincide con la entrada de Secado."
+                    })
+            else:
+                from recepcion.servicios import motivos_silo_no_disponible
+                motivos_silo = motivos_silo_no_disponible(silo, para="proceso")
+                if motivos_silo:
+                    raise ValidationError({
+                        "alimentacion": f"{silo.codigo}: {' '.join(motivos_silo)}"
+                    })
+                exigir_origen_disponible(
+                    silo=silo, cantidad=entrada.cantidad,
+                    excluir_ejecucion_id=corrida.ejecucion_id,
+                )
+                consumir_reserva_origen(
+                    ejecucion_id=corrida.ejecucion_id,
+                    silo_id=silo.pk, cantidad=entrada.cantidad,
+                )
+                MovimientoSilo.objects.create(
+                    silo=silo, tipo=MovimientoSilo.Tipo.SALIDA,
+                    litros=entrada.cantidad, fecha_hora=timezone.now(),
+                    origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+                    origen_id=corrida.pk, operacion_id=operacion_id,
+                    lote=salida_origen.lote, producto=salida_origen.producto,
+                    equipo=corrida.ejecucion.equipo, usuario=usuario,
+                    motivo=f"Alimentación de Secado {corrida.ejecucion.codigo}",
+                )
+        elif entrada.silo_id:
+            silo = Silo.objects.select_for_update(of=("self",)).get(pk=entrada.silo_id)
+            if silo.estado == Silo.Estado.BLOQUEADO_CALIDAD:
+                raise ValidationError({
+                    "alimentacion": "El silo de origen está bloqueado por Calidad."
+                })
+            # Una apertura desde vale ya registró la salida física de L.
+            # Una fila de entrada suelta no prueba ese consumo.
+            consumo_litros = MovimientoSilo.objects.filter(
+                lote_id=corrida.lote_id, silo_id=entrada.silo_id,
+                tipo=MovimientoSilo.Tipo.SALIDA,
+                origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+                origen_id=corrida.lote_id,
+            ).aggregate(total=Sum("litros"))["total"] or Decimal("0")
+            if entrada.unidad.lower() != "l" or consumo_litros != entrada.cantidad:
+                raise ValidationError({
+                    "alimentacion": "La entrada en litros no coincide con una salida física del silo para este lote."
+                })
+        elif entrada.lote_id:
+            raise ValidationError({
+                "alimentacion": "El lote de origen no tiene un consumo físico verificable para esta entrada."
+            })
+        else:
+            raise ValidationError({
+                "alimentacion": "Una entrada principal carece de origen real."
+            })
     if corrida.kg_alimentacion is not None and alimentacion != corrida.kg_alimentacion:
         raise ValidationError({
             "kg_alimentacion": (
@@ -2389,14 +2671,37 @@ def cerrar_secado(
                 "el cierre debe conservar esa cantidad auditable."
             )
         })
+    if "kg" in unidades and alimentacion != sum(
+        (entrada.cantidad for entrada in entradas), Decimal("0")
+    ):
+        raise ValidationError({
+            "kg_alimentacion": "Los kg medidos deben coincidir con la entrada consumida en kg."
+        })
     corrida.kg_alimentacion = alimentacion
     corrida.solidos_entrada_pct = Decimal(str(solidos_entrada_pct))
     corrida.kg_polvo = Decimal(str(kg_polvo))
     corrida.kg_finos = Decimal(str(kg_finos))
     corrida.kg_merma = Decimal(str(kg_merma))
-    corrida.controles = controles or {}
+    finalizada_en = timezone.now()
+    corrida.controles = {
+        **controles,
+        "_op04": {"cierre": {
+            "solicitud": solicitud,
+            "actor_id": usuario.pk,
+            "fecha": finalizada_en.isoformat(),
+            "medicion_kg": {
+                "cantidad": str(alimentacion),
+                "referencia": referencia_medicion_kg,
+                "tipo": "medicion_declarada" if "l" in unidades else "consumo_inventario",
+            },
+            "entradas": [{
+                "id": entrada.pk, "cantidad": str(entrada.cantidad),
+                "unidad": entrada.unidad,
+            } for entrada in entradas],
+        }},
+    }
     corrida.finalizada_por = usuario
-    corrida.finalizada_en = timezone.now()
+    corrida.finalizada_en = finalizada_en
     corrida.full_clean()
 
     lote = Lote.objects.select_for_update(of=("self",)).get(pk=corrida.lote_id)
@@ -2449,5 +2754,8 @@ def cerrar_secado(
             f"merma {corrida.kg_merma} kg."
         ),
         usuario=usuario,
+        operacion_id=operacion_id,
+        datos={"solicitud": solicitud, "actor_id": usuario.pk,
+               "fecha": finalizada_en.isoformat()},
     )
     return corrida

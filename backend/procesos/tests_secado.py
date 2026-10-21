@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -10,12 +11,13 @@ from calidad.models import LiberacionProceso
 from inventario.models import (
     Bodega, Existencia, Insumo, LoteInventario, MovimientoInventario, Ubicacion,
 )
-from maestros.models import Equipo, Especificacion, Mandante, Producto
+from maestros.models import Equipo, Especificacion, Mandante, Producto, Silo
 from produccion.models import Analisis, Lote, OrdenProduccion
+from recepcion.models import MovimientoSilo
 from usuarios.models import Empresa, PerfilUsuario, Rol, Sucursal
 
 from .models import (
-    CorridaSecado, EjecucionProceso, EtapaProceso, Proceso, RutaProducto,
+    CorridaSecado, EjecucionProceso, EntradaProceso, EtapaProceso, Proceso, RutaProducto,
     SalidaProceso,
 )
 
@@ -64,6 +66,27 @@ class CierreSecadoTests(TestCase):
         self.corrida = CorridaSecado.objects.create(
             ejecucion=ejecucion, orden=orden, lote=lote,
         )
+        silo = Silo.objects.create(
+            sucursal=planta, codigo="S-SEC-TEST", tipo=Silo.Tipo.SILO,
+            capacidad_l=Decimal("1000"),
+        )
+        MovimientoSilo.objects.create(
+            silo=silo, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("600"), fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+            motivo="Saldo sintético del fixture de Secado",
+        )
+        MovimientoSilo.objects.create(
+            silo=silo, tipo=MovimientoSilo.Tipo.SALIDA,
+            litros=Decimal("600"), fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE,
+            origen_id=lote.pk, lote=lote, producto=self.producto,
+            equipo=torre, usuario=self.usuario,
+        )
+        EntradaProceso.objects.create(
+            ejecucion=ejecucion, silo=silo, tipo=EntradaProceso.Tipo.PRINCIPAL,
+            cantidad=Decimal("600"), unidad="L",
+        )
         self.cliente = APIClient()
         self.cliente.force_authenticate(self.usuario)
 
@@ -71,6 +94,8 @@ class CierreSecadoTests(TestCase):
         respuesta = self.cliente.post(
             f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
             {
+                "operacion_id": str(uuid4()),
+                "referencia_medicion_kg": "Ticket fixture SEC",
                 "kg_alimentacion": "600.000",
                 "solidos_entrada_pct": "48.00",
                 "kg_polvo": "280.000",
@@ -107,6 +132,8 @@ class CierreSecadoTests(TestCase):
         respuesta = self.cliente.post(
             f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
             {
+                "operacion_id": str(uuid4()),
+                "referencia_medicion_kg": "Ticket fixture SEC",
                 "kg_alimentacion": "600.000",
                 "solidos_entrada_pct": "48.00",
                 "kg_polvo": "280.000",
@@ -155,6 +182,8 @@ class CierreSecadoTests(TestCase):
         cierre = self.cliente.post(
             f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
             {
+                "operacion_id": str(uuid4()),
+                "referencia_medicion_kg": "Ticket fixture SEC",
                 "kg_alimentacion": "600.000",
                 "solidos_entrada_pct": "48.00",
                 "kg_polvo": "280.000",
@@ -208,6 +237,8 @@ class CierreSecadoTests(TestCase):
         respuesta = self.cliente.post(
             f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
             {
+                "operacion_id": str(uuid4()),
+                "referencia_medicion_kg": "Ticket fixture SEC",
                 "kg_alimentacion": "100.000",
                 "solidos_entrada_pct": "48.00",
                 "kg_polvo": "100.000",
@@ -301,7 +332,7 @@ class InicioSecadoDesdeInventarioTests(TestCase):
             {
                 "orden": self.orden.pk, "existencia": self.existencia.pk,
                 "equipo": self.torre.pk, "codigo_lote": "SUE-POL-001",
-                "cantidad": "700.000",
+                "cantidad": "700.000", "operacion_id": str(uuid4()),
             },
             format="json",
         )
@@ -334,7 +365,7 @@ class InicioSecadoDesdeInventarioTests(TestCase):
             {
                 "orden": self.orden.pk, "existencia": self.existencia.pk,
                 "equipo": self.torre.pk, "codigo_lote": "SUE-POL-002",
-                "cantidad": "100.000",
+                "cantidad": "100.000", "operacion_id": str(uuid4()),
             },
             format="json",
         )
@@ -384,6 +415,8 @@ class CierreSecadoDescuentaMaterialTests(CierreSecadoTests):
         respuesta = self.cliente.post(
             f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
             {
+                "operacion_id": str(uuid4()),
+                "referencia_medicion_kg": "Ticket fixture SEC",
                 "kg_alimentacion": "600.000",
                 "solidos_entrada_pct": "48.00",
                 "kg_polvo": "280.000",
@@ -435,6 +468,8 @@ class CierreSecadoDescuentaMaterialTests(CierreSecadoTests):
         self.cliente.post(
             f"/api/procesos/secados/{self.corrida.pk}/cerrar/",
             {
+                "operacion_id": str(uuid4()),
+                "referencia_medicion_kg": "Ticket fixture SEC",
                 "kg_alimentacion": "600.000",
                 "solidos_entrada_pct": "48.00",
                 "kg_polvo": "280.000",

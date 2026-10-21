@@ -62,3 +62,16 @@ La migración `0010_actovaleestandarizacion` es aditiva. La reversión de códig
 5. **Trabajo realizado:** PM/AVANCE coordinaron expediente y fixtures; especialistas backend/frontend implementaron; QA aportó regresiones; revisión independiente detectó y verificó correcciones; operadores hicieron DESK. Se añadió UUID aditivo sin backfill y se ajustaron pantallas. Sin cambios productivos.
 6. **Pruebas y resultados:** CI global aprobada: 1.674 backend (cinco omitidas), 97 frontend; local 64 focales y 58 heredadas, Chrome 5 con API simulada. Los fallos previos y su corrección están registrados; no se presentan como aprobaciones.
 7. **Estado final:** VALIDADO MEDIANTE PRUEBAS EN LA RAMA. Pendiente revisión humana y validación industrial; no se afirma que toda la planta esté lista para operar. Siguiente OP-04, primero validar reglas.
+
+
+## OP-04 — Secado y FIFO
+
+**COMPLETADA EN LA RAMA** `codex/op-04-secado-fifo`, desde OP-03 `5fd3d89`. Usuario validó seis reglas y autorizó rama, pruebas y PR. Código/pruebas `1e2098d89ffc422471b9aa247ccb0b82af82c4bc`; [PR #11 borrador](https://github.com/FelipeCCAA/CCAA/pull/11) apilado sobre OP-03 #10. El cierre posterior sólo modifica este documento, TASK_BACKLOG.md y el [expediente OP-04](docs/operacion/OP-04_VALIDACION.md), sin cambios de código/pruebas. Su CI documental separada no se declara aprobada por anticipado.
+
+Implementado origen/retiro verificable, unidades separadas, FIFO calculado por servidor, excepción auditada, UUID recuperable y cierre trazable con Calidad. Continuación retira el silo dentro del cierre, exige firma vigente y veta CIP antes de un retiro nuevo. Protege correcciones concurrentes de AnalisisSilo, orden de bloqueos y entradas duplicadas. Sin migración nueva, conversión automática ni tolerancia industrial inventada.
+
+**CI final SUCCESS** [39637476601](https://github.com/FelipeCCAA/CCAA/actions/runs/39637476601) en `1e2098d`: backend 1.696 pruebas en 378,453 s, 1.691 aprobadas y cinco omitidas preexistentes, cero fallos/errores. Frontend 101/101; Ruff, Django checks, migración efímera, dry-run, lint, tipos, build y configuración aprobados. Incluye 22 casos nuevos backend y extensión CIP final. Local limpio 68/68 en 158,219 s, Chrome con API simulada 5/5 en 51,7 s y estandarización previa 166/166. Fallo inicial de fixture (35 pruebas, un error) y ajustes de selectores de navegador documentados; no se cuentan como aprobados.
+
+Sólo tres subagentes: backend y revisión independiente `gpt-6-sol high`, frontend `gpt-6-luna medium`; PM/AVANCE/EXPLICADOR integrados por el coordinador. Revisión técnica final sin bloqueantes conocidos por lectura; DB/CI ejecutados por coordinador/GitHub. Recorridos de escritorio de Recepción, Producción y Bodega; no UAT.
+
+Clúster local exacto OP-00 detenido, exit 0 y sin postmaster.pid. DevelopMain verificada sin cambios en `d34df44ca30c402e9da34dc7b75f7652c2751fef`. Sin merge, despliegue, datos productivos, carga de 70 usuarios ni restauración de backup. Medición kg declarada con referencia y antecedentes históricos quedan sujetos a revisión operacional. OP-05 lista para diagnóstico/reglas, sin autorización para implementar. Revisión/merge, UAT y producción requieren sus decisiones posteriores.
