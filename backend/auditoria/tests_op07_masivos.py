@@ -357,4 +357,3 @@ class ActualizacionConcurrenteTests(TransactionTestCase):
             ],
         )
         self.assertEqual([evento.usuario_id for evento in eventos], [primero.pk, segundo.pk])
-
