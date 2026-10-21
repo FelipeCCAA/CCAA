@@ -78,6 +78,15 @@ class FlujoIntegradoApiTests(TestCase):
             grasa_real="3.44", sng_real="8.61",
             estado=ValeEstandarizacion.Estado.LIBERADO,
         )
+        MovimientoSilo.objects.create(
+            silo=self.destino,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("20000.00"),
+            fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+            origen_id=self.vale.pk,
+            motivo="Mezcla ya transferida del vale liberado de prueba",
+        )
         usuario = User.objects.create_user("produccion-flujo", password="x")
         PerfilUsuario.objects.create(
             usuario=usuario, rol=Rol.PRODUCCION, area=PerfilUsuario.Area.SECADO,

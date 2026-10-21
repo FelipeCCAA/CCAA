@@ -5,10 +5,10 @@ queda acompañada por un movimiento inmutable dentro de la misma transacción.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
@@ -1001,12 +1001,52 @@ def reservar_fefo(*, insumo_id, cantidad, usuario, documento_tipo, documento_id)
     return reservas
 
 
+def _bloquear_ubicaciones(ids):
+    """Tras bloquear los lotes, fijar ubicaciones y bodegas hasta el commit."""
+    ubicaciones = dict(Ubicacion.objects.select_for_update().filter(
+        pk__in=ids,
+    ).order_by("pk").in_bulk())
+    bodegas = dict(Bodega.objects.select_for_update().filter(
+        pk__in={u.bodega_id for u in ubicaciones.values()},
+    ).order_by("pk").in_bulk())
+    for ubicacion in ubicaciones.values():
+        ubicacion.bodega = bodegas[ubicacion.bodega_id]
+    return ubicaciones
+
+
 @transaction.atomic
-def entregar_reserva(*, existencia_id, cantidad, destino, usuario, documento_tipo, documento_id):
+def entregar_reserva(*, reserva_id, existencia_id, cantidad, destino, usuario, documento_tipo, documento_id):
     cantidad = _cantidad(cantidad)
-    existencia = Existencia.objects.select_for_update().select_related("lote", "ubicacion").get(pk=existencia_id)
+    reserva = ReservaInventario.objects.select_for_update(of=("self",)).select_related("detalle").get(
+        pk=reserva_id
+    )
+    if not reserva.activa or reserva.existencia_id != existencia_id:
+        raise ValidationError("La reserva ya no está activa para esta existencia.")
+    from .models import EntregaProduccion
+    solicitud_documento = documento_id if documento_tipo == "inventario.SolicitudMaterial" else None
+    if documento_tipo == "inventario.EntregaProduccion":
+        solicitud_documento = EntregaProduccion.objects.filter(pk=documento_id).values_list(
+            "solicitud_id", flat=True,
+        ).first()
+    if solicitud_documento != reserva.detalle.solicitud_id:
+        raise ValidationError("La reserva pertenece a otra solicitud de material.")
+    if cantidad > reserva.cantidad:
+        raise ValidationError("La entrega supera la cantidad de esta reserva.")
+    referencia = Existencia.objects.get(pk=existencia_id)
+    # El mismo orden que el traslado: lote, ubicaciones, bodegas, existencia.
+    # No bloquear los joins de Existencia antes de conocer ambos extremos.
+    LoteInventario.objects.select_for_update().get(pk=referencia.lote_id)
+    ubicaciones = _bloquear_ubicaciones({referencia.ubicacion_id, destino.pk})
+    existencia = Existencia.objects.select_for_update(of=("self",)).select_related("lote", "ubicacion").get(pk=existencia_id)
+    if existencia.lote_id != referencia.lote_id or existencia.ubicacion_id != referencia.ubicacion_id:
+        raise ValidationError("La existencia cambió; actualiza la vista e intenta nuevamente.")
     if not existencia.lote.utilizable:
         raise ValidationError("El lote no está aprobado, está bloqueado, rechazado o vencido.")
+    if len(ubicaciones) != 2 or any(
+        not u.activo or not u.bodega.activo for u in ubicaciones.values()
+    ):
+        raise ValidationError("La entrega requiere origen y destino distintos, con ubicaciones y bodegas activas.")
+    destino = ubicaciones[destino.pk]
     if existencia.cantidad_reservada < cantidad or existencia.cantidad_fisica < cantidad:
         raise ValidationError("La cantidad supera la existencia reservada.")
     anterior = existencia.cantidad_fisica
@@ -1020,13 +1060,17 @@ def entregar_reserva(*, existencia_id, cantidad, destino, usuario, documento_tip
     )
     destino_existencia.cantidad_fisica = F("cantidad_fisica") + cantidad
     destino_existencia.save(update_fields=["cantidad_fisica"])
-    return MovimientoInventario.objects.create(
+    movimiento = MovimientoInventario.objects.create(
         tipo=MovimientoInventario.Tipo.ENTREGA, lote=existencia.lote,
         cantidad=cantidad, origen=existencia.ubicacion, destino=destino,
         documento_tipo=documento_tipo, documento_id=documento_id,
         usuario=usuario, saldo_anterior=anterior,
         saldo_posterior=existencia.cantidad_fisica,
     )
+    reserva.cantidad -= cantidad
+    reserva.activa = reserva.cantidad > 0
+    reserva.save(update_fields=["cantidad", "activa"])
+    return movimiento
 
 
 def _avanzar_estado_orden(orden):
@@ -1246,9 +1290,15 @@ def entregar_solicitud_material(*, solicitud, destino, entrega_por, recibe_por, 
     solicitud = SolicitudMaterial.objects.select_for_update().get(pk=solicitud.pk)
     if solicitud.estado not in {SolicitudMaterial.Estado.PREPARADA, SolicitudMaterial.Estado.PARCIAL}:
         raise ValidationError("La MRQ no está preparada para entrega.")
-    reservas = ReservaInventario.objects.select_for_update().select_related(
+    reservas = list(ReservaInventario.objects.select_for_update(of=("self",)).select_related(
         "existencia__lote", "detalle"
-    ).filter(detalle__solicitud=solicitud, activa=True)
+    ).filter(detalle__solicitud=solicitud, activa=True).order_by("pk"))
+    # Una MRQ puede entregar varias líneas: adquirir todas sus raíces antes
+    # de escribir evita invertir el orden entre líneas y traslados paralelos.
+    list(LoteInventario.objects.select_for_update().filter(
+        pk__in={r.existencia.lote_id for r in reservas},
+    ).order_by("pk"))
+    _bloquear_ubicaciones({destino.pk, *(r.existencia.ubicacion_id for r in reservas)})
     por_id = {int(item["reserva"]): Decimal(str(item["cantidad"])) for item in (selecciones or [])}
     entrega = EntregaProduccion.objects.create(
         solicitud=solicitud, entregada_por=entrega_por,
@@ -1262,7 +1312,8 @@ def entregar_solicitud_material(*, solicitud, destino, entrega_por, recibe_por, 
         if cantidad > reserva.cantidad:
             raise ValidationError("La entrega supera la cantidad reservada.")
         entregar_reserva(
-            existencia_id=reserva.existencia_id, cantidad=cantidad, destino=destino,
+            reserva_id=reserva.pk, existencia_id=reserva.existencia_id,
+            cantidad=cantidad, destino=destino,
             usuario=entrega_por, documento_tipo="inventario.EntregaProduccion",
             documento_id=entrega.pk,
         )
@@ -1272,9 +1323,6 @@ def entregar_solicitud_material(*, solicitud, destino, entrega_por, recibe_por, 
         )
         reserva.detalle.cantidad_entregada = F("cantidad_entregada") + cantidad
         reserva.detalle.save(update_fields=["cantidad_entregada"])
-        reserva.cantidad -= cantidad
-        reserva.activa = reserva.cantidad > 0
-        reserva.save(update_fields=["cantidad", "activa"])
         alguna = True
     if not alguna:
         raise ValidationError("No se seleccionó ninguna cantidad para entregar.")
@@ -1288,40 +1336,114 @@ def entregar_solicitud_material(*, solicitud, destino, entrega_por, recibe_por, 
 
 
 @transaction.atomic
-def trasladar_existencia(*, existencia_id, destino, cantidad, usuario, documento_tipo, documento_id, motivo=""):
+def trasladar_existencia(
+    *, existencia_id, destino, cantidad, usuario, documento_tipo, documento_id,
+    motivo="", operacion_id=None, retornar_replay=False,
+):
     cantidad = _cantidad(cantidad)
-    origen = Existencia.objects.select_for_update().select_related("lote", "ubicacion").get(pk=existencia_id)
+    try:
+        operacion_id = UUID(str(operacion_id)) if operacion_id is not None else None
+    except (TypeError, ValueError, AttributeError) as error:
+        raise ValidationError({"operacion_id": "La clave de operación debe ser un UUID válido."}) from error
+
+    referencia = Existencia.objects.select_related("lote").get(pk=existencia_id)
+    lote = LoteInventario.objects.select_for_update().get(pk=referencia.lote_id)
+    ubicaciones = _bloquear_ubicaciones({referencia.ubicacion_id, destino.pk})
+    if len(ubicaciones) != 2:
+        raise ValidationError("El origen o destino ya no existe.")
+    origen_ubicacion = ubicaciones[referencia.ubicacion_id]
+    destino_ubicacion = ubicaciones[destino.pk]
+    if origen_ubicacion.pk == destino_ubicacion.pk:
+        raise ValidationError("El origen y el destino deben ser distintos.")
+
+    def validar_reintento(movimiento):
+        coincide = (
+            movimiento.tipo == MovimientoInventario.Tipo.TRASLADO
+            and movimiento.lote_id == lote.pk
+            and movimiento.origen_id == origen_ubicacion.pk
+            and movimiento.destino_id == destino_ubicacion.pk
+            and movimiento.cantidad == cantidad
+            and movimiento.documento_tipo == documento_tipo
+            and movimiento.documento_id == documento_id
+            and movimiento.motivo == motivo
+            and movimiento.usuario_id == usuario.pk
+        )
+        if not coincide:
+            raise ValidationError({
+                "operacion_id": "Esta clave ya se usó con datos distintos; consulta el movimiento original."
+            })
+        return (movimiento, True) if retornar_replay else movimiento
+
+    if operacion_id is not None:
+        existente = MovimientoInventario.objects.filter(operacion_id=operacion_id).first()
+        if existente is not None:
+            return validar_reintento(existente)
+
+    existencias = {
+        existencia.ubicacion_id: existencia
+        for existencia in Existencia.objects.select_for_update().select_related(
+            "ubicacion"
+        ).filter(
+            lote_id=lote.pk,
+            ubicacion_id__in=[origen_ubicacion.pk, destino_ubicacion.pk],
+        ).order_by("ubicacion_id", "pk")
+    }
+    origen = existencias.get(origen_ubicacion.pk)
+    if origen is None or origen.pk != existencia_id:
+        raise ValidationError("La existencia de origen cambió; actualiza la vista e intenta nuevamente.")
+
+    # Revalidar estado del lote y ubicaciones después de tomar los bloqueos.
+    if (not origen_ubicacion.activo or not destino_ubicacion.activo
+        or not origen_ubicacion.bodega.activo or not destino_ubicacion.bodega.activo):
+        raise ValidationError("El origen y el destino deben estar activos.")
     if origen.cantidad_fisica < cantidad or origen.cantidad_fisica - origen.cantidad_reservada < cantidad:
-        raise ValidationError("La cantidad supera el saldo físico no reservado.")
-    if origen.lote.estado_calidad in {
+        libre = origen.cantidad_fisica - origen.cantidad_reservada
+        raise ValidationError(
+            f"La cantidad supera el saldo libre de origen ({libre} {lote.insumo.unidad})."
+        )
+    if lote.estado_calidad in {
         LoteInventario.EstadoCalidad.PENDIENTE,
         LoteInventario.EstadoCalidad.MUESTRA,
         LoteInventario.EstadoCalidad.ANALISIS,
-    } and destino.tipo != Ubicacion.Tipo.CUARENTENA:
-        raise ValidationError("Un lote en cuarentena solo puede trasladarse a otra ubicación de cuarentena.")
-    if origen.lote.estado_calidad in {
+    } and destino_ubicacion.tipo != Ubicacion.Tipo.CUARENTENA:
+        raise ValidationError("Un lote pendiente de Calidad solo puede trasladarse a cuarentena.")
+    if lote.estado_calidad in {
         LoteInventario.EstadoCalidad.RECHAZADO,
         LoteInventario.EstadoCalidad.BLOQUEADO,
-    } and destino.tipo != Ubicacion.Tipo.RECHAZADO:
+    } and destino_ubicacion.tipo != Ubicacion.Tipo.RECHAZADO:
         raise ValidationError("Un lote rechazado o bloqueado solo puede ir a una ubicación de rechazados.")
-    anterior = origen.cantidad_fisica
-    origen.cantidad_fisica -= cantidad
-    origen.save(update_fields=["cantidad_fisica"])
-    llegada, _ = Existencia.objects.select_for_update().get_or_create(
-        lote=origen.lote, ubicacion=destino,
-        defaults={"cantidad_fisica": 0, "cantidad_reservada": 0},
-    )
-    llegada.cantidad_fisica = F("cantidad_fisica") + cantidad
-    llegada.save(update_fields=["cantidad_fisica"])
-    movimiento = MovimientoInventario.objects.create(
-        tipo=MovimientoInventario.Tipo.TRASLADO, lote=origen.lote,
-        cantidad=cantidad, origen=origen.ubicacion, destino=destino,
-        documento_tipo=documento_tipo, documento_id=documento_id,
-        usuario=usuario, motivo=motivo, saldo_anterior=anterior,
-        saldo_posterior=origen.cantidad_fisica,
-    )
-    actualizar_alertas_inventario()
-    return movimiento
+
+    try:
+        with transaction.atomic():
+            anterior = origen.cantidad_fisica
+            origen.cantidad_fisica -= cantidad
+            origen.save(update_fields=["cantidad_fisica"])
+            llegada = existencias.get(destino_ubicacion.pk)
+            if llegada is None:
+                llegada = Existencia.objects.create(
+                    lote=lote, ubicacion=destino_ubicacion,
+                    cantidad_fisica=cantidad, cantidad_reservada=Decimal("0"),
+                )
+            else:
+                llegada.cantidad_fisica = F("cantidad_fisica") + cantidad
+                llegada.save(update_fields=["cantidad_fisica"])
+            movimiento = MovimientoInventario.objects.create(
+                tipo=MovimientoInventario.Tipo.TRASLADO, lote=lote,
+                cantidad=cantidad, origen=origen_ubicacion, destino=destino_ubicacion,
+                documento_tipo=documento_tipo, documento_id=documento_id,
+                usuario=usuario, motivo=motivo, saldo_anterior=anterior,
+                saldo_posterior=origen.cantidad_fisica, operacion_id=operacion_id,
+            )
+            actualizar_alertas_inventario()
+    except IntegrityError:
+        if operacion_id is None:
+            raise
+        existente = MovimientoInventario.objects.filter(operacion_id=operacion_id).first()
+        if existente is None:
+            raise
+        return validar_reintento(existente)
+
+    return (movimiento, False) if retornar_replay else movimiento
 
 
 @transaction.atomic

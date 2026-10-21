@@ -8,11 +8,14 @@ recepciones se devuelvan con las cantidades FIFO efectivamente atribuidas. Los
 datos históricos sin atribución se identifican expresamente como inferidos.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from datetime import timezone as tz
+from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -24,7 +27,7 @@ from maestros.models import (
     RecetaComponente,
     Silo,
 )
-from recepcion.models import AtribucionRecepcion, MovimientoSilo, Recepcion
+from recepcion.models import AnalisisSilo, AtribucionRecepcion, MovimientoSilo, Recepcion
 from usuarios.models import PerfilUsuario, Rol
 
 from .models import Lote
@@ -36,6 +39,13 @@ def instante(dia, hora=12):
 
 class BaseAsignacion(TestCase):
     def setUp(self):
+        self._reloj = patch(
+            "django.utils.timezone.now",
+            return_value=datetime(2026, 7, 21, 12, tzinfo=tz.utc),
+        )
+        self._reloj.start()
+        self.addCleanup(self._reloj.stop)
+
         self.mandante = Mandante.objects.create(nombre="Nestlé")
 
         self.leche = Producto.objects.create(
@@ -85,11 +95,70 @@ class BaseAsignacion(TestCase):
         return cliente
 
     def _asignar(self, lineas, cliente=None):
+        if lineas and all(
+            linea.get("silo") and linea.get("litros") not in (None, "")
+            and Decimal(str(linea["litros"])) > 0
+            for linea in lineas
+        ):
+            self._preparar_silos_operables(lineas)
         return (cliente or self.cliente).post(
             f"/api/produccion/lotes/{self.lote.id}/asignacion/",
             {"asignaciones": lineas},
             format="json",
         )
+
+    def _preparar_silos_operables(self, lineas):
+        """Da a los casos positivos stock y una muestra firmada anterior al retiro."""
+        from recepcion.servicios import saldo_silo
+
+        operador = User.objects.get(username=f"u-{Rol.PRODUCCION}")
+        pedidos = {}
+        for linea in lineas:
+            momento = linea.get("fecha_hora")
+            if momento:
+                momento = datetime.fromisoformat(momento.replace("Z", "+00:00"))
+                if timezone.is_naive(momento):
+                    momento = momento.replace(tzinfo=tz.utc)
+            else:
+                momento = timezone.now()
+            silo_id = int(linea["silo"])
+            fila = pedidos.setdefault(silo_id, {"litros": Decimal("0"), "momentos": []})
+            fila["litros"] += Decimal(str(linea["litros"]))
+            fila["momentos"].append(momento)
+
+        for silo_id, pedido in pedidos.items():
+            silo = Silo.objects.get(pk=silo_id)
+            retiro_en = min(pedido["momentos"])
+            if saldo_silo(silo) < pedido["litros"]:
+                MovimientoSilo.objects.create(
+                    silo=silo,
+                    tipo=MovimientoSilo.Tipo.INGRESO,
+                    litros=pedido["litros"],
+                    fecha_hora=retiro_en - timedelta(hours=1),
+                )
+
+            # La guarda del endpoint valida la muestra contra el estado
+            # vigente al procesar la solicitud, incluso cuando se registra
+            # retrospectivamente un retiro histórico.
+            muestra_en = timezone.now() - timedelta(microseconds=1)
+            while AnalisisSilo.objects.filter(silo=silo, tomado_en=muestra_en).exists():
+                muestra_en -= timedelta(microseconds=1)
+            AnalisisSilo.objects.create(
+                silo=silo,
+                tomado_en=muestra_en,
+                grasa="4.00",
+                sng="8.70",
+                inhibidores_resultado="negativo",
+                metodo="snap",
+                hora_lectura=muestra_en.time(),
+                alcohol_75_conforme=True,
+                hervor_conforme=True,
+                organoleptico_conforme=True,
+                analista=operador,
+                visualizado_por=operador,
+                visualizado_en=muestra_en,
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+            )
 
     def _estado(self):
         return self.cliente.get(
@@ -301,7 +370,7 @@ class QuitarAsignacionTests(BaseAsignacion):
 
         self.assertEqual(respuesta.status_code, 409)
         self.assertIn("ajuste", respuesta.json()["detail"])
-        self.assertTrue(MovimientoSilo.objects.exists())
+        self.assertTrue(MovimientoSilo.objects.filter(pk=linea["id"]).exists())
 
 
 class GuardasDeAsignacionTests(BaseAsignacion):
@@ -399,7 +468,6 @@ class TrazabilidadTests(BaseAsignacion):
         """
         antes = self._recepcion(self.silo_a, 50000, 15)
         despues = self._recepcion(self.silo_a, 70000, 20)
-
         # Se declara la hora porque la asignación se está cargando después de
         # que ocurrió. Sin declararla valdría `ahora`, y arrastraría la leche
         # del día 20 que este lote nunca vio.

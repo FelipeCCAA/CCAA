@@ -890,6 +890,8 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
                 )
 
             silo = Silo.objects.select_for_update().get(pk=recepcion.silo_id)
+            from procesos.servicios import exigir_destino_sin_reserva
+            exigir_destino_sin_reserva(silo=silo)
             bloqueos_silo = motivos_silo_no_disponible(silo, para="descarga")
             if bloqueos_silo:
                 return Response(
@@ -1461,6 +1463,8 @@ def ocupacion(request):
     ahora = timezone.now()
 
     ocupaciones = []
+    from estandarizacion.bloqueos import motivos_retencion_silos
+    retenciones = motivos_retencion_silos(ids_silo)
     for silo in silos:
         analisis = analisis_por_silo.get(silo.id)
         vigencia = analisis.vigencia if analisis else None
@@ -1473,6 +1477,16 @@ def ocupacion(request):
             para="proceso",
             ahora=ahora,
         )
+        retencion = retenciones.get(silo.pk)
+        if retencion:
+            motivos.append(retencion)
+        reservas = reservas_por_silo[silo.id]
+        reservado = sum((r["cantidad_planificada"] for r in reservas if r["tipo"] == "origen"), Decimal("0"))
+        capacidad_reservada = sum((r["cantidad_planificada"] for r in reservas if r["tipo"] == "destino"), Decimal("0"))
+        libres = silo.litros_ocupados - reservado
+        if capacidad_reservada:
+            responsables = ", ".join(dict.fromkeys(r["ejecucion_codigo"] for r in reservas if r["tipo"] == "destino"))
+            motivos.append(f"{silo.codigo} está reservado como destino por {responsables}.")
         porcentaje = (
             silo.litros_ocupados / silo.capacidad_l * 100
             if silo.capacidad_l
@@ -1484,6 +1498,10 @@ def ocupacion(request):
             "tipo": silo.tipo,
             "tipo_etiqueta": silo.get_tipo_display(),
             "litros": silo.litros_ocupados,
+            "litros_reservados": reservado,
+            "litros_libres": libres,
+            "litros_disponibles": max(Decimal("0"), libres) if not motivos else Decimal("0"),
+            "capacidad_reservada": capacidad_reservada,
             "capacidad": silo.capacidad_l,
             "estado": silo.estado,
             "estado_etiqueta": silo.get_estado_display(),
@@ -1793,6 +1811,10 @@ class AnalisisSiloViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.M
 @permission_classes([EscribeRecepcion])
 def sugerencia_silos(request):
     """Silos ordenados por la leche utilizable más antigua."""
+    from django.core.exceptions import ValidationError
+    from estandarizacion.bloqueos import motivos_retencion_silos
+    from procesos.servicios import exigir_origen_disponible
+
     try:
         volumen = Decimal(str(request.query_params.get("volumen", "0")))
     except Exception:
@@ -1802,12 +1824,21 @@ def sugerencia_silos(request):
         Silo.objects.filter(activo=True, tipo=tipo), request.user,
         campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
     ).order_by("codigo")
+    silos = list(silos)
+    retenciones = motivos_retencion_silos([silo.pk for silo in silos])
     ahora = timezone.now()
     entradas = []
     metadatos = {}
     for silo in silos:
         antigua = momento_leche_mas_antigua(silo)
         motivos = motivos_silo_no_disponible(silo, para="proceso", ahora=ahora)
+        if retenciones.get(silo.pk):
+            motivos.append(retenciones[silo.pk])
+        try:
+            libre = exigir_origen_disponible(silo=silo, cantidad=Decimal("0"))
+        except ValidationError as error:
+            libre = Decimal("0")
+            motivos.extend(error.messages)
         analisis = silo.analisis.filter(
             estado=AnalisisSilo.Estado.CONFIRMADO
         ).order_by("-tomado_en", "-id").first()
@@ -1817,7 +1848,7 @@ def sugerencia_silos(request):
         )
         entradas.append({
             "silo_id": silo.id,
-            "litros_disponibles": saldo_silo(silo),
+            "litros_disponibles": max(Decimal("0"), libre),
             "leche_mas_antigua_en": antigua,
             "antiguedad_horas": antiguedad,
             "motivos_no_disponible": motivos,

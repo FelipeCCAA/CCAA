@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from django.utils import timezone
+
 from estandarizacion.models import ValeEstandarizacion
 from procesos.models import EjecucionProceso, EtapaProceso, Proceso, RutaProducto
 from recepcion.models import MovimientoSilo
@@ -42,6 +44,16 @@ class BorradorLoteTests(BaseApertura):
             producto=self.polvo,
             proceso=proceso,
             prioridad=1,
+        )
+
+    def abastecer_vale_listo(self):
+        MovimientoSilo.objects.create(
+            silo=self.vale.silo_destino,
+            tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("12000.00"),
+            fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.AJUSTE,
+            motivo="Saldo físico del vale liberado en el escenario de apertura",
         )
 
     def crear_borrador(self, **datos):
@@ -93,6 +105,7 @@ class BorradorLoteTests(BaseApertura):
         self.assertEqual(MovimientoSilo.objects.count(), 0)
 
     def test_confirmar_convierte_el_mismo_registro_y_descuenta_una_vez(self):
+        self.abastecer_vale_listo()
         borrador = self.crear_borrador(observacion="Inicio")
         datos = self.datos_completos()
         datos.pop("producto")
@@ -145,6 +158,8 @@ class BorradorLoteTests(BaseApertura):
         self.assertIn("kg_producidos", respuesta.data)
 
     def test_no_confirma_si_la_maquina_esta_reservada_en_preparacion(self):
+        self.abastecer_vale_listo()
+        libro_inicial = list(MovimientoSilo.objects.order_by("pk").values())
         proceso = Proceso.objects.create(codigo="secado-prueba", nombre="Secado prueba")
         etapa = EtapaProceso.objects.create(
             proceso=proceso, codigo="secado", nombre="Secado",
@@ -162,5 +177,5 @@ class BorradorLoteTests(BaseApertura):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("ocupado", str(respuesta.json()).lower())
-        self.assertEqual(MovimientoSilo.objects.count(), 0)
+        self.assertEqual(list(MovimientoSilo.objects.order_by("pk").values()), libro_inicial)
 

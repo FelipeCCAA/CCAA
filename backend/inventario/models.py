@@ -417,6 +417,10 @@ class MovimientoInventario(models.Model):
     motivo = models.TextField(blank=True)
     saldo_anterior = models.DecimalField(max_digits=16, decimal_places=3)
     saldo_posterior = models.DecimalField(max_digits=16, decimal_places=3)
+    operacion_id = models.UUIDField(
+        null=True, blank=True, unique=True, editable=False,
+        help_text="Clave idempotente para operaciones manuales de inventario.",
+    )
 
     # Qué concesión autorizó esta salida, cuando el material no estaba
     # aprobado. Va en el movimiento y no en un contador aparte: el libro es lo

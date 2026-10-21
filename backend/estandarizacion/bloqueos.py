@@ -13,7 +13,7 @@ def _motivo_vale(vale):
     from .models import ValeEstandarizacion
 
     balance = balance_vale(vale)
-    actos_fisicos = vale.actos.filter(tipo__in=("adicion", "retiro")).exists()
+    actos_fisicos = any(a.tipo in ("adicion", "retiro") for a in vale.actos.all())
     ciclo_fisico_pendiente = (
         actos_fisicos and vale.estado != ValeEstandarizacion.Estado.LIBERADO
     )
@@ -53,6 +53,20 @@ def motivo_retencion_silo(silo_id):
         if motivo:
             return motivo
     return None
+
+
+def motivos_retencion_silos(silo_ids):
+    """Lectura en lote para mostrar disponibilidad sin consultas por silo."""
+    from .models import ValeEstandarizacion
+    motivos = {}
+    for vale in ValeEstandarizacion.objects.filter(
+        silo_destino_id__in=silo_ids, ejecutado_en__isnull=False,
+    ).order_by("pk").prefetch_related("actos"):
+        if vale.silo_destino_id not in motivos:
+            motivo = _motivo_vale(vale)
+            if motivo:
+                motivos[vale.silo_destino_id] = motivo
+    return motivos
 
 
 def exigir_sin_retencion_lote(lote_id):

@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
@@ -10,7 +11,7 @@ from rest_framework.test import APIClient
 from maestros.models import Silo
 from usuarios.models import PerfilUsuario, Rol
 
-from .models import MovimientoSilo
+from .models import AnalisisSilo, MovimientoSilo
 
 
 class MovimientosSiloOperacionalesTests(TestCase):
@@ -27,9 +28,18 @@ class MovimientosSiloOperacionalesTests(TestCase):
         self.destino = Silo.objects.create(
             codigo="DESTINO", tipo=Silo.Tipo.SILO, capacidad_l=600
         )
+        ahora = timezone.now()
         MovimientoSilo.objects.create(
             silo=self.origen, tipo=MovimientoSilo.Tipo.INGRESO,
-            litros=Decimal("800"), fecha_hora=timezone.now(),
+            litros=Decimal("800"), fecha_hora=ahora - timedelta(hours=2),
+        )
+        AnalisisSilo.objects.create(
+            silo=self.origen, tomado_en=ahora - timedelta(hours=1),
+            grasa=Decimal("4.00"), sng=Decimal("8.70"),
+            inhibidores_resultado="negativo", metodo="snap",
+            hora_lectura=timezone.localtime(ahora).time(),
+            analista=self.usuario, visualizado_por=self.usuario,
+            visualizado_en=ahora, estado=AnalisisSilo.Estado.CONFIRMADO,
         )
 
     def transferir(self, clave, litros="300"):

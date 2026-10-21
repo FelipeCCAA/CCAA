@@ -17,7 +17,7 @@ export interface FilaResumen {
   pantalla un modal que no existe.
 */
 export default function ConfirmarAccion({
-  titulo, filas, advertencia, textoConfirmar, peligro = false, ocupado = false, error = "",
+  titulo, filas, advertencia, textoConfirmar, peligro = false, ocupado = false, error = "", bloquearCorreccion = false,
   onConfirmar, onVolver,
 }: {
   titulo: string;
@@ -27,6 +27,7 @@ export default function ConfirmarAccion({
   peligro?: boolean;
   ocupado?: boolean;
   error?: string;
+  bloquearCorreccion?: boolean;
   onConfirmar: () => void;
   onVolver: () => void;
 }) {
@@ -69,7 +70,7 @@ export default function ConfirmarAccion({
         </button>
         <button
           type="button"
-          disabled={ocupado}
+          disabled={ocupado || bloquearCorreccion}
           onClick={onVolver}
           className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
         >

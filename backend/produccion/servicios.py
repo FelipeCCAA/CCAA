@@ -68,6 +68,8 @@ def abrir_lote_desde_vale(
     # Se relee bloqueando: entre la comprobación y la escritura, otro lote del
     # mismo vale podría llevarse los litros que este acaba de dar por
     # disponibles, y los dos pasarían la regla por separado.
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale.pk)
     from estandarizacion.balance import balance_vale, litros_exactos
     litros_exactos(litros, permitir_cero=False)
@@ -80,6 +82,21 @@ def abrir_lote_desde_vale(
 
     if not decision.permitido:
         raise ValidationError(list(decision.bloqueos))
+
+    from maestros.models import Silo
+    from inventario.models import CicloCIP
+    from procesos.servicios import exigir_origen_disponible
+    from recepcion.servicios import ESTADOS_SIN_CONSUMO
+    silo_origen = Silo.objects.select_for_update().get(pk=vale.silo_destino_id)
+    if not silo_origen.activo or silo_origen.estado in ESTADOS_SIN_CONSUMO:
+        raise ValidationError(f"{silo_origen.codigo} no está habilitado para consumo.")
+    if CicloCIP.objects.filter(silo=silo_origen, estado=CicloCIP.Estado.EN_CURSO).exists():
+        raise ValidationError(f"{silo_origen.codigo} tiene una limpieza en curso.")
+    from estandarizacion.bloqueos import motivo_retencion_silo
+    retencion = motivo_retencion_silo(silo_origen.pk)
+    if retencion:
+        raise ValidationError(retencion)
+    exigir_origen_disponible(silo=silo_origen, cantidad=litros)
 
     if producto is not None and producto.pk != vale.producto_id:
         raise ValidationError({

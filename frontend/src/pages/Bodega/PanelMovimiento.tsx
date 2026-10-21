@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 
 import CampoEtiquetado from "../../components/operacion/CampoEtiquetado";
@@ -6,6 +6,7 @@ import ConfirmarAccion, { type FilaResumen } from "../../components/operacion/Co
 import { claseBoton, claseCampo, mensajeDe } from "../../components/seccion/utilidades";
 import { ajustePorConteo, leerCantidad, tiposDeDestino } from "../../services/bodega-reglas";
 import { cantidad } from "../../services/formato";
+import { resultadoDeEnvioIncierto } from "../../services/resultado-envio";
 import {
   crearAjuste, ingresarMaterial, ingresarPallet, registrarSalida, transferirPallet, trasladarExistencia,
   type Existencia, type ExistenciaProductoTerminado, type Insumo, type PalletPorUbicar, type UbicacionInventario,
@@ -47,6 +48,10 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
   const [vencimiento, setVencimiento] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
+  const [incierto, setIncierto] = useState(false);
+  const [confirmado, setConfirmado] = useState(false);
+  const trasladoIntento = useRef<{ firma: string; clave: string } | null>(null);
+  const confirmando = useRef(false);
 
   const existencia = "existencia" in accion ? accion.existencia : null;
   const insumo = insumos.find((item) => String(item.id) === insumoId) ?? null;
@@ -154,9 +159,14 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
         return `Ingreso registrado: ${cantidad(m.cantidad, unidad)} de ${m.insumo_nombre} en ${m.destino_codigo}. Saldo del lote ahí: ${cantidad(m.saldo_posterior, unidad)}.`;
       }
       case "reubicar-material": {
-        const m = await trasladarExistencia({
+        const carga = {
           existencia: accion.existencia.id, destino: idDestino, cantidad: numero ?? 0, motivo: motivo.trim(),
-        });
+        };
+        const firma = JSON.stringify(carga);
+        // Recuperar una respuesta perdida no crea otro traslado; una carga
+        // distinta sí constituye una operación nueva.
+        if (trasladoIntento.current?.firma !== firma) trasladoIntento.current = { firma, clave: crypto.randomUUID() };
+        const m = await trasladarExistencia({ ...carga, operacion_id: trasladoIntento.current.clave });
         return `Traslado registrado: ${cantidad(m.cantidad, unidad)} de ${m.insumo_nombre}, de ${m.origen_codigo} a ${m.destino_codigo}. Quedan ${cantidad(m.saldo_posterior, unidad)} en ${m.origen_codigo}.`;
       }
       case "consumir": {
@@ -183,15 +193,30 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
   };
 
   const confirmar = async () => {
+    if (confirmando.current) return;
+    confirmando.current = true;
     setOcupado(true);
     setError("");
+    let respuestaRecibida = false;
     try {
-      onHecho(await ejecutar());
+      const mensaje = await ejecutar();
+      respuestaRecibida = true;
+      if (accion.tipo === "reubicar-material") { setConfirmado(true); setIncierto(false); }
+      onHecho(mensaje);
     } catch (causa) {
-      setError(mensajeDe(causa, "No se pudo registrar el movimiento."));
+      if (accion.tipo === "reubicar-material" && !respuestaRecibida) setIncierto(resultadoDeEnvioIncierto(causa));
+      setError(respuestaRecibida && accion.tipo === "reubicar-material"
+        ? "El traslado se confirmó, pero no pudimos actualizar la pantalla. Recupera el resultado de la misma operación."
+        : mensajeDe(causa, "No se pudo registrar el movimiento."));
     } finally {
+      confirmando.current = false;
       setOcupado(false);
     }
+  };
+
+  const cerrar = () => {
+    if ((incierto || confirmado) && !window.confirm("Cerrar esta pantalla no anula el traslado. Recupera el resultado de la misma operación antes de registrar otra. ¿Cerrar de todas formas?")) return;
+    onCerrar();
   };
 
   return (
@@ -203,21 +228,23 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
           </p>
           <h2 id="panel-movimiento-titulo" className="text-lg font-semibold text-slate-900">{TITULOS[accion.tipo]}</h2>
         </div>
-        <button type="button" onClick={onCerrar} aria-label="Cerrar sin registrar" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100">
+        <button type="button" onClick={cerrar} disabled={ocupado} aria-label="Cerrar movimiento" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100">
           <X className="h-5 w-5" />
         </button>
       </div>
+      {incierto && <p role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">No sabemos si se confirmó. Reintenta la misma operación para recuperar el resultado antes de cambiar datos.</p>}
 
       {paso === "resumen" ? (
         <ConfirmarAccion
           titulo="Revisa antes de registrar"
           filas={resumen()}
           advertencia={accion.tipo === "contar" ? "El ajuste queda pendiente hasta que otra persona lo apruebe." : undefined}
-          textoConfirmar={accion.tipo === "contar" ? "Enviar ajuste" : "Registrar movimiento"}
+          textoConfirmar={incierto || confirmado ? "Recuperar resultado" : accion.tipo === "contar" ? "Enviar ajuste" : "Registrar movimiento"}
           ocupado={ocupado}
           error={error}
+          bloquearCorreccion={incierto || confirmado}
           onConfirmar={() => void confirmar()}
-          onVolver={() => { setPaso("datos"); setError(""); }}
+          onVolver={() => { if (incierto || confirmado) return; setPaso("datos"); setError(""); }}
         />
       ) : (
         <form onSubmit={revisar} className="grid gap-4 sm:grid-cols-2">
@@ -244,6 +271,7 @@ export default function PanelMovimiento({ accion, ubicaciones, insumos, onCerrar
             <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 sm:col-span-2">
               {existencia.insumo_nombre} · lote {existencia.lote_codigo} · en {existencia.ubicacion_codigo}:{" "}
               <strong>{cantidad(existencia.cantidad_fisica, unidad)}</strong> físicas,{" "}
+              {cantidad(existencia.cantidad_reservada, unidad)} reservadas y{" "}
               {cantidad(existencia.cantidad_disponible, unidad)} disponibles
             </p>
           )}
