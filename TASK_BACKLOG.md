@@ -1,6 +1,6 @@
 # Backlog de mejoras OP
 
-Backlog de las diez oportunidades priorizadas: OP-00 a OP-05 completadas en sus ramas; OP-06 implementada y validada localmente en su rama; OP-07 a OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
+Backlog de las diez oportunidades priorizadas: OP-00 a OP-05 completadas en sus ramas; OP-06 implementada y validada localmente en su rama; OP-07 implementada y validada localmente en su rama; OP-08 y OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
 
 ## OP-00 — Entorno reproducible de pruebas (WP001, P1 habilitante)
 
@@ -30,7 +30,7 @@ Los enlaces siguientes son referencias de requisitos y contexto existentes; no r
 | OP-04 | P0 | Secado y FIFO — [flujo de secado Protomalt](docs/flujos/11-secado-protomalt.md) y [suero](docs/flujos/10-secado-suero.md), WP007/008 | COMPLETADA EN LA RAMA; CI 39637476601 SUCCESS, PR #11 borrador sobre OP-03; sin merge/despliegue |
 | OP-05 | P0 | Mantequilla — [flujo productivo](docs/flujos/03-mantequilla.md), WP009 | COMPLETADA EN LA RAMA; CI 39647306726 SUCCESS, PR #12 borrador sobre OP-04; sin merge/despliegue |
 | OP-06 | P0 | Identidad — [expediente OP-06](docs/operacion/OP-06_VALIDACION.md), WP013/014 | IMPLEMENTADA Y VALIDADA LOCALMENTE EN LA RAMA; frontend 5bdca62 y backend a62622c, seis reglas aprobadas, revisión/CI del PR separadas; sin merge/despliegue; depende de OP-00 |
-| OP-07 | P1 | UUID, auditoría y exportaciones — [auditoría](docs/architecture/04-architecture-problems.md), WP011/015 | PENDIENTE; depende de OP-00 |
+| OP-07 | P1 | UUID, auditoría y exportaciones — [expediente OP-07](docs/operacion/OP-07_VALIDACION.md), WP011/015 | IMPLEMENTADA Y VALIDADA LOCALMENTE EN LA RAMA; código 3ad83f3, revisión/CI del PR separadas; depende de OP-00 |
 | OP-08 | P1 | Envases, archivos y correo — [mapa del sistema](docs/architecture/01-system-map.md), WP010/012 | PENDIENTE; depende de OP-00 y sujeto a confirmar alcance |
 | OP-09 | P1 | Circuito de 70 usuarios y backup — [arquitectura de escalabilidad](docs/ARQUITECTURA_FLUJOS_BIZAGI_ESCALABILIDAD.md), [despliegue Docker y backup](docs/DESPLIEGUE_DOCKER.md) | PENDIENTE; depende de OP-01 a OP-08 y requiere aprobación específica de pruebas. 70 es población, no concurrencia aprobada/certificada. |
 
@@ -70,4 +70,10 @@ Seis reglas implementadas en `codex/op-06-identidad`, desde OP-05 `c21b1f3`; fro
 
 Evidencia local: focal 51/51, últimas guardas 2/2 y 1/1; corte final API/rendimiento 17/17; frontend 107/107, Chrome OP-06 7/7 y regresión OP-02 a OP-05 16/16. Ruff, checks, tipos/build y esquema sin cambios aprobados. Cortes solapados, no sumar como casos únicos. Revisión independiente de lectura sin bloqueantes nuevos en el commit revisado. [Archivos, fallos iniciales, reproducción y límites](docs/operacion/OP-06_VALIDACION.md). Los checks y el informe AVANCE del PR conservan la evidencia de CI del commit entregado.
 
-Destino de revisión: PR borrador apilado sobre OP-05 #12; no fusionar directamente con DevelopMain. Clúster local OP-00 detenido, sin postmaster.pid. Sin producción, despliegue, UAT, prueba de carga de 70 usuarios o restauración de backup. Próxima OP-07 lista por OP-00: diagnóstico/preparación no destructiva; implementar requiere autorización adicional específica.
+Destino de revisión: PR borrador apilado sobre OP-05 #12; no fusionar directamente con DevelopMain. Clúster local OP-00 detenido, sin postmaster.pid. Sin producción, despliegue, UAT, prueba de carga de 70 usuarios o restauración de backup. OP-07 continuó tras aprobación expresa de sus seis reglas y autorización de implementación, según el cierre siguiente.
+
+### OP-07 — Auditoría masiva y reportes confiables
+
+Seis reglas implementadas en rama codex/op-07-auditoria-exportaciones desde OP-06 4dd3a94. Código/pruebas 3ad83f3: IDs/UUID conservados, helpers atómicos, caminos críticos de pallets/inventario/despacho/CIP/atribuciones/módulos/plan/compras auditados. Historia y secretos protegidos; reportes JSON/CSV/XLSX con texto seguro y tope técnico 1000, exceso rechazado sin truncar. Sin migraciones ni backfill.
+
+Evidencia: integración 58/58 incluida concurrencia PostgreSQL y rollback parcial, historia API 12/12, frontend 111/111, Chrome simulado 2/2. Ruff, lint, tipos/build y ausencia de cambios de esquema aprobados. [Expediente, archivos y límites](docs/operacion/OP-07_VALIDACION.md). CI general y PR definitivo en checks/AVANCE, sin anticipar resultado. Revisión apilada sobre OP-06 #13, sin merge ni despliegue. Clúster local detenido. Próxima OP-08: diagnóstico/preparación; implementar requiere autorización propia.
