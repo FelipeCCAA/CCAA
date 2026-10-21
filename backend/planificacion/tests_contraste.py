@@ -6,8 +6,10 @@ real se copiara del plan, el contraste siempre cuadraría y no serviría para
 nada — que es exactamente el fallo que no se ve.
 """
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from datetime import timezone as tz
+from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -23,7 +25,7 @@ from maestros.models import (
     Silo,
 )
 from produccion.models import Lote
-from recepcion.models import MovimientoSilo, Recepcion
+from recepcion.models import AnalisisSilo, MovimientoSilo, Recepcion
 from usuarios.models import Empresa, PerfilUsuario, Rol
 
 from . import contraste, dominio, views
@@ -39,6 +41,13 @@ from .models import (
 
 class BaseContraste(TestCase):
     def setUp(self):
+        self._reloj = patch(
+            "django.utils.timezone.now",
+            return_value=datetime(2026, 2, 9, 11, tzinfo=tz.utc),
+        )
+        self._reloj.start()
+        self.addCleanup(self._reloj.stop)
+
         self.mandante = Mandante.objects.create(nombre="Nestlé")
 
         self.leche = Producto.objects.create(
@@ -65,6 +74,10 @@ class BaseContraste(TestCase):
 
         self.silo = Silo.objects.create(
             codigo="SILO 1", tipo=Silo.Tipo.SILO, capacidad_l=200000
+        )
+        User.objects.create_user(username="calidad-fixture-op03", password="x")
+        User.objects.create_user(
+            username="calidad-fixture-visualizador-op03", password="x"
         )
 
         self.semana = SemanaPlan.objects.create(
@@ -148,6 +161,56 @@ class ConsumoRealTests(BaseContraste):
     """
 
     def _asignar(self, cliente, lote, lineas):
+        from recepcion.servicios import saldo_silo
+
+        operador = User.objects.get(username="calidad-fixture-op03")
+        visualizador = User.objects.get(username="calidad-fixture-visualizador-op03")
+        pedidos = {}
+        for linea in lineas:
+            momento = linea.get("fecha_hora")
+            if momento:
+                momento = datetime.fromisoformat(momento.replace("Z", "+00:00"))
+                if momento.tzinfo is None:
+                    momento = momento.replace(tzinfo=tz.utc)
+            else:
+                momento = datetime(2026, 2, 9, 11, tzinfo=tz.utc)
+            silo_id = int(linea["silo"])
+            pedido = pedidos.setdefault(
+                silo_id, {"litros": Decimal("0"), "momentos": []}
+            )
+            pedido["litros"] += Decimal(str(linea["litros"]))
+            pedido["momentos"].append(momento)
+
+        for silo_id, pedido in pedidos.items():
+            silo = Silo.objects.get(pk=silo_id)
+            consumo_en = min(pedido["momentos"])
+            if saldo_silo(silo) < pedido["litros"]:
+                MovimientoSilo.objects.create(
+                    silo=silo,
+                    tipo=MovimientoSilo.Tipo.INGRESO,
+                    litros=pedido["litros"],
+                    fecha_hora=consumo_en - timedelta(hours=2),
+                )
+            muestra_en = consumo_en - timedelta(hours=1)
+            while AnalisisSilo.objects.filter(silo=silo, tomado_en=muestra_en).exists():
+                muestra_en -= timedelta(microseconds=1)
+            AnalisisSilo.objects.create(
+                silo=silo,
+                tomado_en=muestra_en,
+                grasa=Decimal("4.00"),
+                sng=Decimal("8.70"),
+                inhibidores_resultado="negativo",
+                metodo="snap",
+                hora_lectura=muestra_en.time(),
+                alcohol_75_conforme=True,
+                hervor_conforme=True,
+                organoleptico_conforme=True,
+                analista=operador,
+                visualizado_por=visualizador,
+                visualizado_en=muestra_en,
+                estado=AnalisisSilo.Estado.CONFIRMADO,
+            )
+
         return cliente.post(
             f"/api/produccion/lotes/{lote.id}/asignacion/",
             {"asignaciones": lineas},
