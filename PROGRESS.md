@@ -62,3 +62,14 @@ La migración `0010_actovaleestandarizacion` es aditiva. La reversión de códig
 5. **Trabajo realizado:** PM/AVANCE coordinaron expediente y fixtures; especialistas backend/frontend implementaron; QA aportó regresiones; revisión independiente detectó y verificó correcciones; operadores hicieron DESK. Se añadió UUID aditivo sin backfill y se ajustaron pantallas. Sin cambios productivos.
 6. **Pruebas y resultados:** CI global aprobada: 1.674 backend (cinco omitidas), 97 frontend; local 64 focales y 58 heredadas, Chrome 5 con API simulada. Los fallos previos y su corrección están registrados; no se presentan como aprobaciones.
 7. **Estado final:** VALIDADO MEDIANTE PRUEBAS EN LA RAMA. Pendiente revisión humana y validación industrial; no se afirma que toda la planta esté lista para operar. Siguiente OP-04, primero validar reglas.
+
+
+## OP-04 — Secado y FIFO
+
+**IMPLEMENTADA, EN VALIDACIÓN** en `codex/op-04-secado-fifo`, desde OP-03 `5fd3d89`. Usuario validó las seis reglas y autorizó rama, pruebas y PR. Expediente [OP-04_VALIDACION.md](docs/operacion/OP-04_VALIDACION.md). Cambios limitados a Secado, confirmación FIFO del vale y protección de corrección de AnalisisSilo; no nueva migración ni cambio productivo.
+
+PM/AVANCE integran el trabajo; backend y revisión independiente usan gpt-6-sol high; frontend usa gpt-6-luna medium. Sólo tres subagentes necesarios, sin activar todo el equipo. Root conserva explicación y evidencia. Revisión estática cerró los bloqueantes identificados; no representa pruebas de BD del revisor.
+
+Seis regresiones fallaban antes del cambio. Primera integración: 35 pruebas en 56,473 s, un error de fixture nuevo y 34 aprobadas; fixture corregido. Carrera de UUID y corrección concurrente de Calidad pasaron en esa ejecución; integración final/CI pendientes. Frontend 101/101, lint y build/tipos aprobados; pruebas Chrome con API simulada en revisión final de fixtures. No usar este checkpoint como cierre global.
+
+Sin merge, despliegue, datos productivos, UAT, carga de 70 usuarios ni restauración de backup. OP-05 sólo lista para diagnóstico acotado y propuesta de reglas; implementar requiere autorización específica.

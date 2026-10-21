@@ -10,7 +10,7 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -19,7 +19,7 @@ from config.formato import formato_cantidad
 from .models import ValeEstandarizacion
 from .balance import exigir_balance, balance_vale
 from maestros.models import Silo
-from procesos.models import ReservaSiloProceso
+from procesos.models import EventoProceso, ReservaSiloProceso
 from procesos.servicios import (
     cerrar_estandarizacion,
     exigir_destino_sin_reserva,
@@ -28,7 +28,9 @@ from procesos.servicios import (
     reservas_activas_silo,
 )
 from recepcion.models import MovimientoSilo
-from recepcion.servicios import ESTADOS_SIN_CONSUMO, motivos_silo_no_disponible
+from recepcion.servicios import (
+    ESTADOS_SIN_CONSUMO, momento_leche_mas_antigua, motivos_silo_no_disponible,
+)
 
 
 def _saldo(silo):
@@ -54,9 +56,41 @@ def _exigir_transicion(vale, nuevo):
         )
 
 
+def _origen_fifo_confirmable(vale, silos):
+    """Sugerencia vigente del servidor, entre orígenes operables compatibles.
+
+    El campo sugerido del formulario es una pista, nunca una autorización.
+    Los silos se bloquean por PK antes de leer sus capas y compromisos.
+    """
+    from estandarizacion.bloqueos import motivos_retencion_silos
+    from procesos.servicios import exigir_origen_disponible
+
+    seleccionado = silos[vale.silo_entera_id]
+    retenciones = motivos_retencion_silos(list(silos))
+    candidatos = []
+    for silo in silos.values():
+        if (silo.pk == vale.silo_destino_id or not silo.activo
+            or silo.tipo != seleccionado.tipo
+            or silo.producto_actual_id != seleccionado.producto_actual_id
+            or retenciones.get(silo.pk)):
+            continue
+        if motivos_silo_no_disponible(silo, para="proceso"):
+            continue
+        try:
+            libre = exigir_origen_disponible(silo=silo, cantidad=0)
+        except ValidationError:
+            continue
+        antigua = momento_leche_mas_antigua(silo)
+        if libre > 0 and antigua is not None:
+            candidatos.append((antigua, silo.pk, silo))
+    return min(candidatos, key=lambda dato: (dato[0], dato[1]))[2] if candidatos else seleccionado
+
+
 @transaction.atomic
 def transferir(*, vale_id, usuario, comprobar_solamente=False):
     """Las dos leches ya están en el silo de destino."""
+    from calidad.evidencia import bloquear_catalogo
+    bloquear_catalogo()
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     if vale.ejecutado_en:
         return vale
@@ -70,7 +104,11 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False):
         ids_silos.append(vale.silo_crema_id)
     bloqueados = {
         silo.id: silo
-        for silo in Silo.objects.select_for_update().filter(pk__in=ids_silos).order_by("pk")
+        # Orden común con los movimientos físicos. Incluir los candidatos evita
+        # decidir FIFO con una foto distinta a la que se confirma.
+        for silo in Silo.objects.select_for_update().filter(
+            Q(pk__in=ids_silos) | Q(tipo=vale.silo_entera.tipo)
+        ).order_by("pk")
     }
     entera = bloqueados[vale.silo_entera_id]
     destino = bloqueados[vale.silo_destino_id]
@@ -130,6 +168,13 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False):
 
     if comprobar_solamente:
         return vale
+    recomendado = _origen_fifo_confirmable(vale, bloqueados)
+    desvio = recomendado.pk != entera.pk
+    if desvio and len(vale.motivo_desvio_fifo.strip()) < 5:
+        raise ValidationError({"motivo_desvio_fifo": (
+            f"FIFO recomienda {recomendado.codigo}; indica por qué utilizarás {entera.codigo}."
+        )})
+    vale.silo_sugerido_fifo = recomendado
     ahora = timezone.now()
     operacion_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ccaa:estandarizacion:{vale.pk}")
     movimientos = [
@@ -182,12 +227,18 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False):
     vale.responsable = vale.responsable or usuario
     # La ejecución es este momento: el mismo `ahora` de los movimientos.
     vale.ejecutado_en = ahora
-    vale.save(update_fields=["estado", "responsable", "ejecutado_en"])
+    vale.save(update_fields=["estado", "responsable", "ejecutado_en", "silo_sugerido_fifo"])
 
     # El vale queda registrado como ejecucion de la etapa
     # «Estandarizacion»: es el mismo hecho de planta, y este es el
     # momento en que la mezcla ocurre de verdad.
-    registrar_estandarizacion(vale=vale)
+    ejecucion = registrar_estandarizacion(vale=vale)
+    EventoProceso.objects.create(
+        ejecucion=ejecucion, tipo="desvio_fifo" if desvio else "fifo_confirmado",
+        usuario=usuario, motivo=vale.motivo_desvio_fifo.strip() if desvio else "",
+        datos={"silo_recomendado": recomendado.pk, "silo_utilizado": entera.pk,
+               "litros_entera": str(vale.litros_entera)},
+    )
 
     return vale
 

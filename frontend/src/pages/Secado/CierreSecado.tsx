@@ -8,6 +8,8 @@ import {
   type CierreSecado as DatosCierreSecado,
   type CorridaSecado,
 } from "../../services/secado.service";
+import { kgConocidosDeEntradas, requiereReferenciaMedicionKg } from "../../services/secado-operacion";
+import { resultadoDeEnvioIncierto } from "../../services/resultado-envio";
 
 const numero = (valor: string) => {
   const convertido = Number(valor);
@@ -30,7 +32,7 @@ export default function CierreSecado({
   alCerrar: () => void;
   alCompletarse: (corrida: CorridaSecado) => void;
 }) {
-  const [alimentacion, setAlimentacion] = useState(corrida.kg_alimentacion ?? "");
+  const [alimentacion, setAlimentacion] = useState(corrida.kg_alimentacion ?? (kgConocidosDeEntradas(corrida.entradas_alimentacion ?? [])?.toString() ?? ""));
   const [solidos, setSolidos] = useState("");
   const [polvo, setPolvo] = useState("");
   const [finos, setFinos] = useState("0");
@@ -38,7 +40,16 @@ export default function CierreSecado({
   const [temperaturaSalida, setTemperaturaSalida] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [incierto, setIncierto] = useState(false);
+  const [confirmado, setConfirmado] = useState(false);
+  const [referencia, setReferencia] = useState("");
   const enviando = useRef(false);
+  const intento = useRef<{ firma: string; carga: DatosCierreSecado } | null>(null);
+
+  const entradas = corrida.entradas_alimentacion ?? [];
+  const requiereReferencia = requiereReferenciaMedicionKg(corrida);
+  const kilosConocidos = kgConocidosDeEntradas(entradas);
+  const alimentacionConocida = corrida.kg_alimentacion !== null ? corrida.kg_alimentacion : kilosConocidos === null ? null : String(kilosConocidos);
 
   const valores = {
     kgAlimentacion: numero(alimentacion),
@@ -65,21 +76,36 @@ export default function CierreSecado({
 
     const controles: Record<string, number> = {};
     if (temperaturaSalida !== "") controles.temperatura_salida = numero(temperaturaSalida);
-    const datos: DatosCierreSecado = {
+    if (requiereReferencia && !referencia.trim()) {
+      setError("Registra el ticket o registro de la medición en kg para una alimentación en litros.");
+      return;
+    }
+    const cargaBase = {
       kg_alimentacion: valores.kgAlimentacion,
       solidos_entrada_pct: valores.solidosEntradaPct,
       kg_polvo: valores.kgPolvo,
       kg_finos: valores.kgFinos,
       kg_merma: valores.kgMerma,
       controles,
+      ...(requiereReferencia ? { referencia_medicion_kg: referencia.trim() } : {}),
     };
+    const firma = JSON.stringify(cargaBase);
+    if (!intento.current || intento.current.firma !== firma) {
+      intento.current = { firma, carga: { ...cargaBase, operacion_id: crypto.randomUUID() } };
+    }
 
     enviando.current = true;
     setGuardando(true);
     setError("");
     try {
-      alCompletarse(await cerrarSecado(corrida.id, datos));
+      const cerrada = await cerrarSecado(corrida.id, intento.current.carga);
+      setConfirmado(true);
+      setIncierto(false);
+      alCompletarse(cerrada);
     } catch (errorDesconocido) {
+      const resultadoIncierto = resultadoDeEnvioIncierto(errorDesconocido);
+      setIncierto(resultadoIncierto);
+      if (!resultadoIncierto) intento.current = null;
       setError(mensajeErrorProceso(errorDesconocido, "No se pudo cerrar la corrida de Secado."));
     } finally {
       enviando.current = false;
@@ -96,17 +122,23 @@ export default function CierreSecado({
             <h2 id="titulo-cierre-secado" className="mt-1 text-2xl font-bold text-slate-900">{corrida.lote_codigo} · {corrida.producto_nombre}</h2>
             <p className="mt-1 text-sm text-slate-600">{corrida.equipo_nombre ?? "Torre sin nombre"} · {corrida.ejecucion_codigo}</p>
           </div>
-          <button type="button" onClick={alCerrar} disabled={guardando} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50" aria-label="Cerrar formulario"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={alCerrar} disabled={guardando || incierto || confirmado} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50" aria-label="Cerrar formulario"><X className="h-5 w-5" /></button>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="text-sm font-medium text-slate-700">Alimentación medida <span className="text-slate-500">(kg)</span><input required readOnly={corrida.kg_alimentacion !== null} type="number" min="0.001" step="0.001" value={alimentacion} onChange={(e) => setAlimentacion(e.target.value)} className={`${campo} ${corrida.kg_alimentacion !== null ? "bg-slate-100" : ""}`} />{corrida.kg_alimentacion !== null && <span className="mt-1 block text-xs font-normal text-slate-500">Cantidad ya descontada del lote externo; no se modifica en el cierre.</span>}</label>
-          <label className="text-sm font-medium text-slate-700">Sólidos de entrada <span className="text-slate-500">(%)</span><input required type="number" min="0.01" max="100" step="0.01" value={solidos} onChange={(e) => setSolidos(e.target.value)} className={campo} /></label>
-          <label className="text-sm font-medium text-slate-700">Polvo obtenido <span className="text-slate-500">(kg)</span><input required type="number" min="0.001" step="0.001" value={polvo} onChange={(e) => setPolvo(e.target.value)} className={campo} /></label>
-          <label className="text-sm font-medium text-slate-700">Finos recuperados <span className="text-slate-500">(kg)</span><input required type="number" min="0" step="0.001" value={finos} onChange={(e) => setFinos(e.target.value)} className={campo} /></label>
-          <label className="text-sm font-medium text-slate-700">Merma registrada <span className="text-slate-500">(kg)</span><input required type="number" min="0" step="0.001" value={merma} onChange={(e) => setMerma(e.target.value)} className={campo} /></label>
-          <label className="text-sm font-medium text-slate-700">Temperatura de salida <span className="text-slate-500">(°C)</span><input type="number" step="0.01" value={temperaturaSalida} onChange={(e) => setTemperaturaSalida(e.target.value)} className={campo} /></label>
+          <label className="text-sm font-medium text-slate-700">Alimentación medida <span className="text-slate-500">(kg)</span><input required readOnly={alimentacionConocida !== null} type="number" min="0.001" step="0.001" value={alimentacionConocida ?? alimentacion} onChange={(e) => setAlimentacion(e.target.value)} disabled={incierto || confirmado} className={`${campo} ${alimentacionConocida !== null ? "bg-slate-100" : ""}`} />{alimentacionConocida !== null && <span className="mt-1 block text-xs font-normal text-slate-500">Cantidad en kg informada por el origen de la corrida.</span>}</label>
+          <label className="text-sm font-medium text-slate-700">Sólidos de entrada <span className="text-slate-500">(%)</span><input required type="number" min="0.01" max="100" step="0.01" value={solidos} onChange={(e) => setSolidos(e.target.value)} disabled={incierto || confirmado} className={campo} /></label>
+          <label className="text-sm font-medium text-slate-700">Polvo obtenido <span className="text-slate-500">(kg)</span><input required type="number" min="0.001" step="0.001" value={polvo} onChange={(e) => setPolvo(e.target.value)} disabled={incierto || confirmado} className={campo} /></label>
+          <label className="text-sm font-medium text-slate-700">Finos recuperados <span className="text-slate-500">(kg)</span><input required type="number" min="0" step="0.001" value={finos} onChange={(e) => setFinos(e.target.value)} disabled={incierto || confirmado} className={campo} /></label>
+          <label className="text-sm font-medium text-slate-700">Merma registrada <span className="text-slate-500">(kg)</span><input required type="number" min="0" step="0.001" value={merma} onChange={(e) => setMerma(e.target.value)} disabled={incierto || confirmado} className={campo} /></label>
+          <label className="text-sm font-medium text-slate-700">Temperatura de salida <span className="text-slate-500">(°C)</span><input type="number" step="0.01" value={temperaturaSalida} onChange={(e) => setTemperaturaSalida(e.target.value)} disabled={incierto || confirmado} className={campo} /></label>
         </div>
+
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label="Orígenes de alimentación">
+          <h3 className="font-bold text-slate-900">Orígenes de alimentación</h3>
+          {entradas.length ? <ul className="mt-2 space-y-2 text-sm text-slate-700">{entradas.map((entrada) => <li key={`${entrada.tipo_origen}-${entrada.origen_id}`} className="rounded-lg bg-white p-3"><strong>{entrada.codigo}</strong> · {entrada.tipo_origen} · {Number(entrada.cantidad).toLocaleString("es-CL")} {entrada.unidad} · Calidad: {entrada.estado_calidad}</li>)}</ul> : <p className="mt-2 text-sm text-slate-600">El servidor no informó el detalle de los orígenes de esta corrida.</p>}
+          {requiereReferencia && <label className="mt-3 block text-sm font-medium text-slate-700">Ticket o registro de medición (kg medidos)<input required maxLength={120} value={referencia} onChange={(e) => setReferencia(e.target.value)} disabled={incierto || confirmado} placeholder="Identificador del ticket o registro" className={campo} /><span className="mt-1 block text-xs font-normal text-slate-500">La alimentación ingresada arriba debe ser el peso medido en kg. No se convierte el volumen del origen.</span></label>}
+        </section>
 
         <section className={`mt-6 rounded-2xl border p-4 ${balance.esPosible ? "border-slate-200 bg-slate-50" : "border-red-200 bg-red-50"}`} aria-live="polite">
           <div className="flex items-center justify-between gap-3">
@@ -125,8 +157,9 @@ export default function CierreSecado({
         {error && <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">{error}</p>}
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <button type="button" onClick={alCerrar} disabled={guardando} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancelar</button>
-          <button type="submit" disabled={guardando || !formularioCompleto || !balance.esPosible} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50">{guardando ? "Cerrando corrida…" : "Confirmar balance y cerrar"}</button>
+          {incierto && <p className="mr-auto w-full rounded-xl bg-amber-50 p-3 text-sm text-amber-900" role="alert">No sabemos si se cerró. Recupera el resultado de esta misma operación antes de cambiar datos.</p>}
+          <button type="button" onClick={alCerrar} disabled={guardando || incierto || confirmado} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancelar</button>
+          <button type="submit" disabled={guardando || confirmado || !formularioCompleto || !balance.esPosible || (requiereReferencia && !referencia.trim())} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50">{guardando ? "Cerrando corrida…" : incierto ? "Recuperar resultado" : confirmado ? "Cierre confirmado" : "Confirmar balance y cerrar"}</button>
         </div>
       </form>
     </div>

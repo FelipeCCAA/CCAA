@@ -6,6 +6,7 @@ parámetros operacionales ni especificaciones oficiales de la planta.
 
 from datetime import date, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -232,7 +233,7 @@ class FlujoSueroCompletoTests(TestCase):
             {
                 "orden": self.orden_produccion.pk, "existencia": existencia.pk,
                 "equipo": self.torre.pk, "codigo_lote": "SUERO-POLVO-E2E",
-                "cantidad": "800.000",
+                "cantidad": "800.000", "operacion_id": str(uuid4()),
             },
             format="json",
         )
@@ -244,6 +245,7 @@ class FlujoSueroCompletoTests(TestCase):
         cierre = self._cliente(self.secador).post(
             f"/api/procesos/secados/{corrida.pk}/cerrar/",
             {
+                "operacion_id": str(uuid4()),
                 "kg_alimentacion": "800.000", "solidos_entrada_pct": "90.00",
                 "kg_polvo": "700.000", "kg_finos": "10.000", "kg_merma": "5.000",
                 "controles": {"temperatura_salida": 80},

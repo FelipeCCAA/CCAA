@@ -95,12 +95,20 @@ class SugerirDescremacionSerializer(serializers.Serializer):
 
 
 class CierreSecadoSerializer(serializers.Serializer):
-    kg_alimentacion = serializers.DecimalField(max_digits=14, decimal_places=3)
+    operacion_id = serializers.UUIDField()
+    kg_alimentacion = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0.001"),
+    )
+    referencia_medicion_kg = serializers.CharField(
+        max_length=250, required=False, allow_blank=False,
+    )
     solidos_entrada_pct = serializers.DecimalField(
         max_digits=6, decimal_places=2,
         min_value=Decimal("0.01"), max_value=Decimal("100"),
     )
-    kg_polvo = serializers.DecimalField(max_digits=14, decimal_places=3)
+    kg_polvo = serializers.DecimalField(
+        max_digits=14, decimal_places=3, min_value=Decimal("0.001"),
+    )
     kg_finos = serializers.DecimalField(
         max_digits=14, decimal_places=3, min_value=0, required=False, default=0
     )
@@ -108,6 +116,13 @@ class CierreSecadoSerializer(serializers.Serializer):
         max_digits=14, decimal_places=3, min_value=0, required=False, default=0
     )
     controles = serializers.JSONField(required=False, default=dict)
+
+    def validate_controles(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Los controles deben ser un objeto.")
+        if "_op04" in value:
+            raise serializers.ValidationError("_op04 está reservado para evidencia del servidor.")
+        return value
 
 
 class CrearSecadoInventarioSerializer(serializers.Serializer):
@@ -117,6 +132,10 @@ class CrearSecadoInventarioSerializer(serializers.Serializer):
     codigo_lote = serializers.CharField(max_length=60)
     cantidad = serializers.DecimalField(
         max_digits=14, decimal_places=3, min_value=Decimal("0.001")
+    )
+    operacion_id = serializers.UUIDField()
+    excepcion_fifo_motivo = serializers.CharField(
+        max_length=250, required=False, allow_blank=False,
     )
 
 
@@ -393,6 +412,46 @@ class CorridaSecadoSerializer(serializers.ModelSerializer):
     rendimiento_recuperacion_pct = serializers.DecimalField(
         max_digits=7, decimal_places=2, read_only=True
     )
+    entradas_alimentacion = serializers.SerializerMethodField()
+    requiere_referencia_medicion_kg = serializers.SerializerMethodField()
+
+    def _entradas_principales(self, corrida):
+        return [entrada for entrada in corrida.ejecucion.entradas.all()
+                if entrada.tipo == EntradaProceso.Tipo.PRINCIPAL]
+
+    def get_entradas_alimentacion(self, corrida):
+        resultado = []
+        for entrada in self._entradas_principales(corrida):
+            if entrada.lote_inventario_id:
+                origen = entrada.lote_inventario
+                tipo, codigo = "inventario", origen.codigo
+                calidad = origen.estado_calidad
+                origen_id = origen.pk
+            elif entrada.silo_id:
+                tipo, codigo = "silo", entrada.silo.codigo
+                calidad = None
+                origen_id = entrada.silo_id
+            elif entrada.lote_id:
+                tipo, codigo = "lote", entrada.lote.codigo_lote
+                calidad = None
+                origen_id = entrada.lote_id
+            elif entrada.salida_origen_id:
+                tipo, codigo = "salida", entrada.salida_origen.ejecucion.codigo
+                calidad = None
+                origen_id = entrada.salida_origen_id
+            else:
+                tipo, codigo, calidad, origen_id = "sin_evidencia", None, None, None
+            resultado.append({
+                "tipo_origen": tipo, "origen_id": origen_id,
+                "codigo": codigo, "cantidad": entrada.cantidad,
+                "unidad": entrada.unidad, "estado_calidad": calidad,
+                "salida_origen_id": entrada.salida_origen_id,
+            })
+        return resultado
+
+    def get_requiere_referencia_medicion_kg(self, corrida):
+        return any(entrada.unidad.lower() == "l"
+                   for entrada in self._entradas_principales(corrida))
 
     def get_estado_calidad(self, corrida):
         if not corrida.ejecucion.etapa.requiere_calidad:
