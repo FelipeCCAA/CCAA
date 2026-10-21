@@ -27,10 +27,10 @@ from maestros.models import (
     RecetaComponente,
     Silo,
 )
-from recepcion.models import AtribucionRecepcion, MovimientoSilo, Recepcion
+from recepcion.models import AnalisisSilo, AtribucionRecepcion, MovimientoSilo, Recepcion
 from usuarios.models import PerfilUsuario, Rol
 
-from .models import AnalisisSilo, Lote
+from .models import Lote
 
 
 def instante(dia, hora=12):
@@ -370,7 +370,7 @@ class QuitarAsignacionTests(BaseAsignacion):
 
         self.assertEqual(respuesta.status_code, 409)
         self.assertIn("ajuste", respuesta.json()["detail"])
-        self.assertTrue(MovimientoSilo.objects.exists())
+        self.assertTrue(MovimientoSilo.objects.filter(pk=linea["id"]).exists())
 
 
 class GuardasDeAsignacionTests(BaseAsignacion):

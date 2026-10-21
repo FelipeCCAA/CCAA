@@ -332,7 +332,11 @@ class ConsumoRealTests(BaseContraste):
         self.assertEqual(respuesta.json()["asignado"], 900)
         # Sin receta no hay expectativa contra la que comparar; no se inventa.
         self.assertIsNone(respuesta.json()["teorico"])
-        self.assertEqual(MovimientoSilo.objects.count(), 1)
+        self.assertEqual(MovimientoSilo.objects.filter(
+            tipo=MovimientoSilo.Tipo.SALIDA,
+            origen_tipo=MovimientoSilo.OrigenTipo.LOTE, origen_id=lote.pk,
+            litros=Decimal("900"),
+        ).count(), 1)
 
     def test_calidad_no_descuenta_leche(self):
         cliente = self._cliente(Rol.CALIDAD)
