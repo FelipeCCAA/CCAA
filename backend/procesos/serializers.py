@@ -36,12 +36,22 @@ class CrearCondensacionGuiadaSerializer(serializers.Serializer):
 
 
 class CrearMantequillaGuiadaSerializer(serializers.Serializer):
+    operacion_id = serializers.UUIDField()
     orden = serializers.IntegerField(min_value=1)
     lote_crema = serializers.IntegerField(min_value=1)
+    salida_crema = serializers.IntegerField(min_value=1)
     equipo = serializers.IntegerField(min_value=1)
     codigo_lote_mantequilla = serializers.CharField(max_length=60)
-    lote_suero = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     kg_crema = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=1)
+
+    def validate(self, attrs):
+        if "lote_suero" in self.initial_data:
+            raise serializers.ValidationError({"lote_suero": "La mazada no se registra como suero."})
+        return attrs
+
+
+class IniciarMantequillaSerializer(serializers.Serializer):
+    operacion_id = serializers.UUIDField()
 
 
 class CrearDescremacionGuiadaSerializer(serializers.Serializer):
@@ -256,6 +266,7 @@ class CorridaDescremacionSerializer(serializers.ModelSerializer):
 
 
 class CierreMantequillaSerializer(serializers.Serializer):
+    operacion_id = serializers.UUIDField()
     kg_mantequilla = serializers.DecimalField(
         max_digits=14, decimal_places=3, min_value=Decimal("0.001")
     )
@@ -277,6 +288,10 @@ class CierreMantequillaSerializer(serializers.Serializer):
     controles = serializers.JSONField(required=False, default=dict)
 
     def validate(self, attrs):
+        if attrs["kg_suero"] != 0:
+            raise serializers.ValidationError({"kg_suero": "La mazada no se registra como suero."})
+        if not isinstance(attrs["controles"], dict) or "_op05" in attrs["controles"]:
+            raise serializers.ValidationError({"controles": "_op05 está reservado para evidencia del servidor."})
         if attrs["kg_reproceso"] > 0 and not attrs["motivo_reproceso"].strip():
             raise serializers.ValidationError({
                 "motivo_reproceso": "Indica por qué este material requiere reproceso."
@@ -299,7 +314,7 @@ class CorridaMantequillaSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = [
             "estado", "kg_mantequilla", "kg_suero", "kg_merma", "kg_reproceso",
-            "motivo_reproceso", "lote_reproceso", "controles",
+            "motivo_reproceso", "lote_reproceso", "controles", "salida_crema",
             "iniciada_por", "iniciada_en", "finalizada_por", "finalizada_en",
         ]
 

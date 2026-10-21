@@ -75,3 +75,12 @@ Implementado origen/retiro verificable, unidades separadas, FIFO calculado por s
 Sólo tres subagentes: backend y revisión independiente `gpt-6-sol high`, frontend `gpt-6-luna medium`; PM/AVANCE/EXPLICADOR integrados por el coordinador. Revisión técnica final sin bloqueantes conocidos por lectura; DB/CI ejecutados por coordinador/GitHub. Recorridos de escritorio de Recepción, Producción y Bodega; no UAT.
 
 Clúster local exacto OP-00 detenido, exit 0 y sin postmaster.pid. DevelopMain verificada sin cambios en `d34df44ca30c402e9da34dc7b75f7652c2751fef`. Sin merge, despliegue, datos productivos, carga de 70 usuarios ni restauración de backup. Medición kg declarada con referencia y antecedentes históricos quedan sujetos a revisión operacional. OP-05 lista para diagnóstico/reglas, sin autorización para implementar. Revisión/merge, UAT y producción requieren sus decisiones posteriores.
+
+
+## OP-05 — Mantequilla
+
+**IMPLEMENTADA, EN VALIDACIÓN**, rama `codex/op-05-mantequilla`, desde OP-04 `f00e39a`. Seis reglas aprobadas por usuario; sólo tres subagentes: backend/revisión gpt-6-sol high, frontend gpt-6-luna medium. PM/AVANCE/EXPLICADOR integrados por coordinador.
+
+Origen físico explícito, firma vigente y densidad real identificada, consumo único kg/L, reservas/CIP, balance exacto conservado, nuevas salidas mazada deshabilitadas y recuperación UUID de alta/inicio/cierre. Migración 0024 aditiva nullable sin backfill; ninguna aplicación productiva. Genealogía/consulta de disponibilidad conservan trazabilidad y un solo consumo. Bloqueos coordinados con Secado/Despacho/continuación; no reglas industriales nuevas.
+
+Evidencia al corte: seis fallos iniciales, genealogía 2/2 tras corrección, focal 23 casos con un fallo de formato del fixture corregido; Chrome final 5/5 con API simulada, frontend 103/103 y estática/configuración/lint/tipos/build aprobados. Integración completa local y CI pendientes. Detalle y límites en [OP-05_VALIDACION.md](docs/operacion/OP-05_VALIDACION.md). Sin merge/despliegue/producción/UAT/carga de 70 usuarios/restauración. OP-06 no implementada.

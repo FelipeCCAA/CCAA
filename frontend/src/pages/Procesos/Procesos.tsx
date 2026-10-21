@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowRight, GitBranch, Plus } from "lucide-react";
 
@@ -7,6 +7,8 @@ import EstadoEquipo from "../../components/EstadoEquipo/EstadoEquipo";
 import StatusBadge from "../../components/ui/StatusBadge";
 import { iniciarCondensacion, iniciarMantequilla, obtenerCondensaciones, obtenerDescremaciones, obtenerEjecucionesOperativas, obtenerMantequillas, obtenerRutasProducto, transicionarEjecucion, type CorridaCondensacion, type CorridaDescremacion, type CorridaMantequilla, type EjecucionOperativa, type RutaProducto } from "../../services/procesos.service";
 import { esConflictoVersion, esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
+import { resultadoDeEnvioIncierto } from "../../services/resultado-envio";
+import { prepararIntentoOperacion, type IntentoOperacion } from "../../services/intento-operacion";
 import { puedeEscribir } from "../../services/sesion";
 import CierreCondensacion from "./CierreCondensacion";
 import CierreDescremacion from "./CierreDescremacion";
@@ -36,6 +38,9 @@ export default function Procesos() {
   const [cerrandoCondensacion, setCerrandoCondensacion] = useState<CorridaCondensacion | null>(null);
   const [cerrandoMantequilla, setCerrandoMantequilla] = useState<CorridaMantequilla | null>(null);
   const [accionandoCorrida, setAccionandoCorrida] = useState<number | null>(null);
+  const [mantequillaInicioIncierto, setMantequillaInicioIncierto] = useState<number | null>(null);
+  const intentosInicioMantequilla = useRef(new Map<number, IntentoOperacion<Record<string, never>>>());
+  const iniciosMantequillaEnCurso = useRef(new Set<number>());
   const [nuevaCondensacion, setNuevaCondensacion] = useState(false);
   const [nuevaMantequilla, setNuevaMantequilla] = useState(false);
   const [nuevaRuta, setNuevaRuta] = useState(false);
@@ -120,23 +125,44 @@ export default function Procesos() {
   };
 
   const iniciarCorrida = async (tipo: "condensacion" | "mantequilla", id: number) => {
-    if (accionandoCorrida !== null) return;
+    if (accionandoCorrida !== null || (tipo === "mantequilla" && iniciosMantequillaEnCurso.current.has(id))) return;
+    if (tipo === "mantequilla") iniciosMantequillaEnCurso.current.add(id);
     setAccionandoCorrida(id); setError("");
     try {
       if (tipo === "condensacion") actualizarCondensacion(await iniciarCondensacion(id));
-      else actualizarMantequilla(await iniciarMantequilla(id));
+      else {
+        const intento = prepararIntentoOperacion(intentosInicioMantequilla.current.get(id) ?? null, {});
+        intentosInicioMantequilla.current.set(id, intento);
+        const corrida = await iniciarMantequilla(id, intento.carga);
+        intentosInicioMantequilla.current.delete(id);
+        setMantequillaInicioIncierto((actual) => actual === id ? null : actual);
+        actualizarMantequilla(corrida);
+      }
       if (!await refrescarEjecuciones()) {
         setError("La corrida se inició, pero no se pudo actualizar la disponibilidad.");
       }
     } catch (errorPeticion: unknown) {
-      setError(mensajeErrorProceso(
-        errorPeticion,
-        "No se pudo iniciar la corrida. Revisa equipo, aseo, saldo y estado de la orden.",
-      ));
+      const incierto = tipo === "mantequilla" && resultadoDeEnvioIncierto(errorPeticion);
+      if (tipo === "mantequilla" && incierto) {
+        setMantequillaInicioIncierto(id);
+        setError("No sabemos si se inició esta corrida. Recupera el resultado antes de iniciar otra operación con mantequilla.");
+      } else {
+        if (tipo === "mantequilla") {
+          intentosInicioMantequilla.current.delete(id);
+          setMantequillaInicioIncierto((actual) => actual === id ? null : actual);
+        }
+        setError(mensajeErrorProceso(
+          errorPeticion,
+          "No se pudo iniciar la corrida. Revisa equipo, aseo, saldo y estado de la orden.",
+        ));
+      }
       if (esErrorDeEquipo(errorPeticion)) {
         await refrescarEjecuciones();
       }
-    } finally { setAccionandoCorrida(null); }
+    } finally {
+      if (tipo === "mantequilla") iniciosMantequillaEnCurso.current.delete(id);
+      setAccionandoCorrida(null);
+    }
   };
 
   const cargarRutas = async () => {
@@ -211,7 +237,7 @@ export default function Procesos() {
 
         <section id="proceso-mantequilla" className="scroll-mt-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold text-slate-800">Línea de mantequilla</h2>{puedeOperar && <button type="button" onClick={() => setNuevaMantequilla(true)} className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white">Nueva corrida</button>}</div>
-          {!mantequillasCargadas ? <button type="button" onClick={cargarMantequillas} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : mantequillas.length === 0 ? <EmptyState titulo="Sin corridas de mantequilla" detalle="Las corridas conservan la relación trazable entre crema, mantequilla y merma declarada." /> : <div className="grid gap-4 lg:grid-cols-2">{mantequillas.map((corrida) => <article key={corrida.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{corrida.orden_codigo} · {corrida.mantequilla_codigo}</p><p className="mt-1 text-xs text-slate-600">{corrida.equipo_nombre || "Sin línea"} · {corrida.ejecucion_codigo}</p></div><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p className="rounded-xl bg-amber-50 p-3 text-amber-900"><span className="block text-xs text-amber-700">Crema utilizada</span>{Number(corrida.kg_crema).toLocaleString("es-CL")} kg · {corrida.crema_codigo}</p><p className="rounded-xl bg-green-50 p-3 text-green-900"><span className="block text-xs text-green-700">Mantequilla</span>{corrida.kg_mantequilla ? `${Number(corrida.kg_mantequilla).toLocaleString("es-CL")} kg` : "Pendiente"}</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Merma</span>{Number(corrida.kg_merma).toLocaleString("es-CL")} kg</p></div>{puedeOperar && corrida.estado === "borrador" && <button type="button" disabled={accionandoCorrida === corrida.id} onClick={() => void iniciarCorrida("mantequilla", corrida.id)} className="mt-4 rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{accionandoCorrida === corrida.id ? "Iniciando…" : "Iniciar con esta crema"}</button>}{puedeOperar && corrida.estado === "en_proceso" && <button type="button" onClick={() => setCerrandoMantequilla(corrida)} className="mt-4 rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white">Registrar balance y cerrar</button>}{corrida.estado === "pendiente_calidad" && <p className="mt-4 rounded-xl bg-violet-50 px-3 py-2 text-xs font-medium text-violet-800">Producción cerrada; Calidad debe revisar antes de Envasado.</p>}</article>)}</div>}
+          {!mantequillasCargadas ? <button type="button" onClick={cargarMantequillas} className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-700">Cargar corridas</button> : mantequillas.length === 0 ? <EmptyState titulo="Sin corridas de mantequilla" detalle="Las corridas conservan la relación trazable entre crema, mantequilla y merma declarada." /> : <div className="grid gap-4 lg:grid-cols-2">{mantequillas.map((corrida) => <article key={corrida.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{corrida.orden_codigo} · {corrida.mantequilla_codigo}</p><p className="mt-1 text-xs text-slate-600">{corrida.equipo_nombre || "Sin línea"} · {corrida.ejecucion_codigo}</p></div><StatusBadge estado={corrida.estado} etiqueta={corrida.estado_etiqueta} /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p className="rounded-xl bg-amber-50 p-3 text-amber-900"><span className="block text-xs text-amber-700">Crema utilizada</span>{Number(corrida.kg_crema).toLocaleString("es-CL")} kg · {corrida.crema_codigo}</p><p className="rounded-xl bg-green-50 p-3 text-green-900"><span className="block text-xs text-green-700">Mantequilla</span>{corrida.kg_mantequilla ? `${Number(corrida.kg_mantequilla).toLocaleString("es-CL")} kg` : "Pendiente"}</p><p className="rounded-xl bg-slate-50 p-3 text-slate-700"><span className="block text-xs text-slate-600">Merma</span>{Number(corrida.kg_merma).toLocaleString("es-CL")} kg</p>{Number(corrida.kg_suero) > 0 && <p className="rounded-xl bg-sky-50 p-3 text-sky-900"><span className="block text-xs text-sky-700">Suero / mazada histórica</span>{Number(corrida.kg_suero).toLocaleString("es-CL")} kg</p>}</div>{puedeOperar && corrida.estado === "borrador" && <button type="button" disabled={accionandoCorrida === corrida.id || (mantequillaInicioIncierto !== null && mantequillaInicioIncierto !== corrida.id)} onClick={() => void iniciarCorrida("mantequilla", corrida.id)} className="mt-4 rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{accionandoCorrida === corrida.id ? "Iniciando…" : mantequillaInicioIncierto === corrida.id ? "Recuperar resultado" : "Iniciar con esta crema"}</button>}{puedeOperar && corrida.estado === "en_proceso" && <button type="button" onClick={() => setCerrandoMantequilla(corrida)} className="mt-4 rounded-xl bg-amber-700 px-4 py-2 text-sm font-semibold text-white">Registrar balance y cerrar</button>}{corrida.estado === "pendiente_calidad" && <p className="mt-4 rounded-xl bg-violet-50 px-3 py-2 text-xs font-medium text-violet-800">Producción cerrada; Calidad debe revisar antes de Envasado.</p>}</article>)}</div>}
           {mantequillasCargadas && mantequillas.some((item) => item.finalizada_en) && <div className="mt-3 grid gap-3 lg:grid-cols-2">{mantequillas.filter((item) => item.finalizada_en).map((corrida) => <article key={`auditoria-${corrida.id}`} className="rounded-xl border border-amber-100 bg-amber-50/40 p-4 text-xs text-slate-700"><p className="font-semibold text-amber-950">Registro operativo · {corrida.ejecucion_codigo}</p><p className="mt-2">Inició {corrida.iniciada_en ? new Date(corrida.iniciada_en).toLocaleString("es-CL") : "—"} · {corrida.iniciada_por_nombre || "operador registrado"}</p><p>Cerró {corrida.finalizada_en ? new Date(corrida.finalizada_en).toLocaleString("es-CL") : "—"} · {corrida.finalizada_por_nombre || "operador registrado"}</p>{Object.keys(corrida.controles ?? {}).length > 0 && <div className="mt-2 flex flex-wrap gap-1">{Object.entries(corrida.controles).map(([clave, valor]) => <span key={clave} className="rounded-full bg-white px-2 py-1">{clave.replaceAll("_", " ")}: {String(valor)}</span>)}</div>}</article>)}</div>}
         </section>
 

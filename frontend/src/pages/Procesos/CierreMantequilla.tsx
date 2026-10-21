@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import { calcularBalanceMantequilla } from "../../services/balance-mantequilla";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
+import { resultadoDeEnvioIncierto } from "../../services/resultado-envio";
+import { prepararIntentoOperacion, type IntentoOperacion } from "../../services/intento-operacion";
 import { cerrarMantequilla, type CorridaMantequilla } from "../../services/procesos.service";
 
 const campo = "mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-amber-600";
@@ -13,21 +15,25 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
   onCerrada: (corrida: CorridaMantequilla) => void | Promise<void>;
 }) {
   const [datos, setDatos] = useState({
-    mantequilla: "", suero: "", merma: "", reproceso: "",
+    mantequilla: "", merma: "0", reproceso: "0",
     motivoReproceso: "", humedad: "",
   });
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
+  const [incierto, setIncierto] = useState(false);
+  const [confirmado, setConfirmado] = useState(false);
+  const enviando = useRef(false);
+  const intento = useRef<IntentoOperacion<Omit<Parameters<typeof cerrarMantequilla>[1], "operacion_id">> | null>(null);
   const balance = useMemo(() => calcularBalanceMantequilla(corrida.kg_crema, {
     mantequilla: datos.mantequilla,
-    suero: datos.suero,
+    suero: "0",
     merma: datos.merma,
     reproceso: datos.reproceso,
   }), [corrida.kg_crema, datos]);
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
-    if (ocupado) return;
+    if (enviando.current || confirmado) return;
     setError("");
     if (!balance.cuadrado) {
       setError(balance.excedido
@@ -39,19 +45,34 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
       setError("Indica por qué el material debe segregarse para reproceso.");
       return;
     }
+    const cargaBase = {
+      kg_mantequilla: Number(datos.mantequilla),
+      kg_merma: Number(datos.merma || 0),
+      kg_reproceso: Number(datos.reproceso || 0),
+      motivo_reproceso: datos.motivoReproceso.trim(),
+      controles: datos.humedad ? { humedad: Number(datos.humedad) } : {},
+    };
+    intento.current = prepararIntentoOperacion(intento.current, cargaBase);
+    enviando.current = true;
     setOcupado(true);
+    setError("");
+    let respuestaRecibida = false;
     try {
-      await onCerrada(await cerrarMantequilla(corrida.id, {
-        kg_mantequilla: Number(datos.mantequilla),
-        kg_suero: Number(datos.suero || 0),
-        kg_merma: Number(datos.merma || 0),
-        kg_reproceso: Number(datos.reproceso || 0),
-        motivo_reproceso: datos.motivoReproceso.trim(),
-        controles: datos.humedad ? { humedad: Number(datos.humedad) } : {},
-      }));
+      const cerrada = await cerrarMantequilla(corrida.id, intento.current.carga);
+      respuestaRecibida = true;
+      await onCerrada(cerrada);
+      setConfirmado(true);
     } catch (e) {
-      setError(mensajeErrorProceso(e, "No se pudo cerrar la corrida de mantequilla."));
+      const resultadoIncierto = respuestaRecibida || resultadoDeEnvioIncierto(e);
+      setIncierto(resultadoIncierto);
+      if (!resultadoIncierto) intento.current = null;
+      setError(resultadoIncierto
+        ? respuestaRecibida
+          ? "El cierre se confirmó, pero no pudimos actualizar esta pantalla. Recupera el resultado de la misma operación."
+          : "No sabemos si se cerró la corrida. Recupera el resultado de esta misma operación antes de cambiar los datos."
+        : mensajeErrorProceso(e, "No se pudo cerrar la corrida de mantequilla."));
     } finally {
+      enviando.current = false;
       setOcupado(false);
     }
   };
@@ -64,16 +85,12 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
           <h2 className="mt-1 text-xl font-bold">Cerrar proceso de mantequilla</h2>
           <p className="mt-2 text-sm text-slate-600">Origen {corrida.crema_codigo} · {Number(corrida.kg_crema).toLocaleString("es-CL")} kg de crema.</p>
         </div>
-        <button type="button" onClick={onCerrar} className="rounded-lg p-2 hover:bg-slate-100" aria-label="Cerrar"><X className="h-5 w-5" /></button>
+        <button type="button" onClick={onCerrar} disabled={ocupado || incierto || confirmado} className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40" aria-label="Cerrar"><X className="h-5 w-5" /></button>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <fieldset disabled={ocupado || incierto || confirmado} className="mt-6 grid gap-4 sm:grid-cols-2">
         <Etiqueta texto="Mantequilla producida (kg)">
           <input required min="0.001" step="0.001" type="number" value={datos.mantequilla} onChange={(e) => setDatos({ ...datos, mantequilla: e.target.value })} className={campo} />
-        </Etiqueta>
-        <Etiqueta texto="Suero / mazada recuperada (kg)">
-          <input min="0" step="0.001" type="number" disabled={!corrida.lote_suero} value={datos.suero} onChange={(e) => setDatos({ ...datos, suero: e.target.value })} className={`${campo} disabled:bg-slate-100 disabled:text-slate-500`} />
-          {!corrida.lote_suero && <span className="mt-1 block text-xs font-normal text-rose-700">Esta corrida no tiene un lote de suero asociado. Registra 0 kg.</span>}
         </Etiqueta>
         <Etiqueta texto="Merma medida (kg)">
           <input min="0" step="0.001" type="number" value={datos.merma} onChange={(e) => setDatos({ ...datos, merma: e.target.value })} className={campo} />
@@ -89,17 +106,17 @@ export default function CierreMantequilla({ corrida, onCerrar, onCerrada }: {
         <Etiqueta texto="Humedad (%)">
           <input min="0" max="100" step="0.01" type="number" value={datos.humedad} onChange={(e) => setDatos({ ...datos, humedad: e.target.value })} className={campo} />
         </Etiqueta>
-      </div>
+      </fieldset>
 
       <div className={`mt-4 rounded-xl px-4 py-3 text-sm ${balance.cuadrado ? "bg-emerald-50 text-emerald-900" : balance.excedido ? "bg-rose-50 text-rose-800" : "bg-amber-50 text-amber-900"}`} role="status">
         <span className="font-semibold">{balance.cuadrado ? "Balance completo" : balance.excedido ? "Balance excedido" : "Balance incompleto"}</span>
         {" · "}{balance.clasificado.toLocaleString("es-CL")} de {balance.entrada.toLocaleString("es-CL")} kg clasificados
         {!balance.cuadrado && <> · diferencia <b>{balance.diferencia.toLocaleString("es-CL")} kg</b></>}.
       </div>
-      {error && <p className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
       <div className="mt-6 flex justify-end gap-3">
-        <button type="button" onClick={onCerrar} className="px-4 py-2.5 text-sm text-slate-600">Cancelar</button>
-        <button disabled={ocupado || !balance.cuadrado} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{ocupado ? "Cerrando…" : "Cerrar y enviar a Calidad"}</button>
+        <button type="button" onClick={onCerrar} disabled={ocupado || incierto || confirmado} className="px-4 py-2.5 text-sm text-slate-600 disabled:opacity-40">Cancelar</button>
+        <button disabled={ocupado || !balance.cuadrado} className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{ocupado ? "Cerrando…" : incierto ? "Recuperar resultado" : confirmado ? "Cierre registrado" : "Cerrar y enviar a Calidad"}</button>
       </div>
     </form>
   </div>;

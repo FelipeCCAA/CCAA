@@ -803,31 +803,141 @@ def crear_condensacion_guiada(*, lote_id, silo_destino_id, usuario):
     return corrida
 
 
+def _bloquear_operacion_mantequilla(operacion_id):
+    """Serializa una clave antes de consultar sus filas idempotentes."""
+    from django.db import connection
+
+    if connection.vendor == "postgresql":
+        llave = int.from_bytes(operacion_id.bytes[:4], "big", signed=True)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [17221, llave])
+
+
+def _validar_fuente_crema(salida, crema, etapa, *, bloquear=True):
+    """No atribuye una salida histórica ni convierte kg sin libro físico."""
+    from calidad.models import LiberacionProceso
+    from calidad.vigencia import exigir_liberacion_salida_vigente
+    from maestros.models import Silo
+
+    if salida.lote_id != crema.pk or salida.silo_id is None:
+        raise ValidationError({"salida_crema": "Selecciona una salida física del lote de crema."})
+    if salida.unidad.lower() != "l":
+        raise ValidationError({"salida_crema": "Esta fuente aún no tiene consumo físico verificable en kg."})
+    silo = Silo.objects.select_for_update().get(pk=salida.silo_id) if bloquear else salida.silo
+    salida.silo = silo
+    if silo.tipo != Silo.Tipo.TK_CREMA:
+        raise ValidationError({"salida_crema": "La crema debe provenir de un TK de crema."})
+    if salida.destino not in {
+        SalidaProceso.Destino.PENDIENTE, SalidaProceso.Destino.SIGUIENTE_PROCESO,
+    }:
+        raise ValidationError({"salida_crema": "El destino de la salida no permite Mantequilla."})
+    siguiente = siguiente_etapa_para_salida(salida=salida)
+    if siguiente is None or siguiente.pk != etapa.pk:
+        raise ValidationError({"salida_crema": "La salida no continúa directamente a Mantequilla."})
+    firma = exigir_liberacion_salida_vigente(salida.pk, bloquear=bloquear)
+    decision = LiberacionProceso.objects.select_related("analisis_silo").get(salida_id=salida.pk)
+    if decision.analisis_silo_id and decision.analisis_silo.silo_id != salida.silo_id:
+        raise ValidationError({"salida_crema": "El análisis firmado no corresponde al TK de origen."})
+    densidad = getattr(decision.analisis_silo, "densidad", None) if decision.analisis_silo_id else None
+    if densidad is None or densidad <= 0:
+        raise ValidationError({"salida_crema": "Falta una densidad real y firmada de la crema."})
+    return firma, Decimal(str(densidad)), decision.analisis_silo_id
+
+
+def _disponible_lote_crema(crema, *, excluir_ejecucion_id=None):
+    """Resta entradas históricas en kg y alimentaciones nuevas en kg una vez."""
+    usados_legacy = EntradaProceso.objects.filter(
+        lote_id=crema.pk, unidad__iexact="kg",
+    ).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    nuevas = CorridaMantequilla.objects.filter(
+        lote_crema_id=crema.pk, salida_crema__isnull=False,
+    ).exclude(estado=CorridaMantequilla.Estado.BORRADOR)
+    if excluir_ejecucion_id is not None:
+        nuevas = nuevas.exclude(ejecucion_id=excluir_ejecucion_id)
+    ejecuciones_con_entrada_kg = EntradaProceso.objects.filter(
+        lote_id=crema.pk, unidad__iexact="kg",
+    ).values("ejecucion_id")
+    nuevas = nuevas.exclude(ejecucion_id__in=ejecuciones_con_entrada_kg)
+    usados_nuevos = nuevas.aggregate(total=Sum("kg_crema"))["total"] or Decimal("0")
+    return Decimal(str(crema.kg_producidos or 0)) - usados_legacy - usados_nuevos
+
+
+def _disponible_salida_crema(salida):
+    from estandarizacion.balance import cantidad_operativa_salida
+    from recepcion.models import MovimientoSilo
+
+    usos = salida.usos_como_origen.aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    despachos = salida.detalles_despacho_granel.filter(
+        despacho__estado__in=["autorizado", "despachado"],
+    ).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
+    vinculadas = CorridaMantequilla.objects.filter(
+        salida_crema__silo_id=salida.silo_id,
+        salida_crema__lote_id=salida.lote_id,
+    ).values("operacion_id")
+    retiros_no_atribuidos = MovimientoSilo.objects.filter(
+        silo_id=salida.silo_id, lote_id=salida.lote_id,
+        tipo=MovimientoSilo.Tipo.SALIDA,
+    ).exclude(operacion_id__in=vinculadas)
+    if (retiros_no_atribuidos.exists() and SalidaProceso.objects.filter(
+        silo_id=salida.silo_id, lote_id=salida.lote_id,
+    ).exclude(pk=salida.pk).exists()):
+        raise ValidationError({
+            "salida_crema": "Hay retiros históricos sin salida identificada entre varias fuentes de crema."
+        })
+    legado_litros = retiros_no_atribuidos.aggregate(total=Sum("litros"))["total"] or Decimal("0")
+    return cantidad_operativa_salida(salida) - usos - despachos - legado_litros
+
+
 @transaction.atomic
 def crear_mantequilla_guiada(
-    *, orden_id, lote_crema_id, equipo_id, codigo_lote_mantequilla,
-    kg_crema, usuario, lote_suero_id=None,
+    *, orden_id, lote_crema_id, salida_crema_id, equipo_id,
+    codigo_lote_mantequilla, kg_crema, usuario, operacion_id,
 ):
-    """Crea ejecución, lote de salida y corrida sin pasos parciales huérfanos."""
+    """Crea ejecución, lote y corrida desde una salida elegida y liberada."""
     from maestros.models import Equipo
     from produccion.models import Lote, OrdenProduccion
+    from recepcion.servicios import motivos_silo_no_disponible
+    from calidad.evidencia import bloquear_catalogo
 
+    operacion_id = uuid.UUID(str(operacion_id))
+    codigo = str(codigo_lote_mantequilla).strip()
+    kg_crema = Decimal(str(kg_crema))
+    payload = {
+        "orden": orden_id, "lote_crema": lote_crema_id,
+        "salida_crema": salida_crema_id, "equipo": equipo_id,
+        "codigo_lote_mantequilla": codigo, "kg_crema": str(kg_crema),
+        "usuario_id": usuario.pk,
+    }
+    bloquear_catalogo()
+    _bloquear_operacion_mantequilla(operacion_id)
+    previa = CorridaMantequilla.objects.select_for_update(of=("self",)).filter(
+        operacion_id=operacion_id,
+    ).first()
+    if previa is not None:
+        evento = EventoProceso.objects.filter(
+            ejecucion_id=previa.ejecucion_id, tipo="mantequilla_creada",
+            operacion_id=operacion_id,
+        ).first()
+        if evento is None or evento.datos.get("solicitud") != payload:
+            raise ValidationError({"operacion_id": "Esta clave ya se usó con otra solicitud."})
+        previa._op05_replay = True
+        return previa
+    if EventoProceso.objects.filter(operacion_id=operacion_id).exists():
+        raise ValidationError({"operacion_id": "Esta clave ya se usó en otra operación."})
     orden = OrdenProduccion.objects.select_for_update(of=("self",)).select_related(
         "producto", "sucursal"
     ).get(pk=orden_id)
     crema = Lote.objects.select_for_update(of=("self",)).select_related("producto").get(pk=lote_crema_id)
-    equipo = Equipo.objects.select_for_update().get(pk=equipo_id)
-    suero = Lote.objects.select_for_update().get(pk=lote_suero_id) if lote_suero_id else None
+    salida = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
+        "silo", "ruta_producto__proceso", "ejecucion__etapa",
+        "liberacion_calidad__analisis_silo",
+    ).get(pk=salida_crema_id)
     if orden.producto.categoria != "mantequilla":
         raise ValidationError({"orden": "La orden no corresponde a mantequilla."})
     if orden.estado not in {OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO}:
         raise ValidationError({"orden": "La orden no está programada o en proceso."})
     if crema.producto.familia != "crema":
         raise ValidationError({"lote_crema": "Selecciona un lote de crema."})
-    if not equipo.activo:
-        raise ValidationError({"equipo": "La línea no está activa."})
-    if equipo.tipo not in {Equipo.Tipo.LINEA, Equipo.Tipo.OTRO}:
-        raise ValidationError({"equipo": "El equipo no corresponde a la línea de mantequilla."})
     etapa = etapa_para_producto(
         producto=orden.producto, sucursal=orden.sucursal,
         tipo=EtapaProceso.Tipo.MANTEQUILLA,
@@ -837,9 +947,23 @@ def crear_mantequilla_guiada(
     ruta = ruta_para_etapa(
         producto=orden.producto, sucursal=orden.sucursal, etapa=etapa
     )
-    codigo = str(codigo_lote_mantequilla).strip()
     if not codigo:
         raise ValidationError({"codigo_lote_mantequilla": "Ingresa el código del lote de salida."})
+    if kg_crema <= 0 or kg_crema > _disponible_lote_crema(crema):
+        raise ValidationError({"kg_crema": "No hay suficientes kg de este lote de crema."})
+    firma, densidad, analisis_id = _validar_fuente_crema(salida, crema, etapa)
+    equipo = Equipo.objects.select_for_update().get(pk=equipo_id)
+    if not equipo.activo:
+        raise ValidationError({"equipo": "La línea no está activa."})
+    if equipo.tipo not in {Equipo.Tipo.LINEA, Equipo.Tipo.OTRO}:
+        raise ValidationError({"equipo": "El equipo no corresponde a la línea de mantequilla."})
+    litros = (kg_crema * Decimal("1000") / densidad).quantize(Decimal("0.01"))
+    if litros <= 0 or litros > _disponible_salida_crema(salida):
+        raise ValidationError({"salida_crema": "La salida no tiene litros libres suficientes."})
+    motivos_tk = motivos_silo_no_disponible(salida.silo, para="proceso")
+    if motivos_tk:
+        raise ValidationError({"salida_crema": " ".join(motivos_tk)})
+    exigir_origen_disponible(silo=salida.silo, cantidad=litros)
     lote_salida = Lote(
         sucursal=orden.sucursal, codigo_lote=codigo,
         codigo_lote_propuesto=codigo, op=orden.codigo, orden=orden,
@@ -859,19 +983,33 @@ def crear_mantequilla_guiada(
     lote_salida.save(update_fields=["ejecucion"])
     corrida = CorridaMantequilla(
         ejecucion=ejecucion, orden=orden, lote_crema=crema,
-        lote_mantequilla=lote_salida, lote_suero=suero,
-        kg_crema=Decimal(str(kg_crema)),
+        salida_crema=salida, lote_mantequilla=lote_salida,
+        kg_crema=kg_crema, operacion_id=operacion_id,
     )
     corrida.full_clean()
     corrida.save()
+    corrida._op05_replay = False
+    EventoProceso.objects.create(
+        ejecucion=ejecucion, usuario=usuario, tipo="mantequilla_creada",
+        operacion_id=operacion_id,
+        datos={"solicitud": payload, "firma_salida": firma,
+               "analisis_silo_id": analisis_id,
+               "densidad_kg_m3": str(densidad), "litros_previstos": str(litros)},
+    )
     return corrida
 
 
 @transaction.atomic
 def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     """Reserva parte de una salida liberada y prepara su próxima ejecución."""
+    from calidad.evidencia import bloquear_catalogo
     from maestros.models import Equipo
+    from produccion.models import Lote
 
+    bloquear_catalogo()
+    lote_origen_id = SalidaProceso.objects.values_list("lote_id", flat=True).get(pk=salida_id)
+    if lote_origen_id is not None:
+        Lote.objects.select_for_update(of=("self",)).get(pk=lote_origen_id)
     salida = (
         SalidaProceso.objects.select_for_update(of=("self",))
         .select_related(
@@ -880,6 +1018,8 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
         )
         .get(pk=salida_id)
     )
+    if salida.lote_id != lote_origen_id:
+        raise ValidationError("Cambió el lote de origen; actualiza la salida antes de continuar.")
     try:
         etapa = EtapaProceso.objects.select_related("proceso").get(
             pk=etapa_id, activa=True
@@ -1132,6 +1272,7 @@ def definir_destino_salida(
 
 
 def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
+    from django.db.models.functions import Coalesce
     from produccion.models import Lote
     from .models import EntradaProceso, SalidaProceso
 
@@ -1169,7 +1310,8 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
         if direccion == "atras":
             relaciones = EntradaProceso.objects.filter(
                 ejecucion__salidas__lote_id__in=ids_actuales,
-                lote_id__isnull=False,
+            ).filter(
+                Q(lote_id__isnull=False) | Q(salida_origen__lote_id__isnull=False),
             ).annotate(
                 actual_relacion_id=F("ejecucion__salidas__lote_id"),
                 salida_relacion_id=F("ejecucion__salidas__id"),
@@ -1177,16 +1319,23 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
                 salida_unidad=F("ejecucion__salidas__unidad"),
                 salida_naturaleza=F("ejecucion__salidas__naturaleza"),
                 salida_destino=F("ejecucion__salidas__destino"),
-            ).select_related("lote__producto", "ejecucion__etapa", "ejecucion__equipo")
+            ).select_related(
+                "lote__producto", "salida_origen__lote__producto",
+                "ejecucion__etapa", "ejecucion__equipo",
+            )
             relaciones = relaciones.order_by(
                 "ejecucion__salidas__id", "id"
             )
         else:
             relaciones = SalidaProceso.objects.filter(
-                ejecucion__entradas__lote_id__in=ids_actuales,
+                Q(ejecucion__entradas__lote_id__in=ids_actuales)
+                | Q(ejecucion__entradas__salida_origen__lote_id__in=ids_actuales),
                 lote_id__isnull=False,
             ).annotate(
-                actual_relacion_id=F("ejecucion__entradas__lote_id"),
+                actual_relacion_id=Coalesce(
+                    F("ejecucion__entradas__lote_id"),
+                    F("ejecucion__entradas__salida_origen__lote_id"),
+                ),
                 entrada_relacion_id=F("ejecucion__entradas__id"),
                 entrada_cantidad=F("ejecucion__entradas__cantidad"),
                 entrada_unidad=F("ejecucion__entradas__unidad"),
@@ -1208,6 +1357,8 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
         for actual_id in ids_actuales:
             for relacion in por_actual[actual_id]:
                 relacionado = relacion.lote
+                if direccion == "atras" and relacionado is None:
+                    relacionado = relacion.salida_origen.lote
                 origen, destino = (
                     (relacionado.id, actual_id)
                     if direccion == "atras"
@@ -1976,17 +2127,18 @@ def cerrar_descremacion(
 
 
 @transaction.atomic
-def iniciar_mantequilla(*, corrida_id, usuario):
+def iniciar_mantequilla(*, corrida_id, usuario, operacion_id):
     from inventario.servicios import motivo_equipo_no_habilitado
-    from calidad.models import LiberacionProceso
     from maestros.models import Silo
-    from produccion.models import OrdenProduccion
+    from produccion.models import Lote, OrdenProduccion
     from recepcion.models import MovimientoSilo
-    from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+    from recepcion.servicios import motivos_silo_no_disponible
     from .models import EntradaProceso, SalidaProceso
 
     from calidad.evidencia import bloquear_catalogo
+    operacion_id = uuid.UUID(str(operacion_id))
     bloquear_catalogo()
+    _bloquear_operacion_mantequilla(operacion_id)
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden",
         "lote_crema__producto", "lote_mantequilla__producto",
@@ -1995,68 +2147,72 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     corrida.ejecucion = EjecucionProceso.objects.select_for_update(of=("self",)).select_related(
         "etapa", "equipo",
     ).get(pk=corrida.ejecucion_id)
+    solicitud = {"corrida": corrida.pk, "usuario_id": usuario.pk}
+    previo = EventoProceso.objects.filter(operacion_id=operacion_id).first()
+    if previo is not None:
+        if (previo.tipo != "mantequilla_iniciada" or previo.ejecucion_id != corrida.ejecucion_id
+            or previo.datos.get("solicitud") != solicitud):
+            raise ValidationError({"operacion_id": "Esta clave ya se usó con otra solicitud."})
+        return corrida
+    if CorridaMantequilla.objects.filter(operacion_id=operacion_id).exists():
+        raise ValidationError({"operacion_id": "Esta clave ya se usó en otra operación."})
     if corrida.estado != CorridaMantequilla.Estado.BORRADOR:
         raise ValidationError("Solo una corrida en borrador puede iniciarse.")
     corrida.clean()
-    if corrida.orden.estado not in {
+    orden = OrdenProduccion.objects.select_for_update(of=("self",)).get(pk=corrida.orden_id)
+    crema = Lote.objects.select_for_update(of=("self",)).select_related("producto").get(
+        pk=corrida.lote_crema_id,
+    )
+    if orden.estado not in {
         OrdenProduccion.Estado.PROGRAMADA, OrdenProduccion.Estado.EN_PROCESO,
     }:
         raise ValidationError("La orden debe estar programada o en proceso.")
     impedimento = motivo_equipo_no_habilitado(corrida.ejecucion.equipo)
     if impedimento:
         raise ValidationError(impedimento)
-    utilizado = EntradaProceso.objects.filter(
-        lote=corrida.lote_crema, unidad__iexact="kg"
-    ).aggregate(total=Sum("cantidad"))["total"] or Decimal("0")
-    disponible = Decimal(str(corrida.lote_crema.kg_producidos or 0)) - utilizado
+    if corrida.salida_crema_id is None:
+        raise ValidationError({"salida_crema": "La corrida histórica no identifica una salida de crema; no se puede iniciar."})
+    disponible = _disponible_lote_crema(crema, excluir_ejecucion_id=corrida.ejecucion_id)
     if corrida.kg_crema > disponible:
         raise ValidationError(f"El lote de crema solo tiene {disponible} kg disponibles.")
-    fuente_tk = (
-        SalidaProceso.objects.select_for_update(of=("self",))
-        .select_related("silo", "liberacion_calidad__analisis_silo")
-        .filter(lote=corrida.lote_crema, silo__isnull=False)
-        .order_by("registrada_en")
-        .first()
+    fuente_tk = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
+        "silo", "ruta_producto__proceso", "ejecucion__etapa",
+        "liberacion_calidad__analisis_silo",
+    ).get(pk=corrida.salida_crema_id)
+    firma, densidad, analisis_id = _validar_fuente_crema(
+        fuente_tk, crema, corrida.ejecucion.etapa,
     )
-    if fuente_tk is not None:
-        liberacion = getattr(fuente_tk, "liberacion_calidad", None)
-        if not liberacion or liberacion.estado != LiberacionProceso.Estado.LIBERADO:
-            raise ValidationError("El lote de crema todavía no está liberado por Calidad.")
-        densidad = liberacion.analisis_silo.densidad if liberacion.analisis_silo_id else None
-        if densidad is None or densidad <= 0:
-            raise ValidationError("El análisis de la crema no tiene una densidad válida.")
-        litros_consumidos = (
-            Decimal(str(corrida.kg_crema)) * Decimal("1000") / Decimal(str(densidad))
-        ).quantize(Decimal("0.01"))
-        tk_crema = Silo.objects.select_for_update().get(pk=fuente_tk.silo_id)
-        motivos_tk = motivos_silo_no_disponible(tk_crema, para="proceso")
-        if motivos_tk:
-            raise ValidationError(f"{tk_crema.codigo}: " + " ".join(motivos_tk))
-        exigir_origen_disponible(
-            silo=tk_crema, cantidad=litros_consumidos,
-            excluir_ejecucion_id=corrida.ejecucion_id,
-        )
-        consumir_reserva_origen(
-            ejecucion_id=corrida.ejecucion_id, silo_id=tk_crema.pk,
-            cantidad=litros_consumidos,
-        )
-        MovimientoSilo.objects.create(
-            silo=tk_crema,
-            tipo=MovimientoSilo.Tipo.SALIDA,
-            litros=litros_consumidos,
-            fecha_hora=timezone.now(),
-            origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
-            origen_id=corrida.pk,
-            operacion_id=corrida.operacion_id,
-            lote=corrida.lote_crema,
-            producto=corrida.lote_crema.producto,
-            equipo=corrida.ejecucion.equipo,
-            usuario=usuario,
-        )
-    EntradaProceso.objects.create(
-        ejecucion=corrida.ejecucion, lote=corrida.lote_crema,
-        cantidad=corrida.kg_crema, unidad="kg",
+    litros_consumidos = (
+        Decimal(str(corrida.kg_crema)) * Decimal("1000") / densidad
+    ).quantize(Decimal("0.01"))
+    if litros_consumidos <= 0 or litros_consumidos > _disponible_salida_crema(fuente_tk):
+        raise ValidationError({"salida_crema": "La salida de crema no tiene litros libres suficientes."})
+    tk_crema = Silo.objects.select_for_update().get(pk=fuente_tk.silo_id)
+    motivos_tk = motivos_silo_no_disponible(tk_crema, para="proceso")
+    if motivos_tk:
+        raise ValidationError(f"{tk_crema.codigo}: " + " ".join(motivos_tk))
+    exigir_origen_disponible(
+        silo=tk_crema, cantidad=litros_consumidos,
+        excluir_ejecucion_id=corrida.ejecucion_id,
     )
+    consumir_reserva_origen(
+        ejecucion_id=corrida.ejecucion_id, silo_id=tk_crema.pk,
+        cantidad=litros_consumidos,
+    )
+    MovimientoSilo.objects.create(
+        silo=tk_crema, tipo=MovimientoSilo.Tipo.SALIDA,
+        litros=litros_consumidos, fecha_hora=timezone.now(),
+        origen_tipo=MovimientoSilo.OrigenTipo.PRODUCCION,
+        origen_id=corrida.pk, operacion_id=corrida.operacion_id,
+        lote=crema, producto=crema.producto,
+        equipo=corrida.ejecucion.equipo, usuario=usuario,
+    )
+    entrada = EntradaProceso(
+        ejecucion=corrida.ejecucion, silo=tk_crema, salida_origen=fuente_tk,
+        cantidad=litros_consumidos, unidad=fuente_tk.unidad,
+    )
+    entrada.full_clean()
+    entrada.save()
     if corrida.ejecucion.estado == EjecucionProceso.Estado.BORRADOR:
         transicionar_ejecucion(
             ejecucion_id=corrida.ejecucion_id,
@@ -2070,23 +2226,46 @@ def iniciar_mantequilla(*, corrida_id, usuario):
     corrida.iniciada_por = usuario
     corrida.iniciada_en = timezone.now()
     corrida.save(update_fields=["estado", "iniciada_por", "iniciada_en"])
-    if corrida.orden.estado == OrdenProduccion.Estado.PROGRAMADA:
-        corrida.orden.estado = OrdenProduccion.Estado.EN_PROCESO
-        corrida.orden.save(update_fields=["estado"])
+    if orden.estado == OrdenProduccion.Estado.PROGRAMADA:
+        orden.estado = OrdenProduccion.Estado.EN_PROCESO
+        orden.save(update_fields=["estado"])
+    EventoProceso.objects.create(
+        ejecucion=corrida.ejecucion, usuario=usuario, tipo="mantequilla_iniciada",
+        operacion_id=operacion_id,
+        datos={"solicitud": solicitud, "salida_crema": fuente_tk.pk,
+               "firma_salida": firma, "analisis_silo_id": analisis_id,
+               "densidad_kg_m3": str(densidad),
+               "kg_crema": str(corrida.kg_crema), "litros_consumidos": str(litros_consumidos)},
+    )
     return corrida
 
 
 @transaction.atomic
 def cerrar_mantequilla(
     *, corrida_id, usuario, kg_mantequilla, kg_suero=0, kg_merma=0,
-    kg_reproceso=0, motivo_reproceso="", controles=None,
+    kg_reproceso=0, motivo_reproceso="", controles=None, operacion_id,
 ):
     from calidad.models import LiberacionProceso
     from produccion.models import Lote
+    from recepcion.models import MovimientoSilo
     from .models import AutorizacionReproceso, SalidaProceso
 
     from calidad.evidencia import bloquear_catalogo
+    operacion_id = uuid.UUID(str(operacion_id))
+    controles = controles or {}
+    if not isinstance(controles, dict) or "_op05" in controles:
+        raise ValidationError({"controles": "_op05 está reservado para evidencia del servidor."})
+    solicitud = {
+        "corrida": corrida_id, "usuario_id": usuario.pk,
+        "kg_mantequilla": str(Decimal(str(kg_mantequilla))),
+        "kg_suero": str(Decimal(str(kg_suero))),
+        "kg_merma": str(Decimal(str(kg_merma))),
+        "kg_reproceso": str(Decimal(str(kg_reproceso))),
+        "motivo_reproceso": str(motivo_reproceso).strip(),
+        "controles": controles,
+    }
     bloquear_catalogo()
+    _bloquear_operacion_mantequilla(operacion_id)
     corrida = CorridaMantequilla.objects.select_for_update(of=("self",)).select_related(
         "ejecucion__etapa", "lote_mantequilla__producto", "lote_suero", "orden"
     ).get(pk=corrida_id)
@@ -2094,14 +2273,78 @@ def cerrar_mantequilla(
     corrida.ejecucion = EjecucionProceso.objects.select_for_update(of=("self",)).select_related(
         "etapa", "equipo",
     ).get(pk=corrida.ejecucion_id)
+    previo = EventoProceso.objects.filter(operacion_id=operacion_id).first()
+    if previo is not None:
+        if (previo.tipo != "mantequilla_cerrada" or previo.ejecucion_id != corrida.ejecucion_id
+            or previo.datos.get("solicitud") != solicitud):
+            raise ValidationError({"operacion_id": "Esta clave ya se usó con otra solicitud."})
+        return corrida
+    if CorridaMantequilla.objects.filter(operacion_id=operacion_id).exists():
+        raise ValidationError({"operacion_id": "Esta clave ya se usó en otra operación."})
     if corrida.estado != CorridaMantequilla.Estado.EN_PROCESO:
         raise ValidationError("Solo una corrida en proceso puede cerrarse.")
+    if Decimal(str(kg_suero)) != 0:
+        raise ValidationError({"kg_suero": "La mazada no se registra como suero en Mantequilla."})
+    if corrida.salida_crema_id is None:
+        raise ValidationError({"salida_crema": "Falta el origen real de crema de esta corrida."})
+    from produccion.models import OrdenProduccion
+    OrdenProduccion.objects.select_for_update(of=("self",)).get(pk=corrida.orden_id)
+    lotes = list(Lote.objects.select_for_update(of=("self",)).filter(
+        pk__in=[corrida.lote_crema_id, corrida.lote_mantequilla_id],
+    ).order_by("pk"))
+    crema = next(lote for lote in lotes if lote.pk == corrida.lote_crema_id)
+    fuente = SalidaProceso.objects.select_for_update(of=("self",)).select_related(
+        "silo", "ruta_producto__proceso", "ejecucion__etapa",
+        "liberacion_calidad__analisis_silo",
+    ).get(pk=corrida.salida_crema_id)
+    firma_vigente, densidad_vigente, analisis_vigente_id = _validar_fuente_crema(
+        fuente, crema, corrida.ejecucion.etapa,
+    )
+    inicio = EventoProceso.objects.filter(
+        ejecucion_id=corrida.ejecucion_id, tipo="mantequilla_iniciada",
+    ).order_by("pk").first()
+    datos_inicio = inicio.datos if inicio is not None else {}
+    if (datos_inicio.get("solicitud", {}).get("corrida") != corrida.pk
+        or datos_inicio.get("salida_crema") != fuente.pk):
+        raise ValidationError("Falta la evidencia de alimentación confirmada al inicio.")
+    if not datos_inicio.get("firma_salida") or not datos_inicio.get("analisis_silo_id"):
+        raise ValidationError("La firma y el análisis del inicio están incompletos.")
+    try:
+        kg_inicio = Decimal(datos_inicio["kg_crema"])
+        densidad_inicio = Decimal(datos_inicio["densidad_kg_m3"])
+        litros_inicio = Decimal(datos_inicio["litros_consumidos"])
+    except (KeyError, TypeError, InvalidOperation) as error:
+        raise ValidationError("La evidencia de conversión del inicio está incompleta.") from error
+    if (kg_inicio != corrida.kg_crema or densidad_inicio <= 0
+        or (kg_inicio * Decimal("1000") / densidad_inicio).quantize(Decimal("0.01")) != litros_inicio):
+        raise ValidationError("La medición de inicio no concuerda con la conversión registrada.")
+    consumo = MovimientoSilo.objects.filter(
+        operacion_id=corrida.operacion_id, origen_id=corrida.pk,
+        silo_id=fuente.silo_id, tipo=MovimientoSilo.Tipo.SALIDA,
+    ).first()
+    if consumo is None or consumo.litros != litros_inicio or not EntradaProceso.objects.filter(
+        ejecucion_id=corrida.ejecucion_id, salida_origen_id=fuente.pk,
+        silo_id=fuente.silo_id, cantidad=consumo.litros, unidad__iexact="l",
+    ).exists():
+        raise ValidationError("La crema no tiene retiro físico y entrada trazable confirmados.")
     corrida.kg_mantequilla = Decimal(str(kg_mantequilla))
-    corrida.kg_suero = Decimal(str(kg_suero))
+    corrida.kg_suero = Decimal("0")
     corrida.kg_merma = Decimal(str(kg_merma))
     corrida.kg_reproceso = Decimal(str(kg_reproceso))
     corrida.motivo_reproceso = str(motivo_reproceso).strip()
-    corrida.controles = controles or {}
+    corrida.controles = {
+        **controles,
+        "_op05": {"cierre": {"operacion_id": str(operacion_id), "solicitud": solicitud,
+                            "salida_crema": fuente.pk,
+                            "firma_salida_inicio": datos_inicio["firma_salida"],
+                            "analisis_silo_inicio_id": datos_inicio["analisis_silo_id"],
+                            "densidad_inicio_kg_m3": str(densidad_inicio),
+                            "kg_crema_inicio": str(kg_inicio),
+                            "firma_vigente_al_cierre": firma_vigente,
+                            "analisis_silo_vigente_al_cierre_id": analisis_vigente_id,
+                            "densidad_vigente_al_cierre_kg_m3": str(densidad_vigente),
+                            "litros_consumidos": str(consumo.litros)}},
+    }
     if corrida.kg_reproceso:
         codigo_reproceso = f"RW-MANT-{corrida.operacion_id.hex[:12].upper()}"
         lote_reproceso = Lote(
@@ -2232,6 +2475,18 @@ def cerrar_mantequilla(
             tipo="consumo_materiales_pendiente", motivo=aviso_bodega,
         )
 
+    EventoProceso.objects.create(
+        ejecucion=corrida.ejecucion, usuario=usuario, tipo="mantequilla_cerrada",
+        operacion_id=operacion_id,
+        datos={"solicitud": solicitud, "salida_crema": fuente.pk,
+               "firma_salida_inicio": datos_inicio["firma_salida"],
+               "analisis_silo_inicio_id": datos_inicio["analisis_silo_id"],
+               "densidad_inicio_kg_m3": str(densidad_inicio),
+               "firma_vigente_al_cierre": firma_vigente,
+               "analisis_silo_vigente_al_cierre_id": analisis_vigente_id,
+               "densidad_vigente_al_cierre_kg_m3": str(densidad_vigente),
+               "litros_consumidos": str(consumo.litros)},
+    )
     return corrida
 
 
@@ -2589,6 +2844,9 @@ def cerrar_secado(
                 raise ValidationError({
                     "alimentacion": "La salida intermedia está comprometida por encima de su cantidad."
                 })
+            # Mismo orden que Mantequilla y las correcciones de Calidad:
+            # salida -> silo -> análisis -> aprobación.
+            silo = Silo.objects.select_for_update(of=("self",)).get(pk=entrada.silo_id)
             exigir_liberacion_salida_vigente(salida_origen.pk, bloquear=True)
             if entrada.unidad.lower() != "l":
                 raise ValidationError({
@@ -2597,7 +2855,6 @@ def cerrar_secado(
                         "requiere un consumo en kg verificable, sin conversión implícita."
                     )
                 })
-            silo = Silo.objects.select_for_update(of=("self",)).get(pk=entrada.silo_id)
             if silo.estado == Silo.Estado.BLOQUEADO_CALIDAD:
                 raise ValidationError({
                     "alimentacion": "El silo de origen está bloqueado por Calidad."

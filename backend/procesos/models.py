@@ -569,6 +569,11 @@ class CorridaMantequilla(models.Model):
         "produccion.Lote", on_delete=models.PROTECT,
         related_name="usos_en_mantequilla",
     )
+    salida_crema = models.ForeignKey(
+        "procesos.SalidaProceso", on_delete=models.PROTECT,
+        related_name="corridas_mantequilla", null=True, blank=True,
+        help_text="Salida de crema elegida expresamente; las corridas históricas quedan sin atribución.",
+    )
     lote_mantequilla = models.ForeignKey(
         "produccion.Lote", on_delete=models.PROTECT,
         related_name="corridas_mantequilla",
@@ -624,6 +629,8 @@ class CorridaMantequilla(models.Model):
             raise ValidationError({"ejecucion": "La ejecución no corresponde a Mantequilla."})
         if self.lote_crema_id and self.lote_crema.producto.familia != "crema":
             raise ValidationError({"lote_crema": "La materia prima debe ser un lote de crema."})
+        if self.salida_crema_id and self.salida_crema.lote_id != self.lote_crema_id:
+            raise ValidationError({"salida_crema": "La salida no corresponde al lote de crema."})
         if self.lote_mantequilla_id and self.lote_mantequilla.producto.categoria != "mantequilla":
             raise ValidationError({"lote_mantequilla": "El lote de salida debe ser mantequilla."})
         if self.kg_suero and not self.lote_suero_id:

@@ -564,10 +564,12 @@ class CorridaMantequillaViewSet(
         "lote_crema": ("sucursal_id", "sucursal__empresa_id"),
         "lote_mantequilla": ("sucursal_id", "sucursal__empresa_id"),
         "lote_suero": ("sucursal_id", "sucursal__empresa_id"),
+        "salida_crema": ("ejecucion__sucursal_id", "ejecucion__sucursal__empresa_id"),
     }
     queryset = CorridaMantequilla.objects.select_related(
         "ejecucion__etapa", "ejecucion__equipo", "orden",
         "lote_crema__producto", "lote_mantequilla__producto", "lote_suero",
+        "salida_crema__silo",
         "iniciada_por", "finalizada_por",
     )
     serializer_class = CorridaMantequillaSerializer
@@ -584,6 +586,11 @@ class CorridaMantequillaViewSet(
     def opciones_alta(self, request):
         from maestros.models import Equipo
         from produccion.models import Lote, OrdenProduccion
+        from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
+        from .servicios import (
+            _disponible_lote_crema, _disponible_salida_crema,
+            _validar_fuente_crema, reservas_activas_silo,
+        )
 
         ordenes = filtrar_por_scope(
             OrdenProduccion.objects.filter(
@@ -600,31 +607,64 @@ class CorridaMantequillaViewSet(
             ).select_related("producto"), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
-        lotes = lotes_crema.filter(
-            salidas_proceso__liberacion_calidad__estado="liberado",
-        ).annotate(
-                kg_usados=Coalesce(
-                    Sum("entradas_proceso__cantidad", filter=Q(entradas_proceso__unidad__iexact="kg")),
-                    Value(0), output_field=DecimalField(),
-                )
-            ).distinct()
-        pendientes_calidad = lotes_crema.filter(
-            salidas_proceso__isnull=False,
-        ).exclude(
-            pk__in=lotes.values("pk"),
-        ).prefetch_related(
-            "salidas_proceso__liberacion_calidad",
-            "salidas_proceso__ejecucion__etapa",
-        ).distinct()
-        lotes_suero = filtrar_por_scope(
-            Lote.objects.filter(
-                producto__categoria="suero",
-                estado__in=[Lote.Estado.BORRADOR, Lote.Estado.EN_PROCESO],
-                kg_producidos__isnull=True,
-                corridas_como_suero_mantequilla__isnull=True,
-            ).select_related("producto"), request.user,
-            campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
+        salidas = filtrar_por_scope(
+            SalidaProceso.objects.filter(
+                lote__in=lotes_crema, silo__isnull=False,
+            ).select_related(
+                "lote__producto", "silo", "ejecucion__etapa",
+                "ruta_producto__proceso", "liberacion_calidad__analisis_silo",
+            ).order_by("registrada_en", "pk"), request.user,
+            campo_sucursal="ejecucion__sucursal_id",
+            campo_empresa="ejecucion__sucursal__empresa_id",
         )
+        cremas = []
+        pendientes = {}
+        for salida in salidas:
+            etapa = siguiente_etapa_para_salida(salida=salida)
+            if etapa is None or etapa.tipo != EtapaProceso.Tipo.MANTEQUILLA:
+                continue
+            try:
+                _, densidad, _ = _validar_fuente_crema(
+                    salida, salida.lote, etapa, bloquear=False,
+                )
+            except DjangoValidationError:
+                decision = getattr(salida, "liberacion_calidad", None)
+                estado = (
+                    "rechazado" if decision and decision.estado == "rechazado"
+                    else "pendiente" if decision and decision.estado == "pendiente"
+                    else "trazabilidad_incompleta"
+                )
+                pendientes[salida.lote_id] = {
+                    "id": salida.lote_id, "codigo": salida.lote.codigo_lote,
+                    "producto": salida.lote.producto.nombre,
+                    "estado_calidad": estado,
+                    "etapa_origen": salida.ejecucion.etapa.get_tipo_display(),
+                }
+                continue
+            if motivos_silo_no_disponible(salida.silo, para="proceso"):
+                continue
+            reservado = sum((r.cantidad_planificada for r in reservas_activas_silo(
+                silo_id=salida.silo_id,
+            )), Decimal("0"))
+            try:
+                libre_litros = min(
+                    _disponible_salida_crema(salida), saldo_silo(salida.silo) - reservado,
+                )
+            except DjangoValidationError:
+                continue
+            libre_kg = min(
+                _disponible_lote_crema(salida.lote),
+                (libre_litros * densidad / Decimal("1000")).quantize(Decimal("0.001")),
+            )
+            if libre_kg <= 0:
+                continue
+            cremas.append({
+                "id": salida.lote_id, "codigo": salida.lote.codigo_lote,
+                "producto": salida.lote.producto.nombre,
+                "salida_crema": salida.pk, "silo_id": salida.silo_id,
+                "silo_codigo": salida.silo.codigo, "unidad_origen": salida.unidad,
+                "disponible_kg": libre_kg,
+            })
         equipos = filtrar_por_scope(
             Equipo.objects.filter(activo=True, tipo__in=[Equipo.Tipo.LINEA, Equipo.Tipo.OTRO]),
             request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
@@ -638,45 +678,11 @@ class CorridaMantequillaViewSet(
             ).only("equipo_id", "codigo")
         }
 
-        def estado_calidad_crema(lote):
-            decisiones = [
-                getattr(salida, "liberacion_calidad", None)
-                for salida in lote.salidas_proceso.all()
-            ]
-            estados = {decision.estado for decision in decisiones if decision}
-            if "rechazado" in estados:
-                return "rechazado"
-            if "pendiente" in estados:
-                return "pendiente"
-            return "trazabilidad_incompleta"
-
         return Response({
             "ordenes": [{"id": item.pk, "codigo": item.codigo, "producto": item.producto.nombre} for item in ordenes],
-            "cremas": [
-                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre,
-                 "disponible_kg": item.kg_producidos - item.kg_usados}
-                for item in lotes if item.kg_producidos > item.kg_usados
-            ],
-            "cremas_pendientes_calidad": [
-                {
-                    "id": item.pk,
-                    "codigo": item.codigo_lote,
-                    "producto": item.producto.nombre,
-                    "estado_calidad": estado_calidad_crema(item),
-                    "etapa_origen": next(
-                        (
-                            salida.ejecucion.etapa.get_tipo_display()
-                            for salida in item.salidas_proceso.all()
-                        ),
-                        "Sin proceso de origen",
-                    ),
-                }
-                for item in pendientes_calidad
-            ],
-            "sueros": [
-                {"id": item.pk, "codigo": item.codigo_lote, "producto": item.producto.nombre}
-                for item in lotes_suero
-            ],
+            "cremas": cremas,
+            "cremas_pendientes_calidad": list(pendientes.values()),
+            "sueros": [],
             "equipos": [
                 {
                     "id": item.pk,
@@ -705,27 +711,42 @@ class CorridaMantequillaViewSet(
             alcance["orden"].filter(pk=datos["orden"]).exists()
             and alcance["lote"].filter(pk=datos["lote_crema"]).exists()
             and alcance["equipo"].filter(pk=datos["equipo"]).exists()
-            and (not datos.get("lote_suero") or alcance["lote"].filter(pk=datos["lote_suero"]).exists())
+            and filtrar_por_scope(
+                SalidaProceso.objects.filter(pk=datos["salida_crema"]), request.user,
+                campo_sucursal="ejecucion__sucursal_id",
+                campo_empresa="ejecucion__sucursal__empresa_id",
+            ).exists()
         )
         if not ids_validos:
             return Response({"error": "Alguna selección no pertenece a tu alcance."}, status=403)
         try:
             corrida = crear_mantequilla_guiada(
                 orden_id=datos["orden"], lote_crema_id=datos["lote_crema"],
+                salida_crema_id=datos["salida_crema"],
                 equipo_id=datos["equipo"],
                 codigo_lote_mantequilla=datos["codigo_lote_mantequilla"],
-                lote_suero_id=datos.get("lote_suero"), kg_crema=datos["kg_crema"],
-                usuario=request.user,
+                kg_crema=datos["kg_crema"], usuario=request.user,
+                operacion_id=datos["operacion_id"],
             )
         except DjangoValidationError as error:
             detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
-        return Response(self.get_serializer(corrida).data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(corrida).data,
+            status=(status.HTTP_200_OK if corrida._op05_replay else status.HTTP_201_CREATED),
+        )
 
     @action(detail=True, methods=["post"])
     def iniciar(self, request, pk=None):
+        from .serializers import IniciarMantequillaSerializer
+
+        entrada = IniciarMantequillaSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
         try:
-            corrida = iniciar_mantequilla(corrida_id=self.get_object().pk, usuario=request.user)
+            corrida = iniciar_mantequilla(
+                corrida_id=self.get_object().pk, usuario=request.user,
+                operacion_id=entrada.validated_data["operacion_id"],
+            )
         except DjangoValidationError as error:
             detalle = error.message_dict if hasattr(error, "message_dict") else error.messages
             return Response(detalle, status=status.HTTP_400_BAD_REQUEST)
@@ -1380,12 +1401,32 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
             (salida.lote_id, salida.silo_id)
             for salida in salidas if salida.lote_id
         }
+        # OP-05 registra el mismo consumo como entrada trazable en L y como
+        # retiro físico. Son dos evidencias de un hecho, no dos consumos.
+        corridas_trazables = list(CorridaMantequilla.objects.filter(
+            salida_crema_id__isnull=False, iniciada_en__isnull=False,
+            lote_crema_id__in={clave[0] for clave in claves_material},
+        ).values("ejecucion_id", "lote_crema_id", "kg_crema", "operacion_id"))
+        litros_mantequilla = {
+            fila["salida_origen_id"]: fila["total"]
+            for fila in EntradaProceso.objects.filter(
+                ejecucion_id__in={fila["ejecucion_id"] for fila in corridas_trazables},
+                salida_origen_id__in={salida.pk for salida in salidas},
+                unidad__iexact="l",
+            ).values("salida_origen_id").annotate(total=Sum("cantidad"))
+        }
+        kg_mantequilla = {}
+        for fila in corridas_trazables:
+            lote_id = fila["lote_crema_id"]
+            kg_mantequilla[lote_id] = kg_mantequilla.get(lote_id, 0) + fila["kg_crema"]
         consumos_fisicos = {
             (fila["lote_id"], fila["silo_id"]): fila["total"]
             for fila in MovimientoSilo.objects.filter(
                 lote_id__in={clave[0] for clave in claves_material},
                 silo_id__in={clave[1] for clave in claves_material},
                 tipo=MovimientoSilo.Tipo.SALIDA,
+            ).exclude(
+                operacion_id__in={fila["operacion_id"] for fila in corridas_trazables},
             ).values("lote_id", "silo_id").annotate(total=Sum("litros"))
         }
         consumos_kg = {
@@ -1402,14 +1443,17 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 (salida.consumido or 0)
                 + consumos_fisicos.get((salida.lote_id, salida.silo_id), 0)
             )
-            salida.consumido_kg_trazable = consumos_kg.get(salida.lote_id, 0)
+            salida.consumido_kg_trazable = (
+                consumos_kg.get(salida.lote_id, 0)
+                + kg_mantequilla.get(salida.lote_id, 0)
+            )
             analisis = getattr(salida.liberacion_calidad, "analisis_silo", None)
             if (
                 salida.lote_id and salida.unidad.lower() == "l"
                 and salida.consumido and analisis and analisis.densidad
             ):
                 salida.consumido_kg_trazable += (
-                    Decimal(str(salida.consumido))
+                    (Decimal(str(salida.consumido)) - litros_mantequilla.get(salida.pk, 0))
                     * Decimal(str(analisis.densidad)) / Decimal("1000")
                 )
         salidas = [
