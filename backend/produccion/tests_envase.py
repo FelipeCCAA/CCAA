@@ -1,10 +1,14 @@
 import uuid
-from datetime import date, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from threading import Event, Lock
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.db import close_old_connections, connection
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -170,14 +174,150 @@ class EnvasePalletTests(TestCase):
 
     def test_clave_idempotente_no_duplica_pallets(self):
         clave = uuid.uuid4()
-        primero = self.registrar(clave=clave)
-        segundo = self.registrar(clave=clave)
+        inicio = timezone.now() - timedelta(hours=1)
+        datos = dict(
+            lote_id=self.lote.pk, equipo=self.envasadora, formato=self.formato,
+            inicio=inicio, termino=inicio + timedelta(hours=1), usuario=self.usuario,
+            operacion_id=clave, observacion="cierre de turno",
+            controles={"sellado": "conforme"},
+            pallets=[{"codigo": "PAL-001", "unidades": 20, "kg_neto": "500"}],
+        )
+        primero = registrar_envasado(**datos)
+        segundo = registrar_envasado(**datos)
 
         self.assertEqual(primero.pk, segundo.pk)
         self.assertEqual(RegistroEnvase.objects.count(), 1)
-        self.assertEqual(PalletProducto.objects.count(), 2)
-        self.assertEqual(ExistenciaProductoTerminado.objects.count(), 2)
-        self.assertEqual(MovimientoProductoTerminado.objects.count(), 2)
+        self.assertEqual(PalletProducto.objects.count(), 1)
+        self.assertEqual(ExistenciaProductoTerminado.objects.count(), 1)
+        self.assertEqual(MovimientoProductoTerminado.objects.count(), 1)
+        self.assertEqual(ConsumoLoteProduccion.objects.filter(fase="envasado").count(), 1)
+
+        # La comparación usa el pedido original, aunque cambie el estado vivo.
+        self.formato.nombre = "Nombre posterior"
+        self.formato.save(update_fields=["nombre"])
+        self.assertEqual(registrar_envasado(**datos).pk, primero.pk)
+        distinto_huso = dt_timezone(timedelta(hours=-4))
+        self.assertEqual(registrar_envasado(**{
+            **datos,
+            "inicio": inicio.astimezone(distinto_huso),
+            "termino": (inicio + timedelta(hours=1)).astimezone(distinto_huso),
+        }).pk, primero.pk)
+
+    def test_misma_clave_con_otro_pedido_rechaza_sin_efectos(self):
+        clave = uuid.uuid4()
+        inicio = timezone.now() - timedelta(hours=1)
+        datos = dict(
+            lote_id=self.lote.pk, equipo=self.envasadora, formato=self.formato,
+            inicio=inicio, termino=inicio + timedelta(hours=1), usuario=self.usuario,
+            operacion_id=clave, observacion="original",
+            pallets=[{"codigo": "PAL-001", "unidades": 20, "kg_neto": "500"}],
+        )
+        registrar_envasado(**datos)
+        with self.assertRaisesMessage(ValidationError, "datos distintos"):
+            registrar_envasado(**{**datos, "observacion": "alterado"})
+        with self.assertRaisesMessage(ValidationError, "datos distintos"):
+            registrar_envasado(**{**datos, "pallets": [
+                {"codigo": "PAL-OTRO", "unidades": 20, "kg_neto": "500"}
+            ]})
+        self.assertEqual(RegistroEnvase.objects.count(), 1)
+        self.assertEqual(PalletProducto.objects.count(), 1)
+        self.assertEqual(MovimientoProductoTerminado.objects.count(), 1)
+
+    def test_api_replay_respeta_actor_y_recupera_con_catalogos_inactivos(self):
+        clave = str(uuid.uuid4())
+        inicio = timezone.now() - timedelta(hours=1)
+        pedido = {
+            "operacion_id": clave, "lote": self.lote.pk,
+            "equipo": self.envasadora.pk, "formato": self.formato.pk,
+            "inicio": inicio.isoformat(),
+            "termino": (inicio + timedelta(hours=1)).isoformat(),
+            "observacion": "turno original",
+            "pallets_datos": [{"codigo": "PAL-API-01", "unidades": 20, "kg_neto": "500"}],
+        }
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+        primero = cliente.post("/api/produccion/envases/", pedido, format="json")
+        self.assertEqual(primero.status_code, 201, primero.data)
+
+        self.formato.activo = False
+        self.formato.save(update_fields=["activo"])
+        self.envasadora.activo = False
+        self.envasadora.save(update_fields=["activo"])
+        replay = cliente.post("/api/produccion/envases/", pedido, format="json")
+        self.assertEqual(replay.status_code, 201, replay.data)
+        self.assertEqual(replay.data["id"], primero.data["id"])
+
+        otro = User.objects.create_user("otro-operador-envase")
+        PerfilUsuario.objects.create(
+            usuario=otro, empresa=self.planta.empresa, sucursal=self.planta,
+            rol=Rol.PRODUCCION, area=PerfilUsuario.Area.ENVASE,
+        )
+        cliente.force_authenticate(otro)
+        ajeno = cliente.post("/api/produccion/envases/", pedido, format="json")
+        self.assertEqual(ajeno.status_code, 400, ajeno.data)
+        self.assertIn("datos distintos", str(ajeno.data))
+        self.assertEqual(RegistroEnvase.objects.count(), 1)
+        self.assertEqual(MovimientoProductoTerminado.objects.count(), 1)
+
+    def test_api_exige_clave_de_operacion(self):
+        inicio = timezone.now() - timedelta(hours=1)
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+        respuesta = cliente.post("/api/produccion/envases/", {
+            "lote": self.lote.pk, "equipo": self.envasadora.pk,
+            "formato": self.formato.pk, "inicio": inicio.isoformat(),
+            "termino": (inicio + timedelta(hours=1)).isoformat(),
+            "pallets_datos": [{"codigo": "PAL-SIN-CLAVE", "unidades": 20, "kg_neto": "500"}],
+        }, format="json")
+        self.assertEqual(respuesta.status_code, 400, respuesta.data)
+        self.assertIn("operacion_id", respuesta.data)
+        self.assertFalse(RegistroEnvase.objects.exists())
+
+    def test_registro_legado_sin_firma_no_inventa_pedido_para_replay(self):
+        clave = uuid.uuid4()
+        inicio = timezone.now() - timedelta(hours=1)
+        datos = dict(
+            lote_id=self.lote.pk, equipo=self.envasadora, formato=self.formato,
+            inicio=inicio, termino=inicio + timedelta(hours=1), usuario=self.usuario,
+            operacion_id=clave,
+            pallets=[{"codigo": "PAL-LEGADO", "unidades": 20, "kg_neto": "500"}],
+        )
+        registro = registrar_envasado(**datos)
+        RegistroEnvase.objects.filter(pk=registro.pk).update(solicitud_firma=None)
+        with self.assertRaisesMessage(ValidationError, "histórico sin pedido verificable"):
+            registrar_envasado(**datos)
+        cliente = APIClient()
+        cliente.force_authenticate(self.usuario)
+        consulta = cliente.get(
+            "/api/produccion/envases/por-operacion/", {"operacion_id": str(clave)}
+        )
+        self.assertEqual(consulta.status_code, 200, consulta.data)
+        self.assertEqual(consulta.data["id"], registro.pk)
+        self.assertEqual(consulta.data["pallets"][0]["codigo"], "PAL-LEGADO")
+        self.assertEqual(RegistroEnvase.objects.count(), 1)
+
+    def test_falla_tardia_revierte_cierre_consumos_y_auditoria(self):
+        from auditoria.models import RegistroAuditoria
+
+        inicio = timezone.now() - timedelta(hours=1)
+        saldos = list(Existencia.objects.order_by("pk").values_list("pk", "cantidad_fisica"))
+        auditoria_antes = RegistroAuditoria.objects.count()
+        with patch("inventario.servicios.registrar_pallets_producidos", side_effect=ValidationError("fallo tardío")):
+            with self.assertRaisesMessage(ValidationError, "fallo tardío"):
+                registrar_envasado(
+                    lote_id=self.lote.pk, equipo=self.envasadora, formato=self.formato,
+                    inicio=inicio, termino=inicio + timedelta(hours=1), usuario=self.usuario,
+                    operacion_id=uuid.uuid4(),
+                    pallets=[{"codigo": "PAL-001", "unidades": 20, "kg_neto": "500"}],
+                )
+        self.assertFalse(RegistroEnvase.objects.exists())
+        self.assertFalse(PalletProducto.objects.exists())
+        self.assertFalse(ConsumoLoteProduccion.objects.filter(fase="envasado").exists())
+        self.assertFalse(MovimientoInventario.objects.filter(tipo="consumo").exists())
+        self.assertEqual(ExistenciaProductoTerminado.objects.count(), 0)
+        self.assertEqual(MovimientoProductoTerminado.objects.count(), 0)
+        self.assertEqual(auditoria_antes, RegistroAuditoria.objects.count())
+        self.assertEqual(saldos, list(Existencia.objects.order_by("pk").values_list("pk", "cantidad_fisica")))
 
     def test_no_permite_envasar_mas_de_lo_producido(self):
         with self.assertRaises(ValidationError):
@@ -278,6 +418,7 @@ class EnvasePalletTests(TestCase):
         intento_api = cliente.post(
             "/api/produccion/envases/",
             {
+                "operacion_id": str(uuid.uuid4()),
                 "lote": self.lote.pk,
                 "equipo": self.envasadora.pk,
                 "formato": self.formato.pk,
@@ -528,3 +669,83 @@ class EnvasePalletTests(TestCase):
             for e in Existencia.objects.filter(lote__insumo__in=[bolsa, base])
         ))
         self.assertEqual(MovimientoInventario.objects.filter(tipo="consumo").count(), 2)
+
+
+class EnvaseConcurrenciaTests(TransactionTestCase):
+    """Dos conexiones reales compiten por una operación de envasado."""
+
+    def setUp(self):
+        EnvasePalletTests.setUp(self)
+
+    def _competir(self, *, cambiar_segundo):
+        if connection.vendor != "postgresql":
+            self.skipTest("El bloqueo de operación requiere PostgreSQL")
+        from inventario import servicios as servicios_inventario
+
+        clave = uuid.uuid4()
+        inicio = timezone.now() - timedelta(hours=1)
+        datos = dict(
+            lote_id=self.lote.pk, equipo=self.envasadora.pk,
+            formato=self.formato.pk, inicio=inicio,
+            termino=inicio + timedelta(hours=1), usuario=self.usuario.pk,
+            operacion_id=clave,
+            pallets=[{"codigo": "PAL-CONCURRENT", "unidades": 20, "kg_neto": "500"}],
+        )
+        primero_en_escritura = Event()
+        liberar_primero = Event()
+        segundo_iniciado = Event()
+        guardia = Lock()
+        llamadas = 0
+        original = servicios_inventario.registrar_pallets_producidos
+
+        def detener_primero(*args, **kwargs):
+            nonlocal llamadas
+            with guardia:
+                llamadas += 1
+                primera = llamadas == 1
+            if primera:
+                primero_en_escritura.set()
+                if not liberar_primero.wait(10):
+                    raise AssertionError("El test agotó la espera del primer cierre")
+            return original(*args, **kwargs)
+
+        def ejecutar(pedido, senal=None):
+            close_old_connections()
+            try:
+                if senal:
+                    senal.set()
+                return registrar_envasado(
+                    **{**pedido,
+                       "equipo": Equipo.objects.get(pk=pedido["equipo"]),
+                       "usuario": User.objects.get(pk=pedido["usuario"])}
+                ).pk
+            finally:
+                connection.close()
+
+        segundo = {**datos, "observacion": "pedido diferente"} if cambiar_segundo else datos
+        with patch.object(servicios_inventario, "registrar_pallets_producidos", detener_primero):
+            with ThreadPoolExecutor(max_workers=2) as grupo:
+                futuro_primero = grupo.submit(ejecutar, datos)
+                self.assertTrue(primero_en_escritura.wait(10))
+                futuro_segundo = grupo.submit(ejecutar, segundo, segundo_iniciado)
+                self.assertTrue(segundo_iniciado.wait(10))
+                try:
+                    self.assertFalse(futuro_segundo.done())
+                finally:
+                    liberar_primero.set()
+                id_primero = futuro_primero.result(timeout=10)
+                if cambiar_segundo:
+                    with self.assertRaisesMessage(ValidationError, "datos distintos"):
+                        futuro_segundo.result(timeout=10)
+                else:
+                    self.assertEqual(futuro_segundo.result(timeout=10), id_primero)
+        self.assertEqual(RegistroEnvase.objects.count(), 1)
+        self.assertEqual(PalletProducto.objects.count(), 1)
+        self.assertEqual(ConsumoLoteProduccion.objects.filter(fase="envasado").count(), 1)
+        self.assertEqual(MovimientoProductoTerminado.objects.count(), 1)
+
+    def test_dos_conexiones_misma_clave_mismo_pedido(self):
+        self._competir(cambiar_segundo=False)
+
+    def test_dos_conexiones_misma_clave_distinto_pedido(self):
+        self._competir(cambiar_segundo=True)

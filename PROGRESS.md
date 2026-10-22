@@ -106,3 +106,23 @@ IMPLEMENTADA Y VALIDADA LOCALMENTE EN LA RAMA codex/op-07-auditoria-exportacione
 Integración 58/58, historia API 12/12, frontend 111/111, Chrome 2/2 simulado; Ruff, lint, tipos/build y ausencia de nuevas migraciones aprobados. Dos apoyos reutilizados: backend y revisión independiente sin bloqueos concretos; coordinación integra QA/PM/AVANCE. [Expediente y límites](docs/operacion/OP-07_VALIDACION.md). CI general y PR definitivo en sus checks y AVANCE del commit entregado.
 
 Clúster OP-00 detenido, sin postmaster.pid. Sin producción, datos reales, migraciones nuevas, merge ni despliegue. No UAT, carga certificada ni restauración de backup. PR sobre OP-06 #13. Próxima OP-08: diagnóstico/preparación, implementación requiere autorización propia.
+
+## OP-08 — Envases, archivos y correo
+
+**AVANCE — IMPLEMENTADA Y VALIDADA LOCALMENTE EN LA RAMA**, `codex/op-08-envases-archivos-correo`, desde OP-07 `e2fb6de`; código/pruebas `e592252`. Usuario aprobó seis reglas y ejecución con pruebas/PR. Pedidos completos firmados y recuperables por UUID, sin doble consumo; pendientes separados por cuenta y visibles aun sin embalajes. Adjuntos con documento y permisos heredados, descarga privada/hash, validación de formato y compensación de fallos; bloqueo compartido contra borrado concurrente. Correo indica aceptación/fallo/incertidumbre sin prometer cambio de clave, reintento sólo 401 una vez.
+
+- Evidencia local: 45/45 archivos/correo y regresiones, 40/40 integración backend (solapadas), 1/1 carrera adicional con bloqueo real PostgreSQL; frontend 111/111; Chrome 5/5 en 13,5 s con API simulada. Ruff, diff-check, Django check, esquema, lint, tipos y build aprobados. Revisión independiente final sin defectos materiales pendientes. Detalle de fallos previos y reproducción en [expediente OP-08](docs/operacion/OP-08_VALIDACION.md).
+- Archivos/commits: 35 archivos de código/pruebas/configuración en `e592252`; tres documentos de cierre. Manifiesto completo en PR. Migración 0017 aditiva, sin backfill ni cambios productivos. PR preparado sobre OP-07 #14, no DevelopMain. CI general y job de volumen efímero se registran en checks y AVANCE del PR del SHA entregado, sin declararlos aprobados por anticipado.
+- Equipo: dos apoyos reutilizados, envasado y revisor (`gpt-6-sol high`); coordinador integra archivos/correo, QA y PM/AVANCE/EXPLICADOR. Sin activar todos los roles.
+- Límites: validación de formatos no es antivirus; compensación no asegura atomicidad distribuida ante caída del host. Configuración de volumen privado preparada, no aplicada; archivos históricos/corte/backup pendientes de plan. Respuesta pública de correo genérica, tiempo constante no certificado. Sin UAT, correo real, carga de 70 usuarios ni restauración. Clúster exacto OP-00 detenido, sin postmaster.pid. Sin producción, Supabase/logs, merge ni despliegue.
+- Próxima: OP-09 para diagnóstico/preparación no destructiva. Se requiere validar escenario y concurrencia de carga, destino sintético de restauración y autorizar su ejecución; revisión/merge/despliegue son decisiones posteriores.
+
+**EXPLICADOR — OP-08**
+
+1. **Problema:** un reintento de envasado, un archivo o un correo incierto podían interpretarse incorrectamente.
+2. **Causa:** no se comprobaba el pedido completo ni se separaban bien documento/permisos y aceptación del correo.
+3. **Ejemplo:** si se corta la conexión al crear un pallet, reenviar el mismo pedido recupera ese pallet sin descontar materiales de nuevo.
+4. **Solución:** conservar clave y datos; archivo privado autorizado y verificado; correo con estado preciso, sin reenvío automático incierto.
+5. **Trabajo:** implementado en rama y revisado por dos apoyos, pruebas sintéticas; configuración preparada sin despliegue.
+6. **Pruebas:** backend y navegador aprobados localmente según evidencia arriba; CI general y almacenamiento se informan en el PR cuando terminan.
+7. **Estado final:** implementación local lista para revisión; todavía sin fusionar ni desplegar. OP-09 pendiente, no se certifica la planta lista para operar.

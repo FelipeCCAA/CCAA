@@ -109,7 +109,7 @@ class SolicitudRecuperacionTests(TestCase):
         self.assertEqual(respuesta.status_code, 429)
 
     @patch(
-        "usuarios.views.PasswordResetForm.save",
+        "usuarios.views.RecuperacionConConfirmacion.save",
         side_effect=DatabaseError("base no disponible"),
     )
     def test_un_fallo_de_base_de_datos_devuelve_500_generico(self, _guardar):

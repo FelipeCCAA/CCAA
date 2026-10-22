@@ -55,7 +55,10 @@ class VerificarTests(TestCase):
             verificar(ArchivoFalso("informe.pdf", b"MZ\x90\x00\x03"))
 
     def test_un_xlsx_es_un_zip(self):
-        verificar(ArchivoFalso("libro.xlsx", b"PK\x03\x04\x14\x00"))
+        from openpyxl import Workbook
+        contenido = BytesIO()
+        Workbook().save(contenido)
+        verificar(ArchivoFalso("libro.xlsx", contenido.getvalue()))
 
     def test_un_archivo_vacio_no_pasa(self):
         with self.assertRaises(ContenidoNoCorresponde):

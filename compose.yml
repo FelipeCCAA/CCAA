@@ -176,6 +176,7 @@ services:
       context: ./backend
     environment:
       <<: *backend-environment
+      CCAA_MEDIA_ROOT: /srv/adjuntos-privados
       # 3 x 2 = 6 requests simultaneas; deja un nucleo disponible para Celery
       # y evita multiplicar procesos/conexiones en un host de 4 GiB.
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
@@ -187,6 +188,8 @@ services:
       GUNICORN_ACCESS_LOG: ${GUNICORN_ACCESS_LOG:-}
       GUNICORN_MAX_REQUESTS: ${GUNICORN_MAX_REQUESTS:-1000}
       GUNICORN_MAX_REQUESTS_JITTER: ${GUNICORN_MAX_REQUESTS_JITTER:-100}
+    volumes:
+      - adjuntos_data:/srv/adjuntos-privados
     depends_on:
       db:
         condition: service_healthy
@@ -310,6 +313,7 @@ networks:
   edge:
 
 volumes:
+  adjuntos_data:
   postgres_data:
   redis_data:
   redis_cache_data:

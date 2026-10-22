@@ -578,6 +578,10 @@ class RegistroEnvase(EvidenciaCalidadMixin):
     termino = models.DateTimeField()
     observacion = models.TextField(blank=True)
     operacion_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    solicitud_firma = models.CharField(
+        max_length=64, null=True, blank=True, editable=False,
+        help_text="SHA-256 del pedido original; nulo para registros anteriores a OP-08.",
+    )
     creado_en = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -163,8 +163,10 @@ function Administracion() {
     try {
       const respuesta = await solicitarRestablecimientoTrabajador(trabajador.id);
       setAviso(respuesta.mensaje);
-    } catch {
-      setError("No se pudo enviar el correo de restablecimiento.");
+    } catch (causa) {
+      const detalle = axios.isAxiosError(causa) ? causa.response?.data?.error : null;
+      setError(typeof detalle === "string" ? detalle
+        : "No se confirmó el envío. Revisa el correo y el registro administrativo antes de volver a solicitarlo.");
     } finally {
       setProcesandoId(null);
     }

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Boxes, PackageCheck, RefreshCw } from "lucide-react";
+import { isAxiosError } from "axios";
 
 import {
-  kilos, obtenerBandejaEnvasado,
-  type MaterialEnvasable, type RegistroEnvaseCreado,
+  kilos, obtenerBandejaEnvasado, registrarEnvase,
+  type MaterialEnvasable, type RegistroEnvaseCreado, type SolicitudEnvase,
 } from "../../services/produccion.service";
-import { puedeEscribir } from "../../services/sesion";
+import { obtenerSesion, puedeEscribir } from "../../services/sesion";
 import FormularioEnvase from "../Produccion/FormularioEnvase";
+import { clavePedidoPendiente, leerPedidosPendientes } from "./pendientes";
 
 const numero = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 
@@ -19,6 +21,13 @@ export default function Envasado() {
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const actorId = obtenerSesion()?.usuario.id;
+  const [estadoPendientes, setEstadoPendientes] = useState(() => ({
+    actorId, pedidos: leerPedidosPendientes(actorId),
+  }));
+  const pendientes = estadoPendientes.actorId === actorId ? estadoPendientes.pedidos : [];
+  const [recuperando, setRecuperando] = useState<string | null>(null);
+  const [mensajeRecuperacion, setMensajeRecuperacion] = useState("");
   const puedeEnvasar = puedeEscribir("envasado");
 
   const cargar = useCallback(async () => {
@@ -30,8 +39,26 @@ export default function Envasado() {
       setRegistros(bandeja.registros_recientes);
     } catch {
       setError("No se pudo cargar la bandeja de Envasado.");
-    } finally { setCargando(false); }
-  }, []);
+    } finally { setCargando(false); setEstadoPendientes({ actorId, pedidos: leerPedidosPendientes(actorId) }); }
+  }, [actorId]);
+
+  async function recuperar(pedido: SolicitudEnvase) {
+    setRecuperando(pedido.operacion_id);
+    setMensajeRecuperacion("");
+    try {
+      await registrarEnvase(pedido);
+      try { if (actorId !== undefined) sessionStorage.removeItem(clavePedidoPendiente(actorId, pedido.lote)); } catch { /* Almacenamiento no disponible. */ }
+      setEstadoPendientes({ actorId, pedidos: leerPedidosPendientes(actorId) });
+      setMensajeRecuperacion(`Cierre ${pedido.pallets_datos.map((p) => p.codigo).join(", ")} confirmado. Consulta su estado en el historial.`);
+      await cargar();
+    } catch (fallo) {
+      if (isAxiosError(fallo) && fallo.response) {
+        setMensajeRecuperacion(`El reintento fue rechazado (${fallo.response.status}). El cierre anterior podría existir. Consulta el historial o pide buscar la operación ${pedido.operacion_id} antes de crear otra.`);
+      } else {
+        setMensajeRecuperacion("Aún no se pudo confirmar el cierre. Conservamos el mismo pedido para reintentarlo.");
+      }
+    } finally { setRecuperando(null); }
+  }
 
   useEffect(() => {
     const pendiente = setTimeout(() => void cargar(), 0);
@@ -40,6 +67,12 @@ export default function Envasado() {
   const claveMaterial = (item: MaterialEnvasable) =>
     `${item.salida_id}:${item.formato_id ?? "sin-formato"}`;
   const lote = materiales.find((item) => claveMaterial(item) === seleccionado) ?? null;
+  const formularioMontado = Boolean(
+    lote && puedeEnvasar && lote.puede_envasar
+    && lote.formato_id !== null && lote.formato_kg !== null
+    && lote.maximo_unidad_logistica_kg !== null
+    && lote.tipo_unidad_logistica !== null,
+  );
 
   return <main className="px-6 py-8 lg:px-10"><div className="mx-auto max-w-7xl space-y-7">
     <header className="flex flex-wrap items-start justify-between gap-4">
@@ -58,6 +91,12 @@ export default function Envasado() {
       </article>)}</div>
     </section>}
     {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+    {pendientes.filter((pedido) => !(formularioMontado && pedido.lote === lote?.lote_id)).map((pedido) => <section key={pedido.operacion_id} className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+      <h2 className="font-bold text-amber-950">Cierre pendiente de confirmación</h2>
+      <p className="mt-2 text-sm text-amber-900">Lote #{pedido.lote} · {pedido.pallets_datos.map((p) => `${p.codigo} · ${p.kg_neto} kg`).join(" | ")}. El material puede haber salido de esta bandeja; se conserva el pedido exacto.</p>
+      <button type="button" disabled={recuperando !== null} onClick={() => void recuperar(pedido)} className="mt-3 rounded-xl bg-amber-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{recuperando === pedido.operacion_id ? "Comprobando…" : "Reintentar el mismo cierre"}</button>
+    </section>)}
+    {mensajeRecuperacion && <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">{mensajeRecuperacion}</p>}
     <section className="grid items-start gap-6 lg:grid-cols-[1.15fr_.85fr]">
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-5 py-4"><h2 className="font-bold text-slate-900">Lotes disponibles para envasar</h2><p className="mt-1 text-xs text-slate-500">La selección conserva el mismo lote maestro y toda su trazabilidad.</p></div>
