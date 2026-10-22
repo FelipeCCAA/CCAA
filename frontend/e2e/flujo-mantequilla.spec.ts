@@ -17,7 +17,8 @@ test.afterAll(cerrarSesionesArea);
 test("crema liberada se transforma en mantequilla y pasa por Calidad", async ({ page }) => {
   test.setTimeout(120_000);
   const erroresJs = vigilar(page);
-  const crema = process.env.E2E_LOTE_CREMA ?? "INT-DES-2-CR";
+  const crema = process.env.E2E_LOTE_CREMA ?? "INT-DES-1-CR";
+  const tkCrema = process.env.E2E_TK_CREMA ?? "TkC2";
   const lote = `MANT-E2E-${Date.now().toString().slice(-8)}`;
 
   await usarSesionArea(page, "e2e_produccion");
@@ -25,11 +26,14 @@ test("crema liberada se transforma en mantequilla y pasa por Calidad", async ({ 
   await page.getByRole("button", { name: "Nueva corrida" }).click();
   const alta = page.locator("form").filter({ hasText: "Nueva corrida de mantequilla" });
   await elegirOpcion(campo(alta, "Orden de mantequilla"), /OP-E2E-MANT/);
-  await elegirOpcion(campo(alta, "Lote de crema"), new RegExp(crema));
-  await campo(alta, "Crema a utilizar (kg)").fill("60");
+  await elegirOpcion(campo(alta, "Origen de crema"), new RegExp(crema));
+  const origen = alta.getByText("Origen trazable", { exact: true }).locator("xpath=..");
+  await expect(origen).toContainText(`Lote ${crema}`);
+  await expect(origen).toContainText(tkCrema);
+  await expect(origen).toContainText(/salida de crema \d+/);
+  await campo(alta, "Crema a utilizar (kg)").fill("36");
   await elegirOpcion(campo(alta, "Línea / equipo"), /Línea de mantequilla/i);
   await campo(alta, "Código nuevo lote de mantequilla").fill(lote);
-  await elegirOpcion(campo(alta, "Lote de suero / mazada (opcional)"), /MAZ-E2E/);
   const creada = await trasGuardar(page, "/crear-guiada/", async () => {
     await alta.getByRole("button", { name: "Crear corrida" }).click();
   });
@@ -41,9 +45,9 @@ test("crema liberada se transforma en mantequilla y pasa por Calidad", async ({ 
   });
   await tarjeta.getByRole("button", { name: "Registrar balance y cerrar" }).click();
   const cierre = page.locator("form").filter({ hasText: "Cerrar proceso de mantequilla" });
+  // Balance ficticio para probar el flujo del software; no representa un rendimiento industrial.
   await campo(cierre, "Mantequilla producida (kg)").fill("31");
-  await campo(cierre, "Suero / mazada recuperada (kg)").fill("28");
-  await campo(cierre, "Merma medida (kg)").fill("1");
+  await campo(cierre, "Merma medida (kg)").fill("5");
   await campo(cierre, "Humedad (%)").fill("15.8");
   await trasGuardar(page, "/cerrar/", async () => {
     await cierre.getByRole("button", { name: "Cerrar y enviar a Calidad" }).click();

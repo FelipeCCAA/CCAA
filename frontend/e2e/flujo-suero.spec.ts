@@ -28,7 +28,7 @@ test("suero externo termina como Big Bag disponible en Inventario", async ({ pag
     await page.getByRole("button", { name: "Alimentación externa" }).click();
     const modal = page.getByRole("dialog");
     await elegirOpcion(campo(modal, "Orden / producto"), /Suero en polvo E2E/i);
-    await elegirOpcion(campo(modal, "Lote externo liberado"), /SUERO-EXTERNO-E2E/i);
+    await elegirOpcion(campo(modal, "Lote externo disponible"), /SUERO-EXTERNO-E2E/i);
     await elegirOpcion(campo(modal, "Torre"), /TOR-SUERO-E2E/i);
     await campo(modal, "Código lote de salida").fill(lote);
     await campo(modal, "Cantidad a alimentar").fill("800");

@@ -71,7 +71,28 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     });
   });
 
-  if (reanudarDesde <= 3) await test.step("3 · Secado registra un balance válido", async () => {
+  if (reanudarDesde <= 3) await test.step("3a · Calidad revisa nuevamente la salida que alimentará Secado", async () => {
+    // Preparar la siguiente etapa cambia el equipo del lote y retira la firma
+    // anterior de esta salida. Calidad revisa la evidencia vigente en su bandeja.
+    await usarSesionArea(page, "e2e_calidad");
+    await irA(page, "/calidad");
+    await campo(page, "Lote, corrida, producto o silo").fill(flujo.lote);
+    await page.getByRole("button", { name: "Buscar", exact: true }).click();
+    const tarjeta = page.locator("article")
+      .filter({ hasText: flujo.lote })
+      .filter({ hasText: flujo.silo_precondensado });
+    await expect(tarjeta).toHaveCount(1, { timeout: 20_000 });
+    await elegirOpcion(tarjeta.getByRole("combobox"), /· conforme$/i);
+    await trasGuardar(page, "/liberar/", async () => {
+      await tarjeta.getByRole("button", { name: "Liberar etapa" }).click();
+    });
+    await expect(tarjeta).toHaveCount(0);
+  });
+
+  if (reanudarDesde <= 3) await test.step("3b · Secado registra un balance válido", async () => {
+    // También se puede reanudar desde esta etapa: el paso 2 no habrá iniciado
+    // la sesión del operador de Secado en esta ejecución de Playwright.
+    await usarSesionArea(page, "e2e_secado");
     await irA(page, "/secado");
     const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
     await expect(tarjeta).toBeVisible({ timeout: 20_000 });
@@ -83,6 +104,10 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     await campo(cierre, "Finos recuperados").fill("10");
     await campo(cierre, "Merma registrada").fill("5");
     await campo(cierre, "Temperatura de salida").fill("82");
+    // El origen está en litros. OP-04 exige una referencia de la medición
+    // declarada en kg; el valor de alimentación no se deriva de esos litros.
+    await campo(cierre, "Ticket o registro de medición (kg medidos)")
+      .fill(`E2E-MEDICION-FICTICIA-${flujo.lote}`);
     await expect(cierre.getByText("Resumen del balance")).toBeVisible();
     const respuesta = await trasGuardar(page, "/cerrar/", async () => {
       await cierre.getByRole("button", { name: "Confirmar balance y cerrar" }).click();
@@ -120,9 +145,11 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     }
 
     await irA(page, "/calidad");
-    const tarjeta = page.locator("article").filter({ hasText: flujo.lote });
-    await expect(tarjeta).toBeVisible({ timeout: 20_000 });
-    await elegirOpcion(tarjeta.getByRole("combobox"), /conforme/i);
+    const tarjeta = page.locator("article")
+      .filter({ hasText: flujo.lote })
+      .filter({ has: page.getByRole("button", { name: "Liberar para Envasado", exact: true }) });
+    await expect(tarjeta).toHaveCount(1, { timeout: 20_000 });
+    await elegirOpcion(tarjeta.getByRole("combobox"), /· conforme$/i);
     await trasGuardar(page, "/liberar/", async () => {
       await tarjeta.getByRole("button", { name: "Liberar para Envasado" }).click();
     });
@@ -131,7 +158,13 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
   if (reanudarDesde <= 5) await test.step("5 · Envase crea un pallet trazable de 500 kg", async () => {
     await usarSesionArea(page, "e2e_envasado");
     await irA(page, "/envasado");
-    await page.getByRole("button", { name: new RegExp(flujo.lote) }).click();
+    const materiales = page.getByRole("heading", { name: "Lotes disponibles para envasar" })
+      .locator("xpath=ancestor::section[1]");
+    const material = materiales.getByRole("button")
+      .filter({ hasText: flujo.lote })
+      .filter({ hasText: "Saco 25 kg" });
+    await expect(material).toHaveCount(1, { timeout: 20_000 });
+    await material.click();
     await expect(page.getByText("Esperando aprobación de Calidad")).toHaveCount(0);
     const formulario = page.locator("form").filter({ hasText: "Envasar en pallet" });
     const selectorEquipo = formulario.locator("select").first();
