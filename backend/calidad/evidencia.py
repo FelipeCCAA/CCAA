@@ -43,7 +43,7 @@ class EvidenciaCalidadMixin(models.Model):
                 # de esperar a otro escritor. Sin releer bajo lock, A→B→A
                 # podría parecer un no-op y conservar una firma de B.
                 actual = type(self)._base_manager.using(using).select_for_update().filter(pk=self.pk).values(*campos).get()
-                for campo in ("lote_id", "control_id", "monitoreo_id"):
+                for campo in ("lote_id", "control_id", "monitoreo_id", "ejecucion_id", "salida_origen_id"):
                     if campo in anterior and anterior[campo] != actual[campo]:
                         from django.core.exceptions import ValidationError
 

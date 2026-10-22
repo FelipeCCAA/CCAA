@@ -284,6 +284,10 @@ def _preparar_autorizacion_despacho(despacho, *, bloquear):
     lotes_id.update(salidas_consulta.exclude(lote_id=None).values_list("lote_id", flat=True))
     if bloquear:
         list(Lote.objects.select_for_update().filter(pk__in=lotes_id).order_by("pk"))
+        from calidad.etapas import bloquear_cadenas
+        ids_fuente = set(SalidaProceso.objects.filter(lote_id__in=lotes_id).values_list("pk", flat=True))
+        ids_fuente.update(granel.salida_id for granel in graneles)
+        bloquear_cadenas(ids_fuente)
     salidas = {salida.pk: salida for salida in _con_bloqueo(salidas_consulta, bloquear)}
     # Una FK cambiada durante la espera requiere volver a consultar, no tomar
     # una raíz nueva después de haber bloqueado las salidas.

@@ -27,7 +27,7 @@ class Proceso(models.Model):
         return f"{self.nombre} · v{self.version}"
 
 
-class EtapaProceso(models.Model):
+class EtapaProceso(EvidenciaCalidadMixin):
     class Tipo(models.TextChoices):
         RECEPCION = "recepcion", "Recepción"
         ESTANDARIZACION = "estandarizacion", "Estandarización"
@@ -668,7 +668,7 @@ class CorridaMantequilla(models.Model):
                 })
 
 
-class EjecucionProceso(models.Model):
+class EjecucionProceso(EvidenciaCalidadMixin):
     class Estado(models.TextChoices):
         BORRADOR = "borrador", "Borrador"
         PREPARACION = "preparacion", "En preparación"
@@ -765,7 +765,7 @@ class EjecucionProceso(models.Model):
         return self.estado not in {self.Estado.CERRADA, self.Estado.CANCELADA}
 
 
-class EntradaProceso(models.Model):
+class EntradaProceso(EvidenciaCalidadMixin):
     class Tipo(models.TextChoices):
         PRINCIPAL = "principal", "Principal"
         MEZCLA = "mezcla", "Mezcla"
