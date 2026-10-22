@@ -146,3 +146,19 @@ Clúster OP-00 detenido, sin postmaster.pid. Sin producción, datos reales, migr
 5. Con diez personas la prueba breve funcionó; con veinticinco se perdieron respuestas y paramos. El inventario sí cuadra, pero falta resolver la incertidumbre antes de aumentar usuarios.
 6. Restauramos base y archivo privado en otra instalación y pudimos volver a operar con datos ficticios; eso aún no asegura tiempos de recuperación de planta.
 7. No cambiamos las reglas para esconder fallos. La sostenida se detuvo por memoria del equipo antes de cumplir treinta minutos; las correcciones nuevas deben validarse antes de programarlas.
+
+## H09-01 — AVANCE
+
+Implementación `124d56e`, rama `codex/h09-01-firmas-por-etapa`, PR17 borrador sobre OP09 #16. Seis reglas autorizadas: evidencia por salida/etapa, avance normal conserva firma previa, correcciones retiran sólo dependientes, historial y saldos conservados, bandeja/POST/Despacho coherentes y refirma autorizada. JSONv2, v1 estricta; sin migraciones/backfill. Un apoyo QA reutilizado, no16 agentes.
+
+Circuito web real sobre copia ficticia H09: Evaporación2/2, continuación reanudada1/1 hasta pallet500kg en Inventario/PT-DISP. Dos firmas de proceso vigentes, versión0, un acto cada una; firma final vigente. Ruff/check/esquema, frontend111/111/lint/tipos/build aprobados. Corte focal final88/88, ninguna omitida, incluye18 nuevas. CI del código124d56e SUCCESS/run39819878080:backend1.825 (1.820 aprobadas, cinco omitidas), frontend/almacenamiento/configuración aprobados. Local completo previo1.823 (1.818 aprobadas, cinco omitidas); no sumar cortes solapados ni atribuir a esa corrida los dos últimos ajustes. Entrega posterior sólo documentos/evidencia QA; CI adicional se consulta en PR sin anticipar resultado. Crudos/fallos preservados y [expediente](docs/operacion/H09-01_FIRMAS_POR_ETAPA.md). Sólo clúster local H09; sin producción, Supabase/logs, merge o despliegue. Carga OP09 y preparación productiva siguen pendientes.
+
+**EXPLICADOR — H09-01**
+
+1. **Problema detectado:** avanzar a Secado hacía vencer la firma de Evaporación y después impedía envasar.
+2. **Causa técnica:** la foto firmada incluía equipo, peso y estado actuales del lote completo, que cambian al avanzar.
+3. **Ejemplo real de operación:** cerrar Secado ya no obliga a pedir otra firma de Evaporación; el lote ficticio pudo llegar a Inventario.
+4. **Solución recomendada:** aprobar datos propios de cada etapa y revisar otra vez las etapas afectadas por una corrección verdadera, conservando los bloqueos.
+5. **Trabajo realizado:** coordinador implementó fotos/propagación/guardas y un QA aportó pruebas/revisión independiente. No se cambió esquema ni producción; quedó rama y PR.
+6. **Pruebas y resultados:** circuito real completado en cortes con firmas únicas, controles estáticos e interfaz aprobados; corte final88/88 y CI del código aprobados (1.820 backend aprobadas, cinco omitidas). Fallos de fixtures/aserciones se conservan.
+7. **Estado final:** implementación validada en circuito ficticio, regresiones y CI de código; lista para revisión humana del PR17. Firmas antiguas vencidas requieren revisión explícita; no se convierten automáticamente. Sin despliegue; no equivale a aprobar la carga de planta.

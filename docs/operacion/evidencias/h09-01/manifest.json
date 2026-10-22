@@ -1,0 +1,81 @@
+{
+  "scope": "Hashes of raw files retained only in h09-runtime; no session, credential, dump or private file copied",
+  "files": {
+    "regresion-red.log": {
+      "bytes": 21803,
+      "sha256": "a9c9fe1bf61074e03f8a7f2f08644f16aaf9ddbb840ae999f7378c45a807ed34"
+    },
+    "regresion-green-1.log": {
+      "bytes": 19089,
+      "sha256": "1cee3e8c29fdb39954641f8093d1cfc148f98c7e82ffa178148636d04df11634"
+    },
+    "regresion-green-2.log": {
+      "bytes": 6192,
+      "sha256": "105eff388d60db44a7d522ef34072df0f3359c0432ef47de974ff3e5237822e7"
+    },
+    "regresion-green-3.log": {
+      "bytes": 1246,
+      "sha256": "95b1a29899adb9a2015127fb86dc6e0d8b5b54ef54afa7c276e72b3b19ea0f1f"
+    },
+    "regresion-green-4.log": {
+      "bytes": 1436,
+      "sha256": "04d05e596fe9246be527c2ab11ed0beaf2006fbf7af48bb6c635ac0baaca6015"
+    },
+    "backend-full-1.log": {
+      "bytes": 13427,
+      "sha256": "d8534f78cbb0c7b01370de4d9268a0514345024d6306bbcc615880384aa80a82"
+    },
+    "regresion-final.log": {
+      "bytes": 592,
+      "sha256": "baf50c314398fdd55e8bf2ad881e74a68a6a7764e8c0e548d3ed479f9878400d"
+    },
+    "web-evaporacion-1.log": {
+      "bytes": 3593,
+      "sha256": "67759e397d98a78e829d61d1f98956b9de41c3078e835bbac317590253bbad2a"
+    },
+    "web-evaporacion-2.log": {
+      "bytes": 624,
+      "sha256": "fae7e06a8f24d0b6d364edf362ec49e6f6b92605c16120453bf94a8800be9b41"
+    },
+    "web-polvo-completo-1.log": {
+      "bytes": 3584,
+      "sha256": "8ff8b33e92c55a2858e16a7dbc479b2f81ff700301753aa31b17ee75268518c4"
+    },
+    "web-polvo-continuacion-2.log": {
+      "bytes": 363,
+      "sha256": "12625a038577a9f2f7584fc6916e919b246988548051cb1c57dd3f50950e0312"
+    },
+    "frontend-lint.log": {
+      "bytes": 39,
+      "sha256": "98cdc628d09a5242698fda93e945f0e0efa0645207f11c522f5bffab308bd486"
+    },
+    "frontend-tests.log": {
+      "bytes": 8826,
+      "sha256": "a548d1580c4551acfefb2ef0c2427c90bb9cc2ea9cf6b12d8f31ff20c81b1f4f"
+    },
+    "frontend-build.log": {
+      "bytes": 9202,
+      "sha256": "d50c59b85626cdf4fc8d89181503fb90425dda82a4de00d84310896411a5eb3f"
+    },
+    "ruff-final.log": {
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+    },
+    "check-final.log": {
+      "bytes": 237,
+      "sha256": "9528de1798b051993364828237ffc198061c02ec4672cab75bc9ba98fe03104c"
+    },
+    "schema-final.log": {
+      "bytes": 209,
+      "sha256": "fba1f7877e4e397a86c9dc33bcba28b38aab1051d1dc9e7be0f483596caa479e"
+    },
+    "powder-browser-evidence.json": {
+      "bytes": 811,
+      "sha256": "bfbac11b88bf26ab9497a5fbc212299beffa54ee8d1831e98caa70ad8d52cee3"
+    },
+    "ci-implementation.json": {
+      "bytes": 665,
+      "sha256": "1c64df8c20dda5d616b0b98a8dda0ab4830d071ba75c24586c0429ae8c0f5e63"
+    }
+  }
+}
