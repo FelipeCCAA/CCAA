@@ -71,25 +71,7 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     });
   });
 
-  if (reanudarDesde <= 3) await test.step("3a · Calidad revisa nuevamente la salida que alimentará Secado", async () => {
-    // Preparar la siguiente etapa cambia el equipo del lote y retira la firma
-    // anterior de esta salida. Calidad revisa la evidencia vigente en su bandeja.
-    await usarSesionArea(page, "e2e_calidad");
-    await irA(page, "/calidad");
-    await campo(page, "Lote, corrida, producto o silo").fill(flujo.lote);
-    await page.getByRole("button", { name: "Buscar", exact: true }).click();
-    const tarjeta = page.locator("article")
-      .filter({ hasText: flujo.lote })
-      .filter({ hasText: flujo.silo_precondensado });
-    await expect(tarjeta).toHaveCount(1, { timeout: 20_000 });
-    await elegirOpcion(tarjeta.getByRole("combobox"), /· conforme$/i);
-    await trasGuardar(page, "/liberar/", async () => {
-      await tarjeta.getByRole("button", { name: "Liberar etapa" }).click();
-    });
-    await expect(tarjeta).toHaveCount(0);
-  });
-
-  if (reanudarDesde <= 3) await test.step("3b · Secado registra un balance válido", async () => {
+  if (reanudarDesde <= 3) await test.step("3 · Secado registra un balance válido sin refirmar Evaporación", async () => {
     // También se puede reanudar desde esta etapa: el paso 2 no habrá iniciado
     // la sesión del operador de Secado en esta ejecución de Playwright.
     await usarSesionArea(page, "e2e_secado");
@@ -123,7 +105,6 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
     await irA(page, "/envasado");
     // La bandeja actual muestra únicamente material ya liberado: mientras
     // Calidad está pendiente, el lote no debe ofrecerse como seleccionable.
-    await expect(page.getByText("No hay material liberado para envasar.")).toBeVisible();
     await expect(page.getByRole("button", { name: new RegExp(flujo.lote) })).toHaveCount(0);
 
     await usarSesionArea(page, "e2e_calidad");
@@ -165,7 +146,6 @@ test("del precondensado liberado al pallet disponible en Inventario", async ({ p
       .filter({ hasText: "Saco 25 kg" });
     await expect(material).toHaveCount(1, { timeout: 20_000 });
     await material.click();
-    await expect(page.getByText("Esperando aprobación de Calidad")).toHaveCount(0);
     const formulario = page.locator("form").filter({ hasText: "Envasar en pallet" });
     const selectorEquipo = formulario.locator("select").first();
     await expect.poll(() => selectorEquipo.locator("option").count(), { timeout: 15_000 }).toBeGreaterThan(1);

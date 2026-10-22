@@ -13,6 +13,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from calidad.models import LiberacionProceso
+from calidad.vigencia import registrar_firma_salida
+from inventario.pruebas_firmas import firmar_salida_de_prueba
 from maestros.models import (
     Equipo, Especificacion, FormatoEnvasado, Mandante, Producto, Receta,
     RecetaComponente,
@@ -451,6 +453,7 @@ class EnvasePalletTests(TestCase):
         decision.decidida_en = timezone.now()
         decision.full_clean()
         decision.save()
+        registrar_firma_salida(decision)
 
         bandeja_liberada = cliente.get("/api/produccion/envases/bandeja/")
         self.assertEqual(bandeja_liberada.status_code, 200, bandeja_liberada.data)
@@ -477,9 +480,7 @@ class EnvasePalletTests(TestCase):
             destino=SalidaProceso.Destino.ENVASADO,
             cantidad=Decimal("1000"), unidad="kg",
         )
-        LiberacionProceso.objects.create(
-            salida=salida, estado=LiberacionProceso.Estado.LIBERADO,
-        )
+        firmar_salida_de_prueba(salida, self.usuario)
         cliente = APIClient()
         cliente.force_authenticate(self.usuario)
 
@@ -540,6 +541,14 @@ class EnvasePalletTests(TestCase):
         self.lote.save(update_fields=["kg_producidos"])
         salida.cantidad = Decimal("31")
         salida.save(update_fields=["cantidad"])
+
+        # Corregir producto/cantidad exige una nueva firma, aunque el nuevo
+        # formato sea válido. La fixture positiva representa ese acto previo.
+        self.assertEqual(cliente.get("/api/produccion/envases/materiales-habilitados/").data, [])
+        decision = LiberacionProceso.objects.get(salida=salida)
+        decision.estado = LiberacionProceso.Estado.LIBERADO
+        decision.save(update_fields=["estado"])
+        registrar_firma_salida(decision)
 
         respuesta = cliente.get("/api/produccion/envases/materiales-habilitados/")
 

@@ -1,0 +1,24 @@
+{
+  "implementation_commit": "124d56e2a9602641f0d83fd980b245a9de00e8fe",
+  "backend_full_local": {
+    "executed": 1823,
+    "passed": 1818,
+    "skipped": 5,
+    "seconds": 1536.216,
+    "scope": "Before final deletion/projection fixes; fresh final focused run and CI cover published application. Do not sum overlapping cases."
+  },
+  "backend_focused_final": {
+    "executed": 88,
+    "passed": 88,
+    "skipped": 0,
+    "seconds": 166.992
+  },
+  "new_regressions": 18,
+  "frontend": {
+    "executed": 111,
+    "passed": 111,
+    "skipped": 0
+  },
+  "browser": "Same fictitious lot in preserved cuts: evaporation 2/2 including session, continuation 1/1 after scoped assertion correction, no extra evaporation signature",
+  "scope": "Local fictitious data; no deployment, production access or global OP09/load certification. CI verdict is recorded separately by SHA in PR."
+}

@@ -1010,6 +1010,8 @@ def preparar_continuacion(*, salida_id, etapa_id, equipo_id, cantidad, usuario):
     lote_origen_id = SalidaProceso.objects.values_list("lote_id", flat=True).get(pk=salida_id)
     if lote_origen_id is not None:
         Lote.objects.select_for_update(of=("self",)).get(pk=lote_origen_id)
+    from calidad.etapas import bloquear_cadenas
+    bloquear_cadenas([salida_id])
     salida = (
         SalidaProceso.objects.select_for_update(of=("self",))
         .select_related(

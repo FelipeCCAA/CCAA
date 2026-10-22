@@ -1,0 +1,33 @@
+{
+  "scope": "Fictitious H09 circuit continued in documented cuts; no physical recipe/yield certified",
+  "lot_id": 10,
+  "lot": "H09-POLVO-195563",
+  "stage_releases": [
+    {
+      "stage": "secado",
+      "output_id": 14,
+      "quantity": "500.000",
+      "unit": "kg",
+      "state": "liberado",
+      "format": 2,
+      "evidence_version": 0,
+      "signature_acts": 1
+    },
+    {
+      "stage": "evaporacion",
+      "output_id": 13,
+      "quantity": "1500.000",
+      "unit": "L",
+      "state": "liberado",
+      "format": 2,
+      "evidence_version": 0,
+      "signature_acts": 1
+    }
+  ],
+  "commercial_signature_valid": true,
+  "pallet": "PAL-H09-POLVO-195563",
+  "kg": "500.000",
+  "pallet_state": "en_inventario",
+  "active_stock": true,
+  "location": "PT-DISP"
+}

@@ -60,6 +60,7 @@ from .models import Liberacion, LiberacionProceso, RegistroCalidad, RegistroEqui
 from .evidencia import bloquear_catalogo
 from .vigencia import (
     evidencia_lote, evidencia_salida, registrar_firma_lote, registrar_firma_salida,
+    exigir_antecedentes_salida_vigentes, exigir_etapas_lote_vigentes,
 )
 from .serializers_equipo import RegistroEquipoSerializer
 from .serializers import (
@@ -949,6 +950,8 @@ def liberar_resultado_proceso(request, salida_id):
         previa = _salida_intermedia_permitida(request, salida_id)
         if previa.lote_id:
             Lote.objects.select_for_update().get(pk=previa.lote_id)
+        from .etapas import bloquear_cadenas
+        bloquear_cadenas([salida_id])
         salida = _salida_intermedia_permitida(request, salida_id, bloquear=True)
         if salida.lote_id != previa.lote_id:
             return Response({"detail": "Cambió el lote de la salida. Vuelve a cargarla."}, status=409)
@@ -1068,6 +1071,10 @@ def liberar_resultado_proceso(request, salida_id):
                 bloqueo_especificacion,
                 status=status.HTTP_409_CONFLICT,
             )
+        try:
+            exigir_antecedentes_salida_vigentes(salida.pk)
+        except DjangoValidationError as error:
+            return Response({"detail": "; ".join(error.messages)}, status=409)
         evidencia_salida(
             salida.pk, bloquear=True,
             analisis_silo_id=getattr(analisis_silo, "pk", None),
@@ -1292,6 +1299,10 @@ def _firmar(request, lote_id, concesion, motivo="", observacion=""):
         from estandarizacion.bloqueos import exigir_sin_retencion_lote
         try:
             exigir_sin_retencion_lote(lote.pk)
+        except DjangoValidationError as error:
+            return Response({"detail": "; ".join(error.messages)}, status=409)
+        try:
+            exigir_etapas_lote_vigentes(lote.pk)
         except DjangoValidationError as error:
             return Response({"detail": "; ".join(error.messages)}, status=409)
         foto = evidencia_lote(lote.pk, bloquear=True)

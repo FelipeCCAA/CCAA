@@ -97,6 +97,11 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             ),
             pallets_total=Count("lote__registros_envase__pallets", distinct=True),
         ))
+        bloqueos = {}
+        for salida in salidas:
+            if salida.lote_id not in bloqueos:
+                bloqueos[salida.lote_id] = servicios_produccion.bloqueo_calidad_para_envasado(salida.lote)
+        salidas = [salida for salida in salidas if not bloqueos[salida.lote_id]]
         formatos_por_producto = defaultdict(list)
         for formato in FormatoEnvasado.objects.filter(
             activo=True,
@@ -307,7 +312,7 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     def bandeja(self, request):
         """Trabajo de Envase, incluida la espera explícita por Calidad."""
         from calidad.models import LiberacionProceso
-        from procesos.models import EjecucionProceso, SalidaProceso
+        from procesos.models import SalidaProceso
 
         materiales = self.materiales_habilitados(request)
         if materiales.status_code != status.HTTP_200_OK:
@@ -315,37 +320,34 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         # La relación salida -> lote es la fuente del trabajo recibido por
         # Envasado. Los pendientes se muestran, pero nunca se mezclan con los
         # materiales habilitados ni se convierten en una autorización.
-        pendientes_calidad = (
+        pendientes_calidad = filtrar_por_scope(
             SalidaProceso.objects.filter(
                 destino=SalidaProceso.Destino.ENVASADO,
                 naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
                 unidad__iexact="kg",
                 ejecucion__etapa__requiere_calidad=True,
-                ejecucion__estado__in=[
-                    EjecucionProceso.Estado.PENDIENTE_CONTROL,
-                    EjecucionProceso.Estado.BLOQUEADA,
-                ],
                 lote__producto__isnull=False,
                 lote__estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
             )
-            .exclude(liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO)
             .select_related(
                 "lote__producto", "ejecucion__etapa", "liberacion_calidad"
             )
-            .order_by("registrada_en", "pk")
+            .order_by("registrada_en", "pk"), request.user,
+            campo_sucursal="ejecucion__sucursal_id",
+            campo_empresa="ejecucion__sucursal__empresa_id",
         )
         bloqueados_calidad = []
         for salida in pendientes_calidad:
+            bloqueo = servicios_produccion.bloqueo_calidad_para_envasado(salida.lote)
+            if not bloqueo:
+                continue
             decision = getattr(salida, "liberacion_calidad", None)
             estado = decision.estado if decision else LiberacionProceso.Estado.PENDIENTE
-            motivo = (
-                decision.observacion.strip()
-                if decision and decision.observacion.strip()
-                else (
-                    f"{salida.ejecucion.etapa.get_tipo_display()} está pendiente "
-                    "de aprobación de Calidad antes de Envasado."
-                )
-            )
+            if estado == LiberacionProceso.Estado.LIBERADO:
+                estado = LiberacionProceso.Estado.PENDIENTE
+            motivo = bloqueo
+            if decision and decision.estado == LiberacionProceso.Estado.RECHAZADO and decision.observacion.strip():
+                motivo += " " + decision.observacion.strip()
             bloqueados_calidad.append({
                 "salida_id": salida.pk,
                 "lote_id": salida.lote_id,

@@ -18,6 +18,12 @@ from .evidencia import bloquear_catalogo
 
 
 CAMPOS = {
+    "procesos.EtapaProceso": ("id", "proceso_id", "codigo", "tipo", "orden", "requiere_calidad"),
+    "procesos.EjecucionProceso": ("id", "etapa_id", "sucursal_id", "equipo_id", "ruta_producto_id", "vale_id"),
+    "procesos.EntradaProceso": (
+        "id", "ejecucion_id", "lote_id", "silo_id", "lote_inventario_id",
+        "salida_origen_id", "tipo", "cantidad", "unidad",
+    ),
     "produccion.Lote": (
         "id", "sucursal_id", "codigo_lote", "producto_id", "fecha", "equipo_id", "linea", "turno",
         "kg_producidos", "bultos", "estado",
@@ -40,13 +46,14 @@ CAMPOS = {
 }
 CATALOGOS = {
     "maestros.Producto", "maestros.Especificacion",
-    "maestros.DocumentoLiberacion", "calidad.RegistroEquipo", "maestros.Equipo",
+    "maestros.DocumentoLiberacion", "calidad.RegistroEquipo", "maestros.Equipo", "procesos.EtapaProceso",
 }
 FUENTES = CATALOGOS | {
     "produccion.Lote", "produccion.Analisis", "produccion.ControlProceso",
     "produccion.ControlProcesoLectura", "produccion.RegistroEnvase",
     "calidad.RegistroCalidad", "inocuidad.MonitoreoPPRO", "inocuidad.PproLectura",
     "recepcion.AnalisisSilo", "procesos.SalidaProceso", "procesos.AutorizacionReproceso",
+    "procesos.EjecucionProceso", "procesos.EntradaProceso",
 }
 
 
@@ -91,6 +98,7 @@ def preparar_escritura(objeto, anterior, *, using=DEFAULT_DB_ALIAS):
              .select_for_update().filter(pk__in=ids).order_by("pk"))
         return
     padres = {
+        "procesos.EntradaProceso": ("procesos.EjecucionProceso", "ejecucion_id"),
         "produccion.Analisis": ("produccion.Lote", "lote_id"),
         "calidad.RegistroCalidad": ("produccion.Lote", "lote_id"),
         "produccion.ControlProceso": ("produccion.Lote", "lote_id"),
@@ -111,7 +119,7 @@ def preparar_escritura(objeto, anterior, *, using=DEFAULT_DB_ALIAS):
             list(apps.get_model(modelo)._base_manager.using(using).select_for_update().filter(pk__in=ids).order_by("pk"))
 
 
-def evidencia_lote(lote_id, *, bloquear=False):
+def evidencia_lote_v1(lote_id, *, bloquear=False):
     from maestros.models import DocumentoLiberacion, Equipo, Especificacion, Producto
     from produccion import dominio as dominio_produccion
     from produccion.models import Analisis, ControlProceso, ControlProcesoLectura, Lote, RegistroEnvase
@@ -164,7 +172,7 @@ def evidencia_lote(lote_id, *, bloquear=False):
     }
 
 
-def evidencia_salida(salida_id, *, bloquear=False, analisis_silo_id=None, analisis_lote_id=None):
+def evidencia_salida_v1(salida_id, *, bloquear=False, analisis_silo_id=None, analisis_lote_id=None):
     from maestros.models import Especificacion, Producto
     from procesos.models import SalidaProceso
     from produccion import dominio as dominio_produccion
@@ -209,12 +217,79 @@ def evidencia_salida(salida_id, *, bloquear=False, analisis_silo_id=None, analis
     return evidencia
 
 
+def _evidencia_etapa(salida_id, *, bloquear=False, **analisis):
+    from maestros.models import Equipo
+    from procesos.models import EntradaProceso, SalidaProceso
+
+    foto = evidencia_salida_v1(salida_id, bloquear=bloquear, **analisis)
+    salida = SalidaProceso.objects.select_related("ejecucion__etapa").get(pk=salida_id)
+    # El lote es identidad compartida. Su equipo/masa/estado actuales no son
+    # los del material intermedio: pertenecen a la etapa que está operando.
+    if foto["lote"]:
+        foto["lote"] = {k: v for k, v in foto["lote"].items() if k not in {"equipo_id", "kg_producidos", "bultos", "estado"}}
+    foto.update({
+        "formato": 2,
+        "ejecucion": _fila(salida.ejecucion), "etapa": _fila(salida.ejecucion.etapa),
+        "equipo": _filas(Equipo.objects.filter(pk=salida.ejecucion.equipo_id), bloquear),
+        "entradas": _filas(EntradaProceso.objects.filter(ejecucion_id=salida.ejecucion_id), bloquear),
+    })
+    return foto
+
+
+def evidencia_salida(salida_id, *, bloquear=False, analisis_silo_id=None, analisis_lote_id=None):
+    from .etapas import cadena_salidas, decision_material
+
+    cadena = cadena_salidas(salida_id, bloquear=bloquear)
+    foto = _evidencia_etapa(salida_id, bloquear=bloquear, analisis_silo_id=analisis_silo_id, analisis_lote_id=analisis_lote_id)
+    foto["antecedentes"] = [
+        {"evidencia": _evidencia_etapa(pk, bloquear=bloquear), "aprobacion": decision_material(pk)}
+        for pk in cadena if pk != salida_id
+    ]
+    return foto
+
+
+def evidencia_lote(lote_id, *, bloquear=False):
+    from procesos.models import SalidaProceso
+    from .etapas import decision_material
+
+    foto = evidencia_lote_v1(lote_id, bloquear=bloquear)
+    foto["formato"] = 2
+    foto["procesos"] = [
+        {"evidencia": evidencia_salida(pk, bloquear=bloquear), "aprobacion": decision_material(pk)}
+        for pk in SalidaProceso.objects.filter(lote_id=lote_id).order_by("pk").values_list("pk", flat=True)
+    ]
+    return foto
+
+
+def _foto_actual(decision, calculador, identificador, *, bloquear=False):
+    # Un histórico no se convierte en una aprobación nueva. Mientras coincida
+    # exactamente con v1 sigue siendo válido; si caduca, sólo Calidad lo renueva.
+    if decision.evidencia_firmada.get("formato") == 1:
+        calculador = evidencia_lote_v1 if calculador == evidencia_lote else evidencia_salida_v1
+    return calculador(identificador, bloquear=bloquear)
+
+
+def exigir_antecedentes_salida_vigentes(salida_id, *, bloquear=True):
+    from procesos.models import SalidaProceso
+    from .etapas import cadena_salidas
+    from .models import LiberacionProceso
+
+    if bloquear:
+        bloquear_catalogo()
+    for pk in cadena_salidas(salida_id, bloquear=bloquear):
+        if pk == salida_id:
+            continue
+        if SalidaProceso.objects.get(pk=pk).ejecucion.etapa.requiere_calidad:
+            _exigir(LiberacionProceso, "salida_id", pk, evidencia_salida, bloquear=bloquear)
+
+
 def registrar_firma_lote(liberacion, *, evidencia=None):
     liberacion.evidencia_firmada = evidencia if evidencia is not None else evidencia_lote(liberacion.lote_id, bloquear=True)
     _registrar_firma(liberacion)
 
 
 def registrar_firma_salida(liberacion, *, evidencia=None):
+    exigir_antecedentes_salida_vigentes(liberacion.salida_id)
     liberacion.evidencia_firmada = evidencia if evidencia is not None else evidencia_salida(liberacion.salida_id, bloquear=True)
     _registrar_firma(liberacion)
 
@@ -228,11 +303,13 @@ def _registrar_firma(liberacion):
 def _exigir(modelo, campo, identificador, calculador, *, bloquear):
     if bloquear:
         bloquear_catalogo()
-    evidencia = calculador(identificador, bloquear=bloquear)
+    # Fuentes antes que decisiones, también para las firmas históricas.
+    calculador(identificador, bloquear=bloquear)
     consulta = modelo.objects.filter(**{campo: identificador})
     if bloquear:
         consulta = consulta.select_for_update()
     decision = consulta.first()
+    evidencia = _foto_actual(decision, calculador, identificador, bloquear=bloquear) if decision else None
     estados = getattr(modelo, "ESTADOS_LIBERADO", (modelo.Estado.LIBERADO,))
     if (
         decision is None or decision.estado not in estados or not decision.firma_vigente
@@ -244,17 +321,38 @@ def _exigir(modelo, campo, identificador, calculador, *, bloquear):
 
 def exigir_liberacion_lote_vigente(lote_id, *, bloquear=True):
     from .models import Liberacion
+    if bloquear:
+        bloquear_catalogo()
+        apps.get_model("produccion.Lote").objects.select_for_update().get(pk=lote_id)
+    exigir_etapas_lote_vigentes(lote_id, bloquear=bloquear)
     return _exigir(Liberacion, "lote_id", lote_id, evidencia_lote, bloquear=bloquear)
 
 
 def exigir_liberacion_salida_vigente(salida_id, *, bloquear=True):
     from .models import LiberacionProceso
+    exigir_antecedentes_salida_vigentes(salida_id, bloquear=bloquear)
     return _exigir(LiberacionProceso, "salida_id", salida_id, evidencia_salida, bloquear=bloquear)
+
+
+def exigir_etapas_lote_vigentes(lote_id, *, bloquear=True):
+    from procesos.models import SalidaProceso
+    if bloquear:
+        from .etapas import bloquear_cadenas
+        bloquear_cadenas(SalidaProceso.objects.filter(lote_id=lote_id).values_list("pk", flat=True))
+
+    for pk in SalidaProceso.objects.filter(
+        lote_id=lote_id, naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
+        ejecucion__etapa__requiere_calidad=True,
+    ).order_by("pk").values_list("pk", flat=True):
+        exigir_liberacion_salida_vigente(pk, bloquear=bloquear)
 
 
 def bloquear_evidencias_despacho(lote_ids, salida_ids):
     """Todos los materiales se leen antes de tomar la primera aprobación."""
     bloquear_catalogo()
+    from procesos.models import SalidaProceso
+    from .etapas import bloquear_cadenas
+    bloquear_cadenas(set(salida_ids) | set(SalidaProceso.objects.filter(lote_id__in=lote_ids).values_list("pk", flat=True)))
     for lote_id in sorted(set(lote_ids)):
         evidencia_lote(lote_id, bloquear=True)
     for salida_id in sorted(set(salida_ids)):
@@ -302,19 +400,100 @@ def invalidar_por_cambio(objeto, anterior, despues, *, using=DEFAULT_DB_ALIAS):
         else:
             procesos = procesos.none()
 
-    # Compara primero sin locks adicionales: conserva la dirección del escritor.
-    # Al actualizar, relee bajo lock la aprobación por si otro escritor ya retiró
-    # su vigencia. No importa cuántos cambios sigan: nunca se reactiva por hash.
-    for consulta, calculador, campo, estado in (
-        (candidatos, evidencia_lote, "lote_id", Liberacion.Estado.EN_REVISION),
-        (procesos, evidencia_salida, "salida_id", LiberacionProceso.Estado.PENDIENTE),
-    ):
-        for decision in consulta.order_by("pk"):
-            if decision.evidencia_firmada == calculador(getattr(decision, campo)):
-                continue
-            actual = type(decision).objects.using(using).select_for_update().get(pk=decision.pk)
-            if actual.estado != decision.estado or actual.firma_id != decision.firma_id:
-                continue
-            actual.estado = estado
+    # Compara fotos de etapas, incluidas las que consumieron material de otra
+    # ejecución/lote. Sólo se retira una firma cuya evidencia cambió o que
+    # desciende realmente de un material corregido, nunca por compartir silo.
+    from procesos.models import EntradaProceso, SalidaProceso
+    from .etapas import cadena_salidas
+
+    afectadas = set()
+    potenciales = set()
+    if etiqueta == "procesos.SalidaProceso":
+        afectadas.add(objeto.pk)
+    elif etiqueta in {"procesos.EjecucionProceso", "procesos.EntradaProceso"}:
+        ids = {objeto.pk} if etiqueta.endswith("EjecucionProceso") else {v["ejecucion_id"] for v in valores}
+        afectadas.update(SalidaProceso.objects.filter(ejecucion_id__in=ids).values_list("pk", flat=True))
+    elif etiqueta == "procesos.EtapaProceso":
+        afectadas.update(SalidaProceso.objects.filter(ejecucion__etapa_id=objeto.pk).values_list("pk", flat=True))
+    elif etiqueta in {"recepcion.AnalisisSilo", "produccion.Analisis"}:
+        campo = "analisis_silo_id" if etiqueta.startswith("recepcion.") else "analisis_lote_id"
+        afectadas.update(LiberacionProceso.objects.filter(**{campo: objeto.pk}).values_list("salida_id", flat=True))
+    elif etiqueta == "produccion.Lote":
+        estables = set(CAMPOS[etiqueta]) - {"equipo_id", "kg_producidos", "bultos", "estado"}
+        if anterior is None or despues is None or any(anterior[k] != despues[k] for k in estables):
+            afectadas.update(SalidaProceso.objects.filter(lote_id=objeto.pk).values_list("pk", flat=True))
+    elif etiqueta == "maestros.Producto":
+        afectadas.update(SalidaProceso.objects.filter(
+            Q(producto_id=objeto.pk) | Q(lote__producto_id=objeto.pk),
+        ).values_list("pk", flat=True))
+    elif etiqueta == "maestros.Equipo":
+        afectadas.update(SalidaProceso.objects.filter(ejecucion__equipo_id=objeto.pk).values_list("pk", flat=True))
+    elif etiqueta == "maestros.Especificacion":
+        productos = {v["producto_id"] for v in valores}
+        potenciales.update(SalidaProceso.objects.filter(
+            Q(producto_id__in=productos) | Q(lote__producto_id__in=productos),
+        ).values_list("pk", flat=True))
+    if etiqueta in {"procesos.EjecucionProceso", "procesos.EntradaProceso", "procesos.EtapaProceso"}:
+        procesos = LiberacionProceso.objects.using(using).filter(salida_id__in=afectadas)
+    elif etiqueta == "maestros.Equipo":
+        procesos = LiberacionProceso.objects.using(using).filter(
+            Q(salida__ejecucion__equipo_id=objeto.pk) | Q(salida__lote__equipo_id=objeto.pk),
+        )
+    # Una especificación futura no cambia necesariamente la evidencia. Revisar
+    # las fotos consumidoras permite distinguirla aun si el origen no requiere
+    # firma propia. No se presupone una aprobación inexistente en ese origen.
+    frontera = set(potenciales)
+    while frontera:
+        ejecuciones = EntradaProceso.objects.filter(salida_origen_id__in=frontera).values_list("ejecucion_id", flat=True)
+        nuevas = set(SalidaProceso.objects.filter(ejecucion_id__in=ejecuciones).values_list("pk", flat=True)) - potenciales
+        potenciales.update(nuevas)
+        frontera = nuevas
+    if potenciales:
+        procesos = LiberacionProceso.objects.using(using).filter(
+            Q(pk__in=procesos.values("pk")) | Q(salida_id__in=potenciales),
+            estado=LiberacionProceso.Estado.LIBERADO, firma_id__isnull=False,
+        )
+    for decision in procesos.order_by("pk"):
+        if decision.evidencia_firmada != _foto_actual(decision, evidencia_salida, decision.salida_id):
+            afectadas.add(decision.salida_id)
+    frontera = set(afectadas)
+    while frontera:
+        ejecuciones = EntradaProceso.objects.filter(salida_origen_id__in=frontera).values_list("ejecucion_id", flat=True)
+        nuevas = set(SalidaProceso.objects.filter(ejecucion_id__in=ejecuciones).values_list("pk", flat=True)) - afectadas
+        afectadas.update(nuevas)
+        frontera = nuevas
+
+    # Ancestros antes que descendientes, igual que al exigir o renovar firmas.
+    # post_delete conserva el ID anterior para localizar el lote, pero la
+    # salida borrada ya no puede formar parte de una cadena consultable.
+    afectadas.intersection_update(SalidaProceso.objects.filter(pk__in=afectadas).values_list("pk", flat=True))
+    orden, vistos = [], set()
+    for pk in sorted(afectadas):
+        for material_id in cadena_salidas(pk):
+            if material_id in afectadas and material_id not in vistos:
+                vistos.add(material_id)
+                orden.append(material_id)
+    for material_id in orden:
+        actual = LiberacionProceso.objects.using(using).select_for_update().filter(
+            salida_id=material_id, estado=LiberacionProceso.Estado.LIBERADO, firma_id__isnull=False,
+        ).first()
+        if actual:
+            actual.estado = LiberacionProceso.Estado.PENDIENTE
             actual.version_evidencia += 1
             actual.save(update_fields=["estado", "version_evidencia"])
+
+    lotes_afectados = set(SalidaProceso.objects.filter(pk__in=afectadas).exclude(lote_id=None).values_list("lote_id", flat=True))
+    if etiqueta == "procesos.SalidaProceso":
+        lotes_afectados.update(lotes)
+    candidatos = Liberacion.objects.using(using).filter(
+        estado__in=Liberacion.ESTADOS_LIBERADO, firma_id__isnull=False,
+    ).filter(Q(pk__in=candidatos.values("pk")) | Q(lote_id__in=lotes_afectados))
+    for decision in candidatos.order_by("pk"):
+        if decision.lote_id not in lotes_afectados and decision.evidencia_firmada == _foto_actual(decision, evidencia_lote, decision.lote_id):
+            continue
+        actual = Liberacion.objects.using(using).select_for_update().get(pk=decision.pk)
+        if actual.estado != decision.estado or actual.firma_id != decision.firma_id:
+            continue
+        actual.estado = Liberacion.Estado.EN_REVISION
+        actual.version_evidencia += 1
+        actual.save(update_fields=["estado", "version_evidencia"])

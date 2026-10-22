@@ -1,0 +1,20 @@
+{
+  "commit": "124d56e2a9602641f0d83fd980b245a9de00e8fe",
+  "run_id": 39819878080,
+  "url": "https://github.com/FelipeCCAA/CCAA/actions/runs/39819878080",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": {
+    "backend": "success",
+    "frontend": "success",
+    "private-storage": "success",
+    "production-config": "success"
+  },
+  "backend": {
+    "executed": 1825,
+    "passed": 1820,
+    "skipped": 5,
+    "seconds": 500.647
+  },
+  "scope": "Fresh CI on implementation commit; ephemeral CI services/config checks, no deployment. Later documentation/QA-evidence-only commit must not inherit this status as its own CI verdict."
+}

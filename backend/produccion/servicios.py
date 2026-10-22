@@ -443,6 +443,7 @@ def registrar_envasado(
 ):
     """Registra envase y pallets como un único cierre físico e idempotente."""
     from django.core.exceptions import ValidationError
+    from calidad.evidencia import bloquear_catalogo
     from inventario.servicios import (
         consumir_receta_produccion,
         insumos_requeridos,
@@ -459,6 +460,7 @@ def registrar_envasado(
         inicio=inicio, termino=termino, pallets=pallets, usuario=usuario,
         controles=controles, observacion=observacion,
     )
+    bloquear_catalogo()
     _bloquear_operacion_envase(operacion_id)
     existente = RegistroEnvase.objects.filter(operacion_id=operacion_id).first()
     if existente:
@@ -482,7 +484,7 @@ def registrar_envasado(
     salidas_productivas = SalidaProceso.objects.filter(
         lote=lote, naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
     )
-    bloqueo_calidad = bloqueo_calidad_para_envasado(lote)
+    bloqueo_calidad = bloqueo_calidad_para_envasado(lote, bloquear=True)
     if bloqueo_calidad:
         raise ValidationError(bloqueo_calidad)
     if salidas_productivas.exists() and not salidas_productivas.filter(
@@ -604,9 +606,9 @@ def registrar_envasado(
     return registro
 
 
-def bloqueo_calidad_para_envasado(lote):
+def bloqueo_calidad_para_envasado(lote, *, bloquear=False):
     """Devuelve la puerta material previa a Envase, sin mezclarla con el lote."""
-    from calidad.models import LiberacionProceso
+    from calidad.vigencia import exigir_liberacion_salida_vigente
     from procesos.models import SalidaProceso
 
     for salida in lote.salidas_proceso.all():
@@ -614,8 +616,9 @@ def bloqueo_calidad_para_envasado(lote):
             continue
         if not salida.ejecucion.etapa.requiere_calidad:
             continue
-        decision = getattr(salida, "liberacion_calidad", None)
-        if decision is None or decision.estado != LiberacionProceso.Estado.LIBERADO:
+        try:
+            exigir_liberacion_salida_vigente(salida.pk, bloquear=bloquear)
+        except ValidationError:
             return (
                 f"{salida.ejecucion.etapa.get_tipo_display()} está pendiente "
                 "de aprobación de Calidad antes de Envasado."
