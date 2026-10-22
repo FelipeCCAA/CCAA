@@ -1,0 +1,550 @@
+{
+  "identity": {
+    "directory": "op09-runtime/pgdata",
+    "role": "op09_test",
+    "host": "127.0.0.1",
+    "port": 55449
+  },
+  "timestamp_utc": "20261022T133548Z",
+  "backup_seconds": 1.564200200024061,
+  "restore_seconds": 2.5676996000111103,
+  "verification_seconds": 3.0451278999680653,
+  "dump_bytes": 814076,
+  "dump_sha256": "9dca4d28f6dccf9b10084f576ba2c1b5815fa356c67b96327f8ab4b3db025b41",
+  "source_equals_restore": true,
+  "tables_compared": 130,
+  "attachments_verified": 1,
+  "manifest": {
+    "tables": {
+      "auditoria_registroauditoria": {
+        "rows": 967,
+        "sha256": "edf71748b1d8446f273f291fb4f21b7437caaacea9f503c5b7431b3e46a01983"
+      },
+      "auth_group": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "auth_group_permissions": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "auth_permission": {
+        "rows": 517,
+        "sha256": "01de11de69aa1713e43c7929012da6837117a6761c8483263aac8b9de65d73e8"
+      },
+      "auth_user": {
+        "rows": 80,
+        "sha256": "572dbf255a30fcc4224475f4112fe05cda73eb67cb6b22faebc6f3f883aa3333"
+      },
+      "auth_user_groups": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "auth_user_user_permissions": {
+        "rows": 2,
+        "sha256": "988d9ef97d0ad3c3645956335a021f256d998bf05940b1a24059729f7a2cc322"
+      },
+      "authtoken_token": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "cache_ccaa": {
+        "rows": 10,
+        "sha256": "888c57097bdac128cfb6efb1c114fc1ea44ae1d781dd80625b0defff8d4a2051"
+      },
+      "calidad_liberacion": {
+        "rows": 2,
+        "sha256": "f2951298d3d0b8d59703c4f91fd49bd69d30aca9b0f70efc2752f8245704d66c"
+      },
+      "calidad_liberacionproceso": {
+        "rows": 9,
+        "sha256": "a780b6e66ee22b66d18137bbf53933194ccced9475d3748a726b0bb6464f103b"
+      },
+      "calidad_registrocalidad": {
+        "rows": 21,
+        "sha256": "58396ca5012fb961eac8313c17ed548c611bacd8b32080301815c0e0258ecdd1"
+      },
+      "calidad_registroequipo": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "django_admin_log": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "django_content_type": {
+        "rows": 125,
+        "sha256": "fbc45d6522e2851eba65fb1c9355b7f8470b83d0913694d1cfb6454fb3622bd5"
+      },
+      "django_migrations": {
+        "rows": 207,
+        "sha256": "fbb940b1c124260e4de82107abd5825e7d204860b182eb6b68cde718e2f99fb2"
+      },
+      "django_session": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "estandarizacion_actovaleestandarizacion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "estandarizacion_correccionvaleestandarizacion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "estandarizacion_valeestandarizacion": {
+        "rows": 2,
+        "sha256": "627ce2d4a0402c2fa64c54b36461b5b59e77b937ddf6a57b512761dbaa3a34c4"
+      },
+      "inocuidad_monitoreoppro": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inocuidad_pprolectura": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_adjunto": {
+        "rows": 1,
+        "sha256": "c6ece5cca98182d4b0991f805a7f92e630db5631a19887f59592e3faa27b3f2d"
+      },
+      "inventario_ajusteinventario": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_alerta": {
+        "rows": 26,
+        "sha256": "258752b92266b9bc5a9d80d547ecde2e90dc32863e6c60d0af30c3a9c6b6cd0e"
+      },
+      "inventario_aprobacion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_bodega": {
+        "rows": 6,
+        "sha256": "ebe73ede8503b0f0cb8c8951336af1261c28933048243369d8d5bd71b796aeaf"
+      },
+      "inventario_ciclocip": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_clientedespacho": {
+        "rows": 2,
+        "sha256": "b2de024d480ac3be6ffa5b93f2d93a7e4de39e897c9dfaf5ca6780c2edcb9da0"
+      },
+      "inventario_consumoloteproduccion": {
+        "rows": 5,
+        "sha256": "3e435704f72c387092377fcb2f1794c7b1fd194ac61e3f7106fdcaf0f123503c"
+      },
+      "inventario_despacho": {
+        "rows": 2,
+        "sha256": "3cbfd3a96dcd22a605b3e9955ed079d74d7d47bd57bb8435326ec69799498270"
+      },
+      "inventario_detalledespacho": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_detalledespachogranel": {
+        "rows": 2,
+        "sha256": "021fdb3dca819f7b6663e3fdef5af6eb17f9603eb4ff03c8c6ad366db35b9a19"
+      },
+      "inventario_detalleentregaproduccion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_detalleordencompra": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_detallerecepcioncompra": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_detallesolicitudcompra": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_detallesolicitudmaterial": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_devolucionproduccion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_ejecucionmrp": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_entregaproduccion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_etapacip": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_existencia": {
+        "rows": 47,
+        "sha256": "01f4fcfc07d29a2f2539aede60b604d9b411c925c6869ac74002864f3f2c8caa"
+      },
+      "inventario_existenciaproductoterminado": {
+        "rows": 2,
+        "sha256": "51ad72a669421f4f56bf00905e9b43c8fa475ab19d99b2770a84bf37d9a6aad2"
+      },
+      "inventario_inspeccionmaterial": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_insumo": {
+        "rows": 10,
+        "sha256": "cc83548ba125b7c95c8e1607d5042fbdd49c8c937fcbbdb5080e20ef85db4077"
+      },
+      "inventario_insumoproveedor": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_liberacionexcepcionalmaterial": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_loteinventario": {
+        "rows": 29,
+        "sha256": "56e8ce176899a0c064bae3d2268ef39282e92393d99657e23132ad8c6dd4a528"
+      },
+      "inventario_movimientoinventario": {
+        "rows": 42,
+        "sha256": "596e02328306672526c3a05c24ff880568053cfa19e3d71f6d3abf7e43383cd8"
+      },
+      "inventario_movimientoproductoterminado": {
+        "rows": 4,
+        "sha256": "a2f27f05c03f7a12485ac413a98839e2f1a3884bf7a35a17779a586fadb5257d"
+      },
+      "inventario_movimientorework": {
+        "rows": 1,
+        "sha256": "3d94d409dfd34815117e710837d141d75bbc5addfc0127d04b676308151125d6"
+      },
+      "inventario_noconformidadmaterial": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_notificacion": {
+        "rows": 519,
+        "sha256": "cf858fa84decbda40e96acb3c0abb64c20905956438417e3ab82637fe7ad123a"
+      },
+      "inventario_ordencompra": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_plantillainspeccion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_proveedor": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_recepcioncompra": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_reservainventario": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_resultadomrp": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_solicitudcompra": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_solicitudmaterial": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "inventario_ubicacion": {
+        "rows": 10,
+        "sha256": "579084b19cf2a05e9ae44291a42eff05c7130b3195c0f089aed08eff197732ab"
+      },
+      "inventario_unidadrework": {
+        "rows": 1,
+        "sha256": "8b1eb0e1c43307e4770c7dbded2a7a7068dff6650b569a9cfccd5dc1b3370fbb"
+      },
+      "maestros_documentoliberacion": {
+        "rows": 24,
+        "sha256": "143a93f2ea187588f6fd749d4d7c82394f6b600a5205bb09a5c8bc26ce15f872"
+      },
+      "maestros_equipo": {
+        "rows": 12,
+        "sha256": "0dbc99aff8a0912122c75a370ffa5263b0596aa0c75170b761a0377bb5b5f5cc"
+      },
+      "maestros_especificacion": {
+        "rows": 10,
+        "sha256": "49480dc92680724fb476e186c4d7b3ed2ae6dbd449dcd7d356cba603cfe1ef04"
+      },
+      "maestros_formatoenvasado": {
+        "rows": 3,
+        "sha256": "ce485975ebc1a667e11843669743bd8f6239bd44192389fc0c55967fc5e9edfe"
+      },
+      "maestros_formatoenvasado_equipos": {
+        "rows": 3,
+        "sha256": "ae0ae12ac61975b7a383c9ede547bcebd3d379bb4ab08076712fbf3ace02ec92"
+      },
+      "maestros_mandante": {
+        "rows": 3,
+        "sha256": "8d4e4c50315aae2f2dbcc3207bf5ebcc8d7768d2b285ac8be309c008b69653dd"
+      },
+      "maestros_producto": {
+        "rows": 7,
+        "sha256": "0e7aa086b57a76327f990148282a32659e218f45c8d3c26b074c30b5c4f236aa"
+      },
+      "maestros_receta": {
+        "rows": 3,
+        "sha256": "495b3c8459f62957414f5b7bab471eac7df715e639251564891772ff9fdff6c8"
+      },
+      "maestros_recetacomponente": {
+        "rows": 10,
+        "sha256": "6b5a66129166923741398b5b4f25d461e2a0d7e38308ec6c595ae24a0e6744e0"
+      },
+      "maestros_silo": {
+        "rows": 8,
+        "sha256": "546671232f129c4588b11acafc194ff819f67ff0ece9f20a268b62afee5c823f"
+      },
+      "maestros_vehiculo": {
+        "rows": 1,
+        "sha256": "a4bd9c4f0284383eb9060c7e9d29e7e417bc53a27ab69caaf50f853a38016720"
+      },
+      "mantenimiento_fallaequipo": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "mantenimiento_ordentrabajo": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "mantenimiento_planpreventivo": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "mantenimiento_repuestoutilizado": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "planificacion_balancedia": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "planificacion_bloqueplan": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "planificacion_capacidadproceso": {
+        "rows": 4,
+        "sha256": "0f3b291abcbeb39474926046325e8af4cf3e815d95c36469ea67243558c5d6a0"
+      },
+      "planificacion_codigoproduccion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "planificacion_movimientoplan": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "planificacion_semanaplan": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "planificacion_stockseguridadplan": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "planificacion_tipoactividadplan": {
+        "rows": 11,
+        "sha256": "71f14e4b2a2aa996dc8adb698b8148c6359ed5b4114dfacc7253ce53784c60e0"
+      },
+      "planificacion_versionsemanaplan": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "procesos_autorizacionreproceso": {
+        "rows": 1,
+        "sha256": "13e0f6b779fdd0d26deb8edda6347c83e334964640a62e78aebf421b66bc5913"
+      },
+      "procesos_corridacondensacion": {
+        "rows": 2,
+        "sha256": "50ab86122bc172059d304ece8ae0960d6fb6655006b84a76d1a2d0fdd9fa73cd"
+      },
+      "procesos_corridadescremacion": {
+        "rows": 2,
+        "sha256": "f364b288715ff801f8a34fadf6d7d72b9d677f7f6c337118a1bfaea1265e842b"
+      },
+      "procesos_corridamantequilla": {
+        "rows": 1,
+        "sha256": "b1b74c7ad82304ef2a35def63c82de497d654fe4ec47483fb928dc59a47b9dc9"
+      },
+      "procesos_corridasecado": {
+        "rows": 2,
+        "sha256": "e9a3a0cd574ea08900a7ae895b5407def01f6ba423d37f5d1f05a738689d8596"
+      },
+      "procesos_ejecucionproceso": {
+        "rows": 9,
+        "sha256": "f7a378b6757e361adbd11417ff2b359a01e13c645a658b72d84e1e95ff4dcd13"
+      },
+      "procesos_entradaproceso": {
+        "rows": 11,
+        "sha256": "90dfd5a4f77d4bc3d4a7dbcca9f38066c2695bffb3f11d3ef059b9ff63ab8e31"
+      },
+      "procesos_etapaproceso": {
+        "rows": 18,
+        "sha256": "c7a40e607a323d8bdad358e17fc537d392f5fd356d8f0017a6f5b7c334e2b775"
+      },
+      "procesos_eventoproceso": {
+        "rows": 28,
+        "sha256": "6c79339b9582c59b7fa07dc75825f059df337e0cc062ee504b78ffede906d7dd"
+      },
+      "procesos_proceso": {
+        "rows": 6,
+        "sha256": "766b8aa56f724ccb501ba0eba9b29b07b3cce92a1d5d6e294627cdd7e7cc4a97"
+      },
+      "procesos_reservasiloproceso": {
+        "rows": 8,
+        "sha256": "09cfa249b338749153b6bae3562acca495e9a515966fd02c1c730c46c45b3ef6"
+      },
+      "procesos_rutaproducto": {
+        "rows": 7,
+        "sha256": "f90ea7be8288e7a9850283d3ad51519bd37c6c4a95441fde99e85529ed988e70"
+      },
+      "procesos_salidaproceso": {
+        "rows": 12,
+        "sha256": "7ba39cbe9583f7344f92662020e1e8e29fe4ce81446a714112f272232694d36a"
+      },
+      "produccion_analisis": {
+        "rows": 5,
+        "sha256": "4cbaacf0cd9b7f4626c2991e2591453112804927e45820d19297f5be62aa40a5"
+      },
+      "produccion_controlproceso": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "produccion_controlprocesolectura": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "produccion_correccionlote": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "produccion_lote": {
+        "rows": 9,
+        "sha256": "7e693e4b4c46f0e618c3bc16909550115038291f10d596b7ac7a2e297c8baa2f"
+      },
+      "produccion_ordenproduccion": {
+        "rows": 4,
+        "sha256": "a346164b246f8f335d73bcde1380521a85f1f91529feaedca40ceb5af50f9ce8"
+      },
+      "produccion_palletproducto": {
+        "rows": 2,
+        "sha256": "fa91ef382d4fa2cb5e2a341dd14c688fc63901eed5c31c9bb6165b24dbe82bd2"
+      },
+      "produccion_registroenvase": {
+        "rows": 2,
+        "sha256": "df795954c845b6d4dff2722ff6812289eeb0c73e9f765964edf6e94f771d4d77"
+      },
+      "recepcion_alertacalidadsilo": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "recepcion_analisissilo": {
+        "rows": 16,
+        "sha256": "db9e6ff023991509426419e51552f8ab2fa80f5b2c344aca93b3630d4b50817b"
+      },
+      "recepcion_atribucionrecepcion": {
+        "rows": 22,
+        "sha256": "4bfc44793e8cf6723386d8acaa9014de5d66ff85fefc5302b75ed4f14850fdc3"
+      },
+      "recepcion_busquedaproveedor": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "recepcion_controlinhibidores": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "recepcion_correccionrecepcion": {
+        "rows": 4,
+        "sha256": "5075699e71c294f500fd5a14c65684119c03fc92d4b27a4cd07f589dd8c82482"
+      },
+      "recepcion_despacholeche": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "recepcion_modulorecepcion": {
+        "rows": 4,
+        "sha256": "c50aa6b54e66e92209ea19e504bb8cf236074931508cbc3f3d2908fd5303e494"
+      },
+      "recepcion_movimientosilo": {
+        "rows": 24,
+        "sha256": "72cdeed74c1924bc6f4b01ed753cace8a4fe8259bd75dc6bceb45bcffa8bb17c"
+      },
+      "recepcion_recepcion": {
+        "rows": 5,
+        "sha256": "c1e8ca169adc538f29623786e0b39bdd62968802c220f1c508f5669927216e39"
+      },
+      "recoleccion_cargamodulo": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "recoleccion_paradaruta": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "recoleccion_recoleccion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "recoleccion_rutarecoleccion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "usuarios_areadeperfil": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "usuarios_empresa": {
+        "rows": 1,
+        "sha256": "503575ee2f67a947fb5594f79b7c02cd83ac41797323ca00eb8b80760394185d"
+      },
+      "usuarios_eventoseguridad": {
+        "rows": 92,
+        "sha256": "992410e14c7e4fc121838e6ff84197f2c8f545148cc4c04bf4a498f78c856944"
+      },
+      "usuarios_intentoacceso": {
+        "rows": 47,
+        "sha256": "9aefcf115c6a0a8be371d86ec9d3192c141f9594801f5942c2c7cce76fd4bddf"
+      },
+      "usuarios_perfilusuario": {
+        "rows": 79,
+        "sha256": "a41a387c54b2eff31d97a511c809560f80024296c06c739d70eb3201b3d1fc27"
+      },
+      "usuarios_sesionusuario": {
+        "rows": 117,
+        "sha256": "9bb28f796fcd2a092e2be9822635c151417e22e61706c4f215d5ed574498314d"
+      },
+      "usuarios_sucursal": {
+        "rows": 1,
+        "sha256": "ee4d1000c6e22ac1262bf5ef3e0b1c272c50457614aa7425065a9a5166b1661e"
+      }
+    },
+    "files": {
+      "abastecimiento/2026/10/fef93133e72443528426136f329db925.csv": {
+        "bytes": 68,
+        "sha256": "186f0a2cbb31663d6278ac2ca2e336e0bebddde657349ec0b923287228239627"
+      }
+    },
+    "attachments": 1
+  },
+  "rpo_scope": "zero divergence at frozen synthetic cut; no production schedule/RPO certified",
+  "rto_scope": "measured dump/restore/verification on local dataset; application smoke measured separately"
+}

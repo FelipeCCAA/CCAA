@@ -1,0 +1,66 @@
+{
+  "reads": [
+    {
+      "area": "recepcion",
+      "path": "/api/recepcion/ocupacion/",
+      "status": 200,
+      "seconds": 0.21933469991199672
+    },
+    {
+      "area": "recepcion",
+      "path": "/api/inventario/existencias/?page_size=25",
+      "status": 200,
+      "seconds": 0.14678269997239113
+    },
+    {
+      "area": "bodega",
+      "path": "/api/inventario/existencias/?page_size=25",
+      "status": 200,
+      "seconds": 0.10947060002945364
+    },
+    {
+      "area": "calidad",
+      "path": "/api/produccion/resumen/",
+      "status": 200,
+      "seconds": 0.14365639991592616
+    },
+    {
+      "area": "calidad",
+      "path": "/api/recepcion/ocupacion/",
+      "status": 200,
+      "seconds": 0.33411560009699315
+    },
+    {
+      "area": "calidad",
+      "path": "/api/inventario/existencias/?page_size=25",
+      "status": 200,
+      "seconds": 0.225638399948366
+    },
+    {
+      "area": "condensacion",
+      "path": "/api/produccion/resumen/",
+      "status": 200,
+      "seconds": 0.12479729996994138
+    },
+    {
+      "area": "condensacion",
+      "path": "/api/recepcion/ocupacion/",
+      "status": 200,
+      "seconds": 0.22191429999656975
+    },
+    {
+      "area": "condensacion",
+      "path": "/api/inventario/existencias/?page_size=25",
+      "status": 200,
+      "seconds": 0.14167609997093678
+    }
+  ],
+  "draft_write": true,
+  "transfers_and_replays": 4,
+  "integrity": {
+    "invalid_lots": [],
+    "lots": 18,
+    "connections": 1,
+    "movements": 0
+  }
+}

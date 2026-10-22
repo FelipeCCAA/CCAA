@@ -126,3 +126,23 @@ Clúster OP-00 detenido, sin postmaster.pid. Sin producción, datos reales, migr
 5. **Trabajo:** implementado en rama y revisado por dos apoyos, pruebas sintéticas; configuración preparada sin despliegue.
 6. **Pruebas:** backend y navegador aprobados localmente según evidencia arriba; CI general y almacenamiento se informan en el PR cuando terminan.
 7. **Estado final:** implementación local lista para revisión; todavía sin fusionar ni desplegar. OP-09 pendiente, no se certifica la planta lista para operar.
+
+## OP-09 — AVANCE de ejecución aislada
+
+1. **Realizado:** usuario autorizó seis reglas y escalones; clúster PG17 nuevo, datos ficticios y browser/API reales. Rama `codex/op-09-circuito-carga-respaldos`, QA `6773958`, desde OP-08 `a564861e`. Sin código de aplicación, producción, despliegue ni Supabase/logs.
+2. **Evidencia:** precondensado/descremado/mantequilla/suero principales logrados; carrera HTTP 201/409 y reintento de respuesta descartada sin duplicar; 77/77 regresión PostgreSQL. Respaldo+restauración 130 tablas y adjunto privado iguales; operación en API restaurada aprobada. Lint/tipos/Ruff/diff-check aprobados.
+3. **Problemas:** polvo bloqueado al Envasar por firma anterior invalidada tras avance normal de etapas (H09-01 P1). Carga 25 abortada por siete respuestas perdidas, tres POST inciertos; conciliación posterior 451 UUID distintos, stock por ubicación exacto. Correspondencia de claves cliente incompleta en generador. Auxiliar de mantequilla fallida por estado ya liberado, no se declara toda suite verde.
+4. **Carga:** 10 usuarios/10 minutos aprobado, p95 lectura 0,325 s y escritura 0,425 s, cero errores. 25 sólo 244,726 s; 50/70 no ejecutado. Sostenida independiente a 10 abortada a 631,029/1.800 s por RAM del host 87%, 3.031 solicitudes sin error; 223 nuevas UUID exactas en API/BD, saldo por ubicación íntegro. No reemplaza fallo25 ni cumple treinta minutos. Límite por IP probado: 45 intentos fallidos 401 y el 46 recibió 429 con Retry-After; ventana compartida con accesos previos, no 70 accesos válidos simultáneos.
+5. **Equipo:** coordinador cubre PM/QA/AVANCE/EXPLICADOR, un revisor independiente reutilizado (`op08_revision`, gpt-6-sol high). No se activan 16 roles. PR #16 borrador sobre OP-08 #15, CI final pendiente; diez resúmenes y manifiesto SHA256 de 37 crudos versionados, evidencia completa local conservada.
+6. **Decisión pendiente:** validar alcance de firmas por etapa antes de arreglar H09-01; alinear bandeja y confirmación. Diagnóstico posterior de transporte y nueva carga en entorno representativo; no inferir capacidad productiva de Django dev/Windows.
+7. **Estado:** comprobaciones ejecutadas con bloqueantes, no aprobación global OP-09 ni habilitación de planta. [Expediente, archivos, fallos y límites](docs/operacion/OP-09_VALIDACION.md). Preview local 5209, API8209 y PG55449 conservados en loopback; API restaurada detenida.
+
+**EXPLICADOR — OP-09**
+
+1. Probamos con leche, lotes y usuarios inventados en una instalación aparte.
+2. Recorrimos pantallas reales hasta inventario/despacho y probamos dos personas compitiendo por el mismo saldo.
+3. Los reintentos dirigidos recuperaron la misma operación sin descontar dos veces.
+4. En polvo apareció un problema real: avanzar de etapa hace vencer una firma anterior y al final impide envasar, aunque la pantalla ofrece hacerlo.
+5. Con diez personas la prueba breve funcionó; con veinticinco se perdieron respuestas y paramos. El inventario sí cuadra, pero falta resolver la incertidumbre antes de aumentar usuarios.
+6. Restauramos base y archivo privado en otra instalación y pudimos volver a operar con datos ficticios; eso aún no asegura tiempos de recuperación de planta.
+7. No cambiamos las reglas para esconder fallos. La sostenida se detuvo por memoria del equipo antes de cumplir treinta minutos; las correcciones nuevas deben validarse antes de programarlas.

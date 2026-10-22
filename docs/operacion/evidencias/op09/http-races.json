@@ -1,0 +1,19 @@
+{
+  "http_concurrent_requests": 2,
+  "postgres_blocked_connections_observed": 2,
+  "responses": [
+    201,
+    409
+  ],
+  "single_withdrawal": true,
+  "lost_response_first_commit_proven": true,
+  "lost_response_retry_status": 200,
+  "same_movement_id": 41,
+  "final_balance": 10000,
+  "integrity": {
+    "invalid_lots": [],
+    "lots": 18,
+    "connections": 3,
+    "movements": 0
+  }
+}

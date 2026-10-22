@@ -1,0 +1,190 @@
+{
+  "scope": "Synthetic OP09 QA only; raw logs/screenshots remain in sibling op09-runtime. No credentials, session files, database dump or private payload copied. Original raw-file hashes precede path sanitization of the backup summary.",
+  "files": {
+    "load-readiness-final.json": {
+      "bytes": 1569,
+      "sha256": "dd30c61087affc61545725c6b236b0f180cd82727e5305e66086e24078cace68",
+      "committed_summary": true
+    },
+    "http-races.json": {
+      "bytes": 404,
+      "sha256": "fdbf74c686c41eb48c3101c34331bc7e8722e57e99f784f73731a8b4fea999ae",
+      "committed_summary": true
+    },
+    "backup-summary.json": {
+      "bytes": 21048,
+      "sha256": "a73256d635159daacbe02a1e6579fb8221fa30cc360d6f895ff2c7339a2dab5c",
+      "committed_summary": true
+    },
+    "restore-smoke.json": {
+      "bytes": 391,
+      "sha256": "f8ef5eb7f60fdfffcfab1b6e1691ee7183b0c82357bd6b4b46698dd0cf711782",
+      "committed_summary": true
+    },
+    "load-summary.json": {
+      "bytes": 18479,
+      "sha256": "2fd8fe8ddf36d93d0fcaf3d5e7b60a68fd9fb505699e6cd4728bb7eb766fc478",
+      "committed_summary": true
+    },
+    "load-reconciliation.json": {
+      "bytes": 4805,
+      "sha256": "88671413a562e455d579afddbdadf0a4202b2493558ec2c088f4274b9253ce3d",
+      "committed_summary": true
+    },
+    "load-reconciliation-final.json": {
+      "bytes": 3313,
+      "sha256": "b1f8e224d16cd9d8a840a8d7d5f7e00f7ba087b66fc1545df35fc09b00de44f1",
+      "committed_summary": true
+    },
+    "load-post-abort-soak-summary.json": {
+      "bytes": 28561,
+      "sha256": "b8a59eea11ab43ccdb5720df1e5634439e2158fe83747445b1364d2881efb2f3",
+      "committed_summary": true
+    },
+    "login-burst.json": {
+      "bytes": 6011,
+      "sha256": "961c77097324b5425d9082929da03501b8b704c4cfc54c628794096449f998bb",
+      "committed_summary": true
+    },
+    "evidence-upload.json": {
+      "bytes": 193,
+      "sha256": "1a472783148d21eb6c09272601824cda45e78a1e040b9517ccf7abf0bbf560f9",
+      "committed_summary": true
+    },
+    "circuito-polvo-1.log": {
+      "bytes": 633,
+      "sha256": "4095a59c8a9e956ef773a7153e8f97b227003da4f6caf75634e2fecdd8a922a8",
+      "committed_summary": false
+    },
+    "evaporacion-polvo-1.log": {
+      "bytes": 625,
+      "sha256": "607b27d9ab5a3e1a93eafff20da5e38c1f4245b82ca77ac8c85fd5f76eeef42e",
+      "committed_summary": false
+    },
+    "continuacion-polvo-1.log": {
+      "bytes": 5400,
+      "sha256": "fe1521d74253a0d7f4364ff37ecc357cf7b74dacf6b95cdb078bc88df62a663b",
+      "committed_summary": false
+    },
+    "continuacion-polvo-2.log": {
+      "bytes": 3299,
+      "sha256": "ec57bd9bbe218bafd0fc2caf35a4805044d816f850b32bfb7b8aab435f946383",
+      "committed_summary": false
+    },
+    "continuacion-polvo-3.log": {
+      "bytes": 3954,
+      "sha256": "5939f2290b24ce2acbd208cb52141850f6896f46ee55437421117ddba81448a3",
+      "committed_summary": false
+    },
+    "continuacion-polvo-4.log": {
+      "bytes": 3338,
+      "sha256": "7ac297a77b881e42bafa2bd65bf1d567f1b7a398d64f61a980d67f9ed71a6bd2",
+      "committed_summary": false
+    },
+    "circuito-precondensado-1.log": {
+      "bytes": 3811,
+      "sha256": "14775528d59ffb66d7ba89ea2eaa436cd12bfe1aba04f82afbf7987cd0d72bc4",
+      "committed_summary": false
+    },
+    "circuito-precondensado-2.log": {
+      "bytes": 631,
+      "sha256": "d8ced2f9c06d556e9db2dc6297e03e939dde55b8bb2f3d0c5f342cf8d21b1984",
+      "committed_summary": false
+    },
+    "evaporacion-precondensado-1.log": {
+      "bytes": 625,
+      "sha256": "3073d70186820c4f06444fef7c03bf5dd66700af426c8040a6adf3ebf3757383",
+      "committed_summary": false
+    },
+    "despacho-precondensado-1.log": {
+      "bytes": 375,
+      "sha256": "2960d4300b9e85720b5682386fc435bc39d98716a6b23335de2ebea20bd6383a",
+      "committed_summary": false
+    },
+    "descremado-1.log": {
+      "bytes": 4488,
+      "sha256": "3672253946f5ed2f6b95e3190b31ea5795408155a2f759709fe9b5281b276234",
+      "committed_summary": false
+    },
+    "descremado-directo-2.log": {
+      "bytes": 773,
+      "sha256": "d8e680235568f079802321042f454c405b95fc2f2b9195de222e3b4fcb6e69c8",
+      "committed_summary": false
+    },
+    "mantequilla-produccion-2.log": {
+      "bytes": 643,
+      "sha256": "8910aa746215af559b5a706732a4d4a815e9ae8556c772f8b948e59a162291ff",
+      "committed_summary": false
+    },
+    "mantequilla-continuacion-1.log": {
+      "bytes": 4431,
+      "sha256": "945766e0f862fd208bbb07c0a3b4e2505d38aabab73310d6a051f36093b3c9b1",
+      "committed_summary": false
+    },
+    "suero-1.log": {
+      "bytes": 4110,
+      "sha256": "f9c4348211fec3384e37f0bc4dc8350ce3f051860cd7e4fb74778208ed5d66fa",
+      "committed_summary": false
+    },
+    "suero-2.log": {
+      "bytes": 625,
+      "sha256": "df13b57cb3f73ec48bb69e55fd8f3138b583faab8b388785079fa4bafc325ad8",
+      "committed_summary": false
+    },
+    "carreras-regresion.log": {
+      "bytes": 580,
+      "sha256": "663ce73304869bc7ecdcbb33d7c52695a834da26bb6a14c66dd4892e67d883fb",
+      "committed_summary": false
+    },
+    "frontend-lint.log": {
+      "bytes": 39,
+      "sha256": "98cdc628d09a5242698fda93e945f0e0efa0645207f11c522f5bffab308bd486",
+      "committed_summary": false
+    },
+    "frontend-types.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "committed_summary": false
+    },
+    "http-races.log": {
+      "bytes": 360,
+      "sha256": "2fe3a7c235400690836977da78a0b03c0ba4b77ae4aef15f1976158fd57d0d59",
+      "committed_summary": false
+    },
+    "backup-restore.log": {
+      "bytes": 748,
+      "sha256": "e9bc359d861bc71e5bbbb23e6cca682f21a40b13d6359b798418bdca0497d7ed",
+      "committed_summary": false
+    },
+    "restore-smoke.log": {
+      "bytes": 384,
+      "sha256": "837bf025a3175a15991d3839a0a55bb745a25135c90a9a65d28ceb006afbe9dd",
+      "committed_summary": false
+    },
+    "load-live.log": {
+      "bytes": 10317,
+      "sha256": "24f3e528e7d8dea2bb0f0008b7befdb46849a2f6c3c5f4a86091d42ecd3d44af",
+      "committed_summary": false
+    },
+    "load-post-abort-soak-live.log": {
+      "bytes": 5727,
+      "sha256": "439f9e68b48a97c22319bf6faa11db416a4dae2531e0c84eeaea90ba7d010638",
+      "committed_summary": false
+    },
+    "login-burst.log": {
+      "bytes": 54,
+      "sha256": "9892b86e339d871ba4e3e669642b99c7b2ee9a0a477dd88469a8333ac54b00cf",
+      "committed_summary": false
+    },
+    "pantalla-local.png": {
+      "bytes": 75128,
+      "sha256": "623d9a244e9e51fe9e4b4ed85d46cc0c0865b522cb4ae61e9575aa333d6699e5",
+      "committed_summary": false
+    },
+    "pantalla-local-final.png": {
+      "bytes": 89147,
+      "sha256": "0c05b82811208b0fff80554f1923465cbb7ab9b8e3ef3b45d26062fb2ed16924",
+      "committed_summary": false
+    }
+  }
+}

@@ -1,0 +1,283 @@
+{
+  "requests": [
+    {
+      "attempt": 1,
+      "status": 401,
+      "seconds": 2.5175048999954015,
+      "retry_after": null
+    },
+    {
+      "attempt": 2,
+      "status": 401,
+      "seconds": 2.411570700001903,
+      "retry_after": null
+    },
+    {
+      "attempt": 3,
+      "status": 401,
+      "seconds": 2.4430390999186784,
+      "retry_after": null
+    },
+    {
+      "attempt": 4,
+      "status": 401,
+      "seconds": 2.5306263000238687,
+      "retry_after": null
+    },
+    {
+      "attempt": 5,
+      "status": 401,
+      "seconds": 2.78064470004756,
+      "retry_after": null
+    },
+    {
+      "attempt": 6,
+      "status": 401,
+      "seconds": 2.718176000053063,
+      "retry_after": null
+    },
+    {
+      "attempt": 7,
+      "status": 401,
+      "seconds": 2.624815299990587,
+      "retry_after": null
+    },
+    {
+      "attempt": 8,
+      "status": 401,
+      "seconds": 2.692139699938707,
+      "retry_after": null
+    },
+    {
+      "attempt": 9,
+      "status": 401,
+      "seconds": 2.7824616000289097,
+      "retry_after": null
+    },
+    {
+      "attempt": 10,
+      "status": 401,
+      "seconds": 2.664966700016521,
+      "retry_after": null
+    },
+    {
+      "attempt": 11,
+      "status": 401,
+      "seconds": 2.6147620000410825,
+      "retry_after": null
+    },
+    {
+      "attempt": 12,
+      "status": 401,
+      "seconds": 3.1611012999201193,
+      "retry_after": null
+    },
+    {
+      "attempt": 13,
+      "status": 401,
+      "seconds": 2.8516572000226006,
+      "retry_after": null
+    },
+    {
+      "attempt": 14,
+      "status": 401,
+      "seconds": 2.7362193999579176,
+      "retry_after": null
+    },
+    {
+      "attempt": 15,
+      "status": 401,
+      "seconds": 2.9701872000005096,
+      "retry_after": null
+    },
+    {
+      "attempt": 16,
+      "status": 401,
+      "seconds": 2.74043690005783,
+      "retry_after": null
+    },
+    {
+      "attempt": 17,
+      "status": 401,
+      "seconds": 2.539340200019069,
+      "retry_after": null
+    },
+    {
+      "attempt": 18,
+      "status": 401,
+      "seconds": 2.390705299912952,
+      "retry_after": null
+    },
+    {
+      "attempt": 19,
+      "status": 401,
+      "seconds": 2.9982075000880286,
+      "retry_after": null
+    },
+    {
+      "attempt": 20,
+      "status": 401,
+      "seconds": 3.0184153000591323,
+      "retry_after": null
+    },
+    {
+      "attempt": 21,
+      "status": 401,
+      "seconds": 2.5387905000243336,
+      "retry_after": null
+    },
+    {
+      "attempt": 22,
+      "status": 401,
+      "seconds": 2.5416672999272123,
+      "retry_after": null
+    },
+    {
+      "attempt": 23,
+      "status": 401,
+      "seconds": 3.0501071999315172,
+      "retry_after": null
+    },
+    {
+      "attempt": 24,
+      "status": 401,
+      "seconds": 2.7578823999501765,
+      "retry_after": null
+    },
+    {
+      "attempt": 25,
+      "status": 401,
+      "seconds": 2.8391629999969155,
+      "retry_after": null
+    },
+    {
+      "attempt": 26,
+      "status": 401,
+      "seconds": 3.312932200031355,
+      "retry_after": null
+    },
+    {
+      "attempt": 27,
+      "status": 401,
+      "seconds": 2.819814700051211,
+      "retry_after": null
+    },
+    {
+      "attempt": 28,
+      "status": 401,
+      "seconds": 2.951625299989246,
+      "retry_after": null
+    },
+    {
+      "attempt": 29,
+      "status": 401,
+      "seconds": 2.96153069997672,
+      "retry_after": null
+    },
+    {
+      "attempt": 30,
+      "status": 401,
+      "seconds": 2.7818522000452504,
+      "retry_after": null
+    },
+    {
+      "attempt": 31,
+      "status": 401,
+      "seconds": 2.963927900069393,
+      "retry_after": null
+    },
+    {
+      "attempt": 32,
+      "status": 401,
+      "seconds": 3.1415698000928387,
+      "retry_after": null
+    },
+    {
+      "attempt": 33,
+      "status": 401,
+      "seconds": 3.1010234999703243,
+      "retry_after": null
+    },
+    {
+      "attempt": 34,
+      "status": 401,
+      "seconds": 3.304461000021547,
+      "retry_after": null
+    },
+    {
+      "attempt": 35,
+      "status": 401,
+      "seconds": 3.2695448000449687,
+      "retry_after": null
+    },
+    {
+      "attempt": 36,
+      "status": 401,
+      "seconds": 2.7092335000634193,
+      "retry_after": null
+    },
+    {
+      "attempt": 37,
+      "status": 401,
+      "seconds": 2.9701811999548227,
+      "retry_after": null
+    },
+    {
+      "attempt": 38,
+      "status": 401,
+      "seconds": 2.584421299980022,
+      "retry_after": null
+    },
+    {
+      "attempt": 39,
+      "status": 401,
+      "seconds": 2.5567230999004096,
+      "retry_after": null
+    },
+    {
+      "attempt": 40,
+      "status": 401,
+      "seconds": 2.695945300045423,
+      "retry_after": null
+    },
+    {
+      "attempt": 41,
+      "status": 401,
+      "seconds": 2.8198714000172913,
+      "retry_after": null
+    },
+    {
+      "attempt": 42,
+      "status": 401,
+      "seconds": 2.8928968000691384,
+      "retry_after": null
+    },
+    {
+      "attempt": 43,
+      "status": 401,
+      "seconds": 3.196974299964495,
+      "retry_after": null
+    },
+    {
+      "attempt": 44,
+      "status": 401,
+      "seconds": 2.6846174000529572,
+      "retry_after": null
+    },
+    {
+      "attempt": 45,
+      "status": 401,
+      "seconds": 2.910885600023903,
+      "retry_after": null
+    },
+    {
+      "attempt": 46,
+      "status": 429,
+      "seconds": 0.07710770005360246,
+      "retry_after": "71"
+    }
+  ],
+  "throttle_observed": true,
+  "scope": "One loopback IP, real normal login, max 65 requests, no throttle/cache reset. Prior legitimate logins share the existing hourly quota; count does not establish a fresh 60-request window. No production rate or simultaneous-shift capacity certified.",
+  "passed": true
+}

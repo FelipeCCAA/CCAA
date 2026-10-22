@@ -1,0 +1,13 @@
+{
+  "ready": true,
+  "authenticated_user": "op09_carga_02",
+  "private_download_sha256_matches": true,
+  "transfer_status": 201,
+  "repeat_status": 200,
+  "stock_conserved": true,
+  "source_unchanged": true,
+  "seconds": 1.298855199944228,
+  "elapsed_since_freeze_seconds_including_manual_test_orchestration": 89.3186,
+  "api": "127.0.0.1:8219",
+  "database": "op09_restaurada"
+}
