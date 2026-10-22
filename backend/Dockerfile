@@ -15,6 +15,9 @@ RUN pip install --requirement requirements.txt
 
 COPY --chown=ccaa:ccaa . .
 
+# Docker copia este propietario al inicializar el volumen privado nuevo.
+RUN mkdir -p /srv/adjuntos-privados && chown ccaa:ccaa /srv/adjuntos-privados
+
 USER ccaa
 
 EXPOSE 8000

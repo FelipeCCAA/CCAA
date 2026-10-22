@@ -1494,24 +1494,97 @@ class LiberacionExcepcionalViewSet(RelacionesTenantMixin, QuerysetTenantMixin, v
 class AdjuntoViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     tenant_lookup_sucursal = "sucursal_id"
     tenant_lookup_empresa = "sucursal__empresa_id"
-    queryset = Adjunto.objects.select_related("autor")
+    queryset = Adjunto.objects.select_related("autor").order_by("-creado_en", "-pk")
     serializer_class = AdjuntoSerializer
-    permission_classes = [EscribeRecepcionCompra]
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
     http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        from .documentos_adjuntos import DOCUMENTOS, consulta_documento
+        permitido = Q(pk__in=[])
+        for tipo in DOCUMENTOS:
+            try:
+                documentos = consulta_documento(tipo, self.request)
+            except PermissionDenied:
+                continue
+            permitido |= Q(documento_tipo=tipo, documento_id__in=documentos.values("pk"))
+        return super().get_queryset().filter(permitido)
 
     def perform_create(self, serializer):
         import hashlib
-        archivo = self.request.FILES.get("archivo")
+        import logging
+        from pathlib import Path
+        from django.db import transaction
+        from .documentos_adjuntos import validar_documento
+
+        archivo = serializer.validated_data["archivo"]
         digest = hashlib.sha256()
-        if archivo:
-            for bloque in archivo.chunks():
-                digest.update(bloque)
-            archivo.seek(0)
-        serializer.save(
+        for bloque in archivo.chunks():
+            digest.update(bloque)
+        archivo.seek(0)
+        # Nombres nuevos independientes del proporcionado por el cliente.
+        archivo.name = uuid4().hex + Path(archivo.name).suffix.lower()
+        instancia = Adjunto(
+            **serializer.validated_data,
             autor=self.request.user,
             hash_sha256=digest.hexdigest(),
             sucursal=sucursal_para_escritura(self.request.user, serializer.validated_data),
         )
+        nombre_previsto = instancia.archivo.field.generate_filename(instancia, archivo.name)
+        try:
+            with transaction.atomic():
+                # Impide borrar el documento entre comprobación y guardado.
+                validar_documento(instancia.documento_tipo, instancia.documento_id, self.request, escritura=True)
+                modelo_documento = serializer.documento.__class__
+                if not modelo_documento.objects.select_for_update().filter(pk=instancia.documento_id).exists():
+                    raise ValidationError({"documento_id": "El documento ya no está disponible."})
+                nombre_guardado = instancia.archivo.storage.save(
+                    nombre_previsto, archivo, max_length=instancia.archivo.field.max_length,
+                )
+                instancia.archivo.name = nombre_guardado
+                instancia.archivo._committed = True
+                instancia.save()
+        except Exception:
+            # La BD revierte; el almacenamiento de archivos requiere compensación.
+            nombres = {nombre_previsto}
+            if instancia.archivo._committed:
+                nombres.add(instancia.archivo.name)
+            for nombre in nombres:
+                try:
+                    instancia.archivo.storage.delete(nombre)
+                except OSError:
+                    logging.getLogger(__name__).error("No se pudo limpiar un adjunto OP-08 tras fallo de guardado")
+            raise
+        serializer.instance = instancia
+
+    @action(detail=True, methods=["get"], url_path="descargar")
+    def descargar(self, request, pk=None):
+        import hashlib
+        from pathlib import Path
+        from django.http import FileResponse
+
+        adjunto = self.get_object()
+        try:
+            archivo = adjunto.archivo.open("rb")
+        except (FileNotFoundError, OSError):
+            return Response({"error": "El archivo no está disponible; solicita su revisión."}, status=404)
+        try:
+            digest = hashlib.sha256()
+            for bloque in archivo.chunks():
+                digest.update(bloque)
+            if not adjunto.hash_sha256 or digest.hexdigest() != adjunto.hash_sha256:
+                archivo.close()
+                return Response({"error": "No se pudo verificar la integridad del archivo."}, status=409)
+            archivo.seek(0)
+            respuesta = FileResponse(archivo, as_attachment=True, filename=Path(adjunto.archivo.name).name,
+                                     content_type="application/octet-stream")
+            respuesta["Cache-Control"] = "private, no-store"
+            respuesta["X-Content-Type-Options"] = "nosniff"
+            return respuesta
+        except Exception:
+            archivo.close()
+            raise
 
 
 class AlertaViewSet(QuerysetTenantMixin, viewsets.ReadOnlyModelViewSet):

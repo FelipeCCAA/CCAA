@@ -723,10 +723,34 @@ class LiberacionExcepcionalSerializer(serializers.ModelSerializer):
 
 
 class AdjuntoSerializer(serializers.ModelSerializer):
+    archivo = serializers.SerializerMethodField()
+    archivo_subido = serializers.FileField(write_only=True, required=False)
+
     class Meta:
         model = Adjunto
         fields = "__all__"
-        read_only_fields = ["autor", "hash_sha256", "creado_en"]
+        read_only_fields = ["autor", "hash_sha256", "creado_en", "sucursal"]
+
+    def to_internal_value(self, data):
+        # Mantiene el contrato multipart histórico `archivo`.
+        copia = data.copy()
+        if "archivo" in data:
+            copia["archivo_subido"] = data["archivo"]
+        return super().to_internal_value(copia)
+
+    def get_archivo(self, instancia):
+        from django.urls import reverse
+        return reverse("adjunto-descargar", kwargs={"pk": instancia.pk})
+
+    def validate(self, datos):
+        from .documentos_adjuntos import validar_documento
+        archivo = datos.pop("archivo_subido", None)
+        if archivo is None:
+            raise serializers.ValidationError({"archivo": "Selecciona un archivo."})
+        datos["archivo"] = self.validate_archivo(archivo)
+        documento = validar_documento(datos["documento_tipo"], datos["documento_id"], self.context["request"], escritura=True)
+        self.documento = documento
+        return datos
 
     def validate_archivo(self, archivo):
         from pathlib import Path

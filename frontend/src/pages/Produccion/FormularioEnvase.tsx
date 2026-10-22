@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
+import { isAxiosError } from "axios";
 
-import { registrarEnvase } from "../../services/produccion.service";
+import { registrarEnvase, type SolicitudEnvase } from "../../services/produccion.service";
 import { mensajeErrorProceso } from "../../services/errores-proceso";
+import { obtenerSesion } from "../../services/sesion";
+import { clavePedidoPendiente } from "../Envasado/pendientes";
 
 const campo = "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm";
 const fechaLocal = (fecha: Date) => {
@@ -52,7 +55,18 @@ export default function FormularioEnvase({
   const [integridad, setIntegridad] = useState("conforme");
   const [mensaje, setMensaje] = useState("");
   const [guardando, setGuardando] = useState(false);
-  const [operacionId, setOperacionId] = useState(() => crypto.randomUUID());
+  const actorId = obtenerSesion()?.usuario.id;
+  const clavePendiente = actorId === undefined ? null : clavePedidoPendiente(actorId, loteId);
+  const [pendiente, setPendiente] = useState<SolicitudEnvase | null>(() => {
+    try {
+      const guardado = clavePendiente ? sessionStorage.getItem(clavePendiente) : null;
+      if (!guardado) return null;
+      const pedido = JSON.parse(guardado) as SolicitudEnvase;
+      return pedido.lote === loteId && pedido.operacion_id && pedido.pallets_datos?.length
+        ? pedido : null;
+    } catch { return null; }
+  });
+  const [operacionId, setOperacionId] = useState(() => pendiente?.operacion_id ?? crypto.randomUUID());
   const kg = useMemo(() => Number(unidades || 0) * formatoKg, [formatoKg, unidades]);
   const valido = Boolean(
     equipo && codigo.trim() && Number(unidades) > 0 && kg <= maximoUnidadLogisticaKg
@@ -60,39 +74,60 @@ export default function FormularioEnvase({
     && inicio && termino && new Date(termino) > new Date(inicio),
   );
 
-  async function guardar(evento: React.FormEvent) {
-    evento.preventDefault();
-    if (!valido) return;
+  async function enviar(datos: SolicitudEnvase, reintento = false) {
     setGuardando(true); setMensaje("");
+    setPendiente(datos);
+    try { if (clavePendiente) sessionStorage.setItem(clavePendiente, JSON.stringify(datos)); } catch { /* Almacenamiento no disponible. */ }
     try {
-      await registrarEnvase({
-        operacion_id: operacionId,
-        lote: loteId, equipo: Number(equipo), formato: formatoId,
-        inicio: new Date(inicio).toISOString(), termino: new Date(termino).toISOString(),
-        observacion: observacion.trim(),
-        controles: { sellado, rotulado, integridad_envase: integridad },
-        pallets_datos: [{ codigo: codigo.trim(), unidades: Number(unidades), kg_neto: kg }],
-      });
+      const registro = await registrarEnvase(datos);
+      try { if (clavePendiente) sessionStorage.removeItem(clavePendiente); } catch { /* Almacenamiento no disponible. */ }
+      setPendiente(null);
       const nombreUnidad = tipoUnidadLogistica === "big_bag" ? "Big Bag" : "Pallet";
-      setMensaje(`${nombreUnidad} ${codigo.trim()} creado: ${unidades} unidad(es), ${kg} kg. Quedó en cuarentena de Calidad.`);
-      // La clave se conserva si falla la respuesta para que un reenvío no
-      // duplique el pallet. Solo cambia después de un alta confirmada, porque
-      // el siguiente pallet sí representa una operación física nueva.
+      const pallet = datos.pallets_datos[0];
+      const estado = registro.pallets.every((item) => item.estado === "pendiente_calidad")
+        ? "Quedó en cuarentena de Calidad." : "Consulta el estado actual en el historial.";
+      setMensaje(`${nombreUnidad} ${pallet.codigo} confirmado: ${pallet.unidades} unidad(es), ${pallet.kg_neto} kg. ${estado}`);
       setOperacionId(crypto.randomUUID());
-      const saldoSiguiente = Math.max(cantidadDisponible - kg, 0);
+      const saldoSiguiente = Math.max(cantidadDisponible - pallet.kg_neto, 0);
       const maximoSiguiente = Math.floor(
         Math.min(maximoUnidadLogisticaKg, saldoSiguiente) / formatoKg,
       );
       setCodigo(""); setUnidades(String(maximoSiguiente)); setObservacion(""); alGuardar();
     } catch (error) {
-      /* El bloqueo de Calidad lo informa `lote.bloqueo_envasado`, calculado
-         en el backend, **antes** de intentar el POST. Aquí solo se muestra lo
-         que el servidor respondió: adivinarlo con un `includes` contra el
-         texto del mensaje era una segunda fuente para el mismo hecho, y la
-         frágil de las dos. */
-      setMensaje(mensajeErrorProceso(error, "No se pudo registrar el pallet."));
+      if (!reintento && isAxiosError(error) && error.response && error.response.status < 500) {
+        // El primer intento recibió una respuesta concluyente y se puede corregir.
+        try { if (clavePendiente) sessionStorage.removeItem(clavePendiente); } catch { /* Almacenamiento no disponible. */ }
+        setPendiente(null);
+        setOperacionId(crypto.randomUUID());
+        setMensaje(mensajeErrorProceso(error, "No se pudo registrar el pallet."));
+      } else {
+        // Un rechazo posterior no resuelve si el intento anterior quedó guardado.
+        setMensaje(reintento && isAxiosError(error) && error.response
+          ? `El reintento fue rechazado: ${mensajeErrorProceso(error, "revisa el historial")}. El cierre anterior podría existir. Consulta el historial o pide buscar la operación ${datos.operacion_id} antes de crear otra.`
+          : "No se pudo confirmar el cierre. Reintenta el mismo registro; sus datos quedaron guardados en esta sesión.");
+      }
     } finally { setGuardando(false); }
   }
+
+  function guardar(evento: React.FormEvent) {
+    evento.preventDefault();
+    if (!valido || pendiente) return;
+    void enviar({
+      operacion_id: operacionId,
+      lote: loteId, equipo: Number(equipo), formato: formatoId,
+      inicio: new Date(inicio).toISOString(), termino: new Date(termino).toISOString(),
+      observacion: observacion.trim(),
+      controles: { sellado, rotulado, integridad_envase: integridad },
+      pallets_datos: [{ codigo: codigo.trim(), unidades: Number(unidades), kg_neto: kg }],
+    });
+  }
+
+  if (pendiente) return <section className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+    <h3 className="font-bold text-amber-950">Cierre pendiente de confirmación</h3>
+    <p className="mt-2 text-sm text-amber-900">{pendiente.pallets_datos.map((p) => `${p.codigo} · ${p.unidades} unidad(es) · ${p.kg_neto} kg`).join(" | ")}. Se conservaron la clave y todos los datos del pedido.</p>
+    <button type="button" disabled={guardando} onClick={() => void enviar(pendiente, true)} className="mt-3 rounded-xl bg-amber-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{guardando ? "Comprobando…" : "Reintentar el mismo cierre"}</button>
+    {mensaje && <p className="mt-3 text-sm text-amber-900">{mensaje}</p>}
+  </section>;
 
   return <form onSubmit={guardar} className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
     <h3 className="text-sm font-bold text-slate-900">Envasar en {tipoUnidadLogistica === "big_bag" ? "Big Bag" : "pallet"} · {formatoNombre}</h3>

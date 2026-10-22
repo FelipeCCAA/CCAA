@@ -2,7 +2,6 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
@@ -52,6 +51,9 @@ from .sesiones import (
     revocar_sesiones,
 )
 
+
+from .recuperacion_correo import RecuperacionConConfirmacion
+from .email_backends import MicrosoftGraphEmailError
 
 logger = logging.getLogger(__name__)
 
@@ -440,7 +442,7 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
         ):
             raise PermissionDenied("No tienes permiso para restablecer contraseñas.")
 
-        formulario = PasswordResetForm(data={"email": usuario.email})
+        formulario = RecuperacionConConfirmacion(data={"email": usuario.email}, usuario_objetivo=usuario)
         formulario.is_valid()
         try:
             formulario.save(
@@ -453,11 +455,22 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
                 html_email_template_name="usuarios/password_reset_email.html",
                 extra_email_context={"reset_url": settings.PASSWORD_RESET_FRONTEND_URL},
             )
+            if formulario.aceptados != 1:
+                raise MicrosoftGraphEmailError("No se encontró una cuenta elegible para aceptar el correo.")
         except ImproperlyConfigured as error:
             logger.error("El correo no está configurado: %s", error)
             return Response(
                 {"error": "El servicio de correo no está disponible."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except MicrosoftGraphEmailError as error:
+            registrar_evento(
+                "CORREO_RECUPERACION_INCIERTO" if error.estado == "incierto" else "CORREO_RECUPERACION_FALLIDO",
+                request=request, usuario=usuario, actor=request.user, motivo=error.estado,
+            )
+            return Response(
+                {"error": "No se confirmó la aceptación del correo. Revisa su estado antes de volver a solicitarlo.",
+                 "estado": error.estado}, status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except DatabaseError:
             logger.exception("No se pudo solicitar el restablecimiento administrado")
@@ -469,11 +482,12 @@ class TrabajadorViewSet(viewsets.ModelViewSet):
             usuario, SesionUsuario.MotivoCierre.RESET_PASSWORD, actor=request.user
         )
         registrar_evento(
-            "PASSWORD_RESTABLECIDA", request=request, usuario=usuario, actor=request.user,
-            motivo="Restablecimiento administrativo solicitado",
+            "PASSWORD_RECUPERACION_SOLICITADA", request=request, usuario=usuario, actor=request.user,
+            motivo="Correo aceptado por transporte; contraseña todavía sin cambiar",
         )
         return Response(
-            {"mensaje": "Se enviaron las instrucciones de restablecimiento."},
+            {"mensaje": "El servicio aceptó el correo de recuperación. La contraseña aún no ha cambiado.",
+             "estado": "aceptado"},
             status=status.HTTP_202_ACCEPTED,
         )
 
@@ -508,7 +522,7 @@ def solicitar_recuperacion(request):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-    formulario = PasswordResetForm(data={"email": serializer.validated_data["email"]})
+    formulario = RecuperacionConConfirmacion(data={"email": serializer.validated_data["email"]})
     formulario.is_valid()
 
     try:
@@ -524,6 +538,14 @@ def solicitar_recuperacion(request):
                 "reset_url": settings.PASSWORD_RESET_FRONTEND_URL,
             },
         )
+    except MicrosoftGraphEmailError as error:
+        registrar_evento(
+            "CORREO_RECUPERACION_INCIERTO" if error.estado == "incierto" else "CORREO_RECUPERACION_FALLIDO",
+            request=request, motivo=error.estado,
+        )
+        # Mantiene idéntica respuesta exista o no la cuenta; el diagnóstico
+        # se consulta sólo por los canales administrativos protegidos.
+        return Response({"mensaje": MENSAJE_SOLICITUD_RECUPERACION})
     except DatabaseError:
         logger.exception("Fallo de base de datos al solicitar recuperación")
         return Response(
@@ -531,6 +553,8 @@ def solicitar_recuperacion(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+    if formulario.aceptados:
+        registrar_evento("CORREO_RECUPERACION_ACEPTADO", request=request, motivo="Transporte aceptó solicitud")
     return Response({"mensaje": MENSAJE_SOLICITUD_RECUPERACION})
 
 

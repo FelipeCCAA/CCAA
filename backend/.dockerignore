@@ -8,6 +8,7 @@ __pycache__
 *.log
 db.sqlite3
 staticfiles
+var/adjuntos
 .pytest_cache
 .ruff_cache
 **/tests*.py

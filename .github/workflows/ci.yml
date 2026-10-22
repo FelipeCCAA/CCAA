@@ -12,6 +12,24 @@ permissions:
   contents: read
 
 jobs:
+  private-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated backend image
+        run: docker build --tag ccaa-op08-storage-test ./backend
+      - name: Verify private volume ownership and persistence across containers
+        shell: bash
+        run: |
+          set -euo pipefail
+          volume="ccaa-op08-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          [[ "$volume" =~ ^ccaa-op08-test-[0-9]+-[0-9]+$ ]]
+          docker volume create "$volume"
+          trap 'docker volume rm "$volume"' EXIT
+          docker run --rm --network none -v "$volume:/srv/adjuntos-privados" --entrypoint python ccaa-op08-storage-test -c 'import os; from pathlib import Path; assert os.geteuid() != 0; Path("/srv/adjuntos-privados/evidencia-sintetica").write_bytes(b"OP08-privado")'
+          docker run --rm --network none -v "$volume:/srv/adjuntos-privados" --entrypoint python ccaa-op08-storage-test -c 'import os; from pathlib import Path; assert os.geteuid() != 0; assert Path("/srv/adjuntos-privados/evidencia-sintetica").read_bytes() == b"OP08-privado"; print("OP08_STORAGE_OK nonroot write/read across two containers")'
+
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -14,10 +14,15 @@ descontaban igual —como si secar leche cruda fuera posible— y no había form
 responder de qué mezcla salió un saco.
 """
 
+import hashlib
+import json
+from datetime import timezone as utc_timezone
 from decimal import Decimal
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.core.serializers.json import DjangoJSONEncoder
+from django.db import connection, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -389,6 +394,48 @@ def cerrar_lote_producido(*, lote, usuario, titulo=None, mensaje=None) -> str | 
     return aviso
 
 
+def _firma_solicitud_envase(*, lote_id, equipo, formato, formato_kg, inicio,
+                           termino, pallets, usuario, controles, observacion):
+    """Fija el pedido, no el estado mutable del catálogo o del pallet."""
+    formato_id = getattr(formato, "pk", formato)
+
+    def instante(valor):
+        return (valor.astimezone(utc_timezone.utc) if timezone.is_aware(valor)
+                else valor).isoformat()
+
+    pedido = {
+        "lote": int(lote_id),
+        "equipo": int(equipo.pk),
+        "formato": int(formato_id) if formato_id is not None else None,
+        "formato_kg": (str(Decimal(str(formato_kg)).normalize())
+                       if formato_kg is not None else None),
+        "inicio": instante(inicio),
+        "termino": instante(termino),
+        "usuario": int(usuario.pk),
+        "controles": controles or {},
+        "observacion": observacion or "",
+        "pallets": [
+            {"codigo": str(item.get("codigo", "")).strip(),
+             "unidades": int(item.get("unidades", 0)),
+             "kg_neto": str(Decimal(str(item.get("kg_neto", 0))).normalize())}
+            for item in pallets
+        ],
+    }
+    serializado = json.dumps(
+        pedido, cls=DjangoJSONEncoder, sort_keys=True,
+        separators=(",", ":"), ensure_ascii=False,
+    )
+    return hashlib.sha256(serializado.encode("utf-8")).hexdigest()
+
+
+def _bloquear_operacion_envase(operacion_id):
+    """Serializa reintentos antes de consultar la fila o bloquear el lote."""
+    if connection.vendor == "postgresql":
+        llave = int.from_bytes(operacion_id.bytes[:4], "big", signed=True)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [17222, llave])
+
+
 @transaction.atomic
 def registrar_envasado(
     *, lote_id, equipo, inicio, termino, pallets, usuario, formato=None,
@@ -403,10 +450,23 @@ def registrar_envasado(
         registrar_pallets_producidos,
     )
 
-    if operacion_id:
-        existente = RegistroEnvase.objects.filter(operacion_id=operacion_id).first()
-        if existente:
-            return existente
+    try:
+        operacion_id = UUID(str(operacion_id)) if operacion_id is not None else uuid4()
+    except (TypeError, ValueError, AttributeError) as error:
+        raise ValidationError({"operacion_id": "La clave de operación debe ser un UUID válido."}) from error
+    firma = _firma_solicitud_envase(
+        lote_id=lote_id, equipo=equipo, formato=formato, formato_kg=formato_kg,
+        inicio=inicio, termino=termino, pallets=pallets, usuario=usuario,
+        controles=controles, observacion=observacion,
+    )
+    _bloquear_operacion_envase(operacion_id)
+    existente = RegistroEnvase.objects.filter(operacion_id=operacion_id).first()
+    if existente:
+        if existente.solicitud_firma != firma:
+            raise ValidationError({
+                "operacion_id": "Esta clave ya se usó con datos distintos o pertenece a un registro histórico sin pedido verificable; consulta el registro original."
+            })
+        return existente
     lote = (
         Lote.objects.select_for_update(of=("self",))
         .select_related("sucursal", "producto")
@@ -444,6 +504,8 @@ def registrar_envasado(
         raise ValidationError({
             "formato": "Selecciona un formato de Envasado activo para este producto."
         })
+    if not equipo.activo:
+        raise ValidationError({"equipo": "Selecciona una envasadora activa."})
     if not formato.equipos.filter(pk=equipo.pk).exists():
         raise ValidationError({
             "equipo": (
@@ -474,7 +536,7 @@ def registrar_envasado(
         lote=lote, equipo=equipo, formato=formato, formato_kg=formato_configurado,
         unidades=unidades, kg_envasados=kg_total, controles=controles or {},
         operador=usuario, inicio=inicio, termino=termino, observacion=observacion,
-        **({"operacion_id": operacion_id} if operacion_id else {}),
+        operacion_id=operacion_id, solicitud_firma=firma,
     )
     registro.full_clean()
     registro.save()

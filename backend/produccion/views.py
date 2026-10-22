@@ -2,6 +2,7 @@ import os
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -57,6 +58,16 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
     serializer_class = RegistroEnvaseSerializer
     permission_classes = [EscribeEnvasado]
     http_method_names = ["get", "post", "head", "options"]
+
+    @action(detail=False, methods=["get"], url_path="por-operacion")
+    def por_operacion(self, request):
+        """Consulta el registro actual por UUID, incluso si es histórico sin firma."""
+        try:
+            clave = UUID(request.query_params["operacion_id"])
+        except (KeyError, TypeError, ValueError):
+            raise serializers.ValidationError({"operacion_id": "Indica un UUID válido."})
+        registro = get_object_or_404(self.get_queryset(), operacion_id=clave)
+        return Response(self.get_serializer(registro).data)
 
     @action(detail=False, methods=["get"], url_path="materiales-habilitados")
     def materiales_habilitados(self, request):

@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 class MicrosoftGraphEmailError(RuntimeError):
     """Error seguro y sin credenciales devuelto por Microsoft Graph."""
 
+    def __init__(self, mensaje, *, estado="fallido", http_status=None):
+        super().__init__(mensaje)
+        self.estado = estado
+        self.http_status = http_status
+
 
 class MicrosoftGraphEmailBackend(BaseEmailBackend):
     """Envía mensajes de Django usando el endpoint ``sendMail`` de Graph."""
@@ -59,13 +64,22 @@ class MicrosoftGraphEmailBackend(BaseEmailBackend):
                 if not mensaje.recipients():
                     continue
 
-                self._enviar_mensaje(token, mensaje)
+                try:
+                    self._enviar_mensaje(token, mensaje)
+                except MicrosoftGraphEmailError as error:
+                    # Un 401 rechaza el envío antes de aceptarlo. Sólo en ese
+                    # caso es seguro renovar el token y repetir una vez.
+                    if error.http_status != 401:
+                        raise
+                    cache.delete(self._cache_key)
+                    token = self._obtener_token()
+                    self._enviar_mensaje(token, mensaje)
                 enviados += 1
 
             return enviados
         except Exception:
             if self.fail_silently:
-                logger.exception("Microsoft Graph no pudo enviar el correo")
+                logger.error("Microsoft Graph no confirmó el envío del correo")
                 return 0
             raise
 
@@ -86,6 +100,8 @@ class MicrosoftGraphEmailBackend(BaseEmailBackend):
             raise ImproperlyConfigured(
                 "Falta configurar Microsoft Graph: " + ", ".join(faltantes)
             )
+        if not isinstance(self.timeout, (int, float)) or not 0 < self.timeout <= 30:
+            raise ImproperlyConfigured("MICROSOFT_GRAPH_TIMEOUT debe estar entre 1 y 30 segundos.")
 
     @property
     def _cache_key(self):
@@ -126,7 +142,13 @@ class MicrosoftGraphEmailBackend(BaseEmailBackend):
                 "Microsoft Entra no entregó un token de acceso."
             )
 
-        expiracion = max(60, int(datos.get("expires_in", 3600)) - 120)
+        try:
+            duracion = int(datos.get("expires_in", 3600))
+            if duracion <= 0:
+                raise ValueError
+        except (TypeError, ValueError) as error:
+            raise MicrosoftGraphEmailError("Microsoft devolvió una vigencia de token inválida.") from error
+        expiracion = max(1, duracion - min(120, max(1, duracion // 10)))
         cache.set(self._cache_key, token, timeout=expiracion)
         return token
 
@@ -212,11 +234,13 @@ class MicrosoftGraphEmailBackend(BaseEmailBackend):
             detalle = self._detalle_http(error)
             raise MicrosoftGraphEmailError(
                 f"Microsoft Graph rechazó la {operacion} "
-                f"(HTTP {error.code}{detalle})."
+                f"(HTTP {error.code}{detalle}).", http_status=error.code,
+                estado="incierto" if operacion == "envío" and error.code >= 500 else "fallido",
             ) from error
         except (URLError, TimeoutError) as error:
             raise MicrosoftGraphEmailError(
-                f"No fue posible conectar con Microsoft durante la {operacion}."
+                f"No fue posible conectar con Microsoft durante la {operacion}.",
+                estado="incierto" if operacion == "envío" else "fallido",
             ) from error
 
     @staticmethod

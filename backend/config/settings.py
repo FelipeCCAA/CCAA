@@ -268,6 +268,9 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Evidencias privadas: no se publica una ruta /media/ ni alias de Nginx.
+MEDIA_ROOT = Path(os.environ.get("CCAA_MEDIA_ROOT", str(BASE_DIR / "var" / "adjuntos")))
+
 MAX_UPLOAD_SIZE = int(os.environ.get("DJANGO_MAX_UPLOAD_MB", "15")) * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
 FILE_UPLOAD_MAX_MEMORY_SIZE = min(MAX_UPLOAD_SIZE, 5 * 1024 * 1024)

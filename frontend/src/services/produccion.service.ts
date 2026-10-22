@@ -375,7 +375,7 @@ export async function obtenerBandejaEnvasado(): Promise<BandejaEnvasado> {
   return data;
 }
 
-export async function registrarEnvase(datos: {
+export interface SolicitudEnvase {
   operacion_id: string;
   lote: number;
   equipo: number;
@@ -385,7 +385,9 @@ export async function registrarEnvase(datos: {
   observacion?: string;
   controles?: Record<string, string | boolean | number>;
   pallets_datos: Array<{ codigo: string; unidades: number; kg_neto: number }>;
-}): Promise<RegistroEnvaseCreado> {
+}
+
+export async function registrarEnvase(datos: SolicitudEnvase): Promise<RegistroEnvaseCreado> {
   const { data } = await api.post<RegistroEnvaseCreado>("produccion/envases/", datos);
   return data;
 }

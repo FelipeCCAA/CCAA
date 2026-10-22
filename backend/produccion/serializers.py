@@ -48,7 +48,7 @@ class RegistroEnvaseSerializer(serializers.ModelSerializer):
     equipo_nombre = serializers.CharField(source="equipo.nombre", read_only=True)
     formato_nombre = serializers.CharField(source="formato.nombre", read_only=True)
     operador_nombre = serializers.CharField(source="operador.get_full_name", read_only=True)
-    operacion_id = serializers.UUIDField(required=False)
+    operacion_id = serializers.UUIDField(required=True)
 
     class Meta:
         model = RegistroEnvase
@@ -73,12 +73,12 @@ class RegistroEnvaseSerializer(serializers.ModelSerializer):
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
         self.fields["equipo"].queryset = filtrar_por_scope(
-            Equipo.objects.filter(activo=True), request.user,
+            Equipo.objects.all(), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
         from maestros.models import FormatoEnvasado
         self.fields["formato"].queryset = filtrar_por_scope(
-            FormatoEnvasado.objects.filter(activo=True), request.user,
+            FormatoEnvasado.objects.all(), request.user,
             campo_empresa="producto__mandante__empresa_id",
         )
 

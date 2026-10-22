@@ -38,3 +38,4 @@ graphify-out/
 # Se lee en local para construir las plantillas; lo que queda versionado es
 # la plantilla resultante, no el archivo de origen.
 Documentos Planta/
+backend/var/adjuntos/
