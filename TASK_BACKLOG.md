@@ -1,5 +1,15 @@
 # Backlog de mejoras OP
 
+## Estado vigente — precondensado, 2026-10-23 13:34 Chile
+
+**PARCIAL, BLOQUEADO EN CALIDAD.** Usuario autorizó únicaOPFLOW-OP-PRECOND-01 de2000L y luego continuar e informar trabas, sin definir límites industriales. Se creó una sola OP; repetición `created=False`. Por UI: VE6296-02 (1426,60L Silo3+573,40L Tk02)→Silo5→OPF-PRE-01/Scheffers2→500L OP09-PRE-BASE. Nuevo análisis y segundo firmante. Calidad impide liberar porque falta especificación vigenteSILO; no se creó ni cambió una para forzar el resultado. Despacho no ofrece la salida; no hay liberación ni despacho de ella.
+
+QA independiente:52modelos/299filas, movimientos17–21 conciliados por FIFO, una salida11 y un ingreso21, sin duplicados.307 inicios revisados hasta corte, mínimo medible10,007s/usuario, brechas históricas conservadas. Otras tres acciones posteriores sólo consulta/enfoque/cierre vacío. Ruff QA, diff-check y hashes de evidencia al cierre. Sin cambios de backend/frontend ni producción. Un fixture QA nuevo y15capturas en [expediente](docs/operacion/OP-09_PRECONDENSADO.md); misma rama/PR19borrador.
+
+Próximo requisito: especificación de Calidad de silo validada para este producto/ruta/fecha; no inferirla de la especificaciónLOTE provisoria. Luego completar liberación y despacho sin repetir ingreso ni cierre. F01–F07, suero externo y consumo de rework mantienen pendientes anteriores. El corte15:14UTC siguiente es historial previo.
+
+---
+
 ## Estado vigente OP-09 operacional — 2026-10-23, corte15:14 UTC
 
 **PARCIAL; sin aprobación industrial global.** [Resultados y hallazgos](docs/operacion/OP-09_OPERACIONAL_RESULTADOS.md), [pantallas reales](docs/operacion/evidencias/opflow-ejecucion/PANTALLAS.md), PR19 en borrador, misma rama `codex/op09-operacional-trazabilidad`. El bloqueo inicial de descarga quedó resuelto y su informe se conserva como histórico.

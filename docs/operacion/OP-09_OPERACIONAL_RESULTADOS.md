@@ -1,5 +1,7 @@
 # OP-09 — operación por pantalla, resultados del 23-10-2026
 
+> Continuación vigente: [precondensado, corte13:34 Chile](OP-09_PRECONDENSADO.md). La OP2000L fue autorizada y creada; se procesaron2000L→500L, bloqueados en Calidad por falta de especificaciónSILO. Este documento conserva las cantidades y pruebas del corte anterior15:14UTC salvo el estado actualizado de esa ruta.
+
 **PARCIAL. Tres hojas de despacho y una salida de leche cruda ejecutadas con datos ficticios. No se aprueba operación industrial ni trazabilidad completa.**
 
 Este corte sustituye como estado vigente al [bloqueo inicial de descarga](OP-09_OPERACIONAL_PARCIAL.md), que se conserva como historial. El usuario resolvió la confirmación nativa y se verificó un único ingreso de 25.000 L; no se volvió a crear la recepción.
@@ -63,7 +65,7 @@ No hay P0 demostrado en este recorrido. Eso no descarta otros defectos. Estos P1
 | --- | --- |
 | Polvo, mantequilla, leche cruda y crema directa | Llegaron a salida por UI; validación integral **parcial/fallida** por hallazgos, no aprobación de planta |
 | Descremada | Producida, analizada y consumida en el vale; genealogía/disponible fallan |
-| Precondensado directo | Sin ejecutar. Se solicitó autorización para sólo OPFLOW-OP-PRECOND-01 de2.000 L; **pendiente de respuesta**, no creada. Luego vale→evaporación→Calidad→despacho |
+| Precondensado directo | **Actualización posterior:** OP2000L autorizada y creada. VE6296-02→OPF-PRE-01→500L en OP09-PRE-BASE. Análisis y segunda firma hechos; Calidad bloquea por falta de especificaciónSILO. Sin liberación ni despacho. [Expediente](OP-09_PRECONDENSADO.md) |
 | Suero externo | Pantalla103: sin orden de Secado con materia prima externa configurada; sin ingreso/liberación ficticios por UI. Debe acordarse preparación aislada y entrada compatible con exclusión de Compras. No sembrar un lote aprobado para dar el circuito por hecho |
 | Rework | Segregación y habilitación probadas. Pantalla102 sin ejecución destino; falta escenario compatible definido y consumo con trazabilidad. No mezclar mantequilla en otro producto arbitrariamente |
 | Malta, instantánea, lecitina | Sin variantes ejecutadas. Confirmar rutas realmente aplicables antes de extender cobertura |
@@ -79,7 +81,7 @@ Ruff QA y `git diff --check` ejecutados. No se repiten ni se declaran suites de 
 
 ## AVANCE
 
-Ejecutados: recepción, dos descremados, estandarización, evaporación, Secado, Envase, decisiones de Calidad, Bodega, tres hojas de despacho y una salida de leche cruda. Rework habilitado, no consumido. Modificados: cuatro fixtures QA de preparación, informe, índice/evidencias, `TASK_BACKLOG.md` y `PROGRESS.md`. Riesgos F01–F07 pendientes; PR19 de evidencia en borrador. Próximo circuito: precondensado si se autoriza la orden ficticia solicitada.
+Ejecutados en el corte inicial: recepción, dos descremados, estandarización, evaporación, Secado, Envase, decisiones de Calidad, Bodega, tres hojas de despacho y una salida de leche cruda. Rework habilitado, no consumido. Modificados entonces: cuatro fixtures QA de preparación, informe, índice/evidencias, `TASK_BACKLOG.md` y `PROGRESS.md`. Riesgos F01–F07 pendientes; PR19 de evidencia en borrador. La continuación de precondensado autorizada se documenta en el expediente enlazado arriba; falta la especificaciónSILO para completar su despacho.
 
 ## EXPLICADOR — OP-09 operacional
 

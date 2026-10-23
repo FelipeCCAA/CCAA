@@ -1,5 +1,15 @@
 # Progreso del expediente OP
 
+## AVANCE vigente — precondensado, 2026-10-23 13:34 Chile
+
+**PARCIAL:** únicaOP2000L autorizada creada, valeVE6296-02 liberado por Calidad y loteOPF-PRE-01 evaporado de2000L a500L ficticios en OP09-PRE-BASE. Dos análisis nuevos con analista y visualizador distintos; ingreso nuevo invalidó correctamente análisis anterior de Silo5. La muestra de salida está firmada, pero no hay especificaciónSILO vigente. Liberar etapa deshabilitado, material ausente de cargables; cero liberaciones/despachos de salida11. No se alteraron límites ni permisos. Preparador repetido sin duplicar orden.
+
+QA de archivos concilia52modelos/299filas y movimientos17–21, FIFO íntegro y una sola salida/ingreso. Cadencia medible10,007s por usuario;307 inicios al corte de QA, brechas28/33 preservadas.15capturas nuevas y manifiestoSHA256. Se conservó advertencia de0minagitación; no certifica proceso físico. Interacción de cierre recuperada por recarga antes de un único envío real. Sólo un coordinador y un apoyo QA.
+
+Nuevos archivos: `qa/opflow/seed_precond_order.py`, [expediente](docs/operacion/OP-09_PRECONDENSADO.md) y paquete de evidencia; enlaces/backlog/progreso actualizados. Aplicación intacta, PR19continúa borrador, sin merge/despliegue. Usuario indicó continuar e informar trabas; no suministró rangos de Calidad, requisito industrial todavía pendiente. EXPLICADOR de siete apartados en el expediente. Próximo paso de esta ruta es resolver esa especificación antes de liberar; suero/rework y F01–F07 permanecen pendientes.
+
+---
+
 ## AVANCE vigente — OP-09 operacional, 2026-10-23, corte15:14 UTC
 
 **PARCIAL.** Descarga inicial recuperada sin duplicar recepción; circuitos por pantalla llegaron a tres hojas ejecutadas: DE6296-01 polvo500kg, DE6296-02 mantequilla20kg y DE6296-03 crema42,50L. Además, DespachoLeche1 de1000L. RW-00000111kg disponible en PT-DISP, aún sin consumir. Datos ficticios locales; ninguna operación productiva, despliegue o merge.
