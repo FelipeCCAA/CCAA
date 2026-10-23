@@ -1,0 +1,5 @@
+{
+  "scope": "Primer registro conservado; helper capturaba valores previos de REPL al cambiar de puesto. No cambió las acciones reales ni aprobaciones en pantalla.",
+  "journal_actor_correction": "Calidad se reconoce por etiquetas de sus acciones y por usuario persistido; registro inicial aplicó intervalo global de10s, más restrictivo. Capturas001-009 deben verificarse por contenido, no por nombre.",
+  "fixed": "Nuevo contexto mutable único por tab/actor, identidad comprobada antes de cada acto y captura directa del tab actual."
+}

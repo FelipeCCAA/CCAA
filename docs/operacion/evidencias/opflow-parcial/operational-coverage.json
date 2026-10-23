@@ -1,0 +1,71 @@
+{
+  "status": "NOEJECUTADO",
+  "routes": [
+    {
+      "id": "leche_granel",
+      "description": "Recepción → análisis y dos firmas → silo → despacho de leche",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    },
+    {
+      "id": "polvo",
+      "description": "Recepción → vale → evaporación → secado → envase → Calidad → inventario → despacho",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    },
+    {
+      "id": "precondensado",
+      "description": "Recepción → vale → evaporación → Calidad → despacho directo",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    },
+    {
+      "id": "descremada",
+      "description": "Recepción → silo → descremado → Calidad → destino de descremada",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    },
+    {
+      "id": "crema_directa",
+      "description": "Recepción → descremado → Calidad de crema → despacho directo",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    },
+    {
+      "id": "mantequilla",
+      "description": "Crema del descremado → mantequilla → Calidad → cajas → inventario → despacho",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    },
+    {
+      "id": "suero_externo",
+      "description": "Ingreso externo por pantalla → liberación → secado → Big Bag → inventario → despacho",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    },
+    {
+      "id": "rework",
+      "description": "Segregación real → Calidad → habilitación física de Bodega → consumo en otra ejecución",
+      "status": "NOEJECUTADO",
+      "ui_action_evidence": [],
+      "ledger_reference": null,
+      "missing_steps": []
+    }
+  ],
+  "rule": "Only root may update after observed UI actions and ledger reconciliation; existing coverage is never overwritten by collector",
+  "notes": "Initial masters/orders/packaging supplies are prerequisites, never evidence of executed receipt, production or approval"
+}

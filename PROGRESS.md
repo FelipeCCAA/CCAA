@@ -183,3 +183,24 @@ Circuito web real sobre copia ficticia H09: Evaporación2/2, continuación reanu
 5. **TRABAJO REALIZADO POR LOS AGENTES:** coordinador aisló/ejecutó; un QA preparó y revisó instrumentación/evidencias. Aplicación intacta.
 6. **PRUEBAS Y RESULTADOS:** calentamiento aprobado,10 incompleto,304 movimientos exactos,4/70 accesos;6/6 QA.25/50/70/sostenida sin ejecutar.
 7. **ESTADO FINAL:** BLOQUEADO PARA COMPLETAR VALIDACIÓN DE CARGA por entorno, sin habilitación de planta ni certificación productiva.
+
+
+## OP-09 — Operación por pantalla, corte parcial2026-10-23
+
+**BLOQUEADA ANTES DE DESCARGAR; ningún circuito completo aprobado.** Rama `codex/op09-operacional-trazabilidad`, base9af5518. Usuario autorizó acción lógica cada10s por usuario, trazabilidad/capturas/cantidades/destinos; excluye Planificación, Compras y Mantenimiento. Nueva base vacía PG55479/opflow_circuito y API8209/web5209, sólo ficticios y maestros/órdenes/embalajes iniciales. Sin aplicación, producción, despliegue, contratación o Supabase/logs.
+
+Hechos: recepción1/OPF-ENT-01 de25.000L, muestraM-OPF-ENT-01, decisión de e2e_calidad y destino Silo3 por e2e_recepcion; responsables distintos. **0 movimientos de silo**, aún `liberada`, no descargada. Timeout de interacciónCDP al pulsar Descargar (confirmación nativa previa al POST); pestaña bloqueada no recuperada mediante APIs documentadas. Sin POSTdescargar observado y sin cambio físico; memoria~57–65%, no guardaRAM. Verificación de sólo lectura preserva la misma recepción para retomar.
+
+23 intervalos registrados mínimo10,007s; autoguardados/consultas no son actos operacionales. Se documentó corrección de metadatos del primer registrador (seq11–17=Calidad) y capturas007–009 inválidas para acreditar Calidad, sin reescribir crudos. Capturas010/011 verificadas, muestran aprobación y destino25k/Silo3. QA independiente confirma cantidades/estado/ritmo y rutas no ejecutadas. ExtractorREADONLY de52 modelos, Ruff aprobado; ninguna suite general repetida sin cambios de aplicación.
+
+[Informe y pendientes](docs/operacion/OP-09_OPERACIONAL_PARCIAL.md). Se mantiene entorno local para revisión y consulta al usuario sobre confirmación pendiente; recuperar navegador antes de continuar. No saltar descarga medianteAPI/ORM, no fabricar lotes/pallets aprobados ni considerar cubiertas rutas pendientes con ensayos anteriores.
+
+**EXPLICADOR — operación por pantalla**
+
+1. **PROBLEMA DETECTADO:** no se pudo continuar tras pulsar Descargar.
+2. **CAUSA TÉCNICA:** controlCDP sin respuesta; confirmación nativa en el botón, causalidad exacta pendiente. No prueba fallo de inventario.
+3. **EJEMPLO REAL DE OPERACIÓN:**25.000L aprobados y asignados a Silo3, pero todavía sin movimiento físico registrado.
+4. **SOLUCIÓN RECOMENDADA:** recuperar pestaña/confirmación y continuar sobre recepción1, previa comprobación de estado.
+5. **TRABAJO REALIZADO POR LOS AGENTES:** coordinador ejecutó UI; un QA creó extractor y verificó evidencia. Sólo QA/docs.
+6. **PRUEBAS Y RESULTADOS:** llegada/muestra/Calidad/asignación;23 intervalos>=10s. Descarga y rutas completas pendientes; sin producción.
+7. **ESTADO FINAL:** BLOQUEADO PARA CONTINUAR PRUEBA POR PANTALLA, ninguna aprobación global operacional.

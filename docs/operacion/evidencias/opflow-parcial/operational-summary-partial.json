@@ -1,0 +1,131 @@
+{
+  "scope": "Operational UI actions, not every autosave/API request. Originalv1 actor metadata corrected explicitly; no raw rewrite. Pending/failed browser actions do not prove a completed operation.",
+  "checked_intervals": 23,
+  "min_seconds": 10.007,
+  "all_completed_action_intervals_at_least_10s": true,
+  "intervals": [
+    {
+      "actor": "e2e_recepcion",
+      "seq": 2,
+      "seconds_since_previous_end": 10.013
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 3,
+      "seconds_since_previous_end": 30.825
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 4,
+      "seconds_since_previous_end": 49.553
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 5,
+      "seconds_since_previous_end": 27.472
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 6,
+      "seconds_since_previous_end": 10.007
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 7,
+      "seconds_since_previous_end": 11.383
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 8,
+      "seconds_since_previous_end": 45.507
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 9,
+      "seconds_since_previous_end": 10.015
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 10,
+      "seconds_since_previous_end": 10.016
+    },
+    {
+      "actor": "e2e_calidad",
+      "seq": 12,
+      "seconds_since_previous_end": 10.009
+    },
+    {
+      "actor": "e2e_calidad",
+      "seq": 13,
+      "seconds_since_previous_end": 18.406
+    },
+    {
+      "actor": "e2e_calidad",
+      "seq": 14,
+      "seconds_since_previous_end": 17.479
+    },
+    {
+      "actor": "e2e_calidad",
+      "seq": 15,
+      "seconds_since_previous_end": 17.535
+    },
+    {
+      "actor": "e2e_calidad",
+      "seq": 16,
+      "seconds_since_previous_end": 10.012
+    },
+    {
+      "actor": "e2e_calidad",
+      "seq": 17,
+      "seconds_since_previous_end": 10.015
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 18,
+      "seconds_since_previous_end": 142.348
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 19,
+      "seconds_since_previous_end": 166.386
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 20,
+      "seconds_since_previous_end": 10.347
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 21,
+      "seconds_since_previous_end": 10.05
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 22,
+      "seconds_since_previous_end": 10.093
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 23,
+      "seconds_since_previous_end": 268.41
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 24,
+      "seconds_since_previous_end": 10.052
+    },
+    {
+      "actor": "e2e_recepcion",
+      "seq": 25,
+      "seconds_since_previous_end": 177.749
+    }
+  ],
+  "receipt": "OPF-ENT-01",
+  "quantity_litres": "25000.00",
+  "quality_approved": true,
+  "assigned_silo": "Silo 3",
+  "recorded_silo_movement_count": 0,
+  "discharge_status": "NOT_EXECUTED; browser CDP blocked at native confirmation",
+  "other_processes": "NOT_EXECUTED",
+  "production_modified": false
+}

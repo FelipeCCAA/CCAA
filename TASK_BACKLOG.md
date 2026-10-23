@@ -110,3 +110,14 @@ Clúster nuevo PG55469/API8229 con respaldo ficticio,70 cuentas y18 lotes propio
 Conciliación304 UUID=304 movimientos,36 ubicaciones/18 lotes sin diferencias;63 reenvíos sin segundo efecto. Diario4.260 intenciones=resultados, ninguna nueva trasSTOP. QA independiente verificó diario/IDs/p95 sin nuevos accesos a BD. Instrumentación mejorada;6/6 comprobaciones QA yRuff aprobados, sin repetir suites de aplicación.22 crudos con hashes y seis resúmenes seleccionados; sin sesiones/credenciales/dump/archivos privados. Nuevas sesiones cerradas y API/PG exclusivos detenidos, evidencias preservadas.
 
 **Pendiente P1 H09-03:** entorno existente con recursos disponibles y servidor representativo. **H09-02 sigue abierto:** las tres respuestas inciertas a25 del ensayo anterior no se reprodujeron ni descartaron; no se alcanzó ese nivel. No afirmar máximo10, no reducir guardas ni cambiar políticas industriales. Próxima decisión: identificar recursos existentes sin costo o acordar liberación del equipo antes de repetir; no implementar cambios productivos ni contratar automáticamente.
+
+
+## OP-09 — Operación por pantalla, corte parcial2026-10-23
+
+**BLOQUEADA ANTES DE DESCARGAR; ningún circuito completo aprobado.** Rama `codex/op09-operacional-trazabilidad`, base9af5518. Usuario autorizó acción lógica cada10s por usuario, trazabilidad/capturas/cantidades/destinos; excluye Planificación, Compras y Mantenimiento. Nueva base vacía PG55479/opflow_circuito y API8209/web5209, sólo ficticios y maestros/órdenes/embalajes iniciales. Sin aplicación, producción, despliegue, contratación o Supabase/logs.
+
+Hechos: recepción1/OPF-ENT-01 de25.000L, muestraM-OPF-ENT-01, decisión de e2e_calidad y destino Silo3 por e2e_recepcion; responsables distintos. **0 movimientos de silo**, aún `liberada`, no descargada. Timeout de interacciónCDP al pulsar Descargar (confirmación nativa previa al POST); pestaña bloqueada no recuperada mediante APIs documentadas. Sin POSTdescargar observado y sin cambio físico; memoria~57–65%, no guardaRAM. Verificación de sólo lectura preserva la misma recepción para retomar.
+
+23 intervalos registrados mínimo10,007s; autoguardados/consultas no son actos operacionales. Se documentó corrección de metadatos del primer registrador (seq11–17=Calidad) y capturas007–009 inválidas para acreditar Calidad, sin reescribir crudos. Capturas010/011 verificadas, muestran aprobación y destino25k/Silo3. QA independiente confirma cantidades/estado/ritmo y rutas no ejecutadas. ExtractorREADONLY de52 modelos, Ruff aprobado; ninguna suite general repetida sin cambios de aplicación.
+
+[Informe y pendientes](docs/operacion/OP-09_OPERACIONAL_PARCIAL.md). Se mantiene entorno local para revisión y consulta al usuario sobre confirmación pendiente; recuperar navegador antes de continuar. No saltar descarga medianteAPI/ORM, no fabricar lotes/pallets aprobados ni considerar cubiertas rutas pendientes con ensayos anteriores.

@@ -1,0 +1,57 @@
+{
+  "scope": "Frozen partial evidence only; excludes sessions, credentials, private contents and misleading captures007\u2013009",
+  "files": {
+    "acciones.jsonl": {
+      "bytes": 4778,
+      "sha256": "acdf0ba196fc3a9c7265345d097c3fa14cf495c79b67ea0a0550b6808fbb66a9"
+    },
+    "acciones-v2.jsonl": {
+      "bytes": 2172,
+      "sha256": "e3c7c59c0ebcb9cf695e32cd0fc0b27b0a7d7f7b0b10ed495804848d45cdc24f"
+    },
+    "resources-at-block.jsonl": {
+      "bytes": 43790,
+      "sha256": "efc46970a3faea3369a075f088b654203f1efba9ee593fdce674ec8200766d65"
+    },
+    "operational-ledger-20261023T125555858405Z.json": {
+      "bytes": 60593,
+      "sha256": "1570176cc47a1874569912d6ab0a4a0bfbe4f72d9d9a5d396082356d9ab629f6"
+    },
+    "operational-ledger-20261023T130636782697Z.json": {
+      "bytes": 62658,
+      "sha256": "f62fc7e3bc4f2b0839406f25b1a5eea8c3d5916540cc253663ca2d15090e2388"
+    },
+    "operational-summary-partial.json": {
+      "bytes": 3163,
+      "sha256": "cbec00b51247ed33add7e5b4e970785786f814029c0c10c366d47373a407c55a"
+    },
+    "correcciones-registro-actor.json": {
+      "bytes": 604,
+      "sha256": "63c824ee2e5230a0ceb652e20f22ec9bfc7de0d3164e67e12fcc21bf9029b99d"
+    },
+    "harness-observacion.json": {
+      "bytes": 540,
+      "sha256": "7067e103d6f4b3e2dd93be4e1013b6752980dbb14024111f0fe4fb1e3447535c"
+    },
+    "recuperacion-pestana.log": {
+      "bytes": 428,
+      "sha256": "472e3058884eb81bd026fb422eebc156d7205e57042e8b67e1ecf22a2de290f2"
+    },
+    "pantallas/010-recepcion-aprobada-25000L.png": {
+      "bytes": 46867,
+      "sha256": "205592a4e5fabfd3e7fec175b7ed260201e9f35c8b706fb9616e9bbb5dd0f126"
+    },
+    "pantallas/010-recepcion-aprobada-25000L.txt": {
+      "bytes": 3986,
+      "sha256": "974624a54c7dbbe143e7db74712bda4e45341e5d29b1e7cab3d99664892b5b4a"
+    },
+    "pantallas/011-destino-entera-silo3-formulario.png": {
+      "bytes": 29058,
+      "sha256": "88e2d4730f672457ea2f7dedb92b00dd93d51023c2e920300f3c2e9cab5fc425"
+    },
+    "pantallas/011-destino-entera-silo3-formulario.txt": {
+      "bytes": 4666,
+      "sha256": "f406371a593544d5e435683464d3aed0bfc5a184306ccc8f0b81e2c428eaadcb"
+    }
+  }
+}
