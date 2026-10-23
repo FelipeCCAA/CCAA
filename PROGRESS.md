@@ -1,5 +1,17 @@
 # Progreso del expediente OP
 
+## AVANCE vigente — OP-09 operacional, 2026-10-23, corte15:14 UTC
+
+**PARCIAL.** Descarga inicial recuperada sin duplicar recepción; circuitos por pantalla llegaron a tres hojas ejecutadas: DE6296-01 polvo500kg, DE6296-02 mantequilla20kg y DE6296-03 crema42,50L. Además, DespachoLeche1 de1000L. RW-00000111kg disponible en PT-DISP, aún sin consumir. Datos ficticios locales; ninguna operación productiva, despliegue o merge.
+
+QA contrastó269filas de52modelos, una salida por despacho y FIFO; ambas salidas del segundo descremado tienen analista y visualizador distintos. Diario257inicios, mínimo medible10,007s por usuario; cero infracciones medibles, brechas28/33 declaradas. Se guardan53capturas seleccionadas, diarios originales, correcciones y manifiestoSHA256. Ruff QA y diff-check ejecutados; ninguna suite de aplicación o carga adicional declarada.
+
+Se añadieron sólo cuatro fixtures de preparación (descremado, cliente ficticio, mantequilla y vínculo de ruta de crema), informe, evidencia, backlog y progreso. Aplicación intacta. OP de mantequilla40kg expresamente autorizada; OP de precondensado2000L aún pendiente y no creada. No se sembraron lotes industriales liberados para simular pruebas.
+
+Hallazgos F01–F07: disponible y genealogía incorrectos en descremada/vale, mantequilla con grasa físicamente incompatible aceptada, checklist por familia, embalajes fraccionados, cronología y ubicación histórica engañosa. **No corregidos.** Precondensado, suero externo y consumo de rework pendientes. [Informe con EXPLICADOR de siete apartados](docs/operacion/OP-09_OPERACIONAL_RESULTADOS.md) y [formularios/pantallas](docs/operacion/evidencias/opflow-ejecucion/PANTALLAS.md). PR19 de evidencias continúa en borrador; no equivale a autorización de operación industrial.
+
+---
+
 **OP-00, OP-01 y OP-02: COMPLETADAS EN SUS RAMAS** · OP-00 [PR #6 borrador](https://github.com/FelipeCCAA/CCAA/pull/6) · OP-01 [PR #7 borrador](https://github.com/FelipeCCAA/CCAA/pull/7) · OP-02 [PR #9 borrador](https://github.com/FelipeCCAA/CCAA/pull/9). **OP-03: COMPLETADA EN LA RAMA**, rama `codex/op-03-saldo-reservas-ubicacion` desde `8d0ede7`. No hay merge ni despliegue; no se calcula porcentaje de capacidad. Corte 2026-10-21.
 
 La entrega afectó seis archivos: [.github/workflows/ci.yml](.github/workflows/ci.yml), [tests del reset](backend/usuarios/tests_reset_datos_operacionales.py), [tests de Resumen](backend/produccion/tests_api.py), [guía OP-00](docs/operacion/OP-00_VALIDACION.md), [TASK_BACKLOG.md](TASK_BACKLOG.md) y este [PROGRESS.md](PROGRESS.md). Código y guía están en los commits [`1ed4622`](https://github.com/FelipeCCAA/CCAA/commit/1ed4622a7aa8bc5eab0298beadbdc7f9141bc8b8) y [`4793e33`](https://github.com/FelipeCCAA/CCAA/commit/4793e33b909c2b2a0a29eaf565f2fe3c5711d95d). Este checkpoint documental es posterior al head verificado y se registra en un commit posterior que modifica únicamente los dos documentos de seguimiento. El PR sigue en borrador; no se ha fusionado ni desplegado.

@@ -1,0 +1,28 @@
+{
+  "all_data": "Fictitious OPFLOW only; no production or deployment",
+  "actor_correction": "Original actions11-17 are Calidad; original journal preserved with separate correction",
+  "missing_action_terminal": [
+    28,
+    33
+  ],
+  "unexpected_navigation": {
+    "sequence": 219,
+    "observed": "Planning read-only screen, returned without mutation",
+    "intended": "Rework consult",
+    "actual_rework_consult": 220
+  },
+  "non_final_screens": [
+    "050 optimistic/pending pallet",
+    "092 pending old rework state"
+  ],
+  "invalid_quality_screens": [
+    "007",
+    "008",
+    "009"
+  ],
+  "native_receipt_confirmation": "User manually accepted25000L; subsequent ledger proves exactly one receipt movement",
+  "packaging_times": "Attempted replacements did not stick; persisted UI defaults retained, no backend data fix",
+  "butter_order": "Explicitly approved one40kg fictitious order only; no other new order inferred",
+  "precond_order": "2000L requested, user decision pending; not created",
+  "source_changes": "No backend/frontend application source modified"
+}

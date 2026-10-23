@@ -1,5 +1,7 @@
 # OP-09 — prueba operacional por pantalla, corte parcial 2026-10-23
 
+> HISTÓRICO: el bloqueo de descarga fue resuelto por el usuario. El estado vigente y los recorridos posteriores están en [OP-09_OPERACIONAL_RESULTADOS.md](OP-09_OPERACIONAL_RESULTADOS.md). Las cifras y pendientes siguientes describen exclusivamente el corte inicial.
+
 **BLOQUEADA ANTES DE DESCARGAR. Ningún circuito completo aprobado.**
 Se conserva el entorno y la misma recepción para retomar, sin volver a sembrar
 operaciones ni dar por ejecutados los procesos pendientes.

@@ -1,0 +1,80 @@
+{
+  "scope": "Independent local-file review only; no DB, HTTP, browser or application mutations. Functional fictitious workflow, not industrial yield certification.",
+  "source": "operational-ledger-20261023T145730373548Z.json",
+  "source_sha256": "2ccae7d1b2524e6ac0c7c5e433bb9ff7e20839a4bf7d61d5ee88031ae06f4d66",
+  "butter": {
+    "lot_id": 4,
+    "input_cream_kg": "36.000",
+    "physical_cream_retirement_L": "34.88",
+    "cream_output_id": 2,
+    "cream_start_and_close_signature_same": true,
+    "produced_kg": "31.000",
+    "loss_kg": "5.000",
+    "mass_total_equal": true,
+    "pallet": "OPF-PAL-MANT-01",
+    "units": 1,
+    "packaged_kg": "20.000",
+    "pallet_state": "despachado",
+    "dispatch": "DE6296-02",
+    "dispatch_rows": 1,
+    "pallet_dispatch_movements": 1,
+    "active_finished_stock": false,
+    "process_release_id": 5,
+    "commercial_release_id": 2,
+    "release_versions_match": true,
+    "release_verification_limit": "Stored state/version/UUID and dispatch evidence agree; collector omits signed snapshots, so this review does not independently recompute signature validity."
+  },
+  "rework": {
+    "code": "RW-000001",
+    "lot_id": 4,
+    "origin": "excedente",
+    "quality_approved_kg": "11.000",
+    "warehouse_enabled": true,
+    "location": "PT-DISP",
+    "available_kg": "11.000",
+    "segregation_movements": 1,
+    "enablement_movements": 1,
+    "consumption_movements": 0,
+    "consumed_in_another_execution": false
+  },
+  "packaging_consumption": {
+    "box": "1.000 un",
+    "liner": "1.000 un",
+    "label": "1.000 un",
+    "pallet": "0.040 un",
+    "film": "0.040 un"
+  },
+  "cadence": {
+    "recorded_starts": 210,
+    "measurable_min_seconds_after_previous_same_actor_finish": 10.007,
+    "measurable_violations": 0,
+    "actor_metadata_correction": "Original seq11-17 belong to Calidad, preserved original journal",
+    "starts_without_explicit_terminal_event": [
+      28,
+      33
+    ],
+    "limit": "Checks recorded logical actions, not every individual DOM fill/keystroke; missing terminal events remain evidence gaps."
+  },
+  "material_findings": [
+    {
+      "priority": "P1",
+      "issue": "Fictitious butter mass-fat incompatibility accepted by workflow",
+      "input_fat_kg": "15.12",
+      "output_fat_kg": "25.42",
+      "excess_fat_kg": "10.30",
+      "status": "Total kg balance succeeds; no industrial fat-yield pass"
+    },
+    {
+      "priority": "P2",
+      "issue": "Physical pallet dispatched but recipe deducted only0.040un pallet and0.040un film",
+      "status": "Confirmed ledger behavior; packaging recipe proportional to500kg, not per logistic unit"
+    },
+    {
+      "priority": "P1",
+      "issue": "Descremada consumption into vale lacks material-source edge; previous availability/genealogy issue remains",
+      "status": "Not fixed in this test"
+    }
+  ],
+  "remaining": "Rework has not been consumed; do not mark complete rework route or all supported families passed.",
+  "verdict": "Functional butter packaging/dispatch and rework segregation/enablement demonstrated on fictitious data; industrial validation and whole-route coverage remain partial."
+}

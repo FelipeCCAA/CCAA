@@ -1,0 +1,331 @@
+{
+  "scope": "Selected fictitious evidence; no credentials/session tables or private file bodies",
+  "source_commit_baseline": "9af55186407409ec307e363702e419ed6c415cc0",
+  "files": [
+    {
+      "name": ".gitattributes",
+      "bytes": 102,
+      "sha256": "911af0d5469f16f6caff1e207319a4974943916d4b2bca06aee9dd0a3edb8c67"
+    },
+    {
+      "name": "013-descarga-entera-silo3-25000L.png",
+      "bytes": 66630,
+      "sha256": "cf60d699771c17e55af4137e6673b74eb4da4519715b566f3e851567c7c60279"
+    },
+    {
+      "name": "014-calidad-silo3-formulario-relleno.png",
+      "bytes": 71333,
+      "sha256": "efc3ca1d9a859fa9ede8c1a66e318c3bd94425106e75943ce9fa523b1e86be2d"
+    },
+    {
+      "name": "015-silo3-analisis-con-dos-firmas.png",
+      "bytes": 63613,
+      "sha256": "ca31daa1c88eff1426bcc12971ff7712cfc19a3fba352eec5145c63b53b5bd7b"
+    },
+    {
+      "name": "017-descremado-plan-10000L-relleno.png",
+      "bytes": 74141,
+      "sha256": "2b7ebdcf8d11248ac99b68191b5a16c6a0f823b09802217041311c0f27d278ca"
+    },
+    {
+      "name": "019-descremado-salidas-precision-formulario.png",
+      "bytes": 55190,
+      "sha256": "c69767ec3ca2a06ad17d8f6f287b1c6d6705946ff75043331c771bcab9df2771"
+    },
+    {
+      "name": "020-descremado-cerrado-dos-destinos.png",
+      "bytes": 68802,
+      "sha256": "e39fdf5840c12260f1c10d0a7cf13a7b54e1bf5328190ac4e4e111654e74a42c"
+    },
+    {
+      "name": "025-liberacion-descremada-analisis-elegido.png",
+      "bytes": 77526,
+      "sha256": "656eae527c4fe31c9390674819e9d3cca86ca929c041ed25989c3e827f3238d1"
+    },
+    {
+      "name": "026-liberacion-crema-analisis-elegido.png",
+      "bytes": 74231,
+      "sha256": "13acf01daa28ee3264fcf69436b979c1135bd8eeacae4c212b63a4f453a16276"
+    },
+    {
+      "name": "028-vale-15000L-formulario.png",
+      "bytes": 58002,
+      "sha256": "12abae7efd53702abc8964530ccefad7c7e44da2eb03ef61113d59ae6c248f2f"
+    },
+    {
+      "name": "029-vale-mezcla-calculada.png",
+      "bytes": 65224,
+      "sha256": "390ee1518aa6ebecb564699dc6948c21b39afff114fc000c3e58252aa363ec10"
+    },
+    {
+      "name": "031-vale-muestra-ficticia-aviso-agitacion.png",
+      "bytes": 69451,
+      "sha256": "6b4f9d37d659bfadb656f1b90ce0c13272177f913cfc37934a50222d1539c622"
+    },
+    {
+      "name": "033-vale-liberado-calidad.png",
+      "bytes": 62951,
+      "sha256": "06270ed7e4ae61bfb3615d0c64486218486b39e751eae64257c40a504e7d7e3a"
+    },
+    {
+      "name": "036-apertura-lote-polvo-6000L.png",
+      "bytes": 58286,
+      "sha256": "54b3263f5e1dc739827c929d8897f5229132cb0b34004c89499465b77c9135c2"
+    },
+    {
+      "name": "038-evaporacion-cierre-1500L.png",
+      "bytes": 57640,
+      "sha256": "0673181d3e5c4e38fc60aa1770359d9a9b2006c5906b0e4c06aed756513cc282"
+    },
+    {
+      "name": "040-silo5-concentrado-dos-firmas.png",
+      "bytes": 70056,
+      "sha256": "4a7655786497fb501d9261bd7c5e859c41d886a4e516f3bba2bfd6c5e26c6591"
+    },
+    {
+      "name": "043-secado-balance-500kg-relleno.png",
+      "bytes": 70118,
+      "sha256": "50225f9225bfaa6068c0a5aa0c4201b0909c53db9460d06c146a78d81eaae3b3"
+    },
+    {
+      "name": "046-calidad-polvo-analisis-relleno.png",
+      "bytes": 61329,
+      "sha256": "4657a6183f75747a20fdd337d36601d26a3ce32764c425b15bf239a29ad97fe6"
+    },
+    {
+      "name": "049-envase-20-sacos-pallet-formulario.png",
+      "bytes": 60531,
+      "sha256": "d0b0d624739be810c24920e5418163277ce36d8e4c618c241b545bcdf609d4e6"
+    },
+    {
+      "name": "051-pallet-500kg-confirmado-pendiente-calidad.png",
+      "bytes": 65520,
+      "sha256": "f002f1390a68b5761af88714c613e82e09cb5516cc394a8536df15fd64af2a0b"
+    },
+    {
+      "name": "052-pcc1-atestacion-ficticia.png",
+      "bytes": 61229,
+      "sha256": "b3b0d03965926209b253f7fc499a6859899e5e4fc2f3e57f992390753c0318f3"
+    },
+    {
+      "name": "053-calidad-Scheffers3-no-aplica.png",
+      "bytes": 68737,
+      "sha256": "03443aabfc236e14fd541e981ecb84d38b15bae6cc3d65f9eb56e89feebe3df8"
+    },
+    {
+      "name": "057-checklist-envase-rovema3-ficticio.png",
+      "bytes": 64939,
+      "sha256": "90cf441443f6145d1afa9c24a8e71bbf3f8878b434277f871a678703f741eefa"
+    },
+    {
+      "name": "062-lecitina-no-usada-simulacion.png",
+      "bytes": 70131,
+      "sha256": "f789fd679dc04b00a337be1073ebfd7771032bfed11923390fbf5a2afcf56497"
+    },
+    {
+      "name": "071-calidad-final-checklist-simulado-completo.png",
+      "bytes": 70393,
+      "sha256": "81774a2ca8d29776618519d26244c8013866654407185c47dbb34938016a91d9"
+    },
+    {
+      "name": "074-bodega-pallet-500kg-PT-DISP.png",
+      "bytes": 63379,
+      "sha256": "f2af4130d665ae60d8491610d241ec9f2e7f6df8fae61ff02e1e978cfbc75a92"
+    },
+    {
+      "name": "076-despacho-hoja-carga-rellena.png",
+      "bytes": 57065,
+      "sha256": "bb88021f8376154b9ae68bc6e7c1f2f13d834bf58f05635360e0a58835431215"
+    },
+    {
+      "name": "080-despacho-DE6296-01-ejecutado.png",
+      "bytes": 52862,
+      "sha256": "88e9c4c7ca539febdea10f3ee0ac5ceffc00cc49daa0ee26327baf1981ff2b7a"
+    },
+    {
+      "name": "081-mantequilla-formulario-36kg-crema.png",
+      "bytes": 70476,
+      "sha256": "31c7a71c4b1c9060e46535ba5646c47e6427018fa4b1ed7c618d1c3714638ee5"
+    },
+    {
+      "name": "082-mantequilla-balance-ficticio-31kg.png",
+      "bytes": 62746,
+      "sha256": "0fe7c1075d68a27ad9ce6c7a95d1deb3efda7c9a2c123f1ea3afbe90c42656cc"
+    },
+    {
+      "name": "083-calidad-mantequilla-analisis-relleno.png",
+      "bytes": 71907,
+      "sha256": "c6facfa64f8c8075ea4de76af1d5061836b523c0c1f8a7ab1430fc806c294917"
+    },
+    {
+      "name": "084-mantequilla-liberacion-ficticia-con-limitacion.png",
+      "bytes": 80488,
+      "sha256": "597813ed7baffeb727ab91862b50b1aa51795435075e6343dd212f66c1195172"
+    },
+    {
+      "name": "085-mantequilla-envase-caja-20kg-formulario.png",
+      "bytes": 80229,
+      "sha256": "5d89bd80ab001284a7af64287d558857bb1dbe0ae7783d76df6dca6bd990a2fb"
+    },
+    {
+      "name": "086-mantequilla-caja20kg-remanente11kg-confirmado.png",
+      "bytes": 81108,
+      "sha256": "378b0b0261597a9e69173a94e27328c6637b2ae1b8923599cd57b1e19423f2ad"
+    },
+    {
+      "name": "087-rework-mantequilla-11kg-disposicion.png",
+      "bytes": 81533,
+      "sha256": "ffb023d75c56ace5c8152e8afc8eacdbc213266a9c4132c06a478836e39d9f9a"
+    },
+    {
+      "name": "093-rework-habilitacion-confirmada-11kg.png",
+      "bytes": 66918,
+      "sha256": "7238e5d9959b2de8811aa01d99e744999f97fb94a0e26a0533bcfd9d949f9df6"
+    },
+    {
+      "name": "094-caja-mantequilla20kg-en-PT-DISP.png",
+      "bytes": 63801,
+      "sha256": "f08db9988aba437042f126174c12c23d57b04f1a0198329a8fe09c3402b81a01"
+    },
+    {
+      "name": "095-despacho-caja20kg-formulario.png",
+      "bytes": 57104,
+      "sha256": "07eb07dabf1959f51549cf29b24b6b01dc08e75070015cc8895c5918e369da62"
+    },
+    {
+      "name": "098-despacho-caja20kg-ejecutado.png",
+      "bytes": 53974,
+      "sha256": "39f78235f777eb8340baae37822b2147c1d6db11c659d449d451f76c0127ff77"
+    },
+    {
+      "name": "099-despacho-cruda1000L-formulario.png",
+      "bytes": 59446,
+      "sha256": "74903a086d817a30078ce44b51c3f9ef3f4c0056a2b63c16e295d1f78b62916e"
+    },
+    {
+      "name": "100-despacho-cruda1000L-confirmado.png",
+      "bytes": 62335,
+      "sha256": "48778810519f1ac3b8f4708760678ad9301d4abd5787d62f9819010883de4592"
+    },
+    {
+      "name": "101-trazabilidad-polvo-hacia-atras.png",
+      "bytes": 45008,
+      "sha256": "8291c64c5afae49c9e2a40c93cae9b213dff1352e686e7124973b846f283b2d3"
+    },
+    {
+      "name": "102-rework11kg-sin-ejecucion-destino.png",
+      "bytes": 70319,
+      "sha256": "bf5ee898d41ff32addc52d66e72af1b41fccc3303f32454e6667a44187c462b5"
+    },
+    {
+      "name": "103-suero-externo-sin-orden-ni-materia-prima.png",
+      "bytes": 59818,
+      "sha256": "c9bf33693ff4d6da6fc70695d5dbbca5d938ef0c4760b700ff44506746e4db83"
+    },
+    {
+      "name": "104-crema-comercial-plan500L.png",
+      "bytes": 69842,
+      "sha256": "bf5eaa93dda4a9827c7d2652a01f5665e6edd0bf3eeae8fd9e80e8cf09303e35"
+    },
+    {
+      "name": "105-crema-comercial-cierre500L.png",
+      "bytes": 57413,
+      "sha256": "3e65b90dae67941731c3571509c1e3caa118fac76e6b91efce00df1b5ec86d61"
+    },
+    {
+      "name": "106-crema-comercial-analisis-TkC3.png",
+      "bytes": 67578,
+      "sha256": "f35a5631cc714473c41416f613d3660aa28a6050e4785da20f4a6b5965c3e0e4"
+    },
+    {
+      "name": "107-descremada-Tk03-analisis.png",
+      "bytes": 66704,
+      "sha256": "f1877cc992819c4fa97d5c07c811cfdc4789cb374c035d5e1111f2c83154e3d7"
+    },
+    {
+      "name": "108-crema-TkC3-dos-firmantes.png",
+      "bytes": 74273,
+      "sha256": "0ebce5c6d7c4148bc82cb43b6b80a409e7c6a199fa5f9a3e7b1451b581d858ce"
+    },
+    {
+      "name": "109-descremada-Tk03-dos-firmantes.png",
+      "bytes": 73419,
+      "sha256": "ff0d2097e363129d73ee300daa8371a027bfb750f4e1837ce69cab115e809614"
+    },
+    {
+      "name": "110-crema-comercial-decision-Calidad.png",
+      "bytes": 73201,
+      "sha256": "c1f5bfbcc2403117c057173c1087ff72fb8cd1d422ada6a5091edfdb76188c54"
+    },
+    {
+      "name": "111-despacho-crema42.5L-formulario.png",
+      "bytes": 61266,
+      "sha256": "4927bded11162ba328f4b93187855091a8eef2ffc29c545f18cd24c8c7ba1995"
+    },
+    {
+      "name": "112-despacho-crema42.5L-confirmacion.png",
+      "bytes": 66759,
+      "sha256": "0c36f9490638c8bf64b2583e225b132b5ff5023a524f44174132abf3b24121fc"
+    },
+    {
+      "name": "113-despacho-crema42.5L-ejecutado.png",
+      "bytes": 59285,
+      "sha256": "0e245015f2a1602d339ad2359b6d0548195b0e775a8378abd0d66bd80aa18274"
+    },
+    {
+      "name": "acciones-v2.jsonl",
+      "bytes": 71828,
+      "sha256": "b2f80987fd3198e83fef626551dcd74a629596efbd306b40b0518b01740e0388"
+    },
+    {
+      "name": "acciones.jsonl",
+      "bytes": 4778,
+      "sha256": "acdf0ba196fc3a9c7265345d097c3fa14cf495c79b67ea0a0550b6808fbb66a9"
+    },
+    {
+      "name": "capturas-v3.jsonl",
+      "bytes": 4139,
+      "sha256": "4ebcb5b8fcf1eaa44c67d89102ef8c2959885d7127688192564a253004f03e05"
+    },
+    {
+      "name": "control-incidents.json",
+      "bytes": 1106,
+      "sha256": "ccb338cd171ad75eed2b01b36df89977906c1e46053c0154981aacbada6f81e7"
+    },
+    {
+      "name": "correcciones-registro-actor.json",
+      "bytes": 604,
+      "sha256": "63c824ee2e5230a0ceb652e20f22ec9bfc7de0d3164e67e12fcc21bf9029b99d"
+    },
+    {
+      "name": "environment-summary.json",
+      "bytes": 586,
+      "sha256": "243c43bac37f752edd1337fade397614dfa208452ad2928cc2806040d6fad5ac"
+    },
+    {
+      "name": "operational-coverage.json",
+      "bytes": 4154,
+      "sha256": "39d675578c6c0f0aa0b5f1e3b0f66eb53d211a9e4ee8dddce9c5c2071093ad0c"
+    },
+    {
+      "name": "operational-ledger-20261023T151437735213Z.json",
+      "bytes": 189945,
+      "sha256": "931587803c0e5e1dd065189a96da455dbe7c45f67a5191a74964d6e91ec70354"
+    },
+    {
+      "name": "PANTALLAS.md",
+      "bytes": 5250,
+      "sha256": "a015decd03425fb68fd1aa2634406cd519ba9ac48d471d1294382d83cf89c545"
+    },
+    {
+      "name": "qa-butter-review-20261023T145730.json",
+      "bytes": 3222,
+      "sha256": "fc113a73e10441dbbdb09f798e55f1875a971fcfed73a14fe90db1761689dab5"
+    },
+    {
+      "name": "qa-final-review.json",
+      "bytes": 4215,
+      "sha256": "d4e0791c9535926cabb7b0b4d4e24a3f7e4ae46ff890129b23978fa45e8243a8"
+    }
+  ]
+}

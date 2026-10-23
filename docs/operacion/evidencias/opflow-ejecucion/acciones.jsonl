@@ -1,0 +1,36 @@
+{"seq":1,"actor":"e2e_recepcion","label":"Completar acceso del operador ficticio","event":"inicio","utc":"2026-10-23T12:56:35.751Z"}
+{"seq":1,"actor":"e2e_recepcion","label":"Completar acceso del operador ficticio","event":"fin","utc":"2026-10-23T12:56:35.887Z"}
+{"seq":2,"actor":"e2e_recepcion","label":"Iniciar sesión de Recepción","event":"inicio","utc":"2026-10-23T12:56:45.900Z"}
+{"seq":2,"actor":"e2e_recepcion","label":"Iniciar sesión de Recepción","event":"fin","utc":"2026-10-23T12:56:46.217Z"}
+{"seq":3,"actor":"e2e_recepcion","label":"Abrir Registrar llegada","event":"inicio","utc":"2026-10-23T12:57:17.042Z"}
+{"seq":3,"actor":"e2e_recepcion","label":"Abrir Registrar llegada","event":"fin","utc":"2026-10-23T12:57:17.349Z"}
+{"seq":4,"actor":"e2e_recepcion","label":"Completar llegada OPF-ENT-01 de 25000 L de leche entera","event":"inicio","utc":"2026-10-23T12:58:06.902Z"}
+{"seq":4,"actor":"e2e_recepcion","label":"Completar llegada OPF-ENT-01 de 25000 L de leche entera","event":"fin","utc":"2026-10-23T12:58:07.207Z"}
+{"seq":5,"actor":"e2e_recepcion","label":"Completar marcas horarias ficticias coherentes del camión","event":"inicio","utc":"2026-10-23T12:58:34.679Z"}
+{"seq":5,"actor":"e2e_recepcion","label":"Completar marcas horarias ficticias coherentes del camión","event":"fin","utc":"2026-10-23T12:58:34.771Z"}
+{"seq":6,"actor":"e2e_recepcion","label":"Confirmar llegada OPF-ENT-01","event":"inicio","utc":"2026-10-23T12:58:44.778Z"}
+{"seq":6,"actor":"e2e_recepcion","label":"Confirmar llegada OPF-ENT-01","event":"fin","utc":"2026-10-23T12:58:45.125Z"}
+{"seq":7,"actor":"e2e_recepcion","label":"Abrir Muestreo de Recepción","event":"inicio","utc":"2026-10-23T12:58:56.508Z"}
+{"seq":7,"actor":"e2e_recepcion","label":"Abrir Muestreo de Recepción","event":"fin","utc":"2026-10-23T12:58:56.564Z"}
+{"seq":8,"actor":"e2e_recepcion","label":"Tomar muestra de OPF-ENT-01","event":"inicio","utc":"2026-10-23T12:59:42.071Z"}
+{"seq":8,"actor":"e2e_recepcion","label":"Tomar muestra de OPF-ENT-01","event":"fin","utc":"2026-10-23T12:59:42.414Z"}
+{"seq":9,"actor":"e2e_recepcion","label":"Identificar muestra y responsable e2e_recepcion","event":"inicio","utc":"2026-10-23T12:59:52.429Z"}
+{"seq":9,"actor":"e2e_recepcion","label":"Identificar muestra y responsable e2e_recepcion","event":"fin","utc":"2026-10-23T12:59:52.563Z"}
+{"seq":10,"actor":"e2e_recepcion","label":"Confirmar muestra M-OPF-ENT-01","event":"inicio","utc":"2026-10-23T13:00:02.579Z"}
+{"seq":10,"actor":"e2e_recepcion","label":"Confirmar muestra M-OPF-ENT-01","event":"fin","utc":"2026-10-23T13:00:02.897Z"}
+{"seq":11,"actor":"e2e_recepcion","label":"Completar acceso del operador de Calidad","event":"inicio","utc":"2026-10-23T13:00:45.622Z"}
+{"seq":11,"actor":"e2e_recepcion","label":"Completar acceso del operador de Calidad","event":"fin","utc":"2026-10-23T13:00:45.736Z"}
+{"seq":12,"actor":"e2e_recepcion","label":"Iniciar sesión de Calidad","event":"inicio","utc":"2026-10-23T13:00:55.745Z"}
+{"seq":12,"actor":"e2e_recepcion","label":"Iniciar sesión de Calidad","event":"fin","utc":"2026-10-23T13:00:56.077Z"}
+{"seq":13,"actor":"e2e_recepcion","label":"Abrir controles de Calidad de Recepción","event":"inicio","utc":"2026-10-23T13:01:14.483Z"}
+{"seq":13,"actor":"e2e_recepcion","label":"Abrir controles de Calidad de Recepción","event":"fin","utc":"2026-10-23T13:01:14.588Z"}
+{"seq":14,"actor":"e2e_recepcion","label":"Calidad abre evaluación de OPF-ENT-01","event":"inicio","utc":"2026-10-23T13:01:32.067Z"}
+{"seq":14,"actor":"e2e_recepcion","label":"Calidad abre evaluación de OPF-ENT-01","event":"fin","utc":"2026-10-23T13:01:32.416Z"}
+{"seq":15,"actor":"e2e_recepcion","label":"Calidad completa análisis ficticio del camión OPF-ENT-01","event":"inicio","utc":"2026-10-23T13:01:49.951Z"}
+{"seq":15,"actor":"e2e_recepcion","label":"Calidad completa análisis ficticio del camión OPF-ENT-01","event":"fin","utc":"2026-10-23T13:01:50.359Z"}
+{"seq":16,"actor":"e2e_recepcion","label":"Calidad documenta el pH ficticio declarado","event":"inicio","utc":"2026-10-23T13:02:00.371Z"}
+{"seq":16,"actor":"e2e_recepcion","label":"Calidad documenta el pH ficticio declarado","event":"fin","utc":"2026-10-23T13:02:00.510Z"}
+{"seq":17,"actor":"e2e_recepcion","label":"Calidad guarda decisión OPF-ENT-01","event":"inicio","utc":"2026-10-23T13:02:10.525Z"}
+{"seq":17,"actor":"e2e_recepcion","label":"Calidad guarda decisión OPF-ENT-01","event":"fin","utc":"2026-10-23T13:02:10.874Z"}
+{"seq":18,"actor":"e2e_recepcion","label":"Recepción consulta Silo y descarga después de Calidad","event":"inicio","utc":"2026-10-23T13:02:25.245Z"}
+{"seq":18,"actor":"e2e_recepcion","label":"Recepción consulta Silo y descarga después de Calidad","event":"fin","utc":"2026-10-23T13:02:25.327Z"}

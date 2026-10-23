@@ -1,5 +1,17 @@
 # Backlog de mejoras OP
 
+## Estado vigente OP-09 operacional — 2026-10-23, corte15:14 UTC
+
+**PARCIAL; sin aprobación industrial global.** [Resultados y hallazgos](docs/operacion/OP-09_OPERACIONAL_RESULTADOS.md), [pantallas reales](docs/operacion/evidencias/opflow-ejecucion/PANTALLAS.md), PR19 en borrador, misma rama `codex/op09-operacional-trazabilidad`. El bloqueo inicial de descarga quedó resuelto y su informe se conserva como histórico.
+
+Ejecutados por UI ficticia: recepción25000L, dos descremados, vale15000L, evaporación6000L→1500L, Secado, Envase y despacho500kg polvo/20kg mantequilla/42,50L crema, además de1000L leche cruda. Rework11kg aprobado y habilitado, sin consumo. Calidad y Bodega usan sus cuentas; sin ampliar permisos ni tocar producción. Sólo cuatro fixtures QA nuevos, documentación y evidencias, sin cambios de aplicación.
+
+QA independiente: ledger52modelos/269filas, movimientos únicos y FIFO conciliado;257 inicios, mínimo medible10,007s por usuario, cero infracciones medibles. Brechas de diario28/33 conservadas. Ruff QA y diff-check aprobados; no se declaran suites no ejecutadas ni capacidad70usuarios.
+
+Pendientes: **F01/F02 P1** disponible sobreestimado y genealogía de descremada/vale; **F03 P1** mantequilla acepta10,30kg grasa sin origen; **F04 P1** aplicabilidad/evidencia documental; **F05–F07 P2** pallet0,040un por unidad física, cronología Envase y ubicación histórica tras despacho. Soluciones sin implementar. Siguiente prueba: precondensado, pendiente autorización expresa para sólo OP ficticia2000L; no creada. Suero externo requiere orden/ingreso ficticio y escenario sin Compras; rework requiere ejecución compatible. Carga anterior mantiene pendientes25/50/70/sostenida; este ensayo no los resuelve.
+
+---
+
 Backlog de las diez oportunidades priorizadas: OP-00 a OP-05 completadas en sus ramas; OP-06 implementada y validada localmente en su rama; OP-07 implementada y validada localmente en su rama; OP-08 y OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
 
 ## OP-00 — Entorno reproducible de pruebas (WP001, P1 habilitante)
