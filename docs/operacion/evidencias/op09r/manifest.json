@@ -1,0 +1,93 @@
+{
+  "scope": "Raw originals remain local; no sessions, passwords, dump or private contents copied",
+  "files": {
+    "environment.json": {
+      "bytes": 1130,
+      "sha256": "385b8b9f02e30b05e159cff7533475b7bdaf443a59efe66528cd62286e93544e"
+    },
+    "restore-source.json": {
+      "bytes": 389,
+      "sha256": "2e7597b772b8eb74a33b7fd788b99e7da9bbd00abe56536a69cf4d2048e7c1c6"
+    },
+    "seed.log": {
+      "bytes": 373,
+      "sha256": "e1e1ba446705e8ec11430bc09f9e942ff1563a9d5cb335e653b3462300737ae1"
+    },
+    "load-baseline.json": {
+      "bytes": 6186,
+      "sha256": "53ec65b1d4a32bad270a1a09ddf45e56bf4e8f52da1f82c07658ec2c23621afa"
+    },
+    "load-journal.jsonl": {
+      "bytes": 2480901,
+      "sha256": "3a90f178e392556c4ca85eeb28eb84f9f374335cd6baaa5bf185eb18399a8804"
+    },
+    "load-live.log": {
+      "bytes": 8254,
+      "sha256": "ec99d6f847adc5e2d52a05ef3a24e0a619784b237f22ccfe1f452478d1e83cf4"
+    },
+    "load-warmup.json": {
+      "bytes": 4002,
+      "sha256": "59a8861d76e62958c0a4ddb883c84cb49e56d9a040ed3b8a10303285cb5d43de"
+    },
+    "load-users-10.json": {
+      "bytes": 7403,
+      "sha256": "70d878aba68f751f1f22b03ecccba2e8b4e88877af3f9c2eaf1e86bf156c46c7"
+    },
+    "load-summary.json": {
+      "bytes": 13755,
+      "sha256": "58d25219e3fbbf7788a8571c898e0c48f82de4081831ce8fe34af15480d11291"
+    },
+    "load-reconciliation.json": {
+      "bytes": 119450,
+      "sha256": "fab38d54e7baa2847ae1a38f1dee1d03083dd9a055d8d7f1976a5b17c2924d4f"
+    },
+    "journal-verification.json": {
+      "bytes": 606,
+      "sha256": "68a25866adec07226e7b343055c78138e95a7513807e333ae8f4c71e727eb438"
+    },
+    "login-turn.json": {
+      "bytes": 12004,
+      "sha256": "a396097de947aa75576ab3927c95d64726292c3a50127f0c5bf105cffe3b374c"
+    },
+    "login-live.log": {
+      "bytes": 99,
+      "sha256": "a54652bcee899b34a166799f4653cd29a0b8510e3a73ac3c20d2ff52bf267a88"
+    },
+    "qa-unit-initial5.log": {
+      "bytes": 817,
+      "sha256": "83be1c9243e521b48f94acb4e0730262e69326458c70daf23750fa02267fed0c"
+    },
+    "qa-unit-final6.log": {
+      "bytes": 999,
+      "sha256": "924c970cd3f88864ade22d1c2b063e6d5059983c481a02e9394d62c8918e997c"
+    },
+    "qa-ruff-final.log": {
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+    },
+    "postflight.json": {
+      "bytes": 438,
+      "sha256": "d3979d3d6f516b1435308281f8113e068465ade2d7c4d3bcc8bf1b4b954a349c"
+    },
+    "closure.json": {
+      "bytes": 414,
+      "sha256": "9bc02772bde6c261f9aa7123aafb6a4cc4781a561dff9e2a825d86eaca048c3d"
+    },
+    "executed-load.py": {
+      "bytes": 24807,
+      "sha256": "970688f6141a601c9943205b58dcc5599e6214a3c47b2dda4e7d61ee9e1fab18"
+    },
+    "executed-login_turn.py": {
+      "bytes": 4255,
+      "sha256": "515dd09328d385126315ccdab04522a11decba83ca9bfe9e276f8bd141e3d294"
+    },
+    "api.log": {
+      "bytes": 363020,
+      "sha256": "c955565cafc0b25316d0c6f76f13f86dd0991621b8be17bbc09134c50f960cc8"
+    },
+    "postgres.log": {
+      "bytes": 2812,
+      "sha256": "335848a796d0f29ffb7107eee0fc452c7298d78bd8d1a24d97d4c9ef5b6941fd"
+    }
+  }
+}

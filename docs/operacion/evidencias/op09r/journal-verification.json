@@ -1,0 +1,16 @@
+{
+  "events": 8557,
+  "intents": 4260,
+  "results": 4260,
+  "sequence_contiguous": true,
+  "all_intents_before_results": true,
+  "new_requests_after_stop": 0,
+  "failed_http_results": 0,
+  "replay_intents": 63,
+  "source_scripts": {
+    "executed-load.py": "970688f6141a601c9943205b58dcc5599e6214a3c47b2dda4e7d61ee9e1fab18",
+    "executed-login_turn.py": "515dd09328d385126315ccdab04522a11decba83ca9bfe9e276f8bd141e3d294"
+  },
+  "application_base": "58444474facb420bbfbe24d19b05ddb06f6bea57",
+  "new_tests_only": "No application source modified; no current-run production capacity verdict"
+}
