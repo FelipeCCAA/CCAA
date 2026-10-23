@@ -1,0 +1,18 @@
+{
+  "database": "opflow_circuito",
+  "role": "opflow_test",
+  "postgres_loopback_port": 55479,
+  "api_loopback_port": 8209,
+  "web_loopback_port": 5209,
+  "final_guard": {
+    "utc": "2026-10-23T15:22:10Z",
+    "ram_percent": 62,
+    "total_ram": 16890322944,
+    "idle": 26062870312500,
+    "total": 33220720000000,
+    "stopped": false
+  },
+  "resource_samples": 1761,
+  "resource_raw_sha256": "8f5c39d6abc4cddd5b32bb425fd260fd25a5ec529bf7fe0db9f08dd498762366",
+  "limit": "No production-capacity pass inferred. Raw resource observations remain in local runtime."
+}

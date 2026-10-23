@@ -1,5 +1,27 @@
 # Backlog de mejoras OP
 
+## Estado vigente — precondensado, 2026-10-23 13:34 Chile
+
+**PARCIAL, BLOQUEADO EN CALIDAD.** Usuario autorizó únicaOPFLOW-OP-PRECOND-01 de2000L y luego continuar e informar trabas, sin definir límites industriales. Se creó una sola OP; repetición `created=False`. Por UI: VE6296-02 (1426,60L Silo3+573,40L Tk02)→Silo5→OPF-PRE-01/Scheffers2→500L OP09-PRE-BASE. Nuevo análisis y segundo firmante. Calidad impide liberar porque falta especificación vigenteSILO; no se creó ni cambió una para forzar el resultado. Despacho no ofrece la salida; no hay liberación ni despacho de ella.
+
+QA independiente:52modelos/299filas, movimientos17–21 conciliados por FIFO, una salida11 y un ingreso21, sin duplicados.307 inicios revisados hasta corte, mínimo medible10,007s/usuario, brechas históricas conservadas. Otras tres acciones posteriores sólo consulta/enfoque/cierre vacío. Ruff QA, diff-check y hashes de evidencia al cierre. Sin cambios de backend/frontend ni producción. Un fixture QA nuevo y15capturas en [expediente](docs/operacion/OP-09_PRECONDENSADO.md); misma rama/PR19borrador.
+
+Próximo requisito: especificación de Calidad de silo validada para este producto/ruta/fecha; no inferirla de la especificaciónLOTE provisoria. Luego completar liberación y despacho sin repetir ingreso ni cierre. F01–F07, suero externo y consumo de rework mantienen pendientes anteriores. El corte15:14UTC siguiente es historial previo.
+
+---
+
+## Estado vigente OP-09 operacional — 2026-10-23, corte15:14 UTC
+
+**PARCIAL; sin aprobación industrial global.** [Resultados y hallazgos](docs/operacion/OP-09_OPERACIONAL_RESULTADOS.md), [pantallas reales](docs/operacion/evidencias/opflow-ejecucion/PANTALLAS.md), PR19 en borrador, misma rama `codex/op09-operacional-trazabilidad`. El bloqueo inicial de descarga quedó resuelto y su informe se conserva como histórico.
+
+Ejecutados por UI ficticia: recepción25000L, dos descremados, vale15000L, evaporación6000L→1500L, Secado, Envase y despacho500kg polvo/20kg mantequilla/42,50L crema, además de1000L leche cruda. Rework11kg aprobado y habilitado, sin consumo. Calidad y Bodega usan sus cuentas; sin ampliar permisos ni tocar producción. Sólo cuatro fixtures QA nuevos, documentación y evidencias, sin cambios de aplicación.
+
+QA independiente: ledger52modelos/269filas, movimientos únicos y FIFO conciliado;257 inicios, mínimo medible10,007s por usuario, cero infracciones medibles. Brechas de diario28/33 conservadas. Ruff QA y diff-check aprobados; no se declaran suites no ejecutadas ni capacidad70usuarios.
+
+Pendientes: **F01/F02 P1** disponible sobreestimado y genealogía de descremada/vale; **F03 P1** mantequilla acepta10,30kg grasa sin origen; **F04 P1** aplicabilidad/evidencia documental; **F05–F07 P2** pallet0,040un por unidad física, cronología Envase y ubicación histórica tras despacho. Soluciones sin implementar. Siguiente prueba: precondensado, pendiente autorización expresa para sólo OP ficticia2000L; no creada. Suero externo requiere orden/ingreso ficticio y escenario sin Compras; rework requiere ejecución compatible. Carga anterior mantiene pendientes25/50/70/sostenida; este ensayo no los resuelve.
+
+---
+
 Backlog de las diez oportunidades priorizadas: OP-00 a OP-05 completadas en sus ramas; OP-06 implementada y validada localmente en su rama; OP-07 implementada y validada localmente en su rama; OP-08 y OP-09 pendientes. No se calcula porcentaje de capacidad. OP-00 habilita pruebas reproducibles; las ramas no equivalen a producción. Corte 2026-10-21.
 
 ## OP-00 — Entorno reproducible de pruebas (WP001, P1 habilitante)
@@ -110,3 +132,14 @@ Clúster nuevo PG55469/API8229 con respaldo ficticio,70 cuentas y18 lotes propio
 Conciliación304 UUID=304 movimientos,36 ubicaciones/18 lotes sin diferencias;63 reenvíos sin segundo efecto. Diario4.260 intenciones=resultados, ninguna nueva trasSTOP. QA independiente verificó diario/IDs/p95 sin nuevos accesos a BD. Instrumentación mejorada;6/6 comprobaciones QA yRuff aprobados, sin repetir suites de aplicación.22 crudos con hashes y seis resúmenes seleccionados; sin sesiones/credenciales/dump/archivos privados. Nuevas sesiones cerradas y API/PG exclusivos detenidos, evidencias preservadas.
 
 **Pendiente P1 H09-03:** entorno existente con recursos disponibles y servidor representativo. **H09-02 sigue abierto:** las tres respuestas inciertas a25 del ensayo anterior no se reprodujeron ni descartaron; no se alcanzó ese nivel. No afirmar máximo10, no reducir guardas ni cambiar políticas industriales. Próxima decisión: identificar recursos existentes sin costo o acordar liberación del equipo antes de repetir; no implementar cambios productivos ni contratar automáticamente.
+
+
+## OP-09 — Operación por pantalla, corte parcial2026-10-23
+
+**BLOQUEADA ANTES DE DESCARGAR; ningún circuito completo aprobado.** Rama `codex/op09-operacional-trazabilidad`, base9af5518. Usuario autorizó acción lógica cada10s por usuario, trazabilidad/capturas/cantidades/destinos; excluye Planificación, Compras y Mantenimiento. Nueva base vacía PG55479/opflow_circuito y API8209/web5209, sólo ficticios y maestros/órdenes/embalajes iniciales. Sin aplicación, producción, despliegue, contratación o Supabase/logs.
+
+Hechos: recepción1/OPF-ENT-01 de25.000L, muestraM-OPF-ENT-01, decisión de e2e_calidad y destino Silo3 por e2e_recepcion; responsables distintos. **0 movimientos de silo**, aún `liberada`, no descargada. Timeout de interacciónCDP al pulsar Descargar (confirmación nativa previa al POST); pestaña bloqueada no recuperada mediante APIs documentadas. Sin POSTdescargar observado y sin cambio físico; memoria~57–65%, no guardaRAM. Verificación de sólo lectura preserva la misma recepción para retomar.
+
+23 intervalos registrados mínimo10,007s; autoguardados/consultas no son actos operacionales. Se documentó corrección de metadatos del primer registrador (seq11–17=Calidad) y capturas007–009 inválidas para acreditar Calidad, sin reescribir crudos. Capturas010/011 verificadas, muestran aprobación y destino25k/Silo3. QA independiente confirma cantidades/estado/ritmo y rutas no ejecutadas. ExtractorREADONLY de52 modelos, Ruff aprobado; ninguna suite general repetida sin cambios de aplicación.
+
+[Informe y pendientes](docs/operacion/OP-09_OPERACIONAL_PARCIAL.md). Se mantiene entorno local para revisión y consulta al usuario sobre confirmación pendiente; recuperar navegador antes de continuar. No saltar descarga medianteAPI/ORM, no fabricar lotes/pallets aprobados ni considerar cubiertas rutas pendientes con ensayos anteriores.

@@ -1,0 +1,130 @@
+{
+  "scope": "Independent local-file QA only, no DB/API/UI; simulation is not industrial acceptance",
+  "source": "operational-ledger-20261023T151437735213Z.json",
+  "source_sha256": "931587803c0e5e1dd065189a96da455dbe7c45f67a5191a74964d6e91ec70354",
+  "domain_rows": 269,
+  "raw_milk": {
+    "dispatch_id": 1,
+    "movement_id": 12,
+    "litres": "1000.00",
+    "silo": "Silo 3",
+    "guide": "OPFLOW-GUIA-FICTICIA-CRUDA-01",
+    "unique_dispatch": true,
+    "fifo_receipt_id": 1
+  },
+  "cream_direct": {
+    "run": "OPF-DES-02",
+    "input_L": "500.00",
+    "skim_L": "457.50",
+    "skim_destination": "Tk03",
+    "cream_L": "42.50",
+    "cream_destination": "TkC3",
+    "output_id": 9,
+    "release_record_id": 6,
+    "analysis_id": 6,
+    "distinct_analyst_and_reviewer": true,
+    "dispatch": "DE6296-03",
+    "bulk_detail_id": 1,
+    "physical_movement_id": 16,
+    "movement_uuid_matches_detail": true,
+    "final_cream_tank_L": "0.00",
+    "fifo_receipt_id": 1,
+    "no_unknown_fifo_origin": true
+  },
+  "final_silo_balances": [
+    {
+      "silo_id": 1,
+      "quantity": "2800.53",
+      "unit": "L"
+    },
+    {
+      "silo_id": 2,
+      "quantity": "9000.00",
+      "unit": "L"
+    },
+    {
+      "silo_id": 3,
+      "quantity": "0.00",
+      "unit": "L"
+    },
+    {
+      "silo_id": 4,
+      "quantity": "4849.55",
+      "unit": "L"
+    },
+    {
+      "silo_id": 6,
+      "quantity": "457.50",
+      "unit": "L"
+    },
+    {
+      "silo_id": 7,
+      "quantity": "815.04",
+      "unit": "L"
+    },
+    {
+      "silo_id": 8,
+      "quantity": "0.00",
+      "unit": "L"
+    }
+  ],
+  "cadence": {
+    "recorded_starts": 257,
+    "last_sequence": 257,
+    "min_measurable_seconds_same_actor": 10.007,
+    "measurable_violations": 0,
+    "missing_terminal_events": [
+      28,
+      33
+    ],
+    "scope": "Recorded logical actions; not every DOM input. Original actor correction11–17 applied."
+  },
+  "incidents": [
+    {
+      "seq": 219,
+      "type": "Out-of-scope navigation",
+      "detail": "Coordinator reports accidental Planning screen read only, immediate return, no Planning mutation claimed; preserve journal."
+    }
+  ],
+  "coverage": {
+    "powder": "Functional receipt-to-shipment demonstrated; industrial controls simulated, P1 lineage remains",
+    "butter": "Functional box shipment and rework enablement demonstrated; fat balance incompatible",
+    "raw_milk": "Functional shipment reconciled",
+    "cream_direct": "Functional shipment reconciled",
+    "rework": "11kg available; no destination execution and no consumption",
+    "external_whey": "No source intake or production order; not executed",
+    "precondensate": "Order2000L user decision pending; not authorized/executed",
+    "variants": "No whole-route approval inferred"
+  },
+  "material_findings": [
+    {
+      "priority": "P1",
+      "issue": "Skim availability and process-source lineage gap persists",
+      "ui_evidence": "101-trazabilidad-polvo-hacia-atras.png",
+      "code": "backend/procesos/servicios.py:1316;1481;backend/produccion/servicios.py:240"
+    },
+    {
+      "priority": "P1",
+      "issue": "Butter fat output exceeds input by10.30kg in synthetic case; no industrial yield pass"
+    },
+    {
+      "priority": "P1",
+      "issue": "Family-only dossier application and simulated attestations are not physical controls"
+    },
+    {
+      "priority": "P2",
+      "issue": "Traceability location falls back to old Silo5 after powder pallet shipment",
+      "code": "backend/procesos/consultas_trazabilidad.py:226",
+      "detail": "Active pallet stock absent, then historical silo output selected without checking current stock, later stages or dispatch."
+    },
+    {
+      "priority": "P2",
+      "issue": "Full physical butter pallet used, recipe consumed0.040units; film interpretation depends on actual unit definition"
+    },
+    {
+      "priority": "P2",
+      "issue": "Packaging start default one hour earlier lacks comparison with Secado end"
+    }
+  ],
+  "verdict": "PARTIAL: four functional output routes demonstrated; no whole-system industrial acceptance."
+}

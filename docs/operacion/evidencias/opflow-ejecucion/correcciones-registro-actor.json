@@ -1,0 +1,14 @@
+{
+  "reason": "REPL helper captured initial actor string; original immutable; corrected by explicit action labels, visible usernames and persisted Quality decision",
+  "original_journal": "acciones.jsonl",
+  "actor_overrides_by_seq": {
+    "11": "e2e_calidad",
+    "12": "e2e_calidad",
+    "13": "e2e_calidad",
+    "14": "e2e_calidad",
+    "15": "e2e_calidad",
+    "16": "e2e_calidad",
+    "17": "e2e_calidad"
+  },
+  "screen_note": "001-009 first capture helper bound to Reception tab; do not use named007/008/009 as Quality screenshot;010 and011 are direct verified current tab snapshots"
+}

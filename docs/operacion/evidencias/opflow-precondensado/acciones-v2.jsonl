@@ -1,0 +1,583 @@
+{"seq":19,"actor":"e2e_recepcion","tab":"1","label":"Asignar silo a OPF-ENT-01 aprobado por Calidad","event":"inicio","utc":"2026-10-23T13:05:11.713Z"}
+{"seq":19,"actor":"e2e_recepcion","tab":"1","label":"Asignar silo a OPF-ENT-01 aprobado por Calidad","event":"fin","utc":"2026-10-23T13:05:11.998Z"}
+{"seq":20,"actor":"e2e_recepcion","tab":"1","label":"Seleccionar Silo 3 como destino de 25000 L","event":"inicio","utc":"2026-10-23T13:05:22.345Z"}
+{"seq":20,"actor":"e2e_recepcion","tab":"1","label":"Seleccionar Silo 3 como destino de 25000 L","event":"fin","utc":"2026-10-23T13:05:22.377Z"}
+{"seq":21,"actor":"e2e_recepcion","tab":"1","label":"Confirmar destino Silo 3","event":"inicio","utc":"2026-10-23T13:05:32.427Z"}
+{"seq":21,"actor":"e2e_recepcion","tab":"1","label":"Confirmar destino Silo 3","event":"fin","utc":"2026-10-23T13:05:32.713Z"}
+{"seq":22,"actor":"e2e_recepcion","tab":"1","label":"Descargar OPF-ENT-01 al Silo 3","event":"inicio","utc":"2026-10-23T13:05:42.806Z"}
+{"seq":22,"actor":"e2e_recepcion","tab":"1","event":"error_verificado","label":"Descargar OPF-ENT-01 al Silo 3","utc":"2026-10-23T13:08:46.420Z","error":"CDP input timeout; consulta posterior: recepción liberada, silo asignado, cero movimientos; se cerró sólo sesión QA para recuperar pestaña"}
+{"seq":23,"actor":"e2e_recepcion","tab":"3","label":"Recuperar acceso de Recepción en pestaña nueva","event":"inicio","utc":"2026-10-23T13:10:01.123Z"}
+{"seq":23,"actor":"e2e_recepcion","tab":"3","label":"Recuperar acceso de Recepción en pestaña nueva","event":"fin","utc":"2026-10-23T13:10:01.255Z"}
+{"seq":24,"actor":"e2e_recepcion","tab":"3","label":"Iniciar sesión recuperada de Recepción","event":"inicio","utc":"2026-10-23T13:10:11.307Z"}
+{"seq":24,"actor":"e2e_recepcion","tab":"3","label":"Iniciar sesión recuperada de Recepción","event":"fin","utc":"2026-10-23T13:10:11.616Z"}
+{"seq":25,"actor":"e2e_recepcion","tab":"3","label":"Enviar acceso recuperado mediante teclado","event":"inicio","utc":"2026-10-23T13:13:09.365Z"}
+{"seq":25,"actor":"e2e_recepcion","tab":"3","label":"Enviar acceso recuperado mediante teclado","event":"fin","utc":"2026-10-23T13:13:09.442Z"}
+{"seq":26,"actor":"e2e_recepcion","tab":"1","label":"Reingresar a Recepción tras cerrar confirmación","event":"inicio","utc":"2026-10-23T13:33:52.942Z"}
+{"seq":26,"actor":"e2e_recepcion","tab":"1","label":"Reingresar a Recepción tras cerrar confirmación","event":"fin","utc":"2026-10-23T13:33:53.958Z"}
+{"seq":27,"actor":"e2e_recepcion","tab":"1","label":"Consultar recepción pendiente de descarga","event":"inicio","utc":"2026-10-23T13:34:08.963Z"}
+{"seq":27,"actor":"e2e_recepcion","tab":"1","label":"Consultar recepción pendiente de descarga","event":"fin","utc":"2026-10-23T13:34:12.205Z"}
+{"seq":28,"actor":"e2e_recepcion","tab":"1","label":"Descargar recepción OPF-ENT-01 con confirmación","event":"inicio","utc":"2026-10-23T13:34:36.626Z"}
+{"utc":"2026-10-23T13:35:07.200Z","actor":"e2e_recepcion","tab":"1","event":"error_verificado","label":"Descargar recepción OPF-ENT-01 tras reingreso","detalle":"Acceso recuperado; recepción UI liberada 25000 L Silo 3. Click descarga: Input.dispatchMouseEvent timeout; getJsDialog sin diálogo accesible. No POST descargar nuevo al corte."}
+{"seq":29,"actor":"e2e_recepcion","tab":"1","label":"Consultar silos tras descarga confirmada manualmente","event":"inicio","utc":"2026-10-23T13:39:44.676Z"}
+{"seq":29,"actor":"e2e_recepcion","tab":"1","label":"Consultar silos tras descarga confirmada manualmente","event":"fin","utc":"2026-10-23T13:39:47.748Z"}
+{"seq":30,"actor":"e2e_calidad","tab":"4","label":"Ingresar puesto Calidad para análisis de silo","event":"inicio","utc":"2026-10-23T13:41:17.026Z"}
+{"seq":30,"actor":"e2e_calidad","tab":"4","label":"Ingresar puesto Calidad para análisis de silo","event":"fin","utc":"2026-10-23T13:41:17.391Z"}
+{"seq":31,"actor":"e2e_calidad","tab":"4","label":"Reingresar Calidad tras recuperar sesión ficticia","event":"inicio","utc":"2026-10-23T13:42:07.337Z"}
+{"seq":31,"actor":"e2e_calidad","tab":"4","label":"Reingresar Calidad tras recuperar sesión ficticia","event":"fin","utc":"2026-10-23T13:42:07.648Z"}
+{"seq":32,"actor":"e2e_calidad","tab":"4","label":"Abrir silos recibidos en puesto Calidad","event":"inicio","utc":"2026-10-23T13:42:17.711Z"}
+{"seq":32,"actor":"e2e_calidad","tab":"4","label":"Abrir silos recibidos en puesto Calidad","event":"fin","utc":"2026-10-23T13:42:17.770Z"}
+{"seq":33,"actor":"e2e_calidad","tab":"4","label":"Seleccionar Silo 3 para análisis Calidad","event":"inicio","utc":"2026-10-23T13:42:27.864Z"}
+{"seq":34,"actor":"e2e_calidad","tab":"4","label":"Abrir detalle Silo 3 en Calidad","event":"inicio","utc":"2026-10-23T13:42:40.663Z"}
+{"seq":34,"actor":"e2e_calidad","tab":"4","label":"Abrir detalle Silo 3 en Calidad","event":"fin","utc":"2026-10-23T13:42:40.941Z"}
+{"seq":35,"actor":"e2e_calidad","tab":"4","label":"Completar muestra ficticia del Silo 3","event":"inicio","utc":"2026-10-23T13:42:51.405Z"}
+{"seq":35,"actor":"e2e_calidad","tab":"4","label":"Completar muestra ficticia del Silo 3","event":"fin","utc":"2026-10-23T13:42:51.866Z"}
+{"seq":36,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio de Silo 3","event":"inicio","utc":"2026-10-23T13:43:03.940Z"}
+{"seq":36,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio de Silo 3","event":"fin","utc":"2026-10-23T13:43:04.221Z"}
+{"seq":37,"actor":"e2e_calidad_firma","tab":"5","label":"Ingresar segundo firmante de Calidad","event":"inicio","utc":"2026-10-23T13:43:25.491Z"}
+{"seq":37,"actor":"e2e_calidad_firma","tab":"5","label":"Ingresar segundo firmante de Calidad","event":"fin","utc":"2026-10-23T13:43:25.856Z"}
+{"seq":38,"actor":"e2e_calidad_firma","tab":"5","label":"Abrir Silo 3 para segunda firma","event":"inicio","utc":"2026-10-23T13:43:36.597Z"}
+{"seq":38,"actor":"e2e_calidad_firma","tab":"5","label":"Abrir Silo 3 para segunda firma","event":"fin","utc":"2026-10-23T13:43:36.648Z"}
+{"seq":39,"actor":"e2e_calidad_firma","tab":"5","label":"Seleccionar análisis vigente Silo 3 segundo firmante","event":"inicio","utc":"2026-10-23T13:43:46.719Z"}
+{"seq":39,"actor":"e2e_calidad_firma","tab":"5","label":"Seleccionar análisis vigente Silo 3 segundo firmante","event":"fin","utc":"2026-10-23T13:43:47.292Z"}
+{"seq":40,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis Silo3 por segundo usuario","event":"inicio","utc":"2026-10-23T13:43:57.388Z"}
+{"seq":40,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis Silo3 por segundo usuario","event":"fin","utc":"2026-10-23T13:43:57.685Z"}
+{"seq":41,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar saldo tras firma independiente del silo","event":"inicio","utc":"2026-10-23T13:44:10.763Z"}
+{"seq":41,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar saldo tras firma independiente del silo","event":"fin","utc":"2026-10-23T13:44:11.037Z"}
+{"seq":42,"actor":"e2e_produccion","tab":"6","label":"Ingresar operador ficticio de Producción","event":"inicio","utc":"2026-10-23T13:45:21.291Z"}
+{"seq":42,"actor":"e2e_produccion","tab":"6","label":"Ingresar operador ficticio de Producción","event":"fin","utc":"2026-10-23T13:45:21.672Z"}
+{"seq":43,"actor":"e2e_produccion","tab":"6","label":"Abrir descremación desde silo aprobado","event":"inicio","utc":"2026-10-23T13:45:53.229Z"}
+{"seq":43,"actor":"e2e_produccion","tab":"6","label":"Abrir descremación desde silo aprobado","event":"fin","utc":"2026-10-23T13:45:53.274Z"}
+{"seq":44,"actor":"e2e_produccion","tab":"6","label":"Actualizar maestros disponibles para descremación","event":"inicio","utc":"2026-10-23T13:48:37.207Z"}
+{"seq":44,"actor":"e2e_produccion","tab":"6","label":"Actualizar maestros disponibles para descremación","event":"fin","utc":"2026-10-23T13:48:37.326Z"}
+{"seq":45,"actor":"e2e_produccion","tab":"6","label":"Completar plan ficticio descremación de 10000 L","event":"inicio","utc":"2026-10-23T13:49:30.363Z"}
+{"seq":45,"actor":"e2e_produccion","tab":"6","label":"Completar plan ficticio descremación de 10000 L","event":"fin","utc":"2026-10-23T13:49:31.544Z"}
+{"seq":46,"actor":"e2e_produccion","tab":"6","label":"Revisar y aceptar reparto ficticio descremada crema","event":"inicio","utc":"2026-10-23T13:49:46.503Z"}
+{"seq":46,"actor":"e2e_produccion","tab":"6","label":"Revisar y aceptar reparto ficticio descremada crema","event":"fin","utc":"2026-10-23T13:49:47.093Z"}
+{"seq":47,"actor":"e2e_produccion","tab":"6","label":"Reservar e iniciar descremación OPF-DES-01","event":"inicio","utc":"2026-10-23T13:49:57.645Z"}
+{"seq":47,"actor":"e2e_produccion","tab":"6","label":"Reservar e iniciar descremación OPF-DES-01","event":"fin","utc":"2026-10-23T13:49:58.230Z"}
+{"seq":48,"actor":"e2e_produccion","tab":"6","label":"Abrir registro de salidas descremación OPF-DES-01","event":"inicio","utc":"2026-10-23T13:50:09.217Z"}
+{"seq":48,"actor":"e2e_produccion","tab":"6","label":"Abrir registro de salidas descremación OPF-DES-01","event":"fin","utc":"2026-10-23T13:50:09.693Z"}
+{"seq":49,"actor":"e2e_produccion","tab":"6","label":"Completar salidas ficticias balanceadas OPF-DES-01","event":"inicio","utc":"2026-10-23T13:50:27.083Z"}
+{"seq":49,"actor":"e2e_produccion","tab":"6","label":"Completar salidas ficticias balanceadas OPF-DES-01","event":"fin","utc":"2026-10-23T13:50:27.630Z"}
+{"seq":50,"actor":"e2e_produccion","tab":"6","label":"Cerrar corrida ficticia OPF-DES-01","event":"inicio","utc":"2026-10-23T13:50:37.828Z"}
+{"seq":50,"actor":"e2e_produccion","tab":"6","label":"Cerrar corrida ficticia OPF-DES-01","event":"fin","utc":"2026-10-23T13:50:38.230Z"}
+{"seq":51,"actor":"e2e_produccion","tab":"6","label":"Ajustar lectura ficticia a precisión de captura 0.06% MG","event":"inicio","utc":"2026-10-23T13:51:01.086Z"}
+{"seq":51,"actor":"e2e_produccion","tab":"6","label":"Ajustar lectura ficticia a precisión de captura 0.06% MG","event":"fin","utc":"2026-10-23T13:51:01.290Z"}
+{"seq":52,"actor":"e2e_produccion","tab":"6","label":"Cerrar descremación con lecturas ficticias capturables","event":"inicio","utc":"2026-10-23T13:51:11.511Z"}
+{"seq":52,"actor":"e2e_produccion","tab":"6","label":"Cerrar descremación con lecturas ficticias capturables","event":"fin","utc":"2026-10-23T13:51:11.962Z"}
+{"seq":53,"actor":"e2e_calidad","tab":"4","label":"Actualizar saldos y nuevas ramas para Calidad","event":"inicio","utc":"2026-10-23T13:51:38.055Z"}
+{"seq":53,"actor":"e2e_calidad","tab":"4","label":"Actualizar saldos y nuevas ramas para Calidad","event":"fin","utc":"2026-10-23T13:51:38.491Z"}
+{"seq":54,"actor":"e2e_calidad","tab":"4","label":"Abrir muestra de descremada Tk02","event":"inicio","utc":"2026-10-23T13:51:48.642Z"}
+{"seq":54,"actor":"e2e_calidad","tab":"4","label":"Abrir muestra de descremada Tk02","event":"fin","utc":"2026-10-23T13:51:49.447Z"}
+{"seq":55,"actor":"e2e_calidad","tab":"4","label":"Completar muestra ficticia descremada Tk02","event":"inicio","utc":"2026-10-23T13:52:01.718Z"}
+{"seq":55,"actor":"e2e_calidad","tab":"4","label":"Completar muestra ficticia descremada Tk02","event":"fin","utc":"2026-10-23T13:52:03.026Z"}
+{"seq":56,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis descremada Tk02","event":"inicio","utc":"2026-10-23T13:52:13.046Z"}
+{"seq":56,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis descremada Tk02","event":"fin","utc":"2026-10-23T13:52:13.328Z"}
+{"seq":57,"actor":"e2e_calidad","tab":"4","label":"Abrir análisis crema TkC2","event":"inicio","utc":"2026-10-23T13:53:19.593Z"}
+{"seq":57,"actor":"e2e_calidad","tab":"4","label":"Abrir análisis crema TkC2","event":"fin","utc":"2026-10-23T13:53:20.724Z"}
+{"seq":58,"actor":"e2e_calidad","tab":"4","label":"Completar análisis ficticio crema TkC2","event":"inicio","utc":"2026-10-23T13:53:30.904Z"}
+{"seq":58,"actor":"e2e_calidad","tab":"4","label":"Completar análisis ficticio crema TkC2","event":"fin","utc":"2026-10-23T13:53:31.065Z"}
+{"seq":59,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis crema TkC2","event":"inicio","utc":"2026-10-23T13:53:41.233Z"}
+{"seq":59,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis crema TkC2","event":"fin","utc":"2026-10-23T13:53:41.505Z"}
+{"seq":60,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar ramas pendientes segundo firmante","event":"inicio","utc":"2026-10-23T13:53:52.852Z"}
+{"seq":60,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar ramas pendientes segundo firmante","event":"fin","utc":"2026-10-23T13:53:53.142Z"}
+{"seq":61,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar análisis Tk02 como segundo firmante","event":"inicio","utc":"2026-10-23T13:54:03.341Z"}
+{"seq":61,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar análisis Tk02 como segundo firmante","event":"fin","utc":"2026-10-23T13:54:03.932Z"}
+{"seq":62,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar revisión de análisis descremada Tk02","event":"inicio","utc":"2026-10-23T13:54:17.941Z"}
+{"seq":62,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar revisión de análisis descremada Tk02","event":"fin","utc":"2026-10-23T13:54:18.225Z"}
+{"seq":63,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar análisis de crema TkC2","event":"inicio","utc":"2026-10-23T13:54:28.376Z"}
+{"seq":63,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar análisis de crema TkC2","event":"fin","utc":"2026-10-23T13:54:28.942Z"}
+{"seq":64,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar revisión independiente crema TkC2","event":"inicio","utc":"2026-10-23T13:54:39.134Z"}
+{"seq":64,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar revisión independiente crema TkC2","event":"fin","utc":"2026-10-23T13:54:39.416Z"}
+{"seq":65,"actor":"e2e_calidad","tab":"4","label":"Revisar resultados de descremación en bandeja Calidad","event":"inicio","utc":"2026-10-23T13:54:39.721Z"}
+{"seq":65,"actor":"e2e_calidad","tab":"4","label":"Revisar resultados de descremación en bandeja Calidad","event":"fin","utc":"2026-10-23T13:54:39.766Z"}
+{"seq":66,"actor":"e2e_calidad","tab":"4","label":"Liberar rama descremación Tk02","event":"inicio","utc":"2026-10-23T13:55:02.565Z"}
+{"seq":66,"actor":"e2e_calidad","tab":"4","label":"Liberar rama descremación Tk02","event":"fin","utc":"2026-10-23T13:55:02.948Z"}
+{"seq":67,"actor":"e2e_calidad","tab":"4","label":"Liberar rama descremación TkC2","event":"inicio","utc":"2026-10-23T13:55:13.070Z"}
+{"seq":67,"actor":"e2e_calidad","tab":"4","label":"Liberar rama descremación TkC2","event":"fin","utc":"2026-10-23T13:55:13.431Z"}
+{"seq":68,"actor":"e2e_produccion","tab":"6","label":"Abrir estandarización con material trazable liberado","event":"inicio","utc":"2026-10-23T13:55:44.110Z"}
+{"seq":68,"actor":"e2e_produccion","tab":"6","label":"Abrir estandarización con material trazable liberado","event":"fin","utc":"2026-10-23T13:55:44.627Z"}
+{"seq":69,"actor":"e2e_produccion","tab":"6","label":"Preparar nuevo vale operacional ficticio","event":"inicio","utc":"2026-10-23T13:55:54.881Z"}
+{"seq":69,"actor":"e2e_produccion","tab":"6","label":"Preparar nuevo vale operacional ficticio","event":"fin","utc":"2026-10-23T13:55:55.586Z"}
+{"seq":70,"actor":"e2e_produccion","tab":"6","label":"Completar vale ficticio de 15000 L RC 0.3000","event":"inicio","utc":"2026-10-23T13:56:13.700Z"}
+{"seq":70,"actor":"e2e_produccion","tab":"6","label":"Completar vale ficticio de 15000 L RC 0.3000","event":"fin","utc":"2026-10-23T13:56:13.947Z"}
+{"seq":71,"actor":"e2e_produccion","tab":"6","label":"Calcular mezcla vale con leche y descremada trazables","event":"inicio","utc":"2026-10-23T13:56:24.046Z"}
+{"seq":71,"actor":"e2e_produccion","tab":"6","label":"Calcular mezcla vale con leche y descremada trazables","event":"fin","utc":"2026-10-23T13:56:24.720Z"}
+{"seq":72,"actor":"e2e_produccion","tab":"6","label":"Crear vale ficticio calculado 15000 L","event":"inicio","utc":"2026-10-23T13:56:34.840Z"}
+{"seq":72,"actor":"e2e_produccion","tab":"6","label":"Crear vale ficticio calculado 15000 L","event":"fin","utc":"2026-10-23T13:56:35.493Z"}
+{"seq":73,"actor":"e2e_produccion","tab":"6","label":"Transferir vale VE6296-01 a Silo 4","event":"inicio","utc":"2026-10-23T13:57:02.041Z"}
+{"seq":73,"actor":"e2e_produccion","tab":"6","label":"Transferir vale VE6296-01 a Silo 4","event":"fin","utc":"2026-10-23T13:57:02.332Z"}
+{"seq":74,"actor":"e2e_produccion","tab":"6","label":"Iniciar agitación ficticia vale VE6296-01","event":"inicio","utc":"2026-10-23T13:57:12.475Z"}
+{"seq":74,"actor":"e2e_produccion","tab":"6","label":"Iniciar agitación ficticia vale VE6296-01","event":"fin","utc":"2026-10-23T13:57:12.765Z"}
+{"seq":75,"actor":"e2e_produccion","tab":"6","label":"Registrar muestra ficticia de vale VE6296-01","event":"inicio","utc":"2026-10-23T13:57:32.248Z"}
+{"seq":75,"actor":"e2e_produccion","tab":"6","label":"Registrar muestra ficticia de vale VE6296-01","event":"fin","utc":"2026-10-23T13:57:32.670Z"}
+{"seq":76,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar vale muestreado VE6296-01","event":"inicio","utc":"2026-10-23T13:57:52.162Z"}
+{"seq":76,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar vale muestreado VE6296-01","event":"fin","utc":"2026-10-23T13:57:55.228Z"}
+{"seq":77,"actor":"e2e_calidad","tab":"4","label":"Calidad abrir mediciones del vale","event":"inicio","utc":"2026-10-23T13:58:05.477Z"}
+{"seq":77,"actor":"e2e_calidad","tab":"4","label":"Calidad abrir mediciones del vale","event":"fin","utc":"2026-10-23T13:58:05.764Z"}
+{"seq":78,"actor":"e2e_calidad","tab":"4","label":"Calidad decidir vale VE6296-01","event":"inicio","utc":"2026-10-23T13:58:15.877Z"}
+{"seq":78,"actor":"e2e_calidad","tab":"4","label":"Calidad decidir vale VE6296-01","event":"fin","utc":"2026-10-23T13:58:16.153Z"}
+{"seq":79,"actor":"e2e_calidad","tab":"4","label":"Verificar vale cerrado tras decisión de Calidad","event":"inicio","utc":"2026-10-23T13:58:31.639Z"}
+{"seq":79,"actor":"e2e_calidad","tab":"4","label":"Verificar vale cerrado tras decisión de Calidad","event":"fin","utc":"2026-10-23T13:58:31.937Z"}
+{"seq":80,"actor":"e2e_calidad","tab":"4","label":"Consultar detalle del vale liberado","event":"inicio","utc":"2026-10-23T13:58:42.056Z"}
+{"seq":80,"actor":"e2e_calidad","tab":"4","label":"Consultar detalle del vale liberado","event":"fin","utc":"2026-10-23T13:58:42.335Z"}
+{"seq":81,"actor":"e2e_calidad","tab":"4","label":"Calidad abrir Silo 4 recién estandarizado","event":"inicio","utc":"2026-10-23T13:59:15.332Z"}
+{"seq":81,"actor":"e2e_calidad","tab":"4","label":"Calidad abrir Silo 4 recién estandarizado","event":"fin","utc":"2026-10-23T13:59:15.382Z"}
+{"seq":82,"actor":"e2e_calidad","tab":"4","label":"Abrir muestra del silo estandarizado","event":"inicio","utc":"2026-10-23T13:59:25.686Z"}
+{"seq":82,"actor":"e2e_calidad","tab":"4","label":"Abrir muestra del silo estandarizado","event":"fin","utc":"2026-10-23T13:59:26.281Z"}
+{"seq":83,"actor":"e2e_calidad","tab":"4","label":"Completar análisis ficticio Silo 4 estandarizado","event":"inicio","utc":"2026-10-23T13:59:37.774Z"}
+{"seq":83,"actor":"e2e_calidad","tab":"4","label":"Completar análisis ficticio Silo 4 estandarizado","event":"fin","utc":"2026-10-23T13:59:38.029Z"}
+{"seq":84,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis Silo 4 estandarizado","event":"inicio","utc":"2026-10-23T13:59:48.221Z"}
+{"seq":84,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis Silo 4 estandarizado","event":"fin","utc":"2026-10-23T13:59:48.512Z"}
+{"seq":85,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante actualizar silo estandarizado","event":"inicio","utc":"2026-10-23T13:59:48.886Z"}
+{"seq":85,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante actualizar silo estandarizado","event":"fin","utc":"2026-10-23T13:59:49.170Z"}
+{"seq":86,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar muestra estandarizada como segundo usuario","event":"inicio","utc":"2026-10-23T14:00:08.941Z"}
+{"seq":86,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar muestra estandarizada como segundo usuario","event":"fin","utc":"2026-10-23T14:00:09.533Z"}
+{"seq":87,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis Silo 4","event":"inicio","utc":"2026-10-23T14:00:19.875Z"}
+{"seq":87,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis Silo 4","event":"fin","utc":"2026-10-23T14:00:20.157Z"}
+{"seq":88,"actor":"e2e_produccion","tab":"6","label":"Abrir lote productivo desde vale liberado","event":"inicio","utc":"2026-10-23T14:00:20.326Z"}
+{"seq":88,"actor":"e2e_produccion","tab":"6","label":"Abrir lote productivo desde vale liberado","event":"fin","utc":"2026-10-23T14:00:20.371Z"}
+{"seq":89,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de lote para evaporación","event":"inicio","utc":"2026-10-23T14:00:30.501Z"}
+{"seq":89,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de lote para evaporación","event":"fin","utc":"2026-10-23T14:00:30.787Z"}
+{"seq":90,"actor":"e2e_produccion","tab":"6","label":"Seleccionar vale y equipo del lote polvo OPF-POL-01","event":"inicio","utc":"2026-10-23T14:01:04.291Z"}
+{"seq":90,"actor":"e2e_produccion","tab":"6","label":"Seleccionar vale y equipo del lote polvo OPF-POL-01","event":"fin","utc":"2026-10-23T14:01:04.407Z"}
+{"seq":91,"actor":"e2e_produccion","tab":"6","label":"Completar apertura lote OPF-POL-01 para 6000 L","event":"inicio","utc":"2026-10-23T14:01:15.292Z"}
+{"seq":91,"actor":"e2e_produccion","tab":"6","label":"Completar apertura lote OPF-POL-01 para 6000 L","event":"fin","utc":"2026-10-23T14:01:15.721Z"}
+{"seq":92,"actor":"e2e_produccion","tab":"6","label":"Preparar corrida evaporación del lote OPF-POL-01","event":"inicio","utc":"2026-10-23T14:01:32.479Z"}
+{"seq":92,"actor":"e2e_produccion","tab":"6","label":"Preparar corrida evaporación del lote OPF-POL-01","event":"fin","utc":"2026-10-23T14:01:35.547Z"}
+{"seq":93,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de evaporación","event":"inicio","utc":"2026-10-23T14:01:45.775Z"}
+{"seq":93,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de evaporación","event":"fin","utc":"2026-10-23T14:01:46.056Z"}
+{"seq":94,"actor":"e2e_produccion","tab":"6","label":"Seleccionar lote trazable para evaporación","event":"inicio","utc":"2026-10-23T14:01:58.194Z"}
+{"seq":94,"actor":"e2e_produccion","tab":"6","label":"Seleccionar lote trazable para evaporación","event":"fin","utc":"2026-10-23T14:01:58.214Z"}
+{"seq":95,"actor":"e2e_produccion","tab":"6","label":"Preparar evaporación con concentrado a Silo 5","event":"inicio","utc":"2026-10-23T14:02:08.806Z"}
+{"seq":95,"actor":"e2e_produccion","tab":"6","label":"Preparar evaporación con concentrado a Silo 5","event":"fin","utc":"2026-10-23T14:02:09.150Z"}
+{"seq":96,"actor":"e2e_produccion","tab":"6","label":"Iniciar evaporación OPF-POL-01","event":"inicio","utc":"2026-10-23T14:02:19.307Z"}
+{"seq":96,"actor":"e2e_produccion","tab":"6","label":"Iniciar evaporación OPF-POL-01","event":"fin","utc":"2026-10-23T14:02:19.588Z"}
+{"seq":97,"actor":"e2e_produccion","tab":"6","label":"Registrar salida concentrado del evaporador","event":"inicio","utc":"2026-10-23T14:02:38.048Z"}
+{"seq":97,"actor":"e2e_produccion","tab":"6","label":"Registrar salida concentrado del evaporador","event":"fin","utc":"2026-10-23T14:02:38.318Z"}
+{"seq":98,"actor":"e2e_produccion","tab":"6","label":"Cerrar evaporación ficticia 6000 L a 1500 L concentrado","event":"inicio","utc":"2026-10-23T14:03:18.717Z"}
+{"seq":98,"actor":"e2e_produccion","tab":"6","label":"Cerrar evaporación ficticia 6000 L a 1500 L concentrado","event":"fin","utc":"2026-10-23T14:03:19.187Z"}
+{"seq":99,"actor":"e2e_calidad","tab":"4","label":"Actualizar saldos tras cierre evaporación","event":"inicio","utc":"2026-10-23T14:05:11.407Z"}
+{"seq":99,"actor":"e2e_calidad","tab":"4","label":"Actualizar saldos tras cierre evaporación","event":"fin","utc":"2026-10-23T14:05:11.908Z"}
+{"seq":100,"actor":"e2e_calidad","tab":"4","label":"Tomar muestra de concentrado en Silo 5","event":"inicio","utc":"2026-10-23T14:05:23.056Z"}
+{"seq":100,"actor":"e2e_calidad","tab":"4","label":"Tomar muestra de concentrado en Silo 5","event":"fin","utc":"2026-10-23T14:05:23.895Z"}
+{"seq":101,"actor":"e2e_calidad","tab":"4","label":"Completar análisis ficticio concentrado Silo 5","event":"inicio","utc":"2026-10-23T14:05:35.161Z"}
+{"seq":101,"actor":"e2e_calidad","tab":"4","label":"Completar análisis ficticio concentrado Silo 5","event":"fin","utc":"2026-10-23T14:05:35.429Z"}
+{"seq":102,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis concentrado Silo 5","event":"inicio","utc":"2026-10-23T14:05:45.614Z"}
+{"seq":102,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis concentrado Silo 5","event":"fin","utc":"2026-10-23T14:05:45.887Z"}
+{"seq":103,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar concentrado para segunda firma","event":"inicio","utc":"2026-10-23T14:05:46.159Z"}
+{"seq":103,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar concentrado para segunda firma","event":"fin","utc":"2026-10-23T14:05:46.450Z"}
+{"seq":104,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar análisis concentrado Silo 5 segundo usuario","event":"inicio","utc":"2026-10-23T14:06:02.021Z"}
+{"seq":104,"actor":"e2e_calidad_firma","tab":"5","label":"Revisar análisis concentrado Silo 5 segundo usuario","event":"fin","utc":"2026-10-23T14:06:02.623Z"}
+{"seq":105,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización concentrado Silo 5","event":"inicio","utc":"2026-10-23T14:06:12.802Z"}
+{"seq":105,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización concentrado Silo 5","event":"fin","utc":"2026-10-23T14:06:13.097Z"}
+{"seq":106,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar concentrado OPF-POL-01","event":"inicio","utc":"2026-10-23T14:06:13.558Z"}
+{"seq":106,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar concentrado OPF-POL-01","event":"fin","utc":"2026-10-23T14:06:13.609Z"}
+{"seq":107,"actor":"e2e_calidad","tab":"4","label":"Calidad liberar concentrado OPF-POL-01","event":"inicio","utc":"2026-10-23T14:06:37.549Z"}
+{"seq":107,"actor":"e2e_calidad","tab":"4","label":"Calidad liberar concentrado OPF-POL-01","event":"fin","utc":"2026-10-23T14:06:37.938Z"}
+{"seq":108,"actor":"e2e_secado","tab":"7","label":"Ingresar al puesto ficticio de Secado","event":"inicio","utc":"2026-10-23T14:06:49.050Z"}
+{"seq":108,"actor":"e2e_secado","tab":"7","label":"Ingresar al puesto ficticio de Secado","event":"fin","utc":"2026-10-23T14:06:49.587Z"}
+{"seq":109,"actor":"e2e_secado","tab":"7","label":"Secado consultar concentrado liberado","event":"inicio","utc":"2026-10-23T14:07:03.587Z"}
+{"seq":109,"actor":"e2e_secado","tab":"7","label":"Secado consultar concentrado liberado","event":"fin","utc":"2026-10-23T14:07:03.643Z"}
+{"seq":110,"actor":"e2e_secado","tab":"7","label":"Cargar intermedios liberados para Secado","event":"inicio","utc":"2026-10-23T14:07:13.882Z"}
+{"seq":110,"actor":"e2e_secado","tab":"7","label":"Cargar intermedios liberados para Secado","event":"fin","utc":"2026-10-23T14:07:14.160Z"}
+{"seq":111,"actor":"e2e_secado","tab":"7","label":"Preparar continuación a Secado OPF-POL-01","event":"inicio","utc":"2026-10-23T14:07:24.329Z"}
+{"seq":111,"actor":"e2e_secado","tab":"7","label":"Preparar continuación a Secado OPF-POL-01","event":"fin","utc":"2026-10-23T14:07:24.604Z"}
+{"seq":112,"actor":"e2e_secado","tab":"7","label":"Confirmar preparación Secado OPF-POL-01 1500 L","event":"inicio","utc":"2026-10-23T14:08:08.746Z"}
+{"seq":112,"actor":"e2e_secado","tab":"7","label":"Confirmar preparación Secado OPF-POL-01 1500 L","event":"fin","utc":"2026-10-23T14:08:09.085Z"}
+{"seq":113,"actor":"e2e_secado","tab":"7","label":"Abrir ejecución preparada de Secado","event":"inicio","utc":"2026-10-23T14:08:19.215Z"}
+{"seq":113,"actor":"e2e_secado","tab":"7","label":"Abrir ejecución preparada de Secado","event":"fin","utc":"2026-10-23T14:08:19.284Z"}
+{"seq":114,"actor":"e2e_secado","tab":"7","label":"Iniciar ejecución Secado CONT-4-BDE1611F","event":"inicio","utc":"2026-10-23T14:08:34.926Z"}
+{"seq":114,"actor":"e2e_secado","tab":"7","label":"Iniciar ejecución Secado CONT-4-BDE1611F","event":"fin","utc":"2026-10-23T14:08:35.419Z"}
+{"seq":115,"actor":"e2e_secado","tab":"7","label":"Abrir puesto Secado para registrar balance","event":"inicio","utc":"2026-10-23T14:08:45.502Z"}
+{"seq":115,"actor":"e2e_secado","tab":"7","label":"Abrir puesto Secado para registrar balance","event":"fin","utc":"2026-10-23T14:08:45.777Z"}
+{"seq":116,"actor":"e2e_secado","tab":"7","label":"Abrir balance de Secado OPF-POL-01","event":"inicio","utc":"2026-10-23T14:08:56.023Z"}
+{"seq":116,"actor":"e2e_secado","tab":"7","label":"Abrir balance de Secado OPF-POL-01","event":"fin","utc":"2026-10-23T14:08:56.307Z"}
+{"seq":117,"actor":"e2e_secado","tab":"7","label":"Completar balance ficticio de Secado con ticket de peso","event":"inicio","utc":"2026-10-23T14:09:10.968Z"}
+{"seq":117,"actor":"e2e_secado","tab":"7","label":"Completar balance ficticio de Secado con ticket de peso","event":"error","utc":"2026-10-23T14:09:14.159Z","detalle":"Error: Error: Playwright selector deadline exceeded\nlocator.fill failed for selector internal:role=dialog >> internal:role=textbox[name=\"Ticket o registro de medición (kg medidos)\"s]\nLocator diagnostics: {\"kind\":\"no_matches\",\"action\":\"fill\",\"locator\":\"internal:role=dialog >> internal:role=textbox[name=\\\"Ticket o registro de medición (kg medidos)\\\"s]\",\"matchCount\":0,\"matches\":[],\"visibleCount\":0,\"truncated\":false}"}
+{"seq":118,"actor":"e2e_secado","tab":"7","label":"Registrar ticket ficticio de peso medido en Secado","event":"inicio","utc":"2026-10-23T14:09:29.293Z"}
+{"seq":118,"actor":"e2e_secado","tab":"7","label":"Registrar ticket ficticio de peso medido en Secado","event":"fin","utc":"2026-10-23T14:09:29.466Z"}
+{"seq":119,"actor":"e2e_secado","tab":"7","label":"Cerrar balance ficticio Secado OPF-POL-01","event":"inicio","utc":"2026-10-23T14:09:39.602Z"}
+{"seq":119,"actor":"e2e_secado","tab":"7","label":"Cerrar balance ficticio Secado OPF-POL-01","event":"fin","utc":"2026-10-23T14:09:39.897Z"}
+{"seq":120,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar polvo producido OPF-POL-01","event":"inicio","utc":"2026-10-23T14:10:11.424Z"}
+{"seq":120,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar polvo producido OPF-POL-01","event":"fin","utc":"2026-10-23T14:10:11.564Z"}
+{"seq":121,"actor":"e2e_envasado","tab":"8","label":"Ingresar puesto ficticio de Envase","event":"inicio","utc":"2026-10-23T14:10:34.998Z"}
+{"seq":121,"actor":"e2e_envasado","tab":"8","label":"Ingresar puesto ficticio de Envase","event":"fin","utc":"2026-10-23T14:10:35.350Z"}
+{"seq":122,"actor":"e2e_calidad","tab":"4","label":"Abrir expediente polvo OPF-POL-01","event":"inicio","utc":"2026-10-23T14:10:52.276Z"}
+{"seq":122,"actor":"e2e_calidad","tab":"4","label":"Abrir expediente polvo OPF-POL-01","event":"fin","utc":"2026-10-23T14:10:52.347Z"}
+{"seq":123,"actor":"e2e_calidad","tab":"4","label":"Agregar análisis de polvo OPF-POL-01","event":"inicio","utc":"2026-10-23T14:11:07.212Z"}
+{"seq":123,"actor":"e2e_calidad","tab":"4","label":"Agregar análisis de polvo OPF-POL-01","event":"fin","utc":"2026-10-23T14:11:07.498Z"}
+{"seq":124,"actor":"e2e_calidad","tab":"4","label":"Registrar análisis ficticio polvo 27% MG 3% humedad","event":"inicio","utc":"2026-10-23T14:11:26.169Z"}
+{"seq":124,"actor":"e2e_calidad","tab":"4","label":"Registrar análisis ficticio polvo 27% MG 3% humedad","event":"fin","utc":"2026-10-23T14:11:26.587Z"}
+{"seq":125,"actor":"e2e_calidad","tab":"4","label":"Calidad volver a bandeja para liberar Secado","event":"inicio","utc":"2026-10-23T14:11:36.708Z"}
+{"seq":125,"actor":"e2e_calidad","tab":"4","label":"Calidad volver a bandeja para liberar Secado","event":"fin","utc":"2026-10-23T14:11:36.774Z"}
+{"seq":126,"actor":"e2e_calidad","tab":"4","label":"Calidad liberar polvo OPF-POL-01 para Envase","event":"inicio","utc":"2026-10-23T14:11:51.860Z"}
+{"seq":126,"actor":"e2e_calidad","tab":"4","label":"Calidad liberar polvo OPF-POL-01 para Envase","event":"fin","utc":"2026-10-23T14:11:52.282Z"}
+{"seq":127,"actor":"e2e_envasado","tab":"8","label":"Envase actualizar materiales tras aprobación Calidad","event":"inicio","utc":"2026-10-23T14:11:52.458Z"}
+{"seq":127,"actor":"e2e_envasado","tab":"8","label":"Envase actualizar materiales tras aprobación Calidad","event":"fin","utc":"2026-10-23T14:11:52.749Z"}
+{"seq":128,"actor":"e2e_envasado","tab":"8","label":"Seleccionar polvo liberado para envasar","event":"inicio","utc":"2026-10-23T14:12:02.805Z"}
+{"seq":128,"actor":"e2e_envasado","tab":"8","label":"Seleccionar polvo liberado para envasar","event":"fin","utc":"2026-10-23T14:12:03.072Z"}
+{"seq":129,"actor":"e2e_envasado","tab":"8","label":"Registrar pallet ficticio OPF-PAL-POL-01 de 500 kg","event":"inicio","utc":"2026-10-23T14:12:21.815Z"}
+{"seq":129,"actor":"e2e_envasado","tab":"8","label":"Registrar pallet ficticio OPF-PAL-POL-01 de 500 kg","event":"fin","utc":"2026-10-23T14:12:22.329Z"}
+{"seq":130,"actor":"e2e_calidad","tab":"4","label":"Abrir expediente Calidad final del pallet de polvo","event":"inicio","utc":"2026-10-23T14:13:28.765Z"}
+{"seq":130,"actor":"e2e_calidad","tab":"4","label":"Abrir expediente Calidad final del pallet de polvo","event":"fin","utc":"2026-10-23T14:13:29.070Z"}
+{"seq":131,"actor":"e2e_calidad","tab":"4","label":"Revisar formulario PCC del lote de polvo","event":"inicio","utc":"2026-10-23T14:13:39.284Z"}
+{"seq":131,"actor":"e2e_calidad","tab":"4","label":"Revisar formulario PCC del lote de polvo","event":"fin","utc":"2026-10-23T14:13:39.572Z"}
+{"seq":132,"actor":"e2e_calidad","tab":"4","label":"Completar atestación ficticia PCC1 del lote prueba","event":"inicio","utc":"2026-10-23T14:14:27.355Z"}
+{"seq":132,"actor":"e2e_calidad","tab":"4","label":"Completar atestación ficticia PCC1 del lote prueba","event":"fin","utc":"2026-10-23T14:14:27.838Z"}
+{"seq":133,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist equipo no usado Scheffers3","event":"inicio","utc":"2026-10-23T14:14:37.986Z"}
+{"seq":133,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist equipo no usado Scheffers3","event":"fin","utc":"2026-10-23T14:14:38.281Z"}
+{"seq":134,"actor":"e2e_calidad","tab":"4","label":"Documentar Scheffers3 no utilizado en la simulación","event":"inicio","utc":"2026-10-23T14:15:01.575Z"}
+{"seq":134,"actor":"e2e_calidad","tab":"4","label":"Documentar Scheffers3 no utilizado en la simulación","event":"fin","utc":"2026-10-23T14:15:02.365Z"}
+{"seq":135,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist VEB no utilizado","event":"inicio","utc":"2026-10-23T14:15:12.487Z"}
+{"seq":135,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist VEB no utilizado","event":"fin","utc":"2026-10-23T14:15:12.768Z"}
+{"seq":136,"actor":"e2e_calidad","tab":"4","label":"Documentar VEB no utilizado en simulación","event":"inicio","utc":"2026-10-23T14:15:35.136Z"}
+{"seq":136,"actor":"e2e_calidad","tab":"4","label":"Documentar VEB no utilizado en simulación","event":"fin","utc":"2026-10-23T14:15:36.079Z"}
+{"seq":137,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist del Scheffers2 utilizado","event":"inicio","utc":"2026-10-23T14:15:46.240Z"}
+{"seq":137,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist del Scheffers2 utilizado","event":"fin","utc":"2026-10-23T14:15:46.520Z"}
+{"seq":138,"actor":"e2e_calidad","tab":"4","label":"Completar control ficticio Scheffers2","event":"inicio","utc":"2026-10-23T14:16:06.176Z"}
+{"seq":138,"actor":"e2e_calidad","tab":"4","label":"Completar control ficticio Scheffers2","event":"fin","utc":"2026-10-23T14:16:10.243Z"}
+{"seq":139,"actor":"e2e_calidad","tab":"4","label":"Revisar preoperativo Egron de la simulación","event":"inicio","utc":"2026-10-23T14:16:20.406Z"}
+{"seq":139,"actor":"e2e_calidad","tab":"4","label":"Revisar preoperativo Egron de la simulación","event":"fin","utc":"2026-10-23T14:16:20.687Z"}
+{"seq":140,"actor":"e2e_calidad","tab":"4","label":"Completar preoperativo ficticio de Secado","event":"inicio","utc":"2026-10-23T14:17:01.446Z"}
+{"seq":140,"actor":"e2e_calidad","tab":"4","label":"Completar preoperativo ficticio de Secado","event":"fin","utc":"2026-10-23T14:17:02.249Z"}
+{"seq":141,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist de envasadora Rovema","event":"inicio","utc":"2026-10-23T14:17:12.403Z"}
+{"seq":141,"actor":"e2e_calidad","tab":"4","label":"Revisar checklist de envasadora Rovema","event":"fin","utc":"2026-10-23T14:17:12.692Z"}
+{"seq":142,"actor":"e2e_calidad","tab":"4","label":"Completar checklist ficticio Rovema3","event":"inicio","utc":"2026-10-23T14:18:25.563Z"}
+{"seq":142,"actor":"e2e_calidad","tab":"4","label":"Completar checklist ficticio Rovema3","event":"fin","utc":"2026-10-23T14:18:30.647Z"}
+{"seq":143,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Disco de Uperización","event":"inicio","utc":"2026-10-23T14:19:08.742Z"}
+{"seq":143,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Disco de Uperización","event":"fin","utc":"2026-10-23T14:19:10.244Z"}
+{"seq":144,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Hoja de Pulverización E1-E2","event":"inicio","utc":"2026-10-23T14:19:20.902Z"}
+{"seq":144,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Hoja de Pulverización E1-E2","event":"fin","utc":"2026-10-23T14:19:22.412Z"}
+{"seq":145,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Conexión a Tierra E1-E2","event":"inicio","utc":"2026-10-23T14:19:33.107Z"}
+{"seq":145,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Conexión a Tierra E1-E2","event":"fin","utc":"2026-10-23T14:19:34.684Z"}
+{"seq":146,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Formulario de Filtros de Limpieza de producto","event":"inicio","utc":"2026-10-23T14:19:45.461Z"}
+{"seq":146,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Formulario de Filtros de Limpieza de producto","event":"fin","utc":"2026-10-23T14:19:46.157Z"}
+{"seq":147,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Dosificación de Lecitina en Leche en Polvo","event":"inicio","utc":"2026-10-23T14:19:56.294Z"}
+{"seq":147,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Dosificación de Lecitina en Leche en Polvo","event":"fin","utc":"2026-10-23T14:19:57.101Z"}
+{"seq":148,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Checklist de Cuerpos Extraños E1-E2","event":"inicio","utc":"2026-10-23T14:20:07.288Z"}
+{"seq":148,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Checklist de Cuerpos Extraños E1-E2","event":"fin","utc":"2026-10-23T14:20:07.988Z"}
+{"seq":149,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: PPRO 3 - Monitoreo de PPRO E1-E2","event":"inicio","utc":"2026-10-23T14:20:18.121Z"}
+{"seq":149,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: PPRO 3 - Monitoreo de PPRO E1-E2","event":"fin","utc":"2026-10-23T14:20:18.831Z"}
+{"seq":150,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: PPRO 4 - Monitoreo PPRO Rovemas 3 y 4","event":"inicio","utc":"2026-10-23T14:20:28.994Z"}
+{"seq":150,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: PPRO 4 - Monitoreo PPRO Rovemas 3 y 4","event":"fin","utc":"2026-10-23T14:20:29.733Z"}
+{"seq":151,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Inspección en Operación Rovema 3-4","event":"inicio","utc":"2026-10-23T14:21:33.208Z"}
+{"seq":151,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Inspección en Operación Rovema 3-4","event":"fin","utc":"2026-10-23T14:21:33.946Z"}
+{"seq":152,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Seguimiento FEFO","event":"inicio","utc":"2026-10-23T14:21:44.120Z"}
+{"seq":152,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Seguimiento FEFO","event":"fin","utc":"2026-10-23T14:21:44.847Z"}
+{"seq":153,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: PPRO 5 - Monitoreo PPRO Detector de Metales","event":"inicio","utc":"2026-10-23T14:21:54.997Z"}
+{"seq":153,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: PPRO 5 - Monitoreo PPRO Detector de Metales","event":"fin","utc":"2026-10-23T14:21:55.725Z"}
+{"seq":154,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Control de Consumo de Materiales","event":"inicio","utc":"2026-10-23T14:22:06.481Z"}
+{"seq":154,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Control de Consumo de Materiales","event":"fin","utc":"2026-10-23T14:22:07.154Z"}
+{"seq":155,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Control de Hermeticidad y Peso Neto","event":"inicio","utc":"2026-10-23T14:22:17.302Z"}
+{"seq":155,"actor":"e2e_calidad","tab":"4","label":"Atestación simulada: Control de Hermeticidad y Peso Neto","event":"fin","utc":"2026-10-23T14:22:18.018Z"}
+{"seq":156,"actor":"e2e_calidad","tab":"4","label":"Liberación comercial ficticia lote OPF-POL-01","event":"inicio","utc":"2026-10-23T14:22:34.344Z"}
+{"seq":156,"actor":"e2e_calidad","tab":"4","label":"Liberación comercial ficticia lote OPF-POL-01","event":"fin","utc":"2026-10-23T14:22:34.627Z"}
+{"seq":157,"actor":"e2e_calidad","tab":"4","label":"Enviar pallet ficticio OPF-PAL-POL-01 a Bodega","event":"inicio","utc":"2026-10-23T14:23:08.575Z"}
+{"seq":157,"actor":"e2e_calidad","tab":"4","label":"Enviar pallet ficticio OPF-PAL-POL-01 a Bodega","event":"fin","utc":"2026-10-23T14:23:08.985Z"}
+{"seq":158,"actor":"e2e_inventario","tab":"9","label":"Ingresar puesto ficticio Bodega","event":"inicio","utc":"2026-10-23T14:23:38.456Z"}
+{"seq":158,"actor":"e2e_inventario","tab":"9","label":"Ingresar puesto ficticio Bodega","event":"fin","utc":"2026-10-23T14:23:39.040Z"}
+{"seq":159,"actor":"e2e_inventario","tab":"9","label":"Bodega consultar producto terminado recibido","event":"inicio","utc":"2026-10-23T14:23:49.878Z"}
+{"seq":159,"actor":"e2e_inventario","tab":"9","label":"Bodega consultar producto terminado recibido","event":"fin","utc":"2026-10-23T14:23:49.944Z"}
+{"seq":160,"actor":"e2e_inventario","tab":"9","label":"Bodega revisar movimiento único de ingreso del pallet","event":"inicio","utc":"2026-10-23T14:24:15.028Z"}
+{"seq":160,"actor":"e2e_inventario","tab":"9","label":"Bodega revisar movimiento único de ingreso del pallet","event":"fin","utc":"2026-10-23T14:24:15.314Z"}
+{"seq":161,"actor":"e2e_despacho","tab":"10","label":"Ingresar puesto ficticio de Despacho","event":"inicio","utc":"2026-10-23T14:24:48.928Z"}
+{"seq":161,"actor":"e2e_despacho","tab":"10","label":"Ingresar puesto ficticio de Despacho","event":"fin","utc":"2026-10-23T14:24:49.704Z"}
+{"seq":162,"actor":"e2e_despacho","tab":"10","label":"Preparar hoja de carga pallet ficticio 500 kg","event":"inicio","utc":"2026-10-23T14:25:15.991Z"}
+{"seq":162,"actor":"e2e_despacho","tab":"10","label":"Preparar hoja de carga pallet ficticio 500 kg","event":"fin","utc":"2026-10-23T14:25:16.379Z"}
+{"seq":163,"actor":"e2e_despacho","tab":"10","label":"Actualizar catálogo ficticio de destinos de Despacho","event":"inicio","utc":"2026-10-23T14:26:24.412Z"}
+{"seq":163,"actor":"e2e_despacho","tab":"10","label":"Actualizar catálogo ficticio de destinos de Despacho","event":"fin","utc":"2026-10-23T14:26:25.319Z"}
+{"seq":164,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja de carga con cliente ficticio","event":"inicio","utc":"2026-10-23T14:26:42.104Z"}
+{"seq":164,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja de carga con cliente ficticio","event":"fin","utc":"2026-10-23T14:26:42.513Z"}
+{"seq":165,"actor":"e2e_despacho","tab":"10","label":"Completar hoja de carga del pallet 500 kg","event":"inicio","utc":"2026-10-23T14:26:56.923Z"}
+{"seq":165,"actor":"e2e_despacho","tab":"10","label":"Completar hoja de carga del pallet 500 kg","event":"fin","utc":"2026-10-23T14:26:58.557Z"}
+{"seq":166,"actor":"e2e_despacho","tab":"10","label":"Guardar hoja ficticia de despacho de 500 kg","event":"inicio","utc":"2026-10-23T14:27:09.511Z"}
+{"seq":166,"actor":"e2e_despacho","tab":"10","label":"Guardar hoja ficticia de despacho de 500 kg","event":"fin","utc":"2026-10-23T14:27:10.376Z"}
+{"seq":167,"actor":"e2e_despacho","tab":"10","label":"Autorizar hoja ficticia DE6296-01","event":"inicio","utc":"2026-10-23T14:27:39.362Z"}
+{"seq":167,"actor":"e2e_despacho","tab":"10","label":"Autorizar hoja ficticia DE6296-01","event":"fin","utc":"2026-10-23T14:27:39.778Z"}
+{"seq":168,"actor":"e2e_despacho","tab":"10","label":"Revisar salida del pallet OPF-PAL-POL-01","event":"inicio","utc":"2026-10-23T14:28:12.885Z"}
+{"seq":168,"actor":"e2e_despacho","tab":"10","label":"Revisar salida del pallet OPF-PAL-POL-01","event":"fin","utc":"2026-10-23T14:28:13.150Z"}
+{"seq":169,"actor":"e2e_despacho","tab":"10","label":"Confirmar salida ficticia DE6296-01 de 500 kg","event":"inicio","utc":"2026-10-23T14:30:49.066Z"}
+{"seq":169,"actor":"e2e_despacho","tab":"10","label":"Confirmar salida ficticia DE6296-01 de 500 kg","event":"fin","utc":"2026-10-23T14:30:49.349Z"}
+{"seq":170,"actor":"e2e_produccion","tab":"6","label":"Abrir proceso ficticio de Mantequilla desde crema trazable","event":"inicio","utc":"2026-10-23T14:32:19.678Z"}
+{"seq":170,"actor":"e2e_produccion","tab":"6","label":"Abrir proceso ficticio de Mantequilla desde crema trazable","event":"fin","utc":"2026-10-23T14:32:19.966Z"}
+{"seq":171,"actor":"e2e_produccion","tab":"6","label":"Actualizar orden ficticia disponible para Mantequilla","event":"inicio","utc":"2026-10-23T14:37:12.420Z"}
+{"seq":171,"actor":"e2e_produccion","tab":"6","label":"Actualizar orden ficticia disponible para Mantequilla","event":"fin","utc":"2026-10-23T14:37:12.606Z"}
+{"seq":172,"actor":"e2e_produccion","tab":"6","label":"Abrir Mantequilla con orden ficticia autorizada","event":"inicio","utc":"2026-10-23T14:37:22.681Z"}
+{"seq":172,"actor":"e2e_produccion","tab":"6","label":"Abrir Mantequilla con orden ficticia autorizada","event":"fin","utc":"2026-10-23T14:37:22.981Z"}
+{"seq":173,"actor":"e2e_produccion","tab":"6","label":"Preparar corrida ficticia OPF-MANT-01 desde crema trazable","event":"inicio","utc":"2026-10-23T14:38:02.458Z"}
+{"seq":173,"actor":"e2e_produccion","tab":"6","label":"Preparar corrida ficticia OPF-MANT-01 desde crema trazable","event":"fin","utc":"2026-10-23T14:38:02.604Z"}
+{"seq":174,"actor":"e2e_produccion","tab":"6","label":"Crear corrida ficticia Mantequilla OPF-MANT-01","event":"inicio","utc":"2026-10-23T14:38:12.687Z"}
+{"seq":174,"actor":"e2e_produccion","tab":"6","label":"Crear corrida ficticia Mantequilla OPF-MANT-01","event":"fin","utc":"2026-10-23T14:38:12.980Z"}
+{"seq":175,"actor":"e2e_produccion","tab":"6","label":"Iniciar Mantequilla ficticia con crema TkC2","event":"inicio","utc":"2026-10-23T14:38:26.970Z"}
+{"seq":175,"actor":"e2e_produccion","tab":"6","label":"Iniciar Mantequilla ficticia con crema TkC2","event":"fin","utc":"2026-10-23T14:38:27.254Z"}
+{"seq":176,"actor":"e2e_produccion","tab":"6","label":"Abrir balance de Mantequilla OPF-MANT-01","event":"inicio","utc":"2026-10-23T14:38:37.310Z"}
+{"seq":176,"actor":"e2e_produccion","tab":"6","label":"Abrir balance de Mantequilla OPF-MANT-01","event":"fin","utc":"2026-10-23T14:38:37.589Z"}
+{"seq":177,"actor":"e2e_produccion","tab":"6","label":"Cerrar balance ficticio Mantequilla 31kg y 5kg merma","event":"inicio","utc":"2026-10-23T14:38:54.421Z"}
+{"seq":177,"actor":"e2e_produccion","tab":"6","label":"Cerrar balance ficticio Mantequilla 31kg y 5kg merma","event":"fin","utc":"2026-10-23T14:38:54.820Z"}
+{"seq":178,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar Mantequilla OPF-MANT-01","event":"inicio","utc":"2026-10-23T14:39:07.376Z"}
+{"seq":178,"actor":"e2e_calidad","tab":"4","label":"Calidad revisar Mantequilla OPF-MANT-01","event":"fin","utc":"2026-10-23T14:39:07.433Z"}
+{"seq":179,"actor":"e2e_calidad","tab":"4","label":"Abrir expediente de Mantequilla","event":"inicio","utc":"2026-10-23T14:39:17.490Z"}
+{"seq":179,"actor":"e2e_calidad","tab":"4","label":"Abrir expediente de Mantequilla","event":"fin","utc":"2026-10-23T14:39:20.561Z"}
+{"seq":180,"actor":"e2e_calidad","tab":"4","label":"Agregar análisis ficticio de Mantequilla","event":"inicio","utc":"2026-10-23T14:39:30.602Z"}
+{"seq":180,"actor":"e2e_calidad","tab":"4","label":"Agregar análisis ficticio de Mantequilla","event":"fin","utc":"2026-10-23T14:39:30.900Z"}
+{"seq":181,"actor":"e2e_calidad","tab":"4","label":"Actualizar especificación ficticia del análisis Mantequilla","event":"inicio","utc":"2026-10-23T14:41:02.277Z"}
+{"seq":181,"actor":"e2e_calidad","tab":"4","label":"Actualizar especificación ficticia del análisis Mantequilla","event":"fin","utc":"2026-10-23T14:41:02.711Z"}
+{"seq":182,"actor":"e2e_calidad","tab":"4","label":"Abrir análisis Mantequilla con parámetros de la prueba","event":"inicio","utc":"2026-10-23T14:41:12.797Z"}
+{"seq":182,"actor":"e2e_calidad","tab":"4","label":"Abrir análisis Mantequilla con parámetros de la prueba","event":"fin","utc":"2026-10-23T14:41:13.095Z"}
+{"seq":183,"actor":"e2e_calidad","tab":"4","label":"Registrar análisis ficticio Mantequilla OPF-MANT-01","event":"inicio","utc":"2026-10-23T14:41:28.553Z"}
+{"seq":183,"actor":"e2e_calidad","tab":"4","label":"Registrar análisis ficticio Mantequilla OPF-MANT-01","event":"fin","utc":"2026-10-23T14:41:28.985Z"}
+{"seq":184,"actor":"e2e_calidad","tab":"4","label":"Revisar decisión intermedia de Mantequilla","event":"inicio","utc":"2026-10-23T14:41:39.030Z"}
+{"seq":184,"actor":"e2e_calidad","tab":"4","label":"Revisar decisión intermedia de Mantequilla","event":"fin","utc":"2026-10-23T14:41:39.091Z"}
+{"seq":185,"actor":"e2e_calidad","tab":"4","label":"Calidad liberar Mantequilla ficticia para Envase","event":"inicio","utc":"2026-10-23T14:42:19.914Z"}
+{"seq":185,"actor":"e2e_calidad","tab":"4","label":"Calidad liberar Mantequilla ficticia para Envase","event":"fin","utc":"2026-10-23T14:42:20.292Z"}
+{"seq":186,"actor":"e2e_envasado","tab":"8","label":"Envase actualizar Mantequilla liberada","event":"inicio","utc":"2026-10-23T14:42:20.458Z"}
+{"seq":186,"actor":"e2e_envasado","tab":"8","label":"Envase actualizar Mantequilla liberada","event":"fin","utc":"2026-10-23T14:42:20.746Z"}
+{"seq":187,"actor":"e2e_envasado","tab":"8","label":"Seleccionar Mantequilla para caja completa","event":"inicio","utc":"2026-10-23T14:42:30.813Z"}
+{"seq":187,"actor":"e2e_envasado","tab":"8","label":"Seleccionar Mantequilla para caja completa","event":"fin","utc":"2026-10-23T14:42:31.104Z"}
+{"seq":188,"actor":"e2e_envasado","tab":"8","label":"Completar caja ficticia Mantequilla 20 kg","event":"inicio","utc":"2026-10-23T14:43:41.452Z"}
+{"seq":188,"actor":"e2e_envasado","tab":"8","label":"Completar caja ficticia Mantequilla 20 kg","event":"fin","utc":"2026-10-23T14:43:41.673Z"}
+{"seq":189,"actor":"e2e_envasado","tab":"8","label":"Crear pallet ficticio con una caja Mantequilla 20 kg","event":"inicio","utc":"2026-10-23T14:44:37.875Z"}
+{"seq":189,"actor":"e2e_envasado","tab":"8","label":"Crear pallet ficticio con una caja Mantequilla 20 kg","event":"fin","utc":"2026-10-23T14:44:38.370Z"}
+{"seq":190,"actor":"e2e_calidad","tab":"4","label":"Calidad actualizar excedente de Mantequilla","event":"inicio","utc":"2026-10-23T14:45:29.054Z"}
+{"seq":190,"actor":"e2e_calidad","tab":"4","label":"Calidad actualizar excedente de Mantequilla","event":"fin","utc":"2026-10-23T14:45:33.559Z"}
+{"seq":191,"actor":"e2e_calidad","tab":"4","label":"Definir disposición de los 11kg restantes","event":"inicio","utc":"2026-10-23T14:45:43.835Z"}
+{"seq":191,"actor":"e2e_calidad","tab":"4","label":"Definir disposición de los 11kg restantes","event":"fin","utc":"2026-10-23T14:45:44.314Z"}
+{"seq":192,"actor":"e2e_calidad","tab":"4","label":"Aprobar disposición ficticia de 11kg rework Mantequilla","event":"inicio","utc":"2026-10-23T14:46:09.571Z"}
+{"seq":192,"actor":"e2e_calidad","tab":"4","label":"Aprobar disposición ficticia de 11kg rework Mantequilla","event":"fin","utc":"2026-10-23T14:46:11.002Z"}
+{"seq":193,"actor":"e2e_calidad","tab":"4","label":"Abrir Calidad final del lote Mantequilla","event":"inicio","utc":"2026-10-23T14:46:21.361Z"}
+{"seq":193,"actor":"e2e_calidad","tab":"4","label":"Abrir Calidad final del lote Mantequilla","event":"fin","utc":"2026-10-23T14:46:21.786Z"}
+{"seq":194,"actor":"e2e_calidad","tab":"4","label":"Revisar verificación final de Mantequilla","event":"inicio","utc":"2026-10-23T14:46:31.914Z"}
+{"seq":194,"actor":"e2e_calidad","tab":"4","label":"Revisar verificación final de Mantequilla","event":"fin","utc":"2026-10-23T14:46:32.216Z"}
+{"seq":195,"actor":"e2e_calidad","tab":"4","label":"Completar verificación ficticia de caja Mantequilla","event":"inicio","utc":"2026-10-23T14:46:53.516Z"}
+{"seq":195,"actor":"e2e_calidad","tab":"4","label":"Completar verificación ficticia de caja Mantequilla","event":"fin","utc":"2026-10-23T14:46:54.195Z"}
+{"seq":196,"actor":"e2e_calidad","tab":"4","label":"Liberación comercial ficticia de caja Mantequilla","event":"inicio","utc":"2026-10-23T14:47:04.230Z"}
+{"seq":196,"actor":"e2e_calidad","tab":"4","label":"Liberación comercial ficticia de caja Mantequilla","event":"fin","utc":"2026-10-23T14:47:04.504Z"}
+{"seq":197,"actor":"e2e_calidad","tab":"4","label":"Enviar caja ficticia Mantequilla a Bodega","event":"inicio","utc":"2026-10-23T14:47:41.491Z"}
+{"seq":197,"actor":"e2e_calidad","tab":"4","label":"Enviar caja ficticia Mantequilla a Bodega","event":"fin","utc":"2026-10-23T14:47:41.778Z"}
+{"seq":198,"actor":"e2e_inventario","tab":"9","label":"Abrir puesto Bodega para gestionar rework segregado","event":"inicio","utc":"2026-10-23T14:47:48.657Z"}
+{"seq":198,"actor":"e2e_inventario","tab":"9","label":"Abrir puesto Bodega para gestionar rework segregado","event":"fin","utc":"2026-10-23T14:47:51.730Z"}
+{"seq":199,"actor":"e2e_inventario","tab":"9","label":"Bodega abrir consulta de rework","event":"inicio","utc":"2026-10-23T14:48:02.223Z"}
+{"seq":199,"actor":"e2e_inventario","tab":"9","label":"Bodega abrir consulta de rework","event":"fin","utc":"2026-10-23T14:48:05.299Z"}
+{"seq":200,"actor":"e2e_inventario","tab":"9","label":"Revisar unidades físicas de rework","event":"inicio","utc":"2026-10-23T14:48:15.352Z"}
+{"seq":200,"actor":"e2e_inventario","tab":"9","label":"Revisar unidades físicas de rework","event":"fin","utc":"2026-10-23T14:48:15.645Z"}
+{"seq":201,"actor":"e2e_inventario","tab":"9","label":"Bodega ingresar unidad RW-000001 a zona liberada","event":"inicio","utc":"2026-10-23T14:48:29.133Z"}
+{"seq":201,"actor":"e2e_inventario","tab":"9","label":"Bodega ingresar unidad RW-000001 a zona liberada","event":"fin","utc":"2026-10-23T14:48:29.407Z"}
+{"seq":202,"actor":"e2e_inventario","tab":"9","label":"Bodega confirmar rework ficticio en PT-DISP","event":"inicio","utc":"2026-10-23T14:48:57.224Z"}
+{"seq":202,"actor":"e2e_inventario","tab":"9","label":"Bodega confirmar rework ficticio en PT-DISP","event":"fin","utc":"2026-10-23T14:48:57.579Z"}
+{"seq":203,"actor":"e2e_inventario","tab":"9","label":"Bodega verificar caja Mantequilla disponible","event":"inicio","utc":"2026-10-23T14:49:29.391Z"}
+{"seq":203,"actor":"e2e_inventario","tab":"9","label":"Bodega verificar caja Mantequilla disponible","event":"fin","utc":"2026-10-23T14:49:32.025Z"}
+{"seq":204,"actor":"e2e_despacho","tab":"10","label":"Actualizar caja Mantequilla disponible para Despacho","event":"inicio","utc":"2026-10-23T14:49:52.321Z"}
+{"seq":204,"actor":"e2e_despacho","tab":"10","label":"Actualizar caja Mantequilla disponible para Despacho","event":"fin","utc":"2026-10-23T14:49:53.819Z"}
+{"seq":205,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja ficticia de caja Mantequilla","event":"inicio","utc":"2026-10-23T14:50:04.675Z"}
+{"seq":205,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja ficticia de caja Mantequilla","event":"fin","utc":"2026-10-23T14:50:07.595Z"}
+{"seq":206,"actor":"e2e_despacho","tab":"10","label":"Completar hoja de carga ficticia Mantequilla 20kg","event":"inicio","utc":"2026-10-23T14:50:19.108Z"}
+{"seq":206,"actor":"e2e_despacho","tab":"10","label":"Completar hoja de carga ficticia Mantequilla 20kg","event":"fin","utc":"2026-10-23T14:50:20.816Z"}
+{"seq":207,"actor":"e2e_despacho","tab":"10","label":"Guardar hoja ficticia Mantequilla 20kg","event":"inicio","utc":"2026-10-23T14:50:31.060Z"}
+{"seq":207,"actor":"e2e_despacho","tab":"10","label":"Guardar hoja ficticia Mantequilla 20kg","event":"fin","utc":"2026-10-23T14:50:32.540Z"}
+{"seq":208,"actor":"e2e_despacho","tab":"10","label":"Autorizar hoja ficticia DE6296-02 Mantequilla","event":"inicio","utc":"2026-10-23T14:50:44.544Z"}
+{"seq":208,"actor":"e2e_despacho","tab":"10","label":"Autorizar hoja ficticia DE6296-02 Mantequilla","event":"fin","utc":"2026-10-23T14:50:45.006Z"}
+{"seq":209,"actor":"e2e_despacho","tab":"10","label":"Revisar salida autorizada de caja Mantequilla","event":"inicio","utc":"2026-10-23T14:50:58.669Z"}
+{"seq":209,"actor":"e2e_despacho","tab":"10","label":"Revisar salida autorizada de caja Mantequilla","event":"fin","utc":"2026-10-23T14:50:58.941Z"}
+{"seq":210,"actor":"e2e_despacho","tab":"10","label":"Confirmar salida ficticia DE6296-02 de 20kg","event":"inicio","utc":"2026-10-23T14:51:37.271Z"}
+{"seq":210,"actor":"e2e_despacho","tab":"10","label":"Confirmar salida ficticia DE6296-02 de 20kg","event":"fin","utc":"2026-10-23T14:51:37.585Z"}
+{"seq":211,"actor":"e2e_recepcion","tab":"1","label":"Actualizar saldos para revisar salida de leche cruda","event":"inicio","utc":"2026-10-23T15:00:31.643Z"}
+{"seq":211,"actor":"e2e_recepcion","tab":"1","label":"Actualizar saldos para revisar salida de leche cruda","event":"fin","utc":"2026-10-23T15:00:31.950Z"}
+{"seq":212,"actor":"e2e_recepcion","tab":"1","label":"Abrir Silos con sesión de Recepción renovada","event":"inicio","utc":"2026-10-23T15:01:26.465Z"}
+{"seq":212,"actor":"e2e_recepcion","tab":"1","label":"Abrir Silos con sesión de Recepción renovada","event":"fin","utc":"2026-10-23T15:01:29.539Z"}
+{"seq":213,"actor":"e2e_recepcion","tab":"1","label":"Seleccionar Silo3 para salida ficticia a granel","event":"inicio","utc":"2026-10-23T15:01:40.055Z"}
+{"seq":213,"actor":"e2e_recepcion","tab":"1","label":"Seleccionar Silo3 para salida ficticia a granel","event":"fin","utc":"2026-10-23T15:01:40.342Z"}
+{"seq":214,"actor":"e2e_recepcion","tab":"1","label":"Abrir despacho de leche cruda desde Silo3","event":"inicio","utc":"2026-10-23T15:01:50.429Z"}
+{"seq":214,"actor":"e2e_recepcion","tab":"1","label":"Abrir despacho de leche cruda desde Silo3","event":"fin","utc":"2026-10-23T15:01:50.731Z"}
+{"seq":215,"actor":"e2e_recepcion","tab":"1","label":"Rellenar salida ficticia1000L de leche cruda","event":"inicio","utc":"2026-10-23T15:02:00.812Z"}
+{"seq":215,"actor":"e2e_recepcion","tab":"1","label":"Rellenar salida ficticia1000L de leche cruda","event":"fin","utc":"2026-10-23T15:02:00.913Z"}
+{"seq":216,"actor":"e2e_recepcion","tab":"1","label":"Confirmar despacho ficticio1000L desde Silo3","event":"inicio","utc":"2026-10-23T15:02:11.000Z"}
+{"seq":216,"actor":"e2e_recepcion","tab":"1","label":"Confirmar despacho ficticio1000L desde Silo3","event":"fin","utc":"2026-10-23T15:02:11.309Z"}
+{"seq":217,"actor":"e2e_recepcion","tab":"1","label":"Ver historial del despacho ficticio1000L","event":"inicio","utc":"2026-10-23T15:02:36.646Z"}
+{"seq":217,"actor":"e2e_recepcion","tab":"1","label":"Ver historial del despacho ficticio1000L","event":"fin","utc":"2026-10-23T15:02:36.950Z"}
+{"seq":218,"actor":"e2e_produccion","tab":"6","label":"Consultar genealogía hacia atrás de OPF-POL-01","event":"inicio","utc":"2026-10-23T15:04:03.368Z"}
+{"seq":218,"actor":"e2e_produccion","tab":"6","label":"Consultar genealogía hacia atrás de OPF-POL-01","event":"fin","utc":"2026-10-23T15:04:03.709Z"}
+{"seq":219,"actor":"e2e_produccion","tab":"6","label":"Consultar rework disponible sin consumirlo","event":"inicio","utc":"2026-10-23T15:04:22.182Z"}
+{"seq":219,"actor":"e2e_produccion","tab":"6","label":"Consultar rework disponible sin consumirlo","event":"fin","utc":"2026-10-23T15:04:25.274Z"}
+{"seq":220,"actor":"e2e_produccion","tab":"6","label":"Consultar rework disponible, sólo lectura","event":"inicio","utc":"2026-10-23T15:04:54.599Z"}
+{"seq":220,"actor":"e2e_produccion","tab":"6","label":"Consultar rework disponible, sólo lectura","event":"fin","utc":"2026-10-23T15:04:54.887Z"}
+{"seq":221,"actor":"e2e_produccion","tab":"6","label":"Ver opciones de incorporación del rework sin registrar consumo","event":"inicio","utc":"2026-10-23T15:05:04.979Z"}
+{"seq":221,"actor":"e2e_produccion","tab":"6","label":"Ver opciones de incorporación del rework sin registrar consumo","event":"fin","utc":"2026-10-23T15:05:05.264Z"}
+{"seq":222,"actor":"e2e_secado","tab":"7","label":"Consultar opciones de alimentación externa sin iniciar corrida","event":"inicio","utc":"2026-10-23T15:05:17.001Z"}
+{"seq":222,"actor":"e2e_secado","tab":"7","label":"Consultar opciones de alimentación externa sin iniciar corrida","event":"fin","utc":"2026-10-23T15:05:17.316Z"}
+{"seq":223,"actor":"e2e_produccion","tab":"6","label":"Abrir descremado ficticio desde Silo3 para crema comercial","event":"inicio","utc":"2026-10-23T15:07:40.145Z"}
+{"seq":223,"actor":"e2e_produccion","tab":"6","label":"Abrir descremado ficticio desde Silo3 para crema comercial","event":"fin","utc":"2026-10-23T15:07:40.216Z"}
+{"seq":224,"actor":"e2e_produccion","tab":"6","label":"Rellenar OPF-DES-02 de500L hacia Tk03 y TkC3","event":"inicio","utc":"2026-10-23T15:07:56.303Z"}
+{"seq":224,"actor":"e2e_produccion","tab":"6","label":"Rellenar OPF-DES-02 de500L hacia Tk03 y TkC3","event":"fin","utc":"2026-10-23T15:07:56.482Z"}
+{"seq":225,"actor":"e2e_produccion","tab":"6","label":"Elegir ruta comercial y calcular reparto500L","event":"inicio","utc":"2026-10-23T15:08:06.579Z"}
+{"seq":225,"actor":"e2e_produccion","tab":"6","label":"Elegir ruta comercial y calcular reparto500L","event":"fin","utc":"2026-10-23T15:08:06.887Z"}
+{"seq":226,"actor":"e2e_produccion","tab":"6","label":"Confirmar plan500L de descremado comercial","event":"inicio","utc":"2026-10-23T15:08:16.995Z"}
+{"seq":226,"actor":"e2e_produccion","tab":"6","label":"Confirmar plan500L de descremado comercial","event":"fin","utc":"2026-10-23T15:08:17.300Z"}
+{"seq":227,"actor":"e2e_produccion","tab":"6","label":"Iniciar OPF-DES-02 con reservas500L","event":"inicio","utc":"2026-10-23T15:08:27.399Z"}
+{"seq":227,"actor":"e2e_produccion","tab":"6","label":"Iniciar OPF-DES-02 con reservas500L","event":"fin","utc":"2026-10-23T15:08:27.695Z"}
+{"seq":228,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre OPF-DES-02","event":"inicio","utc":"2026-10-23T15:08:46.649Z"}
+{"seq":228,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre OPF-DES-02","event":"fin","utc":"2026-10-23T15:08:46.938Z"}
+{"seq":229,"actor":"e2e_produccion","tab":"6","label":"Rellenar salidas OPF-DES-02 457.5LD42.5crema","event":"inicio","utc":"2026-10-23T15:09:03.638Z"}
+{"seq":229,"actor":"e2e_produccion","tab":"6","label":"Rellenar salidas OPF-DES-02 457.5LD42.5crema","event":"fin","utc":"2026-10-23T15:09:03.744Z"}
+{"seq":230,"actor":"e2e_produccion","tab":"6","label":"Cerrar OPF-DES-02 con salidas declaradas500L","event":"inicio","utc":"2026-10-23T15:09:14.157Z"}
+{"seq":230,"actor":"e2e_produccion","tab":"6","label":"Cerrar OPF-DES-02 con salidas declaradas500L","event":"fin","utc":"2026-10-23T15:09:14.448Z"}
+{"seq":231,"actor":"e2e_calidad","tab":"4","label":"Abrir silos para muestreo de nueva crema","event":"inicio","utc":"2026-10-23T15:09:23.672Z"}
+{"seq":231,"actor":"e2e_calidad","tab":"4","label":"Abrir silos para muestreo de nueva crema","event":"fin","utc":"2026-10-23T15:09:26.758Z"}
+{"seq":232,"actor":"e2e_calidad","tab":"4","label":"Seleccionar TkC3 para análisis de crema comercial","event":"inicio","utc":"2026-10-23T15:09:36.848Z"}
+{"seq":232,"actor":"e2e_calidad","tab":"4","label":"Seleccionar TkC3 para análisis de crema comercial","event":"fin","utc":"2026-10-23T15:09:37.140Z"}
+{"seq":233,"actor":"e2e_calidad","tab":"4","label":"Rellenar muestra ficticia TkC3 MG42 y controles de prueba","event":"inicio","utc":"2026-10-23T15:09:47.222Z"}
+{"seq":233,"actor":"e2e_calidad","tab":"4","label":"Rellenar muestra ficticia TkC3 MG42 y controles de prueba","event":"fin","utc":"2026-10-23T15:09:47.433Z"}
+{"seq":234,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio de TkC3","event":"inicio","utc":"2026-10-23T15:09:57.535Z"}
+{"seq":234,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio de TkC3","event":"fin","utc":"2026-10-23T15:09:57.822Z"}
+{"seq":235,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar vista segundo firmante para TkC3","event":"inicio","utc":"2026-10-23T15:10:12.473Z"}
+{"seq":235,"actor":"e2e_calidad_firma","tab":"5","label":"Actualizar vista segundo firmante para TkC3","event":"fin","utc":"2026-10-23T15:10:15.558Z"}
+{"seq":236,"actor":"e2e_calidad","tab":"4","label":"Seleccionar Tk03 para análisis de descremada de OPF-DES-02","event":"inicio","utc":"2026-10-23T15:10:30.652Z"}
+{"seq":236,"actor":"e2e_calidad","tab":"4","label":"Seleccionar Tk03 para análisis de descremada de OPF-DES-02","event":"fin","utc":"2026-10-23T15:10:30.945Z"}
+{"seq":237,"actor":"e2e_calidad","tab":"4","label":"Rellenar análisis ficticio Tk03 de OPF-DES-02","event":"inicio","utc":"2026-10-23T15:10:41.035Z"}
+{"seq":237,"actor":"e2e_calidad","tab":"4","label":"Rellenar análisis ficticio Tk03 de OPF-DES-02","event":"fin","utc":"2026-10-23T15:10:41.221Z"}
+{"seq":238,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio Tk03","event":"inicio","utc":"2026-10-23T15:10:51.610Z"}
+{"seq":238,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio Tk03","event":"fin","utc":"2026-10-23T15:10:51.888Z"}
+{"seq":239,"actor":"e2e_calidad_firma","tab":"5","label":"Abrir silos actualizados para firma de crema comercial","event":"inicio","utc":"2026-10-23T15:10:52.056Z"}
+{"seq":239,"actor":"e2e_calidad_firma","tab":"5","label":"Abrir silos actualizados para firma de crema comercial","event":"fin","utc":"2026-10-23T15:10:55.125Z"}
+{"seq":240,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante revisa TkC3","event":"inicio","utc":"2026-10-23T15:11:05.221Z"}
+{"seq":240,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante revisa TkC3","event":"fin","utc":"2026-10-23T15:11:05.531Z"}
+{"seq":241,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis TkC3 por segundo usuario","event":"inicio","utc":"2026-10-23T15:11:15.636Z"}
+{"seq":241,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis TkC3 por segundo usuario","event":"fin","utc":"2026-10-23T15:11:15.920Z"}
+{"seq":242,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante revisa Tk03","event":"inicio","utc":"2026-10-23T15:11:26.038Z"}
+{"seq":242,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante revisa Tk03","event":"fin","utc":"2026-10-23T15:11:26.351Z"}
+{"seq":243,"actor":"e2e_calidad","tab":"4","label":"Abrir Centro Calidad para decisiones de OPF-DES-02","event":"inicio","utc":"2026-10-23T15:11:33.656Z"}
+{"seq":243,"actor":"e2e_calidad","tab":"4","label":"Abrir Centro Calidad para decisiones de OPF-DES-02","event":"fin","utc":"2026-10-23T15:11:36.749Z"}
+{"seq":244,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización de Tk03 por segundo usuario","event":"inicio","utc":"2026-10-23T15:11:37.057Z"}
+{"seq":244,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización de Tk03 por segundo usuario","event":"fin","utc":"2026-10-23T15:11:37.357Z"}
+{"seq":245,"actor":"e2e_calidad","tab":"4","label":"Seleccionar análisis firmado de crema INT-DES-2-CR","event":"inicio","utc":"2026-10-23T15:11:48.807Z"}
+{"seq":245,"actor":"e2e_calidad","tab":"4","label":"Seleccionar análisis firmado de crema INT-DES-2-CR","event":"fin","utc":"2026-10-23T15:11:48.838Z"}
+{"seq":246,"actor":"e2e_calidad","tab":"4","label":"Liberar crema comercial INT-DES-2-CR por Calidad","event":"inicio","utc":"2026-10-23T15:11:58.957Z"}
+{"seq":246,"actor":"e2e_calidad","tab":"4","label":"Liberar crema comercial INT-DES-2-CR por Calidad","event":"fin","utc":"2026-10-23T15:11:59.260Z"}
+{"seq":247,"actor":"e2e_calidad","tab":"4","label":"Seleccionar análisis de Tk03 para liberar salida LD","event":"inicio","utc":"2026-10-23T15:12:16.089Z"}
+{"seq":247,"actor":"e2e_calidad","tab":"4","label":"Seleccionar análisis de Tk03 para liberar salida LD","event":"fin","utc":"2026-10-23T15:12:16.130Z"}
+{"seq":248,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja de carga para comprobar crema liberada","event":"inicio","utc":"2026-10-23T15:12:16.233Z"}
+{"seq":248,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja de carga para comprobar crema liberada","event":"fin","utc":"2026-10-23T15:12:16.514Z"}
+{"seq":249,"actor":"e2e_calidad","tab":"4","label":"Liberar descremada INT-DES-2-LD","event":"inicio","utc":"2026-10-23T15:12:27.692Z"}
+{"seq":249,"actor":"e2e_calidad","tab":"4","label":"Liberar descremada INT-DES-2-LD","event":"fin","utc":"2026-10-23T15:12:27.978Z"}
+{"seq":250,"actor":"e2e_despacho","tab":"10","label":"Cerrar hoja vacía sin guardar y actualizar disponibles","event":"inicio","utc":"2026-10-23T15:12:28.090Z"}
+{"seq":250,"actor":"e2e_despacho","tab":"10","label":"Cerrar hoja vacía sin guardar y actualizar disponibles","event":"fin","utc":"2026-10-23T15:12:28.612Z"}
+{"seq":251,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja ficticia de crema con disponibles actualizados","event":"inicio","utc":"2026-10-23T15:12:44.696Z"}
+{"seq":251,"actor":"e2e_despacho","tab":"10","label":"Abrir hoja ficticia de crema con disponibles actualizados","event":"fin","utc":"2026-10-23T15:12:44.979Z"}
+{"seq":252,"actor":"e2e_despacho","tab":"10","label":"Rellenar hoja de carga ficticia de crema","event":"inicio","utc":"2026-10-23T15:12:55.083Z"}
+{"seq":252,"actor":"e2e_despacho","tab":"10","label":"Rellenar hoja de carga ficticia de crema","event":"fin","utc":"2026-10-23T15:12:55.485Z"}
+{"seq":253,"actor":"e2e_despacho","tab":"10","label":"Revisar hoja ficticia de crema42.5L","event":"inicio","utc":"2026-10-23T15:13:05.569Z"}
+{"seq":253,"actor":"e2e_despacho","tab":"10","label":"Revisar hoja ficticia de crema42.5L","event":"fin","utc":"2026-10-23T15:13:05.862Z"}
+{"seq":254,"actor":"e2e_despacho","tab":"10","label":"Guardar hoja de crema comercial ficticia42.5L","event":"inicio","utc":"2026-10-23T15:13:15.932Z"}
+{"seq":254,"actor":"e2e_despacho","tab":"10","label":"Guardar hoja de crema comercial ficticia42.5L","event":"fin","utc":"2026-10-23T15:13:16.202Z"}
+{"seq":255,"actor":"e2e_despacho","tab":"10","label":"Autorizar hoja ficticia DE6296-03 crema42.5L","event":"inicio","utc":"2026-10-23T15:13:36.163Z"}
+{"seq":255,"actor":"e2e_despacho","tab":"10","label":"Autorizar hoja ficticia DE6296-03 crema42.5L","event":"fin","utc":"2026-10-23T15:13:36.442Z"}
+{"seq":256,"actor":"e2e_despacho","tab":"10","label":"Preparar salida ficticia DE6296-03","event":"inicio","utc":"2026-10-23T15:13:48.123Z"}
+{"seq":256,"actor":"e2e_despacho","tab":"10","label":"Preparar salida ficticia DE6296-03","event":"fin","utc":"2026-10-23T15:13:48.411Z"}
+{"seq":257,"actor":"e2e_despacho","tab":"10","label":"Confirmar salida ficticia DE6296-03 de42.5L","event":"inicio","utc":"2026-10-23T15:13:58.454Z"}
+{"seq":257,"actor":"e2e_despacho","tab":"10","label":"Confirmar salida ficticia DE6296-03 de42.5L","event":"fin","utc":"2026-10-23T15:13:58.748Z"}
+{"seq":258,"actor":"e2e_produccion","tab":"6","label":"Abrir estandarización para precondensado2000L","event":"inicio","utc":"2026-10-23T16:19:36.520Z"}
+{"seq":258,"actor":"e2e_produccion","tab":"6","label":"Abrir estandarización para precondensado2000L","event":"fin","utc":"2026-10-23T16:19:39.597Z"}
+{"seq":259,"actor":"e2e_produccion","tab":"6","label":"Entrar a estandarización para vale de precondensado","event":"inicio","utc":"2026-10-23T16:21:01.592Z"}
+{"seq":259,"actor":"e2e_produccion","tab":"6","label":"Entrar a estandarización para vale de precondensado","event":"fin","utc":"2026-10-23T16:21:04.670Z"}
+{"seq":260,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de vale para producto precondensado","event":"inicio","utc":"2026-10-23T16:21:14.731Z"}
+{"seq":260,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de vale para producto precondensado","event":"fin","utc":"2026-10-23T16:21:15.020Z"}
+{"seq":261,"actor":"e2e_produccion","tab":"6","label":"Rellenar vale ficticio precondensado2000L","event":"inicio","utc":"2026-10-23T16:21:31.462Z"}
+{"seq":261,"actor":"e2e_produccion","tab":"6","label":"Rellenar vale ficticio precondensado2000L","event":"fin","utc":"2026-10-23T16:21:31.595Z"}
+{"seq":262,"actor":"e2e_produccion","tab":"6","label":"Calcular mezcla2000L de precondensado","event":"inicio","utc":"2026-10-23T16:21:41.658Z"}
+{"seq":262,"actor":"e2e_produccion","tab":"6","label":"Calcular mezcla2000L de precondensado","event":"fin","utc":"2026-10-23T16:21:41.955Z"}
+{"seq":263,"actor":"e2e_produccion","tab":"6","label":"Cargar composición de análisis existentes de Silo3 y Tk02","event":"inicio","utc":"2026-10-23T16:22:04.551Z"}
+{"seq":263,"actor":"e2e_produccion","tab":"6","label":"Cargar composición de análisis existentes de Silo3 y Tk02","event":"fin","utc":"2026-10-23T16:22:05.103Z"}
+{"seq":264,"actor":"e2e_produccion","tab":"6","label":"Crear vale separado2000L para precondensado","event":"inicio","utc":"2026-10-23T16:22:15.187Z"}
+{"seq":264,"actor":"e2e_produccion","tab":"6","label":"Crear vale separado2000L para precondensado","event":"fin","utc":"2026-10-23T16:22:15.484Z"}
+{"seq":265,"actor":"e2e_produccion","tab":"6","label":"Transferir vale VE6296-02 a Silo5","event":"inicio","utc":"2026-10-23T16:22:38.472Z"}
+{"seq":265,"actor":"e2e_produccion","tab":"6","label":"Transferir vale VE6296-02 a Silo5","event":"fin","utc":"2026-10-23T16:22:38.887Z"}
+{"seq":266,"actor":"e2e_produccion","tab":"6","label":"Iniciar agitación ficticia VE6296-02","event":"inicio","utc":"2026-10-23T16:22:50.421Z"}
+{"seq":266,"actor":"e2e_produccion","tab":"6","label":"Iniciar agitación ficticia VE6296-02","event":"fin","utc":"2026-10-23T16:22:50.805Z"}
+{"seq":267,"actor":"e2e_produccion","tab":"6","label":"Registrar muestra ficticia VE6296-02 sin acreditar agitación física","event":"inicio","utc":"2026-10-23T16:23:10.100Z"}
+{"seq":267,"actor":"e2e_produccion","tab":"6","label":"Registrar muestra ficticia VE6296-02 sin acreditar agitación física","event":"fin","utc":"2026-10-23T16:23:10.480Z"}
+{"seq":268,"actor":"e2e_calidad","tab":"4","label":"Calidad abre estandarización para decidir VE6296-02","event":"inicio","utc":"2026-10-23T16:24:35.245Z"}
+{"seq":268,"actor":"e2e_calidad","tab":"4","label":"Calidad abre estandarización para decidir VE6296-02","event":"fin","utc":"2026-10-23T16:24:38.338Z"}
+{"seq":269,"actor":"e2e_calidad","tab":"4","label":"Calidad decide VE6296-02 sobre muestra ficticia","event":"inicio","utc":"2026-10-23T16:24:48.445Z"}
+{"seq":269,"actor":"e2e_calidad","tab":"4","label":"Calidad decide VE6296-02 sobre muestra ficticia","event":"fin","utc":"2026-10-23T16:24:48.737Z"}
+{"seq":270,"actor":"e2e_calidad","tab":"4","label":"Mostrar vales cerrados para comprobar decisión de Calidad","event":"inicio","utc":"2026-10-23T16:24:58.868Z"}
+{"seq":270,"actor":"e2e_calidad","tab":"4","label":"Mostrar vales cerrados para comprobar decisión de Calidad","event":"fin","utc":"2026-10-23T16:24:59.176Z"}
+{"seq":271,"actor":"e2e_calidad","tab":"4","label":"Calidad abre Silo5 para análisis de mezcla","event":"inicio","utc":"2026-10-23T16:25:09.250Z"}
+{"seq":271,"actor":"e2e_calidad","tab":"4","label":"Calidad abre Silo5 para análisis de mezcla","event":"fin","utc":"2026-10-23T16:25:12.346Z"}
+{"seq":272,"actor":"e2e_calidad","tab":"4","label":"Seleccionar Silo5 mezcla2000L para análisis","event":"inicio","utc":"2026-10-23T16:25:22.465Z"}
+{"seq":272,"actor":"e2e_calidad","tab":"4","label":"Seleccionar Silo5 mezcla2000L para análisis","event":"fin","utc":"2026-10-23T16:25:22.759Z"}
+{"seq":273,"actor":"e2e_calidad","tab":"4","label":"Rellenar análisis ficticio nueva mezcla Silo5","event":"inicio","utc":"2026-10-23T16:25:32.815Z"}
+{"seq":273,"actor":"e2e_calidad","tab":"4","label":"Rellenar análisis ficticio nueva mezcla Silo5","event":"fin","utc":"2026-10-23T16:25:33.012Z"}
+{"seq":274,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis nuevo de Silo5 para precondensado","event":"inicio","utc":"2026-10-23T16:25:43.127Z"}
+{"seq":274,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis nuevo de Silo5 para precondensado","event":"fin","utc":"2026-10-23T16:25:43.431Z"}
+{"seq":275,"actor":"e2e_produccion","tab":"6","label":"Abrir Producción para lote de precondensado","event":"inicio","utc":"2026-10-23T16:26:13.820Z"}
+{"seq":275,"actor":"e2e_produccion","tab":"6","label":"Abrir Producción para lote de precondensado","event":"fin","utc":"2026-10-23T16:26:16.911Z"}
+{"seq":276,"actor":"e2e_produccion","tab":"6","label":"Abrir alta de lote para orden OPFLOW-OP-PRECOND-01","event":"inicio","utc":"2026-10-23T16:26:26.988Z"}
+{"seq":276,"actor":"e2e_produccion","tab":"6","label":"Abrir alta de lote para orden OPFLOW-OP-PRECOND-01","event":"fin","utc":"2026-10-23T16:26:27.280Z"}
+{"seq":277,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante abre Silo5 para mezcla de precondensado","event":"inicio","utc":"2026-10-23T16:26:40.342Z"}
+{"seq":277,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante abre Silo5 para mezcla de precondensado","event":"fin","utc":"2026-10-23T16:26:40.412Z"}
+{"seq":278,"actor":"e2e_produccion","tab":"6","label":"Rellenar apertura OPF-PRE-01 desde VE6296-02","event":"inicio","utc":"2026-10-23T16:27:03.212Z"}
+{"seq":278,"actor":"e2e_produccion","tab":"6","label":"Rellenar apertura OPF-PRE-01 desde VE6296-02","event":"fin","utc":"2026-10-23T16:27:03.383Z"}
+{"seq":279,"actor":"e2e_produccion","tab":"6","label":"Seleccionar la única OP ficticia autorizada de2000L","event":"inicio","utc":"2026-10-23T16:27:13.475Z"}
+{"seq":279,"actor":"e2e_produccion","tab":"6","label":"Seleccionar la única OP ficticia autorizada de2000L","event":"fin","utc":"2026-10-23T16:27:13.501Z"}
+{"seq":280,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante selecciona mezcla nueva Silo5","event":"inicio","utc":"2026-10-23T16:27:13.667Z"}
+{"seq":280,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante selecciona mezcla nueva Silo5","event":"fin","utc":"2026-10-23T16:27:13.961Z"}
+{"seq":281,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización nueva muestra Silo5 por segundo usuario","event":"inicio","utc":"2026-10-23T16:27:24.011Z"}
+{"seq":281,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización nueva muestra Silo5 por segundo usuario","event":"fin","utc":"2026-10-23T16:27:24.302Z"}
+{"seq":282,"actor":"e2e_produccion","tab":"6","label":"Abrir OPF-PRE-01 con2000L de VE6296-02","event":"inicio","utc":"2026-10-23T16:27:39.433Z"}
+{"seq":282,"actor":"e2e_produccion","tab":"6","label":"Abrir OPF-PRE-01 con2000L de VE6296-02","event":"fin","utc":"2026-10-23T16:27:39.712Z"}
+{"seq":283,"actor":"e2e_produccion","tab":"6","label":"Actualizar trabajo de Producción tras abrir OPF-PRE-01","event":"inicio","utc":"2026-10-23T16:27:55.522Z"}
+{"seq":283,"actor":"e2e_produccion","tab":"6","label":"Actualizar trabajo de Producción tras abrir OPF-PRE-01","event":"fin","utc":"2026-10-23T16:27:55.801Z"}
+{"seq":284,"actor":"e2e_produccion","tab":"6","label":"Abrir seguimiento para preparar evaporación de OPF-PRE-01","event":"inicio","utc":"2026-10-23T16:28:05.909Z"}
+{"seq":284,"actor":"e2e_produccion","tab":"6","label":"Abrir seguimiento para preparar evaporación de OPF-PRE-01","event":"fin","utc":"2026-10-23T16:28:09.003Z"}
+{"seq":285,"actor":"e2e_produccion","tab":"6","label":"Preparar evaporación de OPF-PRE-01","event":"inicio","utc":"2026-10-23T16:28:19.090Z"}
+{"seq":285,"actor":"e2e_produccion","tab":"6","label":"Preparar evaporación de OPF-PRE-01","event":"fin","utc":"2026-10-23T16:28:19.374Z"}
+{"seq":286,"actor":"e2e_produccion","tab":"6","label":"Elegir OPF-PRE-01 para corrida de evaporación","event":"inicio","utc":"2026-10-23T16:28:29.465Z"}
+{"seq":286,"actor":"e2e_produccion","tab":"6","label":"Elegir OPF-PRE-01 para corrida de evaporación","event":"fin","utc":"2026-10-23T16:28:29.498Z"}
+{"seq":287,"actor":"e2e_produccion","tab":"6","label":"Elegir OP09-PRE-BASE como silo vacío de concentrado","event":"inicio","utc":"2026-10-23T16:28:44.187Z"}
+{"seq":287,"actor":"e2e_produccion","tab":"6","label":"Elegir OP09-PRE-BASE como silo vacío de concentrado","event":"fin","utc":"2026-10-23T16:28:44.204Z"}
+{"seq":288,"actor":"e2e_produccion","tab":"6","label":"Crear corrida preparada de precondensado OPF-PRE-01","event":"inicio","utc":"2026-10-23T16:28:54.292Z"}
+{"seq":288,"actor":"e2e_produccion","tab":"6","label":"Crear corrida preparada de precondensado OPF-PRE-01","event":"fin","utc":"2026-10-23T16:28:54.583Z"}
+{"seq":289,"actor":"e2e_produccion","tab":"6","label":"Iniciar evaporación OPF-PRE-01 tras comprobar estado","event":"inicio","utc":"2026-10-23T16:29:41.452Z"}
+{"seq":289,"actor":"e2e_produccion","tab":"6","label":"Iniciar evaporación OPF-PRE-01 tras comprobar estado","event":"fin","utc":"2026-10-23T16:29:41.845Z"}
+{"seq":290,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre de evaporación precondensado","event":"inicio","utc":"2026-10-23T16:30:03.954Z"}
+{"seq":290,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre de evaporación precondensado","event":"error","utc":"2026-10-23T16:30:07.306Z","error":"Error: Error: Playwright selector deadline exceeded\nwaiting on click for selector internal:role=button[name=\"Registrar salida\"s]\nLocator diagnostics: {\"kind\":\"action_failed\",\"action\":\"click\",\"locator\":\"internal:role=button[name=\\\"Registrar salida\\\"s]\",\"matchCount\":1,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Registrar salida\",\"type\":\"button\",\"visible\":true}],\"visibleCount\":1,\"truncated\":false}"}
+{"seq":291,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de cierre, corrida sigue en proceso","event":"inicio","utc":"2026-10-23T16:30:20.584Z"}
+{"seq":291,"actor":"e2e_produccion","tab":"6","label":"Abrir formulario de cierre, corrida sigue en proceso","event":"error","utc":"2026-10-23T16:30:23.844Z","error":"Error: Error: Playwright selector deadline exceeded\nwaiting on click for selector internal:role=button[name=\"Registrar salida\"s]\nLocator diagnostics: {\"kind\":\"action_failed\",\"action\":\"click\",\"locator\":\"internal:role=button[name=\\\"Registrar salida\\\"s]\",\"matchCount\":1,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Registrar salida\",\"type\":\"button\",\"visible\":true}],\"visibleCount\":1,\"truncated\":false}"}
+{"seq":292,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre mediante teclado tras lectura recuperada","event":"inicio","utc":"2026-10-23T16:31:04.733Z"}
+{"seq":292,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre mediante teclado tras lectura recuperada","event":"error","utc":"2026-10-23T16:31:08.070Z","error":"Error: Error: Playwright selector deadline exceeded\nlocator.press failed for selector internal:role=button[name=\"Registrar salida\"s]\nLocator diagnostics: {\"kind\":\"action_failed\",\"action\":\"press\",\"locator\":\"internal:role=button[name=\\\"Registrar salida\\\"s]\",\"matchCount\":1,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Registrar salida\",\"type\":\"button\",\"visible\":true}],\"visibleCount\":1,\"truncated\":false}"}
+{"seq":293,"actor":"e2e_produccion","tab":"6","label":"Recargar seguimiento sin repetir movimientos","event":"inicio","utc":"2026-10-23T16:31:26.037Z"}
+{"seq":293,"actor":"e2e_produccion","tab":"6","label":"Recargar seguimiento sin repetir movimientos","event":"fin","utc":"2026-10-23T16:31:27.567Z"}
+{"seq":294,"actor":"e2e_produccion","tab":"6","label":"Cargar corrida de evaporación después de recargar","event":"inicio","utc":"2026-10-23T16:31:40.228Z"}
+{"seq":294,"actor":"e2e_produccion","tab":"6","label":"Cargar corrida de evaporación después de recargar","event":"fin","utc":"2026-10-23T16:31:40.624Z"}
+{"seq":295,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre desde corrida recargada","event":"inicio","utc":"2026-10-23T16:31:50.791Z"}
+{"seq":295,"actor":"e2e_produccion","tab":"6","label":"Abrir cierre desde corrida recargada","event":"fin","utc":"2026-10-23T16:31:51.185Z"}
+{"seq":296,"actor":"e2e_produccion","tab":"6","label":"Rellenar cierre ficticio precondensado500L","event":"inicio","utc":"2026-10-23T16:32:03.587Z"}
+{"seq":296,"actor":"e2e_produccion","tab":"6","label":"Rellenar cierre ficticio precondensado500L","event":"fin","utc":"2026-10-23T16:32:04.082Z"}
+{"seq":297,"actor":"e2e_produccion","tab":"6","label":"Cerrar evaporación OPF-PRE-01 con500L ficticios","event":"inicio","utc":"2026-10-23T16:32:14.175Z"}
+{"seq":297,"actor":"e2e_produccion","tab":"6","label":"Cerrar evaporación OPF-PRE-01 con500L ficticios","event":"fin","utc":"2026-10-23T16:32:14.473Z"}
+{"seq":298,"actor":"e2e_calidad","tab":"4","label":"Calidad abre bandeja de precondensado pendiente","event":"inicio","utc":"2026-10-23T16:32:23.175Z"}
+{"seq":298,"actor":"e2e_calidad","tab":"4","label":"Calidad abre bandeja de precondensado pendiente","event":"fin","utc":"2026-10-23T16:32:26.249Z"}
+{"seq":299,"actor":"e2e_calidad","tab":"4","label":"Calidad abre silo destino del precondensado500L","event":"inicio","utc":"2026-10-23T16:32:37.867Z"}
+{"seq":299,"actor":"e2e_calidad","tab":"4","label":"Calidad abre silo destino del precondensado500L","event":"fin","utc":"2026-10-23T16:32:40.954Z"}
+{"seq":300,"actor":"e2e_calidad","tab":"4","label":"Seleccionar OP09-PRE-BASE para análisis de salida","event":"inicio","utc":"2026-10-23T16:32:51.042Z"}
+{"seq":300,"actor":"e2e_calidad","tab":"4","label":"Seleccionar OP09-PRE-BASE para análisis de salida","event":"fin","utc":"2026-10-23T16:32:51.347Z"}
+{"seq":301,"actor":"e2e_calidad","tab":"4","label":"Rellenar análisis ficticio precondensado de salida","event":"inicio","utc":"2026-10-23T16:33:03.770Z"}
+{"seq":301,"actor":"e2e_calidad","tab":"4","label":"Rellenar análisis ficticio precondensado de salida","event":"fin","utc":"2026-10-23T16:33:04.026Z"}
+{"seq":302,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio de precondensado OP09-PRE-BASE","event":"inicio","utc":"2026-10-23T16:33:14.089Z"}
+{"seq":302,"actor":"e2e_calidad","tab":"4","label":"Confirmar análisis ficticio de precondensado OP09-PRE-BASE","event":"fin","utc":"2026-10-23T16:33:14.396Z"}
+{"seq":303,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante actualiza saldos para nuevo concentrado","event":"inicio","utc":"2026-10-23T16:33:14.579Z"}
+{"seq":303,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante actualiza saldos para nuevo concentrado","event":"fin","utc":"2026-10-23T16:33:14.866Z"}
+{"seq":304,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante revisa500L de OP09-PRE-BASE","event":"inicio","utc":"2026-10-23T16:33:24.971Z"}
+{"seq":304,"actor":"e2e_calidad_firma","tab":"5","label":"Segundo firmante revisa500L de OP09-PRE-BASE","event":"fin","utc":"2026-10-23T16:33:25.256Z"}
+{"seq":305,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis de precondensado500L","event":"inicio","utc":"2026-10-23T16:33:35.350Z"}
+{"seq":305,"actor":"e2e_calidad_firma","tab":"5","label":"Firmar visualización análisis de precondensado500L","event":"fin","utc":"2026-10-23T16:33:35.650Z"}
+{"seq":306,"actor":"e2e_calidad","tab":"4","label":"Calidad comprueba requisitos de liberación de OPF-PRE-01","event":"inicio","utc":"2026-10-23T16:33:41.433Z"}
+{"seq":306,"actor":"e2e_calidad","tab":"4","label":"Calidad comprueba requisitos de liberación de OPF-PRE-01","event":"fin","utc":"2026-10-23T16:33:44.517Z"}
+{"seq":307,"actor":"e2e_calidad","tab":"4","label":"Seleccionar análisis firmado para comprobar bloqueo por falta de especificación","event":"inicio","utc":"2026-10-23T16:34:08.786Z"}
+{"seq":307,"actor":"e2e_calidad","tab":"4","label":"Seleccionar análisis firmado para comprobar bloqueo por falta de especificación","event":"fin","utc":"2026-10-23T16:34:08.821Z"}
+{"seq":308,"actor":"e2e_calidad","tab":"4","label":"Enfocar decisión de Calidad sin ejecutar liberación","event":"inicio","utc":"2026-10-23T16:35:42.827Z"}
+{"seq":308,"actor":"e2e_calidad","tab":"4","label":"Enfocar decisión de Calidad sin ejecutar liberación","event":"fin","utc":"2026-10-23T16:35:42.874Z"}
+{"seq":309,"actor":"e2e_despacho","tab":"10","label":"Comprobar opciones cargables sin crear hoja para precondensado","event":"inicio","utc":"2026-10-23T16:35:50.382Z"}
+{"seq":309,"actor":"e2e_despacho","tab":"10","label":"Comprobar opciones cargables sin crear hoja para precondensado","event":"fin","utc":"2026-10-23T16:35:50.673Z"}
+{"seq":310,"actor":"e2e_despacho","tab":"10","label":"Cerrar comprobación de hoja vacía sin crear despacho","event":"inicio","utc":"2026-10-23T16:37:17.242Z"}
+{"seq":310,"actor":"e2e_despacho","tab":"10","label":"Cerrar comprobación de hoja vacía sin crear despacho","event":"fin","utc":"2026-10-23T16:37:17.534Z"}

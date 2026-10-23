@@ -1,0 +1,133 @@
+- banner:
+  - img "Campos Australes"
+  - paragraph: Recepción
+  - button "Abrir menú":
+- complementary:
+  - img "Campos Australes"
+  - button "Cerrar menú":
+  - link "Entrada del puesto Mi área · Recepción":
+    - /url: "#/leche"
+    - generic: Entrada del puesto
+    - generic: Mi área · Recepción
+  - navigation "Navegación operacional":
+    - region "Recepción":
+      - paragraph: Recepción
+      - link "Silos principales":
+        - /url: "#/silos"
+        - generic: Silos principales
+    - region "Producción":
+      - paragraph: Producción
+      - link "Estandarización":
+        - /url: "#/estandarizacion"
+        - generic: Estandarización
+  - generic: e2
+  - paragraph: e2e_recepcion
+  - paragraph: Operación ficticia Recepción
+  - button "Cerrar sesión":
+    - text: Cerrar sesión
+- main:
+  - generic "Ubicación operacional":
+    - generic: Recepción
+    - generic: Mi área
+  - paragraph: Flujo operativo · Leche cruda
+  - heading "Del camión a estandarización" [level=1]
+  - paragraph: Recepciona el camión, controla cada módulo, descarga en un silo y entrega la leche disponible directamente a Estandarización.
+  - generic: 1 · Recepción
+  - generic: Datos del camión
+  - generic: 2 · Calidad
+  - generic: Camión + crioscopía por módulo
+  - generic: 3 · Silo
+  - generic: Asignar y descargar
+  - link "4 · Estandarización Seleccionar silo disponible":
+    - /url: "#/estandarizacion"
+    - generic: 4 · Estandarización
+    - generic: Seleccionar silo disponible
+  - navigation:
+    - link "Panel":
+      - /url: "#/leche"
+    - link "Rutas":
+      - /url: "#/leche/rutas"
+    - link "En camino":
+      - /url: "#/leche/en-camino"
+    - link "Muestreo":
+      - /url: "#/leche/muestreo"
+    - link "Calidad":
+      - /url: "#/leche/calidad"
+    - link "Silo y descarga":
+      - /url: "#/leche/descarga"
+    - link "Silos":
+      - /url: "#/leche/silos"
+    - link "Historial":
+      - /url: "#/leche/historial"
+    - link "Reporte":
+      - /url: "#/leche/reporte"
+  - heading "Aprobadas por Calidad" [level=2]
+  - paragraph: Selecciona Silo 1 o cualquier silo creado, descarga y deja sus litros disponibles inmediatamente en Estandarización.
+  - generic: 1 registros
+  - textbox:
+    - /placeholder: Buscar guía, muestra, camión o silo
+  - table:
+    - rowgroup:
+      - row "Ingreso Camión Origen Volumen Kg romana Diferencia TS Uso Horas a pagar Muestra / calidad Destino Estado Siguiente paso":
+        - columnheader "Ingreso"
+        - columnheader "Camión"
+        - columnheader "Origen"
+        - columnheader "Volumen"
+        - columnheader "Kg romana"
+        - columnheader "Diferencia"
+        - columnheader "TS"
+        - columnheader "Uso"
+        - columnheader "Horas a pagar"
+        - columnheader "Muestra / calidad"
+        - columnheader "Destino"
+        - columnheader "Estado"
+        - columnheader "Siguiente paso"
+    - rowgroup:
+      - row "23-oct — Guía OPF-ENT-01 QAOP09 Turno A · 1 módulo CCAA Entera 25.000 L — — 12,23% Stock — Aprobada Sin asignar Aprobada por Calidad Asignar silo Corregir crioscopía":
+        - cell "23-oct — Guía OPF-ENT-01":
+          - paragraph: 23-oct —
+          - paragraph: Guía OPF-ENT-01
+        - cell "QAOP09 Turno A · 1 módulo":
+          - paragraph: QAOP09
+          - paragraph: Turno A · 1 módulo
+        - cell "CCAA Entera":
+          - paragraph: CCAA
+          - paragraph: Entera
+        - cell "25.000 L"
+        - cell "—"
+        - cell "—"
+        - cell "12,23%"
+        - cell "Stock"
+        - cell "—"
+        - cell "Aprobada":
+          - text: Aprobada
+        - cell "Sin asignar":
+          - text: Sin asignar
+        - cell "Aprobada por Calidad":
+          - generic: Aprobada por Calidad
+        - cell "Asignar silo Corregir crioscopía":
+          - button "Asignar silo" [active]:
+            - text: Asignar silo
+          - button "Corregir crioscopía":
+            - text: Corregir crioscopía
+  - paragraph: Etapa 4 · Destino
+  - heading "Asignar silo" [level=2]
+  - button "Cerrar":
+  - paragraph: Guía
+  - paragraph: OPF-ENT-01
+  - paragraph: Módulos
+  - paragraph: M1
+  - paragraph: Tipo
+  - paragraph: Entera
+  - paragraph: Volumen
+  - paragraph: 25.000 L
+  - generic: Silo compatible *
+  - combobox "Silo compatible":
+    - option "Seleccionar destino"
+    - option "OP09-PRE-BASE · capacidad 60.000 L"
+    - option "Silo 3 · capacidad 60.000 L" [selected]
+    - option "Silo 4 · capacidad 60.000 L"
+    - option "Silo 5 · capacidad 60.000 L"
+  - paragraph: Solo se muestran destinos compatibles con entera.
+  - button "Cancelar"
+  - button "Confirmar destino"

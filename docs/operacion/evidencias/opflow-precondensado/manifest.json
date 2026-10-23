@@ -1,0 +1,121 @@
+{
+  "scope": "Fictitious read-only ledger, controller journals, QA and UI screenshots; no credentials or private file bodies",
+  "previous_evidence_commit": "f06cd99f90c5732167a8cf7e75f33ee92d12a70f",
+  "files": [
+    {
+      "name": ".gitattributes",
+      "bytes": 74,
+      "sha256": "44ee6257301ba1688e39585c881e6a8f9fc9b00cc0128d0b2ccb7aa53edc8931"
+    },
+    {
+      "name": "114-precondensado-vale2000L-formulario.png",
+      "bytes": 63340,
+      "sha256": "50ec29789b52e4ced90b75c8817c62fce56ee61e30caa4da2acfe9f889c9b423"
+    },
+    {
+      "name": "115-precondensado-mezcla2000L-calculada.png",
+      "bytes": 65543,
+      "sha256": "5ad85d07ea2506e4d09173bda84ab8ccd8198dec7ef0255451294cef1a31d3de"
+    },
+    {
+      "name": "116-precondensado-vale-muestra-aviso-agitacion.png",
+      "bytes": 68001,
+      "sha256": "44187fb98c155708ee3a13d89dc5d380dceb6d5d75da6206d4a2264bce4f44b5"
+    },
+    {
+      "name": "117-precondensado-vale-VE6296-02-liberado.png",
+      "bytes": 67911,
+      "sha256": "96042bf37330057c0b1e0e506c8e3fdd136b43cfa93823af4c4463620fc0ba58"
+    },
+    {
+      "name": "118-silo5-analisis-anterior-invalidado-por-nuevo-ingreso.png",
+      "bytes": 74238,
+      "sha256": "939decc23617c334c81a27c3049855211d17befc1bfead6af57216bb71304f82"
+    },
+    {
+      "name": "119-precondensado-mezcla-silo5-analisis.png",
+      "bytes": 71741,
+      "sha256": "7b965c731d4c72aae86d5d76df563b9ffdba4584504b832da2ecc5b346bd4fc8"
+    },
+    {
+      "name": "120-precondensado-lote-OPF-PRE-01-formulario.png",
+      "bytes": 63766,
+      "sha256": "64698eed4ad1615a4debebbed0549ff93d328855fd2ffb57da1cf71a56189850"
+    },
+    {
+      "name": "121b-precondensado-mezcla-firma-confirmada.png",
+      "bytes": 73486,
+      "sha256": "b86a0373d13874b6f7eca606f03d47b8f69066651ee366f663b4562908904b56"
+    },
+    {
+      "name": "122-precondensado-evaporacion-destino-OP09-PRE-BASE.png",
+      "bytes": 56234,
+      "sha256": "8bb1e008bb478d090db1cf3b887361756706a5c0fda96835d58ab7cce1a0b4e4"
+    },
+    {
+      "name": "123-precondensado-cierre500L-formulario.png",
+      "bytes": 56483,
+      "sha256": "d8b31a1d3955fb49cf1c965bd6525ea8c657b76c972015e57eb5982867d49bba"
+    },
+    {
+      "name": "124-precondensado500L-cerrado-pendiente-Calidad.png",
+      "bytes": 63323,
+      "sha256": "e2bd37d5a0bbd1368d1ef39e3c06beee2ffc70458baf7bbd795b5f52af8b0653"
+    },
+    {
+      "name": "125-precondensado500L-analisis-salida-ficticio.png",
+      "bytes": 69345,
+      "sha256": "d1bbc18d788708443d69586d549eaa100e6d851312bc95d86defb99b90c8d5d3"
+    },
+    {
+      "name": "126-precondensado500L-dos-firmantes.png",
+      "bytes": 72695,
+      "sha256": "ec831692bc86f28aaf333778a2a094e67b071f4bf0833dd7c25f9c623133d813"
+    },
+    {
+      "name": "127b-precondensado-boton-liberar-bloqueado.png",
+      "bytes": 79570,
+      "sha256": "af1f506c804a3808c9247200c9f865a3c265e0f13fd0fb32e93becc824b672da"
+    },
+    {
+      "name": "128-precondensado-no-ofrecido-despacho-sin-liberacion.png",
+      "bytes": 59429,
+      "sha256": "1988d63b16de0e2c43d19365bc54f14ae702623442a992a24b8eb4885e3aab65"
+    },
+    {
+      "name": "acciones-v2.jsonl",
+      "bytes": 89816,
+      "sha256": "5caf1aee6ac90145d2bcaca5f54ee8009c12665325dabff6e3c8c51c9dc7aeb8"
+    },
+    {
+      "name": "capturas-v3.jsonl",
+      "bytes": 6307,
+      "sha256": "c3841fb553bd070bb02a991b4a5a91822b253abec18323bbabf5c558fbd14b36"
+    },
+    {
+      "name": "operational-coverage.json",
+      "bytes": 4383,
+      "sha256": "c93f3b88e834cc89bb409859f346fca070d91e8c2b6fd60bfbdfa14a0d033f22"
+    },
+    {
+      "name": "operational-ledger-20261023T163432527391Z.json",
+      "bytes": 210910,
+      "sha256": "e535c1064c3cea785a2b1b19e351d81f2aa2e1440a47a3dc0d96f8f05d534d38"
+    },
+    {
+      "name": "PANTALLAS.md",
+      "bytes": 1990,
+      "sha256": "076506c7a2dfbb2dc2e64e489180af04243669cc336d8baf7698c69a0393507b"
+    },
+    {
+      "name": "qa-precond-review.json",
+      "bytes": 4218,
+      "sha256": "e936050907d2f6718c3c65ab1fbc11637d5996e421ccf2fe478a2b66c646fa90"
+    },
+    {
+      "name": "scope-and-observations.json",
+      "bytes": 2081,
+      "sha256": "3205d7083bfbc456d1b3d2721b1d3cd1fe58077eaeaaf3081b6f629e234dffc9"
+    }
+  ]
+}

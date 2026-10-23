@@ -1,5 +1,27 @@
 # Progreso del expediente OP
 
+## AVANCE vigente — precondensado, 2026-10-23 13:34 Chile
+
+**PARCIAL:** únicaOP2000L autorizada creada, valeVE6296-02 liberado por Calidad y loteOPF-PRE-01 evaporado de2000L a500L ficticios en OP09-PRE-BASE. Dos análisis nuevos con analista y visualizador distintos; ingreso nuevo invalidó correctamente análisis anterior de Silo5. La muestra de salida está firmada, pero no hay especificaciónSILO vigente. Liberar etapa deshabilitado, material ausente de cargables; cero liberaciones/despachos de salida11. No se alteraron límites ni permisos. Preparador repetido sin duplicar orden.
+
+QA de archivos concilia52modelos/299filas y movimientos17–21, FIFO íntegro y una sola salida/ingreso. Cadencia medible10,007s por usuario;307 inicios al corte de QA, brechas28/33 preservadas.15capturas nuevas y manifiestoSHA256. Se conservó advertencia de0minagitación; no certifica proceso físico. Interacción de cierre recuperada por recarga antes de un único envío real. Sólo un coordinador y un apoyo QA.
+
+Nuevos archivos: `qa/opflow/seed_precond_order.py`, [expediente](docs/operacion/OP-09_PRECONDENSADO.md) y paquete de evidencia; enlaces/backlog/progreso actualizados. Aplicación intacta, PR19continúa borrador, sin merge/despliegue. Usuario indicó continuar e informar trabas; no suministró rangos de Calidad, requisito industrial todavía pendiente. EXPLICADOR de siete apartados en el expediente. Próximo paso de esta ruta es resolver esa especificación antes de liberar; suero/rework y F01–F07 permanecen pendientes.
+
+---
+
+## AVANCE vigente — OP-09 operacional, 2026-10-23, corte15:14 UTC
+
+**PARCIAL.** Descarga inicial recuperada sin duplicar recepción; circuitos por pantalla llegaron a tres hojas ejecutadas: DE6296-01 polvo500kg, DE6296-02 mantequilla20kg y DE6296-03 crema42,50L. Además, DespachoLeche1 de1000L. RW-00000111kg disponible en PT-DISP, aún sin consumir. Datos ficticios locales; ninguna operación productiva, despliegue o merge.
+
+QA contrastó269filas de52modelos, una salida por despacho y FIFO; ambas salidas del segundo descremado tienen analista y visualizador distintos. Diario257inicios, mínimo medible10,007s por usuario; cero infracciones medibles, brechas28/33 declaradas. Se guardan53capturas seleccionadas, diarios originales, correcciones y manifiestoSHA256. Ruff QA y diff-check ejecutados; ninguna suite de aplicación o carga adicional declarada.
+
+Se añadieron sólo cuatro fixtures de preparación (descremado, cliente ficticio, mantequilla y vínculo de ruta de crema), informe, evidencia, backlog y progreso. Aplicación intacta. OP de mantequilla40kg expresamente autorizada; OP de precondensado2000L aún pendiente y no creada. No se sembraron lotes industriales liberados para simular pruebas.
+
+Hallazgos F01–F07: disponible y genealogía incorrectos en descremada/vale, mantequilla con grasa físicamente incompatible aceptada, checklist por familia, embalajes fraccionados, cronología y ubicación histórica engañosa. **No corregidos.** Precondensado, suero externo y consumo de rework pendientes. [Informe con EXPLICADOR de siete apartados](docs/operacion/OP-09_OPERACIONAL_RESULTADOS.md) y [formularios/pantallas](docs/operacion/evidencias/opflow-ejecucion/PANTALLAS.md). PR19 de evidencias continúa en borrador; no equivale a autorización de operación industrial.
+
+---
+
 **OP-00, OP-01 y OP-02: COMPLETADAS EN SUS RAMAS** · OP-00 [PR #6 borrador](https://github.com/FelipeCCAA/CCAA/pull/6) · OP-01 [PR #7 borrador](https://github.com/FelipeCCAA/CCAA/pull/7) · OP-02 [PR #9 borrador](https://github.com/FelipeCCAA/CCAA/pull/9). **OP-03: COMPLETADA EN LA RAMA**, rama `codex/op-03-saldo-reservas-ubicacion` desde `8d0ede7`. No hay merge ni despliegue; no se calcula porcentaje de capacidad. Corte 2026-10-21.
 
 La entrega afectó seis archivos: [.github/workflows/ci.yml](.github/workflows/ci.yml), [tests del reset](backend/usuarios/tests_reset_datos_operacionales.py), [tests de Resumen](backend/produccion/tests_api.py), [guía OP-00](docs/operacion/OP-00_VALIDACION.md), [TASK_BACKLOG.md](TASK_BACKLOG.md) y este [PROGRESS.md](PROGRESS.md). Código y guía están en los commits [`1ed4622`](https://github.com/FelipeCCAA/CCAA/commit/1ed4622a7aa8bc5eab0298beadbdc7f9141bc8b8) y [`4793e33`](https://github.com/FelipeCCAA/CCAA/commit/4793e33b909c2b2a0a29eaf565f2fe3c5711d95d). Este checkpoint documental es posterior al head verificado y se registra en un commit posterior que modifica únicamente los dos documentos de seguimiento. El PR sigue en borrador; no se ha fusionado ni desplegado.
@@ -183,3 +205,24 @@ Circuito web real sobre copia ficticia H09: Evaporación2/2, continuación reanu
 5. **TRABAJO REALIZADO POR LOS AGENTES:** coordinador aisló/ejecutó; un QA preparó y revisó instrumentación/evidencias. Aplicación intacta.
 6. **PRUEBAS Y RESULTADOS:** calentamiento aprobado,10 incompleto,304 movimientos exactos,4/70 accesos;6/6 QA.25/50/70/sostenida sin ejecutar.
 7. **ESTADO FINAL:** BLOQUEADO PARA COMPLETAR VALIDACIÓN DE CARGA por entorno, sin habilitación de planta ni certificación productiva.
+
+
+## OP-09 — Operación por pantalla, corte parcial2026-10-23
+
+**BLOQUEADA ANTES DE DESCARGAR; ningún circuito completo aprobado.** Rama `codex/op09-operacional-trazabilidad`, base9af5518. Usuario autorizó acción lógica cada10s por usuario, trazabilidad/capturas/cantidades/destinos; excluye Planificación, Compras y Mantenimiento. Nueva base vacía PG55479/opflow_circuito y API8209/web5209, sólo ficticios y maestros/órdenes/embalajes iniciales. Sin aplicación, producción, despliegue, contratación o Supabase/logs.
+
+Hechos: recepción1/OPF-ENT-01 de25.000L, muestraM-OPF-ENT-01, decisión de e2e_calidad y destino Silo3 por e2e_recepcion; responsables distintos. **0 movimientos de silo**, aún `liberada`, no descargada. Timeout de interacciónCDP al pulsar Descargar (confirmación nativa previa al POST); pestaña bloqueada no recuperada mediante APIs documentadas. Sin POSTdescargar observado y sin cambio físico; memoria~57–65%, no guardaRAM. Verificación de sólo lectura preserva la misma recepción para retomar.
+
+23 intervalos registrados mínimo10,007s; autoguardados/consultas no son actos operacionales. Se documentó corrección de metadatos del primer registrador (seq11–17=Calidad) y capturas007–009 inválidas para acreditar Calidad, sin reescribir crudos. Capturas010/011 verificadas, muestran aprobación y destino25k/Silo3. QA independiente confirma cantidades/estado/ritmo y rutas no ejecutadas. ExtractorREADONLY de52 modelos, Ruff aprobado; ninguna suite general repetida sin cambios de aplicación.
+
+[Informe y pendientes](docs/operacion/OP-09_OPERACIONAL_PARCIAL.md). Se mantiene entorno local para revisión y consulta al usuario sobre confirmación pendiente; recuperar navegador antes de continuar. No saltar descarga medianteAPI/ORM, no fabricar lotes/pallets aprobados ni considerar cubiertas rutas pendientes con ensayos anteriores.
+
+**EXPLICADOR — operación por pantalla**
+
+1. **PROBLEMA DETECTADO:** no se pudo continuar tras pulsar Descargar.
+2. **CAUSA TÉCNICA:** controlCDP sin respuesta; confirmación nativa en el botón, causalidad exacta pendiente. No prueba fallo de inventario.
+3. **EJEMPLO REAL DE OPERACIÓN:**25.000L aprobados y asignados a Silo3, pero todavía sin movimiento físico registrado.
+4. **SOLUCIÓN RECOMENDADA:** recuperar pestaña/confirmación y continuar sobre recepción1, previa comprobación de estado.
+5. **TRABAJO REALIZADO POR LOS AGENTES:** coordinador ejecutó UI; un QA creó extractor y verificó evidencia. Sólo QA/docs.
+6. **PRUEBAS Y RESULTADOS:** llegada/muestra/Calidad/asignación;23 intervalos>=10s. Descarga y rutas completas pendientes; sin producción.
+7. **ESTADO FINAL:** BLOQUEADO PARA CONTINUAR PRUEBA POR PANTALLA, ninguna aprobación global operacional.

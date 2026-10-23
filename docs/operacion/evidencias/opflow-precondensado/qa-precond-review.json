@@ -1,0 +1,152 @@
+{
+  "scope": "Independent local files only; no DB/API/UI; no new specifications or industrial limits created",
+  "source": "operational-ledger-20261023T163432527391Z.json",
+  "source_sha256": "e535c1064c3cea785a2b1b19e351d81f2aa2e1440a47a3dc0d96f8f05d534d38",
+  "domain_rows": 299,
+  "authorization": "User expressly authorized only OPFLOW-OP-PRECOND-01,2000L",
+  "order": {
+    "id": 3,
+    "quantity_L": "2000.00",
+    "state": "pendiente_calidad"
+  },
+  "vale": {
+    "id": 2,
+    "code": "VE6296-02",
+    "whole_milk_L": "1426.60",
+    "skim_L": "573.40",
+    "total_L": "2000.00",
+    "destination": "Silo5",
+    "state": "liberado",
+    "agitation_duration_seconds": 19.525,
+    "physical_30_minutes_demonstrated": false
+  },
+  "evaporation": {
+    "lot_id": 7,
+    "code": "OPF-PRE-01",
+    "execution_id": 8,
+    "run_id": 2,
+    "input_L": "2000.00",
+    "output_id": 11,
+    "output_L": "500.000",
+    "destination": "OP09-PRE-BASE",
+    "solids_percent": "45.08",
+    "temperature_C": "62.50",
+    "state": "pendiente_calidad",
+    "output_rows": 1,
+    "physical_production_ingress_rows": 1,
+    "duplicate_physical_ingress_observed": false
+  },
+  "analysis": {
+    "mix_analysis_id": 8,
+    "product_analysis_id": 9,
+    "product_MG_percent": "10.40",
+    "product_SNG_percent": "34.68",
+    "product_pH": "6.65",
+    "distinct_second_reviewer": true,
+    "previous_silo_analysis5_has_new_ingress18": true,
+    "previous_sample_validity_note": "Expired by model rule due subsequent ingress, not a new independent call to validity service"
+  },
+  "fifo": {
+    "all_new_movements_attributed": true,
+    "unknown_origin_L": "0",
+    "checks": [
+      {
+        "movement_id": 17,
+        "type": "salida",
+        "silo_id": 1,
+        "quantity_L": "1426.60",
+        "attributed_receipt": 1
+      },
+      {
+        "movement_id": 18,
+        "type": "ingreso",
+        "silo_id": 3,
+        "quantity_L": "2000.00",
+        "attributed_receipt": 1
+      },
+      {
+        "movement_id": 19,
+        "type": "salida",
+        "silo_id": 4,
+        "quantity_L": "573.40",
+        "attributed_receipt": 1
+      },
+      {
+        "movement_id": 20,
+        "type": "salida",
+        "silo_id": 3,
+        "quantity_L": "2000.00",
+        "attributed_receipt": 1
+      },
+      {
+        "movement_id": 21,
+        "type": "ingreso",
+        "silo_id": 5,
+        "quantity_L": "500.00",
+        "attributed_receipt": 1
+      }
+    ]
+  },
+  "quality_and_dispatch": {
+    "process_release_rows": 0,
+    "bulk_dispatch_details": 0,
+    "commercial_release_claimed": false,
+    "shipment_claimed": false,
+    "blocker": "Screenshot127 shows no applicable current specification for this intermediate result; coordinator read-only query reports only LOTE specification, no SILO specification. This collector does not export specifications.",
+    "decision": "User-provided approved SILO ranges pending; do not invent ranges or change type/limits to force release."
+  },
+  "cadence_to_ledger_cutoff": {
+    "starts": 307,
+    "last_sequence": 307,
+    "min_seconds_same_actor": 10.007,
+    "measurable_violations": 0,
+    "missing_terminal_events": [
+      28,
+      33
+    ],
+    "scope": "Logical recorded actions only; original actors11–17 corrected as documented"
+  },
+  "final_silo_balances": [
+    {
+      "silo_id": 1,
+      "quantity": "1373.93",
+      "unit": "L"
+    },
+    {
+      "silo_id": 2,
+      "quantity": "9000.00",
+      "unit": "L"
+    },
+    {
+      "silo_id": 3,
+      "quantity": "0.00",
+      "unit": "L"
+    },
+    {
+      "silo_id": 4,
+      "quantity": "4276.15",
+      "unit": "L"
+    },
+    {
+      "silo_id": 5,
+      "quantity": "500.00",
+      "unit": "L"
+    },
+    {
+      "silo_id": 6,
+      "quantity": "457.50",
+      "unit": "L"
+    },
+    {
+      "silo_id": 7,
+      "quantity": "815.04",
+      "unit": "L"
+    },
+    {
+      "silo_id": 8,
+      "quantity": "0.00",
+      "unit": "L"
+    }
+  ],
+  "verdict": "PARTIAL/BLOCKED at intermediate quality approval; production output persisted once, no release or shipment."
+}

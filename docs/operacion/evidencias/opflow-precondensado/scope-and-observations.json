@@ -1,0 +1,43 @@
+{
+  "isolation": "Fictitious OPFLOW, Postgres loopback55479/API8209/web5209; no production/deployment",
+  "order_authorization": "Explicit user approval for only OPFLOW-OP-PRECOND-01 of2000L",
+  "user_followup": "Proceed and report obstacles; no numeric quality ranges supplied",
+  "order_preparation": {
+    "first_run_created": true,
+    "second_run_created": false,
+    "second_run_after_workflow": "Existing order state preserved; no new order"
+  },
+  "specification_read_observation": {
+    "source": "Coordinator guarded read-only Django query of product.especificaciones,2026-10-23; not part of ledger collector",
+    "product": "Precondensado Entero NE Granel",
+    "existing": [
+      {
+        "id": 4,
+        "type": "lote",
+        "version": 1,
+        "ranges": {
+          "mg": {
+            "max": 6.0,
+            "min": 3.0,
+            "obligatorio": true
+          },
+          "temperatura": {
+            "max": 8.0,
+            "min": 2.0,
+            "obligatorio": true
+          }
+        },
+        "source": "Configuración inicial provisoria: validar con Calidad antes de operación comercial."
+      }
+    ],
+    "silo_specification_count": 0,
+    "configuration_modified": false
+  },
+  "release_ui": "Signed analysis selected; Liberar etapa disabled, no current specification",
+  "dispatch_ui": "Renewed dispatcher login, new empty sheet showed no bulk available; closed without saving",
+  "controller_incidents": "Read timeout/reset and failed closing-form opening; reload plus run query recovered before the only real close submission",
+  "premature_capture": "121 is before asynchronous signature confirmation;121b is final confirmed, selected instead",
+  "industrial_limits": "No new specification, tolerance or measurement uncertainty invented; fictitious measurements are not certification",
+  "post_ledger_actions": "Sequences308-310 only focus, query new empty load sheet, close without save",
+  "remaining": "Quality specification, release and dispatch; whey/rework and priorF01-F07 unchanged"
+}

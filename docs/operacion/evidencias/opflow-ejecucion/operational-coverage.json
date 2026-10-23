@@ -1,0 +1,130 @@
+{
+  "status": "PARCIAL_SIN_APROBACION_INDUSTRIAL",
+  "routes": [
+    {
+      "id": "leche_granel",
+      "description": "Recepción → análisis y dos firmas → silo → despacho de leche",
+      "status": "FUNCIONAL_UI_CONCILIADO",
+      "ui_action_evidence": [
+        "013",
+        "014",
+        "015",
+        "099",
+        "100"
+      ],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": []
+    },
+    {
+      "id": "polvo",
+      "description": "Recepción → vale → evaporación → secado → envase → Calidad → inventario → despacho",
+      "status": "PARCIAL",
+      "ui_action_evidence": [
+        "028",
+        "038",
+        "043",
+        "049",
+        "074",
+        "080",
+        "101"
+      ],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": [
+        "F01/F02 trazabilidad y disponible",
+        "Controles industriales simulados"
+      ]
+    },
+    {
+      "id": "precondensado",
+      "description": "Recepción → vale → evaporación → Calidad → despacho directo",
+      "status": "PENDIENTE_AUTORIZACION_PRERREQUISITO",
+      "ui_action_evidence": [],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": [
+        "OP ficticia2000L solicitada; aún no creada",
+        "Circuito completo pendiente"
+      ]
+    },
+    {
+      "id": "descremada",
+      "description": "Recepción → silo → descremado → Calidad → destino de descremada",
+      "status": "PARCIAL",
+      "ui_action_evidence": [
+        "017",
+        "020",
+        "025",
+        "029",
+        "107",
+        "109"
+      ],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": [
+        "F01/F02 consumo sin arista de material"
+      ]
+    },
+    {
+      "id": "crema_directa",
+      "description": "Recepción → descremado → Calidad de crema → despacho directo",
+      "status": "FUNCIONAL_UI_CONCILIADO",
+      "ui_action_evidence": [
+        "104",
+        "106",
+        "108",
+        "110",
+        "111",
+        "113"
+      ],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": [
+        "Sin certificación industrial"
+      ]
+    },
+    {
+      "id": "mantequilla",
+      "description": "Crema del descremado → mantequilla → Calidad → cajas → inventario → despacho",
+      "status": "FALLO_INVARIANTE_GRASA",
+      "ui_action_evidence": [
+        "081",
+        "082",
+        "083",
+        "085",
+        "098"
+      ],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": [
+        "F03 grasa incompatible aceptada",
+        "F05/F06 embalajes y cronología"
+      ]
+    },
+    {
+      "id": "suero_externo",
+      "description": "Ingreso externo por pantalla → liberación → secado → Big Bag → inventario → despacho",
+      "status": "BLOQUEADO_PRERREQUISITOS",
+      "ui_action_evidence": [
+        "103"
+      ],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": [
+        "Sin orden con materia prima externa ni ingreso/liberación UI",
+        "Acordar escenario sin Compras"
+      ]
+    },
+    {
+      "id": "rework",
+      "description": "Segregación real → Calidad → habilitación física de Bodega → consumo en otra ejecución",
+      "status": "PARCIAL",
+      "ui_action_evidence": [
+        "087",
+        "093",
+        "102"
+      ],
+      "ledger_reference": "operational-ledger-20261023T151437735213Z.json",
+      "missing_steps": [
+        "11kg habilitados, sin consumo ni ejecución destino compatible"
+      ]
+    }
+  ],
+  "rule": "Only root may update after observed UI actions and ledger reconciliation; existing coverage is never overwritten by collector",
+  "notes": "Root updated after UI observation and independent file QA. No inferred unexecuted route pass.",
+  "cut": "2026-10-23T15:14:37Z"
+}
