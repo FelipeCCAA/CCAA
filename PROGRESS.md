@@ -162,3 +162,24 @@ Circuito web real sobre copia ficticia H09: Evaporación2/2, continuación reanu
 5. **Trabajo realizado:** coordinador implementó fotos/propagación/guardas y un QA aportó pruebas/revisión independiente. No se cambió esquema ni producción; quedó rama y PR.
 6. **Pruebas y resultados:** circuito real completado en cortes con firmas únicas, controles estáticos e interfaz aprobados; corte final88/88 y CI del código aprobados (1.820 backend aprobadas, cinco omitidas). Fallos de fixtures/aserciones se conservan.
 7. **Estado final:** implementación validada en circuito ficticio, regresiones y CI de código; lista para revisión humana del PR17. Firmas antiguas vencidas requieren revisión explícita; no se convierten automáticamente. Sin despliegue; no equivale a aprobar la carga de planta.
+
+
+## OP-09 — AVANCE de reejecución de carga, 2026-10-23
+
+**EJECUTADA HASTA GUARDA; VALIDACIÓN PARCIAL.** Rama `codex/op09-carga-revalidacion`, base5844447; coordinador y un apoyo QA. Sólo QA/docs y nuevos ficticios, sin producción, despliegue, contratación ni Supabase/logs. [Informe completo](docs/operacion/OP-09_CARGA_REEJECUCION.md).
+
+- Calentamiento aprobado302,535s,1.406 solicitudes,0 errores. Escalón10 detenido597,512/600s por RAM86%,2.831 solicitudes,0 errores, p95lectura0,269s/escritura0,372s: NO aprobado.25/50/70 y sostenida no ejecutados. No redondear duración ni reiniciar para forzar verde.
+- Conciliación304/304 operaciones exactas,63 reenvíos correctos,36 ubicaciones de18 lotes sin diferencias. Diario8.557 eventos/4.260 intenciones/resultados, ninguna nueva trasSTOP, revisión independiente coherente. Seis pruebas QA yRuff aprobados. No hubo nuevas respuestas inciertas; recuperación real no ejercida.
+- Ingreso de turno4/70, cuatro identidades y cierres correctos; guardaRAM>85% detuvo. No cambia cuotas ni certifica70 accesos. Evidencia anterior y scripts exactos ejecutados conservados; mejora posterior exige identidades/cierres completos y tiene regresión sin HTTP real.
+- Docker Linux existente no quedó disponible: Django Windows diagnóstico local, NO capacidad productiva. Cero sesiones nuevas abiertas al cierre; API8229 y PG55469 propios detenidos. No otras aplicaciones cerradas ni recursos pagados. Evidencia seleccionada: seis resúmenes y manifiesto22 crudos locales.
+- Pendientes: H09-02 antiguo fallo25 sin causal/resolución; H09-03 recursos/entorno representativo;70 accesos por IP incompletos. Necesario entorno existente con memoria disponible antes de repetir, sin bajar guardas ni cambiar reglas de negocio.
+
+**EXPLICADOR — OP-09 carga**
+
+1. **PROBLEMA DETECTADO:** no se completaron los niveles ni el tiempo exigidos.
+2. **CAUSA TÉCNICA:** RAM agregada del equipo superó85%; no se probó que CCAA causara el consumo. Servidor Linux representativo no disponible.
+3. **EJEMPLO REAL DE OPERACIÓN:** diez usuarios ficticios operaron sin errores, pero el computador obligó a detener antes de diez minutos.
+4. **SOLUCIÓN RECOMENDADA:** recursos existentes libres y servidor de pruebas representativo; mantener límites y evidencias.
+5. **TRABAJO REALIZADO POR LOS AGENTES:** coordinador aisló/ejecutó; un QA preparó y revisó instrumentación/evidencias. Aplicación intacta.
+6. **PRUEBAS Y RESULTADOS:** calentamiento aprobado,10 incompleto,304 movimientos exactos,4/70 accesos;6/6 QA.25/50/70/sostenida sin ejecutar.
+7. **ESTADO FINAL:** BLOQUEADO PARA COMPLETAR VALIDACIÓN DE CARGA por entorno, sin habilitación de planta ni certificación productiva.

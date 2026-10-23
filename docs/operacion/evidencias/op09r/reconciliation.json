@@ -1,0 +1,26 @@
+{
+  "drain": {
+    "drained": true,
+    "active": 0
+  },
+  "recoveries": [],
+  "post_recovery_drain": {
+    "drained": true,
+    "active": 0
+  },
+  "original_transfer_operations": 304,
+  "resolved_operations": 304,
+  "new_movement_rows": 304,
+  "unknown_operations": [],
+  "null_operation_rows": 0,
+  "mismatches": [],
+  "baseline_preserved": true,
+  "integrity": {
+    "invalid": [],
+    "lots": 18,
+    "locations": 36,
+    "movements": 304,
+    "connections": 1
+  },
+  "passed": true
+}

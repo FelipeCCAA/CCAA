@@ -1,0 +1,22 @@
+{
+  "qa_unit_final": {
+    "executed": 6,
+    "passed": 6,
+    "skipped": 0
+  },
+  "ruff": "passed",
+  "application_changed": false,
+  "independent_review": "Recorder sequence, original/replay UUIDs, per-stage counts/p95 and reconciliation verified read-only by one QA helper",
+  "overall_verdict": "PARTIAL; load and login incomplete due host RAM guard; no production capacity certification",
+  "closure": {
+    "postmaster_pid_absent": true,
+    "scope": "Only new OP09R services stopped; original fixtures/evidence preserved",
+    "new_synthetic_sessions_open_before_stop": 0,
+    "api_8229_listening": false,
+    "pg_55469_stopped": true,
+    "verification": "Native Windows TCP listener table and exact pgdata PID absence",
+    "previous_socket_probe": "Timeout/nonblocking10035 was inconclusive, not treated as proof"
+  },
+  "historical_25_user_uncertain_responses": "Not reached or reproduced in this rerun; cause remains unresolved",
+  "login_harness_followup": "All70 identities and cleanup required after run; negative regression added; actual4/70 result remains failed; exact executed script hashes recorded"
+}

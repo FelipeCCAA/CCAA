@@ -1,0 +1,507 @@
+{
+  "scope": "70 valid fictitious credentials, sequential arrivals one second apart from same 127.0.0.1 IP; no cache reset or throttle changes; not simultaneous login benchmark",
+  "planned": 70,
+  "executed": 4,
+  "status_counts": {
+    "200": 4
+  },
+  "elapsed_seconds": 15.995617100037634,
+  "session_cleanup_before": [
+    {
+      "account": "op09r_carga_01",
+      "status": 200,
+      "seconds": 0.20888599997851998,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_02",
+      "status": 200,
+      "seconds": 0.05338220007251948,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_03",
+      "status": 200,
+      "seconds": 0.07522899995092303,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_04",
+      "status": 200,
+      "seconds": 0.18636890000198036,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_05",
+      "status": 200,
+      "seconds": 0.08148870000150055,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_06",
+      "status": 200,
+      "seconds": 0.18857060000300407,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_07",
+      "status": 200,
+      "seconds": 0.07661699992604554,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_08",
+      "status": 200,
+      "seconds": 0.09184059989638627,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_09",
+      "status": 200,
+      "seconds": 0.07689099991694093,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_10",
+      "status": 200,
+      "seconds": 0.07384029997047037,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_11",
+      "status": 200,
+      "seconds": 0.07659459998831153,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_12",
+      "status": 200,
+      "seconds": 0.0511919999262318,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_13",
+      "status": 200,
+      "seconds": 0.08601700002327561,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_14",
+      "status": 200,
+      "seconds": 0.06362179992720485,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_15",
+      "status": 200,
+      "seconds": 0.09148980001918972,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_16",
+      "status": 200,
+      "seconds": 0.05398089997470379,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_17",
+      "status": 200,
+      "seconds": 0.17838729999493808,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_18",
+      "status": 200,
+      "seconds": 0.05213769990950823,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_19",
+      "status": 200,
+      "seconds": 0.09042980009689927,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_20",
+      "status": 200,
+      "seconds": 0.055993600049987435,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_21",
+      "status": 200,
+      "seconds": 0.056192300049588084,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_22",
+      "status": 200,
+      "seconds": 0.04519510001409799,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_23",
+      "status": 200,
+      "seconds": 0.08588989998679608,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_24",
+      "status": 200,
+      "seconds": 0.1780781999696046,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_25",
+      "status": 200,
+      "seconds": 0.20709589996840805,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_26",
+      "status": 200,
+      "seconds": 0.05732750007882714,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_27",
+      "status": 200,
+      "seconds": 0.05082680005580187,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_28",
+      "status": 200,
+      "seconds": 0.1815550000173971,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_29",
+      "status": 200,
+      "seconds": 0.1014578000176698,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_30",
+      "status": 200,
+      "seconds": 0.18613119993824512,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_31",
+      "status": 200,
+      "seconds": 0.04144840000662953,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_32",
+      "status": 200,
+      "seconds": 0.06217269995249808,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_33",
+      "status": 200,
+      "seconds": 0.03847279993351549,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_34",
+      "status": 200,
+      "seconds": 0.06140139990020543,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_35",
+      "status": 200,
+      "seconds": 0.07992240006569773,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_36",
+      "status": 200,
+      "seconds": 0.08433720003813505,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_37",
+      "status": 200,
+      "seconds": 0.06845799996517599,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_38",
+      "status": 200,
+      "seconds": 0.2014699000865221,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_39",
+      "status": 200,
+      "seconds": 0.08830950001720339,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_40",
+      "status": 200,
+      "seconds": 0.0449593000812456,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_41",
+      "status": 200,
+      "seconds": 0.17709980008658022,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_42",
+      "status": 200,
+      "seconds": 0.044674000004306436,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_43",
+      "status": 200,
+      "seconds": 0.04146109998691827,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_44",
+      "status": 200,
+      "seconds": 0.050404899986460805,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_45",
+      "status": 200,
+      "seconds": 0.1706218000035733,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_46",
+      "status": 200,
+      "seconds": 0.049032900016754866,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_47",
+      "status": 200,
+      "seconds": 0.04911929997615516,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_48",
+      "status": 200,
+      "seconds": 0.040300199994817376,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_49",
+      "status": 200,
+      "seconds": 0.04534650000277907,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_50",
+      "status": 200,
+      "seconds": 0.20310339995194227,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_51",
+      "status": 200,
+      "seconds": 0.06741959997452796,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_52",
+      "status": 200,
+      "seconds": 0.039546600077301264,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_53",
+      "status": 200,
+      "seconds": 0.054181499988771975,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_54",
+      "status": 200,
+      "seconds": 0.041295900009572506,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_55",
+      "status": 200,
+      "seconds": 0.06179189996328205,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_56",
+      "status": 200,
+      "seconds": 0.05922470008954406,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_57",
+      "status": 200,
+      "seconds": 0.07512860000133514,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_58",
+      "status": 200,
+      "seconds": 0.05900589993689209,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_59",
+      "status": 200,
+      "seconds": 0.06366000010166317,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_60",
+      "status": 200,
+      "seconds": 0.18135790002997965,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_61",
+      "status": 200,
+      "seconds": 0.049416499910876155,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_62",
+      "status": 200,
+      "seconds": 0.04421720001846552,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_63",
+      "status": 200,
+      "seconds": 0.0712662999285385,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_64",
+      "status": 200,
+      "seconds": 0.054984600050374866,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_65",
+      "status": 200,
+      "seconds": 0.050046400050632656,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_66",
+      "status": 200,
+      "seconds": 0.03822109999600798,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_67",
+      "status": 200,
+      "seconds": 0.04044469993095845,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_68",
+      "status": 200,
+      "seconds": 0.05127460008952767,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_69",
+      "status": 200,
+      "seconds": 0.055501299910247326,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_70",
+      "status": 200,
+      "seconds": 0.0377737000817433,
+      "exception_class": null
+    }
+  ],
+  "results": [
+    {
+      "account": "op09r_carga_01",
+      "status": 200,
+      "seconds": 0.9309643999440596,
+      "exception_class": null,
+      "retry_after": null
+    },
+    {
+      "account": "op09r_carga_02",
+      "status": 200,
+      "seconds": 0.969583599944599,
+      "exception_class": null,
+      "retry_after": null
+    },
+    {
+      "account": "op09r_carga_03",
+      "status": 200,
+      "seconds": 0.9996415000641719,
+      "exception_class": null,
+      "retry_after": null
+    },
+    {
+      "account": "op09r_carga_04",
+      "status": 200,
+      "seconds": 2.398568299948238,
+      "exception_class": null,
+      "retry_after": null
+    }
+  ],
+  "identities": [
+    {
+      "account": "op09r_carga_01",
+      "status": 200,
+      "username_matches": true
+    },
+    {
+      "account": "op09r_carga_02",
+      "status": 200,
+      "username_matches": true
+    },
+    {
+      "account": "op09r_carga_03",
+      "status": 200,
+      "username_matches": true
+    },
+    {
+      "account": "op09r_carga_04",
+      "status": 200,
+      "username_matches": true
+    }
+  ],
+  "session_cleanup_after": [
+    {
+      "account": "op09r_carga_01",
+      "status": 200,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_02",
+      "status": 200,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_03",
+      "status": 200,
+      "exception_class": null
+    },
+    {
+      "account": "op09r_carga_04",
+      "status": 200,
+      "exception_class": null
+    }
+  ],
+  "stop_reason": "host_ram_above_85",
+  "passed": false
+}
