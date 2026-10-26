@@ -301,17 +301,26 @@ class RecepcionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, viewsets.Mode
     def perform_update(self, serializer):
         serializer.save()
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         recepcion = self.get_object()
+        recepcion = Recepcion.objects.select_for_update().get(pk=recepcion.pk)
         if recepcion.estado in {Recepcion.Estado.CERRADA, Recepcion.Estado.ANULADA}:
             return Response(
                 {"detail": "El documento está cerrado y ya no admite edición."},
                 status=status.HTTP_409_CONFLICT,
             )
-        if "litros" in request.data and MovimientoSilo.objects.filter(
+        tiene_movimiento = MovimientoSilo.objects.filter(
             origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION,
             origen_id=recepcion.id,
-        ).exists():
+        ).exists()
+        if (tiene_movimiento and "tipo_leche" in request.data
+            and request.data["tipo_leche"] != recepcion.tipo_leche):
+            return Response(
+                {"tipo_leche": "El tipo de leche descargada forma parte de su trazabilidad y no admite edición."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if "litros" in request.data and tiene_movimiento:
             return Response(
                 {
                     "litros": (

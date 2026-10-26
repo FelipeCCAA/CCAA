@@ -66,6 +66,20 @@ class Recepcion(DocumentoBorradorMixin, models.Model):
     resultado de calidad de un lote.
     """
 
+    def save(self, *args, **kwargs):
+        using = kwargs.get("using") or self._state.db or "default"
+        with transaction.atomic(using=using):
+            if self.pk is not None:
+                anterior = type(self).objects.using(using).select_for_update().filter(pk=self.pk).first()
+                campos = kwargs.get("update_fields")
+                if (anterior is not None and (campos is None or "tipo_leche" in campos)
+                    and anterior.tipo_leche != self.tipo_leche
+                    and MovimientoSilo.objects.using(using).filter(
+                        origen_tipo=MovimientoSilo.OrigenTipo.RECEPCION, origen_id=self.pk,
+                    ).exists()):
+                    raise ValidationError({"tipo_leche": "El tipo de leche descargada forma parte de su trazabilidad y no admite edición."})
+            return super().save(*args, **kwargs)
+
     sucursal = models.ForeignKey(
         "usuarios.Sucursal", on_delete=models.PROTECT,
         related_name="recepciones_leche",
