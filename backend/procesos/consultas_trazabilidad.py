@@ -110,6 +110,9 @@ def construir_timeline_trazabilidad(lote, genealogia):
     ejecucion_ids = {
         enlace["ejecucion"]["id"] for enlace in genealogia["enlaces"]
     }
+    for tramo in genealogia.get("tramos", []):
+        ejecucion_ids.add(tramo["origen"]["ejecucion"]["id"])
+        ejecucion_ids.add(tramo["destino"]["ejecucion"]["id"])
     if lote.ejecucion_id:
         ejecucion_ids.add(lote.ejecucion_id)
     if lote.vale_id and getattr(lote.vale, "ejecucion", None):

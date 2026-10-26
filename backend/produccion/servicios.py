@@ -18,7 +18,7 @@ import hashlib
 import json
 from datetime import timezone as utc_timezone
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
@@ -76,7 +76,16 @@ def abrir_lote_desde_vale(
     # disponibles, y los dos pasarían la regla por separado.
     from calidad.evidencia import bloquear_catalogo
     bloquear_catalogo()
+    from calidad.etapas import bloquear_cadenas
+    from procesos.models import SalidaProceso
+    fuentes_vale = list(SalidaProceso.objects.filter(
+        ejecucion__vale_id=vale.pk,
+    ).values_list("pk", flat=True))
+    bloquear_cadenas(fuentes_vale)
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale.pk)
+    from calidad.vigencia import exigir_antecedentes_salida_vigentes
+    for fuente_id in fuentes_vale:
+        exigir_antecedentes_salida_vigentes(fuente_id)
     from estandarizacion.balance import balance_vale, litros_exactos
     litros_exactos(litros, permitir_cero=False)
     if balance_vale(vale)["pendiente"]:
@@ -240,6 +249,7 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     EntradaProceso.objects.create(
         ejecucion=ejecucion,
         silo=vale.silo_destino,
+        salida_origen=_salida_del_vale(vale),
         tipo=EntradaProceso.Tipo.PRINCIPAL,
         cantidad=Decimal(str(litros)),
         unidad="L",
@@ -258,6 +268,37 @@ def _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=None):
     # `kg_producidos` es nulable. Escribir aquí una cantidad de relleno dejaría
     # un balance de masa construido sobre un número inventado.
     return ejecucion
+
+
+def _salida_del_vale(vale):
+    """Sólo una relación explícita; no reconstruye un vale histórico desde el silo."""
+    from procesos.models import SalidaProceso
+
+    fuentes = list(SalidaProceso.objects.filter(ejecucion__vale=vale)[:2])
+    if len(fuentes) > 1:
+        raise ValidationError("El vale tiene varios resultados; revisa su origen antes de producir.")
+    if fuentes:
+        from recepcion.models import MovimientoSilo
+        movimientos = list(MovimientoSilo.objects.filter(silo=vale.silo_destino).order_by("fecha_hora", "pk"))
+        transferencias = [m for m in movimientos if m.tipo == MovimientoSilo.Tipo.INGRESO
+                         and m.origen_tipo == MovimientoSilo.OrigenTipo.ESTANDARIZACION
+                         and m.origen_id == vale.pk and m.operacion_id == uuid5(
+                             NAMESPACE_URL, f"ccaa:estandarizacion:{vale.pk}",
+                         )]
+        if len(transferencias) != 1 or fuentes[0].silo_id != vale.silo_destino_id:
+            raise ValidationError("El vale requiere revisión: su ingreso físico no está identificado.")
+        saldo, posterior = Decimal("0"), False
+        claves_propias = set(vale.actos.filter(tipo="adicion").values_list("clave", flat=True))
+        for movimiento in movimientos:
+            if movimiento.pk == transferencias[0].pk:
+                if saldo != 0:
+                    raise ValidationError("El silo del vale contenía otro material; requiere identificar la composición.")
+                posterior = True
+            elif posterior and ((movimiento.tipo == MovimientoSilo.Tipo.INGRESO and movimiento.operacion_id not in claves_propias)
+                                or (movimiento.tipo == MovimientoSilo.Tipo.AJUSTE and movimiento.litros > 0)):
+                raise ValidationError("El silo del vale recibió otro material; requiere identificar la composición.")
+            saldo += -movimiento.litros if movimiento.tipo == MovimientoSilo.Tipo.SALIDA else movimiento.litros
+    return fuentes[0] if fuentes else None
 
 
 @transaction.atomic

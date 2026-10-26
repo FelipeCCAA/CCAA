@@ -1,0 +1,389 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Creating test database for alias 'default' ('test_op00_base')...
+
+Found 143 test(s).
+Operations to perform:
+  Synchronize unmigrated apps: corsheaders, messages, observabilidad, rest_framework, staticfiles
+  Apply all migrations: admin, auditoria, auth, authtoken, calidad, contenttypes, estandarizacion, inocuidad, inventario, maestros, mantenimiento, planificacion, procesos, produccion, recepcion, recoleccion, sessions, usuarios
+Synchronizing apps without migrations:
+  Creating tables...
+    Running deferred SQL...
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying usuarios.0001_initial... OK
+  Applying usuarios.0002_roles_del_proceso... OK
+  Applying usuarios.0003_perfilusuario_nivel_alter_perfilusuario_area... OK
+  Applying usuarios.0004_alter_perfilusuario_area... OK
+  Applying usuarios.0005_empresa_perfilusuario_empresa_sucursal_and_more... OK
+  Applying usuarios.0006_sincronizar_staff_administradores_area... OK
+  Applying usuarios.0007_alter_perfilusuario_area... OK
+  Applying auditoria.0001_initial... OK
+  Applying auditoria.0002_forma_unica_de_cambios... OK
+  Applying auditoria.0003_tenant_auditoria... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying authtoken.0001_initial... OK
+  Applying authtoken.0002_auto_20160226_1747... OK
+  Applying authtoken.0003_tokenproxy... OK
+  Applying authtoken.0004_alter_tokenproxy_options... OK
+  Applying usuarios.0008_scope_obligatorio_perfil... OK
+  Applying usuarios.0009_tabla_de_cache... OK
+  Applying usuarios.0010_intentoacceso... OK
+  Applying usuarios.0011_administracion_alcance_empresa... OK
+  Applying usuarios.0012_alter_perfilusuario_rol_areadeperfil... OK
+  Applying usuarios.0013_area_aseo... OK
+  Applying usuarios.0014_alter_perfilusuario_options... OK
+  Applying usuarios.0015_alter_perfilusuario_alcance_and_more... OK
+  Applying maestros.0001_initial... OK
+  Applying produccion.0001_initial... OK
+  Applying produccion.0002_controlproceso_controlprocesolectura_and_more... OK
+  Applying produccion.0003_alter_lote_kg_producidos... OK
+  Applying maestros.0002_vehiculo_silo... OK
+  Applying maestros.0003_documentoliberacion... OK
+  Applying maestros.0004_documentoliberacion_area... OK
+  Applying maestros.0005_sembrar_dossier... OK
+  Applying maestros.0006_receta_recetacomponente_and_more... OK
+  Applying maestros.0007_mandante_codigo_cliente_producto_categoria_and_more... OK
+  Applying maestros.0008_alter_producto_codigo... OK
+  Applying maestros.0009_equipo... OK
+  Applying maestros.0010_sembrar_equipos... OK
+  Applying maestros.0011_documentoliberacion_evidencia... OK
+  Applying maestros.0012_evidencia_del_dossier... OK
+  Applying maestros.0013_plantillas_del_dossier... OK
+  Applying maestros.0014_checklist_ce_por_evaporador... OK
+  Applying maestros.0015_documentoliberacion_frecuencia... OK
+  Applying maestros.0016_frecuencia_de_los_checklists... OK
+  Applying maestros.0017_equipos_torres_y_envasadoras... OK
+  Applying produccion.0004_control_proceso_equipo_al_maestro... OK
+  Applying planificacion.0001_initial... OK
+  Applying maestros.0018_alter_equipo_tipo... OK
+  Applying maestros.0019_evidencia_por_equipo_del_maestro... OK
+  Applying inventario.0001_initial... OK
+  Applying inventario.0002_bodega_proveedor_insumo_categoria_and_more... OK
+  Applying inventario.0003_alter_bodega_area_alter_ciclocip_area_and_more... OK
+  Applying inventario.0004_bodega_sucursal_aprobacion... OK
+  Applying inventario.0005_adjunto_alerta_liberacionexcepcionalmaterial_and_more... OK
+  Applying inventario.0006_insumo_vida_util_dias... OK
+  Applying inventario.0007_ajusteinventario_devolucionproduccion... OK
+  Applying inventario.0008_alter_movimientoinventario_tipo... OK
+  Applying inventario.0009_consumoloteproduccion... OK
+  Applying inventario.0010_ciclocip_equipo_al_maestro... OK
+  Applying inventario.0011_remove_consumoproducto_consumo_unico_producto_insumo_and_more... OK
+  Applying maestros.0020_alter_recetacomponente_options_and_more... OK
+  Applying maestros.0021_plantilla_inspeccion_preoperativa_egron... OK
+  Applying maestros.0022_mandante_unico_por_codigo_cliente... OK
+  Applying maestros.0023_mandante_mandante_unico_por_codigo_cliente... OK
+  Applying maestros.0024_equipo_consume_materiales... OK
+  Applying maestros.0025_sembrar_consume_materiales... OK
+  Applying inventario.0012_remove_insumo_stock_actual... OK
+  Applying maestros.0026_componentes_nulos_distintos... OK
+  Applying maestros.0027_tenant_maestros... OK
+  Applying produccion.0005_tenant_lote... OK
+  Applying estandarizacion.0001_initial... OK
+  Applying produccion.0006_lote_vale... OK
+  Applying procesos.0001_initial... OK
+  Applying procesos.0002_sembrar_flujo_lacteo... OK
+  Applying procesos.0003_scope_obligatorio_ejecucion... OK
+  Applying procesos.0004_ejecucionproceso_vale_entradaproceso_silo_and_more... OK
+  Applying produccion.0007_lote_equipo_ejecucion... OK
+  Applying planificacion.0002_bloqueplan_equipo_fk... OK
+  Applying planificacion.0003_tenant_semana... OK
+  Applying planificacion.0004_semanaplan_cancelada_en_semanaplan_cancelada_por_and_more... OK
+  Applying produccion.0008_ordenproduccion_lote_orden_and_more... OK
+  Applying maestros.0028_remove_silo_silo_capacidad_no_negativa_silo_estado_and_more... OK
+  Applying produccion.0009_registroenvase_palletproducto_and_more... OK
+  Applying procesos.0005_rutaproducto... OK
+  Applying procesos.0006_corridacondensacion... OK
+  Applying procesos.0007_alter_etapaproceso_tipo_corridamantequilla... OK
+  Applying maestros.0029_producto_sku_unico... OK
+  Applying maestros.0030_equipo_sigla... OK
+  Applying maestros.0031_sembrar_siglas... OK
+  Applying recoleccion.0001_initial... OK
+  Applying recepcion.0001_initial... OK
+  Applying recepcion.0002_movimientosilo_una_descarga_por_recepcion... OK
+  Applying recepcion.0003_recepcion_calidad_en_recepcion_calidad_por_and_more... OK
+  Applying recepcion.0004_alter_recepcion_estado... OK
+  Applying recepcion.0005_recepcion_carga_recoleccion... OK
+  Applying recepcion.0006_tenant_recepcion... OK
+  Applying recepcion.0007_alter_movimientosilo_origen_tipo... OK
+  Applying recepcion.0008_recepcion_llegada_id... OK
+  Applying recepcion.0009_llegada_id_por_recepcion... OK
+  Applying recepcion.0010_movimientosilo_equipo_movimientosilo_lote_and_more... OK
+  Applying recepcion.0011_modulorecepcion... OK
+  Applying recepcion.0012_modulos_desde_recepcion... OK
+  Applying recepcion.0013_recepcion_sin_modulo... OK
+  Applying recepcion.0014_carga_recoleccion_unica... OK
+  Applying recepcion.0015_recepcion_instructivo... OK
+  Applying recepcion.0016_inhibidores... OK
+  Applying recepcion.0017_modulo_numero_en_rango... OK
+  Applying recepcion.0018_analisis_silo... OK
+  Applying estandarizacion.0002_muestreado_en... OK
+  Applying estandarizacion.0003_procedencia_del_analisis... OK
+  Applying produccion.0010_lote_codigo_unico... OK
+  Applying produccion.0011_lote_corte... OK
+  Applying produccion.0012_lote_abierto_en_lote_abierto_por_lote_actualizado_en_and_more... OK
+  Applying produccion.0013_correccionlote... OK
+  Applying produccion.0014_pallet_kg_maximo_500... OK
+  Applying recepcion.0019_recepcion_abierto_en_recepcion_abierto_por_and_more... OK
+  Applying recepcion.0020_analisissilo_abierto_en_analisissilo_abierto_por_and_more... OK
+  Applying recepcion.0021_alertacalidadsilo_correccionrecepcion... OK
+  Applying recepcion.0022_atribucionrecepcion... OK
+  Applying recepcion.0023_analisissilo_alcohol_75_conforme_and_more... OK
+  Applying recepcion.0024_limpiar_autofirmas_analisis_silo... OK
+  Applying recepcion.0025_alter_movimientosilo_origen_tipo... OK
+  Applying procesos.0008_corridadescremacion... OK
+  Applying recepcion.0026_alter_movimientosilo_origen_tipo_despacholeche... OK
+  Applying recepcion.0027_despacholeche_anulado_en_despacholeche_anulado_por_and_more... OK
+  Applying calidad.0001_initial... OK
+  Applying calidad.0002_registroequipo... OK
+  Applying calidad.0003_tenant_registro_equipo... OK
+  Applying calidad.0004_liberacionproceso... OK
+  Applying calidad.0005_liberacionproceso_por_salida... OK
+  Applying calidad.0006_analisis_lote_liberacion_proceso... OK
+  Applying calidad.0007_firma_evidencia_versionada... OK
+  Applying maestros.0032_especificacion_tipo_analisis... OK
+  Applying maestros.0033_clasificar_productos_por_etapa_fisica... OK
+  Applying maestros.0034_normalizar_codigos_silos_recepcion_confirmados... OK
+  Applying maestros.0035_equipo_tipo_descremadora... OK
+  Applying procesos.0009_entradaproceso_salida_origen... OK
+  Applying procesos.0010_entradaproceso_motivo_salidaproceso_clasificacion_and_more... OK
+  Applying inventario.0013_ejecucion_mrp_mas_reciente_primero... OK
+  Applying inventario.0014_un_solo_proveedor_principal... OK
+  Applying inventario.0010_alter_bodega_area_alter_ciclocip_area_and_more... OK
+  Applying inventario.0015_merge_ramas_de_inventario... OK
+  Applying inventario.0016_no_conformidad_con_cierre_trazable... OK
+  Applying inventario.0017_movimiento_bajo_concesion... OK
+  Applying inventario.0018_tenant_inventario_compras... OK
+  Applying inventario.0019_ejecucionmrp_error_ejecucionmrp_estado_and_more... OK
+  Applying inventario.0020_aseos_cip... OK
+  Applying inventario.0021_clientedespacho_despacho_detalledespacho_and_more... OK
+  Applying inventario.0022_despacho_desp_suc_est_fecha_idx_and_more... OK
+  Applying inventario.0023_alter_ajusteinventario_options_and_more... OK
+  Applying inventario.0024_detalledespachogranel... OK
+  Applying inventario.0025_detalledespachogranel_movimiento_silo_and_more... OK
+  Applying maestros.0036_recetacomponente_fase... OK
+  Applying maestros.0037_formatoenvasado... OK
+  Applying maestros.0038_formatoenvasado_tipo_unidad_logistica_and_more... OK
+  Applying estandarizacion.0004_valeestandarizacion_abierto_en_and_more... OK
+  Applying estandarizacion.0005_correccionvaleestandarizacion... OK
+  Applying estandarizacion.0006_valeestandarizacion_motivo_desvio_fifo_and_more... OK
+  Applying estandarizacion.0007_valeestandarizacion_analisis_crema_and_more... OK
+  Applying estandarizacion.0008_remove_valeestandarizacion_codigo_propuesto... OK
+  Applying estandarizacion.0009_valeestandarizacion_ejecutado_en... OK
+  Applying estandarizacion.0010_actovaleestandarizacion... OK
+  Applying inocuidad.0001_initial... OK
+  Applying inocuidad.0002_monitoreo_equipo_al_maestro... OK
+  Applying planificacion.0005_planificacion_semanal_normalizada... OK
+  Applying produccion.0015_registroenvase_formato... OK
+  Applying usuarios.0016_alter_perfilusuario_options_and_more... OK
+  Applying procesos.0011_rutas_productivas_especificas... OK
+  Applying procesos.0012_productos_intermedios_descremacion... OK
+  Applying procesos.0013_autorizacion_reproceso... OK
+  Applying procesos.0014_completar_rutas_productivas... OK
+  Applying procesos.0015_impedir_doble_ocupacion_equipo... OK
+  Applying procesos.0016_corrida_secado... OK
+  Applying procesos.0017_corridadescremacion_destino_crema_and_more... OK
+  Applying procesos.0018_rutas_crema_despacho_directo... OK
+  Applying procesos.0019_reservas_silo_y_plan_descremacion... OK
+  Applying procesos.0020_reparar_lotes_suero_mantequilla... OK
+  Applying inventario.0026_consumoloteproduccion_fase_and_more... OK
+  Applying inventario.0027_unidadrework_movimientorework_and_more... OK
+  Applying inventario.0028_notificacion_accion_url... OK
+  Applying inventario.0029_idempotencia_mrp... OK
+  Applying inventario.0030_despacho_cancelacion... OK
+  Applying inventario.0031_op01_autorizacion_evidencia... OK
+  Applying inventario.0032_movimientoinventario_operacion_id... OK
+  Applying mantenimiento.0001_initial... OK
+  Applying mantenimiento.0002_repuesto_respaldado_por_entrega... OK
+  Applying produccion.0016_remove_palletproducto_pallet_kg_maximo_500_and_more... OK
+  Applying procesos.0021_remove_entradaproceso_entrada_de_un_lote_o_de_un_silo_and_more... OK
+  Applying procesos.0022_balance_mantequilla_reproceso... OK
+  Applying procesos.0023_evento_operacion_id... OK
+  Applying procesos.0024_corridamantequilla_salida_crema... OK
+  Applying produccion.0017_registroenvase_solicitud_firma... OK
+test_api_advierte_correcciones_fisicas_sin_inventar_aristas (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_api_advierte_correcciones_fisicas_sin_inventar_aristas) ... ok
+test_consulta_legacy_no_ofrece_mas_que_el_libro_sin_inventar_origen (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_consulta_legacy_no_ofrece_mas_que_el_libro_sin_inventar_origen) ... ok
+test_consumo_conserva_fuente_y_un_solo_retiro (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_consumo_conserva_fuente_y_un_solo_retiro) ... ok
+test_disponible_de_produccion_coincide_con_saldo_fisico (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_disponible_de_produccion_coincide_con_saldo_fisico) ... ok
+test_eleccion_explicita_no_resuelve_composicion_ambigua (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_eleccion_explicita_no_resuelve_composicion_ambigua) ... ok
+test_entrada_y_movimiento_etiquetado_son_el_mismo_consumo (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_entrada_y_movimiento_etiquetado_son_el_mismo_consumo) ... ok
+test_fallo_tardio_revierte_libro_origenes_y_vale (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_fallo_tardio_revierte_libro_origenes_y_vale) ... ok
+test_firma_vencida_rechaza_sin_movimientos (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_firma_vencida_rechaza_sin_movimientos) ... ok
+test_ingreso_posterior_compensado_no_inventa_identidad_por_saldo_igual (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_ingreso_posterior_compensado_no_inventa_identidad_por_saldo_igual) ... ok
+test_no_reconstruye_consumo_historico_por_compartir_tanque (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_no_reconstruye_consumo_historico_por_compartir_tanque) ... ok
+test_otro_ingreso_al_vale_impide_atribuir_lote_y_revierte_retiro (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_otro_ingreso_al_vale_impide_atribuir_lote_y_revierte_retiro) ... ok
+test_reintento_del_vale_no_duplica_consumos (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_reintento_del_vale_no_duplica_consumos) ... ok
+test_retiro_parcial_posterior_conserva_saldo_acumulado (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_retiro_parcial_posterior_conserva_saldo_acumulado) ... ok
+test_saldo_previo_compensado_no_acredita_tanque_vacio (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_saldo_previo_compensado_no_acredita_tanque_vacio) ... ok
+test_vale_lote_parcial_y_firma_conservan_antecedentes_reales (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_vale_lote_parcial_y_firma_conservan_antecedentes_reales) ... ok
+test_varias_fuentes_se_bloquean_sin_un_fifo_inventado (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_varias_fuentes_se_bloquean_sin_un_fifo_inventado) ... ok
+test_adelante_recupera_lote_posterior_a_traves_del_vale (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_adelante_recupera_lote_posterior_a_traves_del_vale) ... ok
+test_atras_conserva_cantidades_por_tramo_sin_asignacion_proporcional (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_atras_conserva_cantidades_por_tramo_sin_asignacion_proporcional) ... ok
+test_entrada_legada_solo_silo_no_atribuye_lote_fuente (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_entrada_legada_solo_silo_no_atribuye_lote_fuente) ... ok
+test_profundidad_y_ciclo_acotan_recorrido_sin_duplicar_tramos (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_profundidad_y_ciclo_acotan_recorrido_sin_duplicar_tramos) ... ok
+test_ruta_mixta_adelante_sigue_lote_directo_y_luego_vale (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_ruta_mixta_adelante_sigue_lote_directo_y_luego_vale) ... ok
+test_ruta_mixta_atras_sigue_vale_y_luego_antecedente_directo (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_ruta_mixta_atras_sigue_vale_y_luego_antecedente_directo) ... ok
+test_ruta_mixta_comparte_un_solo_presupuesto_de_profundidad (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_ruta_mixta_comparte_un_solo_presupuesto_de_profundidad) ... ok
+test_varias_fuentes_son_tramos_independientes (procesos.tests_f02_genealogia_intermedios.GenealogiaIntermediosF02Tests.test_varias_fuentes_son_tramos_independientes) ... ok
+test_el_flujo_muestra_la_recepcion_fifo_y_su_cantidad_confirmada (procesos.tests_estandarizacion.CadenaCompletaTests.test_el_flujo_muestra_la_recepcion_fifo_y_su_cantidad_confirmada) ... ok
+test_la_genealogia_no_revienta_con_una_entrada_de_silo (procesos.tests_estandarizacion.CadenaCompletaTests.test_la_genealogia_no_revienta_con_una_entrada_de_silo)
+Reproducido antes de arreglarlo: `genealogia_lote` daba ... ok
+test_quedan_las_dos_etapas_encadenadas (procesos.tests_estandarizacion.CadenaCompletaTests.test_quedan_las_dos_etapas_encadenadas) ... ok
+test_sin_kilos_no_se_cierra_la_corrida (procesos.tests_estandarizacion.CadenaCompletaTests.test_sin_kilos_no_se_cierra_la_corrida)
+Un lote sin kilos declarados es uno que todavía está en la torre. ... ok
+test_al_transferir_nace_la_ejecucion_con_sus_silos (procesos.tests_estandarizacion.ElValeEsUnaEjecucionTests.test_al_transferir_nace_la_ejecucion_con_sus_silos) ... ok
+test_el_rc_conforme_cierra_la_etapa (procesos.tests_estandarizacion.ElValeEsUnaEjecucionTests.test_el_rc_conforme_cierra_la_etapa) ... ok
+test_sin_ruta_la_transferencia_completa_se_revierte (procesos.tests_estandarizacion.ElValeEsUnaEjecucionTests.test_sin_ruta_la_transferencia_completa_se_revierte) ... ok
+test_transferir_dos_veces_no_duplica_la_corrida (procesos.tests_estandarizacion.ElValeEsUnaEjecucionTests.test_transferir_dos_veces_no_duplica_la_corrida) ... ok
+test_un_vale_en_correccion_deja_la_etapa_abierta (procesos.tests_estandarizacion.ElValeEsUnaEjecucionTests.test_un_vale_en_correccion_deja_la_etapa_abierta)
+Sigue en marcha, que es exactamente lo que pasa en el silo. ... ok
+test_un_vale_solo_calculado_no_tiene_ejecucion (procesos.tests_estandarizacion.ElValeEsUnaEjecucionTests.test_un_vale_solo_calculado_no_tiene_ejecucion)
+Todavía no pasó nada en la planta: registrarlo inventaría una corrida. ... ok
+test_disponible_no_suma_dos_veces_entrada_y_retiro_fisico (procesos.tests_op05_genealogia.GenealogiaOrigenFisicoOP05Tests.test_disponible_no_suma_dos_veces_entrada_y_retiro_fisico) ... ok
+test_rastreo_adelante_identifica_mantequilla_desde_crema (procesos.tests_op05_genealogia.GenealogiaOrigenFisicoOP05Tests.test_rastreo_adelante_identifica_mantequilla_desde_crema) ... ok
+test_rastreo_atras_conserva_lote_crema_y_litros_retirados (procesos.tests_op05_genealogia.GenealogiaOrigenFisicoOP05Tests.test_rastreo_atras_conserva_lote_crema_y_litros_retirados) ... ok
+test_acepta_corrida_o_salida_como_punto_de_entrada (procesos.tests_trazabilidad_visual.TrazabilidadVisualTests.test_acepta_corrida_o_salida_como_punto_de_entrada) ... ok
+test_cada_enlace_lleva_su_propia_cantidad_y_ejecucion (procesos.tests_trazabilidad_visual.TrazabilidadVisualTests.test_cada_enlace_lleva_su_propia_cantidad_y_ejecucion) ... ok
+test_genealogia_cuantifica_entrada_salida_y_transformacion (procesos.tests_trazabilidad_visual.TrazabilidadVisualTests.test_genealogia_cuantifica_entrada_salida_y_transformacion) ... ok
+test_hacia_adelante_cada_enlace_lleva_su_propia_cantidad_y_ejecucion (procesos.tests_trazabilidad_visual.TrazabilidadVisualTests.test_hacia_adelante_cada_enlace_lleva_su_propia_cantidad_y_ejecucion) ... ok
+test_timeline_usa_hechos_persistidos_y_responsables_reales (procesos.tests_trazabilidad_visual.TrazabilidadVisualTests.test_timeline_usa_hechos_persistidos_y_responsables_reales) ... ok
+test_tipo_invalido_no_expone_un_error_tecnico (procesos.tests_trazabilidad_visual.TrazabilidadVisualTests.test_tipo_invalido_no_expone_un_error_tecnico) ... ok
+test_el_balance_viaja_agrupado_por_unidad (procesos.tests.BalanceDeMasaTests.test_el_balance_viaja_agrupado_por_unidad) ... ok
+test_la_merma_cuenta_como_salida (procesos.tests.BalanceDeMasaTests.test_la_merma_cuenta_como_salida)
+La pérdida también es masa que se fue. Excluirla dejaría el hueco por ... ok
+test_la_unidad_no_distingue_mayusculas (procesos.tests.BalanceDeMasaTests.test_la_unidad_no_distingue_mayusculas)
+«Kg» y «kg» son la misma unidad; tratarlas como distintas abriría ... ok
+test_las_salidas_se_acumulan (procesos.tests.BalanceDeMasaTests.test_las_salidas_se_acumulan)
+Tres salidas de 400 no caben en 1.000 aunque cada una quepa sola. ... ok
+test_lo_que_entro_si_puede_salir_entero (procesos.tests.BalanceDeMasaTests.test_lo_que_entro_si_puede_salir_entero) ... ok
+test_no_sale_mas_de_lo_que_entro (procesos.tests.BalanceDeMasaTests.test_no_sale_mas_de_lo_que_entro) ... ok
+test_pero_dentro_de_la_misma_unidad_si_se_controla (procesos.tests.BalanceDeMasaTests.test_pero_dentro_de_la_misma_unidad_si_se_controla)
+Aunque haya una transformación en curso, lo que entra y sale en la ... ok
+test_una_transformacion_de_unidad_no_se_bloquea (procesos.tests.BalanceDeMasaTests.test_una_transformacion_de_unidad_no_se_bloquea)
+Evaporación: entran 20.000 litros y salen 5.000 kilos. No hay exceso, ... ok
+test_varias_entradas_suman (procesos.tests.BalanceDeMasaTests.test_varias_entradas_suman)
+Una mezcla tiene varios orígenes y todos aportan. ... ok
+test_no_se_asea_un_equipo_que_esta_produciendo (procesos.tests.EquipoHabilitadoPorAseoTests.test_no_se_asea_un_equipo_que_esta_produciendo) ... ok
+test_programar_un_cip_futuro_si_se_puede_mientras_produce (procesos.tests.EquipoHabilitadoPorAseoTests.test_programar_un_cip_futuro_si_se_puede_mientras_produce)
+Programar no es asear: la máquina se sigue lavando después. ... ok
+test_sin_cip_el_equipo_arranca (procesos.tests.EquipoHabilitadoPorAseoTests.test_sin_cip_el_equipo_arranca) ... ok
+test_un_aseo_completado_no_estorba (procesos.tests.EquipoHabilitadoPorAseoTests.test_un_aseo_completado_no_estorba) ... ok
+test_un_aseo_conforme_posterior_rehabilita (procesos.tests.EquipoHabilitadoPorAseoTests.test_un_aseo_conforme_posterior_rehabilita)
+El observado bloquea hasta que otro lo reemplace, no para siempre. ... ok
+test_un_aseo_observado_avisa_pero_no_bloquea (procesos.tests.EquipoHabilitadoPorAseoTests.test_un_aseo_observado_avisa_pero_no_bloquea)
+El observado queda trazado como advertencia y la corrida continúa. ... ok
+test_un_cip_programado_no_bloquea (procesos.tests.EquipoHabilitadoPorAseoTests.test_un_cip_programado_no_bloquea)
+Todavía no ocurrió. Tratar un aseo futuro como resultado detendría la ... ok
+test_un_equipo_en_cip_no_puede_producir (procesos.tests.EquipoHabilitadoPorAseoTests.test_un_equipo_en_cip_no_puede_producir) ... ok
+test_api_no_permite_borrado_fisico_de_ejecucion (procesos.tests.ProcesosIndustrialesTests.test_api_no_permite_borrado_fisico_de_ejecucion) ... ok
+test_bandeja_operativa_excluye_ejecuciones_terminadas (procesos.tests.ProcesosIndustrialesTests.test_bandeja_operativa_excluye_ejecuciones_terminadas) ... ok
+test_cinco_procesos_pueden_reservar_equipos_distintos (procesos.tests.ProcesosIndustrialesTests.test_cinco_procesos_pueden_reservar_equipos_distintos) ... ok
+test_continuar_a_secado_mueve_el_lote_a_la_torre_sin_perder_origen (procesos.tests.ProcesosIndustrialesTests.test_continuar_a_secado_mueve_el_lote_a_la_torre_sin_perder_origen) ... ok
+test_crema_de_descremacion_admite_estandarizacion_o_siguiente_proceso (procesos.tests.ProcesosIndustrialesTests.test_crema_de_descremacion_admite_estandarizacion_o_siguiente_proceso) ... ok
+test_definir_destino_es_idempotente_y_auditable (procesos.tests.ProcesosIndustrialesTests.test_definir_destino_es_idempotente_y_auditable) ... ok
+test_destino_final_usa_codigo_estructurado_y_no_texto_libre (procesos.tests.ProcesosIndustrialesTests.test_destino_final_usa_codigo_estructurado_y_no_texto_libre) ... ok
+test_destino_obsoleto_no_sobrescribe_otra_decision (procesos.tests.ProcesosIndustrialesTests.test_destino_obsoleto_no_sobrescribe_otra_decision) ... ok
+test_diagnostico_informa_inconsistencias_productivas (procesos.tests.ProcesosIndustrialesTests.test_diagnostico_informa_inconsistencias_productivas) ... ok
+test_diagnostico_informa_producto_elaborable_sin_ruta (procesos.tests.ProcesosIndustrialesTests.test_diagnostico_informa_producto_elaborable_sin_ruta) ... ok
+test_la_base_impide_dos_ocupaciones_del_mismo_equipo (procesos.tests.ProcesosIndustrialesTests.test_la_base_impide_dos_ocupaciones_del_mismo_equipo) ... ok
+test_la_etapa_se_resuelve_desde_la_ruta_del_producto (procesos.tests.ProcesosIndustrialesTests.test_la_etapa_se_resuelve_desde_la_ruta_del_producto) ... ok
+test_pendiente_control_no_ofrece_reiniciar_y_api_explica_el_rechazo (procesos.tests.ProcesosIndustrialesTests.test_pendiente_control_no_ofrece_reiniciar_y_api_explica_el_rechazo) ... ok
+test_preparacion_reserva_el_equipo_para_una_sola_ejecucion (procesos.tests.ProcesosIndustrialesTests.test_preparacion_reserva_el_equipo_para_una_sola_ejecucion) ... ok
+test_reproceso_exige_motivo_explicito (procesos.tests.ProcesosIndustrialesTests.test_reproceso_exige_motivo_explicito) ... ok
+test_resumen_operacional_cuenta_estados_y_material_liberado (procesos.tests.ProcesosIndustrialesTests.test_resumen_operacional_cuenta_estados_y_material_liberado) ... ok
+test_transicion_exige_entrada_equipo_y_registra_evento (procesos.tests.ProcesosIndustrialesTests.test_transicion_exige_entrada_equipo_y_registra_evento) ... ok
+test_trazabilidad_hacia_atras_encuentra_lote_origen (procesos.tests.ProcesosIndustrialesTests.test_trazabilidad_hacia_atras_encuentra_lote_origen) ... ok
+test_un_intermedio_no_puede_destinarse_a_inventario_terminado (procesos.tests.ProcesosIndustrialesTests.test_un_intermedio_no_puede_destinarse_a_inventario_terminado) ... ok
+test_una_continuacion_no_puede_saltarse_una_etapa (procesos.tests.ProcesosIndustrialesTests.test_una_continuacion_no_puede_saltarse_una_etapa) ... ok
+test_una_ejecucion_admite_una_entrada_y_dos_coproductos (procesos.tests.ProcesosIndustrialesTests.test_una_ejecucion_admite_una_entrada_y_dos_coproductos) ... ok
+test_una_etapa_de_otro_proceso_no_es_fallback_de_escritura (procesos.tests.ProcesosIndustrialesTests.test_una_etapa_de_otro_proceso_no_es_fallback_de_escritura) ... ok
+test_autorizacion_rework_limita_la_cantidad_aprobada (procesos.tests.ReworkAutorizadoTests.test_autorizacion_rework_limita_la_cantidad_aprobada) ... ok
+test_la_concesion_tambien_autoriza (procesos.tests.ReworkAutorizadoTests.test_la_concesion_tambien_autoriza)
+Es Calidad diciendo «úsalo bajo estas condiciones», que es ... ok
+test_un_reproceso_liberado_si_entra (procesos.tests.ReworkAutorizadoTests.test_un_reproceso_liberado_si_entra) ... ok
+test_un_reproceso_pendiente_tampoco (procesos.tests.ReworkAutorizadoTests.test_un_reproceso_pendiente_tampoco) ... ok
+test_un_reproceso_rechazado_tampoco (procesos.tests.ReworkAutorizadoTests.test_un_reproceso_rechazado_tampoco) ... ok
+test_un_reproceso_sin_liberacion_no_entra (procesos.tests.ReworkAutorizadoTests.test_un_reproceso_sin_liberacion_no_entra)
+La ausencia de liberación no es autorización: un lote sin expediente ... ok
+test_una_entrada_principal_no_exige_liberacion (procesos.tests.ReworkAutorizadoTests.test_una_entrada_principal_no_exige_liberacion)
+La regla es del reproceso. Exigirla a toda entrada detendría la ... ok
+test_devuelve_la_raiz_para_saber_desde_donde_dibujar (procesos.tests.TrazabilidadPorCodigoTests.test_devuelve_la_raiz_para_saber_desde_donde_dibujar) ... ok
+test_el_ancho_del_grafo_no_agrega_consultas (procesos.tests.TrazabilidadPorCodigoTests.test_el_ancho_del_grafo_no_agrega_consultas) ... ok
+test_el_flujo_completo_con_vale_conserva_su_contrato (procesos.tests.TrazabilidadPorCodigoTests.test_el_flujo_completo_con_vale_conserva_su_contrato) ... ok
+test_el_id_sigue_funcionando (procesos.tests.TrazabilidadPorCodigoTests.test_el_id_sigue_funcionando)
+Lo usan los enlaces internos; solo la persona necesita el código. ... ok
+test_hacia_adelante_encuentra_la_descendencia (procesos.tests.TrazabilidadPorCodigoTests.test_hacia_adelante_encuentra_la_descendencia) ... ok
+test_los_enlaces_dicen_que_salio_de_que (procesos.tests.TrazabilidadPorCodigoTests.test_los_enlaces_dicen_que_salio_de_que)
+Sin ellos son lotes sueltos: la relación es la trazabilidad. ... ok
+test_se_consulta_por_codigo_de_lote (procesos.tests.TrazabilidadPorCodigoTests.test_se_consulta_por_codigo_de_lote) ... ok
+test_un_lote_que_no_existe_responde_404_con_su_motivo (procesos.tests.TrazabilidadPorCodigoTests.test_un_lote_que_no_existe_responde_404_con_su_motivo) ... ok
+test_acto_persistido_no_se_edita_ni_elimina (estandarizacion.tests_op02_actos.ActosOP02Tests.test_acto_persistido_no_se_edita_ni_elimina) ... ok
+test_adicion_exige_nuevo_ciclo_sin_reabrir_ejecucion_historica (estandarizacion.tests_op02_actos.ActosOP02Tests.test_adicion_exige_nuevo_ciclo_sin_reabrir_ejecucion_historica) ... ok
+test_adicion_invalida_firma_salida_y_actualiza_disponible_sin_reescribir_foto (estandarizacion.tests_op02_actos.ActosOP02Tests.test_adicion_invalida_firma_salida_y_actualiza_disponible_sin_reescribir_foto) ... ok
+test_adicion_retiro_dejan_dos_movimientos_nuevos_y_atribuciones (estandarizacion.tests_op02_actos.ActosOP02Tests.test_adicion_retiro_dejan_dos_movimientos_nuevos_y_atribuciones) ... ok
+test_capacidad_destino_insuficiente_bloquea_adicion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_capacidad_destino_insuficiente_bloquea_adicion) ... ok
+test_consumo_posterior_bloquea_correccion_fisica (estandarizacion.tests_op02_actos.ActosOP02Tests.test_consumo_posterior_bloquea_correccion_fisica) ... ok
+test_cuatro_decimales_se_rechazan_sin_redondear (estandarizacion.tests_op02_actos.ActosOP02Tests.test_cuatro_decimales_se_rechazan_sin_redondear) ... ok
+test_diferencia_medida_retiene_hasta_otra_medicion_sin_maquillar_libro (estandarizacion.tests_op02_actos.ActosOP02Tests.test_diferencia_medida_retiene_hasta_otra_medicion_sin_maquillar_libro) ... ok
+test_entrada_de_otro_proceso_bloquea_correccion_fisica (estandarizacion.tests_op02_actos.ActosOP02Tests.test_entrada_de_otro_proceso_bloquea_correccion_fisica) ... ok
+test_fallo_al_heredar_atribuciones_revierte_todo_el_acto (estandarizacion.tests_op02_actos.ActosOP02Tests.test_fallo_al_heredar_atribuciones_revierte_todo_el_acto) ... ok
+test_motivo_insuficiente_no_crea_acto_ni_movimientos (estandarizacion.tests_op02_actos.ActosOP02Tests.test_motivo_insuficiente_no_crea_acto_ni_movimientos) ... ok
+test_recepcion_registra_faltante_y_muestreo_no_evade_retencion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_recepcion_registra_faltante_y_muestreo_no_evade_retencion) ... ok
+test_rectificacion_documental_conserva_original_y_registra_antes_despues (estandarizacion.tests_op02_actos.ActosOP02Tests.test_rectificacion_documental_conserva_original_y_registra_antes_despues) ... ok
+test_repetir_clave_no_duplica_y_cambiar_solicitud_con_misma_clave_conflicta (estandarizacion.tests_op02_actos.ActosOP02Tests.test_repetir_clave_no_duplica_y_cambiar_solicitud_con_misma_clave_conflicta) ... ok
+test_reserva_de_origen_bloquea_consumir_litros_comprometidos (estandarizacion.tests_op02_actos.ActosOP02Tests.test_reserva_de_origen_bloquea_consumir_litros_comprometidos) ... ok
+test_reserva_del_destino_bloquea_adicion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_reserva_del_destino_bloquea_adicion) ... ok
+test_saldo_insuficiente_bloquea_adicion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_saldo_insuficiente_bloquea_adicion) ... ok
+test_solo_produccion_autoriza_adicion_retiro_y_rectificacion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_solo_produccion_autoriza_adicion_retiro_y_rectificacion) ... ok
+test_bandeja_explica_firma_de_origen_pendiente_sin_mostrar_conforme_como_permiso (calidad.tests_h09_firmas_etapa.BandejaYEnvaseH09Tests.test_bandeja_explica_firma_de_origen_pendiente_sin_mostrar_conforme_como_permiso) ... ok
+test_bandeja_y_post_rechazan_material_cuyo_origen_perdio_firma (calidad.tests_h09_firmas_etapa.BandejaYEnvaseH09Tests.test_bandeja_y_post_rechazan_material_cuyo_origen_perdio_firma) ... ok
+test_despacho_autorizado_rechaza_origen_corregido_sin_descontar_pallet (calidad.tests_h09_firmas_etapa.DespachoAncestroH09Tests.test_despacho_autorizado_rechaza_origen_corregido_sin_descontar_pallet) ... ok
+test_borrar_salida_sin_firma_no_rompe_la_invalidacion_transaccional (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_borrar_salida_sin_firma_no_rompe_la_invalidacion_transaccional) ... ok
+test_cambiar_cantidad_de_entrada_caduca_etapa_consumidora_y_lote (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_cambiar_cantidad_de_entrada_caduca_etapa_consumidora_y_lote) ... ok
+test_cambiar_equipo_de_la_etapa_caduca_su_salida_no_el_origen (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_cambiar_equipo_de_la_etapa_caduca_su_salida_no_el_origen) ... ok
+test_continuar_y_cerrar_secado_no_caduca_firma_de_evaporacion (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_continuar_y_cerrar_secado_no_caduca_firma_de_evaporacion) ... ok
+test_correccion_material_del_origen_retira_firmas_descendientes_y_lote_final (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_correccion_material_del_origen_retira_firmas_descendientes_y_lote_final) ... ok
+test_corregir_analisis_firmado_del_origen_retira_descendientes (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_corregir_analisis_firmado_del_origen_retira_descendientes) ... ok
+test_corregir_una_rama_no_caduca_su_hermana (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_corregir_una_rama_no_caduca_su_hermana) ... ok
+test_corregir_y_revertir_origen_no_resucita_las_firmas (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_corregir_y_revertir_origen_no_resucita_las_firmas) ... ok
+test_especificacion_aplicable_del_origen_sin_firma_caduca_descendiente (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_especificacion_aplicable_del_origen_sin_firma_caduca_descendiente) ... ok
+test_firma_historica_v1_conserva_comparacion_estricta_sin_actualizacion_automatica (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_firma_historica_v1_conserva_comparacion_estricta_sin_actualizacion_automatica) ... ok
+test_lote_de_origen_sin_firma_caduca_solo_su_descendiente (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_lote_de_origen_sin_firma_caduca_solo_su_descendiente) ... ok
+test_producto_del_origen_sin_firma_caduca_descendiente_de_otro_producto (calidad.tests_h09_firmas_etapa.FirmasPorEtapaH09Tests.test_producto_del_origen_sin_firma_caduca_descendiente_de_otro_producto) ... ok
+test_solo_calidad_renueva_firma_con_nueva_muestra_y_nuevo_identificador (calidad.tests_h09_firmas_etapa.RefirmaYPermisosH09Tests.test_solo_calidad_renueva_firma_con_nueva_muestra_y_nuevo_identificador) ... ok
+test_calidad_del_silo_se_revalida_antes_de_escribir_lote_o_consumo (produccion.tests_op03_saldo.AperturaSaldoFisicoOP03Tests.test_calidad_del_silo_se_revalida_antes_de_escribir_lote_o_consumo) ... ok
+test_get_vales_ofrece_solo_100_libres_y_excluye_origen_no_utilizable (produccion.tests_op03_saldo.AperturaSaldoFisicoOP03Tests.test_get_vales_ofrece_solo_100_libres_y_excluye_origen_no_utilizable) ... ok
+test_reserva_de_origen_ajena_no_se_consume_al_abrir_lote (produccion.tests_op03_saldo.AperturaSaldoFisicoOP03Tests.test_reserva_de_origen_ajena_no_se_consume_al_abrir_lote) ... ok
+test_silo_reservado_como_destino_no_alimenta_un_lote_nuevo (produccion.tests_op03_saldo.AperturaSaldoFisicoOP03Tests.test_silo_reservado_como_destino_no_alimenta_un_lote_nuevo) ... ok
+test_solo_el_saldo_libre_abre_lote_y_deja_reserva_ajena_intacta (produccion.tests_op03_saldo.AperturaSaldoFisicoOP03Tests.test_solo_el_saldo_libre_abre_lote_y_deja_reserva_ajena_intacta) ... ok
+test_volumen_de_receta_no_permite_abrir_sin_saldo_fisico_suficiente (produccion.tests_op03_saldo.AperturaSaldoFisicoOP03Tests.test_volumen_de_receta_no_permite_abrir_sin_saldo_fisico_suficiente) ... ok
+test_dos_vales_no_consumen_dos_veces_el_ultimo_saldo (estandarizacion.tests_f01_f02_concurrencia.CarreraMaterialesF01F02Tests.test_dos_vales_no_consumen_dos_veces_el_ultimo_saldo) ... ok
+test_dos_transferencias_simultaneas_no_duplican_libro_ni_ejecucion (estandarizacion.tests_op02_actos.ConcurrenciaOP02Tests.test_dos_transferencias_simultaneas_no_duplican_libro_ni_ejecucion) ... ok
+test_misma_clave_fisica_en_dos_sesiones_crea_un_solo_acto (estandarizacion.tests_op02_actos.ConcurrenciaOP02Tests.test_misma_clave_fisica_en_dos_sesiones_crea_un_solo_acto) ... ok
+test_patch_en_espera_no_reescribe_una_transferencia_confirmada (estandarizacion.tests_op02_actos.ConcurrenciaOP02Tests.test_patch_en_espera_no_reescribe_una_transferencia_confirmada) ... ok
+test_correccion_del_origen_en_vuelo_no_deja_pasar_descendiente (calidad.tests_h09_firmas_etapa.ConcurrenciaFirmasH09Tests.test_correccion_del_origen_en_vuelo_no_deja_pasar_descendiente) ... ok
+test_lote_ancestro_sin_firma_serializa_por_decision_descendiente (calidad.tests_h09_firmas_etapa.ConcurrenciaFirmasH09Tests.test_lote_ancestro_sin_firma_serializa_por_decision_descendiente) ... ok
+
+----------------------------------------------------------------------
+Ran 143 tests in 78.702s
+
+OK
+Destroying test database for alias 'default' ('test_op00_base')...
+
+  Applying sessions.0001_initial... OK
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).

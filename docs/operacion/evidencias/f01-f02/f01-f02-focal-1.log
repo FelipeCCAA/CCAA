@@ -1,0 +1,65 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Creating test database for alias 'default'...
+
+.E....
+======================================================================
+ERROR: test_disponible_de_produccion_coincide_con_saldo_fisico (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_disponible_de_produccion_coincide_con_saldo_fisico)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 87, in test_disponible_de_produccion_coincide_con_saldo_fisico
+    respuesta = self.cliente.get("/api/procesos/salidas/disponibles/")
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\test.py", line 276, in get
+    response = super().get(path, data=data, **extra)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\test.py", line 193, in get
+    return self.generic('GET', path, **r)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\test.py", line 221, in generic
+    return super().generic(
+           ~~~~~~~~~~~~~~~^
+        method, path, data, content_type, secure, **extra)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\test\client.py", line 671, in generic
+    return self.request(**r)
+           ~~~~~~~~~~~~^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\test.py", line 273, in request
+    return super().request(**kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\test.py", line 225, in request
+    request = super().request(**kwargs)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\test\client.py", line 1090, in request
+    self.check_exception(response)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\test\client.py", line 805, in check_exception
+    raise exc_value
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\core\handlers\base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\viewsets.py", line 125, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\procesos\views.py", line 1452, in disponibles
+    for fila in ReservaSiloProceso.objects.filter(
+                ^^^^^^^^^^^^^^^^^^
+NameError: name 'ReservaSiloProceso' is not defined
+
+----------------------------------------------------------------------
+Ran 6 tests in 2.441s
+
+FAILED (errors=1)
+Destroying test database for alias 'default'...
+
+Found 6 test(s).
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).

@@ -1,0 +1,117 @@
+
+> frontend@0.0.0 build
+> tsc -b && vite build
+
+vite v8.1.5 building client environment for production...
+[2K
+transforming...✓ 2002 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                          0.97 kB │ gzip:  0.44 kB
+dist/assets/logo-campos-australes-normal-CeW5-CE3.png   26.74 kB
+dist/assets/CCAA-D-8Wyg9w.jpg                          280.78 kB
+dist/assets/index-CQzOex6q.css                          72.28 kB │ gzip: 12.56 kB
+dist/assets/resultado-envio-C4h8jrf9.js                  0.09 kB │ gzip:  0.10 kB
+dist/assets/chevron-left-y5RfzBfg.js                     0.13 kB │ gzip:  0.14 kB
+dist/assets/plus-D6cHEq6a.js                             0.15 kB │ gzip:  0.15 kB
+dist/assets/permisos-despacho-CRS_B1eb.js                0.16 kB │ gzip:  0.12 kB
+dist/assets/clock-3-B0518LSu.js                          0.16 kB │ gzip:  0.16 kB
+dist/assets/search-fiHeJfw5.js                           0.17 kB │ gzip:  0.16 kB
+dist/assets/gauge-Cn6GwfNf.js                            0.17 kB │ gzip:  0.16 kB
+dist/assets/play-DIBI8vcQ.js                             0.19 kB │ gzip:  0.17 kB
+dist/assets/arrow-down-to-line-B93xAgIQ.js               0.20 kB │ gzip:  0.17 kB
+dist/assets/beaker-DLDx_8pT.js                           0.22 kB │ gzip:  0.18 kB
+dist/assets/triangle-alert-1AK9GXWP.js                   0.26 kB │ gzip:  0.21 kB
+dist/assets/pencil-BtlTbYZM.js                           0.27 kB │ gzip:  0.22 kB
+dist/assets/file-exclamation-point-Dh-KAo2U.js           0.31 kB │ gzip:  0.23 kB
+dist/assets/refresh-cw-YjTC0rOz.js                       0.32 kB │ gzip:  0.22 kB
+dist/assets/trash-2-Cms6mVQ8.js                          0.32 kB │ gzip:  0.21 kB
+dist/assets/scale-C_cXEWda.js                            0.33 kB │ gzip:  0.22 kB
+dist/assets/CampoEtiquetado-C7GyFB_G.js                  0.34 kB │ gzip:  0.23 kB
+dist/assets/shield-alert-CBpyoKTT.js                     0.35 kB │ gzip:  0.26 kB
+dist/assets/calendar-x-2-DqdDCanN.js                     0.35 kB │ gzip:  0.23 kB
+dist/assets/Historial-Byy0fFhc.js                        0.37 kB │ gzip:  0.28 kB
+dist/assets/droplets-WE2NOQmr.js                         0.37 kB │ gzip:  0.28 kB
+dist/assets/calendar-clock-BiYefSmj.js                   0.37 kB │ gzip:  0.25 kB
+dist/assets/formato-Cqax0sH7.js                          0.38 kB │ gzip:  0.24 kB
+dist/assets/aseos.service-CiBez9Jj.js                    0.39 kB │ gzip:  0.20 kB
+dist/assets/package-check-DyMPPP2V.js                    0.41 kB │ gzip:  0.27 kB
+dist/assets/Calidad-BMVKG8LG.js                          0.42 kB │ gzip:  0.32 kB
+dist/assets/Muestreo-EEOfAGGW.js                         0.45 kB │ gzip:  0.33 kB
+dist/assets/SiloDescarga-BNUqIJjJ.js                     0.45 kB │ gzip:  0.33 kB
+dist/assets/planta-ahora-BF7HXboc.js                     0.45 kB │ gzip:  0.22 kB
+dist/assets/package-open-B0hcFKtk.js                     0.57 kB │ gzip:  0.33 kB
+dist/assets/recoleccion.service-sXPleaZW.js              0.69 kB │ gzip:  0.25 kB
+dist/assets/StatusBadge-ITjKUM0g.js                      0.70 kB │ gzip:  0.37 kB
+dist/assets/EstadoEquipo-DbJKiF1h.js                     0.76 kB │ gzip:  0.47 kB
+dist/assets/PageState-Cb_oHV9T.js                        0.79 kB │ gzip:  0.40 kB
+dist/assets/boxes-DXbIidFv.js                            0.85 kB │ gzip:  0.39 kB
+dist/assets/errores-proceso-Cfa_m_US.js                  0.93 kB │ gzip:  0.55 kB
+dist/assets/EtiquetaCalidad-D7PHEbxf.js                  1.15 kB │ gzip:  0.67 kB
+dist/assets/utilidades-BDx6mKVk.js                       1.22 kB │ gzip:  0.73 kB
+dist/assets/PuestoBodega-CnQ6U7_I.js                     1.23 kB │ gzip:  0.65 kB
+dist/assets/useBorrador-DdWgaUWz.js                      1.30 kB │ gzip:  0.62 kB
+dist/assets/Abastecimiento-B8TkMIrG.js                   1.37 kB │ gzip:  0.68 kB
+dist/assets/CampoDePlantilla-CywCDqgK.js                 1.37 kB │ gzip:  0.69 kB
+dist/assets/createLucideIcon-Dyn30oEl.js                 1.38 kB │ gzip:  0.78 kB
+dist/assets/calidad.service-BEkyM1Vv.js                  2.05 kB │ gzip:  0.78 kB
+dist/assets/CambiarPassword-BaRbqFuj.js                  2.17 kB │ gzip:  0.94 kB
+dist/assets/maestros.service-BhYkDbVo.js                 2.21 kB │ gzip:  0.47 kB
+dist/assets/componentes-lvv3e3D2.js                      2.26 kB │ gzip:  0.78 kB
+dist/assets/ConfirmarAccion-D4Egm2Nr.js                  2.87 kB │ gzip:  1.23 kB
+dist/assets/procesos.service-BOIizzNX.js                 3.24 kB │ gzip:  0.79 kB
+dist/assets/FormularioMandante-Du0Q_acX.js               3.25 kB │ gzip:  1.38 kB
+dist/assets/Leche-2H18Zdgi.js                            3.31 kB │ gzip:  1.25 kB
+dist/assets/produccion.service-DdhgHxc_.js               3.34 kB │ gzip:  1.11 kB
+dist/assets/planificacion.service-fZt87aTB.js            3.39 kB │ gzip:  1.01 kB
+dist/assets/FormularioMaestro-BSCIaTKr.js                3.39 kB │ gzip:  1.48 kB
+dist/assets/EnCamino-DjQRbE8M.js                         3.74 kB │ gzip:  1.35 kB
+dist/assets/Calidad-DRLUh9Zs.js                          3.94 kB │ gzip:  1.57 kB
+dist/assets/FormularioAnalisis-Bfs9j2Tz.js               4.00 kB │ gzip:  1.56 kB
+dist/assets/api-CGrbfg7T.js                              4.22 kB │ gzip:  1.95 kB
+dist/assets/recepcion.service-CQXnfA2c.js                4.39 kB │ gzip:  1.26 kB
+dist/assets/TablaConsulta-B4YS5-6S.js                    4.45 kB │ gzip:  1.64 kB
+dist/assets/CierreCondensacion-DcgF1Nrk.js               4.52 kB │ gzip:  1.65 kB
+dist/assets/Pedidos-kbIZqlkv.js                          5.18 kB │ gzip:  1.70 kB
+dist/assets/DetalleLoteInventario-Vai7Kjlc.js            5.93 kB │ gzip:  1.92 kB
+dist/assets/FormularioEquipo-CFu_-AyE.js                 6.04 kB │ gzip:  2.16 kB
+dist/assets/Panel-DxgOf6qA.js                            6.11 kB │ gzip:  2.20 kB
+dist/assets/FormularioFormatoEnvasado-Bo1AWFhZ.js        6.27 kB │ gzip:  2.28 kB
+dist/assets/FormularioReceta-C9LVehIT.js                 6.31 kB │ gzip:  2.21 kB
+dist/assets/NoConformidades-B4fBt-nu.js                  6.56 kB │ gzip:  2.11 kB
+dist/assets/Auditoria-D0uP3-9H.js                        6.81 kB │ gzip:  2.34 kB
+dist/assets/FormularioProducto-BaFsTuFE.js               7.65 kB │ gzip:  2.63 kB
+dist/assets/jsx-runtime-KJkY8l8U.js                      8.53 kB │ gzip:  3.26 kB
+dist/assets/FormularioEspecificacion-DVNQO_VL.js         8.61 kB │ gzip:  3.02 kB
+dist/assets/Compras-Bgnk9S6i.js                          8.93 kB │ gzip:  2.72 kB
+dist/assets/Proveedores-bCtTOmIz.js                      9.48 kB │ gzip:  2.65 kB
+dist/assets/Recepcion-CAM3ILRb.js                       10.30 kB │ gzip:  3.18 kB
+dist/assets/Rutas-CwU0p6aJ.js                           11.29 kB │ gzip:  3.26 kB
+dist/assets/ConfiguracionBodega-DJ4JB7JO.js             11.31 kB │ gzip:  2.95 kB
+dist/assets/Mrp-B7ytTTty.js                             11.64 kB │ gzip:  3.61 kB
+dist/assets/Dashboard-ZNvDrJWY.js                       12.06 kB │ gzip:  3.31 kB
+dist/assets/Inventario-BXIfuGd6.js                      12.15 kB │ gzip:  3.88 kB
+dist/assets/ReporteDiario-B1Fg-FH6.js                   12.52 kB │ gzip:  3.76 kB
+dist/assets/Registros-R-B2EgbH.js                       12.56 kB │ gzip:  3.73 kB
+dist/assets/FormularioLote-CcOhQFIt.js                  13.10 kB │ gzip:  4.29 kB
+dist/assets/Administracion-BeUqLsjm.js                  15.73 kB │ gzip:  4.32 kB
+dist/assets/Aseos-D3feL8AM.js                           17.15 kB │ gzip:  4.76 kB
+dist/assets/PuestoDespacho-BhVsR_pT.js                  17.29 kB │ gzip:  5.34 kB
+dist/assets/Envasado-C4UbYZza.js                        19.40 kB │ gzip:  5.59 kB
+dist/assets/OperarBodega-Bb1GckzF.js                    21.92 kB │ gzip:  6.20 kB
+dist/assets/TablaRecepciones-CCgO-6Yq.js                22.63 kB │ gzip:  6.19 kB
+dist/assets/Liberacion-f2TP384h.js                      23.80 kB │ gzip:  6.34 kB
+dist/assets/Panel-DRe6abPS.js                           24.75 kB │ gzip:  6.91 kB
+dist/assets/Secado-B1HX1PVd.js                          26.40 kB │ gzip:  7.25 kB
+dist/assets/Silos-Bs1tnixG.js                           32.22 kB │ gzip:  8.74 kB
+dist/assets/CentroCalidad-BF1HFNCl.js                   33.25 kB │ gzip:  7.82 kB
+dist/assets/Produccion-DGCQxoVe.js                      34.23 kB │ gzip:  8.67 kB
+dist/assets/Maestros-C5ZtxW4g.js                        36.04 kB │ gzip:  7.87 kB
+dist/assets/DetalleLote-CkRcLKFQ.js                     40.34 kB │ gzip:  9.50 kB
+dist/assets/Planificacion-Dc3yPaVy.js                   43.05 kB │ gzip: 10.71 kB
+dist/assets/axios-20an9nKa.js                           44.71 kB │ gzip: 17.01 kB
+dist/assets/Estandarizacion-LZM_-Uff.js                 45.95 kB │ gzip: 12.22 kB
+dist/assets/Procesos-BWGdeDof.js                        83.47 kB │ gzip: 17.76 kB
+dist/assets/index-C1GOyjwT.js                          289.69 kB │ gzip: 89.72 kB
+
+✓ built in 764ms

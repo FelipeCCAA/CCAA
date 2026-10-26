@@ -84,8 +84,21 @@ function Estandarizacion() {
           : datos[0]?.id ?? null,
       );
       setError("");
+      await cargarCatalogos();
     } catch {
       setError("No se pudo cargar los vales de estandarización.");
+    }
+  };
+
+  const cargarCatalogos = async () => {
+    try {
+      const datos = await obtenerCatalogos();
+      setCatalogos(datos);
+      setSilos(datos.silos);
+    } catch {
+      setCatalogos(null);
+      setSilos([]);
+      setError("No se pudo actualizar el saldo de los silos. Actualiza antes de transferir.");
     }
   };
 
@@ -97,13 +110,6 @@ function Estandarizacion() {
         que los junte, un maestro caído dejaría la pantalla entera en blanco
         aunque los vales sí hubieran llegado.
       */
-      void obtenerCatalogos().then((datos) => {
-        setCatalogos(datos);
-        setSilos(datos.silos);
-      }).catch(() => {
-        setCatalogos(null);
-        setSilos([]);
-      });
       void obtenerProductos().then(setProductos).catch(() => setProductos([]));
       void obtenerGuiaRC().then(setGuiaRC).catch(() => setGuiaRC([]));
     }, 0);
@@ -197,7 +203,7 @@ function Estandarizacion() {
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => void cargar()} disabled={ocupado}
             className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 disabled:opacity-40">
-            Actualizar vales
+            Actualizar vales y saldos
           </button>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
@@ -433,10 +439,28 @@ function Estandarizacion() {
                   <div className="space-y-4">
 
                     {editable && vale.estado === "calculado" && (
+                      <div className="space-y-3">
+                      {(["entera", "descremada", "crema"] as const).map((componente) => {
+                        const fuentes = (catalogos?.salidas_origen ?? []).filter(
+                          (fuente) => fuente.silo_id === vale[`silo_${componente}`],
+                        );
+                        if (!fuentes.length || Number(vale[`litros_${componente}`] ?? 0) <= 0) return null;
+                        return <div key={componente} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+                          <p className="font-medium">Origen de {componente}</p>
+                          {fuentes.map((fuente) => <div key={fuente.id} className="mt-1">
+                            <p>{fuente.codigo} · {numero(fuente.cantidad_disponible)} L registrados</p>
+                            {fuente.bloqueo && <p className="mt-1 text-amber-800">{fuente.bloqueo}</p>}
+                          </div>)}
+                        </div>;
+                      })}
                       <Paso
                         texto="Conecta el circuito y transfiere las dos leches al silo de destino."
                         boton="Transferido"
-                        ocupado={ocupado}
+                        ocupado={ocupado || !catalogos || (catalogos.salidas_origen ?? []).some((fuente) =>
+                          Boolean(fuente.bloqueo) && (["entera", "descremada", "crema"] as const).some((componente) =>
+                            fuente.silo_id === vale[`silo_${componente}`] && Number(vale[`litros_${componente}`] ?? 0) > 0,
+                          ),
+                        )}
                         onClick={() =>
                           void ejecutar(
                             () => transferirVale(vale.id),
@@ -444,6 +468,7 @@ function Estandarizacion() {
                           )
                         }
                       />
+                      </div>
                     )}
 
                     {editable && vale.estado === "transferido" && (

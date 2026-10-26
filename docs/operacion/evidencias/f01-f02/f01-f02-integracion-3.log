@@ -1,0 +1,13 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Creating test database for alias 'default'...
+
+.............................................................................................................................................
+----------------------------------------------------------------------
+Ran 141 tests in 76.053s
+
+OK
+Destroying test database for alias 'default'...
+
+Found 141 test(s).
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).

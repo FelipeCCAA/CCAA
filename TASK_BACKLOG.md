@@ -1,5 +1,19 @@
 # Backlog de mejoras OP
 
+## Estado vigente — corrección acotada F01/F02, 26-10-2026
+
+Autorización del usuario: continuar el trabajo operacional. Rama `codex/f01-f02-saldos-genealogia` sobre `580f26c`/PR19; entrega para revisión, sin merge ni despliegue. **F01: corregido/validado localmente para casos soportados. F02: cadena nueva de origen único validada; cobertura global sigue PARCIAL.** [Contrato, alcance y evidencia](docs/operacion/F01-F02_VALIDACION.md).
+
+Implementado: vínculo fuenteDescremado→vale→lote, ingreso productor verificable y conciliación, firma vigente, conteo físico/material único, Disponible limitado por libro/reservas, recorrido sin lotes ficticios y cantidades por tramo. Orígenes mezclados se bloquean aunque el cliente elija unID; no hay nueva regla de reparto ni reparación de historia. Correcciones OP02 mantienen su flujo y muestran advertencia de procedencia no atribuida. Actualizar vales recarga también los saldos; actualización automática entre usuarios y offline siguen fuera de alcance.
+
+Verificación local:143 backend únicos,25 casos nuevos, cero omitidas/fallos/errores;111 frontend; carrera real entre dos vales, reintentos y rollback; lint/build/Ruff/esquema/diff aprobados. Un apoyo independiente revisó la implementación principal; coordinador revisó el lector y ejecutó comprobaciones en OP00 efímero. CI global9272269:1.850 ejecutadas,1fallo+1error+5omitidas por dos fixtures sin ingreso físico. Preparación ficticia corregida sin debilitar guardas/aserciones;31/31 locales posteriores aprobadas. [PR20 borrador](https://github.com/FelipeCCAA/CCAA/pull/20), nueva CI pendiente. No navegador, carga ni aprobación de planta.
+
+**Cierre de CI4706bfb:** [run40335053758](https://github.com/FelipeCCAA/CCAA/actions/runs/40335053758) aprobado en los cuatro jobs. Backend1.850 ejecutadas:1.845 aprobadas,5omitidas, cero fallos/errores;418,469s. [Evidencia final independiente](docs/operacion/evidencias/f01-f02/final-ci/summary.json). El cierre documental posterior no cambia aplicación/pruebas; su CI adicional se informa por separado en el PR.
+
+Pendientes: política de composición de TK mezclados y adiciones/retiros, conciliación autorizada de históricos, UAT/circuito por pantalla, costo de lectura en bandejas grandes, F03–F07 y pendientes OP09. F03 es siguiente según el plan, con validación industrial antes de introducir tolerancias. Preparación de sólo lectura confirma que ya existe grasa medida en análisis de silo y parámetros por lote, pero el cierre sólo exige kilos y admite humedad opcional: falta definir muestras representativas, composición de salidas y tratamiento de desviaciones/mazada. No implementado F03. Precondensado OPFLOW conserva500 L bloqueados por falta de especificaciónSILO. Sin producción ni Supabase.
+
+---
+
 ## Estado vigente — precondensado, 2026-10-23 13:34 Chile
 
 **PARCIAL, BLOQUEADO EN CALIDAD.** Usuario autorizó únicaOPFLOW-OP-PRECOND-01 de2000L y luego continuar e informar trabas, sin definir límites industriales. Se creó una sola OP; repetición `created=False`. Por UI: VE6296-02 (1426,60L Silo3+573,40L Tk02)→Silo5→OPF-PRE-01/Scheffers2→500L OP09-PRE-BASE. Nuevo análisis y segundo firmante. Calidad impide liberar porque falta especificación vigenteSILO; no se creó ni cambió una para forzar el resultado. Despacho no ofrece la salida; no hay liberación ni despacho de ella.

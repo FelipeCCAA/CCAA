@@ -422,7 +422,8 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
     def transferir(self, request, pk=None):
         try:
             vale = servicios.transferir(
-                vale_id=self.get_object().pk, usuario=request.user
+                vale_id=self.get_object().pk, usuario=request.user,
+                salidas_origen=request.data.get("salidas_origen"),
             )
         except DjangoValidationError as error:
             return _conflicto(error)
@@ -573,7 +574,10 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
             )
         )
 
+        from .origenes import origenes_catalogo
+        silos = list(silos)
         return Response({
+            "salidas_origen": origenes_catalogo([s.pk for s in silos]),
             "estados": [
                 {"valor": valor, "etiqueta": etiqueta}
                 for valor, etiqueta in ValeEstandarizacion.Estado.choices

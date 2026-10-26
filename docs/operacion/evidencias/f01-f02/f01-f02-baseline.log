@@ -1,0 +1,64 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Creating test database for alias 'default'...
+
+FFFF.F
+======================================================================
+FAIL: test_consumo_conserva_fuente_y_un_solo_retiro (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_consumo_conserva_fuente_y_un_solo_retiro)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 80, in test_consumo_conserva_fuente_y_un_solo_retiro
+    self.assertEqual(entrada.salida_origen_id, self.fuente.pk)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 1
+
+======================================================================
+FAIL: test_disponible_de_produccion_coincide_con_saldo_fisico (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_disponible_de_produccion_coincide_con_saldo_fisico)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 90, in test_disponible_de_produccion_coincide_con_saldo_fisico
+    self.assertEqual(fila["cantidad_consumida"], Decimal("4300.53"))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != Decimal('4300.53')
+
+======================================================================
+FAIL: test_firma_vencida_rechaza_sin_movimientos (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_firma_vencida_rechaza_sin_movimientos)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 104, in test_firma_vencida_rechaza_sin_movimientos
+    with self.assertRaises(ValidationError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+======================================================================
+FAIL: test_no_reconstruye_consumo_historico_por_compartir_tanque (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_no_reconstruye_consumo_historico_por_compartir_tanque)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 120, in test_no_reconstruye_consumo_historico_por_compartir_tanque
+    with self.assertRaisesMessage(ValidationError, "conciliar"):
+         ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\AppData\Local\Programs\Python\Python313\Lib\contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+======================================================================
+FAIL: test_varias_fuentes_exigen_eleccion_y_no_un_fifo_inventado (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_varias_fuentes_exigen_eleccion_y_no_un_fifo_inventado)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 128, in test_varias_fuentes_exigen_eleccion_y_no_un_fifo_inventado
+    with self.assertRaisesMessage(ValidationError, "origen"):
+         ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\AppData\Local\Programs\Python\Python313\Lib\contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+----------------------------------------------------------------------
+Ran 6 tests in 4.561s
+
+FAILED (failures=5)
+Destroying test database for alias 'default'...
+
+Found 6 test(s).
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).

@@ -70,6 +70,22 @@ export default function TrazabilidadProceso() {
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Genealogía</p><p className="mt-1 font-bold text-violet-950">{genealogia.nodos.length} lote(s)</p><p className="mt-1 text-xs text-violet-800">{genealogia.enlaces.length} transformación(es) cuantificadas</p></div>
         </div>
       )}
+      {genealogia?.advertencias?.map((aviso) => <p key={aviso} role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{aviso}</p>)}
+      {!!genealogia?.tramos?.length && (
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+          <h3 className="font-semibold text-emerald-950">Origen y consumo por tramo</h3>
+          <p className="mt-1 text-xs text-slate-600">Cada cantidad corresponde a su etapa. Los componentes de una mezcla no se asignan íntegros ni proporcionalmente a un lote parcial.</p>
+          <ol className="mt-3 space-y-3">
+            {genealogia.tramos.map((tramo) => (
+              <li key={`${tramo.entrada.id}-${tramo.destino.id}`} className="rounded-lg border border-emerald-100 bg-white p-3 text-sm">
+                <p className="font-medium">{tramo.origen.ejecucion.vale_codigo ?? tramo.origen.ejecucion.codigo} → {tramo.destino.ejecucion.vale_codigo ?? tramo.destino.ejecucion.codigo}</p>
+                <p className="mt-1 text-slate-600">{tramo.destino.ejecucion.etapa}: tomó {Number(tramo.entrada.cantidad).toLocaleString("es-CL")} {tramo.entrada.unidad} de la salida {tramo.origen.id}.</p>
+                <p className="mt-1 text-xs text-slate-500">Resultado registrado de esa etapa: {Number(tramo.destino.cantidad).toLocaleString("es-CL")} {tramo.destino.unidad}.</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       {genealogia?.flujo && (
         <div className="mt-6">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
