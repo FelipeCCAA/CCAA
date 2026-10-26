@@ -1,1 +1,3 @@
-* -text
+# Preserve recorded bytes; logs are archival evidence rather than source diffs.
+* -text whitespace=cr-at-eol
+*.log -diff
