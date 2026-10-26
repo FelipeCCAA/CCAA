@@ -576,6 +576,13 @@ class CierreDescremacionTests(TestCase):
             cantidad=Decimal("300"),
             unidad="L",
         )
+        # La bandeja ofrece material físico, no sólo una salida documental.
+        MovimientoSilo.objects.create(
+            silo=self.descremada, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("300"), fecha_hora=timezone.now(),
+            origen_tipo=MovimientoSilo.OrigenTipo.DESCREMACION,
+            origen_id=self.corrida.pk, operacion_id=self.corrida.operacion_id,
+        )
         LiberacionProceso.objects.create(
             salida=salida,
             analisis_silo=self.corrida.analisis_entrada,
@@ -636,6 +643,12 @@ class CierreDescremacionTests(TestCase):
             unidad="L",
         )
         for salida in (salida_descremada, salida_crema):
+            MovimientoSilo.objects.create(
+                silo=salida.silo, tipo=MovimientoSilo.Tipo.INGRESO,
+                litros=salida.cantidad, fecha_hora=timezone.now(),
+                origen_tipo=MovimientoSilo.OrigenTipo.DESCREMACION,
+                origen_id=self.corrida.pk, operacion_id=self.corrida.operacion_id,
+            )
             LiberacionProceso.objects.create(
                 salida=salida,
                 analisis_silo=self.corrida.analisis_entrada,

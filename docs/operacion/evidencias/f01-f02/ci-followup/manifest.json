@@ -1,0 +1,17 @@
+[
+  {
+    "path": "ci-9272269-failure-excerpt.txt",
+    "bytes": 2540,
+    "sha256": "295631673630ee9c5fb2ce77824ad8280a563dc619752732d4ec294a2ef9203b"
+  },
+  {
+    "path": "local-31.log",
+    "bytes": 19349,
+    "sha256": "577f9aeed3d018d21474fbf4e0484e9f17b686fca988d7c249dc6c8a9d58e96f"
+  },
+  {
+    "path": "summary.json",
+    "bytes": 4772,
+    "sha256": "ec01590e639e17618a7e932fbc7d91f6ba5a3166b4b9d08ebeb83efc00f22fc8"
+  }
+]
