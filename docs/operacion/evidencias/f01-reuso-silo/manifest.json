@@ -11,6 +11,10 @@
     "bytes": 610,
     "sha256": "3f61d125e2b079498e572bbbf975e2e3472c571518375fb9af2099ede2755c3f"
   },
+  "ci-final.json": {
+    "bytes": 1355,
+    "sha256": "e74d6b37c387d667ba0a8be7752619d115cf51a7338aa3be645204cc0a2b80be"
+  },
   "opflow-readonly-after-ui.log": {
     "bytes": 1609,
     "sha256": "56d14239c9c3c3fbcaf468602ae48fc0c91922cca315a6664fc11fdfe11bcbfe"
@@ -64,7 +68,7 @@
     "sha256": "2fc22d21df0bf6a74e176f39898fabe48a15b331175db595c83f3ce946fdc941"
   },
   "summary.json": {
-    "bytes": 9178,
-    "sha256": "07a6c9c3dd8d11e27449a44ba8332b0530ce06485baf40dde6856f1528b1c4f4"
+    "bytes": 10605,
+    "sha256": "888d3fc86e89619e027e6fec5bf740ce30ec49fdf7fd3a9e50150060b21dc474"
   }
 }

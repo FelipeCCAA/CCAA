@@ -70,7 +70,54 @@
     "backend/recepcion/models.py": "0fc63d161ab1be0de8589aa06af84333a6faa6f483ce77a43c5b80f0fe629d5d",
     "backend/recepcion/views.py": "417d360b187d9882487a5b21f109686ad0b698645039d70997699ee535dabe98"
   },
-  "ci": "Not yet asserted; read the immutable code commit checks separately",
+  "ci": {
+    "code_commit": "178660100a2f8c53a46bafdb72589eac1b80bcef",
+    "run_id": 40374533419,
+    "url": "https://github.com/FelipeCCAA/CCAA/actions/runs/40374533419",
+    "conclusion": "success",
+    "backend": {
+      "executed": 1881,
+      "seconds": 530.676,
+      "skipped": 5,
+      "passed": 1876,
+      "failures": 0,
+      "errors": 0,
+      "job_id": 121753866965,
+      "proof_lines": [
+        "2026-10-26T18:05:09.7583402Z HEAD is now at de9394a Merge 178660100a2f8c53a46bafdb72589eac1b80bcef into 561e11d1850d310401fe38dca73d200e1b0e74ae",
+        "2026-10-26T18:12:30.5438612Z Found 1881 test(s).",
+        "2026-10-26T18:15:38.7239506Z Ran 1881 tests in 530.676s",
+        "2026-10-26T18:15:38.7239770Z OK (skipped=5)"
+      ]
+    },
+    "jobs": [
+      {
+        "id": 121753864684,
+        "name": "private-storage",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 121753864688,
+        "name": "production-config",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 121753865001,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 121753866965,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "note": "Code commit verified. Subsequent commits change documentation/evidence only; their own CI is separate."
+  },
   "code_commit": "178660100a2f8c53a46bafdb72589eac1b80bcef",
   "pr": "https://github.com/FelipeCCAA/CCAA/pull/21",
   "opflow_after_ui": {
