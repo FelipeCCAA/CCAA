@@ -52,6 +52,22 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
     evaluacion = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
     actos = ActoValeSerializer(many=True, read_only=True)
+    continuidad_pendiente_disponible = serializers.SerializerMethodField()
+    avisos_calidad = serializers.SerializerMethodField()
+
+    def get_continuidad_pendiente_disponible(self, vale):
+        from calidad.continuidad import activa
+        from procesos.models import EjecucionProceso
+        evaluacion = vale.evaluacion()
+        return bool(activa() and vale.estado == "muestreado" and vale.ejecutado_en
+                    and evaluacion is not None and evaluacion.cumple and not balance_vale(vale)["pendiente"]
+                    and not EjecucionProceso.objects.filter(vale=vale, estado="cerrada").exists())
+
+    def get_avisos_calidad(self, vale):
+        from calidad.continuidad import activa
+        if activa() and vale.estado not in {"anulado", "liberado", "borrador"}:
+            return ["La preparación no está liberada por Calidad; su continuidad no autoriza despacho."]
+        return []
 
     class Meta:
         model = ValeEstandarizacion
@@ -71,6 +87,7 @@ class ValeEstandarizacionSerializer(serializers.ModelSerializer):
             "rc_real", "minutos_agitando", "avisos", "evaluacion",
             "observaciones", "responsable", "responsable_nombre", "creado_en",
             "es_borrador", "abierto_por", "abierto_en", "actualizado_en", "balance", "actos",
+            "continuidad_pendiente_disponible", "avisos_calidad",
         ]
         # El estado lo mueven las acciones del ciclo, no un PATCH: liberar
         # exige que el RC cumpla, y con un campo escribible eso se salta.

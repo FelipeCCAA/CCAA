@@ -74,7 +74,7 @@ def _origen_fifo_confirmable(vale, silos):
             or silo.producto_actual_id != seleccionado.producto_actual_id
             or retenciones.get(silo.pk)):
             continue
-        if motivos_silo_no_disponible(silo, para="proceso"):
+        if motivos_silo_no_disponible(silo, para="proceso", permitir_pendientes=True):
             continue
         try:
             libre = exigir_origen_disponible(silo=silo, cantidad=0)
@@ -126,7 +126,7 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False, salidas_origen=No
     crema = bloqueados.get(vale.silo_crema_id)
 
     for silo in filter(None, [entera, descremada, crema]):
-        motivos = [] if comprobar_solamente else motivos_silo_no_disponible(silo, para="proceso")
+        motivos = [] if comprobar_solamente else motivos_silo_no_disponible(silo, para="proceso", permitir_pendientes=True)
         if motivos:
             raise ValidationError(f"{silo.codigo}: " + " ".join(motivos))
         if reservas_activas_silo(
@@ -138,6 +138,7 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False, salidas_origen=No
     exigir_destino_sin_reserva(silo=destino)
     if not destino.activo or destino.estado in {
         Silo.Estado.BLOQUEADO_CALIDAD,
+        Silo.Estado.PENDIENTE_CALIDAD,
         Silo.Estado.EN_CIP,
         Silo.Estado.FUERA_SERVICIO,
     }:
@@ -247,6 +248,8 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False, salidas_origen=No
     # «Estandarizacion»: es el mismo hecho de planta, y este es el
     # momento en que la mezcla ocurre de verdad.
     ejecucion = registrar_estandarizacion(vale=vale, origenes=origenes)
+    from calidad.continuidad import registrar_desde_entradas
+    registrar_desde_entradas(ejecucion, usuario, "transferir_estandarizacion")
     EventoProceso.objects.create(
         ejecucion=ejecucion, tipo="desvio_fifo" if desvio else "fifo_confirmado",
         usuario=usuario, motivo=vale.motivo_desvio_fifo.strip() if desvio else "",
@@ -273,6 +276,36 @@ def iniciar_agitacion(*, vale_id):
     vale.agitacion_desde = timezone.now()
     vale.save(update_fields=["estado", "agitacion_desde"])
 
+    return vale
+
+
+@transaction.atomic
+def continuar_pendiente(*, vale_id, usuario, motivo):
+    """Termina la operación conforme; la decisión de Calidad queda pendiente."""
+    from calidad.continuidad import activa, registrar
+    from calidad.evidencia import bloquear_catalogo
+    from procesos.models import EjecucionProceso
+
+    if not activa():
+        raise ValidationError("La continuidad pendiente de Calidad no está habilitada.")
+    bloquear_catalogo()
+    vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
+    evaluacion = vale.evaluacion()
+    if (vale.estado != ValeEstandarizacion.Estado.MUESTREADO or not vale.ejecutado_en
+        or evaluacion is None or not evaluacion.cumple or balance_vale(vale)["pendiente"]):
+        raise ValidationError("Completa la operación, registra la muestra y verifica RC y litros antes de continuar.")
+    if not str(motivo or "").strip():
+        raise ValidationError("Registra el motivo de la continuidad pendiente.")
+    ejecucion = EjecucionProceso.objects.get(vale=vale)
+    if ejecucion.estado == EjecucionProceso.Estado.CERRADA:
+        return vale
+    cerrar_estandarizacion(vale=vale)
+    silo = Silo.objects.select_for_update().get(pk=vale.silo_destino_id)
+    if silo.estado in {Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO}:
+        raise ValidationError("El silo tiene un bloqueo operacional que no es una firma pendiente.")
+    silo.estado = Silo.Estado.PENDIENTE_CALIDAD
+    silo.save(update_fields=["estado"])
+    registrar(ejecucion, usuario, "cerrar_estandarizacion_pendiente", [f"{vale.codigo}: {str(motivo).strip()}"])
     return vale
 
 
@@ -355,6 +388,10 @@ def decidir(*, vale_id, usuario):
     # correccion sigue en ejecucion, que es lo que pasa en el silo.
     if vale.estado == ValeEstandarizacion.Estado.LIBERADO:
         cerrar_estandarizacion(vale=vale)
+        silo = Silo.objects.select_for_update().get(pk=vale.silo_destino_id)
+        if silo.estado == Silo.Estado.PENDIENTE_CALIDAD:
+            silo.estado = Silo.Estado.DISPONIBLE
+            silo.save(update_fields=["estado"])
 
     return vale, evaluacion
 

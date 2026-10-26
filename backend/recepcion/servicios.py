@@ -19,6 +19,7 @@ from .models import (
 
 ESTADOS_SIN_CONSUMO = {
     Silo.Estado.BLOQUEADO_CALIDAD,
+    Silo.Estado.PENDIENTE_CALIDAD,
     Silo.Estado.PENDIENTE_CIP,
     Silo.Estado.EN_CIP,
     Silo.Estado.FUERA_SERVICIO,
@@ -65,16 +66,19 @@ def capas_fifo_silo(silo, antes_de=None):
     return dominio.saldo_por_recepcion(movimientos, atribuciones)
 
 
-def motivos_silo_no_disponible(silo, *, para, ahora=None):
+def motivos_silo_no_disponible(silo, *, para, ahora=None, permitir_pendientes=False):
     """Adapta la compuerta pura al libro, análisis y CIP persistidos."""
     from inventario.models import CicloCIP
     from .models import AnalisisSilo
 
     ahora = ahora or timezone.now()
+    from calidad.continuidad import activa
+    permitir_pendientes = permitir_pendientes and activa() and para == "proceso"
+    muestras = AnalisisSilo.objects.filter(silo=silo)
+    if not permitir_pendientes:
+        muestras = muestras.filter(estado=AnalisisSilo.Estado.CONFIRMADO)
     analisis = (
-        AnalisisSilo.objects.filter(
-            silo=silo, estado=AnalisisSilo.Estado.CONFIRMADO
-        )
+        muestras
         .select_related("analista", "visualizado_por")
         .order_by("-tomado_en", "-id")
         .first()
@@ -93,7 +97,12 @@ def motivos_silo_no_disponible(silo, *, para, ahora=None):
     motivos = motivos_silo_no_disponible_con_datos(
         silo, analisis=analisis, ciclo_cip=ciclo_cip,
         leche_mas_antigua_en=leche_mas_antigua_en, para=para, ahora=ahora,
+        permitir_pendientes=permitir_pendientes,
     )
+    if permitir_pendientes:
+        from calidad.continuidad import muestras_del_material
+        if muestras_del_material(silo.pk).filter(inhibidores_resultado="positivo").exists():
+            motivos.append("El material del silo mantiene un resultado de inhibidores positivos; un remuestreo no lo dispone.")
     from estandarizacion.bloqueos import motivo_retencion_silo
     retencion = motivo_retencion_silo(silo.pk)
     if retencion:
@@ -103,6 +112,7 @@ def motivos_silo_no_disponible(silo, *, para, ahora=None):
 
 def motivos_silo_no_disponible_con_datos(
     silo, *, analisis, ciclo_cip, leche_mas_antigua_en, para, ahora=None,
+    permitir_pendientes=False,
 ):
     """Evalúa la compuerta con datos ya agrupados, sin repetir consultas."""
     ahora = ahora or timezone.now()
@@ -128,7 +138,8 @@ def motivos_silo_no_disponible_con_datos(
             "organoleptico_conforme": analisis.organoleptico_conforme,
         }
     return dominio.motivos_silo_no_disponible(
-        datos_silo, datos_analisis, ciclo_cip, ahora, para=para
+        datos_silo, datos_analisis, ciclo_cip, ahora, para=para,
+        permitir_pendientes=permitir_pendientes,
     )
 
 

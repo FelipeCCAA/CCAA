@@ -862,9 +862,10 @@ class EntradaProceso(EvidenciaCalidadMixin):
                 salida_id=self.salida_origen_id,
                 estado=LiberacionProceso.Estado.LIBERADO,
             ).exists():
-                raise ValidationError({
-                    "salida_origen": "El resultado todavía no está liberado por Calidad."
-                })
+                from calidad.continuidad import activa, comprobar_salida
+                if not activa():
+                    raise ValidationError({"salida_origen": "El resultado todavía no está liberado por Calidad."})
+                comprobar_salida(self.salida_origen_id, bloquear=False)
             origen = self.salida_origen.ejecucion.etapa
             destino = self.ejecucion.etapa
             ruta = self.salida_origen.ruta_producto

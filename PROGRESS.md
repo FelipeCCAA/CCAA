@@ -1,5 +1,15 @@
 # Progreso del expediente OP
 
+## AVANCE vigente — Calidad pendiente, 26-10-2026
+
+Usuario validó permitir producción con análisis/firmas pendientes para la futura operación real, conservando adversos/inocuidad y liberación final obligatorios. Rama `codex/calidad-pendiente-continuidad` desde PR21/3b468bb. Backend/frontend, evento trazable del responsable, deudas del material original y estado aditivo `pendiente_calidad`; apagado por omisión, habilitado sólo en práctica local. No se crean firmas ni se liberan pallets automáticamente.
+
+Verificación en curso:35/35 del corte integrado anterior al último borde;13/13 bordes y tres carreras PostgreSQL en el código actual;115/115 frontend, lint/build y Chrome6/6 con API simulada. No sumar cortes solapados. Revisión estática independiente encontró cuatro omisiones de adversos y comprobó sus correcciones; no ejecutó BD. Regresión amplia/CI se registrarán al concluir, sin anticipar resultados. Corridas interrumpidas o reemplazadas quedan conservadas como incompletas.
+
+Práctica OPFLOW: migración aditiva0039 aplicada;16 tablas operacionales conservan SHA256 `411c481f9c70aba8f15f08b38bf3ceee44a2aea8337b1fd81c10edf20ae4c275` antes/después. API8209/web5209 locales desde la rama, sólo ficticios. Antiguos bloqueos duros no se reclasifican; vale requiere composición real, RC conforme, saldo y ruta. Sin producción, merge, despliegue ni Supabase/logs. [Expediente, límites, reversión y EXPLICADOR](docs/operacion/CALIDAD_CONTINUIDAD_PENDIENTE.md). Reservas propuestas del vale y UAT/carga siguen pendientes.
+
+---
+
 ## AVANCE vigente — F01 reutilización de silo, 26-10-2026
 
 Corrección acotada autorizada tras bloquearse el vale ficticio VE6299-01. Rama `codex/f01-reuso-silo-recepcion` desde561e11d, código `1786601`, [PR21 borrador](https://github.com/FelipeCCAA/CCAA/pull/21) sobrePR20. Se reconoce una recepción entera exclusiva después de vaciado acreditado, sin imputarla al producto antiguo ni reescribir historia. La identidad del tipo de leche descargada queda protegida en save/API; Calidad, firma, reservas, capacidad, FIFO y retiro único se conservan. Sin esquema, tolerancias, datos productivos ni despliegue.

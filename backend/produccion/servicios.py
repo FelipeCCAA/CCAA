@@ -83,16 +83,22 @@ def abrir_lote_desde_vale(
     ).values_list("pk", flat=True))
     bloquear_cadenas(fuentes_vale)
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale.pk)
-    from calidad.vigencia import exigir_antecedentes_salida_vigentes
+    from calidad.continuidad import activa, comprobar_salida, vale_conforme_pendiente
+    avisos_calidad = []
     for fuente_id in fuentes_vale:
-        exigir_antecedentes_salida_vigentes(fuente_id)
+        if activa():
+            avisos_calidad.extend(comprobar_salida(fuente_id)[1])
+        else:
+            from calidad.vigencia import exigir_antecedentes_salida_vigentes
+            exigir_antecedentes_salida_vigentes(fuente_id)
     from estandarizacion.balance import balance_vale, litros_exactos
     litros_exactos(litros, permitir_cero=False)
     if balance_vale(vale)["pendiente"]:
         raise ValidationError("El vale tiene una discrepancia de litros pendiente de revisión.")
 
     decision = dominio.puede_abrir_lote_desde(
-        vale, litros, consumido_por_otros_lotes=litros_ya_tomados(vale)
+        vale, litros, consumido_por_otros_lotes=litros_ya_tomados(vale),
+        pendiente_conforme=vale_conforme_pendiente(vale),
     )
 
     if not decision.permitido:
@@ -103,7 +109,10 @@ def abrir_lote_desde_vale(
     from procesos.servicios import exigir_origen_disponible
     from recepcion.servicios import ESTADOS_SIN_CONSUMO
     silo_origen = Silo.objects.select_for_update().get(pk=vale.silo_destino_id)
-    if not silo_origen.activo or silo_origen.estado in ESTADOS_SIN_CONSUMO:
+    from calidad.continuidad import activa
+    if not silo_origen.activo or (silo_origen.estado in ESTADOS_SIN_CONSUMO and not (
+        activa() and silo_origen.estado == Silo.Estado.PENDIENTE_CALIDAD
+    )):
         raise ValidationError(f"{silo_origen.codigo} no está habilitado para consumo.")
     if CicloCIP.objects.filter(silo=silo_origen, estado=CicloCIP.Estado.EN_CURSO).exists():
         raise ValidationError(f"{silo_origen.codigo} tiene una limpieza en curso.")
@@ -195,6 +204,8 @@ def abrir_lote_desde_vale(
     atribuir_salida(salida)
 
     _encadenar_con_la_estandarizacion(vale, lote, litros, usuario=usuario)
+    from calidad.continuidad import registrar
+    registrar(lote.ejecucion, usuario, "abrir_lote_desde_vale", avisos_calidad)
 
     return lote
 
@@ -644,21 +655,27 @@ def registrar_envasado(
         documento_id=registro.pk,
         accion_url="/calidad",
     )
+    from calidad.continuidad import avisos_salida, registrar, registrar_desde_entradas
+    if lote.ejecucion_id:
+        avisos = [aviso for salida in lote.salidas_proceso.filter(naturaleza="principal")
+                  for aviso in avisos_salida(salida.pk)]
+        registrar(lote.ejecucion, usuario, f"envasar:{registro.pk}", avisos)
+        registrar_desde_entradas(lote.ejecucion, usuario, f"envasar:{registro.pk}")
     return registro
 
 
 def bloqueo_calidad_para_envasado(lote, *, bloquear=False):
     """Devuelve la puerta material previa a Envase, sin mezclarla con el lote."""
-    from calidad.vigencia import exigir_liberacion_salida_vigente
+    from calidad.continuidad import activa, comprobar_salida
     from procesos.models import SalidaProceso
 
     for salida in lote.salidas_proceso.all():
         if salida.naturaleza != SalidaProceso.Naturaleza.PRINCIPAL:
             continue
-        if not salida.ejecucion.etapa.requiere_calidad:
+        if not salida.ejecucion.etapa.requiere_calidad and not activa():
             continue
         try:
-            exigir_liberacion_salida_vigente(salida.pk, bloquear=bloquear)
+            comprobar_salida(salida.pk, bloquear=bloquear)
         except ValidationError:
             return (
                 f"{salida.ejecucion.etapa.get_tipo_display()} está pendiente "

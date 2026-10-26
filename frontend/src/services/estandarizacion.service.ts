@@ -1,4 +1,5 @@
 import api from "./api";
+import { payloadContinuidadPendiente } from "./continuidad-calidad";
 import type { Silo } from "./recepcion.service";
 
 interface Pagina<T> { results: T[] }
@@ -62,6 +63,8 @@ export interface ValeEstandarizacion {
   responsable_nombre: string | null;
   es_borrador: boolean;
   actualizado_en: string;
+  continuidad_pendiente_disponible?: boolean;
+  avisos_calidad?: string[];
   balance?: BalanceVale;
   actos?: ActoVale[];
 }
@@ -113,7 +116,7 @@ export interface Mezcla {
 }
 
 export interface CatalogosEstandarizacion {
-  salidas_origen?: { id: number; silo_id: number; codigo: string; cantidad_disponible: string; bloqueo: string | null }[];
+  salidas_origen?: { id: number; silo_id: number; codigo: string; cantidad_disponible: string; bloqueo: string | null; avisos_calidad?: string[] }[];
   estados: { valor: string; etiqueta: string }[];
   /*
     Los minutos vienen del backend y no se escriben aquí: la cuenta regresiva
@@ -284,6 +287,7 @@ export const transferirVale = (id: number, salidas_origen?: Record<string, numbe
 export const agitarVale = (id: number) => accion(id, "agitar");
 export const reagitarVale = (id: number) => accion(id, "reagitar");
 export const decidirVale = (id: number) => accion(id, "decidir");
+export const continuarValePendiente = (id: number) => accion(id, "continuar-pendiente", payloadContinuidadPendiente());
 
 export const muestrearVale = (id: number, grasa: number, sng: number) =>
   accion(id, "muestrear", { grasa, sng });

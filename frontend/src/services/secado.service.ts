@@ -56,6 +56,7 @@ export interface OpcionesSecadoExterno {
     id: number; lote_id: number; lote_codigo: string;
     insumo_id: number; insumo_nombre: string;
     cantidad_disponible: string; unidad: string; estado_calidad: string;
+    avisos_calidad?: string[];
     readonly fifo_recomendado: boolean; readonly recibido_en: string | null;
   }>;
   ordenes: Array<{

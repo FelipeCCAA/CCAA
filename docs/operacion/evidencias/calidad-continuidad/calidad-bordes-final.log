@@ -1,0 +1,34 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Using existing test database for alias 'default' ('test_op00_base')...
+
+test_adicion_sin_vaciado_no_oculta_resultado_tardio_del_contenido_anterior (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_adicion_sin_vaciado_no_oculta_resultado_tardio_del_contenido_anterior) ... ok
+test_ajuste_a_cero_no_equivale_a_vaciado_fisico_del_origen (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_ajuste_a_cero_no_equivale_a_vaciado_fisico_del_origen) ... ok
+test_conforme_posterior_no_oculta_no_conforme_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_conforme_posterior_no_oculta_no_conforme_del_mismo_material) ... ok
+test_muestra_adversa_de_llenado_futuro_no_se_atribuye_a_salida_anterior (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_muestra_adversa_de_llenado_futuro_no_se_atribuye_a_salida_anterior) ... ok
+test_negativo_posterior_no_oculta_positivo_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_negativo_posterior_no_oculta_positivo_del_mismo_material) ... ok
+test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa) ... ok
+test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes) ... ok
+test_salida_con_silo_no_oculta_analisis_adverso_del_lote (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_salida_con_silo_no_oculta_analisis_adverso_del_lote) ... ok
+test_vaciado_fisico_separa_muestras_de_llenados_distintos (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_vaciado_fisico_separa_muestras_de_llenados_distintos) ... ok
+test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera (calidad.tests_continuidad_remuestreo.ResultadoTardioDeudaTests.test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera) ... ok
+test_alta_salida_no_confirma_entre_validacion_del_ciclo_y_commit (calidad.tests_continuidad_concurrencia.ContinuidadConcurrenciaTests.test_alta_salida_no_confirma_entre_validacion_del_ciclo_y_commit) ... ok
+test_salida_que_confirma_primero_obliga_a_rechazar_el_vale (calidad.tests_continuidad_concurrencia.ContinuidadConcurrenciaTests.test_salida_que_confirma_primero_obliga_a_rechazar_el_vale) ... ok
+test_tipo_de_recepcion_no_cambia_mientras_se_transfiere (calidad.tests_continuidad_concurrencia.ContinuidadConcurrenciaTests.test_tipo_de_recepcion_no_cambia_mientras_se_transfiere) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 148.476s
+
+OK
+Preserving test database for alias 'default' ('test_op00_base')...
+
+Found 13 test(s).
+Operations to perform:
+  Synchronize unmigrated apps: corsheaders, messages, observabilidad, rest_framework, staticfiles
+  Apply all migrations: admin, auditoria, auth, authtoken, calidad, contenttypes, estandarizacion, inocuidad, inventario, maestros, mantenimiento, planificacion, procesos, produccion, recepcion, recoleccion, sessions, usuarios
+Synchronizing apps without migrations:
+  Creating tables...
+    Running deferred SQL...
+Running migrations:
+  No migrations to apply.
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).

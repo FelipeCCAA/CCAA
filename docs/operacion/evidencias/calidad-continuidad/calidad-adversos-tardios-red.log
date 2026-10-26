@@ -1,0 +1,57 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Using existing test database for alias 'default' ('test_op00_base')...
+
+test_conforme_posterior_no_oculta_no_conforme_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_conforme_posterior_no_oculta_no_conforme_del_mismo_material) ... ok
+test_negativo_posterior_no_oculta_positivo_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_negativo_posterior_no_oculta_positivo_del_mismo_material) ... ok
+test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa) ... ok
+test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes) ... FAIL
+test_salida_con_silo_no_oculta_analisis_adverso_del_lote (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_salida_con_silo_no_oculta_analisis_adverso_del_lote) ... FAIL
+test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera (calidad.tests_continuidad_remuestreo.ResultadoTardioDeudaTests.test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera) ... FAIL
+
+======================================================================
+FAIL: test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\calidad-aviso\backend\calidad\tests_continuidad_remuestreo.py", line 91, in test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes
+    with self.assertRaises(ValidationError) as error:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+======================================================================
+Found 6 test(s).
+Operations to perform:
+  Synchronize unmigrated apps: corsheaders, messages, observabilidad, rest_framework, staticfiles
+  Apply all migrations: admin, auditoria, auth, authtoken, calidad, contenttypes, estandarizacion, inocuidad, inventario, maestros, mantenimiento, planificacion, procesos, produccion, recepcion, recoleccion, sessions, usuarios
+Synchronizing apps without migrations:
+  Creating tables...
+    Running deferred SQL...
+Running migrations:
+  No migrations to apply.
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).
+FAIL: test_salida_con_silo_no_oculta_analisis_adverso_del_lote (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_salida_con_silo_no_oculta_analisis_adverso_del_lote)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\calidad-aviso\backend\calidad\tests_continuidad_remuestreo.py", line 80, in test_salida_con_silo_no_oculta_analisis_adverso_del_lote
+    with self.assertRaisesMessage(ValidationError, "no conforme"):
+         ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\AppData\Local\Programs\Python\Python313\Lib\contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+======================================================================
+FAIL: test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera (calidad.tests_continuidad_remuestreo.ResultadoTardioDeudaTests.test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\calidad-aviso\backend\calidad\tests_continuidad_remuestreo.py", line 108, in test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera
+    with self.assertRaises(ValidationError) as error:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+----------------------------------------------------------------------
+Ran 6 tests in 4.705s
+
+FAILED (failures=3)
+Preserving test database for alias 'default' ('test_op00_base')...
+

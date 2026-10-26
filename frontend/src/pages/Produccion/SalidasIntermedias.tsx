@@ -1,3 +1,4 @@
+import AvisosCalidad from "../../components/Calidad/AvisosCalidad";
 import { useRef, useState } from "react";
 import { ArrowRight, FlaskConical, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -32,7 +33,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
     try {
       setSalidas(await obtenerSalidasIntermediasDisponibles());
     } catch {
-      setError("No se pudieron consultar los resultados liberados.");
+      setError("No se pudieron consultar los resultados disponibles.");
     } finally {
       setCargando(false);
     }
@@ -120,9 +121,9 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
             <FlaskConical className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="font-bold text-slate-900">Materiales intermedios liberados</h2>
+            <h2 className="font-bold text-slate-900">Materiales intermedios disponibles</h2>
             <p className="text-sm text-slate-600">
-              Leche o crema aprobada por Calidad y disponible para la etapa siguiente.
+              Leche o crema habilitada para la etapa siguiente. Revisa su estado y los avisos de Calidad.
             </p>
           </div>
         </div>
@@ -145,7 +146,7 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
         </p>
       )}
       {salidas?.length === 0 && (
-        <p className="px-5 py-4 text-sm text-slate-600">No hay resultados con saldo liberado.</p>
+        <p className="px-5 py-4 text-sm text-slate-600">No hay resultados habilitados con saldo disponible.</p>
       )}
       {salidas && salidas.length > 0 && (
         <div className="grid gap-3 p-4 lg:grid-cols-2">
@@ -163,11 +164,12 @@ export default function SalidasIntermedias({ onCambio }: { onCambio?: () => void
                   <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-900">
                     Tipo: {salida.tipo_material_etiqueta}
                   </span>
-                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
+                  <span className={`rounded-full px-3 py-1 ${salida.estado_calidad === "pendiente" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>
                     Calidad: {salida.estado_calidad_etiqueta}
                   </span>
                 </div>
               </div>
+              <AvisosCalidad avisos={salida.avisos_calidad} />
               <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-sm">
                 <div><span className="text-slate-500">Disponible</span><br /><b>{numero.format(Number(salida.cantidad_disponible))} {salida.unidad}</b></div>
                 <div><span className="text-slate-500">Consumido</span><br /><b>{numero.format(Number(salida.cantidad_consumida))} {salida.unidad}</b></div>

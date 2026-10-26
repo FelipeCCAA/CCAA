@@ -1,4 +1,11 @@
 import api from "./api";
+import type { PoliticaContinuidad } from "./continuidad-calidad";
+
+export async function obtenerPoliticaContinuidad(signal?: AbortSignal): Promise<PoliticaContinuidad> {
+  const { data } = await api.get<PoliticaContinuidad>("calidad/politica-continuidad/", { signal });
+  return data;
+}
+
 import {
   payloadLiberacionProceso,
   type TipoAnalisisProceso,

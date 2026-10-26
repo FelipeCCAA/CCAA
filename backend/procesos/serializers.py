@@ -504,6 +504,14 @@ class SalidaProcesoSerializer(serializers.ModelSerializer):
     lote_codigo = serializers.CharField(source="lote.codigo_lote", read_only=True)
     silo_codigo = serializers.CharField(source="silo.codigo", read_only=True)
     cantidad_operativa = serializers.SerializerMethodField()
+    avisos_calidad = serializers.SerializerMethodField()
+
+    def get_avisos_calidad(self, salida):
+        from calidad.continuidad import avisos_salida
+        try:
+            return avisos_salida(salida.pk)
+        except DjangoValidationError as error:
+            return error.messages
 
     def get_cantidad_operativa(self, salida):
         from estandarizacion.balance import cantidad_operativa_salida

@@ -72,7 +72,7 @@ def preparar_origenes(vale, seleccion=None, *, candidatos_bloqueados=None):
     El llamador bloquea cadenas antes de vale/silos y vuelve a consultar las
     candidatas bajo esos locks. No se define FIFO nuevo para los componentes.
     """
-    from calidad.vigencia import exigir_liberacion_salida_vigente
+    from calidad.continuidad import comprobar_salida
     from procesos.servicios import siguiente_etapa_para_salida
 
     seleccion = {} if seleccion is None else seleccion
@@ -98,9 +98,11 @@ def preparar_origenes(vale, seleccion=None, *, candidatos_bloqueados=None):
         if nueva is not None:
             if elegido_id is not None:
                 raise ValidationError({"salidas_origen": "La salida elegida pertenece al ciclo anterior del silo."})
-            analisis = AnalisisSilo.objects.filter(
-                silo_id=silo.pk, estado=AnalisisSilo.Estado.CONFIRMADO,
-            ).order_by("-tomado_en", "-pk").first()
+            from calidad.continuidad import activa
+            muestras = AnalisisSilo.objects.filter(silo_id=silo.pk)
+            if not activa():
+                muestras = muestras.filter(estado=AnalisisSilo.Estado.CONFIRMADO)
+            analisis = muestras.order_by("-tomado_en", "-pk").first()
             if analisis is None or analisis.tomado_en <= nueva.ingreso.fecha_hora:
                 raise ValidationError("La recepción nueva requiere un análisis posterior a su ingreso.")
             if vale.analisis_entera_id is not None and vale.analisis_entera_id != analisis.pk:
@@ -135,7 +137,7 @@ def preparar_origenes(vale, seleccion=None, *, candidatos_bloqueados=None):
             raise ValidationError({"salidas_origen": "La ruta del origen no continúa en Estandarización."})
         if cantidad > saldos[elegido.pk]:
             raise ValidationError({"salidas_origen": f"{silo.codigo}: la cantidad supera el saldo del origen seleccionado."})
-        exigir_liberacion_salida_vigente(elegido.pk)
+        comprobar_salida(elegido.pk)
         resultado[componente] = elegido
     return resultado
 

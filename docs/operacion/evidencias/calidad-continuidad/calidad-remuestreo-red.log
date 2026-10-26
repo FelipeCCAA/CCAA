@@ -1,0 +1,57 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Using existing test database for alias 'default' ('test_op00_base')...
+
+test_conforme_posterior_no_oculta_no_conforme_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_conforme_posterior_no_oculta_no_conforme_del_mismo_material) ... FAIL
+test_negativo_posterior_no_oculta_positivo_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_negativo_posterior_no_oculta_positivo_del_mismo_material) ... FAIL
+test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa) ... FAIL
+
+======================================================================
+FAIL: test_conforme_posterior_no_oculta_no_conforme_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_conforme_posterior_no_oculta_no_conforme_del_mismo_material)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\calidad-aviso\backend\calidad\tests_continuidad_remuestreo.py", line 58, in test_conforme_posterior_no_oculta_no_conforme_del_mismo_material
+    with self.assertRaisesMessage(ValidationError, "no conforme"):
+         ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\AppData\Local\Programs\Python\Python313\Lib\contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+======================================================================
+FAIL: test_negativo_posterior_no_oculta_positivo_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_negativo_posterior_no_oculta_positivo_del_mismo_material)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\calidad-aviso\backend\calidad\tests_continuidad_remuestreo.py", line 44, in test_negativo_posterior_no_oculta_positivo_del_mismo_material
+    with self.assertRaisesMessage(ValidationError, "Inhibidores positivos"):
+         ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\AppData\Local\Programs\Python\Python313\Lib\contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+AssertionError: ValidationError not raised
+
+======================================================================
+Found 3 test(s).
+Operations to perform:
+  Synchronize unmigrated apps: corsheaders, messages, observabilidad, rest_framework, staticfiles
+  Apply all migrations: admin, auditoria, auth, authtoken, calidad, contenttypes, estandarizacion, inocuidad, inventario, maestros, mantenimiento, planificacion, procesos, produccion, recepcion, recoleccion, sessions, usuarios
+Synchronizing apps without migrations:
+  Creating tables...
+    Running deferred SQL...
+Running migrations:
+  No migrations to apply.
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).
+FAIL: test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\calidad-aviso\backend\calidad\tests_continuidad_remuestreo.py", line 67, in test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa
+    self.assertTrue(any("inhibidores positivos" in motivo.lower() for motivo in motivos), motivos)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : []
+
+----------------------------------------------------------------------
+Ran 3 tests in 13.539s
+
+FAILED (failures=3)
+Preserving test database for alias 'default' ('test_op00_base')...
+
