@@ -1,0 +1,12 @@
+{
+  "head": "4706bfb10fb1968e5d6469e6e250979fb928eb38",
+  "all_four_checks_success": true,
+  "run_url": "https://github.com/FelipeCCAA/CCAA/actions/runs/40335053758",
+  "backend_executed": 1850,
+  "backend_seconds": 418.469,
+  "backend_skipped": 5,
+  "backend_success_marker": true,
+  "raw_sha256": "0fbd831bdc84f57129863c91b918c57bb728e8329422b1505702a4cf7687a1e1",
+  "raw_bytes": 132453,
+  "backend_passed": 1845
+}

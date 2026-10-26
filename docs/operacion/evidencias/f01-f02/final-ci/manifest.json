@@ -1,0 +1,17 @@
+[
+  {
+    "path": "backend-result-excerpt.txt",
+    "bytes": 102,
+    "sha256": "b6d79b61b03a58e63f38866df31af2570cd20548ceb34dddf5035b8f248d4ff9"
+  },
+  {
+    "path": "checks.json",
+    "bytes": 1275,
+    "sha256": "6b4a78bf5d1e15ceee4a03f1183040ee0d92fd9c270b0339b96b1dd9947aaa3c"
+  },
+  {
+    "path": "summary.json",
+    "bytes": 429,
+    "sha256": "1f73ad618b9778a8d904c9486e8f055c2f3ce8a26b732002b6d62a901124d051"
+  }
+]

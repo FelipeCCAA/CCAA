@@ -1,6 +1,6 @@
 # F01/F02 — saldo y origen material de estandarización
 
-Fecha: 26-10-2026, Chile. Rama `codex/f01-f02-saldos-genealogia`, base `580f26c` (expediente OP09/PR19). **Casos de origen único implementados y validados localmente; F02 parcial para mezclas, históricos y composición de correcciones. No cierre general de OP09 ni autorización para planta.**
+Fecha: 26-10-2026, Chile. Rama `codex/f01-f02-saldos-genealogia`, base `580f26c` (expediente OP09/PR19). **Casos de origen único implementados y validados localmente y en CI global4706bfb; F02 parcial para mezclas, históricos y composición de correcciones. No cierre general de OP09 ni autorización para planta.**
 
 ## Autorización y alcance
 
@@ -44,7 +44,8 @@ Entorno: harness OP00, PostgreSQL17, rol `op00_test`, carpeta dedicada `../op00-
 - **Corte final por identidad:**143/143, ninguna omitida, en78,702s, exit0. Se verificaron143 identidades distintas en el registro, sin duplicados;25 son casos nuevos de materiales, carrera y genealogía. Incluye saldo9.150,08−4.300,53=4.849,55, segundo retiro parcial, reintento, rollback, firma obsoleta, corrección de ancestro, composición ambigua, ingreso posterior compensado, saldo previo compensado, producto parcialmente consumido, advertencia de correcciones y espera real de ambas conexiones competidoras. La carrera confirma un solo vale de6.000 L y remanente3.150,08 L.
 - Frontend111/111, cero omitidas; lint y build con TypeScript aprobados en versión final. Ruff de todo backend y diff-check aprobados. Esquema: `No changes detected`, exit0. Los system checks del runner final reportan cero problemas.
 - CI global de implementación `9272269`, [run40331871048](https://github.com/FelipeCCAA/CCAA/actions/runs/40331871048): frontend, almacenamiento privado y configuración aprobados; backend ejecutó1.850, con1fallo,1error y5omitidas. Ambos casos antiguos de `CierreDescremacionTests` creaban salidas documentales sin ingreso físico. Se completaron sólo sus fixtures con ingresos ficticios correlacionados; no se relajó la guarda de disponibilidad ni se cambiaron aserciones. Verificación local posterior:31/31 identidades únicas, cero omitidas/fallos/errores,14,905s; Ruff y diff-check aprobados. [Evidencia separada del seguimiento](evidencias/f01-f02/ci-followup/summary.json); no reemplaza el corte original.
-- No se ejecutaron navegador, carga ni un circuito industrial completo en esta corrección. [PR20 en borrador](https://github.com/FelipeCCAA/CCAA/pull/20); nueva CI global pendiente tras el ajuste de fixtures, sin anticipar aprobación.
+- **CI global final sobre4706bfb**, [run40335053758](https://github.com/FelipeCCAA/CCAA/actions/runs/40335053758): los cuatro jobs aprobados. Backend1.850 ejecutadas en418,469s:1.845 aprobadas,5omitidas, cero fallos/errores. Frontend incluye111 pruebas, lint, TypeScript y build; almacenamiento privado y configuración aprobados. [Resumen y manifiesto de CI final](evidencias/f01-f02/final-ci/summary.json), sin sobrescribir el fallo previo.
+- No se ejecutaron navegador, carga ni un circuito industrial completo en esta corrección. [PR20 en borrador](https://github.com/FelipeCCAA/CCAA/pull/20). Código de aplicación9272269; ajuste de fixtures4dcc171; evidencia normalizada4706bfb, SHA de la CI aprobada. El cierre posterior sólo agrega documentación/evidencia: su CI propia se consulta en el PR y no se confunde con la del código validado.
 
 Los registros crudos están en `../op00-runtime/f01-f02-*.log`. [Resumen, identidades, salidas de validación y manifiesto](evidencias/f01-f02/summary.json), publicados sin credenciales ni datos privados. `manifest.json` conserva bytes/SHA256 de15 archivos y el resumen incluye hashes de17 archivos fuente/pruebas afectados. La RAM del equipo compartido alcanzó87% con controles paralelos; se continuó secuencialmente tras bajar. No se atribuye ese consumo a CCAA ni se usa para certificar carga.
 
@@ -62,7 +63,7 @@ Pendientes: política de identificación/composición para TK mezclados, concili
 
 ## AVANCE
 
-Corrección acotada implementada en rama y validada localmente:143 backend únicos,111 frontend, lint/build/esquema/diff aprobados. Se conserva producción intacta y el ensayo original. No se declara F01/F02 resueltos para todas las mezclas ni OP09 completada. PR apilado para revisión, sin merge ni despliegue; CI separada.
+Corrección acotada implementada en rama:143 backend únicos locales,111 frontend; CI global4706bfb con1.845 backend aprobadas,5omitidas y otros tres jobs aprobados. No sumar corridas solapadas como cobertura independiente. Se conserva producción intacta y el ensayo original; PostgreSQL OP00 detenido al finalizar y rama limpia antes del cierre documental. No se declara F01/F02 resueltos para todas las mezclas ni OP09 completada. PR20 apilado en borrador para revisión, sin merge ni despliegue. Próximo F03: preparación de balance graso, mediciones y tolerancias pendientes de validación industrial.
 
 ## EXPLICADOR
 
@@ -71,5 +72,5 @@ Corrección acotada implementada en rama y validada localmente:143 backend únic
 3. **EJEMPLO REAL DE OPERACIÓN:** retirar4.300,53 L de9.150,08 L debe dejar4.849,55 L, no volver a ofrecer9.150,08 L. Un lote parcial conserva cantidades por tramo, sin apropiarse de toda la mezcla.
 4. **SOLUCIÓN RECOMENDADA:** enlazar fuentes verificables, conciliar físico y material, respetar firmas y bloquear composiciones que no se pueden demostrar.
 5. **TRABAJO REALIZADO POR LOS AGENTES:** un coordinador implementó servicios/contratos/pantallas; un apoyo implementó el lector y revisó el resto. Sin esquema ni datos productivos modificados.
-6. **PRUEBAS Y RESULTADOS:**143 backend únicos/111 frontend aprobados, carrera real de dos vales y controles finales. Baseline y fallos intermedios preservados; sin navegador ni aprobación de capacidad.
-7. **ESTADO FINAL:** **VALIDADO LOCALMENTE EN ALCANCE ACOTADO; F02 PARCIAL.** Mezclas, históricos y composición de correcciones requieren trabajo posterior definido, no reglas inventadas.
+6. **PRUEBAS Y RESULTADOS:**143 backend únicos/111 frontend locales aprobados, carrera real de dos vales; CI global4706bfb:1.845 backend aprobadas,5omitidas y cuatro jobs aprobados. Baseline y fallos intermedios preservados; sin navegador ni aprobación de capacidad.
+7. **ESTADO FINAL:** **VALIDADO LOCALMENTE Y EN CI GLOBAL EN ALCANCE ACOTADO; F02 PARCIAL.** Mezclas, históricos y composición de correcciones requieren trabajo posterior definido, no reglas inventadas.
