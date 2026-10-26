@@ -1,0 +1,175 @@
+{
+  "final_regression": {
+    "status": "passed",
+    "exit_code": 0,
+    "tests": 423,
+    "seconds": 172.958,
+    "unique_test_identities": 423,
+    "new_tests": [
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_ajuste_del_ciclo_nuevo_se_rechaza.test_ajuste_del_ciclo_nuevo_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_api_transfiere_conservando_procedencia_de_recepcion.test_api_transfiere_conservando_procedencia_de_recepcion",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_ausente_del_retiro_se_rechaza.test_atribucion_ausente_del_retiro_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_desconocida_del_retiro_se_rechaza.test_atribucion_desconocida_del_retiro_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_incompleta_del_retiro_se_rechaza.test_atribucion_incompleta_del_retiro_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_calidad_sin_segundo_revisor_sigue_bloqueando.test_calidad_sin_segundo_revisor_sigue_bloqueando",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_catalogo_no_presenta_material_del_ciclo_anterior.test_catalogo_no_presenta_material_del_ciclo_anterior",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_composicion_del_vale_distinta_del_analisis_se_rechaza.test_composicion_del_vale_distinta_del_analisis_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_eleccion_explicita_del_material_anterior_se_rechaza.test_eleccion_explicita_del_material_anterior_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_fk_a_muestra_anterior_con_igual_composicion_se_rechaza.test_fk_a_muestra_anterior_con_igual_composicion_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_con_fecha_igual_al_vaciado_es_ambiguo.test_material_con_fecha_igual_al_vaciado_es_ambiguo",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_nuevo_sin_ingreso_productor_se_rechaza.test_material_nuevo_sin_ingreso_productor_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_posterior_en_otra_unidad_se_rechaza.test_material_posterior_en_otra_unidad_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_merma_posterior_del_silo_impide_demostrar_recepcion_exclusiva.test_merma_posterior_del_silo_impide_demostrar_recepcion_exclusiva",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza.test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_con_litros_distintos_se_rechaza.test_recepcion_con_litros_distintos_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_de_otro_silo_se_rechaza.test_recepcion_de_otro_silo_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_descremada_no_habilita_componente_entera.test_recepcion_descremada_no_habilita_componente_entera",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_no_descargada_se_rechaza.test_recepcion_no_descargada_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica.test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_saldo_negativo_intermedio_se_rechaza_aunque_termine_igual.test_saldo_negativo_intermedio_se_rechaza_aunque_termine_igual",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_segundo_ingreso_compensado_se_rechaza.test_segundo_ingreso_compensado_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_sin_consumo_correlacionado_al_vaciado_se_rechaza.test_sin_consumo_correlacionado_al_vaciado_se_rechaza",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_descargado_no_se_puede_reescribir_por_modelo.test_tipo_descargado_no_se_puede_reescribir_por_modelo",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_descargado_por_api_devuelve_conflicto_sin_modificar.test_tipo_descargado_por_api_devuelve_conflicto_sin_modificar",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_descargado_sin_cambio_sigue_permitido_por_api.test_tipo_descargado_sin_cambio_sigue_permitido_por_api",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_sin_descarga_sigue_editable.test_tipo_sin_descarga_sigue_editable",
+      "estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_vaciado_por_ajuste_se_rechaza.test_vaciado_por_ajuste_se_rechaza",
+      "estandarizacion.tests_reuso_concurrencia.ReusoConcurrenciaTests.test_alta_salida_no_confirma_entre_validacion_del_ciclo_y_commit.test_alta_salida_no_confirma_entre_validacion_del_ciclo_y_commit",
+      "estandarizacion.tests_reuso_concurrencia.ReusoConcurrenciaTests.test_salida_que_confirma_primero_obliga_a_rechazar_el_vale.test_salida_que_confirma_primero_obliga_a_rechazar_el_vale",
+      "estandarizacion.tests_reuso_concurrencia.ReusoConcurrenciaTests.test_tipo_de_recepcion_no_cambia_mientras_se_transfiere.test_tipo_de_recepcion_no_cambia_mientras_se_transfiere"
+    ]
+  },
+  "immutable_baseline": {
+    "base": "561e11d1850d310401fe38dca73d200e1b0e74ae",
+    "tests": 2,
+    "exit_code": 1,
+    "outcome": "expected material conflict and old catalog candidate"
+  },
+  "intermediate_global": {
+    "status": "cancelled",
+    "exit_code": -1,
+    "reason": "Superseded by final receipt-identity guard; not acceptance evidence"
+  },
+  "intermediate_fixtures": "Initial date collision, then another newer valid sample remained; preserved failures are not product regressions",
+  "static": {
+    "ruff_backend": "passed",
+    "schema_changes": false,
+    "diff_check": "passed"
+  },
+  "opflow": {
+    "database_read_only": true,
+    "transfer_executed": false,
+    "full_transfer_guards_executed": false,
+    "before_after_industrial_sha256": "efc6874321e1a961e6c0c9a92ee4959e6731d3e2ba749f0b1b4b8795eef1c31a"
+  },
+  "source_sha256": {
+    "backend/estandarizacion/origenes.py": "8cd7457d5a68b70cd79d4a4cd0551b52919229db4eb07008e2cb5333c0bac353",
+    "backend/estandarizacion/recepciones.py": "5d00f91b461c88d79b909eb233a64185a3f46c058a0e0e2f76a358dc02601569",
+    "backend/estandarizacion/tests_reuso_recepcion.py": "dd9a3617e4cd9cf8fdb326f4e3b1579f0931515c8709dadf2b6e21d6f6042a97",
+    "backend/estandarizacion/tests_reuso_concurrencia.py": "b16bebbbb8dcfda099f576b67f64c5c1cec4f434e78843619a6225cad54de37b",
+    "backend/recepcion/models.py": "0fc63d161ab1be0de8589aa06af84333a6faa6f483ce77a43c5b80f0fe629d5d",
+    "backend/recepcion/views.py": "417d360b187d9882487a5b21f109686ad0b698645039d70997699ee535dabe98"
+  },
+  "ci": {
+    "code_commit": "178660100a2f8c53a46bafdb72589eac1b80bcef",
+    "run_id": 40374533419,
+    "url": "https://github.com/FelipeCCAA/CCAA/actions/runs/40374533419",
+    "conclusion": "success",
+    "backend": {
+      "executed": 1881,
+      "seconds": 530.676,
+      "skipped": 5,
+      "passed": 1876,
+      "failures": 0,
+      "errors": 0,
+      "job_id": 121753866965,
+      "proof_lines": [
+        "2026-10-26T18:05:09.7583402Z HEAD is now at de9394a Merge 178660100a2f8c53a46bafdb72589eac1b80bcef into 561e11d1850d310401fe38dca73d200e1b0e74ae",
+        "2026-10-26T18:12:30.5438612Z Found 1881 test(s).",
+        "2026-10-26T18:15:38.7239506Z Ran 1881 tests in 530.676s",
+        "2026-10-26T18:15:38.7239770Z OK (skipped=5)"
+      ]
+    },
+    "jobs": [
+      {
+        "id": 121753864684,
+        "name": "private-storage",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 121753864688,
+        "name": "production-config",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 121753865001,
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 121753866965,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "note": "Code commit verified. Subsequent commits change documentation/evidence only; their own CI is separate."
+  },
+  "code_commit": "178660100a2f8c53a46bafdb72589eac1b80bcef",
+  "pr": "https://github.com/FelipeCCAA/CCAA/pull/21",
+  "opflow_after_ui": {
+    "database_read_only": "on",
+    "vale": "VE6299-01",
+    "state": "calculado",
+    "executed": false,
+    "raw_receipt_id": 2,
+    "emptying_movement": 20,
+    "new_ingress_movement": 22,
+    "raw_balance_L": "5000.00",
+    "whole_analysis_id": 13,
+    "whole_source_fk": null,
+    "skim_candidate_ids": [
+      12
+    ],
+    "historical_whole_candidates_hidden": true,
+    "industrial_snapshot_before": {
+      "sha256": "b6333d2d5623e034366b2b6895e3c3c0531a4acba1a37f9407ca74b2c9f056c9",
+      "counts": {
+        "recepcion.Recepcion": 2,
+        "recepcion.MovimientoSilo": 26,
+        "recepcion.AnalisisSilo": 13,
+        "recepcion.AtribucionRecepcion": 28,
+        "estandarizacion.ValeEstandarizacion": 4,
+        "procesos.EntradaProceso": 11,
+        "procesos.SalidaProceso": 14,
+        "produccion.Lote": 9
+      }
+    },
+    "industrial_snapshot_after": {
+      "sha256": "b6333d2d5623e034366b2b6895e3c3c0531a4acba1a37f9407ca74b2c9f056c9",
+      "counts": {
+        "recepcion.Recepcion": 2,
+        "recepcion.MovimientoSilo": 26,
+        "recepcion.AnalisisSilo": 13,
+        "recepcion.AtribucionRecepcion": 28,
+        "estandarizacion.ValeEstandarizacion": 4,
+        "procesos.EntradaProceso": 11,
+        "procesos.SalidaProceso": 14,
+        "produccion.Lote": 9
+      }
+    },
+    "physical_transfer_executed": false,
+    "full_transfer_guards_executed": false,
+    "other_activity_between_cuts": "Separate dispatch of 10000 L and a second vale; not executed by this correction"
+  },
+  "local_runtime": {
+    "source_branch": "codex/f01-reuso-silo-recepcion",
+    "api": "127.0.0.1:8209",
+    "frontend": "127.0.0.1:5209",
+    "op00_test_cluster_stopped": true,
+    "opflow_training_cluster_running": true
+  }
+}

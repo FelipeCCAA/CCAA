@@ -5,8 +5,10 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum
 
 from procesos.models import CorridaDescremacion, EtapaProceso, SalidaProceso
-from recepcion.models import MovimientoSilo
+from recepcion.models import AnalisisSilo, MovimientoSilo
 from recepcion.servicios import saldo_silo
+
+from .recepciones import recepcion_posterior_a_vaciado
 
 
 COMPONENTES = ("entera", "descremada", "crema")
@@ -92,6 +94,20 @@ def preparar_origenes(vale, seleccion=None, *, candidatos_bloqueados=None):
         elegido_id = seleccion.get(componente)
         if elegido_id is not None and (type(elegido_id) is not int or elegido_id <= 0):
             raise ValidationError({"salidas_origen": "El identificador de origen debe ser un entero positivo."})
+        nueva = recepcion_posterior_a_vaciado(silo, salidas) if componente == "entera" and salidas else None
+        if nueva is not None:
+            if elegido_id is not None:
+                raise ValidationError({"salidas_origen": "La salida elegida pertenece al ciclo anterior del silo."})
+            analisis = AnalisisSilo.objects.filter(
+                silo_id=silo.pk, estado=AnalisisSilo.Estado.CONFIRMADO,
+            ).order_by("-tomado_en", "-pk").first()
+            if analisis is None or analisis.tomado_en <= nueva.ingreso.fecha_hora:
+                raise ValidationError("La recepción nueva requiere un análisis posterior a su ingreso.")
+            if vale.analisis_entera_id is not None and vale.analisis_entera_id != analisis.pk:
+                raise ValidationError("El análisis del vale no identifica la recepción nueva.")
+            if (vale.entera_grasa, vale.entera_sng) != (analisis.grasa, analisis.sng):
+                raise ValidationError("La composición del vale no coincide con el análisis de la recepción nueva.")
+            continue  # Recepción demostrada: conserva silo/FIFO, no fabrica un lote histórico.
         if not salidas:
             if elegido_id is not None:
                 raise ValidationError({"salidas_origen": "El origen no pertenece al silo seleccionado."})
@@ -127,7 +143,15 @@ def preparar_origenes(vale, seleccion=None, *, candidatos_bloqueados=None):
 def origenes_catalogo(silo_ids):
     """Lectura informativa; la confirmación exige firma y saldo bajo bloqueo."""
     resultado = []
-    for salida in salidas_en_silos(silo_ids):
+    salidas = list(salidas_en_silos(silo_ids))
+    recepciones_nuevas = {}
+    for salida in salidas:
+        if salida.silo_id not in recepciones_nuevas:
+            recepciones_nuevas[salida.silo_id] = recepcion_posterior_a_vaciado(
+                salida.silo, [s for s in salidas if s.silo_id == salida.silo_id],
+            )
+        if recepciones_nuevas[salida.silo_id] is not None:
+            continue  # Las salidas previas no son material del ciclo actual.
         try:
             disponible = max(saldo_material(salida), Decimal("0"))
         except ValidationError:

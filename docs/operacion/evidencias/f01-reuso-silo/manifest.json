@@ -1,0 +1,74 @@
+{
+  ".gitattributes": {
+    "bytes": 121,
+    "sha256": "6616356fb6e294b2b6545c35b108611753d520384038b66a84570cfc0eb44d6d"
+  },
+  "boton-disponible-sin-transferencia.png": {
+    "bytes": 79827,
+    "sha256": "46569234bba4a1a9bf1c62a697231809959b5f334d955a80575bf3deb517eb71"
+  },
+  "ci-at-handoff.json": {
+    "bytes": 610,
+    "sha256": "3f61d125e2b079498e572bbbf975e2e3472c571518375fb9af2099ede2755c3f"
+  },
+  "ci-final.json": {
+    "bytes": 1355,
+    "sha256": "e74d6b37c387d667ba0a8be7752619d115cf51a7338aa3be645204cc0a2b80be"
+  },
+  "opflow-readonly-after-ui.log": {
+    "bytes": 1609,
+    "sha256": "56d14239c9c3c3fbcaf468602ae48fc0c91922cca315a6664fc11fdfe11bcbfe"
+  },
+  "opflow-readonly-check.py.txt": {
+    "bytes": 2979,
+    "sha256": "7d4f67c9dcc11c28c398eb25702fff3793ea7b07c4fde0b4214cd0c7bbf00fdb"
+  },
+  "opflow-readonly-proof.log": {
+    "bytes": 1610,
+    "sha256": "72e1dcb0baa71e3c5f984d0a9cd15e921bdba45b6458d5f8d61fc9142c60ddef"
+  },
+  "reuso-backend-global.log": {
+    "bytes": 9462,
+    "sha256": "45636704b910498614c1f9932f5185049e83e5e3daff27a19f68745bea420c38"
+  },
+  "reuso-baseline-inmutable.log": {
+    "bytes": 16703,
+    "sha256": "602182713a5c3a9a17c18e46fcf25824bcb8cac7f8cfb6b59f24e359b253c506"
+  },
+  "reuso-baseline.log": {
+    "bytes": 22738,
+    "sha256": "e2000e8ac061a2ee8e8329cb9ad34fe5a9f80ff6d56ea508a1d077b913d809d5"
+  },
+  "reuso-diff-final.log": {
+    "bytes": 287,
+    "sha256": "7c49f948f18fdd3b633c1699b9ac3cb4d5b877b131d5b46b15da0efdb909a556"
+  },
+  "reuso-focal-1.log": {
+    "bytes": 19046,
+    "sha256": "1f7e90d44a57a5561c334785d7e84c30c8a583eeee7dbdd0a39315205ed8f06d"
+  },
+  "reuso-focal-final.log": {
+    "bytes": 18244,
+    "sha256": "62b2bc549fce88a931cc9040e933067e5984d958b85df022f3410ba5608613bf"
+  },
+  "reuso-regresion-final.log": {
+    "bytes": 85754,
+    "sha256": "c9e8888be127c6d9f4aeef1fd5473ffae0c46d413d762ec4c75e7ff79ff45f3d"
+  },
+  "reuso-ruff-final.log": {
+    "bytes": 20,
+    "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+  },
+  "reuso-schema-final.log": {
+    "bytes": 260,
+    "sha256": "a6eecbf80f8b58c2c1a79f4bd5d31b7acb62fdce79af96989b78c9be70eaabe5"
+  },
+  "revision-independiente.md": {
+    "bytes": 1319,
+    "sha256": "2fc22d21df0bf6a74e176f39898fabe48a15b331175db595c83f3ce946fdc941"
+  },
+  "summary.json": {
+    "bytes": 10605,
+    "sha256": "888d3fc86e89619e027e6fec5bf740ce30ec49fdf7fd3a9e50150060b21dc474"
+  }
+}
