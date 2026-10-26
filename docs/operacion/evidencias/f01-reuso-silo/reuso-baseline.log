@@ -1,0 +1,316 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Creating test database for alias 'default' ('test_op00_base')...
+
+Found 17 test(s).
+Operations to perform:
+  Synchronize unmigrated apps: corsheaders, messages, observabilidad, rest_framework, staticfiles
+  Apply all migrations: admin, auditoria, auth, authtoken, calidad, contenttypes, estandarizacion, inocuidad, inventario, maestros, mantenimiento, planificacion, procesos, produccion, recepcion, recoleccion, sessions, usuarios
+Synchronizing apps without migrations:
+  Creating tables...
+    Running deferred SQL...
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying usuarios.0001_initial... OK
+  Applying usuarios.0002_roles_del_proceso... OK
+  Applying usuarios.0003_perfilusuario_nivel_alter_perfilusuario_area... OK
+  Applying usuarios.0004_alter_perfilusuario_area... OK
+  Applying usuarios.0005_empresa_perfilusuario_empresa_sucursal_and_more... OK
+  Applying usuarios.0006_sincronizar_staff_administradores_area... OK
+  Applying usuarios.0007_alter_perfilusuario_area... OK
+  Applying auditoria.0001_initial... OK
+  Applying auditoria.0002_forma_unica_de_cambios... OK
+  Applying auditoria.0003_tenant_auditoria... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying authtoken.0001_initial... OK
+  Applying authtoken.0002_auto_20160226_1747... OK
+  Applying authtoken.0003_tokenproxy... OK
+  Applying authtoken.0004_alter_tokenproxy_options... OK
+  Applying usuarios.0008_scope_obligatorio_perfil... OK
+  Applying usuarios.0009_tabla_de_cache... OK
+  Applying usuarios.0010_intentoacceso... OK
+  Applying usuarios.0011_administracion_alcance_empresa... OK
+  Applying usuarios.0012_alter_perfilusuario_rol_areadeperfil... OK
+  Applying usuarios.0013_area_aseo... OK
+  Applying usuarios.0014_alter_perfilusuario_options... OK
+  Applying usuarios.0015_alter_perfilusuario_alcance_and_more... OK
+  Applying maestros.0001_initial... OK
+  Applying produccion.0001_initial... OK
+  Applying produccion.0002_controlproceso_controlprocesolectura_and_more... OK
+  Applying produccion.0003_alter_lote_kg_producidos... OK
+  Applying maestros.0002_vehiculo_silo... OK
+  Applying maestros.0003_documentoliberacion... OK
+  Applying maestros.0004_documentoliberacion_area... OK
+  Applying maestros.0005_sembrar_dossier... OK
+  Applying maestros.0006_receta_recetacomponente_and_more... OK
+  Applying maestros.0007_mandante_codigo_cliente_producto_categoria_and_more... OK
+  Applying maestros.0008_alter_producto_codigo... OK
+  Applying maestros.0009_equipo... OK
+  Applying maestros.0010_sembrar_equipos... OK
+  Applying maestros.0011_documentoliberacion_evidencia... OK
+  Applying maestros.0012_evidencia_del_dossier... OK
+  Applying maestros.0013_plantillas_del_dossier... OK
+  Applying maestros.0014_checklist_ce_por_evaporador... OK
+  Applying maestros.0015_documentoliberacion_frecuencia... OK
+  Applying maestros.0016_frecuencia_de_los_checklists... OK
+  Applying maestros.0017_equipos_torres_y_envasadoras... OK
+  Applying produccion.0004_control_proceso_equipo_al_maestro... OK
+  Applying planificacion.0001_initial... OK
+  Applying maestros.0018_alter_equipo_tipo... OK
+  Applying maestros.0019_evidencia_por_equipo_del_maestro... OK
+  Applying inventario.0001_initial... OK
+  Applying inventario.0002_bodega_proveedor_insumo_categoria_and_more... OK
+  Applying inventario.0003_alter_bodega_area_alter_ciclocip_area_and_more... OK
+  Applying inventario.0004_bodega_sucursal_aprobacion... OK
+  Applying inventario.0005_adjunto_alerta_liberacionexcepcionalmaterial_and_more... OK
+  Applying inventario.0006_insumo_vida_util_dias... OK
+  Applying inventario.0007_ajusteinventario_devolucionproduccion... OK
+  Applying inventario.0008_alter_movimientoinventario_tipo... OK
+  Applying inventario.0009_consumoloteproduccion... OK
+  Applying inventario.0010_ciclocip_equipo_al_maestro... OK
+  Applying inventario.0011_remove_consumoproducto_consumo_unico_producto_insumo_and_more... OK
+  Applying maestros.0020_alter_recetacomponente_options_and_more... OK
+  Applying maestros.0021_plantilla_inspeccion_preoperativa_egron... OK
+  Applying maestros.0022_mandante_unico_por_codigo_cliente... OK
+  Applying maestros.0023_mandante_mandante_unico_por_codigo_cliente... OK
+  Applying maestros.0024_equipo_consume_materiales... OK
+  Applying maestros.0025_sembrar_consume_materiales... OK
+  Applying inventario.0012_remove_insumo_stock_actual... OK
+  Applying maestros.0026_componentes_nulos_distintos... OK
+  Applying maestros.0027_tenant_maestros... OK
+  Applying produccion.0005_tenant_lote... OK
+  Applying estandarizacion.0001_initial... OK
+  Applying produccion.0006_lote_vale... OK
+  Applying procesos.0001_initial... OK
+  Applying procesos.0002_sembrar_flujo_lacteo... OK
+  Applying procesos.0003_scope_obligatorio_ejecucion... OK
+  Applying procesos.0004_ejecucionproceso_vale_entradaproceso_silo_and_more... OK
+  Applying produccion.0007_lote_equipo_ejecucion... OK
+  Applying planificacion.0002_bloqueplan_equipo_fk... OK
+  Applying planificacion.0003_tenant_semana... OK
+  Applying planificacion.0004_semanaplan_cancelada_en_semanaplan_cancelada_por_and_more... OK
+  Applying produccion.0008_ordenproduccion_lote_orden_and_more... OK
+  Applying maestros.0028_remove_silo_silo_capacidad_no_negativa_silo_estado_and_more... OK
+  Applying produccion.0009_registroenvase_palletproducto_and_more... OK
+  Applying procesos.0005_rutaproducto... OK
+  Applying procesos.0006_corridacondensacion... OK
+  Applying procesos.0007_alter_etapaproceso_tipo_corridamantequilla... OK
+  Applying maestros.0029_producto_sku_unico... OK
+  Applying maestros.0030_equipo_sigla... OK
+  Applying maestros.0031_sembrar_siglas... OK
+  Applying recoleccion.0001_initial... OK
+  Applying recepcion.0001_initial... OK
+  Applying recepcion.0002_movimientosilo_una_descarga_por_recepcion... OK
+  Applying recepcion.0003_recepcion_calidad_en_recepcion_calidad_por_and_more... OK
+  Applying recepcion.0004_alter_recepcion_estado... OK
+  Applying recepcion.0005_recepcion_carga_recoleccion... OK
+  Applying recepcion.0006_tenant_recepcion... OK
+  Applying recepcion.0007_alter_movimientosilo_origen_tipo... OK
+  Applying recepcion.0008_recepcion_llegada_id... OK
+  Applying recepcion.0009_llegada_id_por_recepcion... OK
+  Applying recepcion.0010_movimientosilo_equipo_movimientosilo_lote_and_more... OK
+  Applying recepcion.0011_modulorecepcion... OK
+  Applying recepcion.0012_modulos_desde_recepcion... OK
+  Applying recepcion.0013_recepcion_sin_modulo... OK
+  Applying recepcion.0014_carga_recoleccion_unica... OK
+  Applying recepcion.0015_recepcion_instructivo... OK
+  Applying recepcion.0016_inhibidores... OK
+  Applying recepcion.0017_modulo_numero_en_rango... OK
+  Applying recepcion.0018_analisis_silo... OK
+  Applying estandarizacion.0002_muestreado_en... OK
+  Applying estandarizacion.0003_procedencia_del_analisis... OK
+  Applying produccion.0010_lote_codigo_unico... OK
+  Applying produccion.0011_lote_corte... OK
+  Applying produccion.0012_lote_abierto_en_lote_abierto_por_lote_actualizado_en_and_more... OK
+  Applying produccion.0013_correccionlote... OK
+  Applying produccion.0014_pallet_kg_maximo_500... OK
+  Applying recepcion.0019_recepcion_abierto_en_recepcion_abierto_por_and_more... OK
+  Applying recepcion.0020_analisissilo_abierto_en_analisissilo_abierto_por_and_more... OK
+  Applying recepcion.0021_alertacalidadsilo_correccionrecepcion... OK
+  Applying recepcion.0022_atribucionrecepcion... OK
+  Applying recepcion.0023_analisissilo_alcohol_75_conforme_and_more... OK
+  Applying recepcion.0024_limpiar_autofirmas_analisis_silo... OK
+  Applying recepcion.0025_alter_movimientosilo_origen_tipo... OK
+  Applying procesos.0008_corridadescremacion... OK
+  Applying recepcion.0026_alter_movimientosilo_origen_tipo_despacholeche... OK
+  Applying recepcion.0027_despacholeche_anulado_en_despacholeche_anulado_por_and_more... OK
+  Applying calidad.0001_initial... OK
+  Applying calidad.0002_registroequipo... OK
+  Applying calidad.0003_tenant_registro_equipo... OK
+  Applying calidad.0004_liberacionproceso... OK
+  Applying calidad.0005_liberacionproceso_por_salida... OK
+  Applying calidad.0006_analisis_lote_liberacion_proceso... OK
+  Applying calidad.0007_firma_evidencia_versionada... OK
+  Applying maestros.0032_especificacion_tipo_analisis... OK
+  Applying maestros.0033_clasificar_productos_por_etapa_fisica... OK
+  Applying maestros.0034_normalizar_codigos_silos_recepcion_confirmados... OK
+  Applying maestros.0035_equipo_tipo_descremadora... OK
+  Applying procesos.0009_entradaproceso_salida_origen... OK
+  Applying procesos.0010_entradaproceso_motivo_salidaproceso_clasificacion_and_more... OK
+  Applying inventario.0013_ejecucion_mrp_mas_reciente_primero... OK
+  Applying inventario.0014_un_solo_proveedor_principal... OK
+  Applying inventario.0010_alter_bodega_area_alter_ciclocip_area_and_more... OK
+  Applying inventario.0015_merge_ramas_de_inventario... OK
+  Applying inventario.0016_no_conformidad_con_cierre_trazable... OK
+  Applying inventario.0017_movimiento_bajo_concesion... OK
+  Applying inventario.0018_tenant_inventario_compras... OK
+  Applying inventario.0019_ejecucionmrp_error_ejecucionmrp_estado_and_more... OK
+  Applying inventario.0020_aseos_cip... OK
+  Applying inventario.0021_clientedespacho_despacho_detalledespacho_and_more... OK
+  Applying inventario.0022_despacho_desp_suc_est_fecha_idx_and_more... OK
+  Applying inventario.0023_alter_ajusteinventario_options_and_more... OK
+  Applying inventario.0024_detalledespachogranel... OK
+  Applying inventario.0025_detalledespachogranel_movimiento_silo_and_more... OK
+  Applying maestros.0036_recetacomponente_fase... OK
+  Applying maestros.0037_formatoenvasado... OK
+  Applying maestros.0038_formatoenvasado_tipo_unidad_logistica_and_more... OK
+  Applying estandarizacion.0004_valeestandarizacion_abierto_en_and_more... OK
+  Applying estandarizacion.0005_correccionvaleestandarizacion... OK
+  Applying estandarizacion.0006_valeestandarizacion_motivo_desvio_fifo_and_more... OK
+  Applying estandarizacion.0007_valeestandarizacion_analisis_crema_and_more... OK
+  Applying estandarizacion.0008_remove_valeestandarizacion_codigo_propuesto... OK
+  Applying estandarizacion.0009_valeestandarizacion_ejecutado_en... OK
+  Applying estandarizacion.0010_actovaleestandarizacion... OK
+  Applying inocuidad.0001_initial... OK
+  Applying inocuidad.0002_monitoreo_equipo_al_maestro... OK
+  Applying planificacion.0005_planificacion_semanal_normalizada... OK
+  Applying produccion.0015_registroenvase_formato... OK
+  Applying usuarios.0016_alter_perfilusuario_options_and_more... OK
+  Applying procesos.0011_rutas_productivas_especificas... OK
+  Applying procesos.0012_productos_intermedios_descremacion... OK
+  Applying procesos.0013_autorizacion_reproceso... OK
+  Applying procesos.0014_completar_rutas_productivas... OK
+  Applying procesos.0015_impedir_doble_ocupacion_equipo... OK
+  Applying procesos.0016_corrida_secado... OK
+  Applying procesos.0017_corridadescremacion_destino_crema_and_more... OK
+  Applying procesos.0018_rutas_crema_despacho_directo... OK
+  Applying procesos.0019_reservas_silo_y_plan_descremacion... OK
+  Applying procesos.0020_reparar_lotes_suero_mantequilla... OK
+  Applying inventario.0026_consumoloteproduccion_fase_and_more... OK
+  Applying inventario.0027_unidadrework_movimientorework_and_more... OK
+  Applying inventario.0028_notificacion_accion_url... OK
+  Applying inventario.0029_idempotencia_mrp... OK
+  Applying inventario.0030_despacho_cancelacion... OK
+  Applying inventario.0031_op01_autorizacion_evidencia... OK
+  Applying inventario.0032_movimientoinventario_operacion_id... OK
+  Applying mantenimiento.0001_initial... OK
+  Applying mantenimiento.0002_repuesto_respaldado_por_entrega... OK
+  Applying produccion.0016_remove_palletproducto_pallet_kg_maximo_500_and_more... OK
+  Applying procesos.0021_remove_entradaproceso_entrada_de_un_lote_o_de_un_silo_and_more... OK
+  Applying procesos.0022_balance_mantequilla_reproceso... OK
+  Applying procesos.0023_evento_operacion_id... OK
+  Applying procesos.0024_corridamantequilla_salida_crema... OK
+  Applying produccion.0017_registroenvase_solicitud_firma... OK
+test_ajuste_del_ciclo_nuevo_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_ajuste_del_ciclo_nuevo_se_rechaza) ... ok
+test_atribucion_ausente_del_retiro_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_ausente_del_retiro_se_rechaza) ... ok
+test_atribucion_incompleta_del_retiro_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_incompleta_del_retiro_se_rechaza) ... ok
+test_catalogo_no_presenta_material_del_ciclo_anterior (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_catalogo_no_presenta_material_del_ciclo_anterior) ... FAIL
+test_composicion_del_vale_distinta_del_analisis_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_composicion_del_vale_distinta_del_analisis_se_rechaza) ... ok
+test_eleccion_explicita_del_material_anterior_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_eleccion_explicita_del_material_anterior_se_rechaza) ... ok
+test_material_con_fecha_igual_al_vaciado_es_ambiguo (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_con_fecha_igual_al_vaciado_es_ambiguo) ... ok
+test_material_nuevo_sin_ingreso_productor_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_nuevo_sin_ingreso_productor_se_rechaza) ... ok
+test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza) ... ERROR
+test_recepcion_con_litros_distintos_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_con_litros_distintos_se_rechaza) ... ok
+test_recepcion_de_otro_silo_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_de_otro_silo_se_rechaza) ... ok
+test_recepcion_no_descargada_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_no_descargada_se_rechaza) ... ok
+test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica) ... ERROR
+test_saldo_negativo_intermedio_se_rechaza_aunque_termine_igual (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_saldo_negativo_intermedio_se_rechaza_aunque_termine_igual) ... ok
+test_segundo_ingreso_compensado_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_segundo_ingreso_compensado_se_rechaza) ... ok
+test_sin_consumo_correlacionado_al_vaciado_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_sin_consumo_correlacionado_al_vaciado_se_rechaza) ... ok
+test_vaciado_por_ajuste_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_vaciado_por_ajuste_se_rechaza) ... ok
+
+======================================================================
+ERROR: test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "analisis_silo_unico_por_momento"
+DETAIL:  Key (silo_id, tomado_en)=(1, 2026-10-26 15:59:46.208995+00) already exists.
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\f01-reuso-silo\backend\estandarizacion\tests_reuso_recepcion.py", line 173, in test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza
+    AnalisisSilo.objects.filter(silo=self.silo_entera).update(tomado_en=self.ingreso.fecha_hora)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\query.py", line 1300, in update
+    rows = query.get_compiler(self.db).execute_sql(ROW_COUNT)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 2111, in execute_sql
+    row_count = super().execute_sql(result_type)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1624, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\utils.py", line 94, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.IntegrityError: duplicate key value violates unique constraint "analisis_silo_unico_por_momento"
+DETAIL:  Key (silo_id, tomado_en)=(1, 2026-10-26 15:59:46.208995+00) already exists.
+
+
+======================================================================
+ERROR: test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\f01-reuso-silo\backend\estandarizacion\tests_reuso_recepcion.py", line 91, in test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica
+    self._transferir()
+    ~~~~~~~~~~~~~~~~^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\f01-reuso-silo\backend\estandarizacion\tests_reuso_recepcion.py", line 80, in _transferir
+    return transferir(vale_id=self.vale.pk, usuario=self.usuario, **extra)
+  File "C:\Users\EQUIPO\AppData\Local\Programs\Python\Python313\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\f01-reuso-silo\backend\estandarizacion\servicios.py", line 184, in transferir
+    origenes = preparar_origenes(vale, salidas_origen, candidatos_bloqueados=candidatos)
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\f01-reuso-silo\backend\estandarizacion\origenes.py", line 109, in preparar_origenes
+    if not salidas:
+        ^^^^^^^^^^^
+django.core.exceptions.ValidationError: {'salidas_origen': ['SILO-E-TEST: hay que conciliar el saldo físico y sus orígenes antes de transferir.']}
+
+======================================================================
+FAIL: test_catalogo_no_presenta_material_del_ciclo_anterior (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_catalogo_no_presenta_material_del_ciclo_anterior)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\f01-reuso-silo\backend\estandarizacion\tests_reuso_recepcion.py", line 108, in test_catalogo_no_presenta_material_del_ciclo_anterior
+    self.assertNotIn(self.material_anterior.pk, {f["id"] for f in foto})
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 8 unexpectedly found in {8, 7}
+
+----------------------------------------------------------------------
+Ran 17 tests in 4.686s
+
+FAILED (failures=1, errors=2)
+Destroying test database for alias 'default' ('test_op00_base')...
+
+  Applying sessions.0001_initial... OK
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).

@@ -1,0 +1,732 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Creating test database for alias 'default' ('test_op00_base')...
+
+Got an error creating the test database: database "test_op00_base" already exists
+
+
+Destroying old test database for alias 'default' ('test_op00_base')...
+
+Found 423 test(s).
+Operations to perform:
+  Synchronize unmigrated apps: corsheaders, messages, observabilidad, rest_framework, staticfiles
+  Apply all migrations: admin, auditoria, auth, authtoken, calidad, contenttypes, estandarizacion, inocuidad, inventario, maestros, mantenimiento, planificacion, procesos, produccion, recepcion, recoleccion, sessions, usuarios
+Synchronizing apps without migrations:
+  Creating tables...
+    Running deferred SQL...
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying usuarios.0001_initial... OK
+  Applying usuarios.0002_roles_del_proceso... OK
+  Applying usuarios.0003_perfilusuario_nivel_alter_perfilusuario_area... OK
+  Applying usuarios.0004_alter_perfilusuario_area... OK
+  Applying usuarios.0005_empresa_perfilusuario_empresa_sucursal_and_more... OK
+  Applying usuarios.0006_sincronizar_staff_administradores_area... OK
+  Applying usuarios.0007_alter_perfilusuario_area... OK
+  Applying auditoria.0001_initial... OK
+  Applying auditoria.0002_forma_unica_de_cambios... OK
+  Applying auditoria.0003_tenant_auditoria... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying authtoken.0001_initial... OK
+  Applying authtoken.0002_auto_20160226_1747... OK
+  Applying authtoken.0003_tokenproxy... OK
+  Applying authtoken.0004_alter_tokenproxy_options... OK
+  Applying usuarios.0008_scope_obligatorio_perfil... OK
+  Applying usuarios.0009_tabla_de_cache... OK
+  Applying usuarios.0010_intentoacceso... OK
+  Applying usuarios.0011_administracion_alcance_empresa... OK
+  Applying usuarios.0012_alter_perfilusuario_rol_areadeperfil... OK
+  Applying usuarios.0013_area_aseo... OK
+  Applying usuarios.0014_alter_perfilusuario_options... OK
+  Applying usuarios.0015_alter_perfilusuario_alcance_and_more... OK
+  Applying maestros.0001_initial... OK
+  Applying produccion.0001_initial... OK
+  Applying produccion.0002_controlproceso_controlprocesolectura_and_more... OK
+  Applying produccion.0003_alter_lote_kg_producidos... OK
+  Applying maestros.0002_vehiculo_silo... OK
+  Applying maestros.0003_documentoliberacion... OK
+  Applying maestros.0004_documentoliberacion_area... OK
+  Applying maestros.0005_sembrar_dossier... OK
+  Applying maestros.0006_receta_recetacomponente_and_more... OK
+  Applying maestros.0007_mandante_codigo_cliente_producto_categoria_and_more... OK
+  Applying maestros.0008_alter_producto_codigo... OK
+  Applying maestros.0009_equipo... OK
+  Applying maestros.0010_sembrar_equipos... OK
+  Applying maestros.0011_documentoliberacion_evidencia... OK
+  Applying maestros.0012_evidencia_del_dossier... OK
+  Applying maestros.0013_plantillas_del_dossier... OK
+  Applying maestros.0014_checklist_ce_por_evaporador... OK
+  Applying maestros.0015_documentoliberacion_frecuencia... OK
+  Applying maestros.0016_frecuencia_de_los_checklists... OK
+  Applying maestros.0017_equipos_torres_y_envasadoras... OK
+  Applying produccion.0004_control_proceso_equipo_al_maestro... OK
+  Applying planificacion.0001_initial... OK
+  Applying maestros.0018_alter_equipo_tipo... OK
+  Applying maestros.0019_evidencia_por_equipo_del_maestro... OK
+  Applying inventario.0001_initial... OK
+  Applying inventario.0002_bodega_proveedor_insumo_categoria_and_more... OK
+  Applying inventario.0003_alter_bodega_area_alter_ciclocip_area_and_more... OK
+  Applying inventario.0004_bodega_sucursal_aprobacion... OK
+  Applying inventario.0005_adjunto_alerta_liberacionexcepcionalmaterial_and_more... OK
+  Applying inventario.0006_insumo_vida_util_dias... OK
+  Applying inventario.0007_ajusteinventario_devolucionproduccion... OK
+  Applying inventario.0008_alter_movimientoinventario_tipo... OK
+  Applying inventario.0009_consumoloteproduccion... OK
+  Applying inventario.0010_ciclocip_equipo_al_maestro... OK
+  Applying inventario.0011_remove_consumoproducto_consumo_unico_producto_insumo_and_more... OK
+  Applying maestros.0020_alter_recetacomponente_options_and_more... OK
+  Applying maestros.0021_plantilla_inspeccion_preoperativa_egron... OK
+  Applying maestros.0022_mandante_unico_por_codigo_cliente... OK
+  Applying maestros.0023_mandante_mandante_unico_por_codigo_cliente... OK
+  Applying maestros.0024_equipo_consume_materiales... OK
+  Applying maestros.0025_sembrar_consume_materiales... OK
+  Applying inventario.0012_remove_insumo_stock_actual... OK
+  Applying maestros.0026_componentes_nulos_distintos... OK
+  Applying maestros.0027_tenant_maestros... OK
+  Applying produccion.0005_tenant_lote... OK
+  Applying estandarizacion.0001_initial... OK
+  Applying produccion.0006_lote_vale... OK
+  Applying procesos.0001_initial... OK
+  Applying procesos.0002_sembrar_flujo_lacteo... OK
+  Applying procesos.0003_scope_obligatorio_ejecucion... OK
+  Applying procesos.0004_ejecucionproceso_vale_entradaproceso_silo_and_more... OK
+  Applying produccion.0007_lote_equipo_ejecucion... OK
+  Applying planificacion.0002_bloqueplan_equipo_fk... OK
+  Applying planificacion.0003_tenant_semana... OK
+  Applying planificacion.0004_semanaplan_cancelada_en_semanaplan_cancelada_por_and_more... OK
+  Applying produccion.0008_ordenproduccion_lote_orden_and_more... OK
+  Applying maestros.0028_remove_silo_silo_capacidad_no_negativa_silo_estado_and_more... OK
+  Applying produccion.0009_registroenvase_palletproducto_and_more... OK
+  Applying procesos.0005_rutaproducto... OK
+  Applying procesos.0006_corridacondensacion... OK
+  Applying procesos.0007_alter_etapaproceso_tipo_corridamantequilla... OK
+  Applying maestros.0029_producto_sku_unico... OK
+  Applying maestros.0030_equipo_sigla... OK
+  Applying maestros.0031_sembrar_siglas... OK
+  Applying recoleccion.0001_initial... OK
+  Applying recepcion.0001_initial... OK
+  Applying recepcion.0002_movimientosilo_una_descarga_por_recepcion... OK
+  Applying recepcion.0003_recepcion_calidad_en_recepcion_calidad_por_and_more... OK
+  Applying recepcion.0004_alter_recepcion_estado... OK
+  Applying recepcion.0005_recepcion_carga_recoleccion... OK
+  Applying recepcion.0006_tenant_recepcion... OK
+  Applying recepcion.0007_alter_movimientosilo_origen_tipo... OK
+  Applying recepcion.0008_recepcion_llegada_id... OK
+  Applying recepcion.0009_llegada_id_por_recepcion... OK
+  Applying recepcion.0010_movimientosilo_equipo_movimientosilo_lote_and_more... OK
+  Applying recepcion.0011_modulorecepcion... OK
+  Applying recepcion.0012_modulos_desde_recepcion... OK
+  Applying recepcion.0013_recepcion_sin_modulo... OK
+  Applying recepcion.0014_carga_recoleccion_unica... OK
+  Applying recepcion.0015_recepcion_instructivo... OK
+  Applying recepcion.0016_inhibidores... OK
+  Applying recepcion.0017_modulo_numero_en_rango... OK
+  Applying recepcion.0018_analisis_silo... OK
+  Applying estandarizacion.0002_muestreado_en... OK
+  Applying estandarizacion.0003_procedencia_del_analisis... OK
+  Applying produccion.0010_lote_codigo_unico... OK
+  Applying produccion.0011_lote_corte... OK
+  Applying produccion.0012_lote_abierto_en_lote_abierto_por_lote_actualizado_en_and_more... OK
+  Applying produccion.0013_correccionlote... OK
+  Applying produccion.0014_pallet_kg_maximo_500... OK
+  Applying recepcion.0019_recepcion_abierto_en_recepcion_abierto_por_and_more... OK
+  Applying recepcion.0020_analisissilo_abierto_en_analisissilo_abierto_por_and_more... OK
+  Applying recepcion.0021_alertacalidadsilo_correccionrecepcion... OK
+  Applying recepcion.0022_atribucionrecepcion... OK
+  Applying recepcion.0023_analisissilo_alcohol_75_conforme_and_more... OK
+  Applying recepcion.0024_limpiar_autofirmas_analisis_silo... OK
+  Applying recepcion.0025_alter_movimientosilo_origen_tipo... OK
+  Applying procesos.0008_corridadescremacion... OK
+  Applying recepcion.0026_alter_movimientosilo_origen_tipo_despacholeche... OK
+  Applying recepcion.0027_despacholeche_anulado_en_despacholeche_anulado_por_and_more... OK
+  Applying calidad.0001_initial... OK
+  Applying calidad.0002_registroequipo... OK
+  Applying calidad.0003_tenant_registro_equipo... OK
+  Applying calidad.0004_liberacionproceso... OK
+  Applying calidad.0005_liberacionproceso_por_salida... OK
+  Applying calidad.0006_analisis_lote_liberacion_proceso... OK
+  Applying calidad.0007_firma_evidencia_versionada... OK
+  Applying maestros.0032_especificacion_tipo_analisis... OK
+  Applying maestros.0033_clasificar_productos_por_etapa_fisica... OK
+  Applying maestros.0034_normalizar_codigos_silos_recepcion_confirmados... OK
+  Applying maestros.0035_equipo_tipo_descremadora... OK
+  Applying procesos.0009_entradaproceso_salida_origen... OK
+  Applying procesos.0010_entradaproceso_motivo_salidaproceso_clasificacion_and_more... OK
+  Applying inventario.0013_ejecucion_mrp_mas_reciente_primero... OK
+  Applying inventario.0014_un_solo_proveedor_principal... OK
+  Applying inventario.0010_alter_bodega_area_alter_ciclocip_area_and_more... OK
+  Applying inventario.0015_merge_ramas_de_inventario... OK
+  Applying inventario.0016_no_conformidad_con_cierre_trazable... OK
+  Applying inventario.0017_movimiento_bajo_concesion... OK
+  Applying inventario.0018_tenant_inventario_compras... OK
+  Applying inventario.0019_ejecucionmrp_error_ejecucionmrp_estado_and_more... OK
+  Applying inventario.0020_aseos_cip... OK
+  Applying inventario.0021_clientedespacho_despacho_detalledespacho_and_more... OK
+  Applying inventario.0022_despacho_desp_suc_est_fecha_idx_and_more... OK
+  Applying inventario.0023_alter_ajusteinventario_options_and_more... OK
+  Applying inventario.0024_detalledespachogranel... OK
+  Applying inventario.0025_detalledespachogranel_movimiento_silo_and_more... OK
+  Applying maestros.0036_recetacomponente_fase... OK
+  Applying maestros.0037_formatoenvasado... OK
+  Applying maestros.0038_formatoenvasado_tipo_unidad_logistica_and_more... OK
+  Applying estandarizacion.0004_valeestandarizacion_abierto_en_and_more... OK
+  Applying estandarizacion.0005_correccionvaleestandarizacion... OK
+  Applying estandarizacion.0006_valeestandarizacion_motivo_desvio_fifo_and_more... OK
+  Applying estandarizacion.0007_valeestandarizacion_analisis_crema_and_more... OK
+  Applying estandarizacion.0008_remove_valeestandarizacion_codigo_propuesto... OK
+  Applying estandarizacion.0009_valeestandarizacion_ejecutado_en... OK
+  Applying estandarizacion.0010_actovaleestandarizacion... OK
+  Applying inocuidad.0001_initial... OK
+  Applying inocuidad.0002_monitoreo_equipo_al_maestro... OK
+  Applying planificacion.0005_planificacion_semanal_normalizada... OK
+  Applying produccion.0015_registroenvase_formato... OK
+  Applying usuarios.0016_alter_perfilusuario_options_and_more... OK
+  Applying procesos.0011_rutas_productivas_especificas... OK
+  Applying procesos.0012_productos_intermedios_descremacion... OK
+  Applying procesos.0013_autorizacion_reproceso... OK
+  Applying procesos.0014_completar_rutas_productivas... OK
+  Applying procesos.0015_impedir_doble_ocupacion_equipo... OK
+  Applying procesos.0016_corrida_secado... OK
+  Applying procesos.0017_corridadescremacion_destino_crema_and_more... OK
+  Applying procesos.0018_rutas_crema_despacho_directo... OK
+  Applying procesos.0019_reservas_silo_y_plan_descremacion... OK
+  Applying procesos.0020_reparar_lotes_suero_mantequilla... OK
+  Applying inventario.0026_consumoloteproduccion_fase_and_more... OK
+  Applying inventario.0027_unidadrework_movimientorework_and_more... OK
+  Applying inventario.0028_notificacion_accion_url... OK
+  Applying inventario.0029_idempotencia_mrp... OK
+  Applying inventario.0030_despacho_cancelacion... OK
+  Applying inventario.0031_op01_autorizacion_evidencia... OK
+  Applying inventario.0032_movimientoinventario_operacion_id... OK
+  Applying mantenimiento.0001_initial... OK
+  Applying mantenimiento.0002_repuesto_respaldado_por_entrega... OK
+  Applying produccion.0016_remove_palletproducto_pallet_kg_maximo_500_and_more... OK
+  Applying procesos.0021_remove_entradaproceso_entrada_de_un_lote_o_de_un_silo_and_more... OK
+  Applying procesos.0022_balance_mantequilla_reproceso... OK
+  Applying procesos.0023_evento_operacion_id... OK
+  Applying procesos.0024_corridamantequilla_salida_crema... OK
+  Applying produccion.0017_registroenvase_solicitud_firma... OK
+test_descargar_una_liberada_crea_el_ingreso_en_el_silo (recepcion.tests.DescargaTests.test_descargar_una_liberada_crea_el_ingreso_en_el_silo) ... ok
+test_no_se_descarga_dos_veces (recepcion.tests.DescargaTests.test_no_se_descarga_dos_veces) ... ok
+test_no_se_descarga_si_supera_la_capacidad_del_silo (recepcion.tests.DescargaTests.test_no_se_descarga_si_supera_la_capacidad_del_silo) ... ok
+test_no_se_descarga_sin_silo_asignado (recepcion.tests.DescargaTests.test_no_se_descarga_sin_silo_asignado) ... ok
+test_no_se_descarga_una_retenida (recepcion.tests.DescargaTests.test_no_se_descarga_una_retenida)
+Es la regla que protege la planta: la leche retenida no entra al silo. ... ok
+test_acidez_alta_retiene_e_informa_el_limite (recepcion.tests.EvaluarRecepcionTests.test_acidez_alta_retiene_e_informa_el_limite) ... ok
+test_acumula_todos_los_motivos (recepcion.tests.EvaluarRecepcionTests.test_acumula_todos_los_motivos) ... ok
+test_controles_normales_liberan (recepcion.tests.EvaluarRecepcionTests.test_controles_normales_liberan) ... ok
+test_delvo_positivo_retiene (recepcion.tests.EvaluarRecepcionTests.test_delvo_positivo_retiene)
+Presencia de antibióticos: esa leche no entra a la planta. ... ok
+test_inhibidores_positivos_retienen (recepcion.tests.EvaluarRecepcionTests.test_inhibidores_positivos_retienen) ... ok
+test_medir_todo_menos_el_delvo_no_alcanza (recepcion.tests.EvaluarRecepcionTests.test_medir_todo_menos_el_delvo_no_alcanza) ... ok
+test_ph_fuera_de_rango_en_ambos_extremos (recepcion.tests.EvaluarRecepcionTests.test_ph_fuera_de_rango_en_ambos_extremos) ... ok
+test_sin_controles_no_hay_motivo_para_retener (recepcion.tests.EvaluarRecepcionTests.test_sin_controles_no_hay_motivo_para_retener) ... ok
+test_sin_controles_tampoco_se_libera (recepcion.tests.EvaluarRecepcionTests.test_sin_controles_tampoco_se_libera)
+No tener motivos para retener no es lo mismo que poder liberar. Sin el ... ok
+test_temperatura_alta_retiene (recepcion.tests.EvaluarRecepcionTests.test_temperatura_alta_retiene) ... ok
+test_un_motivo_manda_sobre_los_controles_que_falten (recepcion.tests.EvaluarRecepcionTests.test_un_motivo_manda_sobre_los_controles_que_falten)
+Delvo positivo retiene aunque no se haya medido nada más. ... ok
+test_asigna_silo_a_recepcion_sin_vehiculo (recepcion.tests.FlujoRecepcionTests.test_asigna_silo_a_recepcion_sin_vehiculo)
+La planta de la recepción manda; el camión es un dato opcional. ... ok
+test_calidad_no_decide_antes_del_muestreo (recepcion.tests.FlujoRecepcionTests.test_calidad_no_decide_antes_del_muestreo) ... ok
+test_calidad_tambien_puede_decidir_la_muestra (recepcion.tests.FlujoRecepcionTests.test_calidad_tambien_puede_decidir_la_muestra) ... ok
+test_delvo_positivo_retiene_y_no_permite_asignar_silo (recepcion.tests.FlujoRecepcionTests.test_delvo_positivo_retiene_y_no_permite_asignar_silo) ... ok
+test_el_operador_queda_registrado_solo (recepcion.tests.FlujoRecepcionTests.test_el_operador_queda_registrado_solo)
+El dato es para auditoría: teclearlo lo haría menos fiable. ... ok
+test_flujo_completo_actualiza_el_saldo_del_silo (recepcion.tests.FlujoRecepcionTests.test_flujo_completo_actualiza_el_saldo_del_silo) ... ok
+test_leche_descremada_solo_se_asigna_a_tk_ld (recepcion.tests.FlujoRecepcionTests.test_leche_descremada_solo_se_asigna_a_tk_ld) ... ok
+test_no_repite_codigo_de_muestra (recepcion.tests.FlujoRecepcionTests.test_no_repite_codigo_de_muestra) ... ok
+test_no_se_puede_borrar_una_recepcion_confirmada (recepcion.tests.FlujoRecepcionTests.test_no_se_puede_borrar_una_recepcion_confirmada)
+Borrar una recepción deja huérfanos sus `MovimientoSilo.origen_id` ... ok
+test_registra_un_camion_con_sus_modulos (recepcion.tests.FlujoRecepcionTests.test_registra_un_camion_con_sus_modulos)
+Contrato de la Task 7: un camión es **un** registro, con sus módulos ... ok
+test_se_registra_una_recepcion (recepcion.tests.FlujoRecepcionTests.test_se_registra_una_recepcion) ... ok
+test_tomar_muestra_identifica_modulo_y_responsable (recepcion.tests.FlujoRecepcionTests.test_tomar_muestra_identifica_modulo_y_responsable) ... ok
+test_el_endpoint_informa_el_saldo_y_sus_alertas (recepcion.tests.OcupacionAPITests.test_el_endpoint_informa_el_saldo_y_sus_alertas) ... ok
+test_el_panel_explica_por_que_un_silo_no_puede_iniciar_proceso (recepcion.tests.OcupacionAPITests.test_el_panel_explica_por_que_un_silo_no_puede_iniciar_proceso) ... ok
+test_la_ocupacion_no_consulta_la_vigencia_por_cada_silo (recepcion.tests.OcupacionAPITests.test_la_ocupacion_no_consulta_la_vigencia_por_cada_silo) ... ok
+test_un_ajuste_sin_motivo_se_rechaza (recepcion.tests.OcupacionAPITests.test_un_ajuste_sin_motivo_se_rechaza) ... ok
+test_un_ingreso_no_puede_ser_negativo (recepcion.tests.OcupacionAPITests.test_un_ingreso_no_puede_ser_negativo) ... ok
+test_avisa_cuando_se_supera_la_capacidad (recepcion.tests.OcupacionSiloTests.test_avisa_cuando_se_supera_la_capacidad) ... ok
+test_calcula_el_porcentaje_sobre_la_capacidad (recepcion.tests.OcupacionSiloTests.test_calcula_el_porcentaje_sobre_la_capacidad) ... ok
+test_la_ocupacion_descuenta_lo_consumido (recepcion.tests.OcupacionSiloTests.test_la_ocupacion_descuenta_lo_consumido)
+No es el acumulado histórico de recepciones: es lo que hay AHORA. ... ok
+test_no_mezcla_los_movimientos_de_otro_silo (recepcion.tests.OcupacionSiloTests.test_no_mezcla_los_movimientos_de_otro_silo) ... ok
+test_se_puede_consultar_el_saldo_a_una_fecha (recepcion.tests.OcupacionSiloTests.test_se_puede_consultar_el_saldo_a_una_fecha) ... ok
+test_un_ajuste_negativo_resta (recepcion.tests.OcupacionSiloTests.test_un_ajuste_negativo_resta) ... ok
+test_un_saldo_negativo_se_informa_en_vez_de_ocultarse (recepcion.tests.OcupacionSiloTests.test_un_saldo_negativo_se_informa_en_vez_de_ocultarse)
+Un negativo es imposible físicamente: significa que el registro está ... ok
+test_un_silo_sin_movimientos_esta_vacio (recepcion.tests.OcupacionSiloTests.test_un_silo_sin_movimientos_esta_vacio) ... ok
+test_los_silos_solo_los_administra_administracion (recepcion.tests.PermisosRecepcionTests.test_los_silos_solo_los_administra_administracion) ... ok
+test_produccion_y_calidad_leen_pero_no_registran (recepcion.tests.PermisosRecepcionTests.test_produccion_y_calidad_leen_pero_no_registran) ... ok
+test_calidad_puede_registrar_analisis_sin_crear_recepciones (recepcion.tests_analisis_silo.AnalisisSiloAPITests.test_calidad_puede_registrar_analisis_sin_crear_recepciones) ... ok
+test_el_analista_es_quien_lo_registra (recepcion.tests_analisis_silo.AnalisisSiloAPITests.test_el_analista_es_quien_lo_registra) ... ok
+test_filtra_por_silo (recepcion.tests_analisis_silo.AnalisisSiloAPITests.test_filtra_por_silo) ... ok
+test_no_se_puede_borrar_un_analisis_confirmado (recepcion.tests_analisis_silo.AnalisisSiloAPITests.test_no_se_puede_borrar_un_analisis_confirmado)
+El análisis del silo está protegido por `on_delete=PROTECT` desde los ... ok
+test_quien_realiza_no_puede_poner_la_segunda_firma (recepcion.tests_analisis_silo.AnalisisSiloAPITests.test_quien_realiza_no_puede_poner_la_segunda_firma) ... ok
+test_registra_un_analisis_y_devuelve_su_vigencia (recepcion.tests_analisis_silo.AnalisisSiloAPITests.test_registra_un_analisis_y_devuelve_su_vigencia) ... ok
+test_vigentes_deja_fuera_al_que_recibio_leche_despues (recepcion.tests_analisis_silo.AnalisisSiloAPITests.test_vigentes_deja_fuera_al_que_recibio_leche_despues) ... ok
+test_certificada_nula_no_es_lo_mismo_que_no_certificada (recepcion.tests_analisis_silo.AnalisisSiloModeloTests.test_certificada_nula_no_es_lo_mismo_que_no_certificada) ... ok
+test_dos_analisis_del_mismo_silo_en_el_mismo_instante_no_conviven (recepcion.tests_analisis_silo.AnalisisSiloModeloTests.test_dos_analisis_del_mismo_silo_en_el_mismo_instante_no_conviven)
+Sería el mismo muestreo cargado dos veces. Dejar pasar el duplicado ... ok
+test_guarda_los_siete_parametros_del_formato (recepcion.tests_analisis_silo.AnalisisSiloModeloTests.test_guarda_los_siete_parametros_del_formato) ... ok
+test_dice_que_falta_para_componer_un_vale (recepcion.tests_analisis_silo.VigenciaContraElLibroTests.test_dice_que_falta_para_componer_un_vale) ... ok
+test_recien_tomado_esta_vigente (recepcion.tests_analisis_silo.VigenciaContraElLibroTests.test_recien_tomado_esta_vigente) ... ok
+test_un_ingreso_a_otro_silo_no_lo_invalida (recepcion.tests_analisis_silo.VigenciaContraElLibroTests.test_un_ingreso_a_otro_silo_no_lo_invalida) ... ok
+test_un_ingreso_posterior_lo_deja_fuera_de_vigencia (recepcion.tests_analisis_silo.VigenciaContraElLibroTests.test_un_ingreso_posterior_lo_deja_fuera_de_vigencia) ... ok
+test_una_salida_posterior_no_lo_invalida (recepcion.tests_analisis_silo.VigenciaContraElLibroTests.test_una_salida_posterior_no_lo_invalida)
+Sacar leche no cambia la composición de la que queda: el análisis ... ok
+test_crioscopia_fuera_de_rango_retiene (recepcion.tests_api_instructivo.DecidirCalidadCrioscopiaYPhTests.test_crioscopia_fuera_de_rango_retiene) ... ok
+test_ph_camion_fuera_de_rango_retiene (recepcion.tests_api_instructivo.DecidirCalidadCrioscopiaYPhTests.test_ph_camion_fuera_de_rango_retiene) ... ok
+test_la_ficha_trae_los_calculos_del_formato (recepcion.tests_api_instructivo.DerivadosEnLaApiTests.test_la_ficha_trae_los_calculos_del_formato) ... ok
+test_los_catalogos_vienen_del_backend (recepcion.tests_api_instructivo.DerivadosEnLaApiTests.test_los_catalogos_vienen_del_backend) ... ok
+test_sale_como_string_no_como_numero (recepcion.tests_api_instructivo.DiferenciaRecoleccionLitrosTipoTests.test_sale_como_string_no_como_numero) ... ok
+test_expone_el_motivo_cuando_falta_una_marca_horaria (recepcion.tests_api_instructivo.PermanenciaMotivoApiTests.test_expone_el_motivo_cuando_falta_una_marca_horaria) ... ok
+test_vacio_cuando_si_se_pudo_calcular (recepcion.tests_api_instructivo.PermanenciaMotivoApiTests.test_vacio_cuando_si_se_pudo_calcular) ... ok
+test_el_numero_de_modulo_no_supera_las_columnas_del_formato (recepcion.tests_api_instructivo.RegistrarLlegadaTests.test_el_numero_de_modulo_no_supera_las_columnas_del_formato)
+El formato solo tiene cuatro columnas (M1-M4): un 99 no es ninguna. ... ok
+test_no_se_repite_el_numero_de_modulo (recepcion.tests_api_instructivo.RegistrarLlegadaTests.test_no_se_repite_el_numero_de_modulo) ... ok
+test_sin_modulos_no_se_registra (recepcion.tests_api_instructivo.RegistrarLlegadaTests.test_sin_modulos_no_se_registra)
+La crioscopía se mide por compartimiento: sin módulos no hay dónde. ... ok
+test_un_camion_crea_un_registro_con_sus_modulos (recepcion.tests_api_instructivo.RegistrarLlegadaTests.test_un_camion_crea_un_registro_con_sus_modulos) ... ok
+test_el_detalle_incluye_camion_crioscopias_y_sobreestadia (recepcion.tests_api_instructivo.ResumenDiarioTests.test_el_detalle_incluye_camion_crioscopias_y_sobreestadia) ... ok
+test_exporta_csv_y_xlsx (recepcion.tests_api_instructivo.ResumenDiarioTests.test_exporta_csv_y_xlsx) ... ok
+test_la_romana_ausente_no_contamina_el_total_ni_la_diferencia (recepcion.tests_api_instructivo.ResumenDiarioTests.test_la_romana_ausente_no_contamina_el_total_ni_la_diferencia)
+Un camión sin pesar aporta CERO a `kg_romana` y sus kilos completos de ... ok
+test_la_ubicacion_historica_no_oculta_recepciones (recepcion.tests_api_instructivo.ResumenDiarioTests.test_la_ubicacion_historica_no_oculta_recepciones) ... ok
+test_totaliza_el_dia_como_el_pie_de_la_planilla (recepcion.tests_api_instructivo.ResumenDiarioTests.test_totaliza_el_dia_como_el_pie_de_la_planilla) ... ok
+test_un_rango_totaliza_todos_los_dias_incluidos (recepcion.tests_api_instructivo.ResumenDiarioTests.test_un_rango_totaliza_todos_los_dias_incluidos) ... ok
+test_una_fecha_invalida_responde_400_y_no_revienta (recepcion.tests_api_instructivo.ResumenDiarioTests.test_una_fecha_invalida_responde_400_y_no_revienta) ... ok
+test_un_uso_no_numerado_con_numero_de_destino_se_rechaza (recepcion.tests_api_instructivo.UsoNumeroApiTests.test_un_uso_no_numerado_con_numero_de_destino_se_rechaza) ... ok
+test_un_uso_numerado_con_su_numero_se_acepta (recepcion.tests_api_instructivo.UsoNumeroApiTests.test_un_uso_numerado_con_su_numero_se_acepta) ... ok
+test_confirmar_incompleto_devuelve_motivos_y_no_avanza (recepcion.tests_borrador.BorradorRecepcionTests.test_confirmar_incompleto_devuelve_motivos_y_no_avanza) ... ok
+test_descartar_anula_sin_borrar (recepcion.tests_borrador.BorradorRecepcionTests.test_descartar_anula_sin_borrar) ... ok
+test_guardar_a_medias_no_mueve_saldo_ni_notifica (recepcion.tests_borrador.BorradorRecepcionTests.test_guardar_a_medias_no_mueve_saldo_ni_notifica) ... ok
+test_litros_negativos_en_el_autoguardado_no_rompe (recepcion.tests_borrador.BorradorRecepcionTests.test_litros_negativos_en_el_autoguardado_no_rompe)
+El CHECK `recepcion_litros_no_negativos` protege la base, pero no al ... ok
+test_reanuda_guarda_y_confirma_el_mismo_documento (recepcion.tests_borrador.BorradorRecepcionTests.test_reanuda_guarda_y_confirma_el_mismo_documento) ... ok
+test_un_borrador_no_aparece_en_el_listado_operativo (recepcion.tests_borrador.BorradorRecepcionTests.test_un_borrador_no_aparece_en_el_listado_operativo) ... ok
+test_crear_borrador_repetido_reutiliza_el_existente (recepcion.tests_borrador_analisis.BorradorAnalisisSiloTests.test_crear_borrador_repetido_reutiliza_el_existente) ... ok
+test_descartar_anula_sin_borrar (recepcion.tests_borrador_analisis.BorradorAnalisisSiloTests.test_descartar_anula_sin_borrar) ... ok
+test_guardar_a_medias_no_aparece_como_analisis_operativo (recepcion.tests_borrador_analisis.BorradorAnalisisSiloTests.test_guardar_a_medias_no_aparece_como_analisis_operativo) ... ok
+test_reanuda_actualiza_y_confirma_el_mismo_analisis (recepcion.tests_borrador_analisis.BorradorAnalisisSiloTests.test_reanuda_actualiza_y_confirma_el_mismo_analisis) ... ok
+test_diferencia_de_pesaje (recepcion.tests_cabecera.DerivadosTests.test_diferencia_de_pesaje) ... ok
+test_kilos_de_guia_se_derivan_de_los_litros (recepcion.tests_cabecera.DerivadosTests.test_kilos_de_guia_se_derivan_de_los_litros) ... ok
+test_permanencia_descuenta_las_dos_horas_libres (recepcion.tests_cabecera.DerivadosTests.test_permanencia_descuenta_las_dos_horas_libres) ... ok
+test_pool_de_crioscopia_desde_los_modulos (recepcion.tests_cabecera.DerivadosTests.test_pool_de_crioscopia_desde_los_modulos) ... ok
+test_sin_arribo_no_hay_horas_a_pagar (recepcion.tests_cabecera.DerivadosTests.test_sin_arribo_no_hay_horas_a_pagar) ... ok
+test_solidos_totales (recepcion.tests_cabecera.DerivadosTests.test_solidos_totales) ... ok
+test_tiempo_de_descarga (recepcion.tests_cabecera.DerivadosTests.test_tiempo_de_descarga) ... ok
+test_ccaa_y_colun_son_procedencias_validas (recepcion.tests_cabecera.DestinoTests.test_ccaa_y_colun_son_procedencias_validas) ... ok
+test_despacho_no_lleva_numero (recepcion.tests_cabecera.DestinoTests.test_despacho_no_lleva_numero) ... ok
+test_el_numero_de_destino_exige_su_familia (recepcion.tests_cabecera.DestinoTests.test_el_numero_de_destino_exige_su_familia)
+`n° 2` a secas no dice de qué. Un número suelto no es trazabilidad. ... ok
+test_semi_con_su_numero_es_valido (recepcion.tests_cabecera.DestinoTests.test_semi_con_su_numero_es_valido) ... ok
+test_busca_en_la_base_y_no_en_la_pagina (recepcion.tests_consulta.BusquedaTests.test_busca_en_la_base_y_no_en_la_pagina)
+La de la página 2 tiene que aparecer. Con el filtro en el cliente ... ok
+test_busca_por_varios_campos (recepcion.tests_consulta.BusquedaTests.test_busca_por_varios_campos) ... ok
+test_una_busqueda_sin_resultados_no_es_un_error (recepcion.tests_consulta.BusquedaTests.test_una_busqueda_sin_resultados_no_es_un_error) ... ok
+test_un_solo_estado (recepcion.tests_consulta.FiltroEstadosTests.test_un_solo_estado) ... ok
+test_varios_estados_separados_por_coma (recepcion.tests_consulta.FiltroEstadosTests.test_varios_estados_separados_por_coma)
+La pestaña «Calidad» son las muestreadas *y* las retenidas. Sin esto ... ok
+test_cuenta_sobre_el_total_y_no_sobre_una_pagina (recepcion.tests_consulta.ResumenTests.test_cuenta_sobre_el_total_y_no_sobre_una_pagina)
+Sesenta recepciones no caben en una página de cincuenta. El tablero las ... ok
+test_distingue_las_aprobadas_con_y_sin_silo (recepcion.tests_consulta.ResumenTests.test_distingue_las_aprobadas_con_y_sin_silo)
+Asignar silo y descargar son dos trabajos distintos y el estado es el ... ok
+test_el_resumen_describe_la_planta_no_la_vista (recepcion.tests_consulta.ResumenTests.test_el_resumen_describe_la_planta_no_la_vista)
+Filtrar la tabla por un estado no puede vaciar el resumen: hacía ... ok
+test_todos_los_estados_aparecen_aunque_esten_en_cero (recepcion.tests_consulta.ResumenTests.test_todos_los_estados_aparecen_aunque_esten_en_cero)
+Una clave ausente y un cero se leen distinto en la pantalla: la primera ... ok
+test_corrige_en_analizada_recalcula_y_deja_motivo_auditable (recepcion.tests_correcciones.CorreccionCrioscopiaTests.test_corrige_en_analizada_recalcula_y_deja_motivo_auditable) ... ok
+test_litros_ya_descargados_indican_usar_un_ajuste (recepcion.tests_correcciones.CorreccionCrioscopiaTests.test_litros_ya_descargados_indican_usar_un_ajuste) ... ok
+test_reanalizar_permite_corregir_ph_camion_y_audita (recepcion.tests_correcciones.CorreccionCrioscopiaTests.test_reanalizar_permite_corregir_ph_camion_y_audita) ... ok
+test_si_ya_se_descargo_retiene_alerta_el_silo_y_no_toca_el_libro (recepcion.tests_correcciones.CorreccionCrioscopiaTests.test_si_ya_se_descargo_retiene_alerta_el_silo_y_no_toca_el_libro) ... ok
+test_un_documento_cerrado_rechaza_cualquier_patch (recepcion.tests_correcciones.CorreccionCrioscopiaTests.test_un_documento_cerrado_rechaza_cualquier_patch) ... ok
+test_despacha_con_liberacion_y_descuenta_el_silo (recepcion.tests_despacho_leche.DespachoLecheAPITests.test_despacha_con_liberacion_y_descuenta_el_silo) ... ok
+test_inhibidores_positivos_valen_igual_que_el_delvo (recepcion.tests_dominio.BloqueosDeCierreTests.test_inhibidores_positivos_valen_igual_que_el_delvo) ... ok
+test_positivo_con_busqueda_cierra (recepcion.tests_dominio.BloqueosDeCierreTests.test_positivo_con_busqueda_cierra) ... ok
+test_positivo_sin_busqueda_no_cierra (recepcion.tests_dominio.BloqueosDeCierreTests.test_positivo_sin_busqueda_no_cierra)
+Un positivo retiene, y ahí terminaba todo. El primer eslabón de la ... ok
+test_sin_positivos_no_hay_bloqueo (recepcion.tests_dominio.BloqueosDeCierreTests.test_sin_positivos_no_hay_bloqueo) ... ok
+test_ignora_los_modulos_sin_lectura (recepcion.tests_dominio.CrioscopiaPoolTests.test_ignora_los_modulos_sin_lectura) ... ok
+test_promedio_de_los_modulos_medidos (recepcion.tests_dominio.CrioscopiaPoolTests.test_promedio_de_los_modulos_medidos) ... ok
+test_sin_ninguna_lectura_no_hay_pool (recepcion.tests_dominio.CrioscopiaPoolTests.test_sin_ninguna_lectura_no_hay_pool) ... ok
+test_el_motivo_usa_el_numero_del_modulo_no_su_posicion_en_la_lista (recepcion.tests_dominio.EvaluacionAmpliadaTests.test_el_motivo_usa_el_numero_del_modulo_no_su_posicion_en_la_lista)
+Los módulos registrados no tienen por qué ser contiguos: un camión ... ok
+test_el_organoleptico_viejo_se_sigue_entendiendo (recepcion.tests_dominio.EvaluacionAmpliadaTests.test_el_organoleptico_viejo_se_sigue_entendiendo)
+Las filas históricas traen una sola clave; no se las deja de leer. ... ok
+test_el_ph_del_camion_fuera_de_rango_retiene (recepcion.tests_dominio.EvaluacionAmpliadaTests.test_el_ph_del_camion_fuera_de_rango_retiene) ... ok
+test_el_ph_del_camion_no_es_el_de_la_leche (recepcion.tests_dominio.EvaluacionAmpliadaTests.test_el_ph_del_camion_no_es_el_de_la_leche)
+7,0 es válido para el enjuague del camión (5,5-8,5) y estaría fuera del ... ok
+test_todas_las_crioscopias_en_rango_liberan (recepcion.tests_dominio.EvaluacionAmpliadaTests.test_todas_las_crioscopias_en_rango_liberan) ... ok
+test_un_item_organoleptico_no_conforme_retiene (recepcion.tests_dominio.EvaluacionAmpliadaTests.test_un_item_organoleptico_no_conforme_retiene) ... ok
+test_una_crioscopia_de_modulo_fuera_de_rango_retiene (recepcion.tests_dominio.EvaluacionAmpliadaTests.test_una_crioscopia_de_modulo_fuera_de_rango_retiene)
+Basta con que UN compartimiento venga aguado: la leche del camión se ... ok
+test_la_media_hora_exacta_no_sube (recepcion.tests_dominio.HorasAPagarTests.test_la_media_hora_exacta_no_sube)
+El formato usa `>0,5`, no `>=`. Se respeta. ... ok
+test_redondeo_comercial_sube_sobre_la_media_hora (recepcion.tests_dominio.HorasAPagarTests.test_redondeo_comercial_sube_sobre_la_media_hora) ... ok
+test_sin_permanencia_no_hay_horas_que_pagar (recepcion.tests_dominio.HorasAPagarTests.test_sin_permanencia_no_hay_horas_que_pagar) ... ok
+test_diferencia_simple (recepcion.tests_dominio.HorasEntreTests.test_diferencia_simple) ... ok
+test_falta_un_extremo (recepcion.tests_dominio.HorasEntreTests.test_falta_un_extremo) ... ok
+test_devuelve_los_que_faltan_en_el_orden_pedido (recepcion.tests_dominio.ParametrosFaltantesTests.test_devuelve_los_que_faltan_en_el_orden_pedido) ... ok
+test_sin_faltantes_devuelve_lista_vacia (recepcion.tests_dominio.ParametrosFaltantesTests.test_sin_faltantes_devuelve_lista_vacia) ... ok
+test_una_clave_ausente_cuenta_como_faltante (recepcion.tests_dominio.ParametrosFaltantesTests.test_una_clave_ausente_cuenta_como_faltante) ... ok
+test_cruzar_la_medianoche_no_da_negativo (recepcion.tests_dominio.PermanenciaTests.test_cruzar_la_medianoche_no_da_negativo)
+Turno C: arriba 23:30, termina CIP 01:00. Son 1,5 h, no -22,5. ... ok
+test_dentro_del_limite_no_acumula (recepcion.tests_dominio.PermanenciaTests.test_dentro_del_limite_no_acumula) ... ok
+test_descuenta_las_dos_horas_libres (recepcion.tests_dominio.PermanenciaTests.test_descuenta_las_dos_horas_libres)
+Arriba 08:00, termina CIP 11:30: 3,5 h en planta, 1,5 a contar. ... ok
+test_sin_arribo_no_devuelve_cero_sino_nada (recepcion.tests_dominio.PermanenciaTests.test_sin_arribo_no_devuelve_cero_sino_nada)
+El defecto de la planilla: la hora programa estaba vacía en 602 de 603 ... ok
+test_sin_termino_de_cip_tampoco (recepcion.tests_dominio.PermanenciaTests.test_sin_termino_de_cip_tampoco) ... ok
+test_diferencia_es_romana_menos_guia (recepcion.tests_dominio.PesajesTests.test_diferencia_es_romana_menos_guia) ... ok
+test_kilos_de_guia_desde_litros (recepcion.tests_dominio.PesajesTests.test_kilos_de_guia_desde_litros) ... ok
+test_sin_litros_no_hay_kilos (recepcion.tests_dominio.PesajesTests.test_sin_litros_no_hay_kilos)
+None no es cero: cero diría que el camión llegó vacío. ... ok
+test_sin_romana_no_hay_diferencia (recepcion.tests_dominio.PesajesTests.test_sin_romana_no_hay_diferencia)
+Falta el pesaje, no es que coincidan. ... ok
+test_kilos_de_solidos_sobre_el_pesaje_real (recepcion.tests_dominio.SolidosTests.test_kilos_de_solidos_sobre_el_pesaje_real) ... ok
+test_sin_pesaje_no_hay_kilos_de_solidos (recepcion.tests_dominio.SolidosTests.test_sin_pesaje_no_hay_kilos_de_solidos) ... ok
+test_sin_una_de_las_dos_no_hay_total (recepcion.tests_dominio.SolidosTests.test_sin_una_de_las_dos_no_hay_total) ... ok
+test_totales_son_la_suma_de_grasa_y_sng (recepcion.tests_dominio.SolidosTests.test_totales_son_la_suma_de_grasa_y_sng) ... ok
+test_sin_hora_de_muestreo_no_esta_vigente_y_lo_dice (recepcion.tests_dominio.VigenciaDelAnalisisDeSiloTests.test_sin_hora_de_muestreo_no_esta_vigente_y_lo_dice)
+Sin la hora no hay contra qué comparar. Devolver `True` aquí haría ... ok
+test_sin_ingresos_posteriores_esta_vigente (recepcion.tests_dominio.VigenciaDelAnalisisDeSiloTests.test_sin_ingresos_posteriores_esta_vigente) ... ok
+test_un_ingreso_anterior_no_lo_invalida (recepcion.tests_dominio.VigenciaDelAnalisisDeSiloTests.test_un_ingreso_anterior_no_lo_invalida) ... ok
+test_un_ingreso_posterior_lo_invalida_y_dice_cuanto_entro (recepcion.tests_dominio.VigenciaDelAnalisisDeSiloTests.test_un_ingreso_posterior_lo_invalida_y_dice_cuanto_entro) ... ok
+test_varios_ingresos_posteriores_se_suman (recepcion.tests_dominio.VigenciaDelAnalisisDeSiloTests.test_varios_ingresos_posteriores_se_suman) ... ok
+test_ajuste_inicial_es_una_capa_explicita (recepcion.tests_fifo.AtribucionFIFODominioTests.test_ajuste_inicial_es_una_capa_explicita) ... ok
+test_exceso_se_declara_no_atribuible (recepcion.tests_fifo.AtribucionFIFODominioTests.test_exceso_se_declara_no_atribuible) ... ok
+test_salida_cruza_tres_camiones (recepcion.tests_fifo.AtribucionFIFODominioTests.test_salida_cruza_tres_camiones) ... ok
+test_salida_menor_que_la_capa_mas_antigua (recepcion.tests_fifo.AtribucionFIFODominioTests.test_salida_menor_que_la_capa_mas_antigua) ... ok
+test_dos_consumos_secuenciales_no_reutilizan_litros (recepcion.tests_fifo.AtribucionFIFOIntegracionTests.test_dos_consumos_secuenciales_no_reutilizan_litros) ... ok
+test_la_suma_atribuida_siempre_iguala_la_salida (recepcion.tests_fifo.AtribucionFIFOIntegracionTests.test_la_suma_atribuida_siempre_iguala_la_salida) ... ok
+test_transferencia_propaga_las_capas_al_silo_destino (recepcion.tests_fifo.AtribucionFIFOIntegracionTests.test_transferencia_propaga_las_capas_al_silo_destino) ... ok
+test_una_recepcion_liberada_no_admite_cambio_de_controles (recepcion.tests_hermanos.NoSeReescribeLoDecididoTests.test_una_recepcion_liberada_no_admite_cambio_de_controles) ... ok
+test_con_la_busqueda_registrada_cierra (recepcion.tests_inhibidores.CierreConInhibidoresTests.test_con_la_busqueda_registrada_cierra) ... ok
+test_no_se_cierra_sin_buscar_al_proveedor (recepcion.tests_inhibidores.CierreConInhibidoresTests.test_no_se_cierra_sin_buscar_al_proveedor) ... ok
+test_una_recepcion_limpia_cierra_sin_tramite (recepcion.tests_inhibidores.CierreConInhibidoresTests.test_una_recepcion_limpia_cierra_sin_tramite) ... ok
+test_el_modulo_no_lleva_litros (recepcion.tests_modulos.ModuloRecepcionTests.test_el_modulo_no_lleva_litros)
+Los litros son del camión: que el módulo no los tenga es la regla. ... ok
+test_la_recepcion_ya_no_tiene_modulo_ni_llegada (recepcion.tests_modulos.ModuloRecepcionTests.test_la_recepcion_ya_no_tiene_modulo_ni_llegada) ... ok
+test_no_se_repite_el_numero_de_modulo_en_el_mismo_camion (recepcion.tests_modulos.ModuloRecepcionTests.test_no_se_repite_el_numero_de_modulo_en_el_mismo_camion) ... ok
+test_un_camion_lleva_varios_modulos_con_su_crioscopia (recepcion.tests_modulos.ModuloRecepcionTests.test_un_camion_lleva_varios_modulos_con_su_crioscopia) ... ok
+test_movimiento_confirmado_no_se_edita_ni_elimina (recepcion.tests_movimientos_operacionales.MovimientosSiloOperacionalesTests.test_movimiento_confirmado_no_se_edita_ni_elimina) ... ok
+test_no_consume_silo_bloqueado_por_calidad (recepcion.tests_movimientos_operacionales.MovimientosSiloOperacionalesTests.test_no_consume_silo_bloqueado_por_calidad) ... ok
+test_no_permita_saldo_negativo_ni_sobrecapacidad (recepcion.tests_movimientos_operacionales.MovimientosSiloOperacionalesTests.test_no_permita_saldo_negativo_ni_sobrecapacidad) ... ok
+test_reintento_con_misma_clave_no_duplica_transferencia (recepcion.tests_movimientos_operacionales.MovimientosSiloOperacionalesTests.test_reintento_con_misma_clave_no_duplica_transferencia) ... ok
+test_transferencia_crea_dos_asientos_y_conserva_saldos (recepcion.tests_movimientos_operacionales.MovimientosSiloOperacionalesTests.test_transferencia_crea_dos_asientos_y_conserva_saldos) ... ok
+test_despacho_leche_no_consume_litros_reservados_por_otra_ejecucion (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_despacho_leche_no_consume_litros_reservados_por_otra_ejecucion) ... ok
+test_despacho_reintento_conserva_operacion_aunque_ya_no_haya_saldo_libre_ni_calidad (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_despacho_reintento_conserva_operacion_aunque_ya_no_haya_saldo_libre_ni_calidad) ... ok
+test_fallo_de_atribucion_revierte_ambos_asientos_y_permite_reintentar_la_clave (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_fallo_de_atribucion_revierte_ambos_asientos_y_permite_reintentar_la_clave) ... ok
+test_ocupacion_distingue_fisico_reservado_libre_y_disponible (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_ocupacion_distingue_fisico_reservado_libre_y_disponible) ... ok
+test_sugerencia_fifo_usa_100_libres_y_no_propone_origen_reservado_como_destino (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_sugerencia_fifo_usa_100_libres_y_no_propone_origen_reservado_como_destino) ... ok
+test_transferencia_no_consume_litros_reservados_por_otra_ejecucion (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_transferencia_no_consume_litros_reservados_por_otra_ejecucion) ... ok
+test_transferencia_no_ingresa_a_silo_con_cip_activo (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_transferencia_no_ingresa_a_silo_con_cip_activo) ... ok
+test_transferencia_no_retira_de_silo_con_cip_activo (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_transferencia_no_retira_de_silo_con_cip_activo) ... ok
+test_transferencia_permite_solo_los_100_litros_libres_sin_mover_reserva (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_transferencia_permite_solo_los_100_litros_libres_sin_mover_reserva) ... ok
+test_transferencia_reintento_no_duplica_ni_acepta_misma_clave_con_otro_payload (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_transferencia_reintento_no_duplica_ni_acepta_misma_clave_con_otro_payload) ... ok
+test_transferencia_respeta_capacidad_reservada_del_destino (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_transferencia_respeta_capacidad_reservada_del_destino) ... ok
+test_transferencia_revalida_analisis_y_rechaza_sin_liberacion_vigente (recepcion.tests_op03_reservas.ReservasRecepcionOP03Tests.test_transferencia_revalida_analisis_y_rechaza_sin_liberacion_vigente) ... ok
+test_csv_neutraliza_textos_formula_sin_alterar_numeros (recepcion.tests_op07_exportaciones.ExportacionesOP07Tests.test_csv_neutraliza_textos_formula_sin_alterar_numeros) ... ok
+test_exportacion_exige_autenticacion_y_permiso_del_modulo (recepcion.tests_op07_exportaciones.ExportacionesOP07Tests.test_exportacion_exige_autenticacion_y_permiso_del_modulo) ... ok
+test_limite_exacto_no_trunca_y_exceso_rechaza_los_tres_formatos (recepcion.tests_op07_exportaciones.ExportacionesOP07Tests.test_limite_exacto_no_trunca_y_exceso_rechaza_los_tres_formatos) ... ok
+test_reporte_vacio_y_fechas_invalidas_sin_archivo (recepcion.tests_op07_exportaciones.ExportacionesOP07Tests.test_reporte_vacio_y_fechas_invalidas_sin_archivo) ... ok
+  Applying sessions.0001_initial... OK
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).
+OP07_REPORTE_BENCH {"formato": "json", "recepciones": 1000, "modulos": 4000, "segundos": 0.637, "pico_bytes_python": 11410330}
+OP07_REPORTE_BENCH {"formato": "csv", "recepciones": 1000, "modulos": 4000, "segundos": 0.637, "pico_bytes_python": 11807654}
+OP07_REPORTE_BENCH {"formato": "xlsx", "recepciones": 1000, "modulos": 4000, "segundos": 1.798, "pico_bytes_python": 14531953}
+test_tope_real_mil_recepciones_cuatro_modulos_y_exceso (recepcion.tests_op07_exportaciones.ExportacionesOP07Tests.test_tope_real_mil_recepciones_cuatro_modulos_y_exceso) ... ok
+test_tres_formatos_coinciden_en_filtros_cantidades_y_faltantes (recepcion.tests_op07_exportaciones.ExportacionesOP07Tests.test_tres_formatos_coinciden_en_filtros_cantidades_y_faltantes) ... ok
+test_xlsx_conserva_texto_literal_sin_formulas (recepcion.tests_op07_exportaciones.ExportacionesOP07Tests.test_xlsx_conserva_texto_literal_sin_formulas) ... ok
+test_un_patch_no_reutiliza_la_vigencia_anotada_antes_de_guardar (recepcion.tests_rendimiento.RendimientoAnalisisSiloTests.test_un_patch_no_reutiliza_la_vigencia_anotada_antes_de_guardar) ... ok
+test_vigencia_y_motivo_no_consultan_dos_veces_por_analisis (recepcion.tests_rendimiento.RendimientoAnalisisSiloTests.test_vigencia_y_motivo_no_consultan_dos_veces_por_analisis) ... ok
+test_endpoint_sugiere_el_silo_con_leche_mas_antigua (recepcion.tests_sugerencia_fifo.SugerenciaFIFOAPITests.test_endpoint_sugiere_el_silo_con_leche_mas_antigua) ... ok
+test_borrador_parcial_es_recuperable_y_no_aparece_en_operacion (estandarizacion.tests_borrador.BorradorValeTests.test_borrador_parcial_es_recuperable_y_no_aparece_en_operacion) ... ok
+test_confirma_mezcla_solo_entera_sin_exigir_tanque_descremada (estandarizacion.tests_borrador.BorradorValeTests.test_confirma_mezcla_solo_entera_sin_exigir_tanque_descremada) ... ok
+test_confirmar_reserva_el_codigo_sin_mover_leche (estandarizacion.tests_borrador.BorradorValeTests.test_confirmar_reserva_el_codigo_sin_mover_leche) ... ok
+test_no_confirma_un_borrador_incompleto (estandarizacion.tests_borrador.BorradorValeTests.test_no_confirma_un_borrador_incompleto) ... ok
+test_agotados_los_intentos_falla_sin_guardar (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_agotados_los_intentos_falla_sin_guardar) ... ok
+test_confirmar_sin_codigo_libre_devuelve_motivo_y_sigue_en_borrador (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_confirmar_sin_codigo_libre_devuelve_motivo_y_sigue_en_borrador) ... ok
+test_confirmar_un_borrador_le_asigna_el_codigo (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_confirmar_un_borrador_le_asigna_el_codigo) ... ok
+test_confirmar_un_borrador_sella_la_fecha_de_hoy (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_confirmar_un_borrador_sella_la_fecha_de_hoy) ... ok
+test_el_primer_vale_del_dia_es_el_01 (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_el_primer_vale_del_dia_es_el_01) ... ok
+test_el_segundo_vale_del_dia_es_el_02 (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_el_segundo_vale_del_dia_es_el_02) ... ok
+test_la_fecha_la_sella_la_confirmacion_y_no_quien_crea_el_vale (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_la_fecha_la_sella_la_confirmacion_y_no_quien_crea_el_vale)
+Fecha y código se sellan juntos: no pueden decir días distintos. ... ok
+test_los_codigos_de_antes_no_cuentan (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_los_codigos_de_antes_no_cuentan) ... ok
+test_un_borrador_conserva_su_fecha_provisional (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_un_borrador_conserva_su_fecha_provisional) ... ok
+test_un_borrador_descartado_no_consume_numero (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_un_borrador_descartado_no_consume_numero)
+Descartar anula el borrador; con su `BORRADOR-…` y sin número. ... ok
+test_un_borrador_no_recibe_codigo (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_un_borrador_no_recibe_codigo) ... ok
+test_un_codigo_explicito_se_respeta (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_un_codigo_explicito_se_respeta)
+Las pruebas y el histórico crean vales con código propio. ... ok
+test_un_vale_anulado_conserva_su_numero_y_no_se_reutiliza (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_un_vale_anulado_conserva_su_numero_y_no_se_reutiliza) ... ok
+test_una_colision_reintenta_con_el_siguiente_libre (estandarizacion.tests_codigo_vale.AsignacionCodigoValeTests.test_una_colision_reintenta_con_el_siguiente_libre)
+Dos confirmaciones simultáneas calculan el mismo número. Se simula ... ok
+test_la_creacion_directa_asigna_el_codigo_e_ignora_el_del_cliente (estandarizacion.tests_codigo_vale.CodigoValeApiTests.test_la_creacion_directa_asigna_el_codigo_e_ignora_el_del_cliente) ... ok
+test_la_creacion_directa_ignora_la_fecha_del_cliente (estandarizacion.tests_codigo_vale.CodigoValeApiTests.test_la_creacion_directa_ignora_la_fecha_del_cliente) ... ok
+test_la_creacion_directa_sin_codigo_libre_responde_400_con_motivo (estandarizacion.tests_codigo_vale.CodigoValeApiTests.test_la_creacion_directa_sin_codigo_libre_responde_400_con_motivo) ... ok
+test_la_respuesta_ya_no_trae_codigo_propuesto (estandarizacion.tests_codigo_vale.CodigoValeApiTests.test_la_respuesta_ya_no_trae_codigo_propuesto) ... ok
+test_un_patch_no_cambia_el_codigo (estandarizacion.tests_codigo_vale.CodigoValeApiTests.test_un_patch_no_cambia_el_codigo) ... ok
+test_un_patch_no_cambia_la_fecha (estandarizacion.tests_codigo_vale.CodigoValeApiTests.test_un_patch_no_cambia_la_fecha) ... ok
+test_avisa_cuando_el_analisis_quedo_fuera_de_vigencia (estandarizacion.tests_composicion.ComposicionDeSilosTests.test_avisa_cuando_el_analisis_quedo_fuera_de_vigencia) ... ok
+test_devuelve_el_ultimo_analisis_de_cada_silo (estandarizacion.tests_composicion.ComposicionDeSilosTests.test_devuelve_el_ultimo_analisis_de_cada_silo) ... ok
+test_dice_que_parametro_falta (estandarizacion.tests_composicion.ComposicionDeSilosTests.test_dice_que_parametro_falta) ... ok
+test_un_silo_sin_analisis_no_es_un_error_pero_lo_dice (estandarizacion.tests_composicion.ComposicionDeSilosTests.test_un_silo_sin_analisis_no_es_un_error_pero_lo_dice) ... ok
+test_analisis_vigentes_y_negativos_permiten_transferir (estandarizacion.tests_compuerta_silo.CompuertaMuestreoEstandarizacionTests.test_analisis_vigentes_y_negativos_permiten_transferir) ... ok
+test_ingreso_posterior_invalida_y_bloquea (estandarizacion.tests_compuerta_silo.CompuertaMuestreoEstandarizacionTests.test_ingreso_posterior_invalida_y_bloquea) ... ok
+test_transferir_sin_analisis_responde_409_con_motivo (estandarizacion.tests_compuerta_silo.CompuertaMuestreoEstandarizacionTests.test_transferir_sin_analisis_responde_409_con_motivo) ... ok
+test_corrige_la_muestra_y_recalcula_la_evaluacion (estandarizacion.tests_correcciones.CorreccionMuestraValeTests.test_corrige_la_muestra_y_recalcula_la_evaluacion) ... ok
+test_desde_corrigiendo_vuelve_a_decision_sin_mover_leche (estandarizacion.tests_correcciones.CorreccionMuestraValeTests.test_desde_corrigiendo_vuelve_a_decision_sin_mover_leche) ... ok
+test_un_vale_liberado_no_admite_corregir_la_muestra (estandarizacion.tests_correcciones.CorreccionMuestraValeTests.test_un_vale_liberado_no_admite_corregir_la_muestra) ... ok
+test_api_advierte_correcciones_fisicas_sin_inventar_aristas (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_api_advierte_correcciones_fisicas_sin_inventar_aristas) ... ok
+test_consulta_legacy_no_ofrece_mas_que_el_libro_sin_inventar_origen (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_consulta_legacy_no_ofrece_mas_que_el_libro_sin_inventar_origen) ... ok
+test_consumo_conserva_fuente_y_un_solo_retiro (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_consumo_conserva_fuente_y_un_solo_retiro) ... ok
+test_disponible_de_produccion_coincide_con_saldo_fisico (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_disponible_de_produccion_coincide_con_saldo_fisico) ... ok
+test_eleccion_explicita_no_resuelve_composicion_ambigua (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_eleccion_explicita_no_resuelve_composicion_ambigua) ... ok
+test_entrada_y_movimiento_etiquetado_son_el_mismo_consumo (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_entrada_y_movimiento_etiquetado_son_el_mismo_consumo) ... ok
+test_fallo_tardio_revierte_libro_origenes_y_vale (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_fallo_tardio_revierte_libro_origenes_y_vale) ... ok
+test_firma_vencida_rechaza_sin_movimientos (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_firma_vencida_rechaza_sin_movimientos) ... ok
+test_ingreso_posterior_compensado_no_inventa_identidad_por_saldo_igual (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_ingreso_posterior_compensado_no_inventa_identidad_por_saldo_igual) ... ok
+test_no_reconstruye_consumo_historico_por_compartir_tanque (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_no_reconstruye_consumo_historico_por_compartir_tanque) ... ok
+test_otro_ingreso_al_vale_impide_atribuir_lote_y_revierte_retiro (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_otro_ingreso_al_vale_impide_atribuir_lote_y_revierte_retiro) ... ok
+test_reintento_del_vale_no_duplica_consumos (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_reintento_del_vale_no_duplica_consumos) ... ok
+test_retiro_parcial_posterior_conserva_saldo_acumulado (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_retiro_parcial_posterior_conserva_saldo_acumulado) ... ok
+test_saldo_previo_compensado_no_acredita_tanque_vacio (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_saldo_previo_compensado_no_acredita_tanque_vacio) ... ok
+test_vale_lote_parcial_y_firma_conservan_antecedentes_reales (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_vale_lote_parcial_y_firma_conservan_antecedentes_reales) ... ok
+test_varias_fuentes_se_bloquean_sin_un_fifo_inventado (estandarizacion.tests_f01_f02_materiales.MaterialesValeF01F02Tests.test_varias_fuentes_se_bloquean_sin_un_fifo_inventado) ... ok
+test_acto_persistido_no_se_edita_ni_elimina (estandarizacion.tests_op02_actos.ActosOP02Tests.test_acto_persistido_no_se_edita_ni_elimina) ... ok
+test_adicion_exige_nuevo_ciclo_sin_reabrir_ejecucion_historica (estandarizacion.tests_op02_actos.ActosOP02Tests.test_adicion_exige_nuevo_ciclo_sin_reabrir_ejecucion_historica) ... ok
+test_adicion_invalida_firma_salida_y_actualiza_disponible_sin_reescribir_foto (estandarizacion.tests_op02_actos.ActosOP02Tests.test_adicion_invalida_firma_salida_y_actualiza_disponible_sin_reescribir_foto) ... ok
+test_adicion_retiro_dejan_dos_movimientos_nuevos_y_atribuciones (estandarizacion.tests_op02_actos.ActosOP02Tests.test_adicion_retiro_dejan_dos_movimientos_nuevos_y_atribuciones) ... ok
+test_capacidad_destino_insuficiente_bloquea_adicion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_capacidad_destino_insuficiente_bloquea_adicion) ... ok
+test_consumo_posterior_bloquea_correccion_fisica (estandarizacion.tests_op02_actos.ActosOP02Tests.test_consumo_posterior_bloquea_correccion_fisica) ... ok
+test_cuatro_decimales_se_rechazan_sin_redondear (estandarizacion.tests_op02_actos.ActosOP02Tests.test_cuatro_decimales_se_rechazan_sin_redondear) ... ok
+test_diferencia_medida_retiene_hasta_otra_medicion_sin_maquillar_libro (estandarizacion.tests_op02_actos.ActosOP02Tests.test_diferencia_medida_retiene_hasta_otra_medicion_sin_maquillar_libro) ... ok
+test_entrada_de_otro_proceso_bloquea_correccion_fisica (estandarizacion.tests_op02_actos.ActosOP02Tests.test_entrada_de_otro_proceso_bloquea_correccion_fisica) ... ok
+test_fallo_al_heredar_atribuciones_revierte_todo_el_acto (estandarizacion.tests_op02_actos.ActosOP02Tests.test_fallo_al_heredar_atribuciones_revierte_todo_el_acto) ... ok
+test_motivo_insuficiente_no_crea_acto_ni_movimientos (estandarizacion.tests_op02_actos.ActosOP02Tests.test_motivo_insuficiente_no_crea_acto_ni_movimientos) ... ok
+test_recepcion_registra_faltante_y_muestreo_no_evade_retencion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_recepcion_registra_faltante_y_muestreo_no_evade_retencion) ... ok
+test_rectificacion_documental_conserva_original_y_registra_antes_despues (estandarizacion.tests_op02_actos.ActosOP02Tests.test_rectificacion_documental_conserva_original_y_registra_antes_despues) ... ok
+test_repetir_clave_no_duplica_y_cambiar_solicitud_con_misma_clave_conflicta (estandarizacion.tests_op02_actos.ActosOP02Tests.test_repetir_clave_no_duplica_y_cambiar_solicitud_con_misma_clave_conflicta) ... ok
+test_reserva_de_origen_bloquea_consumir_litros_comprometidos (estandarizacion.tests_op02_actos.ActosOP02Tests.test_reserva_de_origen_bloquea_consumir_litros_comprometidos) ... ok
+test_reserva_del_destino_bloquea_adicion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_reserva_del_destino_bloquea_adicion) ... ok
+test_saldo_insuficiente_bloquea_adicion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_saldo_insuficiente_bloquea_adicion) ... ok
+test_solo_produccion_autoriza_adicion_retiro_y_rectificacion (estandarizacion.tests_op02_actos.ActosOP02Tests.test_solo_produccion_autoriza_adicion_retiro_y_rectificacion) ... ok
+test_calcular_propone_componentes_a_centilitros_que_suman_125_01 (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_calcular_propone_componentes_a_centilitros_que_suman_125_01) ... ok
+test_calcular_rechaza_precision_excesiva_en_cantidades_l (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_calcular_rechaza_precision_excesiva_en_cantidades_l) ... ok
+test_calidad_puede_decidir_con_muestra_conforme (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_calidad_puede_decidir_con_muestra_conforme) ... ok
+test_confirmar_borrador_no_consume_codigo_ni_libro_si_saldo_insuficiente (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_confirmar_borrador_no_consume_codigo_ni_libro_si_saldo_insuficiente) ... ok
+test_confirmar_borrador_no_persiste_si_capacidad_insuficiente (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_confirmar_borrador_no_persiste_si_capacidad_insuficiente) ... ok
+test_confirmar_borrador_respeta_reserva_de_origen (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_confirmar_borrador_respeta_reserva_de_origen) ... ok
+test_confirmar_borrador_valido_no_transfiere_hasta_accion_explicita (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_confirmar_borrador_valido_no_transfiere_hasta_accion_explicita) ... ok
+test_creacion_rechaza_componentes_negativos (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_creacion_rechaza_componentes_negativos) ... ok
+test_creacion_rechaza_litros_con_mas_de_dos_decimales (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_creacion_rechaza_litros_con_mas_de_dos_decimales) ... ok
+test_crear_calculado_sin_disponibilidad_no_deja_documento_ni_movimientos (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_crear_calculado_sin_disponibilidad_no_deja_documento_ni_movimientos) ... ok
+test_ingreso_exacto_no_se_confunde_con_saldo_previo_del_destino (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_ingreso_exacto_no_se_confunde_con_saldo_previo_del_destino) ... ok
+test_patch_cambia_origen_despues_de_transferir_es_rechazado (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_patch_cambia_origen_despues_de_transferir_es_rechazado) ... ok
+test_patch_de_observaciones_conserva_hechos_fisicos (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_patch_de_observaciones_conserva_hechos_fisicos) ... ok
+test_patch_fisico_balanceado_despues_de_transferir_es_rechazado (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_patch_fisico_balanceado_despues_de_transferir_es_rechazado) ... ok
+test_patch_previo_rechaza_precision_excesiva_sin_redondear (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_patch_previo_rechaza_precision_excesiva_sin_redondear) ... ok
+test_patch_sin_cambio_fisico_se_permite (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_patch_sin_cambio_fisico_se_permite) ... ok
+test_produccion_no_puede_liberar_mediante_decidir (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_produccion_no_puede_liberar_mediante_decidir) ... ok
+test_reintento_de_transferencia_devuelve_200_sin_duplicar_hechos (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_reintento_de_transferencia_devuelve_200_sin_duplicar_hechos) ... ok
+test_transferir_rechaza_faltante_de_un_centilitro_sin_efectos (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_transferir_rechaza_faltante_de_un_centilitro_sin_efectos) ... ok
+test_transferir_rechaza_sobrante_de_volumen_sin_efectos (estandarizacion.tests_op02_balance.BalanceOP02Tests.test_transferir_rechaza_sobrante_de_volumen_sin_efectos) ... ok
+test_liberacion_salida_requiere_muestra_posterior_a_correccion (estandarizacion.tests_op02_bloqueos.MuestraPosteriorActoTests.test_liberacion_salida_requiere_muestra_posterior_a_correccion) ... ok
+test_muestra_debe_ser_posterior_a_acto_de_otro_vale_que_afecta_el_silo (estandarizacion.tests_op02_bloqueos.MuestraPosteriorActoTests.test_muestra_debe_ser_posterior_a_acto_de_otro_vale_que_afecta_el_silo) ... ok
+test_correccion_fisica_requiere_medicion_y_liberacion_nuevas (estandarizacion.tests_op02_bloqueos.RetencionValeTests.test_correccion_fisica_requiere_medicion_y_liberacion_nuevas) ... ok
+test_discrepancia_original_retiene_silo_y_salida (estandarizacion.tests_op02_bloqueos.RetencionValeTests.test_discrepancia_original_retiene_silo_y_salida) ... ok
+test_medicion_diferente_retiene_silo (estandarizacion.tests_op02_bloqueos.RetencionValeTests.test_medicion_diferente_retiene_silo) ... ok
+test_adicion_exige_nuevo_ciclo_firma_y_autorizacion_antes_de_despachar (estandarizacion.tests_op02_despacho.DespachoEstandarizacionOP02Tests.test_adicion_exige_nuevo_ciclo_firma_y_autorizacion_antes_de_despachar) ... ok
+test_discrepancia_retiene_hoja_autorizada_y_nueva_medicion_cero_permite_salida (estandarizacion.tests_op02_despacho.DespachoEstandarizacionOP02Tests.test_discrepancia_retiene_hoja_autorizada_y_nueva_medicion_cero_permite_salida) ... ok
+test_no_se_fabrica_muestra_corrigiendo_una_eliminada_por_movimiento (estandarizacion.tests_op02_muestreo.NuevoMuestreoOP02Tests.test_no_se_fabrica_muestra_corrigiendo_una_eliminada_por_movimiento) ... ok
+test_api_rechaza_transferencia_sin_motivo_y_conserva_libro (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_api_rechaza_transferencia_sin_motivo_y_conserva_libro) ... ok
+test_excepcion_registra_origen_recomendado_usuario_fecha_y_no_duplica (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_excepcion_registra_origen_recomendado_usuario_fecha_y_no_duplica) ... ok
+test_falsificar_sugerencia_no_elude_recalculo_del_servidor (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_falsificar_sugerencia_no_elude_recalculo_del_servidor) ... ok
+test_motivo_no_habilita_material_rechazado (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_motivo_no_habilita_material_rechazado) ... ok
+test_omitir_sugerencia_no_elude_justificacion_fifo (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_omitir_sugerencia_no_elude_justificacion_fifo) ... ok
+test_origen_mas_antiguo_en_cip_no_es_recomendable (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_origen_mas_antiguo_en_cip_no_es_recomendable) ... ok
+test_origen_mas_antiguo_rechazado_no_es_recomendable (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_origen_mas_antiguo_rechazado_no_es_recomendable) ... ok
+test_reserva_total_excluye_origen_antiguo_y_no_se_toca (estandarizacion.tests_op04_fifo.ConfirmacionFIFOOP04Tests.test_reserva_total_excluye_origen_antiguo_y_no_se_toca) ... ok
+test_ajuste_del_ciclo_nuevo_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_ajuste_del_ciclo_nuevo_se_rechaza) ... ok
+test_api_transfiere_conservando_procedencia_de_recepcion (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_api_transfiere_conservando_procedencia_de_recepcion) ... ok
+test_atribucion_ausente_del_retiro_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_ausente_del_retiro_se_rechaza) ... ok
+test_atribucion_desconocida_del_retiro_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_desconocida_del_retiro_se_rechaza) ... ok
+test_atribucion_incompleta_del_retiro_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_atribucion_incompleta_del_retiro_se_rechaza) ... ok
+test_calidad_sin_segundo_revisor_sigue_bloqueando (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_calidad_sin_segundo_revisor_sigue_bloqueando) ... ok
+test_catalogo_no_presenta_material_del_ciclo_anterior (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_catalogo_no_presenta_material_del_ciclo_anterior) ... ok
+test_composicion_del_vale_distinta_del_analisis_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_composicion_del_vale_distinta_del_analisis_se_rechaza) ... ok
+test_eleccion_explicita_del_material_anterior_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_eleccion_explicita_del_material_anterior_se_rechaza) ... ok
+test_fk_a_muestra_anterior_con_igual_composicion_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_fk_a_muestra_anterior_con_igual_composicion_se_rechaza) ... ok
+test_material_con_fecha_igual_al_vaciado_es_ambiguo (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_con_fecha_igual_al_vaciado_es_ambiguo) ... ok
+test_material_nuevo_sin_ingreso_productor_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_nuevo_sin_ingreso_productor_se_rechaza) ... ok
+test_material_posterior_en_otra_unidad_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_material_posterior_en_otra_unidad_se_rechaza) ... ok
+test_merma_posterior_del_silo_impide_demostrar_recepcion_exclusiva (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_merma_posterior_del_silo_impide_demostrar_recepcion_exclusiva) ... ok
+test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_muestra_anterior_o_simultanea_al_ingreso_se_rechaza) ... ok
+test_recepcion_con_litros_distintos_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_con_litros_distintos_se_rechaza) ... ok
+test_recepcion_de_otro_silo_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_de_otro_silo_se_rechaza) ... ok
+test_recepcion_descremada_no_habilita_componente_entera (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_descremada_no_habilita_componente_entera) ... ok
+test_recepcion_no_descargada_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_no_descargada_se_rechaza) ... ok
+test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_recepcion_nueva_no_consume_salida_historica_y_reintento_no_duplica) ... ok
+test_saldo_negativo_intermedio_se_rechaza_aunque_termine_igual (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_saldo_negativo_intermedio_se_rechaza_aunque_termine_igual) ... ok
+test_segundo_ingreso_compensado_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_segundo_ingreso_compensado_se_rechaza) ... ok
+test_sin_consumo_correlacionado_al_vaciado_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_sin_consumo_correlacionado_al_vaciado_se_rechaza) ... ok
+test_tipo_descargado_no_se_puede_reescribir_por_modelo (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_descargado_no_se_puede_reescribir_por_modelo) ... ok
+test_tipo_descargado_por_api_devuelve_conflicto_sin_modificar (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_descargado_por_api_devuelve_conflicto_sin_modificar) ... ok
+test_tipo_descargado_sin_cambio_sigue_permitido_por_api (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_descargado_sin_cambio_sigue_permitido_por_api) ... ok
+test_tipo_sin_descarga_sigue_editable (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_tipo_sin_descarga_sigue_editable) ... ok
+test_vaciado_por_ajuste_se_rechaza (estandarizacion.tests_reuso_recepcion.ReusoRecepcionTests.test_vaciado_por_ajuste_se_rechaza) ... ok
+test_desvio_con_motivo_es_valido (estandarizacion.tests_sugerencia_fifo.DesvioSugerenciaFIFOTests.test_desvio_con_motivo_es_valido) ... ok
+test_elegir_otro_silo_exige_motivo (estandarizacion.tests_sugerencia_fifo.DesvioSugerenciaFIFOTests.test_elegir_otro_silo_exige_motivo) ... ok
+test_las_fechas_del_vale_no_se_editan_en_el_admin (estandarizacion.tests_vale.AdminValeTests.test_las_fechas_del_vale_no_se_editan_en_el_admin) ... ok
+test_ni_un_superusuario_borra_un_vale_desde_el_admin (estandarizacion.tests_vale.AdminValeTests.test_ni_un_superusuario_borra_un_vale_desde_el_admin)
+El admin no es una puerta lateral: ahí tampoco se borra, se anula. ... ok
+test_avisa_cuando_se_muestrea_antes_de_los_treinta (estandarizacion.tests_vale.AgitacionTests.test_avisa_cuando_se_muestrea_antes_de_los_treinta) ... ok
+test_cumplidos_los_treinta_no_avisa_nada (estandarizacion.tests_vale.AgitacionTests.test_cumplidos_los_treinta_no_avisa_nada) ... ok
+test_cumplidos_los_treinta_se_muestrea (estandarizacion.tests_vale.AgitacionTests.test_cumplidos_los_treinta_se_muestrea) ... ok
+test_el_reloj_lo_pone_el_servidor (estandarizacion.tests_vale.AgitacionTests.test_el_reloj_lo_pone_el_servidor)
+La hora de inicio no se recibe: es lo que decide si la muestra dispara ... ok
+test_muestreado_en_congela_los_minutos_de_agitacion (estandarizacion.tests_vale.AgitacionTests.test_muestreado_en_congela_los_minutos_de_agitacion)
+Sin el sello, `minutos_agitando` cuenta contra el reloj actual: un vale ... ok
+test_muestrear_a_tiempo_no_devuelve_avisos (estandarizacion.tests_vale.AgitacionTests.test_muestrear_a_tiempo_no_devuelve_avisos) ... ok
+test_muestrear_antes_de_los_treinta_avisa_pero_no_frena (estandarizacion.tests_vale.AgitacionTests.test_muestrear_antes_de_los_treinta_avisa_pero_no_frena)
+Decisión de planta (2026-08-17): la regla de §10.3 dejó de bloquear. ... ok
+test_no_transfiere_a_silo_reservado_por_otro_proceso (estandarizacion.tests_vale.AgitacionTests.test_no_transfiere_a_silo_reservado_por_otro_proceso) ... ok
+test_no_transfiere_desde_silo_bloqueado_por_calidad (estandarizacion.tests_vale.AgitacionTests.test_no_transfiere_desde_silo_bloqueado_por_calidad) ... ok
+test_sin_agitar_no_hay_nada_que_avisar (estandarizacion.tests_vale.AgitacionTests.test_sin_agitar_no_hay_nada_que_avisar)
+Un vale que no arrancó el reloj no se puede muestrear igual: lo impide ... ok
+test_sin_agitar_no_se_muestrea (estandarizacion.tests_vale.AgitacionTests.test_sin_agitar_no_se_muestrea) ... ok
+test_sin_muestrear_los_minutos_siguen_corriendo (estandarizacion.tests_vale.AgitacionTests.test_sin_muestrear_los_minutos_siguen_corriendo) ... ok
+test_transferir_descuenta_la_crema_como_tercer_origen (estandarizacion.tests_vale.AgitacionTests.test_transferir_descuenta_la_crema_como_tercer_origen) ... ok
+test_transferir_mueve_litros_entre_silos (estandarizacion.tests_vale.AgitacionTests.test_transferir_mueve_litros_entre_silos) ... ok
+test_transferir_sella_la_ejecucion_con_la_hora_del_libro (estandarizacion.tests_vale.AgitacionTests.test_transferir_sella_la_ejecucion_con_la_hora_del_libro)
+La ejecución es cuándo se mezcló la leche: la misma hora que queda en ... ok
+test_calcular_avisa_cuando_el_rc_no_se_alcanza (estandarizacion.tests_vale.ApiTests.test_calcular_avisa_cuando_el_rc_no_se_alcanza) ... ok
+test_calcular_con_crema_entrega_alternativa_sin_crema (estandarizacion.tests_vale.ApiTests.test_calcular_con_crema_entrega_alternativa_sin_crema) ... ok
+test_calcular_no_crea_nada (estandarizacion.tests_vale.ApiTests.test_calcular_no_crea_nada)
+Es el paso que el operador repite variando el volumen: guardar cada ... ok
+test_calcular_solo_entera_no_inventa_falta_de_descremada (estandarizacion.tests_vale.ApiTests.test_calcular_solo_entera_no_inventa_falta_de_descremada) ... ok
+test_el_analisis_tampoco_se_escribe_por_patch (estandarizacion.tests_vale.ApiTests.test_el_analisis_tampoco_se_escribe_por_patch)
+El análisis entra por la acción, que es la que sella `muestreado_en` y ... ok
+test_el_aviso_sobrevive_a_decidir_y_liberado (estandarizacion.tests_vale.ApiTests.test_el_aviso_sobrevive_a_decidir_y_liberado)
+Es la afirmación central de auditabilidad: un vale muestreado temprano ... ok
+test_el_estado_no_se_mueve_con_un_patch (estandarizacion.tests_vale.ApiTests.test_el_estado_no_se_mueve_con_un_patch)
+La regla de liberación vive en `decidir`, que la calcula. Si `estado` ... ok
+test_guia_rc_agrupa_los_objetivos_usados_por_producto (estandarizacion.tests_vale.ApiTests.test_guia_rc_agrupa_los_objetivos_usados_por_producto) ... ok
+test_la_ejecucion_se_expone_y_no_se_escribe (estandarizacion.tests_vale.ApiTests.test_la_ejecucion_se_expone_y_no_se_escribe) ... ok
+test_los_minutos_se_sirven_desde_el_backend (estandarizacion.tests_vale.ApiTests.test_los_minutos_se_sirven_desde_el_backend)
+La pantalla dibuja la cuenta regresiva contra este número. Escribirlo ... ok
+test_muestreado_en_resiste_un_patch (estandarizacion.tests_vale.ApiTests.test_muestreado_en_resiste_un_patch)
+El serializer lo declara de solo lectura; esta prueba lo comprueba en ... ok
+test_muestrear_a_tiempo_responde_sin_avisos (estandarizacion.tests_vale.ApiTests.test_muestrear_a_tiempo_responde_sin_avisos) ... ok
+test_muestrear_antes_de_tiempo_responde_200_con_aviso (estandarizacion.tests_vale.ApiTests.test_muestrear_antes_de_tiempo_responde_200_con_aviso)
+Era un 409. Desde 2026-08-17 la regla avisa y no bloquea, así que la ... ok
+test_muestrear_sin_haber_agitado_responde_409 (estandarizacion.tests_vale.ApiTests.test_muestrear_sin_haber_agitado_responde_409)
+Única prueba del módulo que ejercita `except DjangoValidationError → ... ok
+test_un_vale_no_se_borra_se_anula (estandarizacion.tests_vale.ApiTests.test_un_vale_no_se_borra_se_anula)
+Borrarlo haría desaparecer el eslabón entre el precondensado y los ... ok
+test_el_ciclo_completo_termina_liberando (estandarizacion.tests_vale.CorreccionTests.test_el_ciclo_completo_termina_liberando) ... ok
+test_reagitar_limpia_el_sello_del_muestreo_anterior (estandarizacion.tests_vale.CorreccionTests.test_reagitar_limpia_el_sello_del_muestreo_anterior)
+Si `muestreado_en` sobrevive al reagitado queda **antes** del nuevo ... ok
+test_reagitar_reinicia_el_reloj_y_borra_el_analisis (estandarizacion.tests_vale.CorreccionTests.test_reagitar_reinicia_el_reloj_y_borra_el_analisis)
+Agregar leche deshace la homogeneidad: los treinta minutos se cuentan ... ok
+test_la_decision_no_se_recibe_se_calcula (estandarizacion.tests_vale.DecisionTests.test_la_decision_no_se_recibe_se_calcula)
+No hay forma de pedir «liberado»: `decidir` no acepta el destino. Si ... ok
+test_no_se_decide_sin_muestra (estandarizacion.tests_vale.DecisionTests.test_no_se_decide_sin_muestra) ... ok
+test_si_el_rc_cumple_se_libera (estandarizacion.tests_vale.DecisionTests.test_si_el_rc_cumple_se_libera) ... ok
+test_si_el_rc_no_cumple_va_a_correccion_con_el_motivo (estandarizacion.tests_vale.DecisionTests.test_si_el_rc_no_cumple_va_a_correccion_con_el_motivo)
+El motivo queda escrito en el vale: es lo que le dice al operador qué ... ok
+test_el_destino_no_puede_ser_el_origen (estandarizacion.tests_vale.ReglasDelDocumentoTests.test_el_destino_no_puede_ser_el_origen) ... ok
+test_la_composicion_queda_congelada_en_el_vale (estandarizacion.tests_vale.ReglasDelDocumentoTests.test_la_composicion_queda_congelada_en_el_vale)
+La composición se guarda **en el vale** y no se lee del silo al ... ok
+test_anular_exige_motivo (estandarizacion.tests_vale.TransicionesTests.test_anular_exige_motivo)
+Un vale anulado en blanco no distingue el error de captura del silo que ... ok
+test_no_se_agita_lo_que_no_se_transfirio (estandarizacion.tests_vale.TransicionesTests.test_no_se_agita_lo_que_no_se_transfirio) ... ok
+test_un_vale_liberado_no_se_anula (estandarizacion.tests_vale.TransicionesTests.test_un_vale_liberado_no_se_anula) ... ok
+test_un_vale_liberado_no_vuelve_atras (estandarizacion.tests_vale.TransicionesTests.test_un_vale_liberado_no_vuelve_atras) ... ok
+test_confirmado_el_autoguardado_tardio_no_lo_revierte (recepcion.tests_borrador_carrera.ConfirmarBorradorBloqueaTests.test_confirmado_el_autoguardado_tardio_no_lo_revierte)
+Lo que ve el cliente cuando llega tarde: 409, y el estado intacto. ... ok
+test_un_autoguardado_en_vuelo_no_deshace_la_confirmacion (recepcion.tests_borrador_carrera.ConfirmarBorradorBloqueaTests.test_un_autoguardado_en_vuelo_no_deshace_la_confirmacion)
+Las dos peticiones **por la vista**, solapadas a propósito. ... ok
+test_analisis_completo_y_vigente_habilita (recepcion.tests_compuerta_silo.CompuertaSiloDominioTests.test_analisis_completo_y_vigente_habilita) ... ok
+test_analisis_invalidado_por_ingreso_posterior_bloquea (recepcion.tests_compuerta_silo.CompuertaSiloDominioTests.test_analisis_invalidado_por_ingreso_posterior_bloquea) ... ok
+test_cip_bloquea_proceso_y_descarga (recepcion.tests_compuerta_silo.CompuertaSiloDominioTests.test_cip_bloquea_proceso_y_descarga) ... ok
+test_inhibidores_positivos_bloquean (recepcion.tests_compuerta_silo.CompuertaSiloDominioTests.test_inhibidores_positivos_bloquean) ... ok
+test_leche_sobre_48_h_exige_revalidacion (recepcion.tests_compuerta_silo.CompuertaSiloDominioTests.test_leche_sobre_48_h_exige_revalidacion) ... ok
+test_sin_analisis_no_inicia_proceso (recepcion.tests_compuerta_silo.CompuertaSiloDominioTests.test_sin_analisis_no_inicia_proceso) ... ok
+test_dos_retiros_de_80_no_pueden_consumir_los_mismos_100_libres (recepcion.tests_op03_reservas.ConcurrenciaReservasRecepcionOP03Tests.test_dos_retiros_de_80_no_pueden_consumir_los_mismos_100_libres) ... ok
+test_misma_clave_en_dos_conexiones_crea_solo_un_par_de_asientos (recepcion.tests_op03_reservas.ConcurrenciaReservasRecepcionOP03Tests.test_misma_clave_en_dos_conexiones_crea_solo_un_par_de_asientos) ... ok
+test_prioriza_la_capa_utilizable_mas_antigua (recepcion.tests_sugerencia_fifo.SugerenciaFIFODominioTests.test_prioriza_la_capa_utilizable_mas_antigua) ... ok
+test_reparte_volumen_y_deja_bloqueados_al_final (recepcion.tests_sugerencia_fifo.SugerenciaFIFODominioTests.test_reparte_volumen_y_deja_bloqueados_al_final) ... ok
+test_dos_vales_no_consumen_dos_veces_el_ultimo_saldo (estandarizacion.tests_f01_f02_concurrencia.CarreraMaterialesF01F02Tests.test_dos_vales_no_consumen_dos_veces_el_ultimo_saldo) ... ok
+test_dos_transferencias_simultaneas_no_duplican_libro_ni_ejecucion (estandarizacion.tests_op02_actos.ConcurrenciaOP02Tests.test_dos_transferencias_simultaneas_no_duplican_libro_ni_ejecucion) ... ok
+test_misma_clave_fisica_en_dos_sesiones_crea_un_solo_acto (estandarizacion.tests_op02_actos.ConcurrenciaOP02Tests.test_misma_clave_fisica_en_dos_sesiones_crea_un_solo_acto) ... ok
+test_patch_en_espera_no_reescribe_una_transferencia_confirmada (estandarizacion.tests_op02_actos.ConcurrenciaOP02Tests.test_patch_en_espera_no_reescribe_una_transferencia_confirmada) ... ok
+test_cambio_de_inhibidores_espera_hasta_confirmar_transferencia (estandarizacion.tests_op04_fifo.CalidadConcurrenteFIFOOP04Tests.test_cambio_de_inhibidores_espera_hasta_confirmar_transferencia) ... ok
+test_alta_salida_no_confirma_entre_validacion_del_ciclo_y_commit (estandarizacion.tests_reuso_concurrencia.ReusoConcurrenciaTests.test_alta_salida_no_confirma_entre_validacion_del_ciclo_y_commit) ... ok
+test_salida_que_confirma_primero_obliga_a_rechazar_el_vale (estandarizacion.tests_reuso_concurrencia.ReusoConcurrenciaTests.test_salida_que_confirma_primero_obliga_a_rechazar_el_vale) ... ok
+test_tipo_de_recepcion_no_cambia_mientras_se_transfiere (estandarizacion.tests_reuso_concurrencia.ReusoConcurrenciaTests.test_tipo_de_recepcion_no_cambia_mientras_se_transfiere) ... ok
+test_con_leche_suficiente_no_hay_avisos (estandarizacion.tests_dominio.CalcularMezclaTests.test_con_leche_suficiente_no_hay_avisos) ... ok
+test_dos_leches_del_mismo_rc_no_mueven_nada (estandarizacion.tests_dominio.CalcularMezclaTests.test_dos_leches_del_mismo_rc_no_mueven_nada)
+Mezclar dos leches iguales da esa misma leche. ... ok
+test_la_mezcla_da_el_rc_pedido (estandarizacion.tests_dominio.CalcularMezclaTests.test_la_mezcla_da_el_rc_pedido)
+Lo que importa: no que la fórmula esté escrita, sino que el resultado ... ok
+test_la_sugerencia_aprovecha_crema_y_mantiene_el_rc (estandarizacion.tests_dominio.CalcularMezclaTests.test_la_sugerencia_aprovecha_crema_y_mantiene_el_rc) ... ok
+test_las_partes_suman_el_volumen (estandarizacion.tests_dominio.CalcularMezclaTests.test_las_partes_suman_el_volumen) ... ok
+test_rc_0422_no_se_alcanza_con_entera_pobre (estandarizacion.tests_dominio.CalcularMezclaTests.test_rc_0422_no_se_alcanza_con_entera_pobre)
+Un límite operacional real, no del programa: **RC 0,422 exige leche ... ok
+test_si_no_alcanza_la_leche_avisa_pero_calcula (estandarizacion.tests_dominio.CalcularMezclaTests.test_si_no_alcanza_la_leche_avisa_pero_calcula)
+Se avisa en vez de fallar: el operador puede estar planificando contra ... ok
+test_si_ya_estan_al_objetivo_se_usa_la_que_hay (estandarizacion.tests_dominio.CalcularMezclaTests.test_si_ya_estan_al_objetivo_se_usa_la_que_hay) ... ok
+test_un_rc_mas_alto_pide_mas_leche_entera (estandarizacion.tests_dominio.CalcularMezclaTests.test_un_rc_mas_alto_pide_mas_leche_entera)
+La entera es la que aporta grasa: a más RC, más entera. ... ok
+test_un_rc_por_debajo_de_la_descremada_tampoco (estandarizacion.tests_dominio.CalcularMezclaTests.test_un_rc_por_debajo_de_la_descremada_tampoco) ... ok
+test_un_rc_por_encima_de_la_entera_no_se_alcanza (estandarizacion.tests_dominio.CalcularMezclaTests.test_un_rc_por_encima_de_la_entera_no_se_alcanza)
+Mezclar entera con descremada solo **baja** el RC: nunca lo sube por ... ok
+test_un_volumen_no_positivo_se_rechaza (estandarizacion.tests_dominio.CalcularMezclaTests.test_un_volumen_no_positivo_se_rechaza) ... ok
+test_arma_ve_anio_juliano_y_correlativo (estandarizacion.tests_dominio.CodigoValeTests.test_arma_ve_anio_juliano_y_correlativo) ... ok
+test_el_anio_va_por_su_ultimo_digito (estandarizacion.tests_dominio.CodigoValeTests.test_el_anio_va_por_su_ultimo_digito) ... ok
+test_el_correlativo_crece_mas_alla_de_dos_digitos (estandarizacion.tests_dominio.CodigoValeTests.test_el_correlativo_crece_mas_alla_de_dos_digitos) ... ok
+test_el_dia_juliano_lleva_ceros (estandarizacion.tests_dominio.CodigoValeTests.test_el_dia_juliano_lleva_ceros) ... ok
+test_el_prefijo_es_lo_que_comparten_los_vales_del_dia (estandarizacion.tests_dominio.CodigoValeTests.test_el_prefijo_es_lo_que_comparten_los_vales_del_dia) ... ok
+test_lee_el_correlativo_de_un_codigo_del_dia (estandarizacion.tests_dominio.CodigoValeTests.test_lee_el_correlativo_de_un_codigo_del_dia) ... ok
+test_un_codigo_con_otra_forma_no_tiene_correlativo (estandarizacion.tests_dominio.CodigoValeTests.test_un_codigo_con_otra_forma_no_tiene_correlativo)
+En la base conviven códigos de antes de esta regla. Ninguno debe romper ... ok
+test_con_grasa_de_mas_pide_descremada (estandarizacion.tests_dominio.EvaluarRcTests.test_con_grasa_de_mas_pide_descremada) ... ok
+test_con_grasa_de_menos_pide_entera (estandarizacion.tests_dominio.EvaluarRcTests.test_con_grasa_de_menos_pide_entera) ... ok
+test_dentro_de_tolerancia_cumple (estandarizacion.tests_dominio.EvaluarRcTests.test_dentro_de_tolerancia_cumple) ... ok
+test_el_motivo_usa_coma_decimal_con_cuatro_cifras_fijas (estandarizacion.tests_dominio.EvaluarRcTests.test_el_motivo_usa_coma_decimal_con_cuatro_cifras_fijas) ... ok
+test_la_tolerancia_es_un_parametro (estandarizacion.tests_dominio.EvaluarRcTests.test_la_tolerancia_es_un_parametro)
+La define Calidad; va como parámetro para que cambiarla no sea ... ok
+test_sin_solidos_no_hay_rc (estandarizacion.tests_dominio.EvaluarRcTests.test_sin_solidos_no_hay_rc) ... ok
+test_lo_que_se_agrega_deja_el_rc_en_el_objetivo (estandarizacion.tests_dominio.LitrosAAgregarTests.test_lo_que_se_agrega_deja_el_rc_en_el_objetivo)
+Se comprueba recalculando, no confiando en la fórmula. ... ok
+test_si_no_hace_falta_corregir_devuelve_none (estandarizacion.tests_dominio.LitrosAAgregarTests.test_si_no_hace_falta_corregir_devuelve_none) ... ok
+test_una_correctora_que_no_mueve_el_rc_devuelve_none (estandarizacion.tests_dominio.LitrosAAgregarTests.test_una_correctora_que_no_mueve_el_rc_devuelve_none)
+Distinto de «cero litros»: con esa leche la corrección no existe, y ... ok
+
+----------------------------------------------------------------------
+Ran 423 tests in 172.958s
+
+OK
+Destroying test database for alias 'default' ('test_op00_base')...
+
