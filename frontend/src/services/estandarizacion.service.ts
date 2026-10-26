@@ -113,6 +113,7 @@ export interface Mezcla {
 }
 
 export interface CatalogosEstandarizacion {
+  salidas_origen?: { id: number; silo_id: number; codigo: string; cantidad_disponible: string; bloqueo: string | null }[];
   estados: { valor: string; etiqueta: string }[];
   /*
     Los minutos vienen del backend y no se escriben aquí: la cuenta regresiva
@@ -146,9 +147,11 @@ export async function obtenerVales(params?: {
 }
 
 export async function obtenerCatalogos(): Promise<CatalogosEstandarizacion> {
-  const { data } = await api.get<CatalogosEstandarizacion>(
-    "estandarizacion/vales/catalogos/",
-  );
+  // Es saldo operacional: una actualización explícita no reutiliza los diez
+  // segundos de caché local de api.get tras una operación de otro usuario.
+  const { data } = await api.request<CatalogosEstandarizacion>({
+    method: "get", url: "estandarizacion/vales/catalogos/",
+  });
   return data;
 }
 
@@ -276,7 +279,8 @@ async function accion(id: number, ruta: string, cuerpo?: unknown) {
   return data;
 }
 
-export const transferirVale = (id: number) => accion(id, "transferir");
+export const transferirVale = (id: number, salidas_origen?: Record<string, number>) =>
+  accion(id, "transferir", { salidas_origen });
 export const agitarVale = (id: number) => accion(id, "agitar");
 export const reagitarVale = (id: number) => accion(id, "reagitar");
 export const decidirVale = (id: number) => accion(id, "decidir");

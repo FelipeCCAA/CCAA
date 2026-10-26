@@ -57,6 +57,11 @@ class GenealogiaOrigenFisicoOP05Tests(TestCase):
     def test_disponible_no_suma_dos_veces_entrada_y_retiro_fisico(self):
         fuente = self.entrada.salida_origen
         ahora = timezone.now()
+        MovimientoSilo.objects.create(
+            silo=fuente.silo, tipo=MovimientoSilo.Tipo.INGRESO,
+            litros=Decimal("1000"), fecha_hora=ahora,
+            origen_tipo=MovimientoSilo.OrigenTipo.DESCREMACION,
+        )
         analisis = AnalisisSilo.objects.create(
             silo=fuente.silo, tomado_en=ahora, grasa=Decimal("40"),
             sng=Decimal("5"), densidad=Decimal("1000"),

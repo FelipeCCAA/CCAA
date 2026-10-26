@@ -233,6 +233,16 @@ def _evidencia_etapa(salida_id, *, bloquear=False, **analisis):
         "equipo": _filas(Equipo.objects.filter(pk=salida.ejecucion.equipo_id), bloquear),
         "entradas": _filas(EntradaProceso.objects.filter(ejecucion_id=salida.ejecucion_id), bloquear),
     })
+    if salida.ejecucion.vale_id:
+        # El vale tiene su propio acto de decisión, no una liberación de lote
+        # inventada. Su estado y muestra forman parte de la evidencia material.
+        from estandarizacion.models import ValeEstandarizacion
+        consulta = ValeEstandarizacion.objects.filter(pk=salida.ejecucion.vale_id)
+        if bloquear:
+            consulta = consulta.select_for_update()
+        foto["vale_estandarizacion"] = _json(consulta.values(
+            "id", "estado", "ejecutado_en", "muestreado_en", "grasa_real", "sng_real",
+        ).get())
     return foto
 
 
@@ -279,7 +289,13 @@ def exigir_antecedentes_salida_vigentes(salida_id, *, bloquear=True):
     for pk in cadena_salidas(salida_id, bloquear=bloquear):
         if pk == salida_id:
             continue
-        if SalidaProceso.objects.get(pk=pk).ejecucion.etapa.requiere_calidad:
+        fuente = SalidaProceso.objects.select_related("ejecucion__vale", "ejecucion__etapa").get(pk=pk)
+        if fuente.ejecucion.vale_id:
+            from estandarizacion.balance import balance_vale
+            vale = fuente.ejecucion.vale
+            if vale.estado != vale.Estado.LIBERADO or balance_vale(vale)["pendiente"]:
+                raise ValidationError("El vale de origen requiere revisión y liberación antes de continuar.")
+        elif fuente.ejecucion.etapa.requiere_calidad:
             _exigir(LiberacionProceso, "salida_id", pk, evidencia_salida, bloquear=bloquear)
 
 

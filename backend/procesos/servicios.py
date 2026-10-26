@@ -4,7 +4,7 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, F, Prefetch, Q, Sum
+from django.db.models import Count, Exists, F, OuterRef, Prefetch, Q, Sum
 from django.utils import timezone
 
 from auditoria.registro import (
@@ -877,7 +877,12 @@ def _disponible_salida_crema(salida):
     retiros_no_atribuidos = MovimientoSilo.objects.filter(
         silo_id=salida.silo_id, lote_id=salida.lote_id,
         tipo=MovimientoSilo.Tipo.SALIDA,
-    ).exclude(operacion_id__in=vinculadas)
+    ).exclude(operacion_id__in=vinculadas).annotate(
+        entrada_vale=Exists(EntradaProceso.objects.filter(
+            salida_origen=salida, ejecucion__vale_id=OuterRef("origen_id"),
+            silo_id=OuterRef("silo_id"),
+        )),
+    ).exclude(origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION, entrada_vale=True)
     if (retiros_no_atribuidos.exists() and SalidaProceso.objects.filter(
         silo_id=salida.silo_id, lote_id=salida.lote_id,
     ).exclude(pk=salida.pk).exists()):
@@ -1273,7 +1278,7 @@ def definir_destino_salida(
     return salida
 
 
-def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
+def _genealogia_lotes_directa(lote_id, direccion, profundidad_maxima=12):
     from django.db.models.functions import Coalesce
     from produccion.models import Lote
     from .models import EntradaProceso, SalidaProceso
@@ -1300,6 +1305,7 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
     frontera = [raiz]
     nodos = {raiz.id: serializar_nodo(raiz)}
     enlaces = []
+    hay_intermedios = False
 
     # Una consulta por nivel, no por nodo. En un proceso con varias entradas
     # o coproductos, el recorrido anterior volvía a consultar el lote y sus
@@ -1313,7 +1319,7 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
             relaciones = EntradaProceso.objects.filter(
                 ejecucion__salidas__lote_id__in=ids_actuales,
             ).filter(
-                Q(lote_id__isnull=False) | Q(salida_origen__lote_id__isnull=False),
+                Q(lote_id__isnull=False) | Q(salida_origen_id__isnull=False),
             ).annotate(
                 actual_relacion_id=F("ejecucion__salidas__lote_id"),
                 salida_relacion_id=F("ejecucion__salidas__id"),
@@ -1332,7 +1338,6 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
             relaciones = SalidaProceso.objects.filter(
                 Q(ejecucion__entradas__lote_id__in=ids_actuales)
                 | Q(ejecucion__entradas__salida_origen__lote_id__in=ids_actuales),
-                lote_id__isnull=False,
             ).annotate(
                 actual_relacion_id=Coalesce(
                     F("ejecucion__entradas__lote_id"),
@@ -1361,6 +1366,11 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
                 relacionado = relacion.lote
                 if direccion == "atras" and relacionado is None:
                     relacionado = relacion.salida_origen.lote
+                if relacionado is None:
+                    # La misma consulta descubre el puente sin lote. Sólo
+                    # estos grafos requieren la expansión material adicional.
+                    hay_intermedios = True
+                    continue
                 origen, destino = (
                     (relacionado.id, actual_id)
                     if direccion == "atras"
@@ -1423,11 +1433,20 @@ def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
                 siguiente[relacionado.id] = relacionado
         frontera = list(siguiente.values())
 
-    return {"nodos": list(nodos.values()), "enlaces": enlaces}
+    return {"nodos": list(nodos.values()), "enlaces": enlaces, "_hay_intermedios": hay_intermedios}
+
+
+def genealogia_lote(lote_id, direccion, profundidad_maxima=12):
+    from .genealogia_intermedios import ampliar_genealogia_intermedios
+
+    base = _genealogia_lotes_directa(lote_id, direccion, profundidad_maxima)
+    if not base.pop("_hay_intermedios"):
+        return {**base, "tramos": []}
+    return ampliar_genealogia_intermedios(lote_id, direccion, base, profundidad_maxima)
 
 
 @transaction.atomic
-def registrar_estandarizacion(*, vale):
+def registrar_estandarizacion(*, vale, origenes=None):
     """
     Deja el vale registrado como una ejecución de la etapa «Estandarización».
 
@@ -1447,6 +1466,7 @@ def registrar_estandarizacion(*, vale):
     una acción única, pero un reintento no debería duplicar la corrida.
     """
     from .models import EntradaProceso, EtapaProceso, SalidaProceso
+    origenes = origenes or {}
 
     existente = EjecucionProceso.objects.filter(vale=vale).first()
 
@@ -1472,6 +1492,7 @@ def registrar_estandarizacion(*, vale):
     EntradaProceso.objects.create(
         ejecucion=ejecucion,
         silo=vale.silo_entera,
+        salida_origen=origenes.get("entera"),
         tipo=EntradaProceso.Tipo.PRINCIPAL,
         cantidad=vale.litros_entera,
         unidad="L",
@@ -1481,6 +1502,7 @@ def registrar_estandarizacion(*, vale):
         EntradaProceso.objects.create(
             ejecucion=ejecucion,
             silo=vale.silo_descremada,
+            salida_origen=origenes.get("descremada"),
             tipo=EntradaProceso.Tipo.MEZCLA,
             cantidad=vale.litros_descremada,
             unidad="L",
@@ -1489,6 +1511,7 @@ def registrar_estandarizacion(*, vale):
         EntradaProceso.objects.create(
             ejecucion=ejecucion,
             silo=vale.silo_crema,
+            salida_origen=origenes.get("crema"),
             tipo=EntradaProceso.Tipo.MEZCLA,
             cantidad=vale.litros_crema,
             unidad="L",

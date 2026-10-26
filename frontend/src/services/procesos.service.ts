@@ -227,6 +227,12 @@ export interface Genealogia {
       id: number; cantidad: string; unidad: string; naturaleza: string; destino: string;
     };
   }[];
+  tramos?: {
+    origen: SalidaTramo;
+    entrada: { id: number; ejecucion_id: number; salida_origen_id: number; silo_id: number | null; tipo: string; cantidad: string; unidad: string };
+    destino: SalidaTramo;
+  }[];
+  advertencias?: string[];
   timeline: {
     fecha_hora: string;
     categoria: "proceso" | "entrada" | "salida" | "estado" | "calidad" | "envasado";
@@ -278,6 +284,11 @@ export interface Genealogia {
 }
 
 export type TipoReferenciaTrazabilidad = TipoReferenciaTrazable;
+
+interface SalidaTramo {
+  id: number; lote_id: number | null; silo_id: number | null; cantidad: string; unidad: string;
+  ejecucion: { id: number; codigo: string; etapa: string; tipo: string; vale_id: number | null; vale_codigo: string | null };
+}
 
 export interface OpcionesAltaCondensacion {
   lotes: { id: number; codigo: string; producto: string; orden: string; ejecucion: string; equipo: string | null; origen: string; litros: string }[];

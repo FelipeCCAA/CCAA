@@ -1,0 +1,62 @@
+{
+  ".gitattributes": {
+    "bytes": 44,
+    "sha256": "d63ee73e00c9734f0ed5446c050accab94bb949633d18ce2352ff778d45da0b2"
+  },
+  "f01-f02-baseline.log": {
+    "bytes": 4585,
+    "sha256": "00d925aedf92567ffbe6e37a190341bc20f84f046d55c3ba722ef40cc9a6e0d3"
+  },
+  "f01-f02-diff-check.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "f01-f02-final-identidades.log": {
+    "bytes": 39265,
+    "sha256": "2e6f711cebb235adbccb65c24a7ac7bf2f126f01a145c81432c340ea67b70c42"
+  },
+  "f01-f02-focal-1.log": {
+    "bytes": 5356,
+    "sha256": "2ab57aac7b656c48275dbd0f7ca998f1a03d9dcfb80aae51a1007c7e0ea36d1c"
+  },
+  "f01-f02-frontend-build-final.log": {
+    "bytes": 9202,
+    "sha256": "1a4ec50f0885412da61f15980d4c51d1df13c5d37a4c4f763aaa5f866e6cee95"
+  },
+  "f01-f02-frontend-lint-final.log": {
+    "bytes": 39,
+    "sha256": "98cdc628d09a5242698fda93e945f0e0efa0645207f11c522f5bffab308bd486"
+  },
+  "f01-f02-frontend-test.log": {
+    "bytes": 8826,
+    "sha256": "3dc6f77a2dfc37d4f047471e67f95f84a3ddfa60944ebf1838ec4f4e8650b875"
+  },
+  "f01-f02-integracion-1.log": {
+    "bytes": 4593,
+    "sha256": "9200f42e7e07fdf13d891ec26d21de9b81b977d4859ffd278026ee9b652a1d46"
+  },
+  "f01-f02-integracion-2.log": {
+    "bytes": 4399,
+    "sha256": "9549f0a55e6607dcbafbbf9683eb8cb5b08509687d4b40b3d7742de6bf01158f"
+  },
+  "f01-f02-integracion-3.log": {
+    "bytes": 697,
+    "sha256": "d471e8a0299afd7f0f765b74e7b451b5b882fe556bd5369780cfdced65fd6bef"
+  },
+  "f01-f02-integracion-final.log": {
+    "bytes": 697,
+    "sha256": "91a2ccb9d667d1cff3bcf822ca4d0bbe7832fc5e5460fcb73364dd6da7dee078"
+  },
+  "f01-f02-ruff-final.log": {
+    "bytes": 20,
+    "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+  },
+  "f01-f02-schema.log": {
+    "bytes": 260,
+    "sha256": "a6eecbf80f8b58c2c1a79f4bd5d31b7acb62fdce79af96989b78c9be70eaabe5"
+  },
+  "summary.json": {
+    "bytes": 6452,
+    "sha256": "7244dc5fdbd98bb7f05812202253084e4b046a05fec6cdf462bf317ac008e825"
+  }
+}

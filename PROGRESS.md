@@ -1,5 +1,15 @@
 # Progreso del expediente OP
 
+## AVANCE vigente — F01/F02, 26-10-2026
+
+Usuario autorizó continuar las correcciones operacionales. Primera entrega acotada: rama `codex/f01-f02-saldos-genealogia` desde `580f26c`/PR19. Nuevas transferencias conservan salida real de Descremado→vale→lote cuando existe fuente única, ingreso productor inequívoco y saldo conciliado. No hay segundo descuento físico ni backfill. Varias fuentes, ingreso ajeno o composición no demostrable se bloquean; no se inventa FIFO/prorrateo. El libro físico libre limita Disponibles; Estandarización muestra origen/bloqueo y actualiza catálogo junto a vales. Genealogía atraviesa salidas sin lote y muestra cantidades por tramo; conserva el acto de Calidad del vale. Las correcciones físicas OP02 se advierten como composición aún no atribuida.
+
+**Pruebas locales finales:**143 backend con identidades únicas, cero omitidas/fallos/errores,78,702s;25 casos nuevos, incluida carrera PostgreSQL observada con dos conexiones esperando el mismo origen (uno confirma6.000 L, otro rechaza; quedan3.150,08 L). Frontend111/111, lint y build con TypeScript; Ruff backend, esquema sin cambios y diff-check aprobados. Pruebas y fallos intermedios preservados. Un coordinador y un apoyo; revisión estática independiente sin nuevo bloqueante material en el alcance. [Expediente y EXPLICADOR de siete partes](docs/operacion/F01-F02_VALIDACION.md), [resumen y hashes](docs/operacion/evidencias/f01-f02/summary.json).
+
+**Estado: validado localmente para origen único; F02 parcial.** Falta composición de mezclas/correcciones, conciliación de históricos, repetición por navegador, carga y aceptación industrial. No suite backend global ni CI adicional declaradas por anticipado. No migraciones, producción, despliegues, contratos ni Supabase; no se alteró el ensayo OPFLOW. Próxima tarea del plan: F03 balance graso, primero definir con planta las incertidumbres/tolerancias; las otras reglas industriales pendientes no quedan autorizadas por esta entrega.
+
+---
+
 ## AVANCE vigente — precondensado, 2026-10-23 13:34 Chile
 
 **PARCIAL:** únicaOP2000L autorizada creada, valeVE6296-02 liberado por Calidad y loteOPF-PRE-01 evaporado de2000L a500L ficticios en OP09-PRE-BASE. Dos análisis nuevos con analista y visualizador distintos; ingreso nuevo invalidó correctamente análisis anterior de Silo5. La muestra de salida está firmada, pero no hay especificaciónSILO vigente. Liberar etapa deshabilitado, material ausente de cargables; cero liberaciones/despachos de salida11. No se alteraron límites ni permisos. Preparador repetido sin duplicar orden.

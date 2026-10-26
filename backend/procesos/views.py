@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, DecimalField, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models import Case, Count, DecimalField, Exists, F, OuterRef, Prefetch, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -21,7 +21,7 @@ from usuarios.tenancy import (
 from .models import (
     CorridaCondensacion, CorridaDescremacion, CorridaMantequilla, CorridaSecado,
     EjecucionProceso, EntradaProceso, EventoProceso,
-    EtapaProceso, Proceso, RutaProducto,
+    EtapaProceso, Proceso, ReservaSiloProceso, RutaProducto,
     SalidaProceso,
 )
 from .serializers import (
@@ -1427,7 +1427,32 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 tipo=MovimientoSilo.Tipo.SALIDA,
             ).exclude(
                 operacion_id__in={fila["operacion_id"] for fila in corridas_trazables},
+            ).annotate(
+                entrada_identificada=Exists(EntradaProceso.objects.filter(
+                    ejecucion__vale_id=OuterRef("origen_id"),
+                    silo_id=OuterRef("silo_id"),
+                    salida_origen__lote_id=OuterRef("lote_id"),
+                )),
+            ).exclude(
+                origen_tipo=MovimientoSilo.OrigenTipo.ESTANDARIZACION,
+                entrada_identificada=True,
             ).values("lote_id", "silo_id").annotate(total=Sum("litros"))
+        }
+        fisicos = {
+            fila["silo_id"]: fila["total"]
+            for fila in MovimientoSilo.objects.filter(
+                silo_id__in={salida.silo_id for salida in salidas},
+            ).values("silo_id").annotate(total=Sum(Case(
+                When(tipo=MovimientoSilo.Tipo.SALIDA, then=-F("litros")),
+                default=F("litros"), output_field=DecimalField(),
+            )))
+        }
+        reservas = {
+            fila["silo_id"]: fila["total"]
+            for fila in ReservaSiloProceso.objects.filter(
+                silo_id__in=fisicos, estado=ReservaSiloProceso.Estado.ACTIVA,
+                tipo=ReservaSiloProceso.Tipo.ORIGEN,
+            ).values("silo_id").annotate(total=Sum("cantidad_planificada"))
         }
         consumos_kg = {
             fila["lote_id"]: fila["total"]
@@ -1443,6 +1468,18 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 (salida.consumido or 0)
                 + consumos_fisicos.get((salida.lote_id, salida.silo_id), 0)
             )
+            # El saldo documental nunca autoriza más de lo físicamente libre.
+            # No se atribuye la diferencia histórica a un lote por suposición.
+            salida.disponible_fisico = max(fisicos.get(salida.silo_id, 0) - reservas.get(salida.silo_id, 0), 0)
+            salida.disponible_confirmable = max(min(
+                salida.cantidad_operativa - salida.consumido_trazable,
+                salida.disponible_fisico,
+            ), 0) if salida.unidad.lower() == "l" else max(salida.cantidad_operativa - salida.consumido_trazable, 0)
+            siguiente = siguiente_etapa_para_salida(salida=salida)
+            if siguiente is not None and siguiente.tipo == EtapaProceso.Tipo.ESTANDARIZACION:
+                from estandarizacion.origenes import motivo_origen_no_identificado
+                if motivo_origen_no_identificado(salida):
+                    salida.disponible_confirmable = 0
             salida.consumido_kg_trazable = (
                 consumos_kg.get(salida.lote_id, 0)
                 + kg_mantequilla.get(salida.lote_id, 0)
@@ -1458,7 +1495,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 )
         salidas = [
             salida for salida in salidas
-            if salida.cantidad_operativa - salida.consumido_trazable > 0
+            if salida.disponible_confirmable > 0
         ]
         procesos_ids = {
             salida.ruta_producto.proceso_id
@@ -1561,7 +1598,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 "cantidad_total": salida.cantidad_operativa,
                 "cantidad_original": salida.cantidad,
                 "cantidad_consumida": salida.consumido_trazable,
-                "cantidad_disponible": salida.cantidad_operativa - salida.consumido_trazable,
+                "cantidad_disponible": salida.disponible_confirmable,
                 "unidad": salida.unidad,
                 "clasificacion": salida.clasificacion,
                 "clasificacion_etiqueta": salida.get_clasificacion_display(),
@@ -1666,8 +1703,20 @@ def trazabilidad(request, lote=None, tipo=None, referencia=None):
     except ValueError as error:
         return Response({"error": str(error)}, status=400)
 
+    from estandarizacion.models import ActoValeEstandarizacion
+    vales = {encontrado.vale_id} - {None}
+    for tramo in datos.get("tramos", []):
+        vales.update({tramo["origen"]["ejecucion"]["vale_id"], tramo["destino"]["ejecucion"]["vale_id"]} - {None})
+    corregidos = ActoValeEstandarizacion.objects.filter(
+        vale_id__in=vales, tipo__in=["adicion", "retiro"],
+    ).values_list("vale__codigo", flat=True).distinct()
+
     return Response({
         **datos,
+        "advertencias": [
+            f"El vale {codigo} tiene correcciones físicas. La composición de esas correcciones requiere revisar los actos del vale; no está atribuida en estos tramos."
+            for codigo in corregidos
+        ],
         "raiz": encontrado.pk,
         "foco": foco,
         "ubicacion_actual": ubicacion_actual_lote(encontrado),

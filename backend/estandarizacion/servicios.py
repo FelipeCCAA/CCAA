@@ -87,10 +87,20 @@ def _origen_fifo_confirmable(vale, silos):
 
 
 @transaction.atomic
-def transferir(*, vale_id, usuario, comprobar_solamente=False):
+def transferir(*, vale_id, usuario, comprobar_solamente=False, salidas_origen=None):
     """Las dos leches ya están en el silo de destino."""
     from calidad.evidencia import bloquear_catalogo
     bloquear_catalogo()
+    from .origenes import COMPONENTES, preparar_origenes, salidas_en_silos
+    from calidad.etapas import bloquear_cadenas
+
+    referencia = ValeEstandarizacion.objects.get(pk=vale_id)
+    ids_origen = {getattr(referencia, f"silo_{c}_id") for c in COMPONENTES} - {None}
+    candidatos = set(salidas_en_silos(ids_origen).values_list("pk", flat=True))
+    # Misma jerarquía de H09: cadenas antes del vale y sus silos. Las altas
+    # de salidas durante la espera se detectan al releer, sin tomar locks tarde.
+    if not comprobar_solamente and not referencia.ejecutado_en:
+        bloquear_cadenas(candidatos)
     vale = ValeEstandarizacion.objects.select_for_update().get(pk=vale_id)
     if vale.ejecutado_en:
         return vale
@@ -168,6 +178,10 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False):
 
     if comprobar_solamente:
         return vale
+    ids_actuales = {getattr(vale, f"silo_{c}_id") for c in COMPONENTES} - {None}
+    if ids_actuales != ids_origen or candidatos != set(salidas_en_silos(ids_actuales).values_list("pk", flat=True)):
+        raise ValidationError("Cambió un origen material mientras se confirmaba; actualiza el vale.")
+    origenes = preparar_origenes(vale, salidas_origen, candidatos_bloqueados=candidatos)
     recomendado = _origen_fifo_confirmable(vale, bloqueados)
     desvio = recomendado.pk != entera.pk
     if desvio and len(vale.motivo_desvio_fifo.strip()) < 5:
@@ -232,7 +246,7 @@ def transferir(*, vale_id, usuario, comprobar_solamente=False):
     # El vale queda registrado como ejecucion de la etapa
     # «Estandarizacion»: es el mismo hecho de planta, y este es el
     # momento en que la mezcla ocurre de verdad.
-    ejecucion = registrar_estandarizacion(vale=vale)
+    ejecucion = registrar_estandarizacion(vale=vale, origenes=origenes)
     EventoProceso.objects.create(
         ejecucion=ejecucion, tipo="desvio_fifo" if desvio else "fifo_confirmado",
         usuario=usuario, motivo=vale.motivo_desvio_fifo.strip() if desvio else "",

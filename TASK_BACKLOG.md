@@ -1,5 +1,17 @@
 # Backlog de mejoras OP
 
+## Estado vigente — corrección acotada F01/F02, 26-10-2026
+
+Autorización del usuario: continuar el trabajo operacional. Rama `codex/f01-f02-saldos-genealogia` sobre `580f26c`/PR19; entrega para revisión, sin merge ni despliegue. **F01: corregido/validado localmente para casos soportados. F02: cadena nueva de origen único validada; cobertura global sigue PARCIAL.** [Contrato, alcance y evidencia](docs/operacion/F01-F02_VALIDACION.md).
+
+Implementado: vínculo fuenteDescremado→vale→lote, ingreso productor verificable y conciliación, firma vigente, conteo físico/material único, Disponible limitado por libro/reservas, recorrido sin lotes ficticios y cantidades por tramo. Orígenes mezclados se bloquean aunque el cliente elija unID; no hay nueva regla de reparto ni reparación de historia. Correcciones OP02 mantienen su flujo y muestran advertencia de procedencia no atribuida. Actualizar vales recarga también los saldos; actualización automática entre usuarios y offline siguen fuera de alcance.
+
+Verificación final:143 backend únicos,25 casos nuevos, cero omitidas/fallos/errores;111 frontend; carrera real entre dos vales, reintentos y rollback; lint/build/Ruff/esquema/diff aprobados. Un apoyo independiente revisó la implementación principal; coordinador revisó el lector y ejecutó comprobaciones en OP00 efímero. No navegador, suite global backend, carga ni aprobación de planta en esta entrega. CI del PR se informa aparte.
+
+Pendientes: política de composición de TK mezclados y adiciones/retiros, conciliación autorizada de históricos, UAT/circuito por pantalla, costo de lectura en bandejas grandes, F03–F07 y pendientes OP09. F03 es siguiente según el plan, con validación industrial antes de introducir tolerancias. Precondensado OPFLOW conserva500 L bloqueados por falta de especificaciónSILO. Sin producción ni Supabase.
+
+---
+
 ## Estado vigente — precondensado, 2026-10-23 13:34 Chile
 
 **PARCIAL, BLOQUEADO EN CALIDAD.** Usuario autorizó únicaOPFLOW-OP-PRECOND-01 de2000L y luego continuar e informar trabas, sin definir límites industriales. Se creó una sola OP; repetición `created=False`. Por UI: VE6296-02 (1426,60L Silo3+573,40L Tk02)→Silo5→OPF-PRE-01/Scheffers2→500L OP09-PRE-BASE. Nuevo análisis y segundo firmante. Calidad impide liberar porque falta especificación vigenteSILO; no se creó ni cambió una para forzar el resultado. Despacho no ofrece la salida; no hay liberación ni despacho de ella.

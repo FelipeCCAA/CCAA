@@ -1,0 +1,57 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Creating test database for alias 'default'...
+
+.................................................................E.....
+======================================================================
+ERROR: test_dos_vales_no_consumen_dos_veces_el_ultimo_saldo (estandarizacion.tests_f01_f02_concurrencia.CarreraMaterialesF01F02Tests.test_dos_vales_no_consumen_dos_veces_el_ultimo_saldo)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_concurrencia.py", line 28, in setUp
+    MaterialesValeF01F02Tests.setUp(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 53, in setUp
+    self.fuente = self._fuente("F02-LD-1", "9150.08")
+                  ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\estandarizacion\tests_f01_f02_materiales.py", line 89, in _fuente
+    registrar_firma_salida(decision)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\calidad\vigencia.py", line 308, in registrar_firma_salida
+    exigir_antecedentes_salida_vigentes(liberacion.salida_id)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\calidad\vigencia.py", line 289, in exigir_antecedentes_salida_vigentes
+    for pk in cadena_salidas(salida_id, bloquear=bloquear):
+              ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\calidad\etapas.py", line 29, in cadena_salidas
+    bloquear_cadenas([salida_id])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\audit-ccaa\backend\calidad\etapas.py", line 43, in bloquear_cadenas
+    list(SalidaProceso.objects.select_for_update().filter(pk__in=todos).order_by("pk"))
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\query.py", line 390, in __iter__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\query.py", line 2000, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\query.py", line 95, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1611, in execute_sql
+    sql, params = self.as_sql()
+                  ~~~~~~~~~~~^^
+  File "C:\Users\EQUIPO\.codex\.chatgpt-projects\g-p-6a79c7c991348191bf721f86baa74d0a\op00-runtime\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 847, in as_sql
+    raise TransactionManagementError(
+        "select_for_update cannot be used outside of a transaction."
+    )
+django.db.transaction.TransactionManagementError: select_for_update cannot be used outside of a transaction.
+
+----------------------------------------------------------------------
+Ran 71 tests in 140.261s
+
+FAILED (errors=1)
+Destroying test database for alias 'default'...
+
+Found 71 test(s).
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).
