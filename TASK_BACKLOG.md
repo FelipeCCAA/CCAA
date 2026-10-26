@@ -1,5 +1,15 @@
 # Backlog de mejoras OP
 
+## Estado vigente — F01 silo reutilizado, 26-10-2026
+
+**Implementación y validación local completadas; revisión PR/CI global pendiente.** Rama `codex/f01-reuso-silo-recepcion`, código1786601, [PR21 borrador](https://github.com/FelipeCCAA/CCAA/pull/21) sobrePR20. Excepción sólo para recepción entera nueva posterior a vaciado físicamente probado y FIFO íntegro, sin salidas de proceso nuevas/ajustes/mezclas ni identidad ambigua. Se conserva historia y se protege el tipo de recepción ya descargada. No se backfillean consumos ni se inventa composición.
+
+423/423 pruebas de Recepción/Estandarización,31 nuevas, sin fallos/omitidas,172,958s; API, Calidad, reintentos y tres carreras PostgreSQL; Ruff/esquema/diff aprobados. CI global código1786601 en [run40374533419](https://github.com/FelipeCCAA/CCAA/actions/runs/40374533419), no anticipar éxito. [Contrato, límites, archivos y EXPLICADOR](docs/operacion/F01_REUSO_SILO.md). API local8209 aplica la rama para ensayo: comprobación visual elimina bloqueo histórico sin pulsar Transferido. No producción, despliegue, merge ni migraciones.
+
+Siguiente paso operacional: verificar el nuevo vale VE6299-02 de1.000 L contra análisis reales del ensayo antes de transferir; sus valores manuales difieren. Silo5 quedó en5.000 L tras despacho de10.000 L realizado durante el trabajo, por lo que el vale antiguo15.000 L ya no tiene suficiente entera. No sobrescribir ni anular esos registros automáticamente. Persisten mezclas/F02, correcciones, históricos negativos, producto/especificación de polvo descremado, F03–F07, aceptación industrial y pendientes de carga OP09. SQL masivo/directo no está cubierto por la guarda save. Sin Supabase/logs.
+
+---
+
 ## Estado vigente — corrección acotada F01/F02, 26-10-2026
 
 Autorización del usuario: continuar el trabajo operacional. Rama `codex/f01-f02-saldos-genealogia` sobre `580f26c`/PR19; entrega para revisión, sin merge ni despliegue. **F01: corregido/validado localmente para casos soportados. F02: cadena nueva de origen único validada; cobertura global sigue PARCIAL.** [Contrato, alcance y evidencia](docs/operacion/F01-F02_VALIDACION.md).

@@ -1,5 +1,15 @@
 # Progreso del expediente OP
 
+## AVANCE vigente — F01 reutilización de silo, 26-10-2026
+
+Corrección acotada autorizada tras bloquearse el vale ficticio VE6299-01. Rama `codex/f01-reuso-silo-recepcion` desde561e11d, código `1786601`, [PR21 borrador](https://github.com/FelipeCCAA/CCAA/pull/21) sobrePR20. Se reconoce una recepción entera exclusiva después de vaciado acreditado, sin imputarla al producto antiguo ni reescribir historia. La identidad del tipo de leche descargada queda protegida en save/API; Calidad, firma, reservas, capacidad, FIFO y retiro único se conservan. Sin esquema, tolerancias, datos productivos ni despliegue.
+
+**423/423 pruebas locales finales**,31 nuevas, ninguna omitida/fallida,172,958s; Ruff backend, esquema sin cambios y diff-check aprobados. Incluye API, reintento, casos ambiguos y tres carreras PostgreSQL. Revisión estática independiente sin bloqueantes adicionales; sólo coordinador ejecutó pruebas. Base anterior inmutable reproduce dos fallos esperados. Fallos intermedios de fixtures y global cancelada al quedar desactualizada se conservan y no se declaran aprobados. CI global1786601 [40374533419](https://github.com/FelipeCCAA/CCAA/actions/runs/40374533419) pendiente; otros tres jobs aprobados al corte. [Expediente y EXPLICADOR](docs/operacion/F01_REUSO_SILO.md), [evidencias](docs/operacion/evidencias/f01-reuso-silo/summary.json).
+
+API local del ensayo reiniciada desde la rama y catálogo comprobado por pantalla: desaparece aviso histórico, no se pulsó Transferido. Usuario/otras operaciones dejaron nuevo vale VE6299-02 de1.000 L con composición distinta del análisis y despacho26 de10.000 L: Silo5 ahora5.000 L. Ambas inspecciones usaron READ ONLY y preservaron sus propios hashes; no se atribuye a esta corrección actividad ajena entre cortes. No cambiar los vales ni pedir transferir el antiguo15.000 L sin saldo. Próximo: corregir/validar datos del vale de práctica y continuar el recorrido por usuario; polvo descremado, mezclas/correcciones, históricos, F03–F07 y carga siguen pendientes. Sin Supabase/logs ni merge con DevelopMain.
+
+---
+
 ## AVANCE vigente — F01/F02, 26-10-2026
 
 Usuario autorizó continuar las correcciones operacionales. Primera entrega acotada: rama `codex/f01-f02-saldos-genealogia` desde `580f26c`/PR19. Nuevas transferencias conservan salida real de Descremado→vale→lote cuando existe fuente única, ingreso productor inequívoco y saldo conciliado. No hay segundo descuento físico ni backfill. Varias fuentes, ingreso ajeno o composición no demostrable se bloquean; no se inventa FIFO/prorrateo. El libro físico libre limita Disponibles; Estandarización muestra origen/bloqueo y actualiza catálogo junto a vales. Genealogía atraviesa salidas sin lote y muestra cantidades por tramo; conserva el acto de Calidad del vale. Las correcciones físicas OP02 se advierten como composición aún no atribuida.

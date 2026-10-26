@@ -1,0 +1,52 @@
+"""Inspect the current fictitious cycle with the patch; database enforced read-only."""
+import hashlib
+import json
+from pathlib import Path
+
+from django.apps import apps
+from django.core.serializers.json import DjangoJSONEncoder
+from django.db import connection, transaction
+from estandarizacion.models import ValeEstandarizacion
+from estandarizacion.origenes import origenes_catalogo, salidas_en_silos
+from estandarizacion.recepciones import recepcion_posterior_a_vaciado
+from recepcion.models import AnalisisSilo
+from recepcion.servicios import saldo_silo
+
+tracked = ["recepcion.Recepcion", "recepcion.MovimientoSilo", "recepcion.AnalisisSilo",
+           "recepcion.AtribucionRecepcion", "estandarizacion.ValeEstandarizacion",
+           "procesos.EntradaProceso", "procesos.SalidaProceso", "produccion.Lote"]
+
+def snapshot():
+    rows = {name: list(apps.get_model(name).objects.order_by("pk").values()) for name in tracked}
+    raw = json.dumps(rows, sort_keys=True, cls=DjangoJSONEncoder).encode()
+    return {"sha256": hashlib.sha256(raw).hexdigest(), "counts": {name: len(items) for name, items in rows.items()}}
+
+with transaction.atomic():
+    with connection.cursor() as cursor:
+        cursor.execute("SET TRANSACTION READ ONLY")
+        cursor.execute("SELECT current_database(),current_user,host(inet_server_addr()),inet_server_port(),current_setting('data_directory'),current_setting('transaction_read_only')")
+        database, role, host, port, directory, readonly = cursor.fetchone()
+    assert (database, role, host, port, readonly) == ("opflow_circuito", "opflow_test", "127.0.0.1", 55479, "on")
+    assert Path(directory).resolve() == (Path.cwd().parent.parent / "opflow-runtime/pgdata").resolve()
+    before = snapshot()
+    vale = ValeEstandarizacion.objects.get(pk=3, codigo="VE6299-01")
+    assert vale.estado == "calculado" and vale.ejecutado_en is None
+    silo = vale.silo_entera
+    proof = recepcion_posterior_a_vaciado(silo, list(salidas_en_silos([silo.pk])))
+    assert proof is not None
+    skim_sources = list(salidas_en_silos([vale.silo_descremada_id]).values_list("pk", flat=True))
+    analysis = AnalisisSilo.objects.filter(silo=silo, estado="confirmado").order_by("-tomado_en", "-pk").first()
+    after = snapshot()
+    assert before == after
+    result = {
+        "database_read_only": readonly, "vale": vale.codigo, "state": vale.estado, "executed": False,
+        "raw_receipt_id": proof.recepcion_id, "emptying_movement": proof.vaciado.pk,
+        "new_ingress_movement": proof.ingreso.pk, "raw_balance_L": str(saldo_silo(silo)),
+        "whole_analysis_id": analysis.pk, "whole_source_fk": None,
+        "skim_candidate_ids": skim_sources,
+        "historical_whole_candidates_hidden": not origenes_catalogo([silo.pk]),
+        "industrial_snapshot_before": before, "industrial_snapshot_after": after,
+        "physical_transfer_executed": False,
+        "full_transfer_guards_executed": False,
+    }
+print(json.dumps(result, indent=2))

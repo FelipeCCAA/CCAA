@@ -1,0 +1,17 @@
+{
+  "code_commit": "178660100a2f8c53a46bafdb72589eac1b80bcef",
+  "captured_at_utc": "2026-10-26T18:13:10.615Z",
+  "workflow_runs": [
+    {
+      "id": 40374533419,
+      "name": "CI",
+      "status": "in_progress",
+      "conclusion": null,
+      "run_number": 67,
+      "jobs_url": "https://api.github.com/repos/FelipeCCAA/CCAA/actions/runs/40374533419/jobs",
+      "logs_url": "https://api.github.com/repos/FelipeCCAA/CCAA/actions/runs/40374533419/logs",
+      "workflow_id": 331967196
+    }
+  ],
+  "note": "Snapshot: global backend still running; other three jobs passed. Do not treat as final green CI."
+}
