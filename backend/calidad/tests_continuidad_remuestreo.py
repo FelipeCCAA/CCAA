@@ -8,11 +8,11 @@ from django.utils import timezone
 
 from calidad import tests_continuidad_adversos as escenarios
 from calidad import tests_continuidad_produccion as produccion_escenarios
-from calidad.continuidad import AprobacionPendiente, comprobar_salida, exigir_pendientes_entrada_resueltos
+from calidad.continuidad import AprobacionPendiente, comprobar_salida, exigir_pendientes_entrada_resueltos, registrar
 from calidad.models import LiberacionProceso
 from estandarizacion.tests_vale import BaseVale
 from maestros.models import Especificacion
-from procesos.models import EjecucionProceso
+from procesos.models import EjecucionProceso, EventoProceso
 from produccion.models import Analisis
 from recepcion.models import AnalisisSilo, MovimientoSilo
 from recepcion.servicios import motivos_silo_no_disponible
@@ -137,6 +137,18 @@ class RemuestreoNoDisponeAdversoTests(BaseVale):
         with self.assertRaises(ValidationError) as error:
             exigir_pendientes_entrada_resueltos(ejecucion.pk)
         self.assertNotIsInstance(error.exception, AprobacionPendiente)
+
+    def test_otro_acto_no_fotografia_muestra_posterior_al_retiro_original(self):
+        original = AnalisisSilo.objects.filter(silo=self.silo_entera).latest("pk")
+        from estandarizacion.servicios import transferir
+        transferir(vale_id=self.vale.pk, usuario=self.usuario)
+        ejecucion = EjecucionProceso.objects.get(vale=self.vale)
+        futuro = self._otra_muestra(original)
+        registrar(ejecucion, self.usuario, "segundo_acto_operacional", ["Firma de salida pendiente"])
+        evento = EventoProceso.objects.get(ejecucion=ejecucion, motivo="segundo_acto_operacional")
+        fotos = evento.datos["analisis_silo_pendientes"]
+        self.assertIn(str(original.pk), [f["id"] for f in fotos])
+        self.assertNotIn(str(futuro.pk), [f["id"] for f in fotos])
 
 
 @override_settings(CCAA_CALIDAD_INTERMEDIA_AVISO=True)

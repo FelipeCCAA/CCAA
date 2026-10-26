@@ -220,10 +220,15 @@ def registrar(ejecucion, usuario, accion, avisos):
     avisos = list(avisos)
     for entrada in ejecucion.entradas.filter(salida_origen__isnull=True).exclude(silo_id=None):
         silo_id = entrada.silo_id
-        controles_crudos.append(deuda_sin_muestra(entrada))
-        analisis = AnalisisSilo.objects.filter(silo_id=silo_id).order_by("-tomado_en", "-pk").first()
-        if analisis is None or not analisis.vigente:
-            pendientes.append(deuda_sin_muestra(entrada))
+        control = deuda_sin_muestra(entrada)
+        controles_crudos.append(control)
+        # El acto puede cerrarse después de reutilizar el silo. La muestra
+        # debe describir el retiro original, nunca el contenido actual.
+        analisis = AnalisisSilo.objects.filter(
+            silo_id=silo_id, tomado_en__gte=control["desde"], tomado_en__lte=control["hasta"],
+        ).order_by("-tomado_en", "-pk").first()
+        if analisis is None:
+            pendientes.append(control)
             avisos.append(f"Silo {silo_id}: falta registrar la muestra representativa del material consumido.")
         else:
             pendientes.append(foto_analisis(analisis))
