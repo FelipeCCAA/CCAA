@@ -8,6 +8,7 @@
     "skipped": 5
   },
   "cause": "Two historical availability fixtures omitted physical ingress; only test setup corrected.",
+  "excerpt_format": "Bounded error excerpt; trailing whitespace removed. Full original preserved locally.",
   "local_command": "run_backend.py test procesos.tests_descremacion estandarizacion.tests_f01_f02_materiales --noinput --verbosity 2",
   "local_executed": 31,
   "local_unique_identities": [

@@ -4,7 +4,7 @@ ERROR: test_continuacion_usa_la_primera_etapa_de_la_ruta_de_la_rama (procesos.te
 2026-10-26T13:45:28.1424090Z   File "/home/runner/work/CCAA/CCAA/backend/procesos/tests_descremacion.py", line 597, in test_continuacion_usa_la_primera_etapa_de_la_ruta_de_la_rama
 2026-10-26T13:45:28.1425686Z     material = next(item for item in disponibles.data if item["id"] == salida.pk)
 2026-10-26T13:45:28.1426348Z StopIteration
-2026-10-26T13:45:28.1426484Z 
+2026-10-26T13:45:28.1426484Z
 2026-10-26T13:45:28.1426613Z ======================================================================
 2026-10-26T13:45:28.1427423Z FAIL: test_disponibles_puede_cargarse_solo_para_un_silo (procesos.tests_descremacion.CierreDescremacionTests.test_disponibles_puede_cargarse_solo_para_un_silo)
 2026-10-26T13:45:28.1428376Z ----------------------------------------------------------------------
@@ -19,16 +19,16 @@ ERROR: test_continuacion_usa_la_primera_etapa_de_la_ruta_de_la_rama (procesos.te
 2026-10-26T13:45:28.1432079Z     )
 2026-10-26T13:45:28.1432260Z     ^
 2026-10-26T13:45:28.1432470Z AssertionError: Lists differ: [] != [207]
-2026-10-26T13:45:28.1432687Z 
+2026-10-26T13:45:28.1432687Z
 2026-10-26T13:45:28.1432923Z Second list contains 1 additional elements.
 2026-10-26T13:45:28.1433259Z First extra element 0:
 2026-10-26T13:45:28.1433478Z 207
-2026-10-26T13:45:28.1433584Z 
+2026-10-26T13:45:28.1433584Z
 2026-10-26T13:45:28.1433660Z - []
 2026-10-26T13:45:28.1433852Z + [207]
-2026-10-26T13:45:28.1433954Z 
+2026-10-26T13:45:28.1433954Z
 2026-10-26T13:45:28.1434561Z ----------------------------------------------------------------------
 2026-10-26T13:45:28.1450130Z Ran 1850 tests in 506.542s
-2026-10-26T13:45:28.1450427Z 
+2026-10-26T13:45:28.1450427Z
 2026-10-26T13:45:28.1450587Z FAILED (failures=1, errors=1, skipped=5)
 2026-10-26T13:45:28.1450926Z Destroying test database for alias 'default'...
