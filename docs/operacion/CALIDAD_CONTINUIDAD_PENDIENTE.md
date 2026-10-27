@@ -52,6 +52,10 @@ Las pruebas se ejecutan sobre OP00 local desechable (127.0.0.1:55439, rol `op00_
 
 La evidencia definitiva y los cortes intermedios se registran en `evidencias/calidad-continuidad/summary.json`. No sumar pruebas de cortes solapados ni considerar aprobada una corrida sin resumen completo. Chrome con API simulada verifica interfaz y permisos visibles; no equivale a un circuito completo de planta ni a una prueba de carga.
 
+Cierre27-10-2026: código final `ceb3c80e7ef8fcab314db58f9f723180e2feae77`, [PR22 borrador](https://github.com/FelipeCCAA/CCAA/pull/22), [CI40392127340 aprobada](https://github.com/FelipeCCAA/CCAA/actions/runs/40392127340). Backend1.924 ejecutadas,1.919 aprobadas,5omitidas, cero fallos/errores,552,524s; cuatro jobs aprobados, incluyendo configuración, almacenamiento privado y frontend. Frontend115/115, lint/tipos/build; Chrome6/6 con API simulada. La regresión local302/302 en729,325s corresponde a31fb6c0, anterior a la última selección acotada de muestra; el ajuste final y su regresión sí fueron ejecutados por CI global. Cortes35/35 y13/13 previos conservados sin sumarlos.
+
+Revisión independiente estática aceptó el delta final. Las cuentas ficticias existentes se recuperaron el27-10 sin cambiar permisos ni hash de datos operacionales; superadmin ingresó por pantalla y Calidad pasó login/identidad/logout HTTP local. Dashboard muestra el aviso real de continuidad. La primera carga tras reiniciar conservaba módulos viejos de Vite y falló por mezcla de instancias React; una recarga completa recuperó el panel. No se modificó código para esconderlo. Contraseñas guardadas sólo en archivo local protegido fuera del repositorio y evidencia pública. No se ejecutó un nuevo circuito industrial completo.
+
 Criterios: política apagada conserva modo estricto; cliente no puede activar política; productor terminado y composición/balance válidos; continuidad deja autor y pendiente sin firma falsa; reintento no duplica retiro/evento; fallo tardío revierte ambos; adversos y CIP bloquean; deuda antigua sigue al material; Envase mantiene cuarentena; despacho requiere liberación final vigente. Las pruebas de carga OP09 y reservas propuestas del vale siguen siendo tareas separadas.
 
 ## EXPLICADOR
@@ -62,4 +66,4 @@ Criterios: política apagada conserva modo estricto; cliente no puede activar po
 4. **Solución:** separar avance físico de liberación comercial y mantener el pendiente ligado al material original.
 5. **Trabajo:** coordinador backend, un apoyo frontend y un QA independiente; cambio acotado y migración aditiva, sin producción.
 6. **Pruebas:** política, permisos, trazabilidad, reintento, reversión, resultados adversos, circuitos, interfaz y regresiones. Los resultados finales están en el manifiesto de evidencias.
-7. **Estado:** entrega en verificación y revisión; activar en planta, completar UAT y resolver pendientes industriales son hitos separados.
+7. **Estado:** VALIDADO MEDIANTE PRUEBAS en rama y CI del código final; PR22 en revisión, sin merge ni despliegue. Activar en planta, completar UAT y resolver pendientes industriales son hitos separados. No se certifican históricos ambiguos ni carga OP09.

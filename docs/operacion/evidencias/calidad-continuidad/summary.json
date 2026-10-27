@@ -44,13 +44,55 @@
       "note": "Corrida interrumpida/reemplazada; no aprobada"
     },
     "calidad-regresion-definitiva.log": {
-      "complete": false,
-      "note": "Corrida interrumpida/reemplazada; no aprobada"
+      "count": 302,
+      "seconds": 729.325,
+      "ok": true
     },
     "calidad-ui-final.log": {
       "complete": false,
       "note": "Corrida interrumpida/reemplazada; no aprobada"
     }
+  },
+  "ci_final": {
+    "repository": "FelipeCCAA/CCAA",
+    "pull_request": 22,
+    "code_sha": "ceb3c80e7ef8fcab314db58f9f723180e2feae77",
+    "run_id": 40392127340,
+    "url": "https://github.com/FelipeCCAA/CCAA/actions/runs/40392127340",
+    "conclusion": "success",
+    "jobs": {
+      "backend": {
+        "id": 121815544980,
+        "conclusion": "success",
+        "tests_run": 1924,
+        "passed": 1919,
+        "skipped": 5,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 552.524
+      },
+      "frontend": {
+        "id": 121815545135,
+        "conclusion": "success"
+      },
+      "private-storage": {
+        "id": 121815545033,
+        "conclusion": "success"
+      },
+      "production-config": {
+        "id": 121815544520,
+        "conclusion": "success"
+      }
+    },
+    "local_regression": {
+      "file": "calidad-regresion-definitiva.log",
+      "code_sha": "31fb6c05bd15ff8f4b6ca645917eadd165144157",
+      "run": 302,
+      "passed": 302,
+      "seconds": 729.325,
+      "note": "Previous code cut; final bounded-sample adjustment verified by complete CI on ceb3c80"
+    },
+    "deployment_performed": false
   },
   "frontend_unit": {
     "passed": 115,

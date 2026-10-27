@@ -60,8 +60,8 @@
     "sha256": "7da3da32a4e828645fc47ab38faba3c8bb64aaa4ef9e9be6c8110384cf077e29"
   },
   "calidad-regresion-definitiva.log": {
-    "bytes": 11473,
-    "sha256": "efc775f823099689da4ccf3199c8310141e55801d6b504d41487222837ff7dbb"
+    "bytes": 55286,
+    "sha256": "019f275710de8f3bc8768eba4860fff5a23aee9420afe057a1748f72973e8701"
   },
   "calidad-regresion-final.log": {
     "bytes": 3317,
@@ -87,12 +87,24 @@
     "bytes": 522,
     "sha256": "3cbff58f913e2ca3797d6fee7001fbdf124d924a2b2fd72527fab1cc1fd13252"
   },
+  "ci-backend-excerpt.log": {
+    "bytes": 246,
+    "sha256": "b679426cf28df640bba2e843e36a72c695e33fd21026200b6d48aaa102cbb926"
+  },
+  "ci-final.json": {
+    "bytes": 923,
+    "sha256": "3e6c501f70faaa1551800733fc6bd6ab1c391f80db065fadf005faf2243e48c2"
+  },
+  "revision-independiente.md": {
+    "bytes": 1200,
+    "sha256": "1bb99f132edde3f70f01c496310bc4d30d2abd8af5406718392909bc8a85c61a"
+  },
   "source-sha256.json": {
     "bytes": 5797,
-    "sha256": "eac5e82b1716d2c264aa7036fde641521932e8e819792511d56e5daee20029f7"
+    "sha256": "32810d2a29c3d2710c56f1117670c21e8c70d4093dbc135af15468880d243da4"
   },
   "summary.json": {
-    "bytes": 1957,
-    "sha256": "a7c3e458ed189c4779f88188a5bd181c4d4f4a0eaf358de03032a6df5a408838"
+    "bytes": 3129,
+    "sha256": "5c6448ce95c3fe3204e5dd05d0bec25d07e7aacb99c09e502c2283c9aaa0d123"
   }
 }
