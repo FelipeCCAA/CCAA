@@ -59,7 +59,7 @@ test("una respuesta incierta conserva exactamente UUID y cuerpo al reintentar tr
   expect((enviados[0] as { operacion_id: string }).operacion_id).toMatch(/^[0-9a-f-]{36}$/);
 
   await page.reload();
-  await expect(page.getByText("No hay material liberado para envasar.")).toBeVisible();
+  await expect(page.getByText("No hay material habilitado para envasar.")).toBeVisible();
   await expect(page.getByText("Cierre pendiente de confirmación")).toBeVisible();
   await page.getByRole("button", { name: "Reintentar el mismo cierre" }).click();
   await expect(page.getByText(/PAL-OP08-001 confirmado/)).toBeVisible();
@@ -93,7 +93,7 @@ test("otro operador no ve el cierre pendiente de la cuenta anterior", async ({ p
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
   });
   await page.goto("/#/envasado");
-  await expect(page.getByText("No hay material liberado para envasar.")).toBeVisible();
+  await expect(page.getByText("No hay material habilitado para envasar.")).toBeVisible();
   await expect(page.getByText("Cierre pendiente de confirmación")).toHaveCount(0);
   await expect(page.getByText("PAL-AJENO")).toHaveCount(0);
   expect(await page.evaluate(() => sessionStorage.getItem("envasado-pendiente-908-8"))).not.toBeNull();

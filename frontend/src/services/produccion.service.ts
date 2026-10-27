@@ -272,6 +272,7 @@ export interface LoteNuevo {
 }
 
 export interface ValeDisponible {
+  avisos_calidad?: string[];
   id: number;
   codigo: string;
   fecha: string;
@@ -342,7 +343,8 @@ export interface MaterialEnvasable {
   }>;
   puede_envasar: boolean;
   origen: string;
-  calidad: "liberado";
+  calidad: "liberado" | "pendiente";
+  avisos_calidad?: string[];
   motivo_bloqueo: string;
   advertencia_materiales: string;
 }

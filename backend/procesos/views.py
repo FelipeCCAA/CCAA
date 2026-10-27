@@ -452,8 +452,9 @@ class CorridaDescremacionViewSet(viewsets.ModelViewSet):
                 {"error": "El análisis o producto no pertenece a tu alcance."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        from calidad.continuidad import activa
         if (
-            analisis.estado != AnalisisSilo.Estado.CONFIRMADO
+            (analisis.estado != AnalisisSilo.Estado.CONFIRMADO and not (activa() and analisis.estado == AnalisisSilo.Estado.BORRADOR))
             or not analisis.vigente
             or analisis.grasa is None
             or analisis.sng is None
@@ -585,6 +586,7 @@ class CorridaMantequillaViewSet(
     @action(detail=False, methods=["get"], url_path="opciones-alta")
     def opciones_alta(self, request):
         from maestros.models import Equipo
+        from calidad.continuidad import activa, informacion_salida
         from produccion.models import Lote, OrdenProduccion
         from recepcion.servicios import motivos_silo_no_disponible, saldo_silo
         from .servicios import (
@@ -607,6 +609,11 @@ class CorridaMantequillaViewSet(
             ).select_related("producto"), request.user,
             campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id",
         )
+        if activa():
+            lotes_crema = filtrar_por_scope(Lote.objects.filter(
+                estado__in=[Lote.Estado.EN_PROCESO, Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
+                producto__familia="crema",
+            ).select_related("producto"), request.user, campo_sucursal="sucursal_id", campo_empresa="sucursal__empresa_id")
         salidas = filtrar_por_scope(
             SalidaProceso.objects.filter(
                 lote__in=lotes_crema, silo__isnull=False,
@@ -641,7 +648,7 @@ class CorridaMantequillaViewSet(
                     "etapa_origen": salida.ejecucion.etapa.get_tipo_display(),
                 }
                 continue
-            if motivos_silo_no_disponible(salida.silo, para="proceso"):
+            if motivos_silo_no_disponible(salida.silo, para="proceso", permitir_pendientes=True):
                 continue
             reservado = sum((r.cantidad_planificada for r in reservas_activas_silo(
                 silo_id=salida.silo_id,
@@ -664,6 +671,7 @@ class CorridaMantequillaViewSet(
                 "salida_crema": salida.pk, "silo_id": salida.silo_id,
                 "silo_codigo": salida.silo.codigo, "unidad_origen": salida.unidad,
                 "disponible_kg": libre_kg,
+                "avisos_calidad": informacion_salida(salida)["avisos_calidad"],
             })
         equipos = filtrar_por_scope(
             Equipo.objects.filter(activo=True, tipo__in=[Equipo.Tipo.LINEA, Equipo.Tipo.OTRO]),
@@ -1367,10 +1375,10 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
         """Resultados liberados, con saldo y próximas etapas configuradas."""
         from calidad.models import LiberacionProceso
         from recepcion.models import MovimientoSilo
+        from calidad.continuidad import activa, informacion_salida
 
         salidas = (
             SalidaProceso.objects.filter(
-                liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO,
                 silo__isnull=False,
                 destino__in=[
                     SalidaProceso.Destino.PENDIENTE,
@@ -1386,6 +1394,11 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 "ruta_producto__proceso",
             ).annotate(consumido=Sum("usos_como_origen__cantidad"))
         )
+        if not activa():
+            salidas = salidas.filter(liberacion_calidad__estado=LiberacionProceso.Estado.LIBERADO)
+        salidas = filtrar_por_scope(salidas, request.user,
+                                   campo_sucursal="ejecucion__sucursal_id",
+                                   campo_empresa="ejecucion__sucursal__empresa_id")
         silo_id = request.query_params.get("silo")
         if silo_id:
             try:
@@ -1397,6 +1410,18 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 )
             salidas = salidas.filter(silo_id=silo_id)
         salidas = list(salidas)
+        if activa():
+            permitidas = []
+            for salida in salidas:
+                try:
+                    salida._continuidad = informacion_salida(salida)
+                except DjangoValidationError:
+                    continue
+                # Ninguna acción de despacho obtiene una excepción productiva.
+                if salida.destino == SalidaProceso.Destino.DESPACHO_DIRECTO and salida._continuidad["estado_calidad"] != "liberado":
+                    continue
+                permitidas.append(salida)
+            salidas = permitidas
         claves_material = {
             (salida.lote_id, salida.silo_id)
             for salida in salidas if salida.lote_id
@@ -1484,7 +1509,7 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 consumos_kg.get(salida.lote_id, 0)
                 + kg_mantequilla.get(salida.lote_id, 0)
             )
-            analisis = getattr(salida.liberacion_calidad, "analisis_silo", None)
+            analisis = getattr(getattr(salida, "liberacion_calidad", None), "analisis_silo", None)
             if (
                 salida.lote_id and salida.unidad.lower() == "l"
                 and salida.consumido and analisis and analisis.densidad
@@ -1566,17 +1591,18 @@ class SalidaProcesoViewSet(viewsets.ModelViewSet):
                 ),
                 "tipo_material": salida.clasificacion,
                 "tipo_material_etiqueta": salida.get_clasificacion_display(),
-                "estado_calidad": salida.liberacion_calidad.estado,
-                "estado_calidad_etiqueta": "Liberado por Calidad",
+                "estado_calidad": getattr(salida, "_continuidad", {}).get("estado_calidad", getattr(getattr(salida, "liberacion_calidad", None), "estado", "pendiente")),
+                "estado_calidad_etiqueta": "Pendiente de Calidad" if getattr(salida, "_continuidad", {}).get("estado_calidad") == "pendiente" else "Liberado por Calidad",
+                "avisos_calidad": getattr(salida, "_continuidad", {}).get("avisos_calidad", []),
                 # Compatibilidad temporal: los consumidores nuevos deben usar
                 # ``tipo_material`` y ``estado_calidad``. Estos dos campos
                 # históricos mezclaban el estado del material con la decisión
                 # de Calidad y se retirarán en una versión posterior de la API.
-                "estado_material": "liberado",
-                "estado_material_etiqueta": "Liberado por Calidad",
+                "estado_material": getattr(salida, "_continuidad", {}).get("estado_calidad", "liberado"),
+                "estado_material_etiqueta": "Pendiente de Calidad" if getattr(salida, "_continuidad", {}).get("estado_calidad") == "pendiente" else "Liberado por Calidad",
                 "densidad_kg_m3": (
                     salida.liberacion_calidad.analisis_silo.densidad
-                    if salida.liberacion_calidad.analisis_silo_id else None
+                    if getattr(getattr(salida, "liberacion_calidad", None), "analisis_silo_id", None) else None
                 ),
                 "cantidad_trazable_kg": (
                     salida.lote.kg_producidos if salida.lote_id else None

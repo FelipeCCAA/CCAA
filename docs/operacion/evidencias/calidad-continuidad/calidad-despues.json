@@ -1,0 +1,22 @@
+{
+  "sha256": "411c481f9c70aba8f15f08b38bf3ceee44a2aea8337b1fd81c10edf20ae4c275",
+  "counts": {
+    "maestros.Silo": 10,
+    "recepcion.Recepcion": 2,
+    "recepcion.MovimientoSilo": 26,
+    "recepcion.AnalisisSilo": 13,
+    "recepcion.AtribucionRecepcion": 28,
+    "estandarizacion.ValeEstandarizacion": 4,
+    "procesos.EjecucionProceso": 9,
+    "procesos.EntradaProceso": 11,
+    "procesos.SalidaProceso": 14,
+    "procesos.EventoProceso": 28,
+    "produccion.Lote": 9,
+    "produccion.RegistroEnvase": 2,
+    "produccion.PalletProducto": 2,
+    "calidad.Liberacion": 3,
+    "calidad.LiberacionProceso": 8,
+    "inventario.MovimientoProductoTerminado": 6
+  },
+  "read_only": true
+}

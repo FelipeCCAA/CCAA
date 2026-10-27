@@ -49,6 +49,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 DJANGO_ENV = normalizar_entorno(os.environ.get("DJANGO_ENV"))
+CCAA_CALIDAD_INTERMEDIA_AVISO = env_bool("CCAA_CALIDAD_INTERMEDIA_AVISO", False)
 
 # La suite histórica crea tokens de DRF directamente en varios fixtures. La
 # aplicación real ya no los emite ni los acepta: usa ``SesionUsuario`` y guarda

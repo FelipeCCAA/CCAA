@@ -695,7 +695,7 @@ def analisis_vigente_resumido(
     )
 
 
-def motivos_silo_no_disponible(silo, analisis, ciclo_cip, ahora, *, para) -> list[str]:
+def motivos_silo_no_disponible(silo, analisis, ciclo_cip, ahora, *, para, permitir_pendientes=False) -> list[str]:
     """Razones operativas; una lista vacía habilita la operación solicitada."""
     if para not in {"proceso", "descarga"}:
         raise ValueError("La disponibilidad solo se evalúa para proceso o descarga.")
@@ -706,6 +706,10 @@ def motivos_silo_no_disponible(silo, analisis, ciclo_cip, ahora, *, para) -> lis
         motivos.append("El silo está fuera de servicio.")
     if estado == "bloqueado_calidad":
         motivos.append("El silo está bloqueado por Calidad.")
+    if estado == "pendiente_cip":
+        motivos.append("El silo requiere completar su limpieza CIP.")
+    if estado == "pendiente_calidad" and not permitir_pendientes:
+        motivos.append("El silo está pendiente de Calidad; no tiene liberación final.")
     cip_en_curso = ciclo_cip and _dato(ciclo_cip, "estado") == "en_curso"
     if estado == "en_cip" or cip_en_curso:
         motivos.append("El silo tiene un ciclo CIP en curso.")
@@ -713,6 +717,17 @@ def motivos_silo_no_disponible(silo, analisis, ciclo_cip, ahora, *, para) -> lis
     # Descargar un camión solo se detiene por seguridad operacional. La
     # muestra describe el contenido después de descargar, no antes.
     if para == "descarga" or motivos:
+        return motivos
+
+    if permitir_pendientes:
+        if analisis is not None and _dato(analisis, "inhibidores_resultado") == "positivo":
+            motivos.append("El análisis del silo detectó inhibidores positivos.")
+        antigua = _dato(silo, "leche_mas_antigua_en")
+        if antigua is not None and ahora - antigua > timedelta(hours=48):
+            if analisis is None or not all(_dato(analisis, campo) is True for campo in (
+                "alcohol_75_conforme", "hervor_conforme", "organoleptico_conforme",
+            )):
+                motivos.append("La leche sobre 48 h requiere revalidación de inocuidad.")
         return motivos
 
     if analisis is None:

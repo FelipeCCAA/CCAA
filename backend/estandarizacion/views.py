@@ -439,6 +439,16 @@ class ValeEstandarizacionViewSet(RelacionesTenantMixin, QuerysetTenantMixin, vie
 
         return Response(self.get_serializer(vale).data)
 
+    @action(detail=True, methods=["post"], url_path="continuar-pendiente")
+    def continuar_pendiente(self, request, pk=None):
+        try:
+            vale = servicios.continuar_pendiente(
+                vale_id=self.get_object().pk, usuario=request.user, motivo=request.data.get("motivo", ""),
+            )
+        except DjangoValidationError as error:
+            return _conflicto(error)
+        return Response(self.get_serializer(vale).data)
+
     @action(detail=True, methods=["post"], url_path="muestrear")
     def muestrear(self, request, pk=None):
         entrada = MuestraSerializer(data=request.data)

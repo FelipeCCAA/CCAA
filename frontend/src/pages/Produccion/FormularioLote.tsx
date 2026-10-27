@@ -1,3 +1,5 @@
+import AvisosCalidad from "../../components/Calidad/AvisosCalidad";
+import { sufijoAvisosCalidad } from "../../services/continuidad-calidad";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Beaker, Factory, X } from "lucide-react";
 
@@ -31,7 +33,7 @@ import { cantidad } from "../../services/formato";
   del día, y con él toda su trazabilidad — que entonces ya era documentación
   retroactiva.
 
-  La leche se selecciona por su vale liberado. El vale trae los silos y el RC
+  La leche se selecciona por su vale habilitado por el servidor. El vale trae los silos y el RC
   desde Estandarización; Producción no vuelve a escoger ese origen.
 
   El código identifica la corrida, no el producto: CCAA + año + día juliano +
@@ -352,7 +354,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
             <div className="sm:col-span-2">
 
-              <label className={etiquetaCampo}>Vale estandarizado liberado *</label>
+              <label className={etiquetaCampo}>Vale estandarizado disponible *</label>
 
               <select
                 className={campo}
@@ -374,7 +376,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
                   <option key={item.id} value={item.id}>
 
-                    {item.codigo} · {item.producto_nombre} · {Number(item.litros_disponibles).toLocaleString("es-CL")} L
+                    {item.codigo} · {item.producto_nombre} · {Number(item.litros_disponibles).toLocaleString("es-CL")} L{sufijoAvisosCalidad(item.avisos_calidad)}
 
                   </option>
 
@@ -382,9 +384,10 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
               </select>
 
+              <AvisosCalidad avisos={valeSeleccionado?.avisos_calidad} />
               {vales.length === 0 && (
                 <p className="mt-1.5 text-xs text-amber-700">
-                  No hay vales liberados con saldo. Libera uno en Estandarización.
+                  No hay vales habilitados con saldo. Revisa su continuidad en Estandarización.
                 </p>
               )}
               {valeSeleccionado && (
@@ -538,7 +541,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
 
             <p className="mt-1 mb-5 text-sm text-slate-600">
 
-              Selecciona el vale liberado. Los silos y el RC vienen
+              Selecciona el vale habilitado por el servidor. Los silos y el RC vienen
               precargados desde Estandarización y no se vuelven a digitar.
 
             </p>
@@ -577,7 +580,7 @@ function FormularioLote({ alCerrar, alGuardar }: Props) {
                 <p className="mt-2 text-xs text-slate-600">
                   Vale {valeSeleccionado.codigo} · RC objetivo {cantidad(valeSeleccionado.rc_objetivo, undefined, 4)}
                   {valeSeleccionado.rc_real != null
-                    ? ` · RC liberado ${cantidad(valeSeleccionado.rc_real, undefined, 4)}`
+                    ? ` · RC medido ${cantidad(valeSeleccionado.rc_real, undefined, 4)}`
                     : ""}
                   {` · ${Number(valeSeleccionado.litros_disponibles).toLocaleString("es-CL")} L disponibles`}
                 </p>

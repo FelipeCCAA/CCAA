@@ -537,6 +537,7 @@ class Silo(models.Model):
         EN_USO = "en_uso", "En uso"
         RESERVADO = "reservado", "Reservado"
         BLOQUEADO_CALIDAD = "bloqueado_calidad", "Bloqueado por Calidad"
+        PENDIENTE_CALIDAD = "pendiente_calidad", "Pendiente de Calidad"
         PENDIENTE_CIP = "pendiente_cip", "Pendiente de CIP"
         EN_CIP = "en_cip", "En CIP"
         FUERA_SERVICIO = "fuera_servicio", "Fuera de servicio"

@@ -58,6 +58,7 @@ async function abrir(browser: Browser, rol: "recepcion" | "produccion") {
             : { volumen_contable: "10000.00", diferencia: "-100.00" } }],
       }); return;
     }
+    if (ruta === "/api/calidad/politica-continuidad/") { await responder({ avisos_intermedios: false, mensaje: "" }); return; }
     if (ruta === "/api/estandarizacion/vales/") { await responder({ results: [VALE] }); return; }
     if (ruta === "/api/estandarizacion/vales/catalogos/") { await responder({ silos: SILOS, estados: [], transiciones: {}, minutos_agitacion: 15 }); return; }
     if (ruta === "/api/estandarizacion/vales/guia-rc/") { await responder([]); return; }

@@ -12,6 +12,7 @@ import {
 import { ocupacionesPorEquipo } from "../../services/disponibilidad-equipos";
 import { esErrorDeEquipo, mensajeErrorProceso } from "../../services/errores-proceso";
 import { listarAnalisisSilo, type AnalisisSilo } from "../../services/recepcion.service";
+import { obtenerPoliticaContinuidad } from "../../services/calidad.service";
 
 const control = "mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5";
 
@@ -49,10 +50,13 @@ export default function FormularioDescremacion({
 
   useEffect(() => {
     let vigente = true;
-    Promise.all([obtenerOpcionesAltaDescremacion(), listarAnalisisSilo(siloOrigen)])
-    .then(([opciones, muestras]) => {
+    Promise.all([obtenerOpcionesAltaDescremacion(), listarAnalisisSilo(siloOrigen), obtenerPoliticaContinuidad().catch(() => null)])
+    .then(([opciones, muestras, politica]) => {
       if (!vigente) return;
-      const validos = muestras.filter((item) => item.estado === "confirmado" && item.vigente);
+      const validos = muestras.filter((item) => item.vigente && (
+        item.estado === "confirmado" || (politica?.avisos_intermedios === true && item.estado === "borrador"
+          && item.grasa != null && item.sng != null && item.inhibidores_resultado !== "positivo")
+      ));
       const productoDescremada = opciones.productos_descremada[0];
       const productoCrema = opciones.productos_crema[0];
       setEtapas(opciones.etapas);
@@ -218,7 +222,8 @@ export default function FormularioDescremacion({
             <label className="sm:col-span-2 flex items-start gap-3 rounded-xl bg-white p-3 text-sm text-slate-700"><input type="checkbox" className="mt-1" checked={planConfirmado} onChange={(e) => setPlanConfirmado(e.target.checked)} /><span>Confirmo que revisé los volúmenes sugeridos y que estos serán los volúmenes reservados en los TK.</span></label>
           </div>}
         </section>
-        {analisis.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">El silo no tiene un análisis confirmado vigente.</p>}
+          {muestra?.estado === "borrador" && <p role="status" className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Composición registrada con Calidad pendiente. Continuar conserva el pendiente y no libera el producto final.</p>}
+          {analisis.length === 0 && <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">No hay una composición vigente utilizable. Registra la muestra y sus mediciones de MG y SNG.</p>}
         {productosSinEspecificacion.length > 0 && <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <p>Falta una especificación de silo vigente para: {productosSinEspecificacion.map((producto) => producto?.nombre).join(" y ")}.</p>
           <p className="mt-1">Solicita a Calidad configurarla o abre <Link to="/maestros?seccion=especificaciones" className="font-semibold underline">Maestros · Especificaciones</Link>.</p>

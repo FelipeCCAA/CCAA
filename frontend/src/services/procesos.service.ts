@@ -291,7 +291,7 @@ interface SalidaTramo {
 }
 
 export interface OpcionesAltaCondensacion {
-  lotes: { id: number; codigo: string; producto: string; orden: string; ejecucion: string; equipo: string | null; origen: string; litros: string }[];
+  lotes: { id: number; codigo: string; producto: string; orden: string; ejecucion: string; equipo: string | null; origen: string; litros: string; avisos_calidad?: string[] }[];
   silos: { id: number; codigo: string; estado: string; capacidad_l: string; saldo_l: string }[];
 }
 
@@ -306,6 +306,7 @@ export interface OpcionesAltaMantequilla {
     silo_id: number;
     unidad_origen: string;
     disponible_kg: string;
+    avisos_calidad?: string[];
   }[];
   cremas_pendientes_calidad: {
     id: number;
@@ -471,7 +472,8 @@ export interface SalidaIntermediaDisponible {
   producto_nombre: string | null;
   tipo_material: string;
   tipo_material_etiqueta: string;
-  estado_calidad: "liberado";
+  estado_calidad: "liberado" | "pendiente";
+  avisos_calidad?: string[];
   estado_calidad_etiqueta: string;
   /** @deprecated Usar estado_calidad. */
   estado_material: string;

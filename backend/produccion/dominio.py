@@ -524,7 +524,7 @@ class DecisionApertura:
     litros_disponibles: Decimal = Decimal("0")
 
 
-def puede_abrir_lote_desde(vale, litros, consumido_por_otros_lotes=0) -> DecisionApertura:
+def puede_abrir_lote_desde(vale, litros, consumido_por_otros_lotes=0, *, pendiente_conforme=False) -> DecisionApertura:
     """
     ¿Se puede abrir un lote con la leche de este vale?
 
@@ -552,7 +552,7 @@ def puede_abrir_lote_desde(vale, litros, consumido_por_otros_lotes=0) -> Decisio
 
     estado = getattr(vale, "estado", None)
 
-    if estado != "liberado":
+    if estado != "liberado" and not pendiente_conforme:
         etiqueta = getattr(vale, "get_estado_display", lambda: estado)()
         bloqueos.append(
             f"El vale {getattr(vale, 'codigo', '')} está «{etiqueta}» y no "

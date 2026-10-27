@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Beaker, BookOpen, CheckCircle2, Droplets, Pencil, Plus, Timer } from "lucide-react";
 
 import {
-  agitarVale, anularVale, calcularMezcla, corregirMuestraVale, decidirVale,
+  agitarVale, anularVale, calcularMezcla, corregirMuestraVale, decidirVale, continuarValePendiente,
   muestrearVale, obtenerCatalogos, obtenerGuiaRC, obtenerVales, reagitarVale,
   transferirVale, type CatalogosEstandarizacion, type GuiaRC,
   type ValeEstandarizacion,
@@ -14,6 +14,8 @@ import { puedeEscribir } from "../../services/sesion";
 import { mensajeDe, numero } from "../../components/seccion/utilidades";
 import { cantidad } from "../../services/formato";
 import { Aviso, Tarjeta, Vacio } from "../../components/seccion/componentes";
+import AvisosCalidad from "../../components/Calidad/AvisosCalidad";
+import { puedeContinuarPendiente } from "../../services/continuidad-calidad";
 import Cronometro from "./Cronometro";
 import FormularioVale from "./FormularioVale";
 import BalanceActos from "./BalanceActos";
@@ -53,6 +55,7 @@ function Estandarizacion() {
   } | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
+  const [mensajeContinuidad, setMensajeContinuidad] = useState("");
   const [historico, setHistorico] = useState(false);
 
   const editable = puedeEscribir("estandarizacion");
@@ -131,13 +134,16 @@ function Estandarizacion() {
   const ejecutar = async (
     accion: () => Promise<unknown>,
     porDefecto: string,
+    mensajeExito = "",
   ) => {
     setOcupado(true);
     setError("");
+    setMensajeContinuidad("");
 
     try {
       await accion();
       await cargar();
+      setMensajeContinuidad(mensajeExito);
     } catch (e) {
       setError(mensajeDe(e, porDefecto));
     } finally {
@@ -310,7 +316,7 @@ function Estandarizacion() {
             {vales.map((item) => (
               <button
                 key={item.id}
-                onClick={() => { setValeId(item.id); setCorreccion(null); }}
+                onClick={() => { setValeId(item.id); setCorreccion(null); setMensajeContinuidad(""); }}
                 className={`w-full rounded-xl border p-3 text-left ${
                   valeId === item.id
                     ? "border-emerald-300 bg-emerald-50"
@@ -449,6 +455,7 @@ function Estandarizacion() {
                           <p className="font-medium">Origen de {componente}</p>
                           {fuentes.map((fuente) => <div key={fuente.id} className="mt-1">
                             <p>{fuente.codigo} · {numero(fuente.cantidad_disponible)} L registrados</p>
+                            <AvisosCalidad avisos={fuente.avisos_calidad} />
                             {fuente.bloqueo && <p className="mt-1 text-amber-800">{fuente.bloqueo}</p>}
                           </div>)}
                         </div>;
@@ -534,6 +541,20 @@ function Estandarizacion() {
                       </>
                     )}
 
+                    {mensajeContinuidad && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">{mensajeContinuidad}</p>}
+                    <AvisosCalidad avisos={vale.avisos_calidad} />
+                    {puedeContinuarPendiente(editable, vale) && (
+                      <Paso
+                        texto="Continuidad operacional con Calidad pendiente. La acción queda registrada con tu usuario; no sustituye la firma de Calidad ni la liberación final antes del despacho."
+                        boton="Continuar con Calidad pendiente"
+                        ocupado={ocupado}
+                        onClick={() => void ejecutar(
+                          () => continuarValePendiente(vale.id),
+                          "No se pudo continuar con Calidad pendiente.",
+                          "Continuidad registrada con Calidad pendiente. La liberación final sigue siendo obligatoria antes del despacho.",
+                        )}
+                      />
+                    )}
                     {vale.estado === "muestreado" && (!calidad || !vale.balance || vale.balance.pendiente) && (
                       <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
                         {!vale.balance || vale.balance.pendiente ? "Liberación bloqueada: resuelve el balance pendiente antes de la decisión de Calidad." : "Esperando decisión de Calidad."}

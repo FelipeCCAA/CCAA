@@ -76,13 +76,13 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
         from inventario.servicios import catalogos_de_receta, insumos_requeridos
         from maestros.models import FormatoEnvasado
         from procesos.models import SalidaProceso
+        from calidad.continuidad import activa, informacion_salida
 
         salidas = list(filtrar_por_scope(
             SalidaProceso.objects.filter(
                 destino=SalidaProceso.Destino.ENVASADO,
                 naturaleza=SalidaProceso.Naturaleza.PRINCIPAL,
                 unidad__iexact="kg",
-                liberacion_calidad__estado="liberado",
                 lote__estado__in=[Lote.Estado.PRODUCIDO, Lote.Estado.CERRADO],
             ).select_related(
                 "lote__producto", "ejecucion__etapa", "liberacion_calidad"
@@ -97,6 +97,8 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
             ),
             pallets_total=Count("lote__registros_envase__pallets", distinct=True),
         ))
+        if not activa():
+            salidas = [s for s in salidas if getattr(getattr(s, "liberacion_calidad", None), "estado", None) == "liberado"]
         bloqueos = {}
         for salida in salidas:
             if salida.lote_id not in bloqueos:
@@ -144,6 +146,7 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
 
         respuesta = []
         for salida in salidas:
+            continuidad = informacion_salida(salida)
             envasado = salida.kg_envasado_total or Decimal("0")
             disponible = salida.cantidad - envasado
             if disponible <= 0:
@@ -178,7 +181,8 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                     "materiales_envase": [],
                     "puede_envasar": False,
                     "origen": salida.ejecucion.codigo,
-                    "calidad": salida.liberacion_calidad.estado,
+                    "calidad": continuidad["estado_calidad"],
+                    "avisos_calidad": continuidad["avisos_calidad"],
                     "motivo_bloqueo": (
                         "El producto no tiene un formato de Envasado activo. "
                         "Configúralo en Maestros."
@@ -302,7 +306,8 @@ class RegistroEnvaseViewSet(QuerysetTenantMixin, viewsets.ModelViewSet):
                     "materiales_envase": materiales,
                     "puede_envasar": unidades_disponibles > 0,
                     "origen": salida.ejecucion.codigo,
-                    "calidad": salida.liberacion_calidad.estado,
+                    "calidad": continuidad["estado_calidad"],
+                    "avisos_calidad": continuidad["avisos_calidad"],
                     "motivo_bloqueo": motivo_bloqueo,
                     "advertencia_materiales": advertencia_materiales,
                 })
@@ -684,6 +689,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
     def _vales_operativos(request):
         from estandarizacion.models import ValeEstandarizacion
         from procesos.models import EtapaProceso
+        from calidad.continuidad import activa, vale_conforme_pendiente
         from procesos.servicios import (
             etapas_iniciales_por_producto,
             tipos_equipo_para_etapa,
@@ -691,7 +697,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
 
         vales = filtrar_por_scope(
             ValeEstandarizacion.objects.filter(
-                estado=ValeEstandarizacion.Estado.LIBERADO
+                estado__in=([ValeEstandarizacion.Estado.LIBERADO, ValeEstandarizacion.Estado.MUESTREADO] if activa() else [ValeEstandarizacion.Estado.LIBERADO])
             ).select_related(
                 "producto", "producto__mandante", "silo_entera",
                 "silo_descremada", "silo_destino",
@@ -726,6 +732,8 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
         # tenía forma de saber cuál de los dos números era el bueno.
         resultado = []
         for vale in vales:
+            if vale.estado != "liberado" and not vale_conforme_pendiente(vale):
+                continue
             from estandarizacion.balance import balance_vale
             if balance_vale(vale)["pendiente"]:
                 continue
@@ -737,7 +745,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             from recepcion.servicios import ESTADOS_SIN_CONSUMO
             from estandarizacion.bloqueos import motivo_retencion_silo
             silo = vale.silo_destino
-            if (not silo.activo or silo.estado in ESTADOS_SIN_CONSUMO
+            if (not silo.activo or (silo.estado in ESTADOS_SIN_CONSUMO and not (activa() and silo.estado == Silo.Estado.PENDIENTE_CALIDAD))
                 or CicloCIP.objects.filter(silo=silo, estado=CicloCIP.Estado.EN_CURSO).exists()
                 or motivo_retencion_silo(silo.pk)):
                 continue
@@ -754,6 +762,7 @@ class LoteViewSet(SucursalTenantViewSetMixin, viewsets.ModelViewSet):
             resultado.append({
                 "id": vale.id,
                 "codigo": vale.codigo,
+                "avisos_calidad": (["Vale conforme pendiente de decisión de Calidad."] if vale.estado != "liberado" else []),
                 "fecha": vale.fecha,
                 "producto": vale.producto_id,
                 "producto_nombre": vale.producto.nombre,

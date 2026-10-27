@@ -287,6 +287,8 @@ def exigir_antecedentes_salida_vigentes(salida_id, *, bloquear=True):
     if bloquear:
         bloquear_catalogo()
     for pk in cadena_salidas(salida_id, bloquear=bloquear):
+        from .continuidad import exigir_pendientes_entrada_resueltos
+        exigir_pendientes_entrada_resueltos(SalidaProceso.objects.values_list("ejecucion_id", flat=True).get(pk=pk), bloquear=bloquear)
         if pk == salida_id:
             continue
         fuente = SalidaProceso.objects.select_related("ejecucion__vale", "ejecucion__etapa").get(pk=pk)
@@ -321,6 +323,10 @@ def _exigir(modelo, campo, identificador, calculador, *, bloquear):
         bloquear_catalogo()
     # Fuentes antes que decisiones, también para las firmas históricas.
     calculador(identificador, bloquear=bloquear)
+    if campo == "salida_id":
+        from procesos.models import SalidaProceso
+        from .continuidad import exigir_pendientes_entrada_resueltos
+        exigir_pendientes_entrada_resueltos(SalidaProceso.objects.values_list("ejecucion_id", flat=True).get(pk=identificador), bloquear=bloquear)
     consulta = modelo.objects.filter(**{campo: identificador})
     if bloquear:
         consulta = consulta.select_for_update()
@@ -331,7 +337,9 @@ def _exigir(modelo, campo, identificador, calculador, *, bloquear):
         decision is None or decision.estado not in estados or not decision.firma_vigente
         or decision.evidencia_firmada != evidencia
     ):
-        raise ValidationError("La aprobación de Calidad no está vigente. Calidad debe revisar y firmar nuevamente.")
+        from .continuidad import AprobacionPendiente
+        clase = ValidationError if decision and decision.estado == "rechazado" else AprobacionPendiente
+        raise clase("La aprobación de Calidad no está vigente. Calidad debe revisar y firmar nuevamente.")
     return str(decision.firma_id)
 
 

@@ -1,6 +1,7 @@
 """Fresh OP09 load rerun, restricted to its own fictitious local cluster."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -34,6 +35,7 @@ def environment():
         "PYTHONUNBUFFERED": "1",
         "DATABASE_URL": "postgresql://opflow_test@127.0.0.1:55479/opflow_circuito",
         "CCAA_MEDIA_ROOT": str(RUNTIME / "media"),
+        "CCAA_CALIDAD_INTERMEDIA_AVISO": os.environ.get("CCAA_CALIDAD_INTERMEDIA_AVISO", "false"),
         "DJANGO_SECRET_KEY": "op09r-isolated-synthetic-only-key-012345678901234567890",
     })
     return env

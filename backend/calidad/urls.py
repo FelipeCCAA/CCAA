@@ -1,5 +1,6 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+from .continuidad import politica
 
 from .views import (
     LiberacionViewSet,
@@ -25,6 +26,7 @@ router.register("registros", RegistroCalidadViewSet)
 router.register("liberaciones", LiberacionViewSet)
 
 urlpatterns = [
+    path("politica-continuidad/", politica, name="politica-continuidad"),
     path(
         "documentos-periodicos/",
         documentos_periodicos,

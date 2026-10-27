@@ -359,7 +359,11 @@ def crear_descremacion_guiada(
         analisis = AnalisisSilo.objects.get(pk=analisis_entrada_id, silo=origen)
     except AnalisisSilo.DoesNotExist as error:
         raise ValidationError({"analisis_entrada": "El analisis no pertenece al silo de origen."}) from error
-    if analisis.estado != AnalisisSilo.Estado.CONFIRMADO or not analisis.vigente:
+    from calidad.continuidad import activa
+    estados_analisis = [AnalisisSilo.Estado.CONFIRMADO]
+    if activa():
+        estados_analisis.append(AnalisisSilo.Estado.BORRADOR)
+    if analisis.estado not in estados_analisis or not analisis.vigente:
         raise ValidationError({"analisis_entrada": "El analisis debe estar confirmado y vigente."})
     if analisis.grasa is None or analisis.sng is None:
         raise ValidationError({"analisis_entrada": "El analisis requiere grasa y SNG."})
@@ -816,7 +820,7 @@ def _bloquear_operacion_mantequilla(operacion_id):
 def _validar_fuente_crema(salida, crema, etapa, *, bloquear=True):
     """No atribuye una salida histórica ni convierte kg sin libro físico."""
     from calidad.models import LiberacionProceso
-    from calidad.vigencia import exigir_liberacion_salida_vigente
+    from calidad.continuidad import activa, comprobar_salida
     from maestros.models import Silo
 
     if salida.lote_id != crema.pk or salida.silo_id is None:
@@ -834,14 +838,20 @@ def _validar_fuente_crema(salida, crema, etapa, *, bloquear=True):
     siguiente = siguiente_etapa_para_salida(salida=salida)
     if siguiente is None or siguiente.pk != etapa.pk:
         raise ValidationError({"salida_crema": "La salida no continúa directamente a Mantequilla."})
-    firma = exigir_liberacion_salida_vigente(salida.pk, bloquear=bloquear)
-    decision = LiberacionProceso.objects.select_related("analisis_silo").get(salida_id=salida.pk)
-    if decision.analisis_silo_id and decision.analisis_silo.silo_id != salida.silo_id:
+    firma, _ = comprobar_salida(salida.pk, bloquear=bloquear)
+    decision = LiberacionProceso.objects.select_related("analisis_silo").filter(salida_id=salida.pk).first()
+    if decision and decision.analisis_silo_id and decision.analisis_silo.silo_id != salida.silo_id:
         raise ValidationError({"salida_crema": "El análisis firmado no corresponde al TK de origen."})
-    densidad = getattr(decision.analisis_silo, "densidad", None) if decision.analisis_silo_id else None
+    from recepcion.models import AnalisisSilo
+    muestra = decision.analisis_silo if decision and decision.analisis_silo_id else None
+    if muestra is None:
+        muestra = AnalisisSilo.objects.filter(silo_id=salida.silo_id, tomado_en__gte=salida.registrada_en).order_by("-tomado_en", "-pk").first()
+    if activa() and muestra is not None and muestra.tomado_en < salida.registrada_en:
+        raise ValidationError({"salida_crema": "La densidad debe corresponder al material producido, no al llenado anterior del TK."})
+    densidad = getattr(muestra, "densidad", None)
     if densidad is None or densidad <= 0:
         raise ValidationError({"salida_crema": "Falta una densidad real y firmada de la crema."})
-    return firma, Decimal(str(densidad)), decision.analisis_silo_id
+    return firma, Decimal(str(densidad)), muestra.pk
 
 
 def _disponible_lote_crema(crema, *, excluir_ejecucion_id=None):
@@ -859,7 +869,18 @@ def _disponible_lote_crema(crema, *, excluir_ejecucion_id=None):
     ).values("ejecucion_id")
     nuevas = nuevas.exclude(ejecucion_id__in=ejecuciones_con_entrada_kg)
     usados_nuevos = nuevas.aggregate(total=Sum("kg_crema"))["total"] or Decimal("0")
-    return Decimal(str(crema.kg_producidos or 0)) - usados_legacy - usados_nuevos
+    producidos = Decimal(str(crema.kg_producidos or 0))
+    from calidad.continuidad import activa
+    if crema.kg_producidos is None and activa():
+        fuentes = list(crema.salidas_proceso.filter(ejecucion__etapa__tipo="descremacion").select_related("ejecucion__etapa", "silo"))
+        if len(fuentes) != 1:
+            return Decimal("0")
+        etapa = siguiente_etapa_para_salida(salida=fuentes[0])
+        if etapa is None or etapa.tipo != EtapaProceso.Tipo.MANTEQUILLA:
+            return Decimal("0")
+        _, densidad, _ = _validar_fuente_crema(fuentes[0], crema, etapa, bloquear=False)
+        producidos = (fuentes[0].cantidad * densidad / Decimal("1000")).quantize(Decimal("0.01"))
+    return producidos - usados_legacy - usados_nuevos
 
 
 def _disponible_salida_crema(salida):
@@ -965,7 +986,7 @@ def crear_mantequilla_guiada(
     litros = (kg_crema * Decimal("1000") / densidad).quantize(Decimal("0.01"))
     if litros <= 0 or litros > _disponible_salida_crema(salida):
         raise ValidationError({"salida_crema": "La salida no tiene litros libres suficientes."})
-    motivos_tk = motivos_silo_no_disponible(salida.silo, para="proceso")
+    motivos_tk = motivos_silo_no_disponible(salida.silo, para="proceso", permitir_pendientes=True)
     if motivos_tk:
         raise ValidationError({"salida_crema": " ".join(motivos_tk)})
     exigir_origen_disponible(silo=salida.silo, cantidad=litros)
@@ -1593,7 +1614,7 @@ def iniciar_condensacion(*, corrida_id, usuario):
     }
     origen = silos[corrida.silo_origen_id]
     destino = silos[corrida.silo_destino_id]
-    motivos_silo = motivos_silo_no_disponible(origen, para="proceso")
+    motivos_silo = motivos_silo_no_disponible(origen, para="proceso", permitir_pendientes=True)
     if motivos_silo:
         raise ValidationError(f"{origen.codigo}: " + " ".join(motivos_silo))
     if reservas_activas_silo(
@@ -1608,6 +1629,7 @@ def iniciar_condensacion(*, corrida_id, usuario):
     )
     if not destino.activo or destino.estado in {
         Silo.Estado.BLOQUEADO_CALIDAD,
+        Silo.Estado.PENDIENTE_CALIDAD,
         Silo.Estado.EN_CIP,
         Silo.Estado.FUERA_SERVICIO,
     }:
@@ -1713,6 +1735,8 @@ def iniciar_condensacion(*, corrida_id, usuario):
     if corrida.orden.estado == OrdenProduccion.Estado.PROGRAMADA:
         corrida.orden.estado = OrdenProduccion.Estado.EN_PROCESO
         corrida.orden.save(update_fields=["estado"])
+    from calidad.continuidad import registrar_desde_entradas
+    registrar_desde_entradas(corrida.ejecucion, usuario, "iniciar_evaporacion")
     return corrida
 
 
@@ -1739,7 +1763,7 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         raise ValidationError({"litros_precondensado": "Debe ser mayor que cero."})
     destino = Silo.objects.select_for_update().get(pk=corrida.silo_destino_id)
     if not destino.activo or destino.estado in {
-        Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+        Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.PENDIENTE_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
     }:
         raise ValidationError(f"{destino.codigo} no admite el precondensado.")
     if saldo_silo(destino) + cantidad > destino.capacidad_l:
@@ -1829,7 +1853,8 @@ def cerrar_condensacion(*, corrida_id, usuario, litros_precondensado, controles)
         or destino_operativo == SalidaProceso.Destino.DESPACHO_DIRECTO
     ):
         corrida.estado = CorridaCondensacion.Estado.PENDIENTE_CALIDAD
-        destino.estado = Silo.Estado.BLOQUEADO_CALIDAD
+        from calidad.continuidad import activa
+        destino.estado = Silo.Estado.PENDIENTE_CALIDAD if activa() else Silo.Estado.BLOQUEADO_CALIDAD
         destino.save(update_fields=["estado"])
     else:
         transicionar_ejecucion(
@@ -1894,10 +1919,13 @@ def iniciar_descremacion(*, corrida_id, usuario):
     origen = silos[corrida.silo_entera_id]
     destino_descremada = silos[corrida.silo_descremada_id]
     destino_crema = silos[corrida.estanque_crema_id]
-    motivos = motivos_silo_no_disponible(origen, para="proceso")
+    motivos = motivos_silo_no_disponible(origen, para="proceso", permitir_pendientes=True)
     if motivos:
         raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
-    if corrida.analisis_entrada.estado != corrida.analisis_entrada.Estado.CONFIRMADO:
+    from calidad.continuidad import activa
+    if corrida.analisis_entrada.estado != corrida.analisis_entrada.Estado.CONFIRMADO and not (
+        activa() and corrida.analisis_entrada.estado == corrida.analisis_entrada.Estado.BORRADOR
+    ):
         raise ValidationError({"analisis_entrada": "El análisis de entrada debe estar confirmado."})
     if corrida.analisis_entrada.grasa != corrida.grasa_entrada or corrida.analisis_entrada.sng != corrida.sng_entrada:
         raise ValidationError({
@@ -1913,7 +1941,7 @@ def iniciar_descremacion(*, corrida_id, usuario):
         (destino_crema, corrida.producto_crema, corrida.litros_crema_plan),
     ):
         if not destino.activo or destino.estado in {
-            Silo.Estado.BLOQUEADO_CALIDAD,
+            Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.PENDIENTE_CALIDAD,
             Silo.Estado.EN_CIP,
             Silo.Estado.FUERA_SERVICIO,
         }:
@@ -2015,7 +2043,7 @@ def cerrar_descremacion(
         silos[corrida.silo_entera_id], silos[corrida.silo_descremada_id],
         silos[corrida.estanque_crema_id],
     )
-    motivos = motivos_silo_no_disponible(origen, para="proceso")
+    motivos = motivos_silo_no_disponible(origen, para="proceso", permitir_pendientes=True)
     if motivos:
         raise ValidationError(f"{origen.codigo}: " + " ".join(motivos))
     exigir_origen_disponible(
@@ -2025,7 +2053,7 @@ def cerrar_descremacion(
     for destino, cantidad in ((destino_d, ld), (destino_c, lc)):
         exigir_destino_sin_reserva(silo=destino, excluir_ejecucion_id=corrida.ejecucion_id)
         if not destino.activo or destino.estado in {
-            Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
+            Silo.Estado.BLOQUEADO_CALIDAD, Silo.Estado.PENDIENTE_CALIDAD, Silo.Estado.EN_CIP, Silo.Estado.FUERA_SERVICIO,
         }:
             raise ValidationError(f"{destino.codigo} no admite producto.")
         if saldo_silo(destino) + cantidad > destino.capacidad_l:
@@ -2138,16 +2166,19 @@ def cerrar_descremacion(
         ejecucion_id=corrida.ejecucion_id,
         estado_nuevo=EjecucionProceso.Estado.PENDIENTE_CONTROL, usuario=usuario,
     )
+    from calidad.continuidad import activa
     if corrida.ejecucion.etapa.requiere_calidad:
         actualizar_queryset_con_auditoria(
             Silo.objects.filter(pk__in=[destino_d.pk, destino_c.pk]),
-            estado=Silo.Estado.BLOQUEADO_CALIDAD
+            estado=(Silo.Estado.PENDIENTE_CALIDAD if activa() else Silo.Estado.BLOQUEADO_CALIDAD)
         )
     else:
         transicionar_ejecucion(
             ejecucion_id=corrida.ejecucion_id,
             estado_nuevo=EjecucionProceso.Estado.CERRADA, usuario=usuario,
         )
+    from calidad.continuidad import registrar_desde_entradas
+    registrar_desde_entradas(corrida.ejecucion, usuario, "cerrar_descremacion")
     return corrida
 
 
@@ -2207,13 +2238,18 @@ def iniciar_mantequilla(*, corrida_id, usuario, operacion_id):
     firma, densidad, analisis_id = _validar_fuente_crema(
         fuente_tk, crema, corrida.ejecucion.etapa,
     )
+    from calidad.continuidad import activa
+    if crema.kg_producidos is None and activa():
+        crema.kg_producidos = (fuente_tk.cantidad * densidad / Decimal("1000")).quantize(Decimal("0.01"))
+        crema.estado = Lote.Estado.PRODUCIDO
+        crema.save(update_fields=["kg_producidos", "estado"])
     litros_consumidos = (
         Decimal(str(corrida.kg_crema)) * Decimal("1000") / densidad
     ).quantize(Decimal("0.01"))
     if litros_consumidos <= 0 or litros_consumidos > _disponible_salida_crema(fuente_tk):
         raise ValidationError({"salida_crema": "La salida de crema no tiene litros libres suficientes."})
     tk_crema = Silo.objects.select_for_update().get(pk=fuente_tk.silo_id)
-    motivos_tk = motivos_silo_no_disponible(tk_crema, para="proceso")
+    motivos_tk = motivos_silo_no_disponible(tk_crema, para="proceso", permitir_pendientes=True)
     if motivos_tk:
         raise ValidationError(f"{tk_crema.codigo}: " + " ".join(motivos_tk))
     exigir_origen_disponible(
@@ -2258,10 +2294,12 @@ def iniciar_mantequilla(*, corrida_id, usuario, operacion_id):
         ejecucion=corrida.ejecucion, usuario=usuario, tipo="mantequilla_iniciada",
         operacion_id=operacion_id,
         datos={"solicitud": solicitud, "salida_crema": fuente_tk.pk,
-               "firma_salida": firma, "analisis_silo_id": analisis_id,
+               "firma_salida": firma, "continuidad_pendiente": firma is None, "analisis_silo_id": analisis_id,
                "densidad_kg_m3": str(densidad),
                "kg_crema": str(corrida.kg_crema), "litros_consumidos": str(litros_consumidos)},
     )
+    from calidad.continuidad import registrar_desde_entradas
+    registrar_desde_entradas(corrida.ejecucion, usuario, "iniciar_mantequilla")
     return corrida
 
 
@@ -2332,7 +2370,9 @@ def cerrar_mantequilla(
     if (datos_inicio.get("solicitud", {}).get("corrida") != corrida.pk
         or datos_inicio.get("salida_crema") != fuente.pk):
         raise ValidationError("Falta la evidencia de alimentación confirmada al inicio.")
-    if not datos_inicio.get("firma_salida") or not datos_inicio.get("analisis_silo_id"):
+    from calidad.continuidad import activa
+    inicio_pendiente = datos_inicio.get("continuidad_pendiente") is True
+    if (not datos_inicio.get("firma_salida") and not (inicio_pendiente and (activa() or firma_vigente))) or not datos_inicio.get("analisis_silo_id"):
         raise ValidationError("La firma y el análisis del inicio están incompletos.")
     try:
         kg_inicio = Decimal(datos_inicio["kg_crema"])
@@ -2512,6 +2552,8 @@ def cerrar_mantequilla(
                "densidad_vigente_al_cierre_kg_m3": str(densidad_vigente),
                "litros_consumidos": str(consumo.litros)},
     )
+    from calidad.continuidad import registrar_desde_entradas
+    registrar_desde_entradas(corrida.ejecucion, usuario, "cerrar_mantequilla")
     return corrida
 
 
@@ -2739,7 +2781,6 @@ def cerrar_secado(
 ):
     """Cierra torre, balance y lote como un solo hecho transaccional."""
     from calidad.models import LiberacionProceso
-    from calidad.vigencia import exigir_liberacion_salida_vigente
     from inventario.models import LoteInventario, MovimientoInventario
     from maestros.models import Silo
     from recepcion.models import MovimientoSilo
@@ -2872,7 +2913,8 @@ def cerrar_secado(
             # Mismo orden que Mantequilla y las correcciones de Calidad:
             # salida -> silo -> análisis -> aprobación.
             silo = Silo.objects.select_for_update(of=("self",)).get(pk=entrada.silo_id)
-            exigir_liberacion_salida_vigente(salida_origen.pk, bloquear=True)
+            from calidad.continuidad import comprobar_salida
+            comprobar_salida(salida_origen.pk, bloquear=True)
             if entrada.unidad.lower() != "l":
                 raise ValidationError({
                     "alimentacion": (
@@ -2898,7 +2940,7 @@ def cerrar_secado(
                     })
             else:
                 from recepcion.servicios import motivos_silo_no_disponible
-                motivos_silo = motivos_silo_no_disponible(silo, para="proceso")
+                motivos_silo = motivos_silo_no_disponible(silo, para="proceso", permitir_pendientes=True)
                 if motivos_silo:
                     raise ValidationError({
                         "alimentacion": f"{silo.codigo}: {' '.join(motivos_silo)}"
@@ -3012,6 +3054,13 @@ def cerrar_secado(
     )
     if requiere_calidad:
         LiberacionProceso.objects.get_or_create(salida=salida)
+        from calidad.continuidad import activa
+        if activa():
+            salida.destino = destino_salida_de_ruta(
+                producto=lote.producto, sucursal=corrida.ejecucion.sucursal,
+                etapa=corrida.ejecucion.etapa,
+            )
+            salida.save(update_fields=["destino"])
 
     # La misma cola que el `PATCH` del lote y que Mantequilla: orden a
     # pendiente de Calidad, descuento de bodega y aviso al área. Cerrar la
@@ -3040,4 +3089,6 @@ def cerrar_secado(
         datos={"solicitud": solicitud, "actor_id": usuario.pk,
                "fecha": finalizada_en.isoformat()},
     )
+    from calidad.continuidad import registrar_desde_entradas
+    registrar_desde_entradas(corrida.ejecucion, usuario, "cerrar_secado")
     return corrida

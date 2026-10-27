@@ -1,0 +1,56 @@
+OP00_ISOLATION {"data_directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/op00-runtime/pgdata", "role": "op00_test", "host": "127.0.0.1", "port": 55439, "database": "op00_base", "environment": "ci"}
+Using existing test database for alias 'default' ('test_op00_base')...
+
+test_conforme_posterior_no_oculta_no_conforme_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_conforme_posterior_no_oculta_no_conforme_del_mismo_material) ... ok
+test_negativo_posterior_no_oculta_positivo_del_mismo_material (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_negativo_posterior_no_oculta_positivo_del_mismo_material) ... ok
+test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_origen_crudo_no_oculta_positivo_con_otra_muestra_negativa) ... ok
+test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_positivo_tardio_del_origen_completo_bloquea_sus_descendientes) ... ok
+test_salida_con_silo_no_oculta_analisis_adverso_del_lote (calidad.tests_continuidad_remuestreo.RemuestreoNoDisponeAdversoTests.test_salida_con_silo_no_oculta_analisis_adverso_del_lote) ... ok
+test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera (calidad.tests_continuidad_remuestreo.ResultadoTardioDeudaTests.test_deuda_sin_muestra_con_positivo_y_negativo_no_se_libera) ... ok
+test_accion_http_conserva_pendiente_sin_firmar (calidad.tests_continuidad.ContinuidadAccionAPITests.test_accion_http_conserva_pendiente_sin_firmar) ... ok
+test_payload_no_anula_configuracion_estricta (calidad.tests_continuidad.ContinuidadAccionAPITests.test_payload_no_anula_configuracion_estricta) ... ok
+test_sin_permiso_operacional_no_puede_continuar (calidad.tests_continuidad.ContinuidadAccionAPITests.test_sin_permiso_operacional_no_puede_continuar) ... ok
+test_cliente_no_puede_activar_la_politica (calidad.tests_continuidad.PoliticaContinuidadAPITests.test_cliente_no_puede_activar_la_politica) ... ok
+test_modo_estricto_sigue_siendo_explicito (calidad.tests_continuidad.PoliticaContinuidadAPITests.test_modo_estricto_sigue_siendo_explicito) ... ok
+test_politica_habilitada_se_informa_sin_liberar_material (calidad.tests_continuidad.PoliticaContinuidadAPITests.test_politica_habilitada_se_informa_sin_liberar_material) ... ok
+test_politica_requiere_identidad (calidad.tests_continuidad.PoliticaContinuidadAPITests.test_politica_requiere_identidad) ... ok
+test_fallo_tardio_revierte_consumo_y_aviso (calidad.tests_continuidad_produccion.ContinuidadProduccionTests.test_fallo_tardio_revierte_consumo_y_aviso) ... ok
+test_medicion_cruda_pendiente_queda_fotografiada_y_se_resuelve_sin_cambiarla (calidad.tests_continuidad_produccion.ContinuidadProduccionTests.test_medicion_cruda_pendiente_queda_fotografiada_y_se_resuelve_sin_cambiarla) ... ok
+test_politica_apagada_conserva_bloqueo_antes_de_mover_leche (calidad.tests_continuidad_produccion.ContinuidadProduccionTests.test_politica_apagada_conserva_bloqueo_antes_de_mover_leche) ... ok
+test_rc_fuera_de_objetivo_y_balance_incongruente_no_se_disimulan (calidad.tests_continuidad_produccion.ContinuidadProduccionTests.test_rc_fuera_de_objetivo_y_balance_incongruente_no_se_disimulan) ... ok
+test_reintento_de_transferencia_no_duplica_libro_ni_evento (calidad.tests_continuidad_produccion.ContinuidadProduccionTests.test_reintento_de_transferencia_no_duplica_libro_ni_evento) ... ok
+test_transferencia_pendiente_conserva_origen_y_no_inventa_firma (calidad.tests_continuidad_produccion.ContinuidadProduccionTests.test_transferencia_pendiente_conserva_origen_y_no_inventa_firma) ... ok
+test_vale_con_rc_conforme_continua_sin_volverse_liberado (calidad.tests_continuidad_produccion.ContinuidadProduccionTests.test_vale_con_rc_conforme_continua_sin_volverse_liberado) ... ok
+test_muestra_de_llenado_futuro_no_salda_consumo_anterior (calidad.tests_continuidad_produccion.DeudaSinMuestraTests.test_muestra_de_llenado_futuro_no_salda_consumo_anterior) ... ok
+test_muestra_registrada_tarde_pero_tomada_antes_del_retiro_salda_deuda (calidad.tests_continuidad_produccion.DeudaSinMuestraTests.test_muestra_registrada_tarde_pero_tomada_antes_del_retiro_salda_deuda) ... ok
+test_sin_muestra_deja_deuda_y_retiene_la_firma_final (calidad.tests_continuidad_produccion.DeudaSinMuestraTests.test_sin_muestra_deja_deuda_y_retiene_la_firma_final) ... ok
+test_inhibidores_positivos_en_origen_crudo_siguen_bloqueando (calidad.tests_continuidad_adversos.ContinuidadAdversosTests.test_inhibidores_positivos_en_origen_crudo_siguen_bloqueando) ... ok
+test_inhibidores_positivos_en_salida_intermedia_siguen_bloqueando (calidad.tests_continuidad_adversos.ContinuidadAdversosTests.test_inhibidores_positivos_en_salida_intermedia_siguen_bloqueando) ... ok
+test_medicion_real_fuera_de_especificacion_no_es_solo_firma_pendiente (calidad.tests_continuidad_adversos.ContinuidadAdversosTests.test_medicion_real_fuera_de_especificacion_no_es_solo_firma_pendiente) ... ok
+test_pcc1_fuera_de_limite_bloquea_la_salida_pendiente (calidad.tests_continuidad_adversos.ContinuidadAdversosTests.test_pcc1_fuera_de_limite_bloquea_la_salida_pendiente) ... ok
+test_ppro_no_ok_sin_accion_correctiva_bloquea_la_salida (calidad.tests_continuidad_adversos.ContinuidadAdversosTests.test_ppro_no_ok_sin_accion_correctiva_bloquea_la_salida) ... ok
+test_rechazo_explicito_de_calidad_bloquea_la_transferencia (calidad.tests_continuidad_adversos.ContinuidadAdversosTests.test_rechazo_explicito_de_calidad_bloquea_la_transferencia) ... ok
+test_silo_bloqueado_o_en_cip_no_se_abre_por_el_aviso (calidad.tests_continuidad_adversos.ContinuidadAdversosTests.test_silo_bloqueado_o_en_cip_no_se_abre_por_el_aviso) ... ok
+test_envase_pendiente_crea_pallets_en_cuarentena_y_aviso_sin_liberar (calidad.tests_continuidad_circuitos.ContinuidadEnvaseTests.test_envase_pendiente_crea_pallets_en_cuarentena_y_aviso_sin_liberar) ... ok
+test_catalogo_muestra_crema_pendiente_sin_etiqueta_de_liberacion (calidad.tests_continuidad_circuitos.ContinuidadMantequillaTests.test_catalogo_muestra_crema_pendiente_sin_etiqueta_de_liberacion) ... ok
+test_catalogo_omite_salida_directa_pendiente_de_calidad (calidad.tests_continuidad_circuitos.ContinuidadMantequillaTests.test_catalogo_omite_salida_directa_pendiente_de_calidad) ... ok
+test_crema_pendiente_avanza_con_un_retiro_y_sin_firma_falsa (calidad.tests_continuidad_circuitos.ContinuidadMantequillaTests.test_crema_pendiente_avanza_con_un_retiro_y_sin_firma_falsa) ... ok
+test_precondensado_pendiente_llega_a_secado_con_un_retiro_y_polvo_pendiente (calidad.tests_continuidad_evaporacion.ContinuidadEvaporacionSecadoTests.test_precondensado_pendiente_llega_a_secado_con_un_retiro_y_polvo_pendiente) ... ok
+
+----------------------------------------------------------------------
+Ran 35 tests in 125.122s
+
+OK
+Preserving test database for alias 'default' ('test_op00_base')...
+
+Found 35 test(s).
+Operations to perform:
+  Synchronize unmigrated apps: corsheaders, messages, observabilidad, rest_framework, staticfiles
+  Apply all migrations: admin, auditoria, auth, authtoken, calidad, contenttypes, estandarizacion, inocuidad, inventario, maestros, mantenimiento, planificacion, procesos, produccion, recepcion, recoleccion, sessions, usuarios
+Synchronizing apps without migrations:
+  Creating tables...
+    Running deferred SQL...
+Running migrations:
+  No migrations to apply.
+Cache table 'cache_ccaa' already exists.
+System check identified no issues (0 silenced).

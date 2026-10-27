@@ -1,0 +1,15 @@
+[WebServer] (node:33724) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 6 tests using 1 worker
+
+(node:15936) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 continuidad-ui\continuidad.spec.ts:55:1 › banner y continuidad auditada conservan el vale muestreado y sus avisos (4.9s)
+  ok 2 continuidad-ui\continuidad.spec.ts:69:3 › no presume política activa: política desactivada (6.0s)
+  ok 3 continuidad-ui\continuidad.spec.ts:69:3 › no presume política activa: política sin respuesta (6.1s)
+  ok 4 continuidad-ui\continuidad.spec.ts:76:1 › una cuenta sin permiso operacional no recibe la acción aunque el servidor envíe el flag (6.7s)
+  ok 5 continuidad-ui\continuidad.spec.ts:81:1 › un rechazo del servidor conserva el pendiente y muestra su motivo (6.3s)
+  ok 6 continuidad-ui\continuidad.spec.ts:88:1 › Envase muestra pendiente habilitado y conserva bloqueo por stock (6.1s)
+
+  6 passed (2.4m)

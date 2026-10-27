@@ -1,0 +1,5 @@
+OPFLOW_ISOLATION {"directory": "C:/Users/EQUIPO/.codex/.chatgpt-projects/g-p-6a79c7c991348191bf721f86baa74d0a/opflow-runtime/pgdata", "role": "opflow_test", "host": "127.0.0.1", "port": 55479}
+Operations to perform:
+  Target specific migration: 0039_silo_pendiente_calidad, from maestros
+Running migrations:
+  Applying maestros.0039_silo_pendiente_calidad... OK

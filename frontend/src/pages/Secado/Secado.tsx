@@ -96,7 +96,7 @@ export default function Secado() {
   const completarInicioExterno = (creada: CorridaSecado) => {
     setCorridas((actuales) => [creada, ...actuales.filter((item) => item.id !== creada.id)]);
     setIniciandoExterno(false);
-    setMensaje(`Corrida ${creada.ejecucion_codigo} iniciada desde un lote externo liberado.`);
+    setMensaje(`Corrida ${creada.ejecucion_codigo} iniciada desde un lote externo habilitado por el servidor.`);
     setBandeja("activas");
   };
 
